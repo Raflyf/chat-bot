@@ -14,7 +14,7 @@ export interface ImagePart {
 export type ContentPart = TextPart | ImagePart;
 
 export interface ChatMsg {
-  role: 'system' | 'user';
+  role: 'system' | 'user' | 'assistant';
   content: string | ContentPart[];
 }
 

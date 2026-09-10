@@ -2,6 +2,8 @@ import TelegramBot from 'node-telegram-bot-api';
 import { config } from './env.js';
 import { autoReply, describeImage } from './skills.js';
 import { saveMessage } from './db.js';
+import { getContext, noteExchange, saveCorrection } from './memory.js';
+import { needsSearch, searchWeb } from './web.js';
 import { handleRemind } from './remind.js';
 
 async function answerPhoto(
@@ -35,10 +37,27 @@ export function startTelegram(): TelegramBot {
 
   bot.onText(/^\/start$/, async (msg) => {
     const chatId = msg.chat.id;
-    await bot.sendMessage(
-      chatId,
-      `Halo kak, saya ${config.botName}, asisten AI umum. Silakan tanyakan apa saja, kapan saja.\nPerintah: /remind <menit> <pesan> untuk pengingat.`,
+    const ctx = await getContext(String(chatId));
+    const { reply } = await autoReply(
+      `Sapa user dengan hangat sebagai ${config.botName}. Perkenalkan: kamu asisten AI umum yang mengingat percakapan, bisa cari info terkini dari internet, bisa dikoreksi via /salah, dan bisa pasang pengingat via /remind. Tutup dengan tawaran bantuan.`,
+      ctx,
     );
+    await bot.sendMessage(chatId, reply);
+  });
+
+  bot.onText(/^\/salah([\s\S]*)$/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const chatKey = String(chatId);
+    const correction = (match?.[1] ?? '').trim();
+    const ctx = await getContext(chatKey);
+    if (!correction) {
+      const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, ramah.', ctx);
+      await bot.sendMessage(chatId, reply);
+      return;
+    }
+    const saved = await saveCorrection(chatKey, correction);
+    const { reply } = await autoReply(`User menyimpan koreksi: "${correction}". Konfirmasi singkat bahwa kamu mengingatnya.`, ctx);
+    await bot.sendMessage(chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
   });
 
   bot.onText(/^\/remind([\s\S]*)$/, async (msg, match) => {
@@ -80,8 +99,13 @@ export function startTelegram(): TelegramBot {
             // owner tidak wajib; abaikan
           }
         }
-        const sent = await bot.sendMessage(chatId, 'Maaf kak, gambar ini belum bisa saya analisis. Saya teruskan ke admin.');
-        await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: 'Gambar gagal dianalisis, diteruskan.', via: 'store-forward' });
+        const ctx = await getContext(chatKey);
+        const { reply } = await autoReply(
+          'Gambar user gagal dianalisis dan sudah diteruskan ke admin. Sampaikan itu dengan ramah dan tawarkan alternatif: kirim ulang lebih jelas atau tanya via teks.',
+          ctx,
+        );
+        const sent = await bot.sendMessage(chatId, reply);
+        await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via: 'store-forward' });
         void sent;
         return;
       }
@@ -90,9 +114,16 @@ export function startTelegram(): TelegramBot {
       if (!text || text.startsWith('/')) return;
       await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'user', content: text });
 
-      const { reply, escalate, via } = await autoReply(text);
+      const ctx = await getContext(chatKey);
+      let web: string | null = null;
+      if (needsSearch(text)) {
+        const found = await searchWeb(text);
+        if (found) web = found;
+      }
+      const { reply, escalate, via } = await autoReply(text, ctx, web);
       await bot.sendMessage(chatId, reply);
       await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via });
+      noteExchange(chatKey);
 
       if (escalate && ownerId) {
         try {

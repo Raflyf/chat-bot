@@ -1,6 +1,6 @@
 {
   "name": "agentkit",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "description": "Self-hosted AI agent for WhatsApp & Telegram, $0 free-tier stack (P0: Telegram)",
   "type": "module",
   "license": "MIT",
