@@ -238,6 +238,14 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - Menyesuaikan jadwal cron pengingat agar kompatibel penuh dengan batasan akun Vercel Hobby.
 - Menambahkan dukungan otomatis untuk pembacaan variabel lingkungan integrasi Supabase Vercel (`POSTGRES_URL`, `NEXT_PUBLIC_SUPABASE_URL`, dll).
 
+### v0.13.0 — 2026-09-11 00:07 WIB
+**Penyempurnaan: WhatsApp Clean Output Formatting & Zero-Emoji Enforcement**
+- Eliminasi total emoji dan simbol dekoratif dari seluruh balasan model AI via regex range Unicode komprehensif.
+- Normalisasi sintaks markdown heading (`###`, `##`, `#`) menjadi format cetak tebal WhatsApp (`*Judul*`).
+- Normalisasi format bold ganda (`**teks**`) ke bold tunggal (`*teks*`) dan perbaikan otomatis asteris yang menggantung/tanpa pasangan.
+- Pembersihan format bullet list bertumpuk (`*   *teks*`) menjadi daftar terstruktur bersih (`- *teks*`).
+- Penyempurnaan system prompt agar model langsung menyampaikan substansi teknis tanpa basa-basi pengantar template dan tanpa membocorkan aturan internal.
+
 ### v0.12.0 — 2026-09-10 23:33 WIB
 **Integrasi: Meta WhatsApp Cloud API Production Phone Registration**
 - Pendaftaran nomor produksi (+62 838-7464-0066) ke Meta WhatsApp Cloud API dengan Phone Number ID: 1248930498311083.
