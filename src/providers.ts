@@ -43,26 +43,45 @@ function cacheSet(key: string, text: string): void {
 }
 
 async function postJson(url: string, key: string, body: unknown): Promise<unknown> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(config.timeoutMs),
-  });
+  // Tier 1: Cek respon koneksi/header API key (connectTimeoutMs)
+  // Jika 429 (rate limit) atau provider down, failover cepat ke key/provider berikutnya
+  const connectController = new AbortController();
+  const connectTimer = setTimeout(() => connectController.abort(), config.connectTimeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: connectController.signal,
+    });
+  } finally {
+    clearTimeout(connectTimer);
+  }
+
   if (res.status === 429) {
     const err = new Error('RATE_LIMITED') as Error & { code?: string };
     err.code = 'RATE_LIMITED';
     throw err;
   }
   if (!res.ok) throw new Error(`PROVIDER_${res.status}`);
-  return (await res.json()) as unknown;
+
+  // Tier 2: Model aktif dan sedang berpikir / menghasilkan konten
+  // Berikan waktu berpikir yang leluasa (timeoutMs)
+  const thinkPromise = res.json();
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('THINKING_TIMEOUT')), config.timeoutMs),
+  );
+
+  return (await Promise.race([thinkPromise, timeoutPromise])) as unknown;
 }
 
 async function openAiChat(baseUrl: string, key: string, model: string, messages: ChatMsg[]): Promise<string> {
   const data = (await postJson(`${baseUrl}/chat/completions`, key, {
     model,
     messages,
-    max_tokens: 500,
+    max_tokens: config.maxOutputTokens,
     temperature: 0.4,
   })) as { choices?: Array<{ message?: { content?: string } }> };
   const text = data.choices?.[0]?.message?.content?.trim() ?? '';
@@ -89,20 +108,42 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[]): Prom
   const system = messages.find((m) => m.role === 'system');
   const body: Record<string, unknown> = {
     contents,
-    generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
+    generationConfig: { maxOutputTokens: config.maxOutputTokens, temperature: 0.4 },
   };
   if (system) body.systemInstruction = { parts: [{ text: system.content }] };
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(config.timeoutMs) },
-  );
+
+  const connectController = new AbortController();
+  const connectTimer = setTimeout(() => connectController.abort(), config.connectTimeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: connectController.signal,
+      },
+    );
+  } finally {
+    clearTimeout(connectTimer);
+  }
+
   if (res.status === 429) {
     const err = new Error('RATE_LIMITED') as Error & { code?: string };
     err.code = 'RATE_LIMITED';
     throw err;
   }
   if (!res.ok) throw new Error(`PROVIDER_${res.status}`);
-  const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+
+  const thinkPromise = res.json() as Promise<{ candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }>;
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('THINKING_TIMEOUT')), config.timeoutMs),
+  );
+  const data = (await Promise.race([thinkPromise, timeoutPromise])) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
   const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('').trim() ?? '';
   if (!text) throw new Error('EMPTY_RESPONSE');
   return text;

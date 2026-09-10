@@ -4,7 +4,17 @@ import { autoReply, describeImage } from './skills.js';
 import { saveMessage } from './db.js';
 import { getContext, noteExchange, saveCorrection } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
-import { handleRemind } from './remind.js';
+import { handleRemind, startReminderWorker } from './remind.js';
+
+let sharedBot: TelegramBot | null = null;
+
+export function getTelegramBot(): TelegramBot {
+  if (!sharedBot) {
+    // In serverless (Vercel), polling must be false.
+    sharedBot = new TelegramBot(config.telegramToken, { polling: !config.isServerless });
+  }
+  return sharedBot;
+}
 
 async function answerPhoto(
   bot: TelegramBot,
@@ -27,121 +37,140 @@ async function answerPhoto(
   return true;
 }
 
+/** Handler inti pesan Telegram: dipakai bersama oleh Polling lokal & Webhook Vercel */
+export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.Message): Promise<void> {
+  try {
+    if (msg.from?.is_bot) return;
+    const chatId = msg.chat.id;
+    const chatKey = String(chatId);
+    const ownerId = config.ownerChatId;
+    const text = msg.text?.trim() ?? '';
+
+    // 1. Perintah /start
+    if (text === '/start') {
+      const ctx = await getContext(chatKey);
+      const { reply } = await autoReply(
+        `Sapa user dengan hangat dan cerdas sebagai ${config.botName}. Perkenalkan kemampuanmu: asisten AI umum yang mengingat percakapan, mencari info internet terkini, menerima koreksi via /salah, dan pengingat via /remind. Tawarkan bantuan.`,
+        ctx,
+      );
+      await bot.sendMessage(chatId, reply);
+      return;
+    }
+
+    // 2. Perintah /salah <koreksi>
+    if (text.startsWith('/salah')) {
+      const correction = text.replace(/^\/salah\s*/, '').trim();
+      const ctx = await getContext(chatKey);
+      if (!correction) {
+        const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat dan ramah.', ctx);
+        await bot.sendMessage(chatId, reply);
+        return;
+      }
+      const saved = await saveCorrection(chatKey, correction);
+      const { reply } = await autoReply(`User menyimpan koreksi: "${correction}". Konfirmasi singkat bahwa kamu mengingatnya.`, ctx);
+      await bot.sendMessage(chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
+      return;
+    }
+
+    // 3. Perintah /remind <menit> <pesan>
+    if (text.startsWith('/remind')) {
+      const args = text.replace(/^\/remind\s*/, '').trim();
+      await handleRemind(bot, chatId, args);
+      return;
+    }
+
+    // 4. Gambar (Photo atau Document Image)
+    if (msg.photo?.length || msg.document) {
+      const fileId = msg.photo?.length
+        ? msg.photo[msg.photo.length - 1].file_id
+        : msg.document?.mime_type?.startsWith('image/')
+          ? msg.document.file_id
+          : undefined;
+      const caption = msg.caption?.trim();
+      await saveMessage({
+        platform: 'telegram',
+        chat_id: chatKey,
+        role: 'user',
+        content: caption ? `[gambar] ${caption}` : '[gambar]',
+      });
+      if (fileId) {
+        try {
+          if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
+        } catch (err) {
+          console.error(`[telegram] vision: ${String((err as Error).message ?? err)}`);
+        }
+      }
+      if (ownerId) {
+        try {
+          await bot.forwardMessage(ownerId, chatId, msg.message_id);
+        } catch {
+          // owner tidak wajib
+        }
+      }
+      const ctx = await getContext(chatKey);
+      const { reply } = await autoReply(
+        'Gambar user gagal dianalisis dan sudah diteruskan ke admin. Sampaikan dengan ramah dan tawarkan alternatif: kirim ulang atau tanyakan via teks.',
+        ctx,
+      );
+      await bot.sendMessage(chatId, reply);
+      await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via: 'store-forward' });
+      return;
+    }
+
+    // 5. Pesan teks umum
+    if (!text || text.startsWith('/')) return;
+    await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'user', content: text });
+
+    const ctx = await getContext(chatKey);
+    let web: string | null = null;
+    if (needsSearch(text)) {
+      const found = await searchWeb(text);
+      if (found) web = found;
+    }
+    const { reply, escalate, via } = await autoReply(text, ctx, web);
+    await bot.sendMessage(chatId, reply);
+    await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via });
+    noteExchange(chatKey);
+
+    if (escalate && ownerId) {
+      try {
+        await bot.sendMessage(ownerId, `Semua jalur AI gagal (via ${via}). Chat ${chatKey}: ${text.slice(0, 500)}`);
+      } catch {
+        // abaikan
+      }
+    }
+  } catch (err) {
+    console.error(`[telegram] handler: ${String((err as Error).message ?? err)}`);
+    try {
+      const { reply } = await autoReply('sapa user dengan ramah dan tawarkan bantuan');
+      await bot.sendMessage(msg.chat.id, reply);
+    } catch {
+      // abaikan
+    }
+  }
+}
+
+/** Eksekusi Telegram Webhook Update (dipanggil oleh /api/webhook) */
+export async function processTelegramUpdate(bot: TelegramBot, update: TelegramBot.Update): Promise<void> {
+  if (update.message) {
+    await handleIncomingMessage(bot, update.message);
+  } else if (update.edited_message) {
+    await handleIncomingMessage(bot, update.edited_message);
+  }
+}
+
+/** Memulai bot dalam mode Polling (hanya saat dijalankan lokal di terminal) */
 export function startTelegram(): TelegramBot {
-  const bot = new TelegramBot(config.telegramToken, { polling: true });
-  const ownerId = config.ownerChatId;
+  const bot = getTelegramBot();
 
   bot.on('polling_error', (err) => {
     console.error(`[telegram] polling_error: ${String((err as Error).message ?? err)}`);
   });
 
-  bot.onText(/^\/start$/, async (msg) => {
-    const chatId = msg.chat.id;
-    const ctx = await getContext(String(chatId));
-    const { reply } = await autoReply(
-      `Sapa user dengan hangat sebagai ${config.botName}. Perkenalkan: kamu asisten AI umum yang mengingat percakapan, bisa cari info terkini dari internet, bisa dikoreksi via /salah, dan bisa pasang pengingat via /remind. Tutup dengan tawaran bantuan.`,
-      ctx,
-    );
-    await bot.sendMessage(chatId, reply);
-  });
-
-  bot.onText(/^\/salah([\s\S]*)$/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const chatKey = String(chatId);
-    const correction = (match?.[1] ?? '').trim();
-    const ctx = await getContext(chatKey);
-    if (!correction) {
-      const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, ramah.', ctx);
-      await bot.sendMessage(chatId, reply);
-      return;
-    }
-    const saved = await saveCorrection(chatKey, correction);
-    const { reply } = await autoReply(`User menyimpan koreksi: "${correction}". Konfirmasi singkat bahwa kamu mengingatnya.`, ctx);
-    await bot.sendMessage(chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
-  });
-
-  bot.onText(/^\/remind([\s\S]*)$/, async (msg, match) => {
-    await handleRemind(bot, msg.chat.id, match?.[1] ?? '');
-  });
-
   bot.on('message', async (msg) => {
-    try {
-      if (msg.from?.is_bot) return;
-      const chatId = msg.chat.id;
-      const chatKey = String(chatId);
-
-      // Gambar: unduh lalu analisis dinamis via model vision.
-      // Dokumen non-gambar: teruskan ke owner (di luar kemampuan vision).
-      if (msg.photo?.length || msg.document) {
-        const fileId = msg.photo?.length
-          ? msg.photo[msg.photo.length - 1].file_id
-          : msg.document?.mime_type?.startsWith('image/')
-            ? msg.document.file_id
-            : undefined;
-        const caption = msg.caption?.trim();
-        await saveMessage({
-          platform: 'telegram',
-          chat_id: chatKey,
-          role: 'user',
-          content: caption ? `[gambar] ${caption}` : '[gambar]',
-        });
-        if (fileId) {
-          try {
-            if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
-          } catch (err) {
-            console.error(`[telegram] vision: ${String((err as Error).message ?? err)}`);
-          }
-        }
-        if (ownerId) {
-          try {
-            await bot.forwardMessage(ownerId, chatId, msg.message_id);
-          } catch {
-            // owner tidak wajib; abaikan
-          }
-        }
-        const ctx = await getContext(chatKey);
-        const { reply } = await autoReply(
-          'Gambar user gagal dianalisis dan sudah diteruskan ke admin. Sampaikan itu dengan ramah dan tawarkan alternatif: kirim ulang lebih jelas atau tanya via teks.',
-          ctx,
-        );
-        const sent = await bot.sendMessage(chatId, reply);
-        await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via: 'store-forward' });
-        void sent;
-        return;
-      }
-
-      const text = msg.text?.trim();
-      if (!text || text.startsWith('/')) return;
-      await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'user', content: text });
-
-      const ctx = await getContext(chatKey);
-      let web: string | null = null;
-      if (needsSearch(text)) {
-        const found = await searchWeb(text);
-        if (found) web = found;
-      }
-      const { reply, escalate, via } = await autoReply(text, ctx, web);
-      await bot.sendMessage(chatId, reply);
-      await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via });
-      noteExchange(chatKey);
-
-      if (escalate && ownerId) {
-        try {
-          await bot.sendMessage(ownerId, `Semua provider gagal (via ${via}). Chat ${chatKey}: ${text.slice(0, 500)}`);
-        } catch {
-          // abaikan
-        }
-      }
-    } catch (err) {
-      console.error(`[telegram] handler: ${String((err as Error).message ?? err)}`);
-      try {
-        const { reply } = await autoReply('sapa user dengan ramah dan tawarkan bantuan');
-        await bot.sendMessage(msg.chat.id, reply);
-      } catch {
-        // abaikan
-      }
-    }
+    await handleIncomingMessage(bot, msg);
   });
 
+  startReminderWorker(bot);
   return bot;
 }

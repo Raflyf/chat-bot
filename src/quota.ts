@@ -1,7 +1,8 @@
-// Pelacak kuota harian per key (in-memory). Sederhana dan cukup untuk P0:
-// reset otomatis tiap tanggal UTC baru. 429 ikut dihitung agar pool berhenti.
+// Pelacak kuota harian per key (hybrid in-memory + Supabase provider_quota).
+// Reset otomatis tiap tanggal UTC baru. 429 ikut dihitung agar pool berhenti.
 
-// Kunci peta memakai 4 char terakhir + panjang (identitas tanpa bocor isi key).
+import { db } from './db.js';
+
 type ProviderKind = 'openrouter' | 'groq' | 'gemini' | 'ollama';
 
 interface Counter {
@@ -31,5 +32,31 @@ export function keyAllowed(kind: ProviderKind, key: string, cap: number): boolea
 
 /** Catat satu pemakaian sukses/gagal-terkirim (429 ikut dihitung agar pool berhenti). */
 export function keyUsed(kind: ProviderKind, key: string): void {
-  slot(kind, key).count += 1;
+  const s = slot(kind, key);
+  s.count += 1;
+
+  // Persistensi ke database Supabase (best-effort)
+  const c = db();
+  if (!c) return;
+  const suffix = key.slice(-4);
+  const day = today();
+  void (async () => {
+    try {
+      const { data } = await c
+        .from('provider_quota')
+        .select('used')
+        .eq('kind', kind)
+        .eq('key_suffix', suffix)
+        .eq('day', day)
+        .maybeSingle();
+
+      const nextUsed = (data?.used ?? 0) + 1;
+      await c.from('provider_quota').upsert(
+        { kind, key_suffix: suffix, day, used: nextUsed },
+        { onConflict: 'kind,key_suffix,day' },
+      );
+    } catch {
+      // best-effort, abaikan
+    }
+  })();
 }
