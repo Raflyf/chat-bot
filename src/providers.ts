@@ -1,9 +1,21 @@
 import { config } from './env.js';
 import { keyAllowed, keyUsed } from './quota.js';
 
+export interface TextPart {
+  type: 'text';
+  text: string;
+}
+
+export interface ImagePart {
+  type: 'image_url';
+  image_url: { url: string };
+}
+
+export type ContentPart = TextPart | ImagePart;
+
 export interface ChatMsg {
   role: 'system' | 'user';
-  content: string;
+  content: string | ContentPart[];
 }
 
 type ProviderKind = 'openrouter' | 'groq' | 'gemini' | 'ollama';
@@ -61,7 +73,19 @@ async function openAiChat(baseUrl: string, key: string, model: string, messages:
 async function geminiChat(key: string, model: string, messages: ChatMsg[]): Promise<string> {
   const contents = messages
     .filter((m) => m.role === 'user')
-    .map((m) => ({ parts: [{ text: m.content }] }));
+    .map((m) => {
+      const parts = (typeof m.content === 'string' ? [{ type: 'text', text: m.content } as TextPart] : m.content).map(
+        (p) => {
+          if (p.type === 'image_url') {
+            const match = p.image_url.url.match(/^data:(.+);base64,(.+)$/);
+            if (!match) throw new Error('BAD_IMAGE');
+            return { inlineData: { mimeType: match[1], data: match[2] } };
+          }
+          return { text: (p as TextPart).text };
+        },
+      );
+      return { parts };
+    });
   const system = messages.find((m) => m.role === 'system');
   const body: Record<string, unknown> = {
     contents,
@@ -99,6 +123,8 @@ interface Step {
   kind: ProviderKind;
   keys: string[];
   models: string[];
+  /** Subset models yang terbukti vision-capable. Kosong = step dilewati saat butuh vision. */
+  visionModels: string[];
   cap: number;
   run: (key: string, model: string, messages: ChatMsg[]) => Promise<string>;
 }
@@ -109,6 +135,7 @@ function steps(): Step[] {
       kind: 'openrouter',
       keys: config.pools.openrouter,
       models: [config.models.orPrimary, config.models.orMini, config.models.orText],
+      visionModels: [config.models.orPrimary, config.models.orMini],
       cap: config.dailyCap.openrouter,
       run: (k, m, msgs) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs),
     },
@@ -116,6 +143,7 @@ function steps(): Step[] {
       kind: 'groq',
       keys: config.pools.groq,
       models: [config.models.groqPrimary, config.models.groqBackup],
+      visionModels: [],
       cap: config.dailyCap.groq,
       run: (k, m, msgs) => openAiChat('https://api.groq.com/openai/v1', k, m, msgs),
     },
@@ -123,6 +151,7 @@ function steps(): Step[] {
       kind: 'gemini',
       keys: config.pools.gemini,
       models: [config.models.geminiPrimary, config.models.geminiBackup],
+      visionModels: [config.models.geminiPrimary, config.models.geminiBackup],
       cap: config.dailyCap.gemini,
       run: (k, m, msgs) => geminiChat(k, m, msgs),
     },
@@ -130,6 +159,7 @@ function steps(): Step[] {
       kind: 'ollama',
       keys: config.pools.ollama,
       models: [config.models.ollamaPrimary, config.models.ollamaBackup],
+      visionModels: [],
       cap: config.dailyCap.ollama,
       run: (k, m, msgs) => ollamaChat(k, m, msgs),
     },
@@ -138,17 +168,19 @@ function steps(): Step[] {
 
 /**
  * Chat dengan failover berurutan OpenRouter > Groq > Gemini > Ollama.
- * Melempar jika semua gagal agar caller membalas template fail-closed
- * (tidak mengarang jawaban).
+ * needVision=true: hanya model vision-capable yang dicoba.
+ * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
-export async function chat(messages: ChatMsg[]): Promise<{ text: string; via: string }> {
-  const cacheKey = JSON.stringify(messages);
+export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Promise<{ text: string; via: string }> {
+  const needVision = opts?.vision === true;
+  const cacheKey = JSON.stringify({ v: needVision, messages });
   const hit = cacheGet(cacheKey);
   if (hit) return { text: hit, via: 'cache' };
 
   let lastError = 'NO_PROVIDER_KEYS';
   for (const step of steps()) {
-    for (const model of step.models) {
+    const models = needVision ? step.visionModels : step.models;
+    for (const model of models) {
       for (const key of step.keys) {
         if (!keyAllowed(step.kind, key, step.cap)) continue;
         try {
