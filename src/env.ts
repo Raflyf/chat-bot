@@ -67,9 +67,11 @@ export const config = {
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
   whatsappPhoneNumber: process.env.WHATSAPP_PHONE_NUMBER ?? '',
-  whatsappToken: process.env.WHATSAPP_TOKEN ?? '',
-  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
-  whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN ?? '',
+  whatsappToken:
+    process.env.WHATSAPP_TOKEN ||
+    '[META_TOKEN_REDACTED]',
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '1224589930748061',
+  whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '[REDACTED]',
   whatsappAppSecret: process.env.WHATSAPP_APP_SECRET ?? '',
 };
 
