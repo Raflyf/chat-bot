@@ -34,7 +34,8 @@ export const config = {
     ollamaBackup: process.env.OLLAMA_MODEL_BACKUP ?? 'gpt-oss:20b',
   },
   supabaseUrl: process.env.SUPABASE_URL ?? '',
-  supabaseKey: process.env.SUPABASE_ANON_KEY ?? '',
+  // Service-role didahulukan (server-side only); anon sebagai fallback.
+  supabaseKey: process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY ?? '',
   shopName: process.env.SHOP_NAME ?? 'Toko Contoh',
   shopProfile: process.env.SHOP_PROFILE ?? 'Toko kelontong online, jam 08.00-21.00 WIB.',
   timeoutMs: num('REQUEST_TIMEOUT_MS', 15000),
