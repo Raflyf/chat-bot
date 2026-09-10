@@ -6,9 +6,9 @@
 [![Platform](https://img.shields.io/badge/Deployment-Vercel%20Serverless-black.svg)](https://vercel.com)
 [![Database](https://img.shields.io/badge/Database-Supabase%20PostgreSQL-emerald.svg)](https://supabase.com)
 
-FreeAIBot adalah sistem asisten kecerdasan buatan berbasis TypeScript yang beroperasi melalui antarmuka Telegram. Sistem ini dirancang untuk berjalan pada lingkungan lokal maupun arsitektur komputasi awan serverless (Vercel) secara kontinu 24/7 dengan persistensi data menggunakan Supabase PostgreSQL.
+FreeAIBot adalah sistem asisten kecerdasan buatan berbasis TypeScript yang beroperasi multi-platform melalui antarmuka Telegram dan WhatsApp Multi-Device. Sistem ini dirancang untuk berjalan pada lingkungan lokal maupun arsitektur komputasi awan serverless (Vercel untuk Telegram) dan container 24/7 (Render/Koyeb untuk WhatsApp) secara kontinu dengan persistensi data menggunakan Supabase PostgreSQL.
 
-Dilengkapi dengan mesin penelusuran internet real-time multi-sumber, pembaca halaman web otonom, rantai failover multi-provider, memori percakapan berkesinambungan, dan pengingat terjadwal.
+Dilengkapi dengan mesin penelusuran internet real-time multi-sumber, pembaca halaman web otonom, rantai failover multi-provider, memori percakapan berkesinambungan, pengingat terjadwal, serta persistensi sesi WhatsApp cloud otomatis (zero re-scan).
 
 ---
 
@@ -74,15 +74,21 @@ Dilengkapi dengan mesin penelusuran internet real-time multi-sumber, pembaca hal
    Buka SQL Editor di dasbor Supabase Anda dan jalankan skrip:
    ```
    sql/migrate_v09_hardened.sql
+   sql/migrate_v10_whatsapp_sessions.sql
    ```
-   Skrip ini membuat tabel yang diperlukan (`messages`, `summaries`, `corrections`, `provider_quota`, `reminders`) sekaligus menerapkan aturan Row Level Security (RLS).
+   Skrip ini membuat tabel yang diperlukan (`messages`, `summaries`, `corrections`, `provider_quota`, `reminders`, `whatsapp_sessions`) sekaligus menerapkan aturan Row Level Security (RLS).
 
 5. **Jalankan Bot:**
-   - Mode pengembangan:
+   - **Menjalankan Telegram Bot:**
      ```bash
      npm run dev
      ```
-   - Mode produksi lokal:
+   - **Menjalankan WhatsApp Bot (Multi-Device QR):**
+     ```bash
+     npm run whatsapp
+     ```
+     Pindai QR Code di terminal dari menu *Perangkat Tertaut* aplikasi WhatsApp di HP Anda.
+   - **Mode produksi lokal:**
      ```bash
      npm run build
      npm start

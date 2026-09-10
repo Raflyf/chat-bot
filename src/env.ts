@@ -64,10 +64,14 @@ export const config = {
     gemini: num('DAILY_CAP_GEMINI', 1400),
     ollama: num('DAILY_CAP_OLLAMA', 500),
   },
+  whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
+  whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
 };
 
-export function assertRuntime(): void {
-  if (!config.telegramToken) throw new Error('TELEGRAM_BOT_TOKEN kosong. Salin .env.example ke .env lalu isi.');
+export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegram'): void {
+  if ((target === 'telegram' || target === 'all') && !config.telegramToken) {
+    throw new Error('TELEGRAM_BOT_TOKEN kosong. Salin .env.example ke .env lalu isi.');
+  }
   const totalKeys =
     config.pools.openrouter.length +
     config.pools.groq.length +

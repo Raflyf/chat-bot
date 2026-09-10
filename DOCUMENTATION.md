@@ -1,25 +1,69 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.12.0  
-**Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-10 21:30 WIB  
+**Versi:** v0.13.0  
+**Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
+**Terakhir Diperbarui:** 2026-09-10 22:10 WIB  
 
 ---
 
-## 1. Arsitektur Dual-Mode
+## 1. Arsitektur Multi-Platform (Telegram & WhatsApp)
 
-Sistem dirancang dengan fleksibilitas tinggi menggunakan prinsip *Single Codebase, Dual Execution*:
-1. **Mode Lokal / Terminal (`src/index.ts`)**:
-   - Berjalan dengan mekanisme Telegram long-polling.
-   - Pekerja pengingat internal (*in-process worker*) berjalan setiap 30 detik untuk memeriksa tabel `reminders`.
-   - Ideal untuk pengujian cepat, inspeksi langsung, dan debugging interaktif.
-2. **Mode Serverless 24/7 Vercel (`api/webhook.ts` + `api/cron/reminders.ts`)**:
-   - Webhook endpoint (`POST /api/webhook`) dilindungi verifikasi `X-Telegram-Bot-Api-Secret-Token` menggunakan algoritma *constant-time* `crypto.timingSafeEqual`.
-   - Vercel Cron (`GET /api/cron/reminders`) terintegrasi untuk mengeksekusi pengingat terjadwal langsung dari database.
-   - Beroperasi 24 jam nonstop tanpa memerlukan terminal lokal yang menyala.
+Sistem dirancang dengan fleksibilitas tinggi menggunakan prinsip *Single Unified Brain, Multi-Channel Execution*:
+1. **Telegram Bot (Vercel Serverless 24/7)**:
+   - Webhook endpoint (`POST /api/webhook`) berjalan di Vercel Serverless gratis selamanya.
+   - Dilindungi verifikasi `X-Telegram-Bot-Api-Secret-Token` menggunakan algoritma *constant-time* `crypto.timingSafeEqual`.
+   - Vercel Cron (`GET /api/cron/reminders`) mengeksekusi pengingat terjadwal langsung dari database.
+2. **WhatsApp Bot (Baileys Multi-Device 24/7 Unlimited)**:
+   - Berjalan sebagai client WhatsApp Multi-Device resmi via `@whiskeysockets/baileys` (`src/whatsapp_baileys.ts`).
+   - **Supabase Cloud Session Persistence (`src/whatsapp_session.ts`)**: File sesi otentikasi disinkronkan otomatis ke tabel Supabase `whatsapp_sessions` dengan proteksi Row Level Security (RLS). Pengguna hanya perlu scan QR Code satu kali; bot langsung login otomatis saat container cloud gratis (seperti Render.com atau Koyeb) melakukan restart berkala.
+   - Bebas batas kuota 1.000 pesan ($0 gratis selamanya).
+   - Mendukung chat teks dengan *safe paragraph chunking* (> 4000 karakter) dan analisis gambar multimodal via Gemini Vision.
 
 ---
 
-## 2. Alur Eksekusi Sistem (Pipeline End-to-End)
+## 2. Panduan Operasional & Deployment 24 Jam Gratis
+
+### A. Persiapan Basis Data (Supabase)
+Sebelum menjalankan WhatsApp bot untuk pertama kali, jalankan skrip migrasi [sql/migrate_v10_whatsapp_sessions.sql](file:///d:/code/project/projek_no_name/sql/migrate_v10_whatsapp_sessions.sql) di **Supabase SQL Editor**:
+1. Buka dashboard Supabase proyek Anda -> menu **SQL Editor**.
+2. Salin isi berkas `sql/migrate_v10_whatsapp_sessions.sql` lalu klik **Run**.
+3. Tabel `whatsapp_sessions` siap mengamankan sesi Baileys dengan proteksi Row Level Security (RLS).
+
+### B. Menjalankan Bot di Komputer / Laptop Lokal
+1. Pastikan dependensi terpasang: `npm install`.
+2. Jalankan perintah:
+   ```bash
+   npm run whatsapp
+   ```
+3. Terminal akan memunculkan **QR Code**.
+4. Buka aplikasi WhatsApp di HP (nomor khusus bot Anda) -> ketuk **Titik Tiga / Pengaturan** -> **Perangkat Tertaut** -> **Tautkan Perangkat** -> pindai QR Code di layar.
+5. Bot WhatsApp langsung aktif dan membalas pesan.
+
+### C. Menjalankan 24 Jam Nonstop Gratis di Cloud (Render.com)
+Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
+1. Masuk ke [Render.com](https://render.com) (gratis menggunakan akun GitHub Anda).
+2. Klik **New +** -> pilih **Web Service**.
+3. Pilih repositori GitHub Anda: `Raflyf/chat-bot`.
+4. Konfigurasi layanan:
+   - **Name**: `whatsapp-chatbot` (atau nama pilihan Anda)
+   - **Environment**: `Node`
+   - **Plan**: `Free` ($0)
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm run whatsapp:prod`
+5. Masukkan **Environment Variables** (salin nilai yang sama dari berkas `.env` Anda):
+   - `GROQ_KEYS`
+   - `GEMINI_KEYS`
+   - `OPENROUTER_KEYS`
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_KEY`
+   - `BOT_NAME`, `BOT_PROFILE`
+6. Klik **Deploy Web Service**.
+7. Buka tab **Logs** di dashboard Render. Saat proses booting, QR Code akan muncul di log.
+8. Pindai QR Code tersebut sekali dari HP WhatsApp Anda.
+9. Sesi otomatis disinkronkan ke Supabase. Selesai! Bot WhatsApp Anda kini online 24 jam nonstop secara mandiri dan gratis.
+
+---
+
+## 3. Alur Eksekusi Sistem (Pipeline End-to-End)
 
 ```
 [Pengguna Telegram]
@@ -108,6 +152,25 @@ Sistem dirancang dengan fleksibilitas tinggi menggunakan prinsip *Single Codebas
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.13.0 — 2026-09-10 22:15 WIB
+**Pembaruan Utama: WhatsApp Multi-Device 24/7 Unlimited Engine & Supabase Cloud Session Persistence**
+- **Integrasi Penuh WhatsApp Baileys (`src/whatsapp_baileys.ts`)**:
+  - Mengimplementasikan client WhatsApp Multi-Device resmi (`@whiskeysockets/baileys`) untuk nomor WhatsApp khusus/pribadi.
+  - 100% Gratis Tanpa Batas ($0 Unlimited): Bebas batasan kuota 1.000 sesi bulanan dari Meta Cloud API.
+  - Pairing Interaktif: Menghasilkan QR Code langsung pada terminal console via `qrcode-terminal` untuk pemindaian instan via menu *Perangkat Tertaut (Linked Devices)* WhatsApp di HP.
+- **Supabase Cloud Session Persistence (`src/whatsapp_session.ts`)**:
+  - Menyinkronkan file sesi otentikasi Baileys (`session_wa/`) secara otomatis ke tabel `whatsapp_sessions` di Supabase.
+  - Memungkinkan bot tetap login otomatis (zero re-scan) saat container hosting gratis (seperti Render.com atau Koyeb) melakukan restart berkala.
+  - Dilindungi skrip Row Level Security (RLS) pada `sql/migrate_v10_whatsapp_sessions.sql` dengan akses eksklusif untuk `service_role`.
+- **Otak AI Terpadu & Fitur Komplit**:
+  - Terhubung langsung ke pipeline kecerdasan universal `src/skills.ts` (penalaran multi-disiplin, pemecahan matematika, koding, dan zero-noise scrubber).
+  - Penanganan pesan gambar/soal via Gemini Vision multimodal (`describeImage`).
+  - Penelusuran web real-time 2026 via `src/web.ts` saat terdeteksi kueri berita, harga, atau fakta dinamis.
+  - Memori percakapan persisten Supabase (`chat_id = wa_<jid>`) dan auto-summarization setiap 20 interaksi.
+  - *Safe Paragraph Chunking*: Pemecahan aman di batas paragraf (`\n\n`) jika pesan melebihi 4000 karakter (`sendWhatsAppMessageSafe`).
+- **Skrip Eksekusi Mandiri (`package.json`)**:
+  - Menambahkan script `npm run whatsapp` untuk lokal / pengembangan dan `npm run whatsapp:prod` untuk server produksi 24 jam.
 
 ### v0.12.0 — 2026-09-10 21:30 WIB
 **Pembaruan Utama: Universal Multi-Domain Intelligence, Zero-Noise CoT Scrubber & Telegram Math Formatter**
