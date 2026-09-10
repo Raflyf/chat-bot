@@ -1,23 +1,29 @@
 {
   "name": "agentkit",
-  "version": "0.12.0",
-  "description": "Self-hosted AI agent for WhatsApp & Telegram, $0 free-tier stack (P0: Telegram)",
+  "version": "0.13.0",
+  "description": "Self-hosted AI agent for WhatsApp & Telegram, $0 free-tier stack (P0: Telegram, P1: WhatsApp Baileys)",
   "type": "module",
   "license": "MIT",
   "scripts": {
     "dev": "tsx src/index.ts",
+    "whatsapp": "tsx src/whatsapp_baileys.ts",
+    "whatsapp:prod": "node dist/whatsapp_baileys.js",
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.0",
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
     "dotenv": "^16.4.5",
-    "node-telegram-bot-api": "^0.66.0"
+    "node-telegram-bot-api": "^0.66.0",
+    "pino": "^10.3.1",
+    "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
     "@types/node-telegram-bot-api": "^0.64.6",
+    "@types/qrcode-terminal": "^0.12.2",
     "@vercel/node": "^12.0.3",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
