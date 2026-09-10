@@ -167,32 +167,74 @@ export function needsSearch(text: string): boolean {
   const q = text.trim();
   if (q.length < 3) return false;
 
-  // Jika ada URL atau nama domain, WAJIB search / browse
+  // 1. Jika ada URL atau nama domain, WAJIB search / browse / scrape
   if (/https?:\/\/[^\s"'<>]+/i.test(q) || /\b[a-z0-9-]+\.(?:com|org|io|net|id|ai|dev|app|edu|gov)\b/i.test(q)) {
     return true;
   }
 
   const qNorm = q.toLowerCase().replace(/[?!.,]/g, '').replace(/\s+/g, ' ').trim();
 
-  // Sapaan murni & penutup santai: TIDAK perlu search
-  const isCasualGreeting = /^(halo|hai|hey|hei|assalamu(?:'|a)?laikum|selamat\s*(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|tes|test|ping|apa kabar|makasih|terima kasih|thanks|thx|oke|ok|sip|siap|mantap|keren|yup|yes|ya|iya|bye|dadah)$/i.test(
-    qNorm,
-  );
-  if (isCasualGreeting) return false;
+  // 2. Sapaan murni, konfirmasi santai, ucapan terima kasih
+  if (
+    /^(?:halo|hai|hey|hei|assalamu(?:'|a)?laikum|selamat\s*(?:pagi|siang|sore|malam)|pagi|siang|sore|malam)(?:\s+(?:halo|hai|hey|hei|apa kabar|kawan|bro|kak|min|semuanya|sahabat))?$/i.test(qNorm) ||
+    /^(?:apa kabar|gimana kabarnya|kabarmu gimana|makasih|terima kasih|thanks|thx|oke|ok|sip|siap|mantap|keren|yup|yes|ya|iya|bye|dadah)$/i.test(qNorm)
+  ) {
+    return false;
+  }
 
-  // Pertanyaan identitas murni: TIDAK perlu search
-  const isIdentity = /^(kamu siapa|siapa kamu|kamu model apa|model apa kamu|kamu ai apa|kamu ini apa|siapa namamu|namamu siapa|who are you|what are you|what model are you)$/i.test(
-    qNorm,
-  );
-  if (isIdentity) return false;
+  // 3. Pertanyaan identitas murni: TIDAK perlu search
+  if (/^(kamu siapa|siapa kamu|kamu model apa|model apa kamu|kamu ai apa|kamu ini apa|siapa namamu|namamu siapa|who are you|what are you|what model are you)$/i.test(qNorm)) {
+    return false;
+  }
 
-  // Pertanyaan waktu/jam lokal murni: TIDAK perlu search
-  const isClockOnly = /^(jam berapa|sekarang jam berapa|jam berapa sekarang|hari apa sekarang|sekarang hari apa|tanggal berapa sekarang|sekarang tanggal berapa|pukul berapa)$/i.test(
-    qNorm,
-  );
-  if (isClockOnly) return false;
+  // 4. Pertanyaan waktu/jam lokal murni: TIDAK perlu search
+  if (/^(jam berapa|sekarang jam berapa|jam berapa sekarang|hari apa sekarang|sekarang hari apa|tanggal berapa sekarang|sekarang tanggal berapa|pukul berapa)$/i.test(qNorm)) {
+    return false;
+  }
 
-  // Seluruh pertanyaan faktual, informasi, berita, komparasi, tutorial, atau perintah: SEARCH LIVE
+  // 5. Soal Matematika, Aljabar, Geometri, Kalkulus, Fisika Hitungan & Teka-Teki Logika Murni:
+  // Lewati search untuk menghemat 2-4 detik dan mencegah pencemaran prompt dengan berita tak relevan.
+  const isMathOrLogic =
+    (/[=+\-*/^√∑∫π]/.test(q) && /[xyzabc\d]/.test(q)) ||
+    /\b(hitunglah|berapakah nilai|tentukan nilai|persamaan|logaritma|integral|turunan|matriks|vektor|aljabar|trigonometri|sin|cos|tan|log|lim|himpunan penyelesaian|akar-akar kuadrat|f\(x\)|g\(x\)|x\^|y\^|x²|y²|x³|y³)\b/i.test(q) ||
+    /\\(?:log|frac|sqrt|implies|alpha|beta|theta|sum|int|matrix)\b/i.test(q);
+
+  if (isMathOrLogic && !/\b(berita|kabar|news|terkini|terbaru|update|rilis|release|harga|cuaca|kurs|saham|crypto|hari ini|saat ini|tahun 202[4-9])\b/i.test(qNorm)) {
+    return false;
+  }
+
+  // 6. Permintaan Koding / Algoritma / Pemrograman Murni (kecuali mencari library/rilis baru):
+  const isPureCoding =
+    /\b(buatkan|tuliskan|bikin|contoh)?\s*(fungsi|function|skrip|script|kode|code|class|interface|program|algoritma)\b/i.test(qNorm) ||
+    /\b(binary search|quick sort|bubble sort|linked list|dfs|bfs|dynamic programming|regex untuk|sql query|debounce|throttle)\b/i.test(qNorm);
+
+  if (isPureCoding && !/\b(berita|terbaru|terkini|update|rilis|release|versi terbaru|tahun 202[4-9])\b/i.test(qNorm)) {
+    return false;
+  }
+
+  // 7. Permintaan Penerjemahan, Tata Bahasa, Puisi, Cerita Fiksi:
+  const isCreativeOrLang =
+    /\b(terjemahkan|artikan|translate|perbaiki tata bahasa|perbaiki grammar|buatkan puisi|buatkan cerpen|parafrase|buatkan caption)\b/i.test(qNorm);
+  if (isCreativeOrLang && !/\b(berita|terbaru|terkini|update)\b/i.test(qNorm)) {
+    return false;
+  }
+
+  // 8. Kata Kunci Eksplisit Kebutuhan Penelusuran Real-Time:
+  const hasRealtimeTriggers =
+    /\b(berita|kabar|news|headline|peristiwa|kejadian|informasi|update|terbaru|terkini|hari ini|sekarang|saat ini|pagi ini|siang ini|sore ini|malam ini|rilis|perilisan|release|jadwal|skor|pertandingan|klasemen|cuaca|gempa|kurs|dollar|rupiah|ihsg|saham|crypto|bitcoin|btc|eth|harga|promo|diskon|pemilu|presiden|menteri|kebijakan|pemerintah|siapa yang menang|siapa juara|model baru|versi baru|tahun 2025|tahun 2026)\b/i.test(qNorm) ||
+    /\b(cari|carikan|search|googling|browsing|tampilkan berita|ada apa|apa kabar terbaru|kabar terbaru|kabar terkini|bagaimana perkembangan|kelanjutan)\b/i.test(qNorm) ||
+    /\b(gpt|claude|gemini|deepseek|openai|anthropic|meta ai|nvidia|mistral|qwen|groq|apple|google|microsoft|tesla|spacex)\b/i.test(qNorm);
+
+  if (hasRealtimeTriggers) {
+    return true;
+  }
+
+  // 9. Pertanyaan definisi baku dasar sains/fakta ensiklopedia
+  if (/^(apa itu|jelaskan apa itu|jelaskan pengertian|definisi dari|fungsi dari)\s+[a-z\s]+$/i.test(qNorm) && !/\b(terbaru|202[4-9]|rilis)\b/i.test(qNorm)) {
+    return false;
+  }
+
+  // Default untuk pertanyaan fakta/informasi terbuka lainnya: SEARCH LIVE
   return true;
 }
 

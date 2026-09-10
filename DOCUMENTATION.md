@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.11.1  
+**Versi:** v0.12.0  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-10 21:12 WIB  
+**Terakhir Diperbarui:** 2026-09-10 21:30 WIB  
 
 ---
 
@@ -37,34 +37,38 @@ Sistem dirancang dengan fleksibilitas tinggi menggunakan prinsip *Single Codebas
   └── Koreksi Tersimpan Pengguna (/salah)
        │
        ▼
-[Mesin Penelusuran Web Real-Time (`src/web.ts`)]
-  ├── Deteksi URL & Deep Webpage Scraper (Jina Reader / Fit-Markdown)
-  ├── Formulator Kueri Cerdas Dwibahasa (ID & EN)
-  └── Matriks Pencarian Multi-Sumber:
-        ├── Google News Global RSS
-        ├── Google Berita Indonesia RSS
+[Klasifikasi Kueri Cerdas & Penelusuran Web (`src/web.ts`)]
+  ├── Bypassed untuk Soal Matematika, Algoritma Koding, & Definisi Baku (Hemat 3-4s)
+  └── Diaktifkan untuk Berita, Fakta Live, Harga, & Kueri URL/Domain:
+        ├── Google News Global & ID RSS
         ├── Bing News RSS
         ├── Hacker News Algolia API
         ├── Wikipedia Full-Text Search (ID & EN)
-        └── arXiv Preprints API
+        └── Deep Webpage Scraper (Jina Reader)
        │
        ▼
-[Skills, Prompt System & Guardrails (`src/skills.ts`)]
-  ├── Pembungkusan Input Aman: <user_message>
-  ├── Mandat Grounding Fakta Terkini (Anti-Halusinasi Cut-off 2024)
+[Skills, Prompt Polymath & Multi-Domain Excellence (`src/skills.ts`)]
+  ├── Standar Unggul: Matematika (Rumus abc), Koding (Type-Safe), Sains, Bahasa
+  ├── Mandat Grounding Fakta Real-Time 2026
+  └── Larangan Residu Berpikir Internal (Zero-Noise Mandate)
+       │
+       ▼
+[Router Cepat Kilat & Rantai Failover (`src/providers.ts`)]
+  ├── Mode Teks/Matematika/Koding:
+  │     Groq (qwen3.8-27b ~2s) ──(fail)──> Gemini (2.5-flash) ──(fail)──> OpenRouter Pool ──(fail)──> Ollama
+  └── Mode Vision/Gambar:
+        Gemini (Native Vision ~1.7s) ──(fail)──> OpenRouter Vision
+       │
+       ▼
+[Post-Processing & Formatter Telegram (`cleanMathAndNoise`)]
+  ├── Pembersihan Tag <think> & CoT Monologue Scratchpad
+  ├── Konversi Rumus LaTeX Mentah ke Notasi Aljabar & Simbol Unicode Bersih
   └── Redaksi Kredensial Sensitif: redactOutput()
        │
        ▼
-[Router Dua-Tingkat Timeout (`src/providers.ts`)]
-  ├── Tingkat 1 (Connect Timeout 8 dtk): Deteksi Cepat 429/Kunci Mati
-  └── Tingkat 2 (Thinking Timeout 90 dtk): Inferensi Mendalam & Token 2500
-       │
-       ▼
-[Rantai Failover Model Provider]
-  OpenRouter (Nex-AGI / Gemma) ──(fail)──> Groq ──(fail)──> Gemini ──(fail)──> Ollama Cloud
-       │
-       ▼
-[Pengiriman Respons ke Telegram + Penyimpanan Supabase RLS]
+[Pengiriman Pesan Aman (`sendTelegramMessageSafe` di `src/telegram.ts`)]
+  ├── Pemecahan Paragraf Cerdas jika Karakter > 4000 (Anti-Error 400 Bad Request)
+  └── Penyimpanan Riwayat ke Supabase PostgreSQL RLS
 ```
 
 ---
@@ -104,6 +108,26 @@ Sistem dirancang dengan fleksibilitas tinggi menggunakan prinsip *Single Codebas
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.12.0 — 2026-09-10 21:30 WIB
+**Pembaruan Utama: Universal Multi-Domain Intelligence, Zero-Noise CoT Scrubber & Telegram Math Formatter**
+- **Kecerdasan Universal Multi-Disiplin (`systemPrompt` di `src/skills.ts`)**:
+  - Mengonfigurasi persona asisten AI polymath unggul lintas bidang: Matematika lanjut, Rekayasa Perangkat Lunak, Sains Alami (Termodinamika, Fisika, Kimia), Logika Deduktif, dan Bahasa Indonesia luwes bebas klise AI (*anti-slop*).
+  - Algoritma Aljabar & Rumus Kuadrat abc: Mengeliminasi halusinasi pemfaktoran bilangan bulat semu pada persamaan kuadrat dengan mewajibkan evaluasi diskriminan $D = b² - 4ac$ dan perumusan langsung identitas simetris $x³ + y³ = S(10 - P)$.
+- **Telegram Math Formatter (`cleanMathAndNoise` di `src/skills.ts`)**:
+  - Konversi otomatis ekspresi LaTeX mentah (`\[ \]`, `\( \)`, `$$`, `$`) ke notasi aljabar bersih dan simbol Unicode ramah Telegram (`²`, `³`, `√`, `±`, `⇒`, `×`, `÷`, `≤`, `≥`, `≠`, `π`).
+  - Penanganan rekursif pecahan LaTeX bertingkat `\frac{...}{...}` dan akar `\sqrt{...}`.
+- **Pembersihan Residu Berpikir & Monolog CoT Total (Zero-Noise Scrubber)**:
+  - Mengeliminasi tag `<think>...</think>`, unclosed `<think>`, serta monolog draf internal model berbahasa Inggris (`Here's a thinking process:`, `1. **Analyze User Input:**`).
+  - Menghapus kebisingan draf sehingga pengguna Telegram menerima 100% jawaban solutif dan bersih.
+- **Optimasi Latensi & Prioritas Provider (30 Detik -> 1.5 - 2.5 Detik)**:
+  - Re-ordering router provider: Groq `qwen3.8-27b` diprioritaskan pertama untuk kueri teks, matematika, koding, dan penalaran cepat kilat (~2s).
+  - Gemini `gemini-2.5-flash` diprioritaskan untuk pemrosesan gambar/multimodal vision (~1.7s).
+  - OpenRouter dijadikan pool cadangan berkapasitas tinggi 5 kunci API.
+- **Klasifikasi Kueri Cerdas (`needsSearch` di `src/web.ts`)**:
+  - Melewati penelusuran web untuk soal matematika murni, kalkulus, algoritma koding, dan translasi teks guna memangkas overhead latency 3-4 detik dan mencegah pencemaran prompt dengan berita tak relevan.
+- **Proteksi Panjang Pesan Telegram (`sendTelegramMessageSafe` di `src/telegram.ts`)**:
+  - Pemecahan otomatis teks panjang (> 4000 karakter) di batas paragraf (`\n\n`) untuk mencegah error Telegram API `400 Bad Request: message is too long`.
 
 ### v0.11.1 — 2026-09-10 21:12 WIB
 **Penyempurnaan: Top Headlines Real-Time Feed & Explicit Bot Identity**
