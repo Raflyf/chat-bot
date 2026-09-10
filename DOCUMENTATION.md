@@ -238,6 +238,14 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - Menyesuaikan jadwal cron pengingat agar kompatibel penuh dengan batasan akun Vercel Hobby.
 - Menambahkan dukungan otomatis untuk pembacaan variabel lingkungan integrasi Supabase Vercel (`POSTGRES_URL`, `NEXT_PUBLIC_SUPABASE_URL`, dll).
 
+### v0.18.0 — 2026-09-11 00:52 WIB
+**Persona & Intelegensi Universal: True Companion Polymath & Clean Dynamic Pipeline**
+- Transformasi menyeluruh persona bot menjadi Sahabat Karib Sejati & Partner Diskusi Cerdas Serbabisa (*Universal Polymath Companion*) di WhatsApp: interaksi setara, hangat, manusiawi, berakal sehat, dan berwawasan luas tanpa batas.
+- Integrasi *Universal Situational Intelligence (Read the Room)*: bot membaca mood, tempo, dan maksud lawan bicara secara dinamis tanpa terjebak dalam sekat-sekat kategori kaku.
+- Pembersihan arsitektur payload pesan (*Zero Prompt Pollution*): membuang tag pembungkus XML `<user_message>` dan mengintegrasikan memori percakapan, preferensi koreksi, serta fakta internet real-time langsung ke dalam instruksi sistem latar belakang.
+- Penyempurnaan pipeline riwayat percakapan: pencegahan duplikasi pesan pengguna di ujung riwayat dan pemulihan giliran memori multi-turn Gemini secara mulus.
+- Peningkatan parameter `temperature` ke 0.7 pada provider LLM untuk menghasilkan percakapan yang mengalir luwes, hangat, ekspresif, dan tidak deterministik/kaku.
+
 ### v0.17.0 — 2026-09-11 00:41 WIB
 **Kecerdasan Kontekstual: Conversational Proportionality & Anti-Over-Explaining**
 - Penegakan prinsip proporsionalitas pesan: obrolan santai, curhat, dan cerita harian dibalas ringkas (1-3 kalimat) layaknya teman berkirim pesan di WhatsApp.
