@@ -82,7 +82,7 @@ async function openAiChat(baseUrl: string, key: string, model: string, messages:
     model,
     messages,
     max_tokens: config.maxOutputTokens,
-    temperature: 0.2,
+    temperature: 0.7,
   })) as { choices?: Array<{ message?: { content?: string } }> };
   const text = data.choices?.[0]?.message?.content?.trim() ?? '';
   if (!text) throw new Error('EMPTY_RESPONSE');
@@ -90,25 +90,39 @@ async function openAiChat(baseUrl: string, key: string, model: string, messages:
 }
 
 async function geminiChat(key: string, model: string, messages: ChatMsg[]): Promise<string> {
-  const contents = messages
-    .filter((m) => m.role === 'user')
-    .map((m) => {
-      const parts = (typeof m.content === 'string' ? [{ type: 'text', text: m.content } as TextPart] : m.content).map(
-        (p) => {
-          if (p.type === 'image_url') {
-            const match = p.image_url.url.match(/^data:(.+);base64,(.+)$/);
-            if (!match) throw new Error('BAD_IMAGE');
-            return { inlineData: { mimeType: match[1], data: match[2] } };
-          }
-          return { text: (p as TextPart).text };
-        },
-      );
-      return { parts };
-    });
+  const contents: Array<{ role: 'user' | 'model'; parts: unknown[] }> = [];
+  for (const m of messages) {
+    if (m.role === 'system') continue;
+    const role: 'user' | 'model' = m.role === 'assistant' ? 'model' : 'user';
+    const parts = (typeof m.content === 'string' ? [{ type: 'text', text: m.content } as TextPart] : m.content).map(
+      (p) => {
+        if (p.type === 'image_url') {
+          const match = p.image_url.url.match(/^data:(.+);base64,(.+)$/);
+          if (!match) throw new Error('BAD_IMAGE');
+          return { inlineData: { mimeType: match[1], data: match[2] } };
+        }
+        return { text: (p as TextPart).text };
+      },
+    );
+    if (contents.length > 0 && contents[contents.length - 1].role === role) {
+      contents[contents.length - 1].parts.push(...parts);
+    } else {
+      contents.push({ role, parts });
+    }
+  }
+
+  // Gemini API mewajibkan pesan pertama ber-role 'user'
+  while (contents.length > 0 && contents[0].role === 'model') {
+    contents.shift();
+  }
+  if (contents.length === 0) {
+    contents.push({ role: 'user', parts: [{ text: 'Halo' }] });
+  }
+
   const system = messages.find((m) => m.role === 'system');
   const body: Record<string, unknown> = {
     contents,
-    generationConfig: { maxOutputTokens: config.maxOutputTokens, temperature: 0.2 },
+    generationConfig: { maxOutputTokens: config.maxOutputTokens, temperature: 0.7 },
   };
   if (system) body.systemInstruction = { parts: [{ text: system.content }] };
 
