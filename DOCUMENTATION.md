@@ -238,6 +238,12 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - Menyesuaikan jadwal cron pengingat agar kompatibel penuh dengan batasan akun Vercel Hobby.
 - Menambahkan dukungan otomatis untuk pembacaan variabel lingkungan integrasi Supabase Vercel (`POSTGRES_URL`, `NEXT_PUBLIC_SUPABASE_URL`, dll).
 
+### v0.17.0 — 2026-09-11 00:41 WIB
+**Kecerdasan Kontekstual: Conversational Proportionality & Anti-Over-Explaining**
+- Penegakan prinsip proporsionalitas pesan: obrolan santai, curhat, dan cerita harian dibalas ringkas (1-3 kalimat) layaknya teman berkirim pesan di WhatsApp.
+- Larangan keras terhadap pengeluaran daftar langkah bernomor (1., 2., 3.), SOP darurat, atau panduan aksi yang tidak diminta saat pengguna sekadar bercerita santai.
+- Pengkhususan format daftar langkah teknis hanya untuk pertanyaan yang secara eksplisit meminta panduan, analisis mendalam, atau tutorial koding/akademik.
+
 ### v0.16.0 — 2026-09-11 00:36 WIB
 **Interaksi Percakapan: Two-Way Conversational Flow & Interactive Banter**
 - Implementasi dinamika dialog interaktif dua arah (setup & punchline) saat diminta lelucon, tebak-tebakan, atau humor.
