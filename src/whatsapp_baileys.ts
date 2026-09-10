@@ -97,16 +97,42 @@ export async function startWhatsApp(): Promise<void> {
     await syncSessionDirToSupabase(sessionDir);
   });
 
+  // Jika nomor telepon disediakan dan belum terdaftar, gunakan Pairing Code 8-digit
+  if (config.whatsappPhoneNumber && !state.creds.registered) {
+    let cleanNumber = config.whatsappPhoneNumber.replace(/\D/g, '');
+    if (cleanNumber.startsWith('0')) cleanNumber = '62' + cleanNumber.slice(1);
+
+    setTimeout(async () => {
+      try {
+        const code = await sock.requestPairingCode(cleanNumber);
+        console.log('\n======================================================');
+        console.log(`KODE PAIRING WHATSAPP: ${code}`);
+        console.log('======================================================');
+        console.log(`1. Buka WhatsApp di HP (${cleanNumber})`);
+        console.log('2. Ketuk Titik Tiga / Pengaturan -> Perangkat Tertaut');
+        console.log('3. Ketuk "Tautkan Perangkat" -> pilih "Tautkan dengan nomor telepon saja"');
+        console.log(`4. Masukkan kode di atas: ${code}\n`);
+      } catch (err) {
+        console.warn('[whatsapp] Gagal meminta kode pairing, beralih ke QR Code:', err);
+      }
+    }, 3000);
+  }
+
   // 2. Tangani status koneksi (QR, Open, Close / Reconnect)
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log('\n======================================================');
-      console.log('PINDAI QR CODE WHATSAPP INI DARI HP ANDA (NOMOR BOT)');
-      console.log('======================================================\n');
-      qrcode.generate(qr, { small: true });
-      console.log('\nPanduan: Buka WhatsApp di HP -> Titik Tiga / Pengaturan -> Perangkat Tertaut -> Tautkan Perangkat.\n');
+      if (!config.whatsappPhoneNumber) {
+        console.log('\n======================================================');
+        console.log('PINDAI QR CODE WHATSAPP INI DARI HP ANDA (NOMOR BOT)');
+        console.log('======================================================\n');
+        qrcode.generate(qr, { small: true });
+        console.log('\nPanduan: Buka WhatsApp di HP -> Titik Tiga / Pengaturan -> Perangkat Tertaut -> Tautkan Perangkat.\n');
+      } else {
+        console.log('[whatsapp] QR Code alternatif tersedia (atau gunakan kode pairing di atas):');
+        qrcode.generate(qr, { small: true });
+      }
     }
 
     if (connection === 'open') {
