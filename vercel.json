@@ -8,12 +8,6 @@
       "maxDuration": 30
     }
   },
-  "crons": [
-    {
-      "path": "/api/cron/reminders",
-      "schedule": "* * * * *"
-    }
-  ],
   "headers": [
     {
       "source": "/api/(.*)",
