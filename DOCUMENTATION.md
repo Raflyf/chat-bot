@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.11.0  
+**Versi:** v0.11.1  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-10 20:58 WIB  
+**Terakhir Diperbarui:** 2026-09-10 21:12 WIB  
 
 ---
 
@@ -104,6 +104,12 @@ Sistem dirancang dengan fleksibilitas tinggi menggunakan prinsip *Single Codebas
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.11.1 — 2026-09-10 21:12 WIB
+**Penyempurnaan: Top Headlines Real-Time Feed & Explicit Bot Identity**
+- Penanganan Kueri Berita Umum: Menambahkan integrasi langsung *Top Headlines RSS* Indonesia & Global untuk kueri seperti "berita terbaru hari ini" atau "kabar terkini", memastikan artikel yang ditarik adalah terbitan hari ini (10 September 2026).
+- Penguatan Identitas FreeAIBot: Menghilangkan residu identitas model bawaan provider ("Chat dari OpenAI") pada instruksi sistem agar bot selalu menjawab dengan identitas resminya sebagai FreeAIBot.
+- Penegasan Penelusuran Mandiri: Menginstruksikan model untuk secara proaktif menyajikan ringkasan berita terstruktur (Nasional & Internasional) tanpa meminta pengguna mengirimkan tautan secara manual.
 
 ### v0.11.0 — 2026-09-10 20:57 WIB
 **Fitur Utama: Universal Real-Time Web Search & Deep Browsing Engine**

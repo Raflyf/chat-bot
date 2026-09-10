@@ -200,6 +200,24 @@ export function needsSearch(text: string): boolean {
 export function formulateSmartSearchQueries(query: string): string[] {
   if (!query || typeof query !== 'string') return [];
 
+  const cleanRawLower = query.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const isGeneralNewsQuery =
+    /^(?:infokan|tampilkan|berikan|cari|carikan|apa|ada)?\s*(?:berita|kabar|news|headline|peristiwa)\s*(?:hari\s*ini|terkini|terbaru|pagi\s*ini|siang\s*ini|sore\s*ini|malam\s*ini|saat\s*ini|update)?$/i.test(
+      cleanRawLower,
+    ) ||
+    /^(?:berita|kabar|news|headline)\s*(?:hari\s*ini|terkini|terbaru)$/i.test(cleanRawLower) ||
+    /\b(?:berita|kabar|peristiwa|headline)\s+(?:hari\s*ini|terkini|terbaru)\b/i.test(query) ||
+    /\b(?:berita|kabar|news)\s+terkini\b/i.test(query) ||
+    /^(?:ada\s+berita\s+apa|apa\s+berita\s+hari\s+ini|berita\s+apa\s+hari\s+ini)/i.test(cleanRawLower);
+
+  if (isGeneralNewsQuery) {
+    return [
+      'berita utama terkini hari ini indonesia',
+      'top breaking news headlines today',
+      'peristiwa penting hari ini indonesia',
+    ];
+  }
+
   const qNorm = query
     .toLowerCase()
     .replace(/\bperilisann+\b/g, 'perilisan')
@@ -330,10 +348,11 @@ export async function searchWeb(query: string): Promise<string> {
       if (!isNaN(parsed)) {
         ts = parsed;
         const daysOld = (Date.now() - parsed) / (1000 * 60 * 60 * 24);
-        if (daysOld <= 7) recencyBonus = 35;
+        if (daysOld <= 1) recencyBonus = 50;
+        else if (daysOld <= 7) recencyBonus = 35;
         else if (daysOld <= 30) recencyBonus = 20;
         else if (daysOld <= 90) recencyBonus = 10;
-        else if (daysOld > 180) recencyBonus = -20;
+        else if (daysOld > 180) recencyBonus = -30;
       }
     }
 
@@ -349,8 +368,58 @@ export async function searchWeb(query: string): Promise<string> {
     });
   };
 
+  const cleanRawLower = cleanQuery.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const isGeneralNews =
+    /^(?:infokan|tampilkan|berikan|cari|carikan|apa|ada)?\s*(?:berita|kabar|news|headline|peristiwa)\s*(?:hari\s*ini|terkini|terbaru|pagi\s*ini|siang\s*ini|sore\s*ini|malam\s*ini|saat\s*ini|update)?$/i.test(
+      cleanRawLower,
+    ) ||
+    /^(?:berita|kabar|news|headline)\s*(?:hari\s*ini|terkini|terbaru)$/i.test(cleanRawLower) ||
+    /\b(?:berita|kabar|peristiwa|headline)\s+(?:hari\s*ini|terkini|terbaru)\b/i.test(cleanQuery) ||
+    /\b(?:berita|kabar|news)\s+terkini\b/i.test(cleanQuery) ||
+    /^(?:ada\s+berita\s+apa|apa\s+berita\s+hari\s+ini|berita\s+apa\s+hari\s+ini)/i.test(cleanRawLower);
+
   try {
     const fetches: Array<Promise<void>> = [];
+
+    // 2a. Top Headlines Indonesia & Global RSS (Langsung menarik tajuk berita hari ini jika kueri umum)
+    if (isGeneralNews) {
+      fetches.push(
+        fetch(`https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          signal: controller.signal,
+        })
+          .then((r) => (r.ok ? r.text() : ''))
+          .then((txt) => {
+            if (!txt) return;
+            const items = txt.match(/<item>[\s\S]*?<\/item>/gi) || [];
+            for (const item of items.slice(0, 10)) {
+              const tm = item.match(/<title>([\s\S]*?)<\/title>/i);
+              const dm = item.match(/<description>([\s\S]*?)<\/description>/i);
+              const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+              const lm = item.match(/<link>([\s\S]*?)<\/link>/i);
+              addSnippet('Google Berita Indonesia', tm ? tm[1] : '', dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '');
+            }
+          })
+          .catch(() => {}),
+        fetch(`https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          signal: controller.signal,
+        })
+          .then((r) => (r.ok ? r.text() : ''))
+          .then((txt) => {
+            if (!txt) return;
+            const items = txt.match(/<item>[\s\S]*?<\/item>/gi) || [];
+            for (const item of items.slice(0, 10)) {
+              const tm = item.match(/<title>([\s\S]*?)<\/title>/i);
+              const dm = item.match(/<description>([\s\S]*?)<\/description>/i);
+              const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+              const lm = item.match(/<link>([\s\S]*?)<\/link>/i);
+              addSnippet('Google News Global', tm ? tm[1] : '', dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '');
+            }
+          })
+          .catch(() => {}),
+      );
+    }
 
     // 2a. Google News Global RSS
     fetches.push(
