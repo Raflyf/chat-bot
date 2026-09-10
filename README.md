@@ -1,6 +1,6 @@
-# AgentKit v0.2 — Personal AI Agent (P0: Telegram)
+# AgentKit v0.3 — Personal AI General Assistant (Telegram)
 
-Self-hosted AI agent untuk Telegram (WhatsApp/Baileys fase P2), stack $0: OpenRouter > Groq > Gemini > Ollama Cloud dengan failover + rotasi key + quota guard. Seluruh primer rantai ini terverifikasi live merespon.
+Self-hosted asisten AI umum ala Meta AI/ChatGPT/Gemini via Telegram: jawab pertanyaan apa pun, stack $0: OpenRouter > Groq > Gemini > Ollama Cloud dengan failover + rotasi key + quota guard. Seluruh primer rantai ini terverifikasi live merespon.
 
 ## Jalan cepat
 
@@ -9,10 +9,10 @@ Self-hosted AI agent untuk Telegram (WhatsApp/Baileys fase P2), stack $0: OpenRo
 3. (Opsional) Jalankan `sql/schema.sql` di Supabase untuk arsip chat.
 4. `npm run dev` (atau `npm run build` lalu `npm start`).
 
-## Perilaku P0
+## Perilaku
 
-- `/start` disapa, pesan teks dijawab LLM + eskalasi `BUTUH_ADMIN` ke owner.
-- Foto/dokumen: store-and-forward (diteruskan ke owner + balasan template). Vision LLM fase 2.
+- `/start` disapa, pesan teks apa pun dijawab LLM. Eskalasi ke owner hanya jika semua provider gagal.
+- Foto/dokumen: balasan template (analisis gambar fase 2), media diteruskan ke owner bila diisi.
 - Semua provider gagal: balasan template fail-closed, tidak mengarang jawaban.
 
 ## Risiko yang dinyatakan jujur
