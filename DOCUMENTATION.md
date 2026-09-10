@@ -38,7 +38,27 @@ Sebelum menjalankan WhatsApp bot untuk pertama kali, jalankan skrip migrasi [sql
 4. Buka aplikasi WhatsApp di HP (nomor khusus bot Anda) -> ketuk **Titik Tiga / Pengaturan** -> **Perangkat Tertaut** -> **Tautkan Perangkat** -> pindai QR Code di layar.
 5. Bot WhatsApp langsung aktif dan membalas pesan.
 
-### C. Menjalankan 24 Jam Nonstop Gratis di Cloud (Render.com)
+### C. Menjalankan WhatsApp 24 Jam Nonstop di Vercel (Meta Cloud API - Tanpa Server Tambahan)
+Ini adalah metode paling ringkas karena WhatsApp langsung berjalan di Vercel yang sudah ada, tanpa server eksternal, tanpa laptop menyala, dan tanpa kartu kredit:
+1. Masuk ke [developers.facebook.com](https://developers.facebook.com) dan login dengan akun Facebook Anda.
+2. Buat App baru: pilih tipe **Other** -> pilih **Business** -> beri nama (misal `FreeAIBot WhatsApp`).
+3. Pada dashboard aplikasi, tambahkan produk **WhatsApp** -> klik **Set up**.
+4. Di menu **WhatsApp > API Setup**:
+   - Salin **Temporary access token** (atau buat Permanent Token di System Users).
+   - Salin **Phone number ID**.
+5. Di dasbor **Vercel** proyek Anda (`Raflyf/chat-bot`), tambahkan Environment Variables:
+   - `WHATSAPP_TOKEN`: (token akses dari Meta)
+   - `WHATSAPP_PHONE_NUMBER_ID`: (Phone number ID dari Meta)
+   - `WHATSAPP_VERIFY_TOKEN`: buat string rahasia acak Anda sendiri (misal `wa_verif_secret_2026`)
+6. Kembali ke Meta Developer Dashboard -> menu **WhatsApp > Configuration**:
+   - Klik **Edit** pada bagian Webhook.
+   - **Callback URL**: `https://<domain-vercel-anda>.vercel.app/api/whatsapp`
+   - **Verify token**: (string rahasia yang sama dengan `WHATSAPP_VERIFY_TOKEN` di Vercel)
+   - Klik **Verify and save**.
+   - Pada bagian **Webhook fields**, klik **Manage** -> centang opsi **messages** -> klik **Subscribe**.
+7. Selesai! Bot WhatsApp Anda aktif 24 jam nonstop di Vercel selamanya.
+
+### D. Menjalankan Bot di Cloud Baileys (Opsional)
 Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 1. Masuk ke [Render.com](https://render.com) (gratis menggunakan akun GitHub Anda).
 2. Klik **New +** -> pilih **Web Service**.
