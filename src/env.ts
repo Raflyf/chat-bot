@@ -33,9 +33,15 @@ export const config = {
     ollamaPrimary: process.env.OLLAMA_MODEL_PRIMARY ?? 'nemotron-3-nano:30b',
     ollamaBackup: process.env.OLLAMA_MODEL_BACKUP ?? 'gpt-oss:20b',
   },
-  supabaseUrl: process.env.SUPABASE_URL ?? '',
-  // Service-role diutamakan (server-side only); anon hanya sebagai fallback dev.
-  supabaseKey: process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY ?? '',
+  supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+  // Service-role diutamakan (server-side only); mendukung format integrasi Supabase Vercel
+  supabaseKey:
+    process.env.SUPABASE_SERVICE_KEY ??
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_SECRET_KEY ??
+    process.env.SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
   cronSecret: process.env.CRON_SECRET ?? '',
   botName: process.env.BOT_NAME ?? 'FreeAIBot',
