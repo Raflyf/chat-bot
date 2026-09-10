@@ -1,0 +1,91 @@
+import { db } from './db.js';
+import { chat, type ChatMsg } from './providers.js';
+
+export interface ChatContext {
+  history: ChatMsg[];
+  summary: string | null;
+  corrections: string[];
+}
+
+const warned = new Set<string>();
+
+function warnOnce(table: string, msg: string): void {
+  if (warned.has(table)) return;
+  warned.add(table);
+  console.error(`[memory] tabel ${table} belum ada: ${msg}. Jalankan sql/migrate_v08.sql.`);
+}
+
+/** Ambil konteks chat: 10 pesan terakhir + ringkasan + koreksi. Tanpa DB = kosong. */
+export async function getContext(chatKey: string): Promise<ChatContext> {
+  const empty: ChatContext = { history: [], summary: null, corrections: [] };
+  const c = db();
+  if (!c) return empty;
+  try {
+    const [h, s, k] = await Promise.all([
+      c.from('messages').select('role,content').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(10),
+      c.from('summaries').select('summary').eq('chat_id', chatKey).limit(1).maybeSingle(),
+      c.from('corrections').select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(5),
+    ]);
+    if (h.error) warnOnce('messages', h.error.message);
+    if (s.error && s.error.code !== 'PGRST116') warnOnce('summaries', s.error.message);
+    if (k.error) warnOnce('corrections', k.error.message);
+    return {
+      history: ((h.data ?? []) as Array<{ role: string; content: string }>)
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .reverse()
+        .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      summary: (s.data as { summary?: string } | null)?.summary ?? null,
+      corrections: ((k.data ?? []) as Array<{ correction: string }>).map((r) => r.correction),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+const counters = new Map<string, number>();
+
+/** Dipanggil tiap pertukaran user. Tiap 20 pesan: ringkas ulang konteks (fire-and-forget). */
+export function noteExchange(chatKey: string): void {
+  const n = (counters.get(chatKey) ?? 0) + 1;
+  counters.set(chatKey, n);
+  if (n % 20 !== 0) return;
+  void (async () => {
+    const c = db();
+    if (!c) return;
+    try {
+      const h = await c
+        .from('messages')
+        .select('role,content')
+        .eq('chat_id', chatKey)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (h.error || !h.data?.length) return;
+      const text = (h.data as Array<{ role: string; content: string }>)
+        .reverse()
+        .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
+        .join('\n');
+      const { text: summary } = await chat([
+        { role: 'user', content: `Ringkas fakta penting percakapan berikut dalam 5 kalimat Bahasa Indonesia (nama user, topik, preferensi, koreksi). Balas hanya ringkasan:\n${text.slice(0, 4000)}` },
+      ]);
+      await c.from('summaries').upsert({ chat_id: chatKey, summary, updated_at: new Date().toISOString() }, { onConflict: 'chat_id' });
+    } catch (e) {
+      console.error(`[memory] ringkas: ${String((e as Error).message ?? e)}`);
+    }
+  })();
+}
+
+/** Simpan koreksi user agar diingat di percakapan berikutnya. */
+export async function saveCorrection(chatKey: string, correction: string): Promise<boolean> {
+  const c = db();
+  if (!c) return false;
+  try {
+    const { error } = await c.from('corrections').insert({ chat_id: chatKey, correction: correction.slice(0, 1000) });
+    if (error) {
+      warnOnce('corrections', error.message);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}

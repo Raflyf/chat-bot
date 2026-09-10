@@ -1,4 +1,4 @@
-# AgentKit v0.4 — Personal AI General Assistant (Telegram)
+# AgentKit v0.9 — Personal AI General Assistant (Telegram)
 
 Self-hosted asisten AI umum ala Meta AI/ChatGPT/Gemini via Telegram: jawab pertanyaan apa pun (teks + gambar), pengingat, stack $0: OpenRouter > Groq > Gemini > Ollama Cloud dengan failover + rotasi key + quota guard.
 
@@ -12,8 +12,9 @@ Self-hosted asisten AI umum ala Meta AI/ChatGPT/Gemini via Telegram: jawab perta
 ## Perilaku
 
 - `/start` disapa, pesan teks apa pun dijawab LLM dinamis 24/7 tanpa template dan tanpa jam off. Eskalasi ke owner hanya jika semua provider mati total.
-- `/remind <menit 1-1440> <pesan>` untuk pengingat. Pengingat hilang saat restart (persistensi roadmap berikutnya).
-- Foto dianalisis dinamis via model vision (nex-pro / gemini-flash); dokumen non-gambar diteruskan ke owner.
+- Memori: 10 pesan terakhir + ringkasan tiap 20 pesan + koreksi via `/salah <koreksi>` (butuh `sql/migrate_v08.sql`).
+- Butuh info terkini (terbaru/hari ini/berita): lookup Wikipedia + DuckDuckGo otomatis dengan sumber disebut.
+- Aturan jujur bawaan: tanpa halu, tanpa overclaim, bedakan fakta vs opini.
 
 ## Risiko yang dinyatakan jujur
 
