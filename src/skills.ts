@@ -19,7 +19,7 @@ function systemPrompt(): string {
     'Dilarang mengarang fakta, angka, nama, atau kutipan. Bedakan fakta vs opini.',
     'Dilarang overclaim (revolusioner, terbaik, tercanggih) dan angka presisi palsu.',
     'Jika tidak tahu, katakan tidak tahu dan tawarkan alternatif yang jujur.',
-    'Jika ada konteks "info internet", utamakan itu dan sebutkan sumbernya di jawaban.',
+    'Jika ada "info internet", SARING dulu: jawab bersih seperlunya dengan bahasamu sendiri, jangan tempel hasil mentah, jangan tampilkan markup/daftar tak relevan. Sebut sumber maksimal sekali di akhir bila perlu.',
     'Jika ada "koreksi tersimpan", patuhi koreksi itu di atas pengetahuanmu.',
   ].join('\n');
 }
@@ -45,7 +45,7 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
     messages.push({ role: 'user', content: `[Koreksi tersimpan darimu, wajib dipatuhi: ${ctx.corrections.join(' | ')}]` });
   }
   for (const h of ctx?.history.slice(-10) ?? []) messages.push(h);
-  if (web) messages.push({ role: 'user', content: `[Info internet: ${web}]` });
+  if (web) messages.push({ role: 'user', content: `[Info internet mentah (saring sebelum menjawab, maks 1500 char): ${web.slice(0, 1500)}]` });
   messages.push({ role: 'user', content: clean });
   return messages;
 }

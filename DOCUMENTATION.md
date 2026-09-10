@@ -13,6 +13,7 @@ Telegram polling (`src/telegram.ts`) → preprocessor (dedup bot, filter command
 
 ## 3. Riwayat perubahan
 
+- v0.9.1 (2026-09-10): Jawaban bersih — hasil web disaring AI, tidak ditempel mentah.
 - v0.9 (2026-09-10): Zero-template — semua sapaan/konfirmasi dinamis via AI; pencarian kata kunci Wikipedia.
 - v0.8 (2026-09-10): Smart — kontinuitas chat, memori ringkasan + koreksi, lookup internet, system rules anti-halu.
 - v0.7 (2026-09-10): Purge total logika toko (order-parser, rekap, scheduler, SHOP_*). Bot murni AI general assistant.
