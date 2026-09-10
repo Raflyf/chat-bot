@@ -66,6 +66,7 @@ export const config = {
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
+  whatsappPhoneNumber: process.env.WHATSAPP_PHONE_NUMBER ?? '',
 };
 
 export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegram'): void {
