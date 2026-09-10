@@ -238,6 +238,13 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - Menyesuaikan jadwal cron pengingat agar kompatibel penuh dengan batasan akun Vercel Hobby.
 - Menambahkan dukungan otomatis untuk pembacaan variabel lingkungan integrasi Supabase Vercel (`POSTGRES_URL`, `NEXT_PUBLIC_SUPABASE_URL`, dll).
 
+### v0.14.0 — 2026-09-11 00:21 WIB
+**Kecerdasan Emosional: Dynamic Tone Chameleon & Human Warmth Enhancement**
+- Desain ulang system prompt dengan integrasi Emotional Intelligence (EQ): beralih luwes menjadi teman hangat dan berempati saat pengguna curhat/sedih.
+- Larangan keras terhadap respons kaku ala robot konsultan medis/neurosains saat berinteraksi emosional.
+- Fleksibilitas gaya bahasa multi-konteks: hangat untuk curhat, akrab untuk kasual, presisi dan tajam untuk koding/sains teknis.
+- Eliminasi seluruh klise identitas robotik ("Sebagai AI", "Sebagai asisten yang analitis").
+
 ### v0.13.0 — 2026-09-11 00:07 WIB
 **Penyempurnaan: WhatsApp Clean Output Formatting & Zero-Emoji Enforcement**
 - Eliminasi total emoji dan simbol dekoratif dari seluruh balasan model AI via regex range Unicode komprehensif.
