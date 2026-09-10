@@ -16,6 +16,56 @@ export function getTelegramBot(): TelegramBot {
   return sharedBot;
 }
 
+/**
+ * Kirim pesan ke Telegram dengan pemecahan otomatis jika teks melebihi limit 4000 karakter.
+ * Memotong di batas paragraf (\n\n) atau baris baru (\n) agar struktur pesan tetap rapi.
+ */
+export async function sendTelegramMessageSafe(
+  bot: TelegramBot,
+  chatId: number,
+  text: string,
+): Promise<void> {
+  if (!text) return;
+  const maxLen = 4000;
+  if (text.length <= maxLen) {
+    await bot.sendMessage(chatId, text);
+    return;
+  }
+
+  // Pecah teks secara cerdas berdasarkan paragraf
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLen) {
+      chunks.push(remaining);
+      break;
+    }
+
+    let splitIndex = remaining.lastIndexOf('\n\n', maxLen);
+    if (splitIndex === -1 || splitIndex < 1000) {
+      splitIndex = remaining.lastIndexOf('\n', maxLen);
+    }
+    if (splitIndex === -1 || splitIndex < 500) {
+      splitIndex = remaining.lastIndexOf(' ', maxLen);
+    }
+    if (splitIndex === -1) {
+      splitIndex = maxLen;
+    }
+
+    const chunk = remaining.slice(0, splitIndex).trim();
+    if (chunk) chunks.push(chunk);
+    remaining = remaining.slice(splitIndex).trim();
+  }
+
+  for (const chunk of chunks) {
+    await bot.sendMessage(chatId, chunk);
+    if (chunks.length > 1) {
+      await new Promise((r) => setTimeout(r, 120));
+    }
+  }
+}
+
 async function answerPhoto(
   bot: TelegramBot,
   chatId: number,
@@ -32,7 +82,7 @@ async function answerPhoto(
   if (buf.length === 0 || buf.length > 8_000_000) return false;
   const mime = file.file_path.endsWith('.png') ? 'image/png' : 'image/jpeg';
   const { reply, via } = await describeImage(buf.toString('base64'), mime, caption);
-  await bot.sendMessage(chatId, reply);
+  await sendTelegramMessageSafe(bot, chatId, reply);
   await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via });
   return true;
 }
@@ -53,7 +103,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         `Sapa user dengan hangat dan cerdas sebagai ${config.botName}. Perkenalkan kemampuanmu: asisten AI umum yang mengingat percakapan, mencari info internet terkini, menerima koreksi via /salah, dan pengingat via /remind. Tawarkan bantuan.`,
         ctx,
       );
-      await bot.sendMessage(chatId, reply);
+      await sendTelegramMessageSafe(bot, chatId, reply);
       return;
     }
 
@@ -63,12 +113,12 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const ctx = await getContext(chatKey);
       if (!correction) {
         const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat dan ramah.', ctx);
-        await bot.sendMessage(chatId, reply);
+        await sendTelegramMessageSafe(bot, chatId, reply);
         return;
       }
       const saved = await saveCorrection(chatKey, correction);
       const { reply } = await autoReply(`User menyimpan koreksi: "${correction}". Konfirmasi singkat bahwa kamu mengingatnya.`, ctx);
-      await bot.sendMessage(chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
+      await sendTelegramMessageSafe(bot, chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
       return;
     }
 
@@ -112,7 +162,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         'Gambar user gagal dianalisis dan sudah diteruskan ke admin. Sampaikan dengan ramah dan tawarkan alternatif: kirim ulang atau tanyakan via teks.',
         ctx,
       );
-      await bot.sendMessage(chatId, reply);
+      await sendTelegramMessageSafe(bot, chatId, reply);
       await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via: 'store-forward' });
       return;
     }
@@ -128,7 +178,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       if (found) web = found;
     }
     const { reply, escalate, via } = await autoReply(text, ctx, web);
-    await bot.sendMessage(chatId, reply);
+    await sendTelegramMessageSafe(bot, chatId, reply);
     await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via });
     noteExchange(chatKey);
 
@@ -143,7 +193,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     console.error(`[telegram] handler: ${String((err as Error).message ?? err)}`);
     try {
       const { reply } = await autoReply('sapa user dengan ramah dan tawarkan bantuan');
-      await bot.sendMessage(msg.chat.id, reply);
+      await sendTelegramMessageSafe(bot, msg.chat.id, reply);
     } catch {
       // abaikan
     }

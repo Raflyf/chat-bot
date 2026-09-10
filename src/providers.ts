@@ -82,7 +82,7 @@ async function openAiChat(baseUrl: string, key: string, model: string, messages:
     model,
     messages,
     max_tokens: config.maxOutputTokens,
-    temperature: 0.4,
+    temperature: 0.2,
   })) as { choices?: Array<{ message?: { content?: string } }> };
   const text = data.choices?.[0]?.message?.content?.trim() ?? '';
   if (!text) throw new Error('EMPTY_RESPONSE');
@@ -108,7 +108,7 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[]): Prom
   const system = messages.find((m) => m.role === 'system');
   const body: Record<string, unknown> = {
     contents,
-    generationConfig: { maxOutputTokens: config.maxOutputTokens, temperature: 0.4 },
+    generationConfig: { maxOutputTokens: config.maxOutputTokens, temperature: 0.2 },
   };
   if (system) body.systemInstruction = { parts: [{ text: system.content }] };
 
@@ -173,14 +173,6 @@ interface Step {
 function steps(): Step[] {
   return [
     {
-      kind: 'openrouter',
-      keys: config.pools.openrouter,
-      models: [config.models.orPrimary, config.models.orMini, config.models.orText],
-      visionModels: [config.models.orPrimary, config.models.orMini],
-      cap: config.dailyCap.openrouter,
-      run: (k, m, msgs) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs),
-    },
-    {
       kind: 'groq',
       keys: config.pools.groq,
       models: [config.models.groqPrimary, config.models.groqBackup],
@@ -197,6 +189,14 @@ function steps(): Step[] {
       run: (k, m, msgs) => geminiChat(k, m, msgs),
     },
     {
+      kind: 'openrouter',
+      keys: config.pools.openrouter,
+      models: [config.models.orPrimary, config.models.orMini, config.models.orText],
+      visionModels: [config.models.orPrimary, config.models.orMini],
+      cap: config.dailyCap.openrouter,
+      run: (k, m, msgs) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs),
+    },
+    {
       kind: 'ollama',
       keys: config.pools.ollama,
       models: [config.models.ollamaPrimary, config.models.ollamaBackup],
@@ -208,8 +208,9 @@ function steps(): Step[] {
 }
 
 /**
- * Chat dengan failover berurutan OpenRouter > Groq > Gemini > Ollama.
- * needVision=true: hanya model vision-capable yang dicoba.
+ * Chat dengan failover cerdas:
+ * - Teks umum / matematika / koding: Groq (ultra-cepat ~2s) > Gemini > OpenRouter > Ollama.
+ * - Vision / gambar: Gemini (nativ multimodal ~1.7s) > OpenRouter Vision.
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
 export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Promise<{ text: string; via: string }> {
@@ -219,7 +220,13 @@ export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Pr
   if (hit) return { text: hit, via: 'cache' };
 
   let lastError = 'NO_PROVIDER_KEYS';
-  for (const step of steps()) {
+  const allSteps = steps();
+  // Untuk vision: utamakan provider yang memiliki visionModels (Gemini -> OpenRouter)
+  const orderedSteps = needVision
+    ? allSteps.filter((s) => s.visionModels.length > 0).sort((a, b) => (a.kind === 'gemini' ? -1 : 1))
+    : allSteps;
+
+  for (const step of orderedSteps) {
     const models = needVision ? step.visionModels : step.models;
     for (const model of models) {
       for (const key of step.keys) {
