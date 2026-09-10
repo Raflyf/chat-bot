@@ -67,11 +67,9 @@ export const config = {
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
   whatsappPhoneNumber: process.env.WHATSAPP_PHONE_NUMBER ?? '',
-  whatsappToken:
-    process.env.WHATSAPP_TOKEN ||
-    'EAAUA6UZCjT8gBSe1GzfRtZAwKBSTUmZAysbObvsynZAWz15N3ZC1z3M18mGPLtt0ALHZAe9AUvcMpE1lwqlNHbLqKwcmGTOsx2OvuXxDrH2guOc4pmY16Sfik72dgZAQJpd1sa7eOoqOZBhcpPefaGD0E8XMdLdZBY1sUTVezLfsJ3QZBlDSXdaRs3Q1xpOsnYh57WksMDdwtrjPVzoYKJvOAEwjJr4d8ZAWPtZB2rNJmqTuoaStraepQyQaFuICTDkhTXPNusYw5V1xGxZApAwMzm0Jn',
-  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '1248930498311083',
-  whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || 'wa_verif_secret_2026',
+  whatsappToken: process.env.WHATSAPP_TOKEN ?? '',
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
+  whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN ?? '',
   whatsappAppSecret: process.env.WHATSAPP_APP_SECRET ?? '',
 };
 
