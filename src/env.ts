@@ -38,7 +38,7 @@ export const config = {
   supabaseKey: process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY ?? '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
   cronSecret: process.env.CRON_SECRET ?? '',
-  botName: process.env.BOT_NAME ?? 'AgentKit',
+  botName: process.env.BOT_NAME ?? 'FreeAIBot',
   botProfile:
     process.env.BOT_PROFILE ??
     'Asisten AI umum berbahasa Indonesia. Cerdas, adaptif, jujur, dan berwawasan luas.',
