@@ -38,6 +38,11 @@ export const config = {
   supabaseKey: process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY ?? '',
   shopName: process.env.SHOP_NAME ?? 'Toko Contoh',
   shopProfile: process.env.SHOP_PROFILE ?? 'Toko kelontong online, jam 08.00-21.00 WIB.',
+  botName: process.env.BOT_NAME ?? process.env.SHOP_NAME ?? 'AgentKit',
+  botProfile:
+    process.env.BOT_PROFILE ??
+    process.env.SHOP_PROFILE ??
+    'Asisten AI umum berbahasa Indonesia. Jawab pertanyaan apa pun dengan benar dan singkat.',
   timeoutMs: num('REQUEST_TIMEOUT_MS', 15000),
   cacheTtlMs: num('CACHE_TTL_MS', 3600000),
   dailyCap: {

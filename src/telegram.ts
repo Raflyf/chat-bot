@@ -13,7 +13,7 @@ export function startTelegram(): TelegramBot {
 
   bot.onText(/^\/start$/, async (msg) => {
     const chatId = msg.chat.id;
-    await bot.sendMessage(chatId, `Halo kak, selamat datang di ${config.shopName}. Ada yang bisa kami bantu?`);
+    await bot.sendMessage(chatId, `Halo kak, saya ${config.botName}, asisten AI umum. Silakan tanyakan apa saja.`);
   });
 
   bot.on('message', async (msg) => {

@@ -1,8 +1,8 @@
-# DOCUMENTATION — AgentKit v0.2 (P0)
+# DOCUMENTATION — AgentKit v0.3 (general assistant)
 
-## 1. Arsitektur P0
+## 1. Arsitektur
 
-Telegram polling (`src/telegram.ts`) → preprocessor (dedup bot, filter command, potong 1000 char) → skill auto-reply (`src/skills.ts`: system prompt toko + sentinel `BUTUH_ADMIN`) → provider router (`src/providers.ts`: OpenRouter > Groq > Gemini > Ollama, timeout 15 dtk, cache 1 jam, quota harian per key via `src/quota.ts`) → kirim balasan + arsip best-effort (`src/db.ts`) → eskalasi ke owner bila perlu.
+Telegram polling (`src/telegram.ts`) → preprocessor (dedup bot, filter command, potong 2000 char) → skill asisten umum (`src/skills.ts`: system prompt general + jujur-tidak-tahu, eskalasi hanya saat provider gagal) → provider router (`src/providers.ts`: OpenRouter > Groq > Gemini > Ollama, timeout 15 dtk, cache 1 jam, quota harian per key via `src/quota.ts`) → kirim balasan + arsip best-effort (`src/db.ts`).
 
 ## 2. Keputusan penting (PRD v0.2 terkunci)
 
@@ -13,4 +13,5 @@ Telegram polling (`src/telegram.ts`) → preprocessor (dedup bot, filter command
 
 ## 3. Riwayat perubahan
 
+- v0.3 (2026-09-10): Migrasi ke asisten umum (system prompt general, sapaan netral, BOT_NAME/BOT_PROFILE, fallback SHOP_* kompatibel).
 - v0.2 (2026-09-10): P0 Telegram + chain 4 provider + quota/cache + skema DB + docs. Verifikasi: `tsc --noEmit` bersih.
