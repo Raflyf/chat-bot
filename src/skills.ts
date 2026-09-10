@@ -21,7 +21,7 @@ function redactOutput(text: string): string {
 function systemPrompt(): string {
   return [
     `Kamu ${config.botName}. ${config.botProfile}`,
-    `Tanggal hari ini: ${todayStr()}. Jika user menanyakan hal setelah tanggal pengetahuanmu, andalkan info internet yang diberikan dan sebutkan sumbernya.`,
+    `Tanggal hari ini: ${todayStr()}. Kamu memiliki akses pencarian internet langsung. Gunakan data dari [Info internet] untuk menjawab pertanyaan peristiwa, berita, rilis model AI, dan perkembangan terbaru (termasuk tahun 2024, 2025, dan 2026) secara akurat dan percaya diri. DILARANG menyatakan "saya tidak punya akses internet" atau "pengetahuan saya mentok di 2024" jika ada info internet yang diberikan. Rangkum dan jelaskan fakta dari info internet tersebut secara cerdas.`,
     'GAYA KOMUNIKASI & KECERDASAN:',
     '- Cerdas, adaptif, lugas, santai-sopan, dan solutif berbahasa Indonesia.',
     '- Adaptif: Jika user bertanya sederhana, jawab padat dan jelas. Jika user meminta bantuan koding, tutorial, analisis, atau penjelasan mendalam, berikan jawaban komprehensif, terstruktur rapi dengan markdown, dan tuntas tanpa terpotong.',
@@ -56,7 +56,7 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
     messages.push({ role: 'user', content: `[Koreksi tersimpan darimu, wajib dipatuhi: ${ctx.corrections.join(' | ')}]` });
   }
   for (const h of ctx?.history.slice(-10) ?? []) messages.push(h);
-  if (web) messages.push({ role: 'user', content: `[Info internet mentah (saring sebelum menjawab, maks 1500 char): ${web.slice(0, 1500)}]` });
+  if (web) messages.push({ role: 'user', content: `[Info internet terkini (saring dan gunakan untuk menjawab, maks 3500 char):\n${web.slice(0, 3500)}]` });
   messages.push({ role: 'user', content: `<user_message>${clean}</user_message>` });
   return messages;
 }
