@@ -70,7 +70,7 @@ export const config = {
   whatsappToken:
     process.env.WHATSAPP_TOKEN ||
     '[META_TOKEN_REDACTED]',
-  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '1224589930748061',
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '1248930498311083',
   whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '[REDACTED]',
   whatsappAppSecret: process.env.WHATSAPP_APP_SECRET ?? '',
 };
