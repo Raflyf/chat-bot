@@ -4,7 +4,7 @@ import { startTelegram } from './telegram.js';
 function main(): void {
   assertRuntime();
   startTelegram();
-  console.log('[agentkit] P0 telegram bot jalan. Ctrl+C untuk berhenti.');
+  console.log('[agentkit] bot asisten umum jalan. Ctrl+C untuk berhenti.');
 
   const stop = () => {
     console.log('\n[agentkit] berhenti.');
