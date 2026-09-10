@@ -20,3 +20,10 @@ create table if not exists provider_quota (
   used integer not null default 0,
   unique (kind, key_suffix, day)
 );
+
+alter table messages enable row level security;
+alter table provider_quota enable row level security;
+revoke all on table messages, provider_quota from anon, authenticated;
+create policy "Service Role Only messages" on messages for all to service_role using (true) with check (true);
+create policy "Service Role Only provider_quota" on provider_quota for all to service_role using (true) with check (true);
+

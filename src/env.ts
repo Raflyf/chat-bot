@@ -34,17 +34,24 @@ export const config = {
     ollamaBackup: process.env.OLLAMA_MODEL_BACKUP ?? 'gpt-oss:20b',
   },
   supabaseUrl: process.env.SUPABASE_URL ?? '',
-  // Service-role didahulukan (server-side only); anon sebagai fallback.
+  // Service-role diutamakan (server-side only); anon hanya sebagai fallback dev.
   supabaseKey: process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY ?? '',
+  telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
+  cronSecret: process.env.CRON_SECRET ?? '',
   botName: process.env.BOT_NAME ?? 'AgentKit',
   botProfile:
     process.env.BOT_PROFILE ??
-    'Asisten AI umum berbahasa Indonesia. Jawab pertanyaan apa pun dengan benar dan singkat.',
+    'Asisten AI umum berbahasa Indonesia. Cerdas, adaptif, jujur, dan berwawasan luas.',
+  // Waktu tunggu respon koneksi/header API key (jika mati/429/error, langsung failover cepat)
+  connectTimeoutMs: num('CONNECT_TIMEOUT_MS', 8000),
+  // Waktu tunggu model berpikir & menyelesaikan generasi teks lengkap
   timeoutMs: num('REQUEST_TIMEOUT_MS', 90000),
-  // Timeout unduhan media terpisah dan pendek: gagal unduh langsung fallback,
-  // tidak memakan jatah waktu berpikir model.
-  downloadTimeoutMs: num('DOWNLOAD_TIMEOUT_MS', 30000),
+  // Kapasitas output token agar AI mampu menjelaskan detail & koding tanpa terpotong
+  maxOutputTokens: num('MAX_OUTPUT_TOKENS', 2500),
+  // Timeout unduhan media terpisah dan pendek
+  downloadTimeoutMs: num('DOWNLOAD_TIMEOUT_MS', 25000),
   cacheTtlMs: num('CACHE_TTL_MS', 3600000),
+  isServerless: process.env.VERCEL === '1' || !!process.env.AWS_LAMBDA_FUNCTION_NAME,
   dailyCap: {
     openrouter: num('DAILY_CAP_OPENROUTER', 180),
     groq: num('DAILY_CAP_GROQ', 800),

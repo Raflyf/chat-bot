@@ -14,3 +14,10 @@ create table if not exists corrections (
   created_at timestamptz not null default now()
 );
 create index if not exists corrections_chat_idx on corrections (chat_id, created_at desc);
+
+alter table summaries enable row level security;
+alter table corrections enable row level security;
+revoke all on table summaries, corrections from anon, authenticated;
+create policy "Service Role Only summaries" on summaries for all to service_role using (true) with check (true);
+create policy "Service Role Only corrections" on corrections for all to service_role using (true) with check (true);
+
