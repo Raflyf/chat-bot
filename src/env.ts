@@ -36,14 +36,14 @@ export const config = {
   supabaseUrl: process.env.SUPABASE_URL ?? '',
   // Service-role didahulukan (server-side only); anon sebagai fallback.
   supabaseKey: process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY ?? '',
-  shopName: process.env.SHOP_NAME ?? 'Toko Contoh',
-  shopProfile: process.env.SHOP_PROFILE ?? 'Toko kelontong online, jam 08.00-21.00 WIB.',
-  botName: process.env.BOT_NAME ?? process.env.SHOP_NAME ?? 'AgentKit',
+  botName: process.env.BOT_NAME ?? 'AgentKit',
   botProfile:
     process.env.BOT_PROFILE ??
-    process.env.SHOP_PROFILE ??
     'Asisten AI umum berbahasa Indonesia. Jawab pertanyaan apa pun dengan benar dan singkat.',
-  timeoutMs: num('REQUEST_TIMEOUT_MS', 15000),
+  timeoutMs: num('REQUEST_TIMEOUT_MS', 90000),
+  // Timeout unduhan media terpisah dan pendek: gagal unduh langsung fallback,
+  // tidak memakan jatah waktu berpikir model.
+  downloadTimeoutMs: num('DOWNLOAD_TIMEOUT_MS', 30000),
   cacheTtlMs: num('CACHE_TTL_MS', 3600000),
   dailyCap: {
     openrouter: num('DAILY_CAP_OPENROUTER', 180),
