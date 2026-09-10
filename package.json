@@ -1,0 +1,27 @@
+{
+  "name": "agentkit",
+  "version": "0.2.0",
+  "description": "Self-hosted AI agent for WhatsApp & Telegram, $0 free-tier stack (P0: Telegram)",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.0",
+    "dotenv": "^16.4.5",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/node-telegram-bot-api": "^0.64.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
