@@ -238,6 +238,12 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - Menyesuaikan jadwal cron pengingat agar kompatibel penuh dengan batasan akun Vercel Hobby.
 - Menambahkan dukungan otomatis untuk pembacaan variabel lingkungan integrasi Supabase Vercel (`POSTGRES_URL`, `NEXT_PUBLIC_SUPABASE_URL`, dll).
 
+### v0.12.0 — 2026-09-10 23:33 WIB
+**Integrasi: Meta WhatsApp Cloud API Production Phone Registration**
+- Pendaftaran nomor produksi (+62 838-7464-0066) ke Meta WhatsApp Cloud API dengan Phone Number ID: 1248930498311083.
+- Konfigurasi serverless webhook Vercel (/api/whatsapp) terhubung dengan Meta Graph API v21.0.
+- Pembersihan dependensi Python/Gradio untuk memastikan build pipeline Vercel murni Node.js ultra-cepat.
+
 ### v0.10.0 — 2026-09-10 20:12 WIB
 **Arsitektur: Hardened AI Assistant, Persistent Memory & Vercel 24/7 Deployment Ready**
 - Implementasi endpoint Webhook Vercel (`api/webhook.ts`) dengan verifikasi secret token timing-safe.
