@@ -25,6 +25,13 @@ Update Telegram (Polling/Webhook) → Sanitasi & Preprocessing → Ekstraksi Kon
 
 ## 3. Riwayat Perubahan
 
+- v0.11.0 (2026-09-10): **Universal Real-Time Web Search & Deep Browsing Engine**
+  - Mengadopsi arsitektur mesin pencari teruji dari Terminal AI Portofolio Rafly Firmansyah ke dalam `src/web.ts`.
+  - Matriks Mesin Multi-Sumber Paralel: Google News Global RSS, Google Berita Indonesia RSS, Bing News RSS, Hacker News Algolia, Wikipedia EN & ID, dan arXiv Preprints.
+  - Deep Webpage Scraper & Jina Reader: Deteksi tautan URL/domain otomatis dan ekstraksi konten menjadi Fit-Markdown bersih untuk membaca artikel atau dokumentasi apa pun.
+  - Formulator Kueri Cerdas (`formulateSmartSearchQueries`): Normalisasi typo/slang bahasa Indonesia, pembersihan kata pengisi (filler), dan pembuatan kueri dwibahasa secara paralel.
+  - Eliminasi Cut-off 2024: Suntikan bukti internet real-time ke prompt sistem dengan penegasan mandat fakta terkini tanpa klaim ketiadaan akses internet.
+  - Deduplikasi judul lintas feed, pembobotan kesegaran waktu publikasi (recency scoring), dan proteksi keamanan SSRF.
 - v0.10.0 (2026-09-10): **Hardened & Vercel 24/7 Deployment Ready**
   - Implementasi Webhook Vercel (`api/webhook.ts`) dengan proteksi secret token.
   - Pengingat persisten Supabase (`reminders`) + Vercel Cron (`api/cron/reminders.ts`).
