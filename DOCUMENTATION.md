@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.23.8  
+**Versi:** v0.23.9  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 16:49 WIB  
+**Terakhir Diperbarui:** 2026-09-11 17:05 WIB  
 
 ---
 
@@ -191,6 +191,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.23.9 — 2026-09-11 17:05 WIB
+**Refined 5-Column Ledger & Universal Quota Aggregation Across All Providers**
+- **Pemangkasan Kolom Tabel Kuota Upstream (`public/dashboard.html`)**:
+  - Menghapus kolom *Model Utama & Tier* serta kolom *Batas Upstream Resmi* yang redundan/tidak diperlukan sesuai permintaan pengguna.
+  - Memfokuskan tabel ke dalam 5 kolom esensial:
+    1. *Provider & Kunci API* (Masked Key).
+    2. *Akun Terdaftar* (Nama & Email Akun).
+    3. *Penggunaan Hari Ini* (Token terpakai global, persentase, dan bar progress visual).
+    4. *Sisa Kuota Hari Ini* (Sisa token riil berwarna hijau emerald tebal).
+    5. *Status Validasi* (Badge sinkronisasi & health check).
+- **Agregasi Metrik Universal pada Ribbon Ringkasan**:
+  - Menghitung total limit kuota harian secara universal dari seluruh provider (xKiro, Groq, dll), bukan hanya terbatas pada xKiro.
+  - Menghitung total sisa kuota bersih universal gabungan dari seluruh kunci API aktif.
+  - Menampilkan total kunci dan pool terhubung secara global di 4 provider AI.
 
 ### v0.23.8 — 2026-09-11 16:49 WIB
 **Smart Sticky Navbar with Smooth Scroll Reveal & Dynamic Glassmorphism**
