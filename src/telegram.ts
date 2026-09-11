@@ -230,7 +230,8 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
             if (found) web = found;
           }
 
-          const { reply, via } = await autoReply(transcription, ctx, web);
+          const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
+          const { reply, via } = await autoReply(prompt, ctx, web);
           await sendTelegramMessageSafe(bot, chatId, reply);
           await saveMessage({
             platform: 'telegram',
