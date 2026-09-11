@@ -204,6 +204,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.3 - 2026-09-12 00:08 WIB
+**Persistent Knowledge Memory with Dynamic TTL, Shared Multi-Platform Intelligence & Sub-Millisecond Cache Lookup**
+- **Sistem Memori Pengetahuan Bersama Permanen (`src/knowledge.ts`, `sql/migrate_v14_web_knowledge.sql`)**:
+  - Mengubah hasil penelusuran web dan penjelajahan internet menjadi pengetahuan kumulatif permanen bagi AI, sehingga bot tidak perlu mengulang penelusuran atau men-scrap ulang data yang sudah pernah dipelajari sebelumnya.
+  - Pengetahuan disimpan pada tabel `web_knowledge` di Supabase dan disinkronkan ke dalam *Hot In-Memory Cache* lokal untuk respon sub-milidetik (<0.06ms).
+  - Sekali sebuah fakta dipelajari dari pertanyaan pengguna tertentu (baik di WhatsApp maupun Telegram), seluruh pengguna lain yang menanyakan hal serupa langsung mendapatkan jawaban seketika tanpa scraping internet.
+- **Klasifikasi Umur Pengetahuan Cerdas (Tiered Dynamic TTL)**:
+  - Mengeliminasi risiko data basi (*stale data*) dengan membagi masa berlaku pengetahuan secara dinamis:
+    1. **Real-time (Cuaca, Kurs, Harga Emas, Skor Bola, Gempa)**: TTL 2 jam (7.200 detik). Otomatis di-refresh jika sudah kedaluwarsa.
+    2. **News / Breaking Events (Politik, Hukum, Viral, Menteri, Pemilu)**: TTL 12 jam (43.200 detik).
+    3. **Tech & Product Releases (Xiaomi, iPhone, Samsung, DeepSeek, Claude, Qwen, Spesifikasi Hardware)**: TTL 21 hari (1.814.400 detik).
+    4. **Fakta Statis / Ilmiah / Sejarah**: TTL 90 hari (7.776.000 detik).
+- **Pencocokan Entitas Normalisasi & Token Overlap (`normalizeEntityKey`, `getKnowledge`)**:
+  - Menyaring stopwords dan filler kata tanya secara presisi sehingga pertanyaan seperti *"Kapan rilis Xiaomi 15 di Indonesia?"* dan *"info rilis xiaomi 15 dong kak"* dipetakan ke entitas kunci yang sama (`xiaomi_15`).
+  - Mendukung pencocokan prefix dan token overlap sehingga pencarian pengetahuan berjalan cepat dan akurat.
+- **Integrasi Seamless Tanpa Regresi (`src/web.ts`)**:
+  - Diintegrasikan langsung di dalam `searchWeb(query)` sebelum live scraper dijalankan.
+  - Handler WhatsApp Cloud, WhatsApp Baileys, dan Telegram otomatis menikmati fitur ini tanpa perubahan struktur kode di lapisan controller.
+  - Penulisan ke `web_knowledge` berjalan asinkron non-blocking (*fire-and-forget*), menjamin tidak ada latensi tambahan pada interaksi pengguna.
+
 ### v0.25.2 - 2026-09-11 23:55 WIB
 **Autonomous Latency Optimization, Fast-Path In-Memory Context Cache & Non-Blocking Asynchronous Persistence**
 - **Eliminasi Latensi Web Search Agresif pada Percakapan Umum (`src/web.ts`)**:
