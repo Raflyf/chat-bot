@@ -63,8 +63,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   try {
-    // Ambil riwayat pesan terurut dari awal percakapan
-    let query = c.from('messages').select('*').order('id', { ascending: true }).limit(3000);
+    // Optimasi performa: tarik hanya kolom penting secara descending dari pesan terbaru
+    const isExport = format === 'jsonl' || format === 'csv';
+    const dbLimit = isExport ? 1500 : Math.min(600, limit * 2 + 60);
+
+    let query = c
+      .from('messages')
+      .select('id, platform, chat_id, role, content, via, created_at')
+      .order('id', { ascending: false })
+      .limit(dbLimit);
+
     if (startDateIso) {
       query = query.gte('created_at', startDateIso);
     }
@@ -72,13 +80,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       query = query.eq('platform', platform);
     }
 
-    const { data: allMsgs, error } = await query;
-
+    const { data: rawMsgs, error } = await query;
     if (error) throw error;
 
-    // Pasangkan pesan pengguna dengan balasan bot berikutnya di chat yang sama
+    // Balik urutan ke kronologis (ascending) agar algoritma pairing user -> bot bekerja sempurna
+    const msgs = (rawMsgs || []).reverse();
     const pairs: DatasetPair[] = [];
-    const msgs = allMsgs || [];
 
     for (let i = 0; i < msgs.length; i++) {
       if (msgs[i].role === 'user') {
@@ -183,7 +190,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     // Default: JSON API Response
-    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=30');
     res.status(200).json({
       ok: true,
       totalCount: pairs.length,

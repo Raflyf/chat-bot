@@ -1117,7 +1117,7 @@
         <button class="btn active" id="btn-auto" onclick="toggleAutoRefresh()">
           <span>Auto: 15s</span>
         </button>
-        <button class="btn" id="btn-manual-refresh" onclick="fetchData()">
+        <button class="btn" id="btn-manual-refresh" onclick="fetchData(true); fetchDataset(true);">
           <span id="btn-refresh-icon">&#x21bb;</span>
           <span>Segarkan</span>
         </button>
@@ -1672,13 +1672,15 @@
     }
 
     // =========================================================================
-    // MULTI-LEVEL FILTERING STATE & DASHBOARD DATA LOADER
+    // MULTI-LEVEL FILTERING STATE & DASHBOARD DATA LOADER (WITH SWR MEMORY CACHE)
     // =========================================================================
     let currentTimeRange = "today";
     let currentPlatform = "all";
     let currentProviderFilter = "all";
     let currentKeyStatusFilter = "all";
     let cachedDashboardData = null;
+    const statsCache = new Map();
+    const datasetCache = new Map();
 
     function setTimeRange(range) {
       currentTimeRange = range;
@@ -1719,9 +1721,17 @@
       if (cachedDashboardData) renderPoolMatrix(cachedDashboardData);
     }
 
-    async function fetchData() {
+    async function fetchData(force = false) {
       const token = getStoredToken();
       if (!token) return;
+
+      const cacheKey = `${currentTimeRange}_${currentPlatform}`;
+      // Instant render dari cache jika ada dan bukan force refresh
+      if (!force && statsCache.has(cacheKey)) {
+        const cached = statsCache.get(cacheKey);
+        cachedDashboardData = cached;
+        renderDashboard(cached);
+      }
 
       const btnIcon = document.getElementById("btn-refresh-icon");
       if (btnIcon) btnIcon.innerHTML = '<span class="pulse-dot"></span>';
@@ -1734,12 +1744,15 @@
 
         if (res.status === 401) {
           clearStoredToken();
+          document.documentElement.classList.remove("authenticated");
+          document.documentElement.classList.add("not-authenticated");
           document.getElementById("auth-modal").classList.remove("hidden");
           return;
         }
 
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
+        statsCache.set(cacheKey, data);
         cachedDashboardData = data;
         renderDashboard(data);
       } catch (err) {
@@ -1915,7 +1928,7 @@
       }, 350);
     }
 
-    async function fetchDataset() {
+    async function fetchDataset(force = false) {
       const token = getStoredToken();
       if (!token) return;
 
@@ -1923,6 +1936,13 @@
       const range = document.getElementById("dataset-range-filter")?.value || "all";
       const platform = document.getElementById("dataset-platform-filter").value;
       const model = document.getElementById("dataset-model-filter")?.value || "";
+
+      const cacheKey = `${range}_${platform}_${model}_${q}`;
+      if (!force && datasetCache.has(cacheKey)) {
+        cachedDatasetPairs = datasetCache.get(cacheKey);
+        currentDatasetPage = 1;
+        renderDatasetTable();
+      }
 
       try {
         const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&limit=300`;
@@ -1932,13 +1952,15 @@
 
         if (res.status === 401) {
           clearStoredToken();
+          document.documentElement.classList.remove("authenticated");
+          document.documentElement.classList.add("not-authenticated");
           document.getElementById("auth-modal").classList.remove("hidden");
           return;
         }
 
         const data = await res.json();
         cachedDatasetPairs = data.pairs || [];
-        currentDatasetPage = 1;
+        datasetCache.set(cacheKey, cachedDatasetPairs);
         renderDatasetTable();
       } catch (err) {
         console.error("fetchDataset error:", err);
