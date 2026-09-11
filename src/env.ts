@@ -71,6 +71,10 @@ export const config = {
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
   whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN ?? '',
   whatsappAppSecret: process.env.WHATSAPP_APP_SECRET ?? '',
+  resendApiKey: process.env.RESEND_API_KEY ?? '',
+  resendFrom: process.env.RESEND_FROM ?? 'ChatBot Security <onboarding@resend.dev>',
+  adminEmail: process.env.ADMIN_EMAIL ?? 'raflyfirmansyah02@gmail.com',
+  pinSalt: process.env.PIN_SALT ?? 'rafly_telemetry_salt',
 };
 
 export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegram'): void {

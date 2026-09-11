@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FreeAIBot - Unified Monitoring Dashboard</title>
-  <meta name="description" content="Dashboard monitoring real-time untuk penggunaan chatbot, pool API Key, model AI, dan kuota harian.">
+  <title>FreeAIBot - Unified Monitoring &amp; Dataset Console</title>
+  <meta name="description" content="Dashboard monitoring real-time penggunaan chatbot, pool API Key, model AI, kuota harian, serta dataset evaluasi percakapan.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg-base: #090d16;
@@ -12,7 +15,7 @@
       --bg-card: #162032;
       --bg-card-hover: #1c2940;
       --border-subtle: #24344d;
-      --border-focus: #3b82f6;
+      --border-focus: #38bdf8;
       --text-main: #f8fafc;
       --text-muted: #94a3b8;
       --text-dim: #64748b;
@@ -21,7 +24,8 @@
       --accent-emerald: #10b981;
       --accent-amber: #f59e0b;
       --accent-rose: #f43f5e;
-      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
     }
 
     * {
@@ -143,6 +147,7 @@
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
+      font-family: inherit;
     }
 
     .btn:hover {
@@ -154,6 +159,25 @@
       background: rgba(56, 189, 248, 0.15);
       border-color: var(--accent-blue);
       color: var(--accent-blue);
+    }
+
+    .btn-danger {
+      border-color: rgba(244, 63, 94, 0.4);
+      color: #fda4af;
+    }
+    .btn-danger:hover {
+      background: rgba(244, 63, 94, 0.15);
+      border-color: var(--accent-rose);
+      color: var(--accent-rose);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      border: none;
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #0369a1, #1d4ed8);
     }
 
     /* KPI Summary Cards */
@@ -235,6 +259,8 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 1rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
     }
 
     .section-title {
@@ -266,6 +292,8 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 0.75rem;
     }
 
     .provider-name {
@@ -275,10 +303,9 @@
     }
 
     .provider-models {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      margin-top: 0.2rem;
-      font-family: monospace;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-top: 0.15rem;
     }
 
     .provider-summary-stat {
@@ -286,7 +313,7 @@
     }
 
     .provider-usage-text {
-      font-size: 0.9rem;
+      font-size: 1.1rem;
       font-weight: 700;
       color: var(--accent-blue);
     }
@@ -299,59 +326,41 @@
     .keys-list {
       display: flex;
       flex-direction: column;
-      gap: 0.65rem;
-      border-top: 1px solid var(--border-subtle);
-      padding-top: 0.85rem;
+      gap: 0.6rem;
     }
 
     .key-row {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 10px;
-      padding: 0.75rem 0.85rem;
       display: flex;
       flex-direction: column;
-      gap: 0.45rem;
-      transition: background 0.15s ease;
+      gap: 0.35rem;
+      background: var(--bg-card);
+      padding: 0.75rem;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
     }
 
-    .key-row:hover {
-      background: var(--bg-card-hover);
-    }
-
-    .key-meta {
+    .key-info-line {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 0.825rem;
+      font-size: 0.8rem;
     }
 
-    .key-tag {
-      font-family: monospace;
+    .key-label {
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .key-stats {
       font-weight: 700;
       color: var(--text-main);
-      background: rgba(255, 255, 255, 0.05);
-      padding: 0.15rem 0.4rem;
-      border-radius: 4px;
     }
-
-    .key-status {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-size: 0.75rem;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .status-healthy { color: var(--accent-emerald); }
-    .status-warning { color: var(--accent-amber); }
-    .status-capped { color: var(--accent-rose); }
 
     .progress-bar-bg {
       width: 100%;
       height: 6px;
-      background: rgba(255, 255, 255, 0.08);
+      background: #1e293b;
       border-radius: 9999px;
       overflow: hidden;
     }
@@ -362,46 +371,41 @@
       transition: width 0.4s ease;
     }
 
-    .progress-emerald { background: var(--accent-emerald); }
-    .progress-amber { background: var(--accent-amber); }
-    .progress-rose { background: var(--accent-rose); }
+    .progress-emerald { background: linear-gradient(90deg, #10b981, #059669); }
+    .progress-amber { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    .progress-rose { background: linear-gradient(90deg, #f43f5e, #e11d48); }
 
-    .key-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.75rem;
-      color: var(--text-dim);
-    }
-
-    /* Dual Column: Models Breakdown & Media Breakdown */
+    /* Model Analytics & Media Grid */
     .dual-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      grid-template-columns: 1fr 1fr;
       gap: 1.25rem;
+    }
+
+    @media (max-width: 900px) {
+      .dual-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     .panel-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
       border-radius: 16px;
-      padding: 1.25rem;
+      padding: 1.25rem 1.5rem;
+    }
+
+    .models-list {
       display: flex;
       flex-direction: column;
-      gap: 1rem;
+      gap: 0.85rem;
+      margin-top: 1rem;
     }
 
     .model-item {
       display: flex;
       flex-direction: column;
       gap: 0.35rem;
-      padding-bottom: 0.65rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .model-item:last-child {
-      border-bottom: none;
-      padding-bottom: 0;
     }
 
     .model-label-row {
@@ -411,240 +415,591 @@
     }
 
     .model-name {
-      font-family: monospace;
       font-weight: 600;
       color: var(--text-main);
+      font-family: var(--font-mono);
     }
 
     .model-count {
-      font-weight: 700;
-      color: var(--accent-blue);
+      color: var(--text-muted);
+      font-size: 0.8rem;
     }
 
     .media-badges-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
       gap: 0.85rem;
+      margin-top: 1rem;
     }
 
     .media-box {
       background: var(--bg-card);
       border: 1px solid var(--border-subtle);
       border-radius: 12px;
-      padding: 0.85rem;
+      padding: 1rem;
       text-align: center;
       display: flex;
       flex-direction: column;
-      gap: 0.25rem;
+      gap: 0.3rem;
     }
 
     .media-box-count {
       font-size: 1.5rem;
       font-weight: 800;
-      color: var(--text-main);
+      color: var(--accent-blue);
     }
 
     .media-box-label {
       font-size: 0.75rem;
       color: var(--text-muted);
-      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      font-weight: 600;
     }
 
-    /* Live Activity Table */
+    /* Table Sections */
     .activity-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
       border-radius: 16px;
-      padding: 1.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
+      padding: 1.25rem 1.5rem;
+      overflow: hidden;
     }
 
     .table-container {
       overflow-x: auto;
+      margin-top: 1rem;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.85rem;
+      font-size: 0.825rem;
       text-align: left;
     }
 
     th {
       padding: 0.75rem 1rem;
+      background: var(--bg-card);
       color: var(--text-muted);
       font-weight: 600;
       border-bottom: 1px solid var(--border-subtle);
-      text-transform: uppercase;
-      font-size: 0.75rem;
-      letter-spacing: 0.05em;
+      white-space: nowrap;
     }
 
     td {
       padding: 0.85rem 1rem;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
       color: var(--text-main);
-      vertical-align: middle;
+      vertical-align: top;
     }
 
     tr:hover td {
-      background: var(--bg-card-hover);
+      background: rgba(255, 255, 255, 0.02);
     }
 
     .role-badge {
       display: inline-block;
-      padding: 0.2rem 0.5rem;
+      padding: 0.15rem 0.5rem;
       border-radius: 4px;
       font-size: 0.7rem;
       font-weight: 700;
       text-transform: uppercase;
     }
 
-    .role-user {
-      background: rgba(56, 189, 248, 0.15);
-      color: var(--accent-blue);
-    }
-
-    .role-bot {
-      background: rgba(168, 85, 247, 0.15);
-      color: var(--accent-purple);
-    }
+    .role-user { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); }
+    .role-bot { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); }
 
     .type-badge {
       display: inline-block;
-      padding: 0.15rem 0.45rem;
+      padding: 0.15rem 0.5rem;
       border-radius: 4px;
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       font-weight: 600;
+      font-family: var(--font-mono);
     }
 
     .type-voice { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
-    .type-doc { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+    .type-document { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
     .type-image { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
     .type-sticker { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); }
+    .type-video { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); }
     .type-text { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
 
+    .model-tag {
+      font-family: var(--font-mono);
+      font-size: 0.725rem;
+      color: var(--text-dim);
+    }
+
     .msg-preview {
-      max-width: 420px;
+      max-width: 380px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      color: var(--text-muted);
+    }
+
+    /* Dataset Pair Styling */
+    .dataset-prompt {
+      max-width: 320px;
+      font-weight: 500;
+      color: #e2e8f0;
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
+    .dataset-reply {
+      max-width: 440px;
+      color: #94a3b8;
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
+    .search-input {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.45rem 0.85rem;
+      color: var(--text-main);
+      font-size: 0.825rem;
+      font-family: inherit;
+      min-width: 220px;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    .filter-select {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.45rem 0.75rem;
+      color: var(--text-main);
+      font-size: 0.825rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    /* ==========================================================================
+       AUTHENTICATION & RESET PIN MODAL (OBSIDIAN GLASS)
+       ========================================================================== */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(9, 13, 22, 0.94);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      opacity: 1;
+      transition: opacity 0.25s ease;
+    }
+
+    .modal-overlay.hidden {
+      display: none;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .auth-card {
+      width: 100%;
+      max-width: 420px;
+      background: #0f172a;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 20px;
+      padding: 2.25rem 2rem;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(56, 189, 248, 0.12);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 1.25rem;
+      position: relative;
+    }
+
+    .auth-shield-icon {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(168, 85, 247, 0.15));
+      border: 1.5px solid rgba(56, 189, 248, 0.4);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      color: var(--accent-blue);
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+    }
+
+    .auth-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.02em;
+    }
+
+    .auth-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .pin-display-group {
+      display: flex;
+      gap: 0.65rem;
+      margin: 0.5rem 0;
+    }
+
+    .pin-dot {
+      width: 44px;
+      height: 52px;
+      background: #1e293b;
+      border: 1.5px solid var(--border-subtle);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--accent-blue);
+      transition: all 0.2s ease;
+    }
+
+    .pin-dot.filled {
+      border-color: var(--accent-blue);
+      background: rgba(56, 189, 248, 0.1);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+    }
+
+    .keypad-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.65rem;
+      width: 100%;
+      margin-top: 0.5rem;
+    }
+
+    .key-btn {
+      height: 50px;
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      color: var(--text-main);
+      font-size: 1.25rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
       font-family: inherit;
     }
 
-    .model-tag {
-      font-family: monospace;
-      font-size: 0.75rem;
-      color: var(--text-dim);
+    .key-btn:hover {
+      background: #27354f;
+      border-color: var(--accent-blue);
     }
 
-    /* Footer */
+    .key-btn:active {
+      transform: scale(0.96);
+    }
+
+    .key-btn-action {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .auth-alert {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-align: left;
+      display: none;
+    }
+
+    .auth-alert.show {
+      display: block;
+    }
+
+    .auth-alert-error {
+      background: rgba(244, 63, 94, 0.12);
+      border: 1px solid rgba(244, 63, 94, 0.35);
+      color: #fda4af;
+    }
+
+    .auth-alert-success {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #6ee7b7;
+    }
+
+    .auth-link-btn {
+      background: none;
+      border: none;
+      color: var(--accent-blue);
+      font-size: 0.825rem;
+      cursor: pointer;
+      font-weight: 600;
+      text-decoration: underline;
+      padding: 0.25rem;
+      font-family: inherit;
+    }
+
+    .auth-link-btn:hover {
+      color: #7dd3fc;
+    }
+
+    /* Reset Modal Form */
+    .reset-form {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      text-align: left;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .form-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .form-input {
+      background: #1e293b;
+      border: 1.5px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 0.65rem 0.95rem;
+      color: var(--text-main);
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+    }
+
+    .shake {
+      animation: shake 0.35s ease-in-out;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-8px); }
+      40%, 80% { transform: translateX(8px); }
+    }
+
     footer {
       text-align: center;
-      font-size: 0.8rem;
+      padding: 1.5rem 0;
       color: var(--text-dim);
-      padding: 1.5rem 0 0.5rem;
-    }
-
-    /* Loader */
-    .spinner {
-      display: inline-block;
-      width: 14px;
-      height: 14px;
-      border: 2px solid rgba(255, 255, 255, 0.2);
-      border-radius: 50%;
-      border-top-color: #fff;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+      font-size: 0.8rem;
+      border-top: 1px solid var(--border-subtle);
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Top Nav Header -->
+
+  <!-- ========================================================================
+       MODAL 1: PIN LOGIN GATEWAY
+       ======================================================================== -->
+  <div id="auth-modal" class="modal-overlay">
+    <div class="auth-card" id="pin-card">
+      <div class="auth-shield-icon">&#128274;</div>
+      <div>
+        <h2 class="auth-title">Admin Observability Gateway</h2>
+        <p class="auth-subtitle">Masukkan Master PIN untuk membuka panel monitoring &amp; evaluasi.</p>
+      </div>
+
+      <!-- Alert Status -->
+      <div id="auth-alert" class="auth-alert auth-alert-error"></div>
+
+      <!-- PIN Display Dots -->
+      <div class="pin-display-group">
+        <div class="pin-dot" id="dot-0"></div>
+        <div class="pin-dot" id="dot-1"></div>
+        <div class="pin-dot" id="dot-2"></div>
+        <div class="pin-dot" id="dot-3"></div>
+        <div class="pin-dot" id="dot-4"></div>
+        <div class="pin-dot" id="dot-5"></div>
+      </div>
+
+      <div style="font-size: 0.775rem; color: var(--text-dim);" id="attempts-label">
+        Sisa percobaan: 5 kali
+      </div>
+
+      <!-- Keypad -->
+      <div class="keypad-grid">
+        <button class="key-btn" onclick="pressKey('1')">1</button>
+        <button class="key-btn" onclick="pressKey('2')">2</button>
+        <button class="key-btn" onclick="pressKey('3')">3</button>
+        <button class="key-btn" onclick="pressKey('4')">4</button>
+        <button class="key-btn" onclick="pressKey('5')">5</button>
+        <button class="key-btn" onclick="pressKey('6')">6</button>
+        <button class="key-btn" onclick="pressKey('7')">7</button>
+        <button class="key-btn" onclick="pressKey('8')">8</button>
+        <button class="key-btn" onclick="pressKey('9')">9</button>
+        <button class="key-btn key-btn-action" onclick="clearPin()">C</button>
+        <button class="key-btn" onclick="pressKey('0')">0</button>
+        <button class="key-btn key-btn-action" onclick="deleteKey()">&#9003;</button>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; margin-top: 0.25rem;">
+        <button class="auth-link-btn" onclick="openResetModal()">Lupa PIN? Reset via Email</button>
+        <span style="font-size: 0.75rem; color: var(--text-dim);">SHA-256 Protected</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 2: RESET MASTER PIN VIA EMAIL OTP
+       ======================================================================== -->
+  <div id="reset-modal" class="modal-overlay hidden">
+    <div class="auth-card" style="max-width: 460px;">
+      <div class="auth-shield-icon" style="color: var(--accent-purple);">&#9993;</div>
+      <div>
+        <h2 class="auth-title">Reset Master PIN Keamanan</h2>
+        <p class="auth-subtitle">Verifikasi OTP dikirim ke email terdaftar: <span id="reset-target-email" style="color: var(--accent-blue); font-weight: 600;">raf***@gmail.com</span></p>
+      </div>
+
+      <div id="reset-alert" class="auth-alert"></div>
+
+      <!-- Step 1: Request OTP -->
+      <div id="reset-step-1" class="reset-form">
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+          Sistem akan mengirimkan kode 6-digit ke email admin. Kode berlaku selama 10 menit.
+        </p>
+        <button class="btn btn-primary" id="btn-send-otp" onclick="handleSendOtp()" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
+          Kirim Kode OTP ke Email
+        </button>
+        <button class="btn" onclick="closeResetModal()" style="justify-content: center;">
+          Batal &amp; Kembali ke Login
+        </button>
+      </div>
+
+      <!-- Step 2: Verify OTP & New PIN -->
+      <div id="reset-step-2" class="reset-form" style="display: none;">
+        <div class="form-group">
+          <label class="form-label" for="input-otp">Kode OTP (6 Digit)</label>
+          <input type="text" id="input-otp" class="form-input" placeholder="Contoh: 123456" maxlength="6" style="letter-spacing: 4px; font-family: var(--font-mono); font-weight: 700; text-align: center;">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="input-new-pin">Master PIN Baru (4-8 Digit)</label>
+          <input type="password" id="input-new-pin" class="form-input" placeholder="Masukkan angka PIN baru" maxlength="8">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="input-confirm-pin">Konfirmasi PIN Baru</label>
+          <input type="password" id="input-confirm-pin" class="form-input" placeholder="Ulangi angka PIN baru" maxlength="8">
+        </div>
+
+        <button class="btn btn-primary" id="btn-submit-reset" onclick="handleVerifyOtpAndReset()" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
+          Verifikasi &amp; Simpan PIN Baru
+        </button>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+          <button class="auth-link-btn" id="btn-resend-otp" onclick="handleSendOtp()" disabled>Kirim Ulang OTP (60s)</button>
+          <button class="auth-link-btn" onclick="closeResetModal()">Kembali</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MAIN DASHBOARD INTERFACE
+       ======================================================================== -->
+  <div class="container" id="main-content">
+    <!-- Header -->
     <header>
       <div class="brand">
         <div class="brand-icon">AI</div>
         <div class="brand-info">
-          <h1><span id="bot-name">FreeAIBot</span> Console</h1>
-          <p id="server-time">Sinkronisasi data real-time...</p>
+          <h1 id="bot-name">FreeAIBot Console</h1>
+          <p id="server-time">Memuat sinkronisasi sistem...</p>
         </div>
       </div>
       <div class="header-actions">
         <div class="status-pill">
-          <div class="pulse-dot"></div>
-          <span>Systems Operational</span>
+          <span class="pulse-dot"></span>
+          <span>Sistem Aktif</span>
         </div>
-        <button id="btn-refresh" class="btn" onclick="fetchData()">
-          <span id="btn-refresh-icon">&#x21bb;</span>
-          <span>Refresh</span>
-        </button>
-        <button id="btn-auto" class="btn active" onclick="toggleAutoRefresh()">
+        <button class="btn active" id="btn-auto" onclick="toggleAutoRefresh()">
           <span>Auto: 15s</span>
+        </button>
+        <button class="btn" id="btn-manual-refresh" onclick="fetchData()">
+          <span id="btn-refresh-icon">&#x21bb;</span>
+          <span>Segarkan</span>
+        </button>
+        <button class="btn btn-danger" onclick="handleLogout()" title="Kunci Dashboard">
+          <span>Kunci Keluar</span>
         </button>
       </div>
     </header>
 
-    <!-- Top KPI Grid -->
+    <!-- Top KPI Cards -->
     <section class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-title">Pesan Hari Ini</div>
         <div class="kpi-value" id="kpi-today-msgs">-</div>
         <div class="kpi-subtext">
-          <span>Semua waktu: <strong id="kpi-total-msgs">-</strong></span>
           <span class="badge badge-wa" id="kpi-wa">- WA</span>
           <span class="badge badge-tele" id="kpi-tele">- Tele</span>
         </div>
       </div>
 
       <div class="kpi-card">
-        <div class="kpi-title">Total Panggilan AI Hari Ini</div>
+        <div class="kpi-title">Total Pesan All-Time</div>
+        <div class="kpi-value" id="kpi-total-msgs">-</div>
+        <div class="kpi-subtext">Tersimpan di Supabase PostgreSQL</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-title">Panggilan API Provider (Hari Ini)</div>
         <div class="kpi-value" id="kpi-calls-today">-</div>
-        <div class="kpi-subtext">
-          <span>Distribusi model aktif lintas seluruh pool</span>
-        </div>
+        <div class="kpi-subtext" id="kpi-total-keys">- Keys Aktif Terpantau</div>
       </div>
 
       <div class="kpi-card">
-        <div class="kpi-title">Kapasitas Pool API Key</div>
-        <div class="kpi-value" id="kpi-total-keys">- Keys</div>
-        <div class="kpi-subtext">
-          <span>Groq, Gemini, OpenRouter &amp; Ollama Cloud</span>
-        </div>
-      </div>
-
-      <div class="kpi-card">
-        <div class="kpi-title">Model Paling Aktif</div>
-        <div class="kpi-value" id="kpi-top-model" style="font-size: 1.25rem; word-break: break-all; margin-top: 0.25rem;">-</div>
-        <div class="kpi-subtext">
-          <span>Tier 1 failover engine</span>
-        </div>
+        <div class="kpi-title">Model Terpopuler Hari Ini</div>
+        <div class="kpi-value" id="kpi-top-model" style="font-size: 1.25rem; word-break: break-all;">-</div>
+        <div class="kpi-subtext">Distribusi Beban Otomatis</div>
       </div>
     </section>
 
-    <!-- API Key & Provider Matrix -->
+    <!-- Pool API Key Matrix -->
     <section>
       <div class="section-header">
-        <h2 class="section-title">Monitoring Pool API Key &amp; Kuota Harian</h2>
+        <h2 class="section-title">Matriks Penggunaan Pool API Key</h2>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">Reset Harian 00:00 UTC</span>
       </div>
       <div class="pool-grid" id="pool-grid">
-        <!-- Rendered dynamically -->
+        <!-- Dimuat dinamis -->
       </div>
     </section>
 
-    <!-- Dual Column: Models Breakdown & Media Types -->
+    <!-- Model Usage & Media Types -->
     <section class="dual-grid">
       <div class="panel-card">
-        <h2 class="section-title">Distribusi Model (Hari Ini)</h2>
-        <div id="models-list">
-          <!-- Rendered dynamically -->
+        <h2 class="section-title">Distribusi Model LLM Hari Ini</h2>
+        <div class="models-list" id="models-list">
+          <div style="color: var(--text-dim); font-size: 0.85rem;">Memuat metrik...</div>
         </div>
       </div>
 
@@ -676,6 +1031,51 @@
             <div class="media-box-label">Video</div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- SECTION: EVALUASI PERCAKAPAN & DATASET TRAINING AI -->
+    <section class="activity-card" id="dataset-section">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Evaluasi &amp; Dataset Training AI (Fine-Tuning / Audit)</h2>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+            Pasangan pertanyaan user dan balasan chatbot yang tersimpan untuk evaluasi kualitas dan training model.
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="dataset-search" class="search-input" placeholder="Cari pertanyaan atau jawaban..." oninput="debounceDatasetSearch()">
+          <select id="dataset-platform-filter" class="filter-select" onchange="fetchDataset()">
+            <option value="">Semua Platform</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="telegram">Telegram</option>
+          </select>
+          <button class="btn btn-primary" onclick="downloadDataset('jsonl')" title="Unduh format JSONL untuk Fine-Tuning LLM">
+            <span>Unduh JSONL</span>
+          </button>
+          <button class="btn" onclick="downloadDataset('csv')" title="Unduh format CSV untuk Spreadsheet">
+            <span>Unduh CSV</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 130px;">Waktu &amp; Platform</th>
+              <th style="width: 140px;">Chat ID &amp; Model</th>
+              <th>Pertanyaan Pengguna (Prompt)</th>
+              <th>Jawaban Chatbot (Completion)</th>
+              <th style="width: 80px; text-align: right;">Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="dataset-tbody">
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat dataset evaluasi...</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -711,9 +1111,40 @@
     </footer>
   </div>
 
+  <!-- ========================================================================
+       JAVASCRIPT LOGIC: AUTHENTICATION, DATASET, & MONITORING
+       ======================================================================== -->
   <script>
+    const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
+    const PIN_SALT = "rafly_telemetry_salt";
+
+    let currentPinInput = "";
     let autoRefresh = true;
     let refreshTimer = null;
+    let resendCountdownTimer = null;
+    let datasetSearchTimeout = null;
+
+    // Cryptographic SHA-256 client-side hashing
+    async function sha256(message) {
+      const msgBuffer = new TextEncoder().encode(message);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    function getStoredToken() {
+      return sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY) || "";
+    }
+
+    function setStoredToken(token) {
+      sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+      localStorage.setItem(SESSION_TOKEN_KEY, token);
+    }
+
+    function clearStoredToken() {
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+      localStorage.removeItem(SESSION_TOKEN_KEY);
+    }
 
     function formatTime(isoString) {
       if (!isoString) return "-";
@@ -721,12 +1152,348 @@
       return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
 
-    async function fetchData() {
-      const btnIcon = document.getElementById("btn-refresh-icon");
-      if (btnIcon) btnIcon.innerHTML = '<span class="spinner"></span>';
+    function formatDateTime(isoString) {
+      if (!isoString) return "-";
+      const d = new Date(isoString);
+      return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    }
+
+    // =========================================================================
+    // PIN KEYPAD & SUBMIT LOGIC
+    // =========================================================================
+    function updatePinDots() {
+      for (let i = 0; i < 6; i++) {
+        const dot = document.getElementById(`dot-${i}`);
+        if (i < currentPinInput.length) {
+          dot.classList.add("filled");
+          dot.textContent = "●";
+        } else {
+          dot.classList.remove("filled");
+          dot.textContent = "";
+        }
+      }
+    }
+
+    function pressKey(num) {
+      if (currentPinInput.length < 6) {
+        currentPinInput += num;
+        updatePinDots();
+        if (currentPinInput.length === 6) {
+          setTimeout(submitPin, 120);
+        }
+      }
+    }
+
+    function deleteKey() {
+      if (currentPinInput.length > 0) {
+        currentPinInput = currentPinInput.slice(0, -1);
+        updatePinDots();
+      }
+    }
+
+    function clearPin() {
+      currentPinInput = "";
+      updatePinDots();
+    }
+
+    // Keyboard support
+    window.addEventListener("keydown", (e) => {
+      const authModal = document.getElementById("auth-modal");
+      if (!authModal.classList.contains("hidden")) {
+        if (e.key >= "0" && e.key <= "9") {
+          pressKey(e.key);
+        } else if (e.key === "Backspace") {
+          deleteKey();
+        } else if (e.key === "Escape" || e.key === "c" || e.key === "C") {
+          clearPin();
+        }
+      }
+    });
+
+    async function submitPin() {
+      if (currentPinInput.length !== 6) return;
+
+      const alertEl = document.getElementById("auth-alert");
+      alertEl.className = "auth-alert";
+      alertEl.textContent = "";
 
       try {
-        const res = await fetch("/api/stats");
+        const pinHash = await sha256(currentPinInput + PIN_SALT);
+        const res = await fetch("/api/admin-otp?action=verify_pin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "verify_pin", pin_hash: pinHash }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.verified && data.session_token) {
+          setStoredToken(data.session_token);
+          document.getElementById("auth-modal").classList.add("hidden");
+          clearPin();
+          fetchData();
+          fetchDataset();
+        } else {
+          // Gagal
+          const card = document.getElementById("pin-card");
+          card.classList.add("shake");
+          setTimeout(() => card.classList.remove("shake"), 400);
+          clearPin();
+
+          alertEl.className = "auth-alert auth-alert-error show";
+          alertEl.textContent = data.message || "Master PIN salah.";
+
+          if (data.remaining_attempts !== undefined) {
+            document.getElementById("attempts-label").textContent = `Sisa percobaan: ${data.remaining_attempts} kali`;
+          }
+          if (data.is_locked) {
+            document.getElementById("attempts-label").textContent = "Sistem Terkunci. Gunakan Reset via Email.";
+          }
+        }
+      } catch (err) {
+        console.error("PIN verification error:", err);
+        alertEl.className = "auth-alert auth-alert-error show";
+        alertEl.textContent = "Gagal menghubungi server keamanan. Silakan coba lagi.";
+        clearPin();
+      }
+    }
+
+    // =========================================================================
+    // RESET PIN VIA EMAIL OTP
+    // =========================================================================
+    function openResetModal() {
+      document.getElementById("auth-modal").classList.add("hidden");
+      document.getElementById("reset-modal").classList.remove("hidden");
+      document.getElementById("reset-step-1").style.display = "flex";
+      document.getElementById("reset-step-2").style.display = "none";
+      const alertEl = document.getElementById("reset-alert");
+      alertEl.className = "auth-alert";
+      alertEl.textContent = "";
+    }
+
+    function closeResetModal() {
+      document.getElementById("reset-modal").classList.add("hidden");
+      document.getElementById("auth-modal").classList.remove("hidden");
+      clearPin();
+    }
+
+    async function handleSendOtp() {
+      const btn = document.getElementById("btn-send-otp");
+      const resendBtn = document.getElementById("btn-resend-otp");
+      const alertEl = document.getElementById("reset-alert");
+
+      if (btn) btn.disabled = true;
+      if (resendBtn) resendBtn.disabled = true;
+
+      alertEl.className = "auth-alert auth-alert-success show";
+      alertEl.textContent = "Mengirimkan kode OTP ke email admin...";
+
+      try {
+        const res = await fetch("/api/admin-otp?action=send_otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "send_otp" }),
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          alertEl.className = "auth-alert auth-alert-success show";
+          alertEl.textContent = data.message;
+          if (data.target_email_masked) {
+            document.getElementById("reset-target-email").textContent = data.target_email_masked;
+          }
+
+          document.getElementById("reset-step-1").style.display = "none";
+          document.getElementById("reset-step-2").style.display = "flex";
+          document.getElementById("input-otp").focus();
+
+          startOtpTimer(60);
+        } else {
+          alertEl.className = "auth-alert auth-alert-error show";
+          alertEl.textContent = data.message || "Gagal mengirim kode OTP.";
+          if (btn) btn.disabled = false;
+        }
+      } catch (err) {
+        console.error("sendOtp error:", err);
+        alertEl.className = "auth-alert auth-alert-error show";
+        alertEl.textContent = "Terjadi kesalahan jaringan saat mengirim OTP.";
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function startOtpTimer(seconds) {
+      const resendBtn = document.getElementById("btn-resend-otp");
+      if (!resendBtn) return;
+      resendBtn.disabled = true;
+      let remaining = seconds;
+
+      if (resendCountdownTimer) clearInterval(resendCountdownTimer);
+      resendBtn.textContent = `Kirim Ulang OTP (${remaining}s)`;
+
+      resendCountdownTimer = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+          clearInterval(resendCountdownTimer);
+          resendBtn.disabled = false;
+          resendBtn.textContent = "Kirim Ulang OTP";
+        } else {
+          resendBtn.textContent = `Kirim Ulang OTP (${remaining}s)`;
+        }
+      }, 1000);
+    }
+
+    async function handleVerifyOtpAndReset() {
+      const otpCode = document.getElementById("input-otp").value.trim();
+      const newPin = document.getElementById("input-new-pin").value.trim();
+      const confirmPin = document.getElementById("input-confirm-pin").value.trim();
+      const alertEl = document.getElementById("reset-alert");
+
+      if (!/^\d{6}$/.test(otpCode)) {
+        alertEl.className = "auth-alert auth-alert-error show";
+        alertEl.textContent = "Kode OTP harus berupa 6 digit angka.";
+        return;
+      }
+
+      if (newPin.length < 4 || newPin.length > 8 || !/^\d+$/.test(newPin)) {
+        alertEl.className = "auth-alert auth-alert-error show";
+        alertEl.textContent = "Master PIN baru harus berupa 4 hingga 8 digit angka.";
+        return;
+      }
+
+      if (newPin !== confirmPin) {
+        alertEl.className = "auth-alert auth-alert-error show";
+        alertEl.textContent = "Konfirmasi PIN baru tidak cocok.";
+        return;
+      }
+
+      const submitBtn = document.getElementById("btn-submit-reset");
+      submitBtn.disabled = true;
+      alertEl.className = "auth-alert auth-alert-success show";
+      alertEl.textContent = "Memverifikasi OTP dan mereset PIN...";
+
+      try {
+        const res = await fetch("/api/admin-otp?action=verify_otp_and_reset_pin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "verify_otp_and_reset_pin",
+            otp_code: otpCode,
+            new_pin: newPin,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          alertEl.className = "auth-alert auth-alert-success show";
+          alertEl.textContent = data.message + " Mengalihkan ke login...";
+          setTimeout(() => {
+            closeResetModal();
+            const loginAlert = document.getElementById("auth-alert");
+            loginAlert.className = "auth-alert auth-alert-success show";
+            loginAlert.textContent = "PIN baru berhasil disimpan. Silakan masukkan PIN baru Anda.";
+          }, 1500);
+        } else {
+          alertEl.className = "auth-alert auth-alert-error show";
+          alertEl.textContent = data.message || "Gagal mereset Master PIN.";
+          submitBtn.disabled = false;
+        }
+      } catch (err) {
+        console.error("resetPin error:", err);
+        alertEl.className = "auth-alert auth-alert-error show";
+        alertEl.textContent = "Kesalahan koneksi saat mereset PIN.";
+        submitBtn.disabled = false;
+      }
+    }
+
+    async function handleLogout() {
+      const token = getStoredToken();
+      if (token) {
+        fetch("/api/admin-otp?action=logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-admin-token": token },
+          body: JSON.stringify({ action: "logout", session_token: token }),
+        }).catch(() => {});
+      }
+      clearStoredToken();
+      document.getElementById("auth-modal").classList.remove("hidden");
+      clearPin();
+    }
+
+    // =========================================================================
+    // SESSION VERIFICATION & DATA LOADER
+    // =========================================================================
+    async function checkSession() {
+      const token = getStoredToken();
+      if (!token) {
+        document.getElementById("auth-modal").classList.remove("hidden");
+        fetchAuthState();
+        return false;
+      }
+
+      try {
+        const res = await fetch("/api/admin-otp?action=verify_session", {
+          method: "GET",
+          headers: { "x-admin-token": token },
+        });
+        const data = await res.json();
+        if (res.ok && data.valid) {
+          document.getElementById("auth-modal").classList.add("hidden");
+          return true;
+        } else {
+          clearStoredToken();
+          document.getElementById("auth-modal").classList.remove("hidden");
+          fetchAuthState();
+          return false;
+        }
+      } catch {
+        // network error, biarkan modal login muncul
+        document.getElementById("auth-modal").classList.remove("hidden");
+        return false;
+      }
+    }
+
+    async function fetchAuthState() {
+      try {
+        const res = await fetch("/api/admin-otp?action=get_auth_state");
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (data.target_email_masked) {
+            document.getElementById("reset-target-email").textContent = data.target_email_masked;
+          }
+          if (data.is_locked) {
+            const alertEl = document.getElementById("auth-alert");
+            alertEl.className = "auth-alert auth-alert-error show";
+            alertEl.textContent = "Akses sedang terkunci karena batas percobaan terlampaui. Gunakan Reset via Email.";
+            document.getElementById("attempts-label").textContent = "Sistem Terkunci";
+          } else if (data.remaining_attempts !== undefined) {
+            document.getElementById("attempts-label").textContent = `Sisa percobaan: ${data.remaining_attempts} kali`;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // =========================================================================
+    // FETCH MONITORING STATS
+    // =========================================================================
+    async function fetchData() {
+      const token = getStoredToken();
+      if (!token) return;
+
+      const btnIcon = document.getElementById("btn-refresh-icon");
+      if (btnIcon) btnIcon.innerHTML = '<span class="pulse-dot"></span>';
+
+      try {
+        const res = await fetch("/api/stats", {
+          headers: { "x-admin-token": token },
+        });
+
+        if (res.status === 401) {
+          clearStoredToken();
+          document.getElementById("auth-modal").classList.remove("hidden");
+          return;
+        }
+
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
         renderDashboard(data);
@@ -741,8 +1508,9 @@
       if (!data || !data.ok) return;
 
       // Header
-      document.getElementById("bot-name").textContent = data.botName || "FreeAIBot";
-      document.getElementById("server-time").textContent = "Tanggal Data: " + data.today + " &bull; Terakhir sinkronisasi: " + formatTime(data.serverTime) + " WIB";
+      document.getElementById("bot-name").textContent = data.botName || "FreeAIBot Console";
+      document.getElementById("server-time").textContent =
+        "Tanggal Data: " + data.today + " \u2022 Sinkronisasi: " + formatTime(data.serverTime) + " WIB";
 
       // KPI
       document.getElementById("kpi-today-msgs").textContent = data.summary.totalMessagesToday.toLocaleString();
@@ -750,47 +1518,35 @@
       document.getElementById("kpi-wa").textContent = data.summary.whatsappToday + " WA";
       document.getElementById("kpi-tele").textContent = data.summary.telegramToday + " Tele";
       document.getElementById("kpi-calls-today").textContent = data.summary.totalCallsToday.toLocaleString() + " calls";
-      document.getElementById("kpi-total-keys").textContent = data.summary.totalKeys + " Keys";
+      document.getElementById("kpi-total-keys").textContent = data.summary.totalKeys + " Keys Aktif Terpantau";
 
-      const topModel = data.modelsBreakdown && data.modelsBreakdown.length > 0 ? data.modelsBreakdown[0].name : "Menunggu panggilan";
+      const topModel = data.modelsBreakdown && data.modelsBreakdown.length > 0
+        ? data.modelsBreakdown[0].name
+        : "Menunggu panggilan";
       document.getElementById("kpi-top-model").textContent = topModel;
 
       // Pools Matrix
       const poolGrid = document.getElementById("pool-grid");
       poolGrid.innerHTML = "";
 
-      (data.pools || []).forEach(p => {
+      (data.providers || []).forEach(p => {
         const card = document.createElement("div");
         card.className = "provider-card";
 
         let keysHtml = "";
         p.keys.forEach(k => {
-          let progressColor = "progress-emerald";
-          let statusLabel = "Healthy";
-          let statusClass = "status-healthy";
-
-          if (k.status === "capped") {
-            progressColor = "progress-rose";
-            statusLabel = "Capped (Limit)";
-            statusClass = "status-capped";
-          } else if (k.status === "warning") {
-            progressColor = "progress-amber";
-            statusLabel = "Warning (>80%)";
-            statusClass = "status-warning";
-          }
+          let progressColorClass = "progress-emerald";
+          if (k.percentUsed > 85) progressColorClass = "progress-rose";
+          else if (k.percentUsed > 50) progressColorClass = "progress-amber";
 
           keysHtml += `
             <div class="key-row">
-              <div class="key-meta">
-                <span class="key-tag">...${k.suffix}</span>
-                <span class="key-status ${statusClass}">&bull; ${statusLabel}</span>
+              <div class="key-info-line">
+                <span class="key-label">${k.suffix}</span>
+                <span class="key-stats">${k.used} / ${k.dailyCap} (${k.percentUsed}%)</span>
               </div>
               <div class="progress-bar-bg">
-                <div class="progress-bar-fill ${progressColor}" style="width: ${k.percent}%"></div>
-              </div>
-              <div class="key-footer">
-                <span>Terpakai: <strong>${k.used}</strong> / ${k.cap}</span>
-                <span>Sisa: <strong>${k.remaining}</strong> (${k.percent}%)</span>
+                <div class="progress-bar-fill ${progressColorClass}" style="width: ${Math.min(100, k.percentUsed)}%"></div>
               </div>
             </div>
           `;
@@ -867,9 +1623,9 @@
           const typeBadge = `<span class="type-badge ${typeClass}">${act.type.toUpperCase()}</span>`;
 
           tr.innerHTML = `
-            <td style="color: var(--text-dim); font-family: monospace;">${formatTime(act.createdAt)}</td>
+            <td style="color: var(--text-dim); font-family: var(--font-mono);">${formatTime(act.createdAt)}</td>
             <td>${platformBadge}</td>
-            <td style="font-family: monospace;">${act.chatIdMasked}</td>
+            <td style="font-family: var(--font-mono);">${act.chatIdMasked}</td>
             <td>${roleBadge}</td>
             <td>${typeBadge}</td>
             <td><span class="model-tag">${act.via || "-"}</span></td>
@@ -880,13 +1636,123 @@
       }
     }
 
+    // =========================================================================
+    // DATASET EVALUATION & TRAINING LOADER
+    // =========================================================================
+    function debounceDatasetSearch() {
+      if (datasetSearchTimeout) clearTimeout(datasetSearchTimeout);
+      datasetSearchTimeout = setTimeout(fetchDataset, 350);
+    }
+
+    async function fetchDataset() {
+      const token = getStoredToken();
+      if (!token) return;
+
+      const q = document.getElementById("dataset-search").value.trim();
+      const platform = document.getElementById("dataset-platform-filter").value;
+      const tbody = document.getElementById("dataset-tbody");
+
+      try {
+        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&platform=${encodeURIComponent(platform)}&limit=100`;
+        const res = await fetch(url, {
+          headers: { "x-admin-token": token },
+        });
+
+        if (res.status === 401) {
+          clearStoredToken();
+          document.getElementById("auth-modal").classList.remove("hidden");
+          return;
+        }
+
+        const data = await res.json();
+        tbody.innerHTML = "";
+
+        if (!data.pairs || data.pairs.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2.5rem;">Tidak ada data percakapan yang cocok dengan filter pencarian.</td></tr>`;
+          return;
+        }
+
+        data.pairs.forEach(p => {
+          const tr = document.createElement("tr");
+
+          const platformBadge = p.platform === "whatsapp"
+            ? `<span class="badge badge-wa">WhatsApp</span>`
+            : `<span class="badge badge-tele">Telegram</span>`;
+
+          tr.innerHTML = `
+            <td>
+              <div style="font-size: 0.775rem; color: var(--text-muted); font-family: var(--font-mono);">${formatDateTime(p.createdAt)}</div>
+              <div style="margin-top: 0.25rem;">${platformBadge}</div>
+            </td>
+            <td>
+              <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim);">${p.chatIdMasked}</div>
+              <div style="margin-top: 0.2rem;"><span class="model-tag">${p.via || "Router"}</span></div>
+            </td>
+            <td>
+              <div class="dataset-prompt">${escapeHtml(p.userPrompt)}</div>
+            </td>
+            <td>
+              <div class="dataset-reply">${escapeHtml(p.botReply)}</div>
+            </td>
+            <td style="text-align: right;">
+              <button class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="copyPrompt('${escapeJs(p.userPrompt)}')">
+                Copy
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error("fetchDataset error:", err);
+      }
+    }
+
+    function downloadDataset(format) {
+      const token = getStoredToken();
+      if (!token) return;
+
+      const q = document.getElementById("dataset-search").value.trim();
+      const platform = document.getElementById("dataset-platform-filter").value;
+      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&platform=${encodeURIComponent(platform)}&limit=1000&token=${encodeURIComponent(token)}`;
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `freeaibot_dataset_${format}_${Date.now()}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function escapeJs(str) {
+      if (!str) return "";
+      return str.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+    }
+
+    function copyPrompt(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert("Pertanyaan berhasil disalin ke clipboard.");
+      }).catch(() => {});
+    }
+
     function toggleAutoRefresh() {
       autoRefresh = !autoRefresh;
       const btn = document.getElementById("btn-auto");
       if (autoRefresh) {
         btn.classList.add("active");
         btn.querySelector("span").textContent = "Auto: 15s";
-        refreshTimer = setInterval(fetchData, 15000);
+        refreshTimer = setInterval(() => {
+          fetchData();
+        }, 15000);
       } else {
         btn.classList.remove("active");
         btn.querySelector("span").textContent = "Auto: Off";
@@ -894,9 +1760,17 @@
       }
     }
 
-    // Inisialisasi awal
-    fetchData();
-    refreshTimer = setInterval(fetchData, 15000);
+    // =========================================================================
+    // INITIALIZATION
+    // =========================================================================
+    (async () => {
+      const isAuthed = await checkSession();
+      if (isAuthed) {
+        fetchData();
+        fetchDataset();
+        refreshTimer = setInterval(fetchData, 15000);
+      }
+    })();
   </script>
 </body>
 </html>

@@ -14,6 +14,12 @@
     },
     "api/stats.ts": {
       "maxDuration": 15
+    },
+    "api/dataset.ts": {
+      "maxDuration": 20
+    },
+    "api/admin-otp.ts": {
+      "maxDuration": 15
     }
   },
   "headers": [
