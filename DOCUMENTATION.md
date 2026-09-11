@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.22.6  
+**Versi:** v0.22.7  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 14:10 WIB  
+**Terakhir Diperbarui:** 2026-09-11 14:21 WIB  
 
 ---
 
@@ -191,6 +191,14 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.22.7 — 2026-09-11 14:21 WIB
+**Dokumentasi Publik: Perampingan README.md & Akses Cepat Ramah Pengunjung**
+- **Perampingan Berkas README (`README.md`)**:
+  - Mengeliminasi dinding teks teoritis dan penjelasan berulang agar pengunjung GitHub dapat memahami kapabilitas bot dalam hitungan detik.
+  - Menyajikan seksi Akses Cepat dengan tautan langsung ke Telegram Bot (`@chatkita_bot`), nomor WhatsApp resmi, dan tautan dashboard produksi (`free-chatbot-ai.vercel.app`).
+  - Merangkum 5 pilar fitur utama (Multimodal, Failover 4-Provider, Percakapan Alami, Memori Berkelanjutan, dan Panel Dataset AI) secara padat dan lugas.
+  - Mempersingkat panduan instalasi lokal dan deployment Vercel menjadi 3 langkah cepat.
 
 ### v0.22.6 — 2026-09-11 14:10 WIB
 **Sinkronisasi Identitas: Profil Resmi Bot Telegram FreeAiBot (@chatkita_bot) pada Landing Page**
