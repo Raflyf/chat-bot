@@ -208,6 +208,9 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
     - **Context Tokens (`Ctx`)**: Estimasi jendela konteks yang disuntikkan (System Prompt dasar ~650 token + Prompt pengguna).
     - **Output Tokens (`Out`)**: Estimasi token generasi balasan AI.
   - Memperbarui skema ekspor dataset (`api/dataset.ts`) baik CSV (kolom `Context_Tokens`, `Output_Tokens`, `Total_Tokens`) maupun JSONL (`metadata.context_tokens`, `metadata.output_tokens`, `metadata.total_tokens`).
+- **Penyederhanaan Label Filter Provider & Penambahan Opsi xKiro (`public/dashboard.html`)**:
+  - Mengubah teks tombol pill filter provider dari `xKiro (Qwen 3.8)` menjadi `xKiro`.
+  - Menambahkan opsi filter model `xKiro` pada dropdown dataset evaluasi (`#dataset-model-filter`) dengan label ringkas `xKiro`.
 
 ### v0.23.2 — 2026-09-11 15:35 WIB
 **Restrukturisasi UI Observabilitas: Pemisahan Tabel Matriks Kuota Token & Perampingan Kartu Rotasi Kunci Provider**
