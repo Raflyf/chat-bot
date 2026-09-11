@@ -287,9 +287,20 @@ function systemPrompt(ctx?: ChatContext, web?: string | null): string {
     instructions.push('', `[CATATAN PREFERENSI / KOREKSI PENTING DARI TEMANMU (WAJIB DIPATUHI)]:\n- ${ctx.corrections.join('\n- ')}`);
   }
   if (web) {
+    const nowYear = new Date().getFullYear();
     instructions.push(
       '',
-      `[FAKTA & DATA INTERNET TERKINI REAL-TIME]:\n${web.slice(0, 8500)}\n(Gunakan fakta di atas sebagai referensi kebenaran faktual terkini secara natural. Dilarang mengaku tidak punya akses internet/berita).`,
+      `[DATA INTERNET REAL-TIME — PRIORITAS MUTLAK DI ATAS PENGETAHUAN TRAINING]:
+${web.slice(0, 8500)}
+
+PEDOMAN WAJIB (TIDAK BOLEH DILANGGAR):
+- Data internet di atas adalah SUMBER KEBENARAN UTAMA untuk semua klaim faktual: angka, nama, status, versi, harga, jabatan, hasil pertandingan, rilis produk, atau kejadian terkini.
+- Tahun konteks saat ini: ${nowYear}. Namun JANGAN tolak info dari tahun lain — jika topik tertentu terakhir diperbarui tahun 2022 atau 2023, tetap gunakan info tersebut sebagai yang paling terbaru yang tersedia.
+- PRINSIP: Selalu gunakan informasi TERBARU yang ditemukan di data internet di atas, terlepas dari tahunnya. "Terbaru" = yang paling mutakhir yang ada di sumber, bukan yang harus tahun ${nowYear}.
+- DILARANG KERAS membantah, mengabaikan, atau mengganti fakta dari data internet di atas hanya karena bertentangan dengan pengetahuan training lama.
+- Jika data internet menyebut X terjadi, jawab berdasarkan X — bukan berdasarkan apa yang kamu "ingat" dari pelatihan.
+- Jika suatu detail tidak tersedia di data internet di atas, sampaikan jujur: "Dari sumber yang saya temukan saat ini, detail tersebut belum tercakup" — JANGAN mengarang dari pengetahuan lama.
+- DILARANG mengaku tidak punya akses internet, tidak bisa mencari berita, atau tidak tahu kondisi terkini.`,
     );
   }
 
