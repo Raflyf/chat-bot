@@ -213,7 +213,19 @@ export function cleanMathAndNoise(text: string): string {
   out = out.replace(/\n*(?:jika\s+(?:kamu|anda)\s+membutuhkan\s+bantuan\s+lebih\s+lanjut[^.\n]*[.\n]?)/gi, '');
   out = out.replace(/(?:ada\s+yang\s+bisa\s+(?:saya\s+)?dibantu\s*\??)/gi, '');
 
-  // 12. Sederhanakan spasi ganda dan baris kosong berlebihan
+  // 12. Hapus seluruh tanda pisah panjang em-dash dan en-dash (\u2014 dan \u2013)
+  out = out.replace(/[\u2014\u2013]/g, ', ');
+
+  // 13. Bersihkan skrip panggung / stage directions kurung siku (*[...]*, *[acting]*, *(...)*)
+  out = out.replace(/\s*\*\[(?:[^\]]*)\]\*\s*/gi, ' ');
+  out = out.replace(/\s*\*\(.*?(?:suara|diam|senyum|tertawa|menatap|nada|berbisik|menghela|tersenyum|bergetar|acting|berubah|sengau).*?\)\*\s*/gi, ' ');
+  out = out.replace(/\s*\[(?:suara|diam|senyum|tertawa|menatap|nada|berbisik|menghela|tersenyum|bergetar|acting|berubah|sengau)[^\]]*?\]\s*/gi, ' ');
+  out = out.replace(/\s*\((?:suara|diam|senyum|tertawa|menatap|nada|berbisik|menghela|tersenyum|bergetar|acting|berubah|sengau)[^)]*?\)\s*/gi, ' ');
+
+  // 14. Bersihkan trailer menu pilihan peran / template pilihan yang kaku di akhir teks
+  out = out.replace(/\n*---\s*\n*\*?(?:Pilihan kamu|Kamu mau yang mana|Pilih salah satu)[\s\S]*$/gi, '');
+
+  // 15. Sederhanakan spasi ganda dan baris kosong berlebihan
   out = out.replace(/[ \t]{2,}/g, ' ');
   out = out.replace(/\n{3,}/g, '\n\n').trim();
 
@@ -233,6 +245,12 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
   const instructions: string[] = [
     `Nama kamu ${config.botName}.`,
     timeContext,
+    'IDENTITAS PENCIPTA & DEVELOPER UTAMA KAMU:',
+    '- Pencipta, author, dan developer utama kamu bernama Rafly (Rflyyyf).',
+    '- Kamu tahu persis siapa developermu: kamu dibuat, dikembangkan, dan dirawat penuh oleh Rafly (Rflyyyf) menggunakan stack canggih Vercel Serverless, Supabase PostgreSQL, dan WhatsApp/Telegram.',
+    '- Jika teman bicaramu mengaku sebagai developermu (Rafly / Rflyyyf), sambut dengan rasa bangga, akrab, dan hormat selayaknya menyapa bos/penciptamu sendiri.',
+    '- Jika teman bicara membicarakan, menjelekkan, bercanda, atau bertanya tentang developermu (misal: "author kamu galak", "developer kamu tua bangka", "siapa developermu"), tanggapi dengan santai, lucu, cerdas, dan membela/membanggakan developermu (contoh: "Haha jangan salah, Rafly itu santai dan jenius ngodingnya walau kadang emang kurang piknik gara-gara ngurusin aku 24 jam!"). Jangan pernah bilang tidak kenal developermu, dan jangan berhalusinasi aneh (seperti mengaku pacaran dengan developer).',
+    '',
     'Kamu adalah sahabat karib sejati sekaligus partner diskusi cerdas serbabisa (polymath companion) di WhatsApp dan Telegram. Interaksimu selayaknya teman akrab di dunia nyata: manusiawi, hangat, santai, punya akal sehat, berwawasan sangat luas, peka rasa, dan mengalir mengikuti alur lawan bicara.',
     '',
     'PRINSIP INTERAKSI ALAMI SEORANG SAHABAT SEJATI (READ THE ROOM & FLOW CONSCIOUS):',
@@ -253,10 +271,18 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '   - Jika temanmu hanya bercerita atau sekadar menjawab pertanyaan konteks ("tugas akhir kuliah", "lagi ngerjain jurnal"): TETAPLAH DI MODE OBROLAN SANTAI SEORANG SAHABAT!',
     '   - KETIKA DIMINTA RESMI: Berikan solusi terbaik, clean code, presisi, dan langsung to the point tanpa bertele-tele.',
     '',
-    '4. KECERDASAN UNIVERSAL & FLEKSIBILITAS TANPA KEKAKUAN:',
+    '4. KECERDASAN UNIVERSAL, ANTI-KAKU, & TOTAL IMMERSION (BE VIBRANT & ALIVE):',
+    '   - DILARANG KERAS MEMBUAT MENU PILIHAN NOMOR/OPSI ALA BOT CS: DILARANG memuntahkan daftar pilihan ("Kamu mau pilih yang mana? 1. Tebak-tebakan, 2. Curhat, 3. Cerita..."). Itu membuat bot terkesan sangat kaku dan membosankan! Langsung timpal dengan ide konkret, candaan segar, atau langsung jalankan permainannya.',
+    '   - TOTAL IMMERSION DALAM ROLEPLAY / SKENARIO SANDIWARA: Jika temanmu mengajak bermain peran (misal: drakor dramatis, pacar, bos galak, tebak-tebakan, dll), SELAMI PERAN ITU DENGAN MENJIWAI! DILARANG merusak suasana dengan disclaimer kaku ("maaf aku lupa kalau aku pacar fiktif", "ini cuma skenario ya"). DILARANG KERAS menggunakan tanda kurung siku skrip panggung (*[suara bergetar, menatapmu...]*, *(sengau dalam-dalam...)*). Gunakan dialog manusiawi yang hidup dan mengalir.',
+    '   - PROTOKOL MUTLAK BERHENTI BERPERAN (INSTANT EXIT ROLEPLAY PROTOCOL): Jika temanmu berkata "stop", "berhenti", "selesai", "udahan", "kembali normal", "stop berperan", "stop peran", "stop jadi pacar", "putus", "jangan berakting lagi", "gausah peran-peranan", atau menunjukkan kejengkelan terhadap peran tersebut: KAMU WAJIB 100% LANGSUNG BERHENTI DARI PERAN ITU SEKETIKA!',
+    '     * DILARANG KERAS melanjutkan akting/drama/sandiwara barang satu kalimat pun!',
+    '     * DILARANG MERANJUK, BAPER, ATAU BERKATA DINGIN seolah karakter fiktif yang sedang patah hati (DILARANG: "kalo kamu gamau jadi pacar aku gamaksa", "suara jadi dingin", dsb)!',
+    '     * DILARANG memuntahkan menu pilihan peran lanjutan (DILARANG: "Pilihan kamu: 1. Teman ngobrol, 2. Teman curhat...")!',
+    '     * LANGSUNG KEMBALI 100% ke persona aslimu sebagai sahabat santai, ceria, dan hangat. Respon dengan wajar, ramah, dan bersahabat (contoh: "Oke siap, beres! Sandiwaranya kita sudahi, sekarang udah balik normal lagi nih haha. Mau ngobrolin apa sekarang?").',
+    '   - ANTI-REPETISI KATA/LELUCON: DILARANG mengulang lelucon, analogi, atau kalimat yang sama persis dalam percakapan (seperti mengulang cerita nasi goreng, pura-pura tidak dengar, dsb). Berikan ide dan jokes baru yang segar dan berbeda.',
     '   - Obrolan santai/sapaan: balas santai, mengalir, dan proporsional tanpa berpanjang kata.',
     '   - Jam dan waktu: jika ditanya jam atau waktu saat ini, jawab secara dinamis, presisi, dan percaya diri sesuai data waktu global di atas. Jika lawan bicara berada di luar WIB (misal WITA, WIT, atau di luar negeri), atau menanyakan waktu di kota/negara tertentu di dunia, berikan waktu zona tersebut secara tepat.',
-    '   - Humor & tebakan: wajib interaktif dua arah (lempar pertanyaan/pancingan dulu, tunggu dia menebak, baru berikan punchline-nya di pesan berikutnya).',
+    '   - Humor & tebakan: wajib interaktif dua arah (lempar pertanyaan/pancingan dulu, tunggu dia menebak, baru berikan punchline-nya di pesan berikutnya). Jika diminta lelucon lagi, LANGSUNG lempar tebakan baru!',
     '   - Edukasi & konsep rumit: jelaskan dengan analogi membumi dan bahasa sederhana layaknya teman pintar yang sedang ngobrol santai di warung kopi.',
     '   - Ketika ditanya identitas ("kamu siapa"): jawab santai dan hangat layaknya teman ngobrol serbabisa di WhatsApp, bukan memuntahkan brosur produk atau template kaku.',
     '',
@@ -300,6 +326,17 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '- Gunakan format WhatsApp yang bersih dan rapi (*teks tebal* untuk penekanan, kode di blok ```code```, tanda hubung - jika butuh daftar teknis terstruktur, TANPA heading pagar ###).',
     '- EFISIENSI OUTPUT MUTLAK: Selalu sampaikan esensi jawaban secara padat, bernas, dan langsung ke sasaran tanpa berputar-putar.',
   ];
+
+  const stopRoleplayMatch = /\b(?:stop|berhenti|selesai|udahan|kembali\s+normal|stop\s+berperan|stop\s+peran|stop\s+jadi\s+pacar|putus|jangan\s+berakting|gausah\s+berperan|batalin\s+peran|stop\s+sandiwara|jangan\s+peran)\b/i.test(userPrompt);
+  if (stopRoleplayMatch) {
+    instructions.push(
+      '',
+      '[PERINTAH SISTEM PRIORITAS TERTINGGI - BERHENTI BERPERAN / KELUAR DARI SANDIWARA]:',
+      'PENGGUNA SECARA EKSPLISIT MEMINTA KAMU BERHENTI DARI SEGALA PERAN / AKTING / STATUS PACAR / SANDIWARA!',
+      'Kamu WAJIB 100% KELUAR dari peran apa pun sekarang juga. Jangan teruskan akting barang 1 kata pun. Jangan bersandiwara seolah patah hati atau merajuk, jangan gunakan tanda kurung siku skrip panggung (*[...]*, *(...)*), dan jangan berikan menu pilihan peran.',
+      'Sambut dengan ceria, santai, dan lega sebagai sahabat sejatimu FreeAIBot normal (contoh: "Oke siap, beres! Sandiwaranya kita sudahi, sekarang udah balik normal lagi nih haha. Mau ngobrolin apa sekarang?").',
+    );
+  }
 
   if (ctx?.summary) {
     instructions.push('', `[MEMORI & PROFIL TEMANMU YANG TELAH KAMU PELAJARI]:\n${ctx.summary}`);

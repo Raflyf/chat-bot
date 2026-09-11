@@ -261,6 +261,18 @@
       background: linear-gradient(135deg, #0369a1, #1d4ed8);
     }
 
+    .btn-today {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #34d399;
+    }
+    .btn-today:hover {
+      background: rgba(16, 185, 129, 0.22);
+      border-color: #10b981;
+      color: #6ee7b7;
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+    }
+
     /* KPI Summary Cards */
     .kpi-grid {
       display: grid;
@@ -2274,8 +2286,8 @@
         <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
           <input type="text" id="dataset-search" class="search-input" placeholder="Cari pertanyaan / jawaban..." oninput="debounceDatasetSearch()">
           <select id="dataset-range-filter" class="filter-select" onchange="fetchDataset()">
-            <option value="all">Semua Waktu</option>
-            <option value="today">Hari Ini</option>
+            <option value="today">Hari Ini Saja (WIB)</option>
+            <option value="all" selected>Semua Waktu</option>
             <option value="7d">7 Hari Terakhir</option>
             <option value="14d">14 Hari Terakhir</option>
             <option value="30d">30 Hari Terakhir</option>
@@ -2292,11 +2304,14 @@
             <option value="gemini">Gemini</option>
             <option value="openrouter">OpenRouter</option>
           </select>
+          <button class="btn btn-today" onclick="downloadDataset('csv', 'today')" title="Unduh CSV data percakapan hari ini saja (ringkas, cepat &amp; hemat data)">
+            <span>Unduh CSV (Hari Ini)</span>
+          </button>
+          <button class="btn" onclick="downloadDataset('csv')" title="Unduh format CSV sesuai filter tabel saat ini atau seluruh riwayat">
+            <span>Unduh CSV (Semua)</span>
+          </button>
           <button class="btn btn-primary" onclick="downloadDataset('jsonl')" title="Unduh format JSONL untuk Fine-Tuning LLM">
             <span>Unduh JSONL</span>
-          </button>
-          <button class="btn" onclick="downloadDataset('csv')" title="Unduh format CSV untuk Spreadsheet">
-            <span>Unduh CSV</span>
           </button>
         </div>
       </div>
@@ -3630,7 +3645,8 @@
       const platform = document.getElementById("dataset-platform-filter").value;
       const model = document.getElementById("dataset-model-filter")?.value || "";
 
-      const cacheKey = `${range}_${platform}_${model}_${q}`;
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
+      const cacheKey = `${range}_${platform}_${model}_${q}_${tz}`;
       if (!force && datasetCache.has(cacheKey)) {
         cachedDatasetPairs = datasetCache.get(cacheKey);
         currentDatasetPage = 1;
@@ -3638,7 +3654,7 @@
       }
 
       try {
-        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&limit=300&_t=${Date.now()}`;
+        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=300&_t=${Date.now()}`;
         const res = await fetch(url, {
           headers: { "x-admin-token": token },
         });
@@ -3781,20 +3797,24 @@
       }
     }
 
-    function downloadDataset(format) {
+    function downloadDataset(format, overrideRange) {
       const token = getStoredToken();
       if (!token) return;
 
       const q = document.getElementById("dataset-search").value.trim();
-      const range = document.getElementById("dataset-range-filter")?.value || "all";
+      const rangeSelect = document.getElementById("dataset-range-filter");
+      const range = overrideRange || (rangeSelect ? rangeSelect.value : "all");
       const platform = document.getElementById("dataset-platform-filter").value;
       const model = document.getElementById("dataset-model-filter")?.value || "";
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
 
-      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&limit=1000&token=${encodeURIComponent(token)}`;
+      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=1000&token=${encodeURIComponent(token)}`;
 
       const a = document.createElement("a");
       a.href = url;
-      a.download = `freeaibot_dataset_${format}_${Date.now()}.${format}`;
+      const filePrefix = format === "csv" ? "evaluasi_chatbot" : "training_dataset";
+      const rangeLabel = range === "today" ? "hari_ini" : range === "all" ? "semua" : range;
+      a.download = `${filePrefix}_${rangeLabel}_${Date.now()}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

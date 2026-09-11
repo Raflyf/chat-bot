@@ -168,7 +168,7 @@ const LOCATION_MAP: LocationMatch[] = [
   { keywords: ['jambi', 'sungai penuh', 'kerinci', 'bungo', 'muara bungo', 'merangin', 'bangko', 'sarolangun', 'tebo', 'muaro jambi', 'batanghari'], zone: 'Asia/Jakarta', label: 'Jambi / WIB' },
   { keywords: ['bengkulu', 'curup', 'rejang lebong', 'mukomuko', 'kaur', 'manna', 'kepahiang', 'lebong', 'seluma'], zone: 'Asia/Jakarta', label: 'Bengkulu / WIB' },
   { keywords: ['palembang', 'lubuklinggau', 'prabumulih', 'pagar alam', 'lahat', 'banyuasin', 'muara enim', 'sekayu', 'musi banyuasin', 'musi rawas', 'ogan ilir', 'indralaya', 'oki', 'kayuagung', 'oku', 'baturaja', 'sumsel', 'sumatera selatan'], zone: 'Asia/Jakarta', label: 'Sumatera Selatan / WIB' },
-  { keywords: ['pangkalpinang', 'bangka', 'sungailiat', 'belitung', 'tanjung pandan', 'mentok', 'toboali', 'koba', 'manggar', 'babel', 'bangka belitung'], zone: 'Asia/Jakarta', label: 'Bangka Belitung / WIB' },
+  { keywords: ['pangkalpinang', 'bangka belitung', 'pulau bangka', 'sungailiat', 'belitung', 'tanjung pandan', 'mentok', 'toboali', 'koba', 'manggar', 'babel'], zone: 'Asia/Jakarta', label: 'Bangka Belitung / WIB' },
   { keywords: ['lampung', 'bandar lampung', 'metro', 'kalianda', 'lampung selatan', 'gunung sugih', 'lampung tengah', 'kotabumi', 'pringsewu', 'tanggamus', 'kota agung', 'tulang bawang', 'menggala', 'way kanan'], zone: 'Asia/Jakarta', label: 'Lampung / WIB' },
   { keywords: ['pontianak', 'singkawang', 'sambas', 'ketapang', 'sintang', 'sanggau', 'bengkayang', 'kubu raya', 'landak', 'ngabang', 'melawi', 'sekadau', 'kapuas hulu', 'putussibau', 'kalbar', 'kalimantan barat'], zone: 'Asia/Jakarta', label: 'Kalimantan Barat / WIB' },
   { keywords: ['palangkaraya', 'palangka raya', 'sampit', 'pangkalan bun', 'kotawaringin', 'kapuas kalteng', 'kuala kapuas', 'barito', 'muara teweh', 'buntok', 'katingan', 'kasongan', 'seruyan', 'lamandau', 'kalteng', 'kalimantan tengah'], zone: 'Asia/Jakarta', label: 'Kalimantan Tengah / WIB' },
@@ -281,6 +281,9 @@ export function detectUserLocationDeclaration(text?: string): LocationMatch | nu
   if (!text || typeof text !== 'string') return null;
   const q = text.toLowerCase().trim();
 
+  // Abaikan ekspresi/idiom yang bukan deklarasi lokasi tempat (misal: "tua bangka", "si bangka")
+  if (/\b(?:tua\s+bangka|si\s+bangka)\b/i.test(q)) return null;
+
   // Jika pesan adalah pertanyaan waktu (misal "jam berapa di tokyo"), BUKAN deklarasi lokasi diri
   if (isAskingTime(q)) {
     const selfMatch = q.match(/\b(?:saya|aku|gua|gw|posisi|tinggal|rumah|domisili|lagi|sedang)\s*(?:di|daerah)\s+([a-z\s]+)/i);
@@ -290,16 +293,16 @@ export function detectUserLocationDeclaration(text?: string): LocationMatch | nu
     return null;
   }
 
-  // Cek pola kalimat penanda lokasi diri
-  const selfMatch = q.match(/\b(?:saya|aku|gua|gw|kami|posisi|tinggal|rumah|domisili|lagi|sedang|berada|dari)\s*(?:di|ke|daerah)?\s+([a-z\s]+)/i);
+  // Cek pola kalimat penanda lokasi diri (wajib diikuti preposisi tempat: di, ke, daerah, tinggal di, posisi di, berada di)
+  const selfMatch = q.match(/\b(?:saya|aku|gua|gw|kami|posisi|tinggal|rumah|domisili|lagi|sedang|berada|dari)\s+(?:di|ke|daerah|tinggal di|posisi di|berada di)\s+([a-z\s]+)/i);
   if (selfMatch) {
     const matched = detectLocation(selfMatch[1]);
     if (matched) return matched;
   }
 
-  // Jika user menjawab dengan jawaban pendek (misal menjawab "cianjur" atau "di cianjur")
+  // Jika user menjawab dengan jawaban sangat pendek (misal menjawab "cianjur", "di cianjur", atau "bali")
   const words = q.split(/\s+/);
-  if (words.length <= 4) {
+  if (words.length <= 3 && !/\b(?:apa|gimana|kenapa|siapa|tua|bangka)\b/i.test(q)) {
     const matched = detectLocation(q);
     if (matched) return matched;
   }
