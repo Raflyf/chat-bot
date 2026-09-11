@@ -87,11 +87,13 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 9. Sesi otomatis disinkronkan ke Supabase. Selesai! Bot WhatsApp Anda kini online 24 jam nonstop secara mandiri dan gratis.
 
 ### E. Mengakses Dashboard Pemantauan & Evaluasi Dataset
-1. Buka URL deployment Vercel Anda di browser (misal `https://<domain-vercel-anda>.vercel.app`).
-2. Masukkan Master PIN (default: `080402`) pada modal gateway keamanan.
-3. Setelah masuk, token sesi aktif tersimpan selama 24 jam di browser Anda.
-4. Jika lupa PIN, klik tombol **"Lupa PIN? Reset via Email"** -> klik **"Kirim Kode OTP ke Email"** -> periksa email admin `raflyfirmansyah02@gmail.com` -> masukkan 6-digit kode OTP dan PIN baru Anda.
-5. Untuk melatih ulang (*fine-tuning*) model AI atau audit percakapan, buka bagian **"Evaluasi & Dataset Training AI"**, lalu klik tombol **Unduh JSONL** atau **Unduh CSV**.
+1. Buka URL deployment Vercel Anda di browser (misal `https://<domain-vercel-anda>.vercel.app`). Halaman utama (`/`) menyajikan Landing Page publik berisi fitur multimodal dan status bot online 24/7.
+2. Klik tombol **"Monitoring Dashboard"** di bilah navigasi atau tombol CTA untuk diarahkan ke `/dashboard` (`/dashboard.html`).
+3. Masukkan Master PIN (default: `080402`) langsung melalui keyboard atau numpad perangkat Anda (desain bersih tanpa keypad angka virtual manual).
+4. Setelah masuk, token sesi aktif tersimpan selama 24 jam di browser Anda.
+5. Jika salah memasukkan PIN sebanyak 5 kali berturut-turut, sistem terkunci selama 1 menit (60 detik) untuk pencegahan brute force.
+6. Jika lupa PIN, klik tombol **"Lupa PIN? Reset via Email"** -> klik **"Kirim Kode OTP ke Email"** -> periksa email admin `raflyfirmansyah02@gmail.com` -> masukkan 6-digit kode OTP dan PIN baru Anda. Reset PIN otomatis menghanguskan sesi aktif di seluruh perangkat lain secara real-time.
+7. Untuk melatih ulang (*fine-tuning*) model AI atau audit percakapan, buka bagian **"Evaluasi & Dataset Training AI"**, lalu klik tombol **Unduh JSONL** atau **Unduh CSV**.
 
 ---
 
@@ -189,6 +191,12 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.22.1 — 2026-09-11 13:18 WIB
+**Penyempurnaan UI/UX: Restorasi Landing Page Publik di Root (/) & Eliminasi Keypad Virtual Manual**
+- **Restorasi Landing Page Publik (`public/index.html`)**: Rute utama (`/`) difungsikan sebagai Landing Page publik yang menyajikan status operasional bot online 24/7, kapabilitas multimodal (Voice Note Whisper, Dokumen PDF/Word, Gemini Vision, 4-Provider Failover), dan tombol CTA menuju panel monitoring.
+- **Pemisahan Dashboard Observabilitas (`public/dashboard.html` / `/dashboard`)**: Panel monitoring dipisahkan ke rute `/dashboard` dengan proteksi Master PIN keamanan.
+- **Eliminasi Keypad Angka Virtual**: Menghapus seluruh tombol keypad kalkulator manual (`1 2 3 4 5 6 7 8 9 C 0 ⌫`) pada modal autentikasi admin, digantikan dengan input password keyboard native yang bersih, elegan, dan autofocus.
 
 ### v0.22.0 — 2026-09-11 13:10 WIB
 **Keamanan & Observabilitas: Master PIN Gateway, Email OTP Reset & Fine-Tuning Dataset Engine**

@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FreeAIBot - Unified Monitoring &amp; Dataset Console</title>
-  <meta name="description" content="Dashboard monitoring real-time penggunaan chatbot, pool API Key, model AI, kuota harian, serta dataset evaluasi percakapan.">
+  <title>FreeAIBot - Asisten AI Pribadi WhatsApp &amp; Telegram 24/7</title>
+  <meta name="description" content="Asisten AI cerdas multi-platform untuk WhatsApp dan Telegram. Mendukung pemrosesan teks, Voice Note Whisper, dokumen PDF/Word, analisis gambar vision, serta memori persisten.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg-base: #090d16;
@@ -39,72 +39,75 @@
       color: var(--text-main);
       font-family: var(--font-sans);
       min-height: 100vh;
-      line-height: 1.5;
-      padding: 1.5rem;
+      line-height: 1.6;
       overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .container {
-      max-width: 1400px;
+      max-width: 1200px;
       margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 1.75rem;
+      padding: 0 1.5rem;
+      width: 100%;
     }
 
-    /* Top Navigation */
+    /* Top Navigation Bar */
     header {
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(17, 24, 39, 0.8);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .nav-inner {
       display: flex;
-      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
-      gap: 1rem;
-      padding: 1rem 1.5rem;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      padding: 1rem 0;
     }
 
     .brand {
       display: flex;
       align-items: center;
       gap: 0.85rem;
+      text-decoration: none;
+      color: var(--text-main);
     }
 
     .brand-icon {
-      width: 44px;
-      height: 44px;
+      width: 40px;
+      height: 40px;
       background: linear-gradient(135deg, #2563eb, #7c3aed);
       border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 800;
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       color: #fff;
       box-shadow: 0 0 16px rgba(59, 130, 246, 0.4);
     }
 
-    .brand-info h1 {
-      font-size: 1.25rem;
+    .brand-text h1 {
+      font-size: 1.15rem;
       font-weight: 700;
       letter-spacing: -0.02em;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
+      line-height: 1.2;
     }
 
-    .brand-info p {
-      font-size: 0.825rem;
+    .brand-text p {
+      font-size: 0.75rem;
       color: var(--text-muted);
     }
 
-    .header-actions {
+    .nav-actions {
       display: flex;
       align-items: center;
       gap: 0.85rem;
-      flex-wrap: wrap;
     }
 
     .status-pill {
@@ -115,7 +118,7 @@
       background: rgba(16, 185, 129, 0.12);
       border: 1px solid rgba(16, 185, 129, 0.3);
       border-radius: 9999px;
-      font-size: 0.8rem;
+      font-size: 0.775rem;
       font-weight: 600;
       color: var(--accent-emerald);
     }
@@ -137,69 +140,172 @@
     .btn {
       display: inline-flex;
       align-items: center;
-      gap: 0.4rem;
-      padding: 0.5rem 1rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
+      gap: 0.5rem;
+      padding: 0.55rem 1.1rem;
       border-radius: 10px;
-      color: var(--text-main);
       font-size: 0.85rem;
       font-weight: 600;
       cursor: pointer;
+      text-decoration: none;
       transition: all 0.2s ease;
       font-family: inherit;
     }
 
-    .btn:hover {
-      background: var(--bg-card-hover);
-      border-color: var(--border-focus);
-    }
-
-    .btn.active {
-      background: rgba(56, 189, 248, 0.15);
-      border-color: var(--accent-blue);
+    .btn-dashboard {
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.35);
       color: var(--accent-blue);
     }
 
-    .btn-danger {
-      border-color: rgba(244, 63, 94, 0.4);
-      color: #fda4af;
-    }
-    .btn-danger:hover {
-      background: rgba(244, 63, 94, 0.15);
-      border-color: var(--accent-rose);
-      color: var(--accent-rose);
+    .btn-dashboard:hover {
+      background: rgba(56, 189, 248, 0.22);
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
     }
 
     .btn-primary {
       background: linear-gradient(135deg, #0284c7, #2563eb);
-      border: none;
       color: #fff;
+      border: none;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
     }
+
     .btn-primary:hover {
       background: linear-gradient(135deg, #0369a1, #1d4ed8);
+      transform: translateY(-1px);
     }
 
-    /* KPI Summary Cards */
-    .kpi-grid {
+    .btn-wa {
+      background: #25d366;
+      color: #0b2e13;
+      border: none;
+      font-weight: 700;
+    }
+
+    .btn-wa:hover {
+      background: #22bf5b;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(37, 211, 102, 0.35);
+    }
+
+    .btn-tele {
+      background: #229ed9;
+      color: #fff;
+      border: none;
+      font-weight: 700;
+    }
+
+    .btn-tele:hover {
+      background: #1e8dbf;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(34, 158, 217, 0.35);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 4.5rem 0 3.5rem;
+      text-align: center;
+      position: relative;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 1rem;
+      background: rgba(168, 85, 247, 0.12);
+      border: 1px solid rgba(168, 85, 247, 0.35);
+      border-radius: 9999px;
+      color: #c084fc;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      font-family: var(--font-mono);
+    }
+
+    .hero-title {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      max-width: 820px;
+      margin: 0 auto 1.25rem;
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    @media (max-width: 768px) {
+      .hero-title {
+        font-size: 2rem;
+      }
+    }
+
+    .hero-subtitle {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 0 auto 2.25rem;
+      line-height: 1.6;
+    }
+
+    .hero-cta-group {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    /* Feature Grid */
+    .features-section {
+      padding: 3.5rem 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .section-title-wrap {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .section-title {
+      font-size: 1.85rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    .section-subtitle {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+
+    .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1.25rem;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
     }
 
-    .kpi-card {
+    .feature-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
       border-radius: 16px;
-      padding: 1.25rem 1.5rem;
+      padding: 1.75rem;
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
+      gap: 0.75rem;
+      transition: all 0.25s ease;
       position: relative;
       overflow: hidden;
     }
 
-    .kpi-card::before {
+    .feature-card:hover {
+      border-color: var(--border-focus);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+    }
+
+    .feature-card::before {
       content: "";
       position: absolute;
       top: 0;
@@ -207,1570 +313,221 @@
       right: 0;
       height: 3px;
       background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
-    }
-
-    .kpi-title {
-      font-size: 0.825rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-    }
-
-    .kpi-value {
-      font-size: 2rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      color: var(--text-main);
-    }
-
-    .kpi-subtext {
-      font-size: 0.825rem;
-      color: var(--text-dim);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 0.15rem 0.55rem;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-weight: 700;
-    }
-
-    .badge-wa {
-      background: rgba(37, 211, 102, 0.15);
-      color: #25d366;
-      border: 1px solid rgba(37, 211, 102, 0.3);
-    }
-
-    .badge-tele {
-      background: rgba(34, 158, 217, 0.15);
-      color: #38bdf8;
-      border: 1px solid rgba(34, 158, 217, 0.3);
-    }
-
-    /* Pool Matrix Section */
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-    }
-
-    .section-title {
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: var(--text-main);
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-    }
-
-    .pool-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1.25rem;
-    }
-
-    .provider-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-
-    .provider-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      border-bottom: 1px solid var(--border-subtle);
-      padding-bottom: 0.75rem;
-    }
-
-    .provider-name {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--text-main);
-    }
-
-    .provider-models {
-      font-size: 0.75rem;
-      color: var(--text-dim);
-      margin-top: 0.15rem;
-    }
-
-    .provider-summary-stat {
-      text-align: right;
-    }
-
-    .provider-usage-text {
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: var(--accent-blue);
-    }
-
-    .provider-cap-text {
-      font-size: 0.75rem;
-      color: var(--text-dim);
-    }
-
-    .keys-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.6rem;
-    }
-
-    .key-row {
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-      background: var(--bg-card);
-      padding: 0.75rem;
-      border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.04);
-    }
-
-    .key-info-line {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.8rem;
-    }
-
-    .key-label {
-      font-family: var(--font-mono);
-      color: var(--text-muted);
-      font-weight: 600;
-    }
-
-    .key-stats {
-      font-weight: 700;
-      color: var(--text-main);
-    }
-
-    .progress-bar-bg {
-      width: 100%;
-      height: 6px;
-      background: #1e293b;
-      border-radius: 9999px;
-      overflow: hidden;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      border-radius: 9999px;
-      transition: width 0.4s ease;
-    }
-
-    .progress-emerald { background: linear-gradient(90deg, #10b981, #059669); }
-    .progress-amber { background: linear-gradient(90deg, #f59e0b, #d97706); }
-    .progress-rose { background: linear-gradient(90deg, #f43f5e, #e11d48); }
-
-    /* Model Analytics & Media Grid */
-    .dual-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.25rem;
-    }
-
-    @media (max-width: 900px) {
-      .dual-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .panel-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.25rem 1.5rem;
-    }
-
-    .models-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.85rem;
-      margin-top: 1rem;
-    }
-
-    .model-item {
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-    }
-
-    .model-label-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.85rem;
-    }
-
-    .model-name {
-      font-weight: 600;
-      color: var(--text-main);
-      font-family: var(--font-mono);
-    }
-
-    .model-count {
-      color: var(--text-muted);
-      font-size: 0.8rem;
-    }
-
-    .media-badges-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-      gap: 0.85rem;
-      margin-top: 1rem;
-    }
-
-    .media-box {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 12px;
-      padding: 1rem;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
-    }
-
-    .media-box-count {
-      font-size: 1.5rem;
-      font-weight: 800;
-      color: var(--accent-blue);
-    }
-
-    .media-box-label {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      font-weight: 600;
-    }
-
-    /* Table Sections */
-    .activity-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.25rem 1.5rem;
-      overflow: hidden;
-    }
-
-    .table-container {
-      overflow-x: auto;
-      margin-top: 1rem;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.825rem;
-      text-align: left;
-    }
-
-    th {
-      padding: 0.75rem 1rem;
-      background: var(--bg-card);
-      color: var(--text-muted);
-      font-weight: 600;
-      border-bottom: 1px solid var(--border-subtle);
-      white-space: nowrap;
-    }
-
-    td {
-      padding: 0.85rem 1rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      color: var(--text-main);
-      vertical-align: top;
-    }
-
-    tr:hover td {
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    .role-badge {
-      display: inline-block;
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.7rem;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .role-user { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); }
-    .role-bot { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); }
-
-    .type-badge {
-      display: inline-block;
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.7rem;
-      font-weight: 600;
-      font-family: var(--font-mono);
-    }
-
-    .type-voice { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
-    .type-document { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
-    .type-image { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
-    .type-sticker { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); }
-    .type-video { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); }
-    .type-text { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
-
-    .model-tag {
-      font-family: var(--font-mono);
-      font-size: 0.725rem;
-      color: var(--text-dim);
-    }
-
-    .msg-preview {
-      max-width: 380px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: var(--text-muted);
-    }
-
-    /* Dataset Pair Styling */
-    .dataset-prompt {
-      max-width: 320px;
-      font-weight: 500;
-      color: #e2e8f0;
-      word-break: break-word;
-      line-height: 1.4;
-    }
-
-    .dataset-reply {
-      max-width: 440px;
-      color: #94a3b8;
-      word-break: break-word;
-      line-height: 1.4;
-    }
-
-    .search-input {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      padding: 0.45rem 0.85rem;
-      color: var(--text-main);
-      font-size: 0.825rem;
-      font-family: inherit;
-      min-width: 220px;
-    }
-
-    .search-input:focus {
-      outline: none;
-      border-color: var(--accent-blue);
-    }
-
-    .filter-select {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      padding: 0.45rem 0.75rem;
-      color: var(--text-main);
-      font-size: 0.825rem;
-      font-family: inherit;
-      cursor: pointer;
-    }
-
-    /* ==========================================================================
-       AUTHENTICATION & RESET PIN MODAL (OBSIDIAN GLASS)
-       ========================================================================== */
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(9, 13, 22, 0.94);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      z-index: 99999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
-      opacity: 1;
+      opacity: 0;
       transition: opacity 0.25s ease;
     }
 
-    .modal-overlay.hidden {
-      display: none;
-      opacity: 0;
-      pointer-events: none;
+    .feature-card:hover::before {
+      opacity: 1;
     }
 
-    .auth-card {
-      width: 100%;
-      max-width: 420px;
-      background: #0f172a;
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      border-radius: 20px;
-      padding: 2.25rem 2rem;
-      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(56, 189, 248, 0.12);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      gap: 1.25rem;
-      position: relative;
-    }
-
-    .auth-shield-icon {
-      width: 60px;
-      height: 60px;
-      background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(168, 85, 247, 0.15));
-      border: 1.5px solid rgba(56, 189, 248, 0.4);
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.6rem;
-      color: var(--accent-blue);
-      box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
-    }
-
-    .auth-title {
-      font-size: 1.35rem;
-      font-weight: 800;
-      color: var(--text-main);
-      letter-spacing: -0.02em;
-    }
-
-    .auth-subtitle {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      line-height: 1.45;
-    }
-
-    .pin-display-group {
-      display: flex;
-      gap: 0.65rem;
-      margin: 0.5rem 0;
-    }
-
-    .pin-dot {
+    .feature-icon-box {
       width: 44px;
-      height: 52px;
-      background: #1e293b;
-      border: 1.5px solid var(--border-subtle);
+      height: 44px;
       border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.75rem;
-      font-weight: 800;
-      color: var(--accent-blue);
-      transition: all 0.2s ease;
-    }
-
-    .pin-dot.filled {
-      border-color: var(--accent-blue);
-      background: rgba(56, 189, 248, 0.1);
-      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
-    }
-
-    .keypad-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 0.65rem;
-      width: 100%;
-      margin-top: 0.5rem;
-    }
-
-    .key-btn {
-      height: 50px;
-      background: #1e293b;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 12px;
-      color: var(--text-main);
       font-size: 1.25rem;
       font-weight: 700;
-      cursor: pointer;
+      margin-bottom: 0.35rem;
+    }
+
+    .f-blue { background: rgba(56, 189, 248, 0.12); color: var(--accent-blue); border: 1px solid rgba(56, 189, 248, 0.25); }
+    .f-emerald { background: rgba(16, 185, 129, 0.12); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.25); }
+    .f-rose { background: rgba(244, 63, 94, 0.12); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.25); }
+    .f-amber { background: rgba(245, 158, 11, 0.12); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.25); }
+    .f-purple { background: rgba(168, 85, 247, 0.12); color: var(--accent-purple); border: 1px solid rgba(168, 85, 247, 0.25); }
+
+    .feature-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+
+    .feature-desc {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    /* Dashboard Teaser Card */
+    .dashboard-teaser {
+      background: linear-gradient(135deg, #111827 0%, #162032 100%);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 20px;
+      padding: 2.5rem;
+      margin: 2rem 0 4rem;
       display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
       align-items: center;
-      justify-content: center;
-      transition: all 0.15s ease;
-      font-family: inherit;
+      gap: 1.5rem;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
     }
 
-    .key-btn:hover {
-      background: #27354f;
-      border-color: var(--accent-blue);
-    }
-
-    .key-btn:active {
-      transform: scale(0.96);
-    }
-
-    .key-btn-action {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-muted);
-    }
-
-    .auth-alert {
-      width: 100%;
-      padding: 0.75rem 1rem;
-      border-radius: 10px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      text-align: left;
-      display: none;
-    }
-
-    .auth-alert.show {
-      display: block;
-    }
-
-    .auth-alert-error {
-      background: rgba(244, 63, 94, 0.12);
-      border: 1px solid rgba(244, 63, 94, 0.35);
-      color: #fda4af;
-    }
-
-    .auth-alert-success {
-      background: rgba(16, 185, 129, 0.12);
-      border: 1px solid rgba(16, 185, 129, 0.35);
-      color: #6ee7b7;
-    }
-
-    .auth-link-btn {
-      background: none;
-      border: none;
-      color: var(--accent-blue);
-      font-size: 0.825rem;
-      cursor: pointer;
-      font-weight: 600;
-      text-decoration: underline;
-      padding: 0.25rem;
-      font-family: inherit;
-    }
-
-    .auth-link-btn:hover {
-      color: #7dd3fc;
-    }
-
-    /* Reset Modal Form */
-    .reset-form {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      text-align: left;
-    }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
-    }
-
-    .form-label {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-muted);
-    }
-
-    .form-input {
-      background: #1e293b;
-      border: 1.5px solid var(--border-subtle);
-      border-radius: 10px;
-      padding: 0.65rem 0.95rem;
+    .teaser-text h3 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
       color: var(--text-main);
-      font-size: 0.95rem;
-      font-family: inherit;
     }
 
-    .form-input:focus {
-      outline: none;
-      border-color: var(--accent-blue);
-      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
-    }
-
-    .shake {
-      animation: shake 0.35s ease-in-out;
-    }
-
-    @keyframes shake {
-      0%, 100% { transform: translateX(0); }
-      20%, 60% { transform: translateX(-8px); }
-      40%, 80% { transform: translateX(8px); }
+    .teaser-text p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      max-width: 620px;
     }
 
     footer {
-      text-align: center;
-      padding: 1.5rem 0;
-      color: var(--text-dim);
-      font-size: 0.8rem;
+      margin-top: auto;
       border-top: 1px solid var(--border-subtle);
+      padding: 2rem 0;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.825rem;
     }
   </style>
 </head>
 <body>
 
-  <!-- ========================================================================
-       MODAL 1: PIN LOGIN GATEWAY
-       ======================================================================== -->
-  <div id="auth-modal" class="modal-overlay">
-    <div class="auth-card" id="pin-card">
-      <div class="auth-shield-icon">&#128274;</div>
-      <div>
-        <h2 class="auth-title">Admin Observability Gateway</h2>
-        <p class="auth-subtitle">Masukkan Master PIN untuk membuka panel monitoring &amp; evaluasi.</p>
-      </div>
-
-      <!-- Alert Status -->
-      <div id="auth-alert" class="auth-alert auth-alert-error"></div>
-
-      <!-- PIN Display Dots -->
-      <div class="pin-display-group">
-        <div class="pin-dot" id="dot-0"></div>
-        <div class="pin-dot" id="dot-1"></div>
-        <div class="pin-dot" id="dot-2"></div>
-        <div class="pin-dot" id="dot-3"></div>
-        <div class="pin-dot" id="dot-4"></div>
-        <div class="pin-dot" id="dot-5"></div>
-      </div>
-
-      <div style="font-size: 0.775rem; color: var(--text-dim);" id="attempts-label">
-        Sisa percobaan: 5 kali
-      </div>
-
-      <!-- Keypad -->
-      <div class="keypad-grid">
-        <button class="key-btn" onclick="pressKey('1')">1</button>
-        <button class="key-btn" onclick="pressKey('2')">2</button>
-        <button class="key-btn" onclick="pressKey('3')">3</button>
-        <button class="key-btn" onclick="pressKey('4')">4</button>
-        <button class="key-btn" onclick="pressKey('5')">5</button>
-        <button class="key-btn" onclick="pressKey('6')">6</button>
-        <button class="key-btn" onclick="pressKey('7')">7</button>
-        <button class="key-btn" onclick="pressKey('8')">8</button>
-        <button class="key-btn" onclick="pressKey('9')">9</button>
-        <button class="key-btn key-btn-action" onclick="clearPin()">C</button>
-        <button class="key-btn" onclick="pressKey('0')">0</button>
-        <button class="key-btn key-btn-action" onclick="deleteKey()">&#9003;</button>
-      </div>
-
-      <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; margin-top: 0.25rem;">
-        <button class="auth-link-btn" onclick="openResetModal()">Lupa PIN? Reset via Email</button>
-        <span style="font-size: 0.75rem; color: var(--text-dim);">SHA-256 Protected</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ========================================================================
-       MODAL 2: RESET MASTER PIN VIA EMAIL OTP
-       ======================================================================== -->
-  <div id="reset-modal" class="modal-overlay hidden">
-    <div class="auth-card" style="max-width: 460px;">
-      <div class="auth-shield-icon" style="color: var(--accent-purple);">&#9993;</div>
-      <div>
-        <h2 class="auth-title">Reset Master PIN Keamanan</h2>
-        <p class="auth-subtitle">Verifikasi OTP dikirim ke email terdaftar: <span id="reset-target-email" style="color: var(--accent-blue); font-weight: 600;">raf***@gmail.com</span></p>
-      </div>
-
-      <div id="reset-alert" class="auth-alert"></div>
-
-      <!-- Step 1: Request OTP -->
-      <div id="reset-step-1" class="reset-form">
-        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-          Sistem akan mengirimkan kode 6-digit ke email admin. Kode berlaku selama 10 menit.
-        </p>
-        <button class="btn btn-primary" id="btn-send-otp" onclick="handleSendOtp()" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
-          Kirim Kode OTP ke Email
-        </button>
-        <button class="btn" onclick="closeResetModal()" style="justify-content: center;">
-          Batal &amp; Kembali ke Login
-        </button>
-      </div>
-
-      <!-- Step 2: Verify OTP & New PIN -->
-      <div id="reset-step-2" class="reset-form" style="display: none;">
-        <div class="form-group">
-          <label class="form-label" for="input-otp">Kode OTP (6 Digit)</label>
-          <input type="text" id="input-otp" class="form-input" placeholder="Contoh: 123456" maxlength="6" style="letter-spacing: 4px; font-family: var(--font-mono); font-weight: 700; text-align: center;">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="input-new-pin">Master PIN Baru (4-8 Digit)</label>
-          <input type="password" id="input-new-pin" class="form-input" placeholder="Masukkan angka PIN baru" maxlength="8">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="input-confirm-pin">Konfirmasi PIN Baru</label>
-          <input type="password" id="input-confirm-pin" class="form-input" placeholder="Ulangi angka PIN baru" maxlength="8">
-        </div>
-
-        <button class="btn btn-primary" id="btn-submit-reset" onclick="handleVerifyOtpAndReset()" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
-          Verifikasi &amp; Simpan PIN Baru
-        </button>
-
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
-          <button class="auth-link-btn" id="btn-resend-otp" onclick="handleSendOtp()" disabled>Kirim Ulang OTP (60s)</button>
-          <button class="auth-link-btn" onclick="closeResetModal()">Kembali</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ========================================================================
-       MAIN DASHBOARD INTERFACE
-       ======================================================================== -->
-  <div class="container" id="main-content">
-    <!-- Header -->
-    <header>
-      <div class="brand">
+  <!-- Top Navigation -->
+  <header>
+    <div class="container nav-inner">
+      <a href="/" class="brand">
         <div class="brand-icon">AI</div>
-        <div class="brand-info">
-          <h1 id="bot-name">FreeAIBot Console</h1>
-          <p id="server-time">Memuat sinkronisasi sistem...</p>
+        <div class="brand-text">
+          <h1>FreeAIBot</h1>
+          <p>Personal AI Assistant</p>
         </div>
-      </div>
-      <div class="header-actions">
+      </a>
+      <div class="nav-actions">
         <div class="status-pill">
           <span class="pulse-dot"></span>
-          <span>Sistem Aktif</span>
+          <span>Online 24/7</span>
         </div>
-        <button class="btn active" id="btn-auto" onclick="toggleAutoRefresh()">
-          <span>Auto: 15s</span>
-        </button>
-        <button class="btn" id="btn-manual-refresh" onclick="fetchData()">
-          <span id="btn-refresh-icon">&#x21bb;</span>
-          <span>Segarkan</span>
-        </button>
-        <button class="btn btn-danger" onclick="handleLogout()" title="Kunci Dashboard">
-          <span>Kunci Keluar</span>
-        </button>
+        <a href="/dashboard.html" class="btn btn-dashboard" title="Buka Monitoring Dashboard">
+          <span>Monitoring Dashboard</span>
+          <span>&rarr;</span>
+        </a>
       </div>
-    </header>
+    </div>
+  </header>
 
-    <!-- Top KPI Cards -->
-    <section class="kpi-grid">
-      <div class="kpi-card">
-        <div class="kpi-title">Pesan Hari Ini</div>
-        <div class="kpi-value" id="kpi-today-msgs">-</div>
-        <div class="kpi-subtext">
-          <span class="badge badge-wa" id="kpi-wa">- WA</span>
-          <span class="badge badge-tele" id="kpi-tele">- Tele</span>
-        </div>
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">
+        <span>SISTEM PRODUKSI &bull; MULTI-PLATFORM VERIFIED</span>
       </div>
+      <h2 class="hero-title">
+        Asisten AI Cerdas, Multimodal, &amp; Siap 24 Jam Nonstop
+      </h2>
+      <p class="hero-subtitle">
+        Terhubung langsung ke nomor WhatsApp dan Telegram dengan pemrosesan Voice Note Whisper, dokumen PDF &amp; Word, analisis gambar, serta memori percakapan persisten.
+      </p>
 
-      <div class="kpi-card">
-        <div class="kpi-title">Total Pesan All-Time</div>
-        <div class="kpi-value" id="kpi-total-msgs">-</div>
-        <div class="kpi-subtext">Tersimpan di Supabase PostgreSQL</div>
+      <div class="hero-cta-group">
+        <a href="https://wa.me/6283874640066" target="_blank" rel="noopener noreferrer" class="btn btn-wa" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+          <span>Mulai Chat di WhatsApp</span>
+        </a>
+        <a href="https://t.me/FreeAIBot" target="_blank" rel="noopener noreferrer" class="btn btn-tele" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+          <span>Mulai Chat di Telegram</span>
+        </a>
+        <a href="/dashboard.html" class="btn btn-dashboard" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+          <span>Buka Panel Dashboard</span>
+        </a>
       </div>
+    </div>
+  </section>
 
-      <div class="kpi-card">
-        <div class="kpi-title">Panggilan API Provider (Hari Ini)</div>
-        <div class="kpi-value" id="kpi-calls-today">-</div>
-        <div class="kpi-subtext" id="kpi-total-keys">- Keys Aktif Terpantau</div>
-      </div>
-
-      <div class="kpi-card">
-        <div class="kpi-title">Model Terpopuler Hari Ini</div>
-        <div class="kpi-value" id="kpi-top-model" style="font-size: 1.25rem; word-break: break-all;">-</div>
-        <div class="kpi-subtext">Distribusi Beban Otomatis</div>
-      </div>
-    </section>
-
-    <!-- Pool API Key Matrix -->
-    <section>
-      <div class="section-header">
-        <h2 class="section-title">Matriks Penggunaan Pool API Key</h2>
-        <span style="font-size: 0.8rem; color: var(--text-muted);">Reset Harian 00:00 UTC</span>
-      </div>
-      <div class="pool-grid" id="pool-grid">
-        <!-- Dimuat dinamis -->
-      </div>
-    </section>
-
-    <!-- Model Usage & Media Types -->
-    <section class="dual-grid">
-      <div class="panel-card">
-        <h2 class="section-title">Distribusi Model LLM Hari Ini</h2>
-        <div class="models-list" id="models-list">
-          <div style="color: var(--text-dim); font-size: 0.85rem;">Memuat metrik...</div>
-        </div>
+  <!-- Features Grid Section -->
+  <section class="features-section">
+    <div class="container">
+      <div class="section-title-wrap">
+        <h3 class="section-title">Kapabilitas Lengkap Tanpa Batas</h3>
+        <p class="section-subtitle">Didukung tumpukan provider gratis (Groq, Gemini, OpenRouter, Ollama) dengan otomatisasi failover.</p>
       </div>
 
-      <div class="panel-card">
-        <h2 class="section-title">Pemrosesan Tipe Media (Hari Ini)</h2>
-        <div class="media-badges-grid">
-          <div class="media-box">
-            <div class="media-box-count" id="media-text">0</div>
-            <div class="media-box-label">Chat Teks</div>
-          </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-voice" style="color: var(--accent-rose);">0</div>
-            <div class="media-box-label">Voice Note (VN)</div>
-          </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-image" style="color: var(--accent-emerald);">0</div>
-            <div class="media-box-label">Foto / Vision</div>
-          </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-sticker" style="color: var(--accent-purple);">0</div>
-            <div class="media-box-label">Stiker</div>
-          </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-doc" style="color: var(--accent-amber);">0</div>
-            <div class="media-box-label">Dokumen (PDF/Word)</div>
-          </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-video">0</div>
-            <div class="media-box-label">Video</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION: EVALUASI PERCAKAPAN & DATASET TRAINING AI -->
-    <section class="activity-card" id="dataset-section">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">Evaluasi &amp; Dataset Training AI (Fine-Tuning / Audit)</h2>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-            Pasangan pertanyaan user dan balasan chatbot yang tersimpan untuk evaluasi kualitas dan training model.
+      <div class="features-grid">
+        <!-- Feature 1: Voice Note -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-rose">VN</div>
+          <h4 class="feature-title">Transkripsi Voice Note Sub-Detik</h4>
+          <p class="feature-desc">
+            Kirimkan rekaman suara VN di WhatsApp atau Telegram. Model Groq Whisper menerjemahkan suara ke teks secara instan (~500ms) dan AI menjawab pertanyaannya secara alami.
           </p>
         </div>
-        <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
-          <input type="text" id="dataset-search" class="search-input" placeholder="Cari pertanyaan atau jawaban..." oninput="debounceDatasetSearch()">
-          <select id="dataset-platform-filter" class="filter-select" onchange="fetchDataset()">
-            <option value="">Semua Platform</option>
-            <option value="whatsapp">WhatsApp</option>
-            <option value="telegram">Telegram</option>
-          </select>
-          <button class="btn btn-primary" onclick="downloadDataset('jsonl')" title="Unduh format JSONL untuk Fine-Tuning LLM">
-            <span>Unduh JSONL</span>
-          </button>
-          <button class="btn" onclick="downloadDataset('csv')" title="Unduh format CSV untuk Spreadsheet">
-            <span>Unduh CSV</span>
-          </button>
+
+        <!-- Feature 2: PDF & Word -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-amber">DOC</div>
+          <h4 class="feature-title">Analisis Dokumen PDF &amp; Word</h4>
+          <p class="feature-desc">
+            Unggah file `.pdf` atau `.docx`. AI membaca isi tabel, bagan, bab, serta kode sumber hingga puluhan halaman untuk dirangkum, dianalisis, atau dievaluasi.
+          </p>
+        </div>
+
+        <!-- Feature 3: Vision & Multimodal -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-emerald">VIS</div>
+          <h4 class="feature-title">Analisis Foto &amp; Stiker Kontekstual</h4>
+          <p class="feature-desc">
+            Dianalisis oleh Google Gemini Vision. Mampu membaca foto tugas, diagram alir, grafik, tangkapan layar, hingga memahami ekspresi stiker WhatsApp.
+          </p>
+        </div>
+
+        <!-- Feature 4: Memory -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-purple">MEM</div>
+          <h4 class="feature-title">Memori Persisten &amp; Distilasi</h4>
+          <p class="feature-desc">
+            Didukung basis data Supabase PostgreSQL dengan Row Level Security. Bot mengingat konteks percakapan lampau dan preferensi gaya bicara penggunanya.
+          </p>
+        </div>
+
+        <!-- Feature 5: 4-Provider Failover -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-blue">AI</div>
+          <h4 class="feature-title">Rantai Failover 4 Provider</h4>
+          <p class="feature-desc">
+            Jika satu model terkena rate limit, sistem otomatis mengalihkan panggilan ke provider berikutnya (Groq &rarr; Gemini &rarr; OpenRouter &rarr; Ollama) dalam hitungan milidetik.
+          </p>
+        </div>
+
+        <!-- Feature 6: Zero-Template -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-emerald">BOT</div>
+          <h4 class="feature-title">Interaksi Nyata Tanpa Template</h4>
+          <p class="feature-desc">
+            Bebas dari sapaan klise robotik dan format kaku. Berinteraksi secara luwes layaknya teman karib sekaligus partner diskusi cerdas dan berwawasan luas.
+          </p>
         </div>
       </div>
 
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 130px;">Waktu &amp; Platform</th>
-              <th style="width: 140px;">Chat ID &amp; Model</th>
-              <th>Pertanyaan Pengguna (Prompt)</th>
-              <th>Jawaban Chatbot (Completion)</th>
-              <th style="width: 80px; text-align: right;">Aksi</th>
-            </tr>
-          </thead>
-          <tbody id="dataset-tbody">
-            <tr>
-              <td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat dataset evaluasi...</td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- Dashboard Teaser Section -->
+      <div class="dashboard-teaser">
+        <div class="teaser-text">
+          <h3>Monitoring Konsol &amp; Dataset Training AI</h3>
+          <p>
+            Pantau status penggunaan seluruh pool API Key, statistik kuota harian, traffic percakapan, serta unduh riwayat pasangan chat dalam format JSONL/CSV untuk fine-tuning model AI.
+          </p>
+        </div>
+        <div>
+          <a href="/dashboard.html" class="btn btn-primary" style="padding: 0.85rem 1.6rem; font-size: 0.95rem;">
+            <span>Akses Dashboard Admin</span>
+            <span>&rarr;</span>
+          </a>
+        </div>
       </div>
-    </section>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      FreeAIBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.22.0
+    </div>
+  </footer>
 
-    <!-- Live Activity Log -->
-    <section class="activity-card">
-      <div class="section-header">
-        <h2 class="section-title">Aktivitas Percakapan Terbaru (Live Log)</h2>
-      </div>
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Waktu</th>
-              <th>Platform</th>
-              <th>Chat ID</th>
-              <th>Peran</th>
-              <th>Tipe</th>
-              <th>Model / Eksekutor</th>
-              <th>Isi Pesan</th>
-            </tr>
-          </thead>
-          <tbody id="activity-tbody">
-            <tr>
-              <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat aktivitas...</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <footer>
-      FreeAIBot Unified Monitoring Console &bull; Menggunakan Supabase Engine &amp; Vercel Serverless
-    </footer>
-  </div>
-
-  <!-- ========================================================================
-       JAVASCRIPT LOGIC: AUTHENTICATION, DATASET, & MONITORING
-       ======================================================================== -->
-  <script>
-    const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
-    const PIN_SALT = "rafly_telemetry_salt";
-
-    let currentPinInput = "";
-    let autoRefresh = true;
-    let refreshTimer = null;
-    let resendCountdownTimer = null;
-    let datasetSearchTimeout = null;
-
-    // Cryptographic SHA-256 client-side hashing
-    async function sha256(message) {
-      const msgBuffer = new TextEncoder().encode(message);
-      const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-    }
-
-    function getStoredToken() {
-      return sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY) || "";
-    }
-
-    function setStoredToken(token) {
-      sessionStorage.setItem(SESSION_TOKEN_KEY, token);
-      localStorage.setItem(SESSION_TOKEN_KEY, token);
-    }
-
-    function clearStoredToken() {
-      sessionStorage.removeItem(SESSION_TOKEN_KEY);
-      localStorage.removeItem(SESSION_TOKEN_KEY);
-    }
-
-    function formatTime(isoString) {
-      if (!isoString) return "-";
-      const d = new Date(isoString);
-      return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    }
-
-    function formatDateTime(isoString) {
-      if (!isoString) return "-";
-      const d = new Date(isoString);
-      return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-    }
-
-    // =========================================================================
-    // PIN KEYPAD & SUBMIT LOGIC
-    // =========================================================================
-    function updatePinDots() {
-      for (let i = 0; i < 6; i++) {
-        const dot = document.getElementById(`dot-${i}`);
-        if (i < currentPinInput.length) {
-          dot.classList.add("filled");
-          dot.textContent = "●";
-        } else {
-          dot.classList.remove("filled");
-          dot.textContent = "";
-        }
-      }
-    }
-
-    function pressKey(num) {
-      if (currentPinInput.length < 6) {
-        currentPinInput += num;
-        updatePinDots();
-        if (currentPinInput.length === 6) {
-          setTimeout(submitPin, 120);
-        }
-      }
-    }
-
-    function deleteKey() {
-      if (currentPinInput.length > 0) {
-        currentPinInput = currentPinInput.slice(0, -1);
-        updatePinDots();
-      }
-    }
-
-    function clearPin() {
-      currentPinInput = "";
-      updatePinDots();
-    }
-
-    // Keyboard support
-    window.addEventListener("keydown", (e) => {
-      const authModal = document.getElementById("auth-modal");
-      if (!authModal.classList.contains("hidden")) {
-        if (e.key >= "0" && e.key <= "9") {
-          pressKey(e.key);
-        } else if (e.key === "Backspace") {
-          deleteKey();
-        } else if (e.key === "Escape" || e.key === "c" || e.key === "C") {
-          clearPin();
-        }
-      }
-    });
-
-    async function submitPin() {
-      if (currentPinInput.length !== 6) return;
-
-      const alertEl = document.getElementById("auth-alert");
-      alertEl.className = "auth-alert";
-      alertEl.textContent = "";
-
-      try {
-        const pinHash = await sha256(currentPinInput + PIN_SALT);
-        const res = await fetch("/api/admin-otp?action=verify_pin", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "verify_pin", pin_hash: pinHash }),
-        });
-
-        const data = await res.json();
-
-        if (res.ok && data.verified && data.session_token) {
-          setStoredToken(data.session_token);
-          document.getElementById("auth-modal").classList.add("hidden");
-          clearPin();
-          fetchData();
-          fetchDataset();
-        } else {
-          // Gagal
-          const card = document.getElementById("pin-card");
-          card.classList.add("shake");
-          setTimeout(() => card.classList.remove("shake"), 400);
-          clearPin();
-
-          alertEl.className = "auth-alert auth-alert-error show";
-          alertEl.textContent = data.message || "Master PIN salah.";
-
-          if (data.remaining_attempts !== undefined) {
-            document.getElementById("attempts-label").textContent = `Sisa percobaan: ${data.remaining_attempts} kali`;
-          }
-          if (data.is_locked) {
-            document.getElementById("attempts-label").textContent = "Sistem Terkunci. Gunakan Reset via Email.";
-          }
-        }
-      } catch (err) {
-        console.error("PIN verification error:", err);
-        alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Gagal menghubungi server keamanan. Silakan coba lagi.";
-        clearPin();
-      }
-    }
-
-    // =========================================================================
-    // RESET PIN VIA EMAIL OTP
-    // =========================================================================
-    function openResetModal() {
-      document.getElementById("auth-modal").classList.add("hidden");
-      document.getElementById("reset-modal").classList.remove("hidden");
-      document.getElementById("reset-step-1").style.display = "flex";
-      document.getElementById("reset-step-2").style.display = "none";
-      const alertEl = document.getElementById("reset-alert");
-      alertEl.className = "auth-alert";
-      alertEl.textContent = "";
-    }
-
-    function closeResetModal() {
-      document.getElementById("reset-modal").classList.add("hidden");
-      document.getElementById("auth-modal").classList.remove("hidden");
-      clearPin();
-    }
-
-    async function handleSendOtp() {
-      const btn = document.getElementById("btn-send-otp");
-      const resendBtn = document.getElementById("btn-resend-otp");
-      const alertEl = document.getElementById("reset-alert");
-
-      if (btn) btn.disabled = true;
-      if (resendBtn) resendBtn.disabled = true;
-
-      alertEl.className = "auth-alert auth-alert-success show";
-      alertEl.textContent = "Mengirimkan kode OTP ke email admin...";
-
-      try {
-        const res = await fetch("/api/admin-otp?action=send_otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "send_otp" }),
-        });
-        const data = await res.json();
-
-        if (res.ok && data.success) {
-          alertEl.className = "auth-alert auth-alert-success show";
-          alertEl.textContent = data.message;
-          if (data.target_email_masked) {
-            document.getElementById("reset-target-email").textContent = data.target_email_masked;
-          }
-
-          document.getElementById("reset-step-1").style.display = "none";
-          document.getElementById("reset-step-2").style.display = "flex";
-          document.getElementById("input-otp").focus();
-
-          startOtpTimer(60);
-        } else {
-          alertEl.className = "auth-alert auth-alert-error show";
-          alertEl.textContent = data.message || "Gagal mengirim kode OTP.";
-          if (btn) btn.disabled = false;
-        }
-      } catch (err) {
-        console.error("sendOtp error:", err);
-        alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Terjadi kesalahan jaringan saat mengirim OTP.";
-        if (btn) btn.disabled = false;
-      }
-    }
-
-    function startOtpTimer(seconds) {
-      const resendBtn = document.getElementById("btn-resend-otp");
-      if (!resendBtn) return;
-      resendBtn.disabled = true;
-      let remaining = seconds;
-
-      if (resendCountdownTimer) clearInterval(resendCountdownTimer);
-      resendBtn.textContent = `Kirim Ulang OTP (${remaining}s)`;
-
-      resendCountdownTimer = setInterval(() => {
-        remaining--;
-        if (remaining <= 0) {
-          clearInterval(resendCountdownTimer);
-          resendBtn.disabled = false;
-          resendBtn.textContent = "Kirim Ulang OTP";
-        } else {
-          resendBtn.textContent = `Kirim Ulang OTP (${remaining}s)`;
-        }
-      }, 1000);
-    }
-
-    async function handleVerifyOtpAndReset() {
-      const otpCode = document.getElementById("input-otp").value.trim();
-      const newPin = document.getElementById("input-new-pin").value.trim();
-      const confirmPin = document.getElementById("input-confirm-pin").value.trim();
-      const alertEl = document.getElementById("reset-alert");
-
-      if (!/^\d{6}$/.test(otpCode)) {
-        alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Kode OTP harus berupa 6 digit angka.";
-        return;
-      }
-
-      if (newPin.length < 4 || newPin.length > 8 || !/^\d+$/.test(newPin)) {
-        alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Master PIN baru harus berupa 4 hingga 8 digit angka.";
-        return;
-      }
-
-      if (newPin !== confirmPin) {
-        alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Konfirmasi PIN baru tidak cocok.";
-        return;
-      }
-
-      const submitBtn = document.getElementById("btn-submit-reset");
-      submitBtn.disabled = true;
-      alertEl.className = "auth-alert auth-alert-success show";
-      alertEl.textContent = "Memverifikasi OTP dan mereset PIN...";
-
-      try {
-        const res = await fetch("/api/admin-otp?action=verify_otp_and_reset_pin", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "verify_otp_and_reset_pin",
-            otp_code: otpCode,
-            new_pin: newPin,
-          }),
-        });
-
-        const data = await res.json();
-
-        if (res.ok && data.success) {
-          alertEl.className = "auth-alert auth-alert-success show";
-          alertEl.textContent = data.message + " Mengalihkan ke login...";
-          setTimeout(() => {
-            closeResetModal();
-            const loginAlert = document.getElementById("auth-alert");
-            loginAlert.className = "auth-alert auth-alert-success show";
-            loginAlert.textContent = "PIN baru berhasil disimpan. Silakan masukkan PIN baru Anda.";
-          }, 1500);
-        } else {
-          alertEl.className = "auth-alert auth-alert-error show";
-          alertEl.textContent = data.message || "Gagal mereset Master PIN.";
-          submitBtn.disabled = false;
-        }
-      } catch (err) {
-        console.error("resetPin error:", err);
-        alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Kesalahan koneksi saat mereset PIN.";
-        submitBtn.disabled = false;
-      }
-    }
-
-    async function handleLogout() {
-      const token = getStoredToken();
-      if (token) {
-        fetch("/api/admin-otp?action=logout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-admin-token": token },
-          body: JSON.stringify({ action: "logout", session_token: token }),
-        }).catch(() => {});
-      }
-      clearStoredToken();
-      document.getElementById("auth-modal").classList.remove("hidden");
-      clearPin();
-    }
-
-    // =========================================================================
-    // SESSION VERIFICATION & DATA LOADER
-    // =========================================================================
-    async function checkSession() {
-      const token = getStoredToken();
-      if (!token) {
-        document.getElementById("auth-modal").classList.remove("hidden");
-        fetchAuthState();
-        return false;
-      }
-
-      try {
-        const res = await fetch("/api/admin-otp?action=verify_session", {
-          method: "GET",
-          headers: { "x-admin-token": token },
-        });
-        const data = await res.json();
-        if (res.ok && data.valid) {
-          document.getElementById("auth-modal").classList.add("hidden");
-          return true;
-        } else {
-          clearStoredToken();
-          document.getElementById("auth-modal").classList.remove("hidden");
-          fetchAuthState();
-          return false;
-        }
-      } catch {
-        // network error, biarkan modal login muncul
-        document.getElementById("auth-modal").classList.remove("hidden");
-        return false;
-      }
-    }
-
-    async function fetchAuthState() {
-      try {
-        const res = await fetch("/api/admin-otp?action=get_auth_state");
-        const data = await res.json();
-        if (res.ok && data.success) {
-          if (data.target_email_masked) {
-            document.getElementById("reset-target-email").textContent = data.target_email_masked;
-          }
-          if (data.is_locked) {
-            const alertEl = document.getElementById("auth-alert");
-            alertEl.className = "auth-alert auth-alert-error show";
-            alertEl.textContent = "Akses sedang terkunci karena batas percobaan terlampaui. Gunakan Reset via Email.";
-            document.getElementById("attempts-label").textContent = "Sistem Terkunci";
-          } else if (data.remaining_attempts !== undefined) {
-            document.getElementById("attempts-label").textContent = `Sisa percobaan: ${data.remaining_attempts} kali`;
-          }
-        }
-      } catch (_) {}
-    }
-
-    // =========================================================================
-    // FETCH MONITORING STATS
-    // =========================================================================
-    async function fetchData() {
-      const token = getStoredToken();
-      if (!token) return;
-
-      const btnIcon = document.getElementById("btn-refresh-icon");
-      if (btnIcon) btnIcon.innerHTML = '<span class="pulse-dot"></span>';
-
-      try {
-        const res = await fetch("/api/stats", {
-          headers: { "x-admin-token": token },
-        });
-
-        if (res.status === 401) {
-          clearStoredToken();
-          document.getElementById("auth-modal").classList.remove("hidden");
-          return;
-        }
-
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const data = await res.json();
-        renderDashboard(data);
-      } catch (err) {
-        console.error("Gagal mengambil metrik:", err);
-      } finally {
-        if (btnIcon) btnIcon.innerHTML = "&#x21bb;";
-      }
-    }
-
-    function renderDashboard(data) {
-      if (!data || !data.ok) return;
-
-      // Header
-      document.getElementById("bot-name").textContent = data.botName || "FreeAIBot Console";
-      document.getElementById("server-time").textContent =
-        "Tanggal Data: " + data.today + " \u2022 Sinkronisasi: " + formatTime(data.serverTime) + " WIB";
-
-      // KPI
-      document.getElementById("kpi-today-msgs").textContent = data.summary.totalMessagesToday.toLocaleString();
-      document.getElementById("kpi-total-msgs").textContent = data.summary.totalMessagesAllTime.toLocaleString();
-      document.getElementById("kpi-wa").textContent = data.summary.whatsappToday + " WA";
-      document.getElementById("kpi-tele").textContent = data.summary.telegramToday + " Tele";
-      document.getElementById("kpi-calls-today").textContent = data.summary.totalCallsToday.toLocaleString() + " calls";
-      document.getElementById("kpi-total-keys").textContent = data.summary.totalKeys + " Keys Aktif Terpantau";
-
-      const topModel = data.modelsBreakdown && data.modelsBreakdown.length > 0
-        ? data.modelsBreakdown[0].name
-        : "Menunggu panggilan";
-      document.getElementById("kpi-top-model").textContent = topModel;
-
-      // Pools Matrix
-      const poolGrid = document.getElementById("pool-grid");
-      poolGrid.innerHTML = "";
-
-      (data.providers || []).forEach(p => {
-        const card = document.createElement("div");
-        card.className = "provider-card";
-
-        let keysHtml = "";
-        p.keys.forEach(k => {
-          let progressColorClass = "progress-emerald";
-          if (k.percentUsed > 85) progressColorClass = "progress-rose";
-          else if (k.percentUsed > 50) progressColorClass = "progress-amber";
-
-          keysHtml += `
-            <div class="key-row">
-              <div class="key-info-line">
-                <span class="key-label">${k.suffix}</span>
-                <span class="key-stats">${k.used} / ${k.dailyCap} (${k.percentUsed}%)</span>
-              </div>
-              <div class="progress-bar-bg">
-                <div class="progress-bar-fill ${progressColorClass}" style="width: ${Math.min(100, k.percentUsed)}%"></div>
-              </div>
-            </div>
-          `;
-        });
-
-        card.innerHTML = `
-          <div class="provider-header">
-            <div>
-              <div class="provider-name">${p.displayName}</div>
-              <div class="provider-models">${p.primaryModel}</div>
-            </div>
-            <div class="provider-summary-stat">
-              <div class="provider-usage-text">${p.usedToday} Calls</div>
-              <div class="provider-cap-text">${p.keyCount} Keys &bull; Cap: ${p.totalCap}/hari</div>
-            </div>
-          </div>
-          <div class="keys-list">
-            ${keysHtml}
-          </div>
-        `;
-        poolGrid.appendChild(card);
-      });
-
-      // Models Breakdown
-      const modelsList = document.getElementById("models-list");
-      modelsList.innerHTML = "";
-      if (!data.modelsBreakdown || data.modelsBreakdown.length === 0) {
-        modelsList.innerHTML = `<div style="color: var(--text-dim); font-size: 0.85rem;">Belum ada riwayat model hari ini.</div>`;
-      } else {
-        data.modelsBreakdown.forEach(m => {
-          const row = document.createElement("div");
-          row.className = "model-item";
-          row.innerHTML = `
-            <div class="model-label-row">
-              <span class="model-name">${m.name}</span>
-              <span class="model-count">${m.count} (${m.percent}%)</span>
-            </div>
-            <div class="progress-bar-bg">
-              <div class="progress-bar-fill progress-emerald" style="width: ${m.percent}%"></div>
-            </div>
-          `;
-          modelsList.appendChild(row);
-        });
-      }
-
-      // Media Counts
-      const mc = data.mediaCounts || {};
-      document.getElementById("media-text").textContent = mc.text || 0;
-      document.getElementById("media-voice").textContent = mc.voice || 0;
-      document.getElementById("media-image").textContent = mc.image || 0;
-      document.getElementById("media-sticker").textContent = mc.sticker || 0;
-      document.getElementById("media-doc").textContent = mc.document || 0;
-      document.getElementById("media-video").textContent = mc.video || 0;
-
-      // Activity Table
-      const tbody = document.getElementById("activity-tbody");
-      tbody.innerHTML = "";
-
-      if (!data.recentActivity || data.recentActivity.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada aktivitas percakapan.</td></tr>`;
-      } else {
-        data.recentActivity.forEach(act => {
-          const tr = document.createElement("tr");
-
-          const platformBadge = act.platform === "whatsapp"
-            ? `<span class="badge badge-wa">WhatsApp</span>`
-            : `<span class="badge badge-tele">Telegram</span>`;
-
-          const roleBadge = act.role === "user"
-            ? `<span class="role-badge role-user">User</span>`
-            : `<span class="role-badge role-bot">Bot</span>`;
-
-          const typeClass = "type-" + act.type;
-          const typeBadge = `<span class="type-badge ${typeClass}">${act.type.toUpperCase()}</span>`;
-
-          tr.innerHTML = `
-            <td style="color: var(--text-dim); font-family: var(--font-mono);">${formatTime(act.createdAt)}</td>
-            <td>${platformBadge}</td>
-            <td style="font-family: var(--font-mono);">${act.chatIdMasked}</td>
-            <td>${roleBadge}</td>
-            <td>${typeBadge}</td>
-            <td><span class="model-tag">${act.via || "-"}</span></td>
-            <td><div class="msg-preview" title="${act.preview.replace(/"/g, '&quot;')}">${act.preview}</div></td>
-          `;
-          tbody.appendChild(tr);
-        });
-      }
-    }
-
-    // =========================================================================
-    // DATASET EVALUATION & TRAINING LOADER
-    // =========================================================================
-    function debounceDatasetSearch() {
-      if (datasetSearchTimeout) clearTimeout(datasetSearchTimeout);
-      datasetSearchTimeout = setTimeout(fetchDataset, 350);
-    }
-
-    async function fetchDataset() {
-      const token = getStoredToken();
-      if (!token) return;
-
-      const q = document.getElementById("dataset-search").value.trim();
-      const platform = document.getElementById("dataset-platform-filter").value;
-      const tbody = document.getElementById("dataset-tbody");
-
-      try {
-        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&platform=${encodeURIComponent(platform)}&limit=100`;
-        const res = await fetch(url, {
-          headers: { "x-admin-token": token },
-        });
-
-        if (res.status === 401) {
-          clearStoredToken();
-          document.getElementById("auth-modal").classList.remove("hidden");
-          return;
-        }
-
-        const data = await res.json();
-        tbody.innerHTML = "";
-
-        if (!data.pairs || data.pairs.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2.5rem;">Tidak ada data percakapan yang cocok dengan filter pencarian.</td></tr>`;
-          return;
-        }
-
-        data.pairs.forEach(p => {
-          const tr = document.createElement("tr");
-
-          const platformBadge = p.platform === "whatsapp"
-            ? `<span class="badge badge-wa">WhatsApp</span>`
-            : `<span class="badge badge-tele">Telegram</span>`;
-
-          tr.innerHTML = `
-            <td>
-              <div style="font-size: 0.775rem; color: var(--text-muted); font-family: var(--font-mono);">${formatDateTime(p.createdAt)}</div>
-              <div style="margin-top: 0.25rem;">${platformBadge}</div>
-            </td>
-            <td>
-              <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim);">${p.chatIdMasked}</div>
-              <div style="margin-top: 0.2rem;"><span class="model-tag">${p.via || "Router"}</span></div>
-            </td>
-            <td>
-              <div class="dataset-prompt">${escapeHtml(p.userPrompt)}</div>
-            </td>
-            <td>
-              <div class="dataset-reply">${escapeHtml(p.botReply)}</div>
-            </td>
-            <td style="text-align: right;">
-              <button class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="copyPrompt('${escapeJs(p.userPrompt)}')">
-                Copy
-              </button>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
-      } catch (err) {
-        console.error("fetchDataset error:", err);
-      }
-    }
-
-    function downloadDataset(format) {
-      const token = getStoredToken();
-      if (!token) return;
-
-      const q = document.getElementById("dataset-search").value.trim();
-      const platform = document.getElementById("dataset-platform-filter").value;
-      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&platform=${encodeURIComponent(platform)}&limit=1000&token=${encodeURIComponent(token)}`;
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `freeaibot_dataset_${format}_${Date.now()}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
-
-    function escapeHtml(str) {
-      if (!str) return "";
-      return str
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
-
-    function escapeJs(str) {
-      if (!str) return "";
-      return str.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, "\\n");
-    }
-
-    function copyPrompt(text) {
-      navigator.clipboard.writeText(text).then(() => {
-        alert("Pertanyaan berhasil disalin ke clipboard.");
-      }).catch(() => {});
-    }
-
-    function toggleAutoRefresh() {
-      autoRefresh = !autoRefresh;
-      const btn = document.getElementById("btn-auto");
-      if (autoRefresh) {
-        btn.classList.add("active");
-        btn.querySelector("span").textContent = "Auto: 15s";
-        refreshTimer = setInterval(() => {
-          fetchData();
-        }, 15000);
-      } else {
-        btn.classList.remove("active");
-        btn.querySelector("span").textContent = "Auto: Off";
-        if (refreshTimer) clearInterval(refreshTimer);
-      }
-    }
-
-    // =========================================================================
-    // INITIALIZATION
-    // =========================================================================
-    (async () => {
-      const isAuthed = await checkSession();
-      if (isAuthed) {
-        fetchData();
-        fetchDataset();
-        refreshTimer = setInterval(fetchData, 15000);
-      }
-    })();
-  </script>
 </body>
 </html>
