@@ -18,9 +18,9 @@
    - Menambahkan aturan sanitasi Rule 13b pada `cleanMathAndNoise` untuk menyaring teks gestur fisik bertanda bintang (`*menyentuh tanganmu*`, `*tersenyum manis*`, `*ngeliat ke samping*`) agar obrolan murni berbentuk percakapan pesan teks WA yang natural.
    - Memperketat Rule 14 regex pembersih trailer menu kaku (`*Pilihan kamu:* 1. ... 2. ...`) agar terpotong secara instan dengan atau tanpa garis pemisah `---`.
    - Melarang keras bot mengusulkan diri menjadi pacar fiktif secara sepihak jika pengguna tidak pernah memintanya.
-5. **Penanganan Candaan & Roasting dari Teman Developer (Rafly)**:
-   - Menambahkan instruksi khusus pada prompt sistem agar mengenali makian santai, ledekan, atau candaan seputar Rafly (misal: "author lu galak", "developer lu pelit/tua bangka") sebagai lelucon santai antar teman.
-   - Menghapus label spesifik "teman tongkrongan" dan mencabut keharusan membela Rafly; bot diperbolehkan ikut menimpali candaan, ikut membuat lelucon, dan ikut meledek atau nge-roasting Rafly secara santai, lucu, dan menghibur tanpa baper.
+5. **Penanganan Candaan & Pengenalan Sinonim Kata Kunci Developer (Rafly)**:
+   - Memperluas pemahaman kata kunci penanya pembuat sistem: seluruh variasi kata seperti `developer`, `author`, `pembuat`, `pencipta`, `programmer`, `kreator`, `yang bikin bot`, `yang ngoding`, dan `maker` secara seragam dipahami merujuk kepada Rafly (Rflyyyf).
+   - Menghapus label spesifik "teman tongkrongan" dan mencabut keharusan membela Rafly; saat ada teman yang bercanda atau meledek seputar Rafly, bot diperbolehkan ikut menimpali lelucon dan ikut meledek atau nge-roasting Rafly secara santai, lucu, dan menghibur tanpa baper.
 6. **Integritas Konfigurasi Model Tetap Utuh 100%**:
    - Menjaga seluruh konfigurasi pool model AI di `src/env.ts` dan `.env` tetap lengkap (10 model cadangan failover xKiro dan model utama) tanpa ada yang dihilangkan.
 
