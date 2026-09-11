@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.24.9  
+**Versi:** v0.25.0  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 21:30 WIB  
+**Terakhir Diperbarui:** 2026-09-11 21:35 WIB  
 
 ---
 
@@ -191,6 +191,20 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.0 - 2026-09-11 21:35 WIB
+**Eliminasi Format Kuliah / Outline Skripsi Tanpa Perintah, Definisi Ensiklopedia & Nada Korporat CS**
+- **Larangan Format / Panduan / Outline Dokumen Tanpa Perintah Eksplisit (`src/skills.ts`)**:
+  - Mengatasi kendala bot yang tiba-tiba membuatkan panduan lengkap tugas akhir 5 bab (Bab 1 Pendahuluan s/d Bab 5, format font Times New Roman 12, APA/IEEE) ketika pengguna hanya menjawab santai "tugas akhir kuliah".
+  - Menegakkan pemisahan tegas: menyebutkan aktivitas atau tugas (sedang ngerjain jurnal, skripsi, tugas akhir, koding) adalah topik obrolan santai biasa (curhat/cerita), BUKAN perintah untuk membuatkan dokumen atau modul akademik.
+  - Melarang keras bot mengeluarkan outline skripsi/makalah/jurnal, daftar bab, format font/spasi/margin, atau panduan tugas akhir jika tidak diminta secara eksplisit dengan perintah seperti "buatkan outline", "buatkan draf", atau "tuliskan bab 1".
+- **Pelarangan Definisi Ensiklopedia Kata ("X adalah...") & Nada CS Korporat**:
+  - Melarang keras bot mengawali jawaban dengan mendefinisikan istilah yang disebut pengguna (contoh: "Tugas akhir kuliah adalah tahap akhir dari studi sarjana..."). Pengguna sudah mengetahui artinya dan ingin mengobrol santai, bukan membaca ensiklopedia.
+  - Menghapus pola penawaran bantuan CS berlebihan: "aku bisa bantu dari awal sampai akhir, mulai dari brainstorming ide... Kamu mau mulai dari mana?".
+  - Mengembalikan respon ke nada sahabat karib yang santai dan wajar (1-2 kalimat: menanyakan topik atau perkembangan tugas secara santai).
+- **Penegakan Larangan Kata Formal "Anda" & Pembersihan Boilerplate CS (`cleanMathAndNoise`)**:
+  - Mengharamkan kata formal "Anda" dalam seluruh interaksi, mewajibkan penggunaan sapaan akrab "kamu".
+  - Memperluas pembersihan sanitasi output (`cleanMathAndNoise`) untuk menyingkirkan kalimat klise CS otomatis: "Jika Anda membutuhkan bantuan lebih lanjut...", "Ada yang bisa dibantu?", "Ada yang bisa saya bantu?".
 
 ### v0.24.9 - 2026-09-11 21:30 WIB
 **Comprehensive 514-Regency Indonesia Geo-Mapping, Auto-Location Persistence & Zero-Prompt-Leakage on Non-Time Queries**
