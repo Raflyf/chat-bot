@@ -253,10 +253,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const modelCounts: Record<string, number> = {};
     let totalModelCalls = 0;
     const latestActiveModel = assistantMsgs?.[0]?.via || null;
+    const recentModelOrder: string[] = [];
+    const seenRecent = new Set<string>();
+
     for (const m of assistantMsgs ?? []) {
       const model = m.via || 'unknown';
       modelCounts[model] = (modelCounts[model] || 0) + 1;
       totalModelCalls++;
+      if (m.via && !seenRecent.has(m.via)) {
+        seenRecent.add(m.via);
+        recentModelOrder.push(m.via);
+      }
     }
 
     const modelsBreakdown = Object.entries(modelCounts)
@@ -509,6 +516,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       },
       pools,
       activeModel: latestActiveModel,
+      recentModels: recentModelOrder,
       modelsBreakdown,
       mediaCounts,
     });

@@ -2873,37 +2873,90 @@
         },
       ];
 
-      // Identifikasi model yang sedang aktif merespon / paling baru digunakan
-      const activeRaw = (data.activeModel || (modelsBreakdown[0]?.name) || "qwen/qwen3.8-max:free").toLowerCase();
+      // Urutan Model Berbasis MRU (Most Recently Used):
+      // Jika ada model baru terpakai jadi #1, maka model #1 sebelumnya bergeser jadi #2, #3, dst.
+      // Tidak kembali ke posisi statis/fix di bawah.
 
-      // Cari indeks model aktif di dalam katalog
-      let activeCatalogIdx = catalog.findIndex(item => {
-        return item.matchKeys.some(k => activeRaw.includes(k.toLowerCase()) || k.toLowerCase().includes(activeRaw));
+      // 1. Ambil urutan model terbaru dari backend (recentModels)
+      const serverRecent = Array.isArray(data.recentModels) ? data.recentModels : [];
+
+      // 2. Pertahankan juga MRU stack di client session agar perpindahan kartu mulus
+      if (!window.__mruModelHistory) {
+        window.__mruModelHistory = [];
+      }
+
+      // Sinkronkan data recent dari server ke history client (dari terlama ke terbaru agar unshift terurut benar)
+      for (let idx = serverRecent.length - 1; idx >= 0; idx--) {
+        const sm = serverRecent[idx];
+        if (sm) {
+          const existingIdx = window.__mruModelHistory.findIndex(k => k.toLowerCase() === sm.toLowerCase());
+          if (existingIdx !== -1) {
+            window.__mruModelHistory.splice(existingIdx, 1);
+          }
+          window.__mruModelHistory.unshift(sm);
+        }
+      }
+
+      // Jika ada activeModel saat ini, pastikan ia berada di posisi paling puncak (#1)
+      const currentActive = data.activeModel || (modelsBreakdown[0]?.name);
+      if (currentActive) {
+        const existingIdx = window.__mruModelHistory.findIndex(k => k.toLowerCase() === currentActive.toLowerCase());
+        if (existingIdx !== -1) {
+          window.__mruModelHistory.splice(existingIdx, 1);
+        }
+        window.__mruModelHistory.unshift(currentActive);
+      }
+
+      // 3. Masukkan juga model-model dari breakdown yang memiliki eksekusi (count > 0) ke dalam MRU jika belum ada
+      modelsBreakdown.forEach(m => {
+        if (m.name && (m.count || 0) > 0) {
+          const already = window.__mruModelHistory.some(k => k.toLowerCase() === m.name.toLowerCase());
+          if (!already) {
+            window.__mruModelHistory.push(m.name);
+          }
+        }
       });
 
-      let orderedCatalog = [...catalog];
-      if (activeCatalogIdx > 0) {
-        // Model ditemukan di posisi selain #1, angkat otomatis ke posisi #1!
-        const [activeItem] = orderedCatalog.splice(activeCatalogIdx, 1);
-        orderedCatalog.unshift(activeItem);
-      } else if (activeCatalogIdx === -1) {
-        // Model eksekusi baru di luar katalog statis, buatkan kartu dinamis di posisi #1!
-        let prov = "AI GATEWAY";
-        let tagCls = "tag-xkiro";
-        if (activeRaw.includes("groq")) { prov = "GROQ"; tagCls = "tag-groq"; }
-        else if (activeRaw.includes("gemini")) { prov = "GEMINI"; tagCls = "tag-gemini"; }
-        else if (activeRaw.includes("openrouter")) { prov = "OPENROUTER"; tagCls = "tag-openrouter"; }
-        else if (activeRaw.includes("xkiro")) { prov = "XKIRO"; tagCls = "tag-xkiro"; }
+      // 4. Susun orderedCatalog:
+      // Petakan model dari window.__mruModelHistory ke item katalog statis
+      const orderedCatalog = [];
+      const usedCatalogIndices = new Set();
 
-        const dynamicItem = {
-          name: data.activeModel || "Model Terpilih",
-          provider: prov,
-          tagClass: tagCls,
-          desc: "Model dinamis yang sedang aktif merespon pengguna saat ini",
-          matchKeys: [activeRaw],
-        };
-        orderedCatalog.unshift(dynamicItem);
+      for (const mruKey of window.__mruModelHistory) {
+        const keyLower = mruKey.toLowerCase();
+        const catIdx = catalog.findIndex((item, i) => {
+          if (usedCatalogIndices.has(i)) return false;
+          return item.matchKeys.some(k => keyLower.includes(k.toLowerCase()) || k.toLowerCase().includes(keyLower));
+        });
+
+        if (catIdx !== -1) {
+          usedCatalogIndices.add(catIdx);
+          orderedCatalog.push(catalog[catIdx]);
+        } else {
+          // Model dinamis di luar katalog statis
+          let prov = "AI GATEWAY";
+          let tagCls = "tag-xkiro";
+          if (keyLower.includes("groq")) { prov = "GROQ"; tagCls = "tag-groq"; }
+          else if (keyLower.includes("gemini")) { prov = "GEMINI"; tagCls = "tag-gemini"; }
+          else if (keyLower.includes("openrouter")) { prov = "OPENROUTER"; tagCls = "tag-openrouter"; }
+          else if (keyLower.includes("xkiro")) { prov = "XKIRO"; tagCls = "tag-xkiro"; }
+
+          orderedCatalog.push({
+            name: mruKey,
+            provider: prov,
+            tagClass: tagCls,
+            desc: "Model dinamis yang aktif melayani inferensi pengguna",
+            matchKeys: [mruKey],
+          });
+        }
       }
+
+      // 5. Tambahkan sisa model katalog statis yang belum pernah dipakai di bawahnya
+      catalog.forEach((item, i) => {
+        if (!usedCatalogIndices.has(i)) {
+          orderedCatalog.push(item);
+        }
+      });
 
       // Render kartu dengan urutan baru: posisi #1 selalu model yang sedang aktif
       gridEl.innerHTML = orderedCatalog.map((c, i) => {
