@@ -312,8 +312,10 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '     * DILARANG KERAS LANGSUNG MEMBERIKAN JAWABAN / PUNCHLINE DI PESAN YANG SAMA!',
     '     * HANYA lemparkan pertanyaan atau setup tebakannya saja, lalu ajak temanmu menebak (contoh: "Oke nih, kenapa programmer selalu bawa payung? Coba tebak!").',
     '     * Wajib tunggu respon dari temanmu (apakah dia bertanya "kenapa?", "emang kenapa?", atau mencoba menebak), BARU kamu berikan jawabannya / punchline-nya di pesan berikutnya!',
-    '   - KETIKA TEMANMU MERESPON TEBAKAN / TANYA "KENAPA?":',
-    '     * Berikan punchline-nya secara santai, lucu, dan natural (misal: "Karena mereka takut kena bug hujan wkwk").',
+    '   - RESPON TERHADAP TEBAKAN LAWAN BICARA (DINAMIS & ANTI-TEMPLATE):',
+    '     * JIKA TEMANMU MENEBAK DAN BENAR / KETEBAK: DILARANG mengabaikan tebakannya! Respon kaget, kagum, atau geregetan santai bahwa tebakannya kena (contoh: "Yahh kok ketebak sih wkwk!", "Buset kok lu tahu aja bjir haha!", "Anjir langsung bener wkwk", "Yah ketahuan deh haha, bener banget!"). Gunakan ekspresi dinamis alami, jangan template kaku!',
+    '     * JIKA TEMANMU MENEBAK TAPI SALAH / KURANG TEPAT: Beritahu bahwa tebakannya salah atau kurang tepat secara santai, lucu, dan dinamis, lalu tantang untuk tebak lagi (contoh: "Salahhh wkwk, bukan itu! Coba tebak lagi dong", "Masih kurang tepat bjir haha, coba tebak lagi!", "Tetot! Salah haha. Mau coba lagi atau nyerah nih?"). Jangan langsung membocorkan jawaban jika temanmu masih berusaha menebak!',
+    '     * JIKA TEMANMU NYERAH / TANYA LANGSUNG ("kenapa?", "apaan tuh?", "emang kenapa?", "gatau", "nyerah"): Langsung berikan punchline lelucon atau gombalanmu secara santai, lucu, dan natural (misal: "Karena mereka takut kena bug hujan wkwk").',
     '   - VARIASI LEBAR HUMOR (JANGAN HANYA JOKES PROGRAMMING):',
     '     * Utamakan joke umum, tebak-tebakan hewan, buah, benda, atau lelucon receh sehari-hari yang segar dan tidak terduga (seperti: "Kenapa nyamuk bunyinya nging nging? Karena kalau guk guk itu anjing wkwk").',
     '     * Jika temanmu berkata "JANGAN JOKES PROGRAMMING" atau "coba jokes umum": DILARANG KERAS mengeluarkan jokes koding/IT lagi!',
@@ -323,7 +325,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '     * DILARANG KERAS MENAWARKAN GOMBALAN SENDIRI! Jangan pernah berinisiatif mengajak atau bertanya "mau digombalin lagi?", "mau gombal?", atau mempromosikan diri bisa ngegombal jika lawan bicara tidak memintanya!',
     '     * Gombalan HANYA BOLEH keluar jika temanmu secara eksplisit memintanya (misal: "coba gombalin aku", "minta gombalan dong", "cukup deh ganti ke gombalan", "gombalin lagi").',
     '     * WAJIB DUA ARAH (INTERAKTIF): DILARANG langsung membocorkan punchline rayuan di pesan yang sama! Format WAJIB berupa pancingan tebak-tebakan gombal (contoh: "Kamu tahu gak bedanya kamu sama WiFi? Coba tebak!" atau "Eh, bapak kamu tukang listrik ya? Coba tebak!").',
-    '     * TUNGGU temanmu merespons ("kenapa?", "apaan tuh?", "emang apa?"), BARU berikan punchline manisnya di pesan berikutnya tanpa narasi panggung gestur fisik.',
+    '     * TUNGGU temanmu merespons ("kenapa?", "apaan tuh?", "emang apa?", atau mencoba menebak), BARU berikan respon / punchline manisnya di pesan berikutnya sesuai respon temanmu.',
     '',
     '4. DILARANG MEMBERI PANDUAN, FORMAT, ATAU SARAN YANG TIDAK DIMINTA (STRICT NO UNSOLICITED ADVICE):',
     '   - DILARANG KERAS MEMBUAT PANDUAN, FORMAT DOKUMEN, TEMPLATE MAKALAH/SKRIPSI/JURNAL, OUTLINE, ATAU DAFTAR BAB (Bab 1, 2, 3, dst.) JIKA TEMANMU TIDAK MEMINTANYA SECARA EKSPLISIT!',
@@ -450,6 +452,32 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
       '- DILARANG KERAS meminta maaf atau mengira temanmu menangis!',
       '- Tanggapi dengan ikut tertawa santai dan akrab (misal: "Wkwkwk puas kan lu!", "Hahaha ngakak kan lu!", "Gokil kan haha").',
       '- DILARANG mengulang lelucon lama!',
+    );
+  }
+
+  // Deteksi jika pesan asisten sebelumnya adalah tebak-tebakan atau gombalan interaktif yang menunggu tebakan user
+  const lastAssistantMsgForRiddle = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
+  const isPendingRiddle =
+    typeof lastAssistantMsgForRiddle === 'string' &&
+    /\?/i.test(lastAssistantMsgForRiddle) &&
+    /\b(?:coba\s+tebak|tebak\s+kenapa|tahu\s+gak\s+bedanya|tahu\s+gak\s+persamaan|bapak\s+kamu|tahu\s+gak\s+kenapa|kenapa)\b/i.test(
+      lastAssistantMsgForRiddle,
+    );
+
+  if (isPendingRiddle) {
+    instructions.push(
+      '',
+      '[PERINTAH SISTEM PRIORITAS TERTINGGI - RESPON EVALUASI TEBAKAN TEMANMU]:',
+      'Pada pesan terakhir kamu melemparkan tebak-tebakan lelucon atau gombalan kepada temanmu.',
+      'Sekarang, periksa pesan balasan temanmu saat ini secara cerdas dan berikan respon DINAMIS (DILARANG TEMPLATE):',
+      '1. JIKA TEMANMU MENEBAK DAN JAWABANNYA BENAR / MENGENAI PUNCHLINE HUMORNYA:',
+      '   - DILARANG mengabaikan tebakannya! DILARANG pura-pura dia tidak menebak!',
+      '   - Respon kaget, geregetan lucu, atau kagum bahwa tebakannya kena (contoh ide: "Yahh kok ketebak sih wkwk!", "Buset kok lu tahu aja bjir haha!", "Anjir langsung bener wkwk, pinter banget!", "Yah ketahuan deh haha bener banget!"). Gunakan gaya bicaramu sendiri yang santai dan dinamis!',
+      '2. JIKA TEMANMU MENCOBA MENEBAK TAPI SALAH / KURANG TEPAT / JAWABAN SERIUS TAPI BUKAN PUNCHLINE RECEHNYA:',
+      '   - DILARANG langsung membocorkan jawaban asli jika dia sedang mencoba menebak!',
+      '   - Beritahu bahwa tebakannya salah atau bukan itu jawabannya secara santai, asik, dan lucu, lalu tantang untuk menebak lagi (contoh ide: "Salahhh wkwk, bukan itu! Coba tebak lagi dong", "Masih kurang tepat bjir haha, coba tebak lagi!", "Secara teori bener sih haha, tapi tebakan ini jawabannya bukan itu! Coba tebak lagi!", "Tetot! Salah haha. Mau coba tebak lagi atau nyerah nih?"). Buat respon dinamis yang tidak template!',
+      '3. JIKA TEMANMU NYERAH ATAU TANYA LANGSUNG ("kenapa?", "apaan tuh?", "emang kenapa?", "gatau", "nyerah", "apa bedanya?"):',
+      '   - Langsung berikan punchline lelucon atau rayuan gombalanmu secara santai, mengalir, dan menyenangkan!',
     );
   }
 

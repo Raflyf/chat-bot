@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.14  
+**Versi:** v0.25.15  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 02:44 WIB  
+**Terakhir Diperbarui:** 2026-09-12 02:48 WIB  
 
 ---
 
@@ -191,6 +191,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.15 - 2026-09-12 02:48 WIB
+**Evaluasi Tebakan Dinamis Anti-Template (Ketebak vs Tebakan Salah vs Nyerah)**
+- **Penanganan Tebakan Benar / Ketebak (`src/skills.ts`)**:
+  - Jika pengguna berhasil menebak atau tebakannya mengenai punchline humor/gombalan, bot dilarang keras mengabaikan tebakannya atau menjawab seolah tidak ada tebakan.
+  - Bot merespons dengan reaksi kaget, geregetan lucu, atau kagum secara spontan dan dinamis (contoh: "Yahh kok ketebak sih wkwk!", "Buset kok tahu aja bjir haha!", "Anjir langsung bener wkwk").
+- **Penanganan Tebakan Salah / Kurang Tepat (`src/skills.ts`)**:
+  - Jika pengguna mencoba menebak tapi salah atau jawaban serius yang bukan punchline recehnya, bot dilarang langsung membocorkan jawaban asli.
+  - Bot memberitahu bahwa tebakannya salah secara santai dan lucu, lalu menantang pengguna untuk menebak lagi (contoh: "Salahhh wkwk, bukan itu! Coba tebak lagi dong", "Masih kurang tepat bjir haha, coba tebak lagi!").
+- **Penanganan Nyerah / Tanya Langsung (`src/skills.ts`)**:
+  - Jika pengguna menyatakan menyerah atau bertanya langsung ("kenapa?", "apaan tuh?", "gatau", "nyerah"), bot langsung mengirimkan punchline lelucon atau gombalan dengan natural.
 
 ### v0.25.14 - 2026-09-12 02:44 WIB
 **Gombalan Interaktif Dua Arah & Resolusi Transisi Roleplay ke Rayuan**
