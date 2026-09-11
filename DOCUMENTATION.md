@@ -210,6 +210,8 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - Banner Auto Gateway Router (Smart Cascades) menyajikan total resolusi inferensi real-time dengan filter rentang waktu instan (Hari Ini, 7 Hari, 30 Hari, Semua).
 - **Logo & Favicon Browser Tab Resmi (`public/favicon.svg`)**:
   - Menyematkan logo favicon neural chip AI berbasis vektor SVG beresolusi tinggi di seluruh halaman web (`index.html`, `dashboard.html`, `privacy.html`) agar logo bot tampil elegan di tab browser desktop maupun mobile.
+- **Scrollable Dataset Response Container (`public/dashboard.html`)**:
+  - Memasang batasan ketinggian `max-height: 220px` dan `overflow-y: auto` dengan scrollbar ramping bernuansa cyber-cyan pada sel jawaban chatbot (`.dataset-reply`) dan prompt pengguna (`.dataset-prompt`), menjaga tabel tetap proporsional dan mudah digulir saat teks jawaban sangat panjang.
 - **Validasi Empiris Status MiniMax xKiro**:
   - Penelusuran langsung melalui pemanggilan API membuktikan bahwa seluruh varian `minimax/*:free` di xKiro saat ini mengalami HTTP 500 (`internal_error`) dari upstream provider, sedangkan varian non-free mewajibkan deposit saldo (HTTP 403).
 
