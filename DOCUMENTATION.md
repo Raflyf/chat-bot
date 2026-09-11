@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.22.0  
+**Versi:** v0.22.4  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 13:10 WIB  
+**Terakhir Diperbarui:** 2026-09-11 13:46 WIB  
 
 ---
 
@@ -191,6 +191,15 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.22.4 — 2026-09-11 13:46 WIB
+**Optimasi Dashboard & Efisiensi Database: Eliminasi Tabel Live Log Redundan & Streamlining Endpoint Stats**
+- **Eliminasi Tabel Live Log Redundan (`public/dashboard.html`)**:
+  - Menghapus seksi tabel "Aktivitas Percakapan Terbaru (Live Log)" di dashboard monitoring karena redundan dengan tabel "Evaluasi & Dataset Training AI" di atasnya yang sudah memuat pasangan prompt-completion terstruktur secara jauh lebih informatif dan kaya fitur (pencarian, filter platform, rentang waktu, ekspor JSONL/CSV).
+  - Menghapus fungsi JavaScript `filterActivityTable()` dan variabel memori `cachedRecentActivity` guna memperkecil ukuran bundle HTML dan merampingkan siklus render UI.
+- **Streamlining Endpoint Serverless (`api/stats.ts`)**:
+  - Mengeliminasi query `messages.select().limit(50)` dan pemetaan `recentFormatted` pada endpoint `/api/stats`.
+  - Menghemat kuota query database Supabase sebanyak 1 pemanggilan per 15 detik auto-refresh dan mempercepat waktu respons payload serverless.
 
 ### v0.22.3 — 2026-09-11 13:38 WIB
 **Optimasi Respon & Kepadatan Bahasa: Universal Conciseness & Anti-Wall-of-Text Engine**
