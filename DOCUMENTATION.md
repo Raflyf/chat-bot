@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.24.6  
+**Versi:** v0.24.7  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 20:55 WIB  
+**Terakhir Diperbarui:** 2026-09-11 21:05 WIB  
 
 ---
 
@@ -191,6 +191,24 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.24.7 - 2026-09-11 21:05 WIB
+**Universal Dynamic Global Timezone Engine, Phone Country Auto-Detection & Multi-Continent Real-Time Clock**
+- **Mesin Zona Waktu Global & Universal Real-Time Clock (`src/timezone.ts`)**:
+  - Mengatasi keterbatasan zona waktu tunggal (WIB): mengintegrasikan mesin zona waktu global berbasis API native `Intl.DateTimeFormat` yang mendukung seluruh 418 zona waktu IANA dunia secara presisi tanpa ketergantungan paket eksternal.
+  - **Waktu Universal Standar (UTC/GMT)**: Menyediakan basis waktu universal koordinat global sebagai acuan matematis ground truth.
+  - **Matriks 3 Zona Waktu Indonesia Lengkap**: Menyajikan waktu presisi serentak untuk WIB (UTC+7 / Asia/Jakarta), WITA (UTC+8 / Asia/Makassar - Bali, NTB, NTT, Kalimantan Timur/Selatan/Utara, Sulawesi), dan WIT (UTC+9 / Asia/Jayapura - Papua, Maluku).
+- **Deteksi Otomatis Negara Asal dari Nomor Telepon Pengguna (`detectUserCountry`)**:
+  - Menganalisis prefiks kode panggilan negara internasional (E.164) pada akun WhatsApp (`chatKey` / `chatId`).
+  - Secara otomatis mengenali pengguna luar negeri (seperti +1 AS/Kanada, +44 Inggris, +49 Jerman, +33 Prancis, +81 Jepang, +82 Korea, +60 Malaysia, +65 Singapura, +61 Australia, +966 Arab Saudi, +971 UAE, dll) dan menyajikan waktu lokal negara tempat pengguna berada secara otomatis saat mereka bertanya jam tanpa harus menyebutkan negaranya.
+- **Deteksi Entitas Kota, Daerah & Wilayah Dinamis (`detectLocation`)**:
+  - Memetakan ratusan nama kota, provinsi, dan daerah di Indonesia (Bali, Denpasar, Lombok, Kupang, Makassar, Manado, Samarinda, Balikpapan, Jayapura, Merauke, Ambon, Surabaya, Medan, dll) serta kota-kota metropolitan dunia (Tokyo, London, Paris, Berlin, New York, Los Angeles, Chicago, Sydney, Perth, Mekkah, Dubai, dll).
+  - Jika pengguna menyebutkan atau menanyakan jam di kota tertentu ("jam berapa di Bali?", "kalo di Tokyo jam berapa?", "sekarang jam berapa di London?"), sistem secara otomatis menghitung waktu presisi di lokasi target tersebut.
+- **Pengalihan Cerdas Kueri Jam di Web Search (`src/web.ts`)**:
+  - Memperbarui filter `needsSearch`: kueri yang menanyakan jam/waktu saat ini di kota atau daerah manapun dialihkan langsung ke mesin jam internal presisi berkecepatan 0ms, mencegah ketergantungan pada potongan hasil web search yang lambat atau usang.
+- **Penyelarasan System Prompt & Multi-Turn Memory (`src/skills.ts`, `src/memory.ts`)**:
+  - Menyematkan field `chatId` ke dalam interface `ChatContext` Supabase memory agar identitas nomor pengguna selalu tersedia di seluruh saluran.
+  - Menghubungkan teks pesan pengguna (`userPrompt`) ke dalam generator prompt sistem sehingga deteksi lokasi langsung aktif pada giliran pesan pertama.
 
 ### v0.24.6 - 2026-09-11 20:55 WIB
 **Universal Real-Time Search Engine, Bing Redirect Decoders, Dual News RSS, Hugging Face AI Catalog, Anaphora Context Resolution & Anti-Refusal Tuning**

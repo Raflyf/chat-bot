@@ -214,9 +214,15 @@ export function needsSearch(text: string): boolean {
     return false;
   }
 
-  // 4. Pertanyaan waktu/jam lokal murni: TIDAK perlu search
-  if (/^(jam berapa|sekarang jam berapa|jam berapa sekarang|hari apa sekarang|sekarang hari apa|tanggal berapa sekarang|sekarang tanggal berapa|pukul berapa)$/i.test(qNorm)) {
-    return false;
+  // 4. Pertanyaan waktu/jam saat ini (lokal maupun kota/negara di dunia): TIDAK perlu search karena ditangani mesin waktu presisi
+  if (
+    /^(?:kalo\s+|kalau\s+|dan\s+)?(?:di\s+[a-z\s]+\s+)?(?:sekarang\s+)?(?:jam|pukul|waktu|hari|tanggal)\s+(?:berapa|apa)(?:\s+(?:sekarang|saat ini))?(?:\s+(?:di|pada|untuk)\s+[a-z\s]+)?$/i.test(qNorm) ||
+    /^(?:kalo\s+|kalau\s+|dan\s+)?(?:sekarang\s+)?(?:jam|pukul|waktu|hari|tanggal)\s+(?:berapa|apa)(?:\s+(?:sekarang|saat ini))?(?:\s+(?:di|pada|untuk)\s+[a-z\s]+)?$/i.test(qNorm) ||
+    /^(?:di\s+[a-z\s]+\s+)?(?:sekarang\s+)?(?:jam|pukul)\s+berapa/i.test(qNorm)
+  ) {
+    if (!/\b(?:pertandingan|konser|acara|jadwal|tayang|rilis|kick\s*off|main)\b/i.test(qNorm)) {
+      return false;
+    }
   }
 
   // 5. Soal aritmatika murni tanpa teks kata: e.g. "12 + 15" atau "50 * 4 / 2"
