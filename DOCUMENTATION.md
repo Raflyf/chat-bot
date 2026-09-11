@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.23.3  
+**Versi:** v0.23.7  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 15:48 WIB  
+**Terakhir Diperbarui:** 2026-09-11 16:47 WIB  
 
 ---
 
@@ -191,6 +191,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.23.7 — 2026-09-11 16:47 WIB
+**Dedicated Live Upstream Quota & Token Table Card (UI/UX Refactoring & Zero Clutter)**
+- **Penyempurnaan Tampilan Kartu Pool API Key (`public/dashboard.html`)**:
+  - Mengembalikan tata letak baris kunci (`.key-row`) di dalam kartu provider menjadi bersih, rapi, dan proporsional tanpa teks bertumpuk atau wrap yang terpotong.
+  - Menghilangkan badge dan kotak rincian token yang sebelumnya memadati baris kunci sempit di kartu pool.
+- **Card Tabel Terpisah Khusus Monitoring Kuota & Sisa Token Upstream (`#live-upstream-section`)**:
+  - Membangun komponen card tabel mandiri baru yang mewah dan berkarakter tepat di bawah seksi kartu pool.
+  - Dilengkapi *Mini KPI Summary Ribbon* di bagian atas: Total Limit Kuota Upstream (10M Token), Token Terpakai Hari Ini, Sisa Kuota Bersih xKiro (99.7% Tersedia), dan Status Kunci OpenRouter.
+  - Menampilkan tabel rincian horizontal lapang 7 kolom: Provider & Kunci Masked, Akun/Email Terdaftar, Model Utama & Tier, Batas Upstream Resmi, Penggunaan Global Hari Ini (dengan visual bar progress), Sisa Kuota Riil Upstream (font mono tebal hijau emerald), serta Status Validasi Live Synced.
+  - Mengintegrasikan seluruh kunci provider (xKiro, OpenRouter, Groq, Gemini) ke dalam satu ledger terpusat yang mudah dibaca.
 
 ### v0.23.6 — 2026-09-11 16:38 WIB
 **Live Remote Quota Sync (Real-Time Upstream Platform Token Tracking for xKiro & OpenRouter)**
