@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { config } from '../src/env.js';
 import {
   getClientIp,
   verifyPin,
