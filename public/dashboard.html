@@ -2708,18 +2708,41 @@
             const cleanSuffix = k.suffix.startsWith("...") ? k.suffix : "..." + k.suffix;
             const capLabel = k.cap > 0 ? `${k.used.toLocaleString()} / ${k.cap.toLocaleString()} calls (${k.percent}%)` : `${k.used.toLocaleString()} calls`;
 
+            const liveBadge = k.isLiveSynced
+              ? `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 0.68rem; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3); padding: 1px 6px; border-radius: 4px; margin-left: 4px;" title="Tersinkronisasi langsung dari web server resmi ${escapeHtml(p.displayName)}${k.liveUserEmail ? ' (' + escapeHtml(k.liveUserEmail) + ')' : ''}">● Live Sync</span>`
+              : "";
+
+            let liveDetailHtml = "";
+            if (p.kind === "xkiro" && k.isLiveSynced) {
+              liveDetailHtml = `
+                <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #94a3b8; margin-top: 6px; font-family: var(--font-mono); background: rgba(15, 23, 42, 0.45); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.04);">
+                  <span>Web Token: <strong style="color: #38bdf8;">${k.tokensUsed.toLocaleString("id-ID")}</strong> / ${k.tokenCap.toLocaleString("id-ID")} (${k.tokenPercent}%)</span>
+                  <span style="color: #34d399; font-weight: 600;">Sisa: ${k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined ? k.liveRemainingTokens.toLocaleString("id-ID") : "-"}</span>
+                </div>
+              `;
+            } else if (p.kind === "openrouter" && k.isLiveSynced) {
+              liveDetailHtml = `
+                <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #94a3b8; margin-top: 6px; font-family: var(--font-mono); background: rgba(15, 23, 42, 0.45); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.04);">
+                  <span>Credit Usage: <strong style="color: #38bdf8;">$${Number(k.liveUsageUsd || 0).toFixed(5)}</strong></span>
+                  <span style="color: #a855f7; font-weight: 600;">${k.isFreeTier ? "Free Model Tier" : "Deposit Paid"}</span>
+                </div>
+              `;
+            }
+
             keysHtml += `
               <div class="key-row">
                 <div class="key-info-line">
                   <div class="key-identity">
                     <span class="key-label">${escapeHtml(cleanSuffix)}</span>
                     <span class="key-badge-status status-${k.status}">${statusLabel}</span>
+                    ${liveBadge}
                   </div>
                   <span class="key-stats">${capLabel}</span>
                 </div>
                 <div class="progress-bar-bg">
                   <div class="progress-bar-fill ${progressColor}" style="width: ${Math.min(100, k.percent || 0)}%"></div>
                 </div>
+                ${liveDetailHtml}
               </div>
             `;
           });
@@ -2727,11 +2750,17 @@
 
         const usedValue = p.usedPeriod ?? p.usedToday ?? 0;
         const capInfo = p.totalCap > 0 ? `Cap: ${p.totalCap.toLocaleString()} calls` : "Uncapped";
+        const providerLiveBadge = p.isLiveSynced
+          ? `<span class="badge" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8; font-size: 0.68rem; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.25); padding: 2px 7px; border-radius: 9999px; margin-left: 6px;">● Live Remote Sync</span>`
+          : "";
 
         card.innerHTML = `
           <div class="provider-header">
             <div>
-              <div class="provider-name">${escapeHtml(p.displayName)}</div>
+              <div class="provider-name" style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+                <span>${escapeHtml(p.displayName)}</span>
+                ${providerLiveBadge}
+              </div>
               <div class="provider-models">${escapeHtml(p.primaryModel)}</div>
             </div>
             <div class="provider-summary-stat">
@@ -2782,6 +2811,10 @@
           limitOfficial = "Included Usage Credits";
         }
 
+        const syncSubtext = p.isLiveSynced
+          ? `<div style="font-size: 0.72rem; color: #34d399; margin-top: 2px; font-weight: 600;">● Live API Sync (Global di Semua App &amp; IDE)</div>`
+          : `<div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Rata-rata ~380 token/chat</div>`;
+
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>
@@ -2801,8 +2834,8 @@
             <span class="tp-badge-cycle">${escapeHtml(p.resetCycle || "-")}</span>
           </td>
           <td>
-            <div style="font-weight: 700; color: var(--text-main);">${usedCalls.toLocaleString()} Calls &bull; ~${formatTokens(tokensUsed)}</div>
-            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Rata-rata ~380 token/chat</div>
+            <div style="font-weight: 700; color: var(--text-main);">${usedCalls.toLocaleString()} Calls &bull; ${formatTokens(tokensUsed)} Token</div>
+            ${syncSubtext}
           </td>
           <td style="text-align: right;">
             <span class="key-badge-status ${statusBadgeClass}">${statusText}</span>

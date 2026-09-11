@@ -129,7 +129,59 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       userMsgsQuery = userMsgsQuery.eq('platform', filterPlatform);
     }
 
-    // 5. Eksekusi SEMUA query database secara PARALEL (1 kali roundtrip network)
+    // Fetch live usage dari remote provider API (xKiro & OpenRouter) secara paralel
+    const xkiroLivePromises = config.pools.xkiro.map(async (k) => {
+      try {
+        const res = await fetch('https://api.xkiro.com/v1/usage', {
+          headers: { Authorization: `Bearer ${k}`, Accept: 'application/json' },
+          signal: AbortSignal.timeout(2800),
+        });
+        if (!res.ok) return null;
+        const data = (await res.json()) as {
+          user?: { name?: string; email?: string };
+          free_tokens?: { used_today?: number; limit_per_day?: number; remaining?: number };
+        };
+        return {
+          key: k,
+          userName: data.user?.name || null,
+          userEmail: data.user?.email || null,
+          usedToday: Number(data.free_tokens?.used_today) || 0,
+          limitPerDay: Number(data.free_tokens?.limit_per_day) || 5000000,
+          remaining: Number(data.free_tokens?.remaining) || 0,
+        };
+      } catch {
+        return null;
+      }
+    });
+
+    const orLivePromises = config.pools.openrouter.map(async (k) => {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
+          headers: { Authorization: `Bearer ${k}`, Accept: 'application/json' },
+          signal: AbortSignal.timeout(2800),
+        });
+        if (!res.ok) return null;
+        const json = (await res.json()) as {
+          data?: {
+            usage?: number;
+            usage_daily?: number;
+            is_free_tier?: boolean;
+            limit_remaining?: number | null;
+          };
+        };
+        return {
+          key: k,
+          usageUsd: Number(json.data?.usage) || 0,
+          usageDailyUsd: Number(json.data?.usage_daily) || 0,
+          isFreeTier: json.data?.is_free_tier ?? true,
+          limitRemaining: json.data?.limit_remaining ?? null,
+        };
+      } catch {
+        return null;
+      }
+    });
+
+    // 5. Eksekusi SEMUA query database & live provider fetch secara PARALEL (1 kali roundtrip)
     const [
       { data: quotasData },
       { count: totalMessagesAllTime },
@@ -137,6 +189,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       { count: telePeriod },
       { data: assistantMsgs },
       { data: userMsgs },
+      xkiroLiveResults,
+      orLiveResults,
     ] = await Promise.all([
       quotaQuery,
       c.from('messages').select('*', { count: 'exact', head: true }),
@@ -144,7 +198,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       telePeriodQuery,
       assistantQuery,
       userMsgsQuery,
+      Promise.all(xkiroLivePromises),
+      Promise.all(orLivePromises),
     ]);
+
+    const xkiroSyncMap = new Map<string, {
+      key: string;
+      userName: string | null;
+      userEmail: string | null;
+      usedToday: number;
+      limitPerDay: number;
+      remaining: number;
+    }>();
+    for (const r of xkiroLiveResults) {
+      if (r) xkiroSyncMap.set(r.key, r);
+    }
+
+    const orSyncMap = new Map<string, {
+      key: string;
+      usageUsd: number;
+      usageDailyUsd: number;
+      isFreeTier: boolean;
+      limitRemaining: number | null;
+    }>();
+    for (const r of orLiveResults) {
+      if (r) orSyncMap.set(r.key, r);
+    }
 
     const quotaMap = new Map<string, number>();
     for (const q of quotasData ?? []) {
@@ -260,9 +339,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         poolUsed += used;
         totalCallsPeriod += used;
 
-        const tokensUsed = used * 380;
+        const xkLive = p.kind === 'xkiro' ? xkiroSyncMap.get(k) : null;
+        const orLive = p.kind === 'openrouter' ? orSyncMap.get(k) : null;
+
+        let tokensUsed = used * 380;
+        let tokenCap = effectiveTokenCapPerKey;
+        let remainingTokens: number | null = effectiveTokenCapPerKey > 0 ? Math.max(0, effectiveTokenCapPerKey - tokensUsed) : null;
+        let tokenPercent = effectiveTokenCapPerKey > 0 ? Math.min(100, Math.round((tokensUsed / effectiveTokenCapPerKey) * 100)) : 0;
+
+        if (xkLive) {
+          // Menggunakan data sinkronisasi langsung dari web server xKiro (global di semua apps)
+          tokensUsed = xkLive.usedToday;
+          tokenCap = xkLive.limitPerDay;
+          remainingTokens = xkLive.remaining;
+          tokenPercent = tokenCap > 0 ? Math.min(100, Math.round((tokensUsed / tokenCap) * 100)) : 0;
+        }
+
         const percent = effectiveCapPerKey > 0 ? Math.min(100, Math.round((used / effectiveCapPerKey) * 100)) : 0;
-        const tokenPercent = effectiveTokenCapPerKey > 0 ? Math.min(100, Math.round((tokensUsed / effectiveTokenCapPerKey) * 100)) : 0;
         const status = effectiveCapPerKey > 0 && used >= effectiveCapPerKey ? 'capped' : percent >= 80 ? 'warning' : 'healthy';
 
         return {
@@ -272,7 +365,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           remaining: effectiveCapPerKey > 0 ? Math.max(0, effectiveCapPerKey - used) : null,
           percent,
           tokensUsed,
-          tokenCap: effectiveTokenCapPerKey,
+          tokenCap,
           tokenPercent,
           tokenLimitType: p.tokenLimitType,
           tokenLimitLabel: p.tokenLimitLabel,
@@ -280,14 +373,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           contextWindow: p.contextWindow,
           avgTokensPerChat: 380,
           status,
+          isLiveSynced: !!xkLive || !!orLive,
+          liveUserName: xkLive?.userName ?? null,
+          liveUserEmail: xkLive?.userEmail ?? null,
+          liveRemainingTokens: remainingTokens,
+          liveUsageUsd: orLive?.usageUsd ?? null,
+          liveDailyUsageUsd: orLive?.usageDailyUsd ?? null,
+          isFreeTier: orLive?.isFreeTier ?? true,
         };
       });
 
       const totalPoolCap = effectiveCapPerKey * p.keys.length;
       const totalTokenPoolCap = effectiveTokenCapPerKey * p.keys.length;
       const poolPercent = totalPoolCap > 0 ? Math.min(100, Math.round((poolUsed / totalPoolCap) * 100)) : 0;
-      const poolTokensUsed = poolUsed * 380;
+      
+      let poolTokensUsed = 0;
+      for (const kd of keysDetail) {
+        poolTokensUsed += kd.tokensUsed;
+      }
       const poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolTokensUsed / totalTokenPoolCap) * 100)) : 0;
+      const isAnyLiveSynced = keysDetail.some((kd) => kd.isLiveSynced);
 
       return {
         kind: p.kind,
@@ -308,6 +413,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         totalTokenCap: totalTokenPoolCap,
         totalTokensUsed: poolTokensUsed,
         tokenPercent: poolTokenPercent,
+        isLiveSynced: isAnyLiveSynced,
         keys: keysDetail,
       };
     });
