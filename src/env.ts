@@ -1,21 +1,35 @@
 import 'dotenv/config';
 
+function cleanStr(name: string): string {
+  const val = process.env[name];
+  if (!val) return '';
+  return val.trim().replace(/^["']|["']$/g, '').trim();
+}
+
+function firstEnv(...names: string[]): string {
+  for (const n of names) {
+    const v = cleanStr(n);
+    if (v.length > 0) return v;
+  }
+  return '';
+}
+
 function csv(name: string): string[] {
   const raw = process.env[name] ?? '';
   return raw
     .split(',')
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(/^["']|["']$/g, '').trim())
     .filter((s) => s.length > 0);
 }
 
 function num(name: string, fallback: number): number {
-  const v = Number(process.env[name]);
+  const v = Number(cleanStr(name));
   return Number.isFinite(v) && v > 0 ? v : fallback;
 }
 
 export const config = {
-  telegramToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
-  ownerChatId: process.env.OWNER_CHAT_ID ?? '',
+  telegramToken: cleanStr('TELEGRAM_BOT_TOKEN'),
+  ownerChatId: cleanStr('OWNER_CHAT_ID'),
   pools: {
     xkiro: csv('XKIRO_KEYS'),
     openrouter: csv('OPENROUTER_KEYS'),
@@ -23,7 +37,7 @@ export const config = {
     gemini: csv('GEMINI_KEYS'),
   },
   models: {
-    xkiroPrimary: process.env.XKIRO_MODEL_PRIMARY ?? 'qwen/qwen3.8-max:free',
+    xkiroPrimary: cleanStr('XKIRO_MODEL_PRIMARY') || 'qwen/qwen3.8-max:free',
     xkiroBackup:
       csv('XKIRO_MODEL_BACKUPS').length > 0
         ? csv('XKIRO_MODEL_BACKUPS')
@@ -36,28 +50,28 @@ export const config = {
             'qwen/qwen3.7-plus:free',
             'mistralai/mistral-large-2512',
           ],
-    orPrimary: process.env.OR_MODEL_PRIMARY ?? 'nex-agi/nex-n2.5-pro:free',
-    orMini: process.env.OR_MODEL_MINI ?? 'nex-agi/nex-n2.5-mini:free',
-    orText: process.env.OR_MODEL_TEXT ?? 'nvidia/nemotron-3.5-lightning:free',
-    groqPrimary: process.env.GROQ_MODEL_PRIMARY ?? 'qwen/qwen3.8-27b',
-    groqBackup: process.env.GROQ_MODEL_BACKUP ?? 'qwen/qwen3.6-27b',
-    geminiPrimary: process.env.GEMINI_MODEL_PRIMARY ?? 'gemini-3.8-flash',
-    geminiBackup: process.env.GEMINI_MODEL_BACKUP ?? 'gemini-2.5-flash',
+    orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
+    orMini: cleanStr('OR_MODEL_MINI') || 'nex-agi/nex-n2.5-mini:free',
+    orText: cleanStr('OR_MODEL_TEXT') || 'nvidia/nemotron-3.5-lightning:free',
+    groqPrimary: cleanStr('GROQ_MODEL_PRIMARY') || 'qwen/qwen3.8-27b',
+    groqBackup: cleanStr('GROQ_MODEL_BACKUP') || 'qwen/qwen3.6-27b',
+    geminiPrimary: cleanStr('GEMINI_MODEL_PRIMARY') || 'gemini-3.8-flash',
+    geminiBackup: cleanStr('GEMINI_MODEL_BACKUP') || 'gemini-2.5-flash',
   },
-  supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+  supabaseUrl: firstEnv('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'POSTGRES_URL'),
   // Service-role diutamakan (server-side only); mendukung format integrasi Supabase Vercel
-  supabaseKey:
-    process.env.SUPABASE_SERVICE_KEY ??
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.SUPABASE_SECRET_KEY ??
-    process.env.SUPABASE_KEY ??
-    process.env.SUPABASE_ANON_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_KEY ??
-    '',
-  telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
-  cronSecret: process.env.CRON_SECRET ?? '',
-  botName: process.env.BOT_NAME ?? 'FreeAIBot',
+  supabaseKey: firstEnv(
+    'SUPABASE_SERVICE_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SECRET_KEY',
+    'SUPABASE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_KEY',
+  ),
+  telegramWebhookSecret: cleanStr('TELEGRAM_WEBHOOK_SECRET'),
+  cronSecret: cleanStr('CRON_SECRET'),
+  botName: cleanStr('BOT_NAME') || 'FreeAIBot',
   botProfile:
     process.env.BOT_PROFILE ??
     'Asisten AI umum berbahasa Indonesia. Cerdas, adaptif, jujur, dan berwawasan luas.',

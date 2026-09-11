@@ -1,7 +1,19 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.1  
+**Versi:** v0.25.2  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 23:15 WIB  
+**Terakhir Diperbarui:** 2026-09-11 23:31 WIB  
+
+---
+
+## Ringkasan Pembaruan v0.25.2 (Perbaikan Parsing Environment & Ketahanan Dashboard)
+1. **Parsing Variabel Lingkungan Kuat (*Robust Env Parsing*)**:
+   - `src/env.ts`: Memperkenalkan `cleanStr` dan `firstEnv` yang memangkas spasi/karakter newline (`.trim()`), membersihkan tanda kutip ganda/tunggal pembungkus (`"..."`, `'...'`), dan mengabaikan nilai kosong (`""`).
+   - Mendukung seluruh varian penamaan kunci Supabase: `SUPABASE_SERVICE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY`, `SUPABASE_KEY`, `SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+2. **Ketahanan Dashboard Telemetri (*Graceful Telemetry Degradation*)**:
+   - `api/stats.ts`: Metrik pool API Key (xKiro, Groq, Gemini, OpenRouter) dan sinkronisasi kuota upstream ke server xKiro & OpenRouter kini tetap dibangun dan disajikan ke dashboard meskipun Supabase sedang offline atau dalam proses sinkronisasi env.
+   - Menyajikan diagnostik transparan pada banner header mengenai ketersediaan `SUPABASE_URL` dan `SUPABASE_SERVICE_KEY` di container serverless.
+3. **Siklus Hidup Vercel Environment Variables**:
+   - Dokumentasi menegaskan bahwa penambahan Environment Variables di Project Settings Vercel mewajibkan proses build baru (*Redeploy* / git push) agar terinjeksi ke dalam container lambda aktif.
 
 ---
 
