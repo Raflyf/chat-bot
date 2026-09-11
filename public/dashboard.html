@@ -3381,7 +3381,7 @@
       }
 
       try {
-        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&limit=300`;
+        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&limit=300&_t=${Date.now()}`;
         const res = await fetch(url, {
           headers: { "x-admin-token": token },
         });
@@ -3632,8 +3632,11 @@
       const isAuthed = await checkSession();
       if (isAuthed) {
         fetchData();
-        fetchDataset();
-        refreshTimer = setInterval(fetchData, 15000);
+        fetchDataset(true);
+        refreshTimer = setInterval(() => {
+          fetchData();
+          fetchDataset(true);
+        }, 15000);
       }
     })();
   </script>
