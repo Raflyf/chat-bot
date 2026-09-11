@@ -198,6 +198,10 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - Membatasi tampilan tabel dataset evaluasi secara presisi menjadi 5 pasangan percakapan per halaman sehingga layout panel tetap rapi dan tidak memanjang ke bawah.
   - Mengintegrasikan kontrol navigasi pagination interaktif (tombol `Prev`, nomor halaman `1`, `2`, `3`, ..., dan `Next`) serta teks indikator jumlah percakapan yang ditampilkan.
   - Menambahkan pembatasan ketinggian maksimum (*max-height: 220px*) dengan scrollbar ramping pada prompt pengguna dan balasan bot agar isi teks yang sangat panjang tetap proporsional tanpa merusak estetika antarmuka.
+- **Anti-Flicker / Anti-FOUC Authentication Guard (`public/dashboard.html`)**:
+  - Mengatasi kendala modal masukkan PIN yang berkedip (*blink/flicker*) saat halaman dashboard di-refresh oleh pengguna yang telah login.
+  - Memasang skrip sinkron fast-path di `<head>` dan menyetel class default `.hidden` pada `#auth-modal` untuk memeriksa ketersediaan session token sebelum peramban merender piksel pertama ke layar.
+  - Mengimplementasikan sistem guard level `html` (`authenticated` vs `not-authenticated`) dengan penegakan CSS strict, menjamin modal PIN tidak pernah muncul sekejap pun saat admin me-refresh halaman, serta mencegah kebocoran konten utama bagi pengguna yang belum terotentikasi.
 - **Eliminasi Tabel Live Log Redundan (`public/dashboard.html`)**:
   - Menghapus seksi tabel "Aktivitas Percakapan Terbaru (Live Log)" di dashboard monitoring karena redundan dengan tabel "Evaluasi & Dataset Training AI" di atasnya yang sudah memuat pasangan prompt-completion terstruktur secara jauh lebih informatif dan kaya fitur (pencarian, filter platform, rentang waktu, ekspor JSONL/CSV).
   - Menghapus fungsi JavaScript `filterActivityTable()` dan variabel memori `cachedRecentActivity` guna memperkecil ukuran bundle HTML dan merampingkan siklus render UI.
