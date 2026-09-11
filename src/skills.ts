@@ -283,7 +283,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null): string {
   if (web) {
     instructions.push(
       '',
-      `[FAKTA & DATA INTERNET TERKINI REAL-TIME]:\n${web.slice(0, 4500)}\n(Gunakan fakta di atas sebagai referensi kebenaran faktual terkini secara natural. Dilarang mengaku tidak punya akses internet/berita).`,
+      `[FAKTA & DATA INTERNET TERKINI REAL-TIME]:\n${web.slice(0, 8500)}\n(Gunakan fakta di atas sebagai referensi kebenaran faktual terkini secara natural. Dilarang mengaku tidak punya akses internet/berita).`,
     );
   }
 
