@@ -1,7 +1,21 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.11  
+**Versi:** v0.25.12  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 02:16 WIB  
+**Terakhir Diperbarui:** 2026-09-12 02:20 WIB  
+
+---
+
+## Ringkasan Pembaruan v0.25.12 (Proteksi Anti-Bocor Memori & Penguncian Fitur Gombal Eksklusif On-Demand)
+1. **Proteksi Anti-Bocor Memori (Zero Memory Leakage & Noise Isolation)**:
+   - Mengunci `ctx.summary` sebagai referensi pasif internal murni dengan aturan mutlak agar model tidak pernah mengungkit atau menyinggung topik masa lalu di luar konteks pesan saat ini.
+   - Melarang keras membawa-bawa topik riwayat lama (seperti skincare, curhatan masa lalu, atau figur lain) jika pengguna tidak sedang membicarakannya.
+2. **Isolasi Fitur Gombalan Eksklusif Berbasis Permintaan Eksplisit**:
+   - Menghapus total inisiatif penawaran gombalan dari bot ("mau digombalin lagi?", "siap ngegombal kapan aja").
+   - Gombalan hanya dan eksklusif aktif ketika lawan bicara meminta secara terang-terangan (misal: "coba gombalin aku").
+   - Menghapus kata "gombalan" dari deskripsi umum gaya bahasa gaul WhatsApp agar tidak terjadi over-priming pada model.
+3. **Sanitasi Riwayat Asisten & Pembersih Output Lanjutan**:
+   - Membersihkan residu penawaran gombal atau racauan lama yang tersimpan di riwayat pesan DB sebelum disuntikkan ke model pada `buildMessages`.
+   - Menambahkan filter pemotong sisa penawaran gombal yang tidak diminta pada `cleanMathAndNoise`.
 
 ---
 

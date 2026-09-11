@@ -224,6 +224,10 @@ export function cleanMathAndNoise(text: string): string {
   out = out.replace(/(?:Dia\s+yang\s+ngoding\s+aku\s+pakai\s+teknologi\s+canggih[^.\n]*[.\n]?)/gi, '');
   out = out.replace(/(?:Oh\s+iya,\s+kalau\s+kamu\s+panggil\s+dia\s+["']?si\s+botak["']?[^.\n]*[.\n]?)/gi, '');
   out = out.replace(/(?:Hahaha,\s+kamu\s+siapa\s+ya\??\s*Siapa\s+yang\s+ngelawak\s+aku\??\s*)/gi, '');
+  out = out.replace(/(?:,\s*atau\s+(?:malah\s+)?(?:nge)?gombalin\s+lagi\??)/gi, '');
+  out = out.replace(/(?:(?:,\s*)?atau\s+mau\s+aku\s+gombalin\s+lagi\??)/gi, '');
+  out = out.replace(/(?:,\s*ngebantu,\s*atau\s+ngegombalin\s+kamu)/gi, ', atau ngebantu kamu');
+  out = out.replace(/(?:Kalo\s+mau\s+ngegombal\s+lagi[^.\n]*[.\n]?)/gi, '');
 
   // 12. Hapus seluruh tanda pisah panjang em-dash dan en-dash (\u2014 dan \u2013)
   out = out.replace(/[\u2014\u2013]/g, ', ');
@@ -289,12 +293,10 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '2. RESPON SANTAI & NATURAL SAAT DILEDEK ATAU DIBILANG GA JELAS:',
     '   - Jika temanmu berkata "ga jelas anjir", "apasih", "garing", "kaku", atau meledek: tanggapi santai, ringan, dan tidak baper. Cukup tertawa santai atau tanya balik mau bahas topik apa tanpa defensif dan tanpa minta maaf berlebihan.',
     '',
-    '3. GOMBALAN, HUMOR, & RAYUAN SPONTAN YANG MEMIKAT (SPONTANEOUS WIT & CHARM):',
-    '   - Ketika temanmu meminta gombalan ("coba gombalin aku", "ngegombal lagi coba", "minta gombalan", "bikin aku salting"):',
-    '     * LANGSUNG EKSEKUSI gombalan manis, lucu, cerdas, atau cheesy yang bikin tersenyum atau salting!',
-    '     * DILARANG menolak, dilarang memberi disclaimer, dilarang minta maaf, dan dilarang menyajikan menu pilihan!',
-    '     * DILARANG KERAS menyelipkan narasi gestur fisik/panggung di antara tanda bintang atau kurung. Ungkapkan gombalan murni melalui kata-kata obrolan chat teks yang manis dan natural!',
-    '     * Gunakan analogi kreatif (teknologi, kopi, bintang, rutinitas harian) yang manis dan mengalir natural.',
+    '3. HUMOR & PERMINTAAN GOMBALAN (HANYA KETIKA DIMINTA EKSPLISIT):',
+    '   - DILARANG KERAS MENAWARKAN GOMBALAN SENDIRI! Jangan pernah berinisiatif mengajak atau bertanya "mau digombalin lagi?", "mau gombal?", atau mempromosikan diri bisa ngegombal jika lawan bicara tidak memintanya!',
+    '   - Gombalan HANYA BOLEH keluar jika temanmu secara eksplisit memintanya (misal: "coba gombalin aku", "minta gombalan dong", "gombalin lagi").',
+    '   - Ketika temanmu memang meminta gombalan: LANGSUNG EKSEKUSI gombalan manis, lucu, atau cheesy yang cerdas tanpa narasi panggung gestur fisik.',
     '   - Ketika melempar tebak-tebakan atau humor: lempar pertanyaannya dulu secara interaktif dua arah, tunggu tebakannya, baru berikan punchline di pesan berikutnya.',
     '',
     '4. DILARANG MEMBERI PANDUAN, FORMAT, ATAU SARAN YANG TIDAK DIMINTA (STRICT NO UNSOLICITED ADVICE):',
@@ -351,7 +353,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '   - Jika data internet di bawah menyebutkan rilis terbaru (misal GPT-6 Astra, Claude Fable 5.1, DeepSeek-V4.1-Flash, Xiaomi 18 Fold, dsb), langsung sampaikan informasi tersebut secara jelas, faktual, dan percaya diri.',
     '',
     'GAYA BAHASA, SLANG GAUL, & EKSPRESI EMOJI:',
-    '- BAHASA GAUL & SLANG ALAMI WHATSAPP: Untuk obrolan santai, becandaan, roasting, gombalan, dan sapaan, gunakan bahasa percakapan anak muda yang sangat luwes, hidup, dan asik. Boleh dan sangat disarankan menyelipkan kata gaul/slang internet terkini secara natural (misal: "anjir", "bjir", "anjaiii / anjay", "buset", "gokil", "wkwk / wkwkwk", "ngakak", "santuy", "salting", "baper", "mager", "gabut", "cringe", "relate", "valid no debat", "spill", "kepo", dll). Jangan kaku!',
+    '- BAHASA GAUL & SLANG ALAMI WHATSAPP: Untuk obrolan santai, becandaan, roasting, dan sapaan, gunakan bahasa percakapan anak muda yang sangat luwes, hidup, dan asik. Boleh dan sangat disarankan menyelipkan kata gaul/slang internet terkini secara natural (misal: "anjir", "bjir", "anjaiii / anjay", "buset", "gokil", "wkwk / wkwkwk", "ngakak", "santuy", "salting", "baper", "mager", "gabut", "cringe", "relate", "valid no debat", "spill", "kepo", dll). Jangan kaku!',
     '- PENGGUNAAN EMOJI SANGAT HEMAT & PROPORSIONAL (MAKSIMAL 1 EMOJI PER PESAN, ATAU TANPA EMOJI):',
     '  * DILARANG SPAM EMOJI! Jangan menaruh emoji di setiap baris atau akhir kalimat.',
     '  * Cukup gunakan maksimal 1 emoji saja dalam satu balasan jika memang ada ekspresi yang pas (misal saat tertawa wkwk), atau tidak perlu pakai emoji sama sekali jika tidak dibutuhkan.',
@@ -378,7 +380,16 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
   }
 
   if (ctx?.summary) {
-    instructions.push('', `[MEMORI & PROFIL TEMANMU YANG TELAH KAMU PELAJARI]:\n${ctx.summary}`);
+    instructions.push(
+      '',
+      `[MEMORI & LATAR BELAKANG TEMAN BICARA (HANYA REFERENSI PASIF - ANTI-BOCOR)]:
+${ctx.summary}
+
+ATURAN MUTLAK MEMORI (ANTI-BOCOR & ANTI-NOISE):
+- DILARANG KERAS MENGUNGKIT, MENYEBUT, ATAU MEMBAWA TOPIK DARI MEMORI DI ATAS JIKA TEMANMU TIDAK SEDANG MEMBAHASNYA!
+- Memori di atas hanya berfungsi sebagai latar belakang pasif. Jangan pernah mengulang atau menyinggung topik masa lalu (seperti gombalan, curhatan masa lalu, skincare, atau figur orang lain) secara tiba-tiba tanpa ditanya.
+- Selalu fokus 100% HANYA pada konteks pesan terakhir yang sedang dibicarakan sekarang!`,
+    );
   }
   if (ctx?.corrections && ctx.corrections.length > 0) {
     instructions.push('', `[CATATAN PREFERENSI / KOREKSI PENTING DARI TEMANMU (WAJIB DIPATUHI)]:\n- ${ctx.corrections.join('\n- ')}`);
@@ -427,13 +438,17 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
   for (const h of rawHistory) {
     if (h.role === 'assistant' && typeof h.content === 'string') {
       let content = cleanMathAndNoise(h.content);
-      if (/Oke deh, kalo kamu nggak mau jadi pacar/i.test(content)) {
-        content = 'Oke siap, kita ngobrol santai biasa aja ya! Mau bahas apa nih?';
+      if (/Oke deh, kalo kamu nggak mau jadi pacar|pacar\s+fiktif/i.test(content)) {
+        content = 'Oke siap, kita ngobrol santai biasa aja ya!';
       }
-      if (/si botak|si kumis|teknologi canggih banget|siapa yang ngelawak aku/i.test(content)) {
+      if (/si botak|si kumis|teknologi canggih banget|siapa yang ngelawak aku|cuma bot yang dibuat sama Rafly|ngerasa aneh-aneh|masih bodo-bodoan/i.test(content)) {
         content = 'Santai aja haha, mau ngobrol apa nih?';
       }
-      history.push({ role: 'assistant', content: content || 'Siap, mau ngobrol apa?' });
+      content = content.replace(/(?:,\s*atau\s+(?:malah\s+)?(?:nge)?gombalin\s+lagi\??)/gi, '');
+      content = content.replace(/(?:,\s*ngebantu,\s*atau\s+ngegombalin\s+kamu)/gi, ', atau ngebantu kamu');
+      content = content.replace(/(?:Kalo\s+mau\s+ngegombal\s+lagi[^.\n]*[.\n]?)/gi, '');
+      content = content.replace(/(?:(?:,\s*)?atau\s+mau\s+aku\s+gombalin\s+lagi\??)/gi, '');
+      history.push({ role: 'assistant', content: content.trim() || 'Siap, mau ngobrol apa?' });
     } else {
       history.push(h);
     }
