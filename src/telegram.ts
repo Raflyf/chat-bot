@@ -1,6 +1,7 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { config } from './env.js';
 import { autoReply, describeImage } from './skills.js';
+import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage } from './db.js';
 import { getContext, noteExchange, saveCorrection } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -66,6 +67,26 @@ export async function sendTelegramMessageSafe(
   }
 }
 
+/** Unduh buffer file dari server Telegram */
+async function downloadTelegramBuffer(
+  bot: TelegramBot,
+  fileId: string,
+): Promise<{ buffer: Buffer; filePath: string } | null> {
+  try {
+    const file = await bot.getFile(fileId);
+    if (!file.file_path) return null;
+    const url = `https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(config.downloadTimeoutMs) });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0 || buf.length > 20_000_000) return null;
+    return { buffer: buf, filePath: file.file_path };
+  } catch (err) {
+    console.error('[telegram] Gagal unduh file:', err);
+    return null;
+  }
+}
+
 async function answerPhoto(
   bot: TelegramBot,
   chatId: number,
@@ -73,17 +94,13 @@ async function answerPhoto(
   fileId: string,
   caption?: string,
 ): Promise<boolean> {
-  const file = await bot.getFile(fileId);
-  if (!file.file_path) return false;
-  const url = `https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(config.downloadTimeoutMs) });
-  if (!res.ok) return false;
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length === 0 || buf.length > 8_000_000) return false;
-  const mime = file.file_path.endsWith('.png') ? 'image/png' : 'image/jpeg';
-  const { reply, via } = await describeImage(buf.toString('base64'), mime, caption);
+  const dl = await downloadTelegramBuffer(bot, fileId);
+  if (!dl) return false;
+  const mime = dl.filePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
+  const { reply, via } = await describeImage(dl.buffer.toString('base64'), mime, caption);
   await sendTelegramMessageSafe(bot, chatId, reply);
   await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via });
+  noteExchange(chatKey);
   return true;
 }
 
@@ -100,7 +117,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     if (text === '/start') {
       const ctx = await getContext(chatKey);
       const { reply } = await autoReply(
-        `Sapa user dengan hangat dan cerdas sebagai ${config.botName}. Perkenalkan kemampuanmu: asisten AI umum yang mengingat percakapan, mencari info internet terkini, menerima koreksi via /salah, dan pengingat via /remind. Tawarkan bantuan.`,
+        `Sapa user dengan hangat dan cerdas sebagai ${config.botName}. Perkenalkan kemampuanmu: asisten AI umum yang mengingat percakapan, mencari info internet terkini, menerima koreksi via /salah, pengingat via /remind, serta memahami dokumen (PDF, Word, teks), foto, pesan suara (VN), stiker, dan video. Tawarkan bantuan.`,
         ctx,
       );
       await sendTelegramMessageSafe(bot, chatId, reply);
@@ -129,45 +146,187 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       return;
     }
 
-    // 4. Gambar (Photo atau Document Image)
-    if (msg.photo?.length || msg.document) {
-      const fileId = msg.photo?.length
-        ? msg.photo[msg.photo.length - 1].file_id
-        : msg.document?.mime_type?.startsWith('image/')
-          ? msg.document.file_id
-          : undefined;
+    // 4. Foto / Gambar
+    if (msg.photo?.length) {
+      const fileId = msg.photo[msg.photo.length - 1].file_id;
       const caption = msg.caption?.trim();
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
-        content: caption ? `[gambar] ${caption}` : '[gambar]',
+        content: caption ? `[Gambar] ${caption}` : '[Gambar]',
       });
-      if (fileId) {
+      try {
+        if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
+      } catch (err) {
+        console.error(`[telegram] vision photo error: ${String((err as Error).message ?? err)}`);
+      }
+    }
+
+    // 5. Dokumen (PDF, Word .docx, Teks, CSV, JSON, Kode, atau Gambar Asli)
+    if (msg.document) {
+      const fileId = msg.document.file_id;
+      const filename = msg.document.file_name || 'dokumen';
+      const mime = msg.document.mime_type || 'application/octet-stream';
+      const caption = msg.caption?.trim();
+
+      // Jika berkas berupa gambar tanpa kompresi
+      if (mime.startsWith('image/')) {
+        await saveMessage({
+          platform: 'telegram',
+          chat_id: chatKey,
+          role: 'user',
+          content: caption ? `[Gambar: ${filename}] ${caption}` : `[Gambar: ${filename}]`,
+        });
+        if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
+      }
+
+      // Berkas dokumen umum (PDF, DOCX, TXT, CSV, JSON, kode)
+      await saveMessage({
+        platform: 'telegram',
+        chat_id: chatKey,
+        role: 'user',
+        content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
+      });
+
+      const dl = await downloadTelegramBuffer(bot, fileId);
+      if (dl) {
+        const ctx = await getContext(chatKey);
+        const { reply, via } = await processIncomingDocument(dl.buffer, mime, filename, caption, ctx);
+        await sendTelegramMessageSafe(bot, chatId, reply);
+        await saveMessage({
+          platform: 'telegram',
+          chat_id: chatKey,
+          role: 'assistant',
+          content: reply.slice(0, 4000),
+          via,
+        });
+        noteExchange(chatKey);
+        return;
+      }
+    }
+
+    // 6. Voice Note (VN) atau File Audio
+    if (msg.voice || msg.audio) {
+      const fileId = msg.voice ? msg.voice.file_id : msg.audio!.file_id;
+      const mime = msg.voice ? (msg.voice.mime_type || 'audio/ogg') : (msg.audio?.mime_type || 'audio/mpeg');
+      const dl = await downloadTelegramBuffer(bot, fileId);
+
+      if (dl) {
         try {
-          if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
+          const transcription = await transcribeAudio(dl.buffer, mime);
+          const ctx = await getContext(chatKey);
+
+          await saveMessage({
+            platform: 'telegram',
+            chat_id: chatKey,
+            role: 'user',
+            content: `[Voice Note]: "${transcription}"`,
+          });
+
+          let web: string | null = null;
+          if (needsSearch(transcription)) {
+            const found = await searchWeb(transcription);
+            if (found) web = found;
+          }
+
+          const { reply, via } = await autoReply(transcription, ctx, web);
+          await sendTelegramMessageSafe(bot, chatId, reply);
+          await saveMessage({
+            platform: 'telegram',
+            chat_id: chatKey,
+            role: 'assistant',
+            content: reply.slice(0, 4000),
+            via,
+          });
+          noteExchange(chatKey);
         } catch (err) {
-          console.error(`[telegram] vision: ${String((err as Error).message ?? err)}`);
+          console.error('[telegram] Gagal transkripsi audio/VN:', err);
+          await sendTelegramMessageSafe(
+            bot,
+            chatId,
+            'Suara dalam rekaman audio tidak terdengar jelas atau kosong. Boleh tolong kirim ulang atau sampaikan melalui teks?',
+          );
         }
+        return;
       }
-      if (ownerId) {
-        try {
-          await bot.forwardMessage(ownerId, chatId, msg.message_id);
-        } catch {
-          // owner tidak wajib
-        }
-      }
+    }
+
+    // 7. Stiker Telegram
+    if (msg.sticker) {
+      const emoji = msg.sticker.emoji;
       const ctx = await getContext(chatKey);
-      const { reply } = await autoReply(
-        'Gambar user gagal dianalisis dan sudah diteruskan ke admin. Sampaikan dengan ramah dan tawarkan alternatif: kirim ulang atau tanyakan via teks.',
-        ctx,
-      );
+
+      await saveMessage({
+        platform: 'telegram',
+        chat_id: chatKey,
+        role: 'user',
+        content: `[Stiker Telegram${emoji ? `: ${emoji}` : ''}]`,
+      });
+
+      // Jika stiker statis (WebP), kita kirim ke Vision
+      if (!msg.sticker.is_animated && !msg.sticker.is_video) {
+        const dl = await downloadTelegramBuffer(bot, msg.sticker.file_id);
+        if (dl) {
+          const { reply, via } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx);
+          await sendTelegramMessageSafe(bot, chatId, reply);
+          await saveMessage({
+            platform: 'telegram',
+            chat_id: chatKey,
+            role: 'assistant',
+            content: reply.slice(0, 4000),
+            via,
+          });
+          noteExchange(chatKey);
+          return;
+        }
+      }
+
+      // Fallback untuk stiker animasi / video stiker atau jika download gagal
+      const prompt = `Pengguna mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya seorang sahabat mengobrol.`;
+      const { reply, via } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
-      await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via: 'store-forward' });
+      await saveMessage({
+        platform: 'telegram',
+        chat_id: chatKey,
+        role: 'assistant',
+        content: reply.slice(0, 4000),
+        via,
+      });
+      noteExchange(chatKey);
       return;
     }
 
-    // 5. Pesan teks umum
+    // 8. Video atau Video Note (Lingkaran)
+    if (msg.video || msg.video_note) {
+      const caption = msg.caption?.trim();
+      const ctx = await getContext(chatKey);
+
+      await saveMessage({
+        platform: 'telegram',
+        chat_id: chatKey,
+        role: 'user',
+        content: caption ? `[Video] ${caption}` : '[Video]',
+      });
+
+      const prompt = caption
+        ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
+        : 'User mengirim pesan video. Sampaikan secara ramah bahwa videonya diterima, dan tanyakan apa yang ingin didiskusikan.';
+
+      const { reply, via } = await autoReply(prompt, ctx);
+      await sendTelegramMessageSafe(bot, chatId, reply);
+      await saveMessage({
+        platform: 'telegram',
+        chat_id: chatKey,
+        role: 'assistant',
+        content: reply.slice(0, 4000),
+        via,
+      });
+      noteExchange(chatKey);
+      return;
+    }
+
+    // 9. Pesan teks umum
     if (!text || text.startsWith('/')) return;
     await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'user', content: text });
 

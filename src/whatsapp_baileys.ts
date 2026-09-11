@@ -11,6 +11,7 @@ import {
 } from '@whiskeysockets/baileys';
 import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage } from './skills.js';
+import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage } from './db.js';
 import { getContext, noteExchange } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -185,15 +186,21 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
   const isGroup = remoteJid.endsWith('@g.us');
 
-  // Ekstrak teks dari berbagai tipe pesan
+  // Ekstrak teks atau caption dari berbagai tipe pesan
   let text =
     m.message?.conversation ||
     m.message?.extendedTextMessage?.text ||
     m.message?.imageMessage?.caption ||
+    m.message?.documentMessage?.caption ||
+    m.message?.videoMessage?.caption ||
     '';
   text = text.trim();
 
   const hasImage = !!m.message?.imageMessage;
+  const hasDoc = !!m.message?.documentMessage;
+  const hasAudio = !!m.message?.audioMessage;
+  const hasSticker = !!m.message?.stickerMessage;
+  const hasVideo = !!m.message?.videoMessage;
 
   // Jika di dalam grup, periksa apakah bot diizinkan merespons grup
   if (isGroup && !config.whatsappRespondGroups) {
@@ -232,11 +239,17 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         },
       );
 
-      if (buffer && buffer.length > 0 && buffer.length <= 8_000_000) {
+      if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
         const mime = m.message?.imageMessage?.mimetype || 'image/jpeg';
         const base64 = buffer.toString('base64');
-        const { reply, via } = await describeImage(base64, mime, text || undefined);
+        await saveMessage({
+          platform: 'whatsapp',
+          chat_id: chatKey,
+          role: 'user',
+          content: text ? `[Gambar] ${text}` : '[Gambar]',
+        });
 
+        const { reply, via } = await describeImage(base64, mime, text || undefined);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
         await saveMessage({
           platform: 'whatsapp',
@@ -245,6 +258,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           content: reply.slice(0, 4000),
           via,
         });
+        noteExchange(chatKey);
         return;
       }
     } catch (err) {
@@ -256,6 +270,208 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         // best-effort
       }
     }
+  }
+
+  // Kasus 2: Dokumen (PDF, Word .docx, Teks, CSV, JSON, Kode)
+  if (hasDoc) {
+    try {
+      await sock.sendPresenceUpdate('composing', remoteJid);
+      const buffer = await downloadMediaMessage(
+        m,
+        'buffer',
+        {},
+        {
+          logger,
+          reuploadRequest: sock.updateMediaMessage,
+        },
+      );
+
+      if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
+        const filename = m.message?.documentMessage?.fileName || 'dokumen';
+        const mime = m.message?.documentMessage?.mimetype || 'application/octet-stream';
+        const caption = m.message?.documentMessage?.caption?.trim() || text || undefined;
+        const context = await getContext(chatKey);
+
+        await saveMessage({
+          platform: 'whatsapp',
+          chat_id: chatKey,
+          role: 'user',
+          content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
+        });
+
+        const { reply, via } = await processIncomingDocument(
+          buffer,
+          mime,
+          filename,
+          caption,
+          context,
+        );
+
+        await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+        await saveMessage({
+          platform: 'whatsapp',
+          chat_id: chatKey,
+          role: 'assistant',
+          content: reply.slice(0, 4000),
+          via,
+        });
+        noteExchange(chatKey);
+        return;
+      }
+    } catch (err) {
+      console.error('[whatsapp] Gagal memproses dokumen:', err);
+    } finally {
+      try {
+        await sock.sendPresenceUpdate('paused', remoteJid);
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
+  // Kasus 3: Voice Note / Rekaman Audio
+  if (hasAudio) {
+    try {
+      await sock.sendPresenceUpdate('composing', remoteJid);
+      const buffer = await downloadMediaMessage(
+        m,
+        'buffer',
+        {},
+        {
+          logger,
+          reuploadRequest: sock.updateMediaMessage,
+        },
+      );
+
+      if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
+        const mime = m.message?.audioMessage?.mimetype || 'audio/ogg';
+        try {
+          const transcription = await transcribeAudio(buffer, mime);
+          const context = await getContext(chatKey);
+
+          await saveMessage({
+            platform: 'whatsapp',
+            chat_id: chatKey,
+            role: 'user',
+            content: `[Voice Note]: "${transcription}"`,
+          });
+
+          let webResults: string | null = null;
+          if (needsSearch(transcription)) {
+            try {
+              webResults = await searchWeb(transcription);
+            } catch (err) {
+              console.warn('[whatsapp] Gagal penelusuran web audio:', err);
+            }
+          }
+
+          const { reply, via } = await autoReply(transcription, context, webResults);
+          await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+          await saveMessage({
+            platform: 'whatsapp',
+            chat_id: chatKey,
+            role: 'assistant',
+            content: reply.slice(0, 4000),
+            via,
+          });
+          noteExchange(chatKey);
+          return;
+        } catch (err) {
+          console.error('[whatsapp] Gagal transkripsi audio/VN:', err);
+          await sendWhatsAppMessageSafe(
+            sock,
+            remoteJid,
+            'Suara dalam rekaman audio tidak terdengar jelas atau kosong. Boleh tolong kirim ulang atau sampaikan melalui teks?',
+          );
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('[whatsapp] Gagal memproses audio:', err);
+    } finally {
+      try {
+        await sock.sendPresenceUpdate('paused', remoteJid);
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
+  // Kasus 4: Stiker WhatsApp (.webp)
+  if (hasSticker) {
+    try {
+      await sock.sendPresenceUpdate('composing', remoteJid);
+      const buffer = await downloadMediaMessage(
+        m,
+        'buffer',
+        {},
+        {
+          logger,
+          reuploadRequest: sock.updateMediaMessage,
+        },
+      );
+
+      if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
+        const mime = m.message?.stickerMessage?.mimetype || 'image/webp';
+        const context = await getContext(chatKey);
+
+        await saveMessage({
+          platform: 'whatsapp',
+          chat_id: chatKey,
+          role: 'user',
+          content: '[Stiker WhatsApp]',
+        });
+
+        const { reply, via } = await processIncomingSticker(buffer, mime, undefined, context);
+        await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+        await saveMessage({
+          platform: 'whatsapp',
+          chat_id: chatKey,
+          role: 'assistant',
+          content: reply.slice(0, 4000),
+          via,
+        });
+        noteExchange(chatKey);
+        return;
+      }
+    } catch (err) {
+      console.error('[whatsapp] Gagal memproses stiker:', err);
+    } finally {
+      try {
+        await sock.sendPresenceUpdate('paused', remoteJid);
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
+  // Kasus 5: Video
+  if (hasVideo) {
+    const caption = m.message?.videoMessage?.caption?.trim() || text;
+    const context = await getContext(chatKey);
+
+    await saveMessage({
+      platform: 'whatsapp',
+      chat_id: chatKey,
+      role: 'user',
+      content: caption ? `[Video] ${caption}` : '[Video]',
+    });
+
+    const prompt = caption
+      ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
+      : 'User mengirim berkas video. Beritahukan dengan ramah bahwa videonya diterima, dan tanyakan apa yang ingin dibahas.';
+
+    const { reply, via } = await autoReply(prompt, context);
+    await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+    await saveMessage({
+      platform: 'whatsapp',
+      chat_id: chatKey,
+      role: 'assistant',
+      content: reply.slice(0, 4000),
+      via,
+    });
+    noteExchange(chatKey);
+    return;
   }
 
   // Kasus 2: Pesan Teks

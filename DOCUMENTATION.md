@@ -150,10 +150,15 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - Setiap 20 giliran percakapan, sistem membuat ringkasan padat di tabel `summaries`.
 - Fitur koreksi pengguna via `/salah <instruksi_koreksi>` disimpan di tabel `corrections` dan dipatuhi secara absolut pada setiap giliran berikutnya.
 
-### 3.3. Pemrosesan Multimodal & Vision
-- Menerima kiriman foto dan dokumen gambar dari Telegram.
-- Mengunduh berkas secara terisolasi dengan batas waktu 30 detik.
-- Mengarahkan pemrosesan ke model vision untuk mendeskripsikan atau menjawab pertanyaan seputar gambar.
+### 3.3. Pemrosesan Multimodal & Media Komprehensif (WhatsApp & Telegram)
+- **Teks & Chat:** Percakapan natural, flow-conscious, ramah sahabat, dan zero unsolicited advice.
+- **Foto & Gambar:** Dianalisis oleh model vision (Gemini & OpenRouter) dengan penjelasan dan pemecahan masalah visual.
+- **Dokumen PDF:** Dianalisis secara native multimodal via Google Gemini API (`inlineData`) untuk membaca teks, tabel, bagan, dan rangkuman.
+- **Dokumen Word (.docx):** Diekstrak teks mentahnya via pustaka murni JavaScript `mammoth` dan dianalisis mendalam oleh AI.
+- **Dokumen Teks, Data & Kode (.txt, .md, .csv, .json, kode):** Dibaca secara langsung via UTF-8 dengan batas token aman hingga 32.000 karakter.
+- **Voice Note (VN / Audio):** Ditranskripsi otomatis sub-detik (~500ms) menggunakan Groq Whisper (`whisper-large-v3-turbo`) 100% gratis ($0 free-tier), kemudian dibalas secara alami oleh asisten.
+- **Stiker WhatsApp & Telegram:** Diunduh (.webp) dan dianalisis ekspresi serta konteks humornya via model Vision AI, dengan fallback cerdas berbasis representasi emoji untuk stiker animasi/video.
+- **Video & Catatan:** Merespons video kiriman pengguna secara kontekstual berbasis teks catatan (*caption*).
 
 ### 3.4. Pengingat Terjadwal (Reminders)
 - Perintah `/remind <menit> <pesan>` mencatat jadwal ke tabel `reminders`.
@@ -173,70 +178,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
-### v0.13.0 — 2026-09-10 22:15 WIB
-**Pembaruan Utama: WhatsApp Multi-Device 24/7 Unlimited Engine & Supabase Cloud Session Persistence**
-- **Integrasi Penuh WhatsApp Baileys (`src/whatsapp_baileys.ts`)**:
-  - Mengimplementasikan client WhatsApp Multi-Device resmi (`@whiskeysockets/baileys`) untuk nomor WhatsApp khusus/pribadi.
-  - 100% Gratis Tanpa Batas ($0 Unlimited): Bebas batasan kuota 1.000 sesi bulanan dari Meta Cloud API.
-  - Pairing Interaktif: Menghasilkan QR Code langsung pada terminal console via `qrcode-terminal` untuk pemindaian instan via menu *Perangkat Tertaut (Linked Devices)* WhatsApp di HP.
-- **Supabase Cloud Session Persistence (`src/whatsapp_session.ts`)**:
-  - Menyinkronkan file sesi otentikasi Baileys (`session_wa/`) secara otomatis ke tabel `whatsapp_sessions` di Supabase.
-  - Memungkinkan bot tetap login otomatis (zero re-scan) saat container hosting gratis (seperti Render.com atau Koyeb) melakukan restart berkala.
-  - Dilindungi skrip Row Level Security (RLS) pada `sql/migrate_v10_whatsapp_sessions.sql` dengan akses eksklusif untuk `service_role`.
-- **Otak AI Terpadu & Fitur Komplit**:
-  - Terhubung langsung ke pipeline kecerdasan universal `src/skills.ts` (penalaran multi-disiplin, pemecahan matematika, koding, dan zero-noise scrubber).
-  - Penanganan pesan gambar/soal via Gemini Vision multimodal (`describeImage`).
-  - Penelusuran web real-time 2026 via `src/web.ts` saat terdeteksi kueri berita, harga, atau fakta dinamis.
-  - Memori percakapan persisten Supabase (`chat_id = wa_<jid>`) dan auto-summarization setiap 20 interaksi.
-  - *Safe Paragraph Chunking*: Pemecahan aman di batas paragraf (`\n\n`) jika pesan melebihi 4000 karakter (`sendWhatsAppMessageSafe`).
-- **Skrip Eksekusi Mandiri (`package.json`)**:
-  - Menambahkan script `npm run whatsapp` untuk lokal / pengembangan dan `npm run whatsapp:prod` untuk server produksi 24 jam.
-
-### v0.12.0 — 2026-09-10 21:30 WIB
-**Pembaruan Utama: Universal Multi-Domain Intelligence, Zero-Noise CoT Scrubber & Telegram Math Formatter**
-- **Kecerdasan Universal Multi-Disiplin (`systemPrompt` di `src/skills.ts`)**:
-  - Mengonfigurasi persona asisten AI polymath unggul lintas bidang: Matematika lanjut, Rekayasa Perangkat Lunak, Sains Alami (Termodinamika, Fisika, Kimia), Logika Deduktif, dan Bahasa Indonesia luwes bebas klise AI (*anti-slop*).
-  - Algoritma Aljabar & Rumus Kuadrat abc: Mengeliminasi halusinasi pemfaktoran bilangan bulat semu pada persamaan kuadrat dengan mewajibkan evaluasi diskriminan $D = b² - 4ac$ dan perumusan langsung identitas simetris $x³ + y³ = S(10 - P)$.
-- **Telegram Math Formatter (`cleanMathAndNoise` di `src/skills.ts`)**:
-  - Konversi otomatis ekspresi LaTeX mentah (`\[ \]`, `\( \)`, `$$`, `$`) ke notasi aljabar bersih dan simbol Unicode ramah Telegram (`²`, `³`, `√`, `±`, `⇒`, `×`, `÷`, `≤`, `≥`, `≠`, `π`).
-  - Penanganan rekursif pecahan LaTeX bertingkat `\frac{...}{...}` dan akar `\sqrt{...}`.
-- **Pembersihan Residu Berpikir & Monolog CoT Total (Zero-Noise Scrubber)**:
-  - Mengeliminasi tag `<think>...</think>`, unclosed `<think>`, serta monolog draf internal model berbahasa Inggris (`Here's a thinking process:`, `1. **Analyze User Input:**`).
-  - Menghapus kebisingan draf sehingga pengguna Telegram menerima 100% jawaban solutif dan bersih.
-- **Optimasi Latensi & Prioritas Provider (30 Detik -> 1.5 - 2.5 Detik)**:
-  - Re-ordering router provider: Groq `qwen3.8-27b` diprioritaskan pertama untuk kueri teks, matematika, koding, dan penalaran cepat kilat (~2s).
-  - Gemini `gemini-2.5-flash` diprioritaskan untuk pemrosesan gambar/multimodal vision (~1.7s).
-  - OpenRouter dijadikan pool cadangan berkapasitas tinggi 5 kunci API.
-- **Klasifikasi Kueri Cerdas (`needsSearch` di `src/web.ts`)**:
-  - Melewati penelusuran web untuk soal matematika murni, kalkulus, algoritma koding, dan translasi teks guna memangkas overhead latency 3-4 detik dan mencegah pencemaran prompt dengan berita tak relevan.
-- **Proteksi Panjang Pesan Telegram (`sendTelegramMessageSafe` di `src/telegram.ts`)**:
-  - Pemecahan otomatis teks panjang (> 4000 karakter) di batas paragraf (`\n\n`) untuk mencegah error Telegram API `400 Bad Request: message is too long`.
-
-### v0.11.1 — 2026-09-10 21:12 WIB
-**Penyempurnaan: Top Headlines Real-Time Feed & Explicit Bot Identity**
-- Penanganan Kueri Berita Umum: Menambahkan integrasi langsung *Top Headlines RSS* Indonesia & Global untuk kueri seperti "berita terbaru hari ini" atau "kabar terkini", memastikan artikel yang ditarik adalah terbitan hari ini (10 September 2026).
-- Penguatan Identitas FreeAIBot: Menghilangkan residu identitas model bawaan provider ("Chat dari OpenAI") pada instruksi sistem agar bot selalu menjawab dengan identitas resminya sebagai FreeAIBot.
-- Penegasan Penelusuran Mandiri: Menginstruksikan model untuk secara proaktif menyajikan ringkasan berita terstruktur (Nasional & Internasional) tanpa meminta pengguna mengirimkan tautan secara manual.
-
-### v0.11.0 — 2026-09-10 20:57 WIB
-**Fitur Utama: Universal Real-Time Web Search & Deep Browsing Engine**
-- Mengadopsi arsitektur mesin pencari teruji dari proyek Portofolio Terminal AI Rafly Firmansyah ke dalam `src/web.ts`.
-- Matriks Mesin Multi-Sumber Paralel: Menghubungkan Google News Global RSS, Google Berita Indonesia RSS, Bing News RSS, Hacker News Algolia, Wikipedia EN & ID, dan arXiv Preprints.
-- Deep Webpage Scraper & Jina Reader: Menambahkan kapabilitas pembacaan halaman web secara mandiri; mendeteksi URL/domain dan mengonversi konten menjadi Fit-Markdown bersih.
-- Formulator Kueri Cerdas (`formulateSmartSearchQueries`): Menormalisasi typo/slang bahasa Indonesia, membersihkan *filler words*, dan memproduksi kueri dwibahasa presisi tinggi.
-- Eliminasi Cut-off 2024: Memperbarui instruksi sistem pada `src/skills.ts` agar model wajib menggunakan fakta internet real-time dan dilarang mengklaim tidak memiliki akses internet.
-- Deduplikasi judul berita lintas sumber, algoritma pembobotan kesegaran waktu (*recency scoring*), dan proteksi keamanan SSRF.
-
-### v0.10.2 — 2026-09-10 20:50 WIB
-**Perbaikan: Search Upgrade to Full-Text & Live Tech Feeds**
-- Mengganti pencarian OpenSearch terbatas menjadi Wikipedia Full-Text Search (ID/EN) dan Hacker News Algolia real-time.
-- Menjamin respons berita teknologi mutakhir tanpa ketergantungan API key berbayar.
-
-### v0.10.1 — 2026-09-10 20:41 WIB
-**Infrastruktur: Vercel Static Asset & Output Directory Compatibility**
-- Menambahkan `public/index.html` dan mengonfigurasi `outputDirectory: "public"` pada `vercel.json` untuk kompatibilitas deployment Vercel.
-- Menyesuaikan jadwal cron pengingat agar kompatibel penuh dengan batasan akun Vercel Hobby.
-- Menambahkan dukungan otomatis untuk pembacaan variabel lingkungan integrasi Supabase Vercel (`POSTGRES_URL`, `NEXT_PUBLIC_SUPABASE_URL`, dll).
+### v0.20.0 — 2026-09-11 10:50 WIB
+**Pembaruan Utama: Comprehensive Multimodal Media Engine (PDF, Word, Code/Data, Voice Note Whisper, Stickers & Videos)**
+- **Dokumen PDF Multimodal Native (`src/media.ts`)**:
+  - Memanfaatkan kapabilitas native multimodal Google Gemini API (`inlineData` dengan `application/pdf`) untuk membaca isi teks, tabel, bagan, dan analisis struktur dokumen secara utuh tanpa parser pihak ketiga yang berat.
+- **Dokumen Microsoft Word (.docx) (`mammoth`)**:
+  - Mengintegrasikan parser murni JavaScript `mammoth` untuk mengekstrak teks mentah dari file `.docx` secara cepat, aman, dan kompatibel 100% dengan Vercel Serverless.
+- **Dokumen Teks, Data & Kode Sumber**:
+  - Mendukung pembacaan UTF-8 langsung untuk berbagai format berkas: `.txt`, `.md`, `.csv`, `.json`, `.js`, `.ts`, `.py`, `.html`, `.css`, `.sql`, `.yaml`, `.yml`, `.xml`, `.env`, `.log`.
+  - Kapasitas input teks diperluas dari 3.000 karakter menjadi 32.000 karakter pada `autoReply` di `src/skills.ts` agar dokumen berukuran puluhan halaman dapat dianalisis tuntas tanpa terpotong.
+- **Voice Note (VN) & Audio Transcription Sub-Detik via Groq Whisper**:
+  - Mengintegrasikan model Whisper mutakhir (`whisper-large-v3-turbo` dengan auto-fallback ke `whisper-large-v3`) melalui Groq API pool.
+  - Transkripsi ultra-cepat (~500ms), 100% gratis ($0 free-tier), sangat akurat mengenali Bahasa Indonesia, dialek lokal, maupun Bahasa Inggris.
+  - Hasil transkripsi disimpan ke riwayat percakapan dengan label `[Voice Note]: "..."`, langsung diproses oleh AI, dan dibalas secara alami.
+- **Pemahaman Konteks Stiker WhatsApp & Telegram**:
+  - Mengunduh berkas stiker (`image/webp`) dan mengumpankannya ke model Vision AI untuk memahami ekspresi emosi, humor, atau maksud visual dari stiker tersebut.
+  - Dilengkapi mekanisme fallback berbasis representasi emoji stiker untuk stiker animasi (TGS) atau stiker video (WebM) di Telegram.
+- **Penanganan Video & Catatan Kontekstual**:
+  - Merespons video kiriman pengguna secara kontekstual berbasis teks catatan (*caption*) yang disertakan.
+- **Integrasi Universal Lintas Platform**:
+  - Diaktifkan serentak dan identik pada Meta WhatsApp Cloud API (`src/whatsapp_cloud.ts`), Telegram Bot API (`src/telegram.ts`), dan WhatsApp Baileys Multi-Device (`src/whatsapp_baileys.ts`).
 
 ### v0.19.0 — 2026-09-11 10:35 WIB
 **Kecerdasan Relasional & Siklus Belajar Adaptif: Flow-Conscious, Professional Excellence & Continuous Memory**
