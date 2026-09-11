@@ -1566,6 +1566,8 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .pulse-dot-cyan {
@@ -1583,6 +1585,8 @@
       padding: 2px 7px;
       border-radius: 4px;
       letter-spacing: 0.02em;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .tag-xkiro {
@@ -1616,6 +1620,7 @@
       padding: 1px 6px;
       border-radius: 4px;
       letter-spacing: 0.02em;
+      white-space: nowrap;
     }
 
     .tag-cap-vision {
@@ -1640,6 +1645,14 @@
       background: rgba(148, 163, 184, 0.12);
       color: #94a3b8;
       border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    .card-caps-row {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin: 0.35rem 0 0.45rem 0;
     }
 
     .card-model-name {
@@ -1986,7 +1999,7 @@
         <table class="token-table">
           <thead>
             <tr>
-              <th style="min-width: 180px;">Provider &amp; Model Flagship</th>
+              <th style="min-width: 180px;">Provider</th>
               <th style="min-width: 140px;">Mekanisme Limit</th>
               <th style="min-width: 130px;">Jendela Konteks</th>
               <th style="min-width: 150px;">Batas Kuota Resmi</th>
@@ -2810,7 +2823,7 @@
       // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover sistem)
       const catalog = [
         {
-          name: "Qwen 3.8 Max Free (xKiro)",
+          name: "Qwen 3.8 Max Free",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Text", "Vision"],
@@ -2818,7 +2831,7 @@
           matchKeys: ["qwen/qwen3.8-max:free", "qwen3.8-max", "xkiro/qwen/qwen3.8-max:free"],
         },
         {
-          name: "Qwen 3.6 Plus Free (xKiro)",
+          name: "Qwen 3.6 Plus Free",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Text", "Vision"],
@@ -2826,7 +2839,7 @@
           matchKeys: ["qwen/qwen3.6-plus:free", "qwen3.6-plus", "xkiro/qwen/qwen3.6-plus:free"],
         },
         {
-          name: "Mistral Large 2512 (xKiro)",
+          name: "Mistral Large 2512",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Vision", "Reasoning"],
@@ -2834,7 +2847,7 @@
           matchKeys: ["mistralai/mistral-large-2512", "mistral-large-2512", "mistral-large", "xkiro/mistralai/mistral-large-2512"],
         },
         {
-          name: "Mistral Medium 3.5 (xKiro)",
+          name: "Mistral Medium 3.5",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Vision", "Reasoning"],
@@ -2842,7 +2855,7 @@
           matchKeys: ["mistralai/mistral-medium-3.5", "mistral-medium-3.5", "mistral-medium", "xkiro/mistralai/mistral-medium-3.5"],
         },
         {
-          name: "SenseNova 6.8 Flash-Lite (xKiro)",
+          name: "SenseNova 6.8 Flash-Lite",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Fast Text"],
@@ -2850,7 +2863,7 @@
           matchKeys: ["sensenova/sensenova-6.8-flash-lite", "sensenova-6.8-flash-lite", "sensenova", "xkiro/sensenova/sensenova-6.8-flash-lite"],
         },
         {
-          name: "DeepSeek V4 Pro (xKiro)",
+          name: "DeepSeek V4 Pro",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Code", "Reasoning"],
@@ -2858,7 +2871,7 @@
           matchKeys: ["deepseek/deepseek-v4-pro", "deepseek-v4-pro", "xkiro/deepseek/deepseek-v4-pro"],
         },
         {
-          name: "DeepSeek V4 Flash (xKiro)",
+          name: "DeepSeek V4 Flash",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Fast Reasoning"],
@@ -2866,7 +2879,7 @@
           matchKeys: ["deepseek/deepseek-v4-flash", "deepseek-v4-flash", "xkiro/deepseek/deepseek-v4-flash"],
         },
         {
-          name: "MiniMax M2.7 Highspeed (xKiro)",
+          name: "MiniMax M2.7 Highspeed",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Fast Text"],
@@ -2874,7 +2887,7 @@
           matchKeys: ["minimax/minimax-m2.7-highspeed:free", "minimax-m2.7-highspeed", "xkiro/minimax/minimax-m2.7-highspeed:free"],
         },
         {
-          name: "MiniMax M3 Free (xKiro)",
+          name: "MiniMax M3 Free",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["1M Context"],
@@ -2882,7 +2895,7 @@
           matchKeys: ["minimax/minimax-m3:free", "minimax-m3", "xkiro/minimax/minimax-m3:free"],
         },
         {
-          name: "Mistral Codestral 2508 (xKiro)",
+          name: "Mistral Codestral 2508",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Code Expert"],
@@ -2890,7 +2903,7 @@
           matchKeys: ["mistralai/codestral-2508", "codestral-2508", "codestral", "xkiro/mistralai/codestral-2508"],
         },
         {
-          name: "Qwen 3.7 Plus Free (xKiro)",
+          name: "Qwen 3.7 Plus Free",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Efficient Text"],
@@ -2898,7 +2911,7 @@
           matchKeys: ["qwen/qwen3.7-plus:free", "qwen3.7-plus", "xkiro/qwen/qwen3.7-plus:free"],
         },
         {
-          name: "Qwen 3.8 27B (Groq)",
+          name: "Qwen 3.8 27B",
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Vision", "LPU Speed"],
@@ -2906,7 +2919,7 @@
           matchKeys: ["groq/qwen/qwen3.8-27b", "groq/qwen3.8", "qwen3.8-27b"],
         },
         {
-          name: "Qwen 3.6 27B (Groq)",
+          name: "Qwen 3.6 27B",
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Vision", "LPU Speed"],
@@ -2914,7 +2927,7 @@
           matchKeys: ["groq/qwen/qwen3.6-27b", "groq/qwen3.6", "qwen3.6-27b"],
         },
         {
-          name: "Groq Whisper Turbo (Groq Voice)",
+          name: "Groq Whisper Turbo",
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Voice Note (VN)"],
@@ -2922,7 +2935,7 @@
           matchKeys: ["whisper-large-v3-turbo", "whisper", "groq/whisper"],
         },
         {
-          name: "Gemini 3.8 Flash (Google Gemini)",
+          name: "Gemini 3.8 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
           capabilities: ["Multimodal Vision"],
@@ -2930,7 +2943,7 @@
           matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
         },
         {
-          name: "Gemini 2.5 Flash (Google Gemini)",
+          name: "Gemini 2.5 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
           capabilities: ["Multimodal Vision"],
@@ -2938,7 +2951,7 @@
           matchKeys: ["gemini/gemini-2.5-flash", "gemini-2.5-flash"],
         },
         {
-          name: "Nex N2.5 Pro Free (OpenRouter)",
+          name: "Nex N2.5 Pro Free",
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Text", "Vision"],
@@ -2946,7 +2959,7 @@
           matchKeys: ["openrouter/nex-agi/nex-n2.5-pro:free", "nex-n2.5-pro", "nex-agi/nex-n2.5-pro:free"],
         },
         {
-          name: "Nex N2.5 Mini Free (OpenRouter)",
+          name: "Nex N2.5 Mini Free",
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Text", "Vision"],
@@ -2954,7 +2967,7 @@
           matchKeys: ["openrouter/nex-agi/nex-n2.5-mini:free", "nex-n2.5-mini", "nex-agi/nex-n2.5-mini:free"],
         },
         {
-          name: "Nemotron 3.5 Lightning (OpenRouter)",
+          name: "Nemotron 3.5 Lightning",
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Fast Text"],
@@ -3075,12 +3088,10 @@
                   <span class="card-number">#${i + 1}</span>
                   ${activeBadge}
                 </div>
-                <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
-                  ${capBadgesHtml}
-                  <span class="tag-provider ${c.tagClass}">${c.provider}</span>
-                </div>
+                <span class="tag-provider ${c.tagClass}">${c.provider}</span>
               </div>
               <div class="card-model-name">${escapeHtml(c.name)}</div>
+              ${capBadgesHtml ? `<div class="card-caps-row">${capBadgesHtml}</div>` : ""}
               <div class="card-model-desc">${escapeHtml(c.desc)}</div>
             </div>
             <div class="card-footer-row">

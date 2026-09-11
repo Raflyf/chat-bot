@@ -329,7 +329,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }> = [
       {
         kind: 'xkiro',
-        displayName: 'xKiro Gateway (Qwen 3.8 Flagship)',
+        displayName: 'xKiro Gateway',
         keys: config.pools.xkiro,
         cap: config.dailyCap.xkiro,
         tokenCapPerKey: 5000000,
@@ -343,7 +343,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       },
       {
         kind: 'groq',
-        displayName: 'Groq Cloud API (LPU Speed)',
+        displayName: 'Groq Cloud API',
         keys: config.pools.groq,
         cap: config.dailyCap.groq,
         tokenCapPerKey: 200000,
@@ -357,7 +357,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       },
       {
         kind: 'gemini',
-        displayName: 'Google Gemini API (Google AI Studio)',
+        displayName: 'Google Gemini API',
         keys: config.pools.gemini,
         cap: config.dailyCap.gemini,
         tokenCapPerKey: 0,
@@ -371,7 +371,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       },
       {
         kind: 'openrouter',
-        displayName: 'OpenRouter AI Pool',
+        displayName: 'OpenRouter AI',
         keys: config.pools.openrouter,
         cap: config.dailyCap.openrouter,
         tokenCapPerKey: 0,
