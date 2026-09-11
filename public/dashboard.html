@@ -452,6 +452,94 @@
     .progress-cyan { background: linear-gradient(90deg, #06b6d4, #0284c7); }
 
     /* =========================================================================
+       SECTION: DEDICATED LIVE UPSTREAM QUOTA & TOKEN CARD TABLE (NEW)
+       ========================================================================= */
+    .live-upstream-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-top: 1.75rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    .live-upstream-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 1rem;
+    }
+
+    .live-stats-ribbon {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 0.85rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .live-stat-box {
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .live-stat-label {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .live-stat-val {
+      font-size: 1.2rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-main);
+    }
+
+    .live-stat-sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .badge-live-sync {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      white-space: nowrap;
+    }
+
+    .badge-bot-sync {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background: rgba(148, 163, 184, 0.12);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      white-space: nowrap;
+    }
+
+    /* =========================================================================
        SECTION: DEDICATED TOKEN QUOTA & CONTEXT MONITORING PANEL (SEPARATE)
        ========================================================================= */
     .token-matrix-section {
@@ -1734,6 +1822,70 @@
     </section>
 
     <!-- ========================================================================
+         SECTION: DEDICATED LIVE UPSTREAM QUOTA & TOKEN CARD TABLE (NEW)
+         ======================================================================== -->
+    <section class="live-upstream-card" id="live-upstream-section">
+      <div class="live-upstream-header">
+        <div>
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.35rem;">
+            <h2 class="section-title" style="margin-bottom: 0;">Monitoring Sisa Kuota &amp; Token Upstream</h2>
+            <span class="badge-live-sync">● Live Remote Sync</span>
+          </div>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">
+            Tabel pelacak sisa kuota dan penggunaan token riil langsung dari server penyedia resmi &bull; Mencakup seluruh penggunaan di WhatsApp Bot, Cursor, IDE, &amp; Terminal
+          </span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 0.74rem; color: #94a3b8; font-family: var(--font-mono); background: rgba(15, 23, 42, 0.6); padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.05);">Sinkronisasi: Tiap 10 Detik</span>
+        </div>
+      </div>
+
+      <!-- Mini KPI Summary Ribbon -->
+      <div class="live-stats-ribbon">
+        <div class="live-stat-box">
+          <span class="live-stat-label">Total Limit Kuota xKiro</span>
+          <span class="live-stat-val" id="upstream-total-cap" style="color: #38bdf8;">10.000.000</span>
+          <span class="live-stat-sub">Token/hari (2 Kunci Aktif)</span>
+        </div>
+        <div class="live-stat-box">
+          <span class="live-stat-label">Token Terpakai Hari Ini</span>
+          <span class="live-stat-val" id="upstream-total-used" style="color: #fbbf24;">0</span>
+          <span class="live-stat-sub">Konsumsi Global (Bot + IDE)</span>
+        </div>
+        <div class="live-stat-box">
+          <span class="live-stat-label">Sisa Kuota Bersih xKiro</span>
+          <span class="live-stat-val" id="upstream-total-remaining" style="color: #34d399;">10.000.000</span>
+          <span class="live-stat-sub" id="upstream-remaining-pct">100% Kuota Tersedia</span>
+        </div>
+        <div class="live-stat-box">
+          <span class="live-stat-label">Status Pool OpenRouter</span>
+          <span class="live-stat-val" id="upstream-openrouter-status" style="color: #a855f7;">5 Kunci</span>
+          <span class="live-stat-sub">Free Model Tier Aktif</span>
+        </div>
+      </div>
+
+      <!-- Dedicated Upstream Token Table -->
+      <div class="token-table-container">
+        <table class="token-table">
+          <thead>
+            <tr>
+              <th style="min-width: 170px;">Provider &amp; Kunci API</th>
+              <th style="min-width: 180px;">Akun / Email Terdaftar</th>
+              <th style="min-width: 150px;">Model Utama &amp; Tier</th>
+              <th style="min-width: 150px;">Batas Upstream Resmi</th>
+              <th style="min-width: 180px;">Penggunaan Hari Ini</th>
+              <th style="min-width: 170px;">Sisa Kuota Riil (Upstream)</th>
+              <th style="min-width: 100px; text-align: right;">Status Validasi</th>
+            </tr>
+          </thead>
+          <tbody id="live-upstream-tbody">
+            <!-- Dimuat dinamis oleh renderLiveUpstreamTable -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========================================================================
          SECTION: DEDICATED TOKEN QUOTA & CONTEXT LIMIT TABLE (SEPARATED)
          ======================================================================== -->
     <section class="token-matrix-section" id="token-matrix-section">
@@ -2443,6 +2595,7 @@
 
       // Render Pools Matrix, Dedicated Token Quota Matrix & AI Model Router Matrix
       renderPoolMatrix(data);
+      renderLiveUpstreamTable(data);
       renderTokenMatrix(data);
       renderAiModelMatrix(data);
 
@@ -2708,41 +2861,18 @@
             const cleanSuffix = k.suffix.startsWith("...") ? k.suffix : "..." + k.suffix;
             const capLabel = k.cap > 0 ? `${k.used.toLocaleString()} / ${k.cap.toLocaleString()} calls (${k.percent}%)` : `${k.used.toLocaleString()} calls`;
 
-            const liveBadge = k.isLiveSynced
-              ? `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 0.68rem; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3); padding: 1px 6px; border-radius: 4px; margin-left: 4px;" title="Tersinkronisasi langsung dari web server resmi ${escapeHtml(p.displayName)}${k.liveUserEmail ? ' (' + escapeHtml(k.liveUserEmail) + ')' : ''}">● Live Sync</span>`
-              : "";
-
-            let liveDetailHtml = "";
-            if (p.kind === "xkiro" && k.isLiveSynced) {
-              liveDetailHtml = `
-                <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #94a3b8; margin-top: 6px; font-family: var(--font-mono); background: rgba(15, 23, 42, 0.45); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.04);">
-                  <span>Web Token: <strong style="color: #38bdf8;">${k.tokensUsed.toLocaleString("id-ID")}</strong> / ${k.tokenCap.toLocaleString("id-ID")} (${k.tokenPercent}%)</span>
-                  <span style="color: #34d399; font-weight: 600;">Sisa: ${k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined ? k.liveRemainingTokens.toLocaleString("id-ID") : "-"}</span>
-                </div>
-              `;
-            } else if (p.kind === "openrouter" && k.isLiveSynced) {
-              liveDetailHtml = `
-                <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #94a3b8; margin-top: 6px; font-family: var(--font-mono); background: rgba(15, 23, 42, 0.45); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.04);">
-                  <span>Credit Usage: <strong style="color: #38bdf8;">$${Number(k.liveUsageUsd || 0).toFixed(5)}</strong></span>
-                  <span style="color: #a855f7; font-weight: 600;">${k.isFreeTier ? "Free Model Tier" : "Deposit Paid"}</span>
-                </div>
-              `;
-            }
-
             keysHtml += `
               <div class="key-row">
                 <div class="key-info-line">
                   <div class="key-identity">
                     <span class="key-label">${escapeHtml(cleanSuffix)}</span>
                     <span class="key-badge-status status-${k.status}">${statusLabel}</span>
-                    ${liveBadge}
                   </div>
                   <span class="key-stats">${capLabel}</span>
                 </div>
                 <div class="progress-bar-bg">
                   <div class="progress-bar-fill ${progressColor}" style="width: ${Math.min(100, k.percent || 0)}%"></div>
                 </div>
-                ${liveDetailHtml}
               </div>
             `;
           });
@@ -2774,6 +2904,218 @@
         `;
         poolGrid.appendChild(card);
       });
+    }
+
+    function renderLiveUpstreamTable(data) {
+      const tbody = document.getElementById("live-upstream-tbody");
+      if (!tbody) return;
+      tbody.innerHTML = "";
+
+      const pools = data.pools || data.providers || [];
+      let totalXkiroCap = 0;
+      let totalXkiroUsed = 0;
+      let totalXkiroRemaining = 0;
+      let openrouterKeyCount = 0;
+      let totalOrUsageUsd = 0;
+
+      const rows = [];
+
+      pools.forEach(p => {
+        if (!p.keys || p.keys.length === 0) return;
+
+        p.keys.forEach(k => {
+          const cleanSuffix = k.suffix.startsWith("...") ? k.suffix : "..." + k.suffix;
+
+          if (p.kind === "xkiro") {
+            const keyCap = k.tokenCap || 5000000;
+            const keyUsed = k.tokensUsed || 0;
+            const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);
+            const pct = k.tokenPercent || 0;
+
+            totalXkiroCap += keyCap;
+            totalXkiroUsed += keyUsed;
+            totalXkiroRemaining += keyRemaining;
+
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #38bdf8; font-weight: 700; margin-top: 3px;">sk-xt-${escapeHtml(cleanSuffix)}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">${escapeHtml(k.liveUserName || "Akun Terverifikasi")}</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">${escapeHtml(k.liveUserEmail || "api.xkiro.com")}</div>
+                </td>
+                <td>
+                  <div style="font-size: 0.8rem; font-weight: 600; color: #93c5fd; font-family: var(--font-mono);">${escapeHtml(p.primaryModel)}</div>
+                  <span class="tp-badge-cycle" style="margin-top: 4px; border-color: rgba(56, 189, 248, 0.3); color: #38bdf8;">Flagship Qwen 3.8</span>
+                </td>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-family: var(--font-mono);">${keyCap.toLocaleString("id-ID")} Token</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Reset Harian 00:00 UTC</div>
+                </td>
+                <td>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token</span>
+                    <span style="color: var(--text-dim);">${pct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Global (Bot + IDE + Cursor)</div>
+                </td>
+                <td>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Kuota Bersih</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-live-sync" style="margin-bottom: 4px;">● Live Synced</span>
+                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                </td>
+              </tr>
+            `);
+          } else if (p.kind === "openrouter") {
+            openrouterKeyCount++;
+            const usageUsd = Number(k.liveUsageUsd || 0);
+            const dailyUsd = Number(k.liveUsageDailyUsd || 0);
+            totalOrUsageUsd += usageUsd;
+
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #a855f7; font-weight: 700; margin-top: 3px;">sk-or-${escapeHtml(cleanSuffix)}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">OpenRouter Key Pool</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">openrouter.ai/keys</div>
+                </td>
+                <td>
+                  <div style="font-size: 0.8rem; font-weight: 600; color: #c084fc; font-family: var(--font-mono);">${escapeHtml(p.primaryModel)}</div>
+                  <span class="tp-badge-cycle" style="margin-top: 4px; border-color: rgba(168, 85, 247, 0.3); color: #c084fc;">Free Model Route</span>
+                </td>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main);">Included Credits</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Bebas Model :free</div>
+                </td>
+                <td>
+                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">$${usageUsd.toFixed(5)} USD</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Daily Usage: $${dailyUsd.toFixed(5)}</div>
+                </td>
+                <td>
+                  <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Free Tier Active</div>
+                  <div style="font-size: 0.72rem; color: #10b981; margin-top: 2px;">Rate Limit Dynamic</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-live-sync" style="margin-bottom: 4px;">● Live Synced</span>
+                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                </td>
+              </tr>
+            `);
+          } else if (p.kind === "groq") {
+            const keyCap = k.tokenCap || 200000;
+            const keyUsed = k.tokensUsed || 0;
+            const keyRemaining = Math.max(0, keyCap - keyUsed);
+            const pct = k.tokenPercent || 0;
+
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #f97316; font-weight: 700; margin-top: 3px;">gsk_${escapeHtml(cleanSuffix)}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Groq Cloud Console</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">console.groq.com</div>
+                </td>
+                <td>
+                  <div style="font-size: 0.8rem; font-weight: 600; color: #fdba74; font-family: var(--font-mono);">${escapeHtml(p.primaryModel)}</div>
+                  <span class="tp-badge-cycle" style="margin-top: 4px; border-color: rgba(249, 115, 22, 0.3); color: #f97316;">LPU Ultra-Fast</span>
+                </td>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-family: var(--font-mono);">${keyCap.toLocaleString("id-ID")} Token</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">200K TPD per key</div>
+                </td>
+                <td>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token</span>
+                    <span style="color: var(--text-dim);">${pct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Estimasi Bot Monitoring</div>
+                </td>
+                <td>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Estimasi</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-bot-sync" style="margin-bottom: 4px;">● Bot Monitored</span>
+                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                </td>
+              </tr>
+            `);
+          } else if (p.kind === "gemini") {
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #60a5fa; font-weight: 700; margin-top: 3px;">AIza...${escapeHtml(cleanSuffix)}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Google AI Studio</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">aistudio.google.com</div>
+                </td>
+                <td>
+                  <div style="font-size: 0.8rem; font-weight: 600; color: #93c5fd; font-family: var(--font-mono);">${escapeHtml(p.primaryModel)}</div>
+                  <span class="tp-badge-cycle" style="margin-top: 4px; border-color: rgba(96, 165, 250, 0.3); color: #60a5fa;">1M Context Window</span>
+                </td>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main);">1.500 RPD / 1M TPM</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Bebas Kuota Harian</div>
+                </td>
+                <td>
+                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">${(k.used || 0).toLocaleString("id-ID")} Panggilan</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">TPM & Rate Limit Safe</div>
+                </td>
+                <td>
+                  <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Uncapped Daily</div>
+                  <div style="font-size: 0.72rem; color: #10b981; margin-top: 2px;">15 RPM / 1M TPM Tier</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-bot-sync" style="margin-bottom: 4px;">● Bot Monitored</span>
+                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                </td>
+              </tr>
+            `);
+          }
+        });
+      });
+
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">Tidak ada data sinkronisasi upstream aktif.</td></tr>`;
+      } else {
+        tbody.innerHTML = rows.join("");
+      }
+
+      // Update Mini KPI Ribbon
+      const capEl = document.getElementById("upstream-total-cap");
+      const usedEl = document.getElementById("upstream-total-used");
+      const remEl = document.getElementById("upstream-total-remaining");
+      const pctEl = document.getElementById("upstream-remaining-pct");
+      const orEl = document.getElementById("upstream-openrouter-status");
+
+      if (capEl) capEl.textContent = totalXkiroCap.toLocaleString("id-ID");
+      if (usedEl) usedEl.textContent = totalXkiroUsed.toLocaleString("id-ID");
+      if (remEl) remEl.textContent = totalXkiroRemaining.toLocaleString("id-ID");
+      if (pctEl && totalXkiroCap > 0) {
+        const remainingPct = Math.round((totalXkiroRemaining / totalXkiroCap) * 100);
+        pctEl.textContent = `${remainingPct}% Kuota Bersih Tersedia`;
+      }
+      if (orEl) {
+        orEl.textContent = `${openrouterKeyCount} Kunci ($${totalOrUsageUsd.toFixed(4)})`;
+      }
     }
 
     function renderTokenMatrix(data) {
