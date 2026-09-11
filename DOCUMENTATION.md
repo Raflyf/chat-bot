@@ -192,8 +192,12 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
-### v0.22.4 — 2026-09-11 13:46 WIB
-**Optimasi Dashboard & Efisiensi Database: Eliminasi Tabel Live Log Redundan & Streamlining Endpoint Stats**
+### v0.22.4 — 2026-09-11 13:50 WIB
+**Optimasi Dashboard & Efisiensi Database: Eliminasi Tabel Live Log Redundan & Sistem Pagination 5 Baris**
+- **Sistem Penomoran Halaman (Pagination 5 Baris) Dataset Evaluasi (`public/dashboard.html`)**:
+  - Membatasi tampilan tabel dataset evaluasi secara presisi menjadi 5 pasangan percakapan per halaman sehingga layout panel tetap rapi dan tidak memanjang ke bawah.
+  - Mengintegrasikan kontrol navigasi pagination interaktif (tombol `Prev`, nomor halaman `1`, `2`, `3`, ..., dan `Next`) serta teks indikator jumlah percakapan yang ditampilkan.
+  - Menambahkan pembatasan ketinggian maksimum (*max-height: 220px*) dengan scrollbar ramping pada prompt pengguna dan balasan bot agar isi teks yang sangat panjang tetap proporsional tanpa merusak estetika antarmuka.
 - **Eliminasi Tabel Live Log Redundan (`public/dashboard.html`)**:
   - Menghapus seksi tabel "Aktivitas Percakapan Terbaru (Live Log)" di dashboard monitoring karena redundan dengan tabel "Evaluasi & Dataset Training AI" di atasnya yang sudah memuat pasangan prompt-completion terstruktur secara jauh lebih informatif dan kaya fitur (pencarian, filter platform, rentang waktu, ekspor JSONL/CSV).
   - Menghapus fungsi JavaScript `filterActivityTable()` dan variabel memori `cachedRecentActivity` guna memperkecil ukuran bundle HTML dan merampingkan siklus render UI.
