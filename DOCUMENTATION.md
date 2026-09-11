@@ -208,6 +208,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 **Penyelarasan Model xKiro: SenseNova 6.8, Mistral Medium 3.5 & Eliminasi Model Berbayar**
 - **Penyesuaian Model Cadangan xKiro (`src/env.ts`, `src/providers.ts`)**:
   - Menghapus `openai/gpt-5.3-codex-spark` karena berstatus berbayar (*paying customers only* / HTTP 403).
+  - Menghapus `qwen/qwen3-vl-plus:free` dari daftar model teks cadangan dan model vision.
   - Menambahkan `mistralai/mistral-medium-3.5` (Terbukti aktif 100%, mendukung teks & multimodal vision).
   - Menambahkan `sensenova/sensenova-6.8-flash-lite` (Terbukti aktif 100% untuk pemrosesan teks berkecepatan tinggi).
   - Menambahkan `minimax/minimax-m2.7-highspeed:free` dan `minimax/minimax-m3:free` sebagai model cadangan standby.

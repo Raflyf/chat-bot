@@ -51,7 +51,6 @@ export const config = {
             'minimax/minimax-m2.7-highspeed:free',
             'minimax/minimax-m3:free',
             'mistralai/codestral-2508',
-            'qwen/qwen3-vl-plus:free',
             'qwen/qwen3.7-plus:free',
           ],
     orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
