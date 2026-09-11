@@ -523,42 +523,61 @@ export async function searchWeb(query: string): Promise<string> {
     );
 
     // 2a-3. Direct scrape sumber resmi brand saat query tentang tech brand spesifik
-    // Ini bypass semua search engine — langsung ke halaman berita/blog resmi
-    const brandNewsPages: Record<string, string> = {
-      claude:     'https://www.anthropic.com/news',
-      anthropic:  'https://www.anthropic.com/news',
-      openai:     'https://openai.com/blog',
-      chatgpt:    'https://openai.com/blog',
-      gpt:        'https://openai.com/blog',
-      gemini:     'https://blog.google/technology/ai/',
-      mistral:    'https://mistral.ai/news/',
-      groq:       'https://groq.com/blog/',
-      deepseek:   'https://deepseek.com',
-      perplexity: 'https://www.perplexity.ai/hub/blog',
-      meta:       'https://ai.meta.com/blog/',
-      llama:      'https://ai.meta.com/blog/',
-      cohere:     'https://cohere.com/blog',
-      nvidia:     'https://blogs.nvidia.com/blog/category/generative-ai/',
+    // URL dipilih yang bisa dibaca Jina AI (hindari SPA murni tanpa konten HTML)
+    // Untuk SPA: Jina AI tetap dapat render, tapi halaman /news atau /blog lebih baik
+    const brandNewsPages: Record<string, string[]> = {
+      claude:      ['https://www.anthropic.com/news', 'https://docs.anthropic.com/en/release-notes/overview'],
+      anthropic:   ['https://www.anthropic.com/news', 'https://docs.anthropic.com/en/release-notes/overview'],
+      openai:      ['https://openai.com/news', 'https://openai.com/blog'],
+      chatgpt:     ['https://openai.com/news', 'https://openai.com/blog'],
+      gpt:         ['https://openai.com/news', 'https://openai.com/blog'],
+      gemini:      ['https://blog.google/technology/google-deepmind/', 'https://ai.google.dev/gemini-api/docs/changelog'],
+      google:      ['https://blog.google/technology/ai/'],
+      mistral:     ['https://mistral.ai/news/', 'https://huggingface.co/mistralai'],
+      groq:        ['https://groq.com/blog/', 'https://console.groq.com/docs/changelog'],
+      deepseek:    ['https://huggingface.co/deepseek-ai', 'https://github.com/deepseek-ai/DeepSeek-V3/blob/main/README.md'],
+      perplexity:  ['https://www.perplexity.ai/hub/blog'],
+      meta:        ['https://ai.meta.com/blog/', 'https://huggingface.co/meta-llama'],
+      llama:       ['https://ai.meta.com/blog/', 'https://huggingface.co/meta-llama'],
+      qwen:        ['https://huggingface.co/Qwen', 'https://qwenlm.github.io/'],
+      cohere:      ['https://cohere.com/blog'],
+      nvidia:      ['https://blogs.nvidia.com/blog/category/generative-ai/'],
+      grok:        ['https://x.ai/blog', 'https://huggingface.co/xai-org'],
+      xai:         ['https://x.ai/blog'],
+      microsoft:   ['https://blogs.microsoft.com/ai/', 'https://azure.microsoft.com/en-us/blog/category/ai-and-machine-learning/'],
+      copilot:     ['https://blogs.microsoft.com/ai/'],
+      midjourney:  ['https://www.midjourney.com/updates'],
+      stability:   ['https://stability.ai/news'],
+      runway:      ['https://runwayml.com/blog/'],
+      sora:        ['https://openai.com/sora'],
+      openrouter:  ['https://openrouter.ai/announcements'],
+      agentrouter: ['https://agentrouter.org'],
+      huggingface: ['https://huggingface.co/blog'],
+      ollama:      ['https://ollama.com/blog'],
     };
     const queryLower = cleanQuery.toLowerCase();
-    for (const [brand, newsUrl] of Object.entries(brandNewsPages)) {
+    for (const [brand, newsUrls] of Object.entries(brandNewsPages)) {
       if (queryLower.includes(brand)) {
-        // Jadwalkan scrape halaman resmi brand secara paralel
-        fetches.push(
-          scrapeWebpage(newsUrl)
-            .then((content) => {
+        // Scrape URL pertama; jika gagal/kosong, coba URL kedua (fallback)
+        const tryUrls = Array.isArray(newsUrls) ? newsUrls : [newsUrls];
+        const scrapeWithFallback = async () => {
+          for (const newsUrl of tryUrls) {
+            try {
+              const content = await scrapeWebpage(newsUrl);
               if (content && content.length > 80) {
                 let host = newsUrl;
                 try { host = new URL(newsUrl).hostname; } catch { /* */ }
                 structuredSnippets.unshift({
-                  text: `[Halaman Resmi ${brand.toUpperCase()} (${host})]:\n${content.slice(0, 3000)}`,
+                  text: `[Sumber Resmi ${brand.toUpperCase()} (${host})]:\n${content.slice(0, 3000)}`,
                   timestamp: Date.now() + 2_000_000_000,
                   score: 98,
                 });
+                return; // berhasil, tidak perlu fallback
               }
-            })
-            .catch(() => {})
-        );
+            } catch { /* coba URL berikutnya */ }
+          }
+        };
+        fetches.push(scrapeWithFallback());
         break; // cukup satu brand per request
       }
     }
