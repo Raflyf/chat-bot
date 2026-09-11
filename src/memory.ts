@@ -5,6 +5,7 @@ export interface ChatContext {
   history: ChatMsg[];
   summary: string | null;
   corrections: string[];
+  chatId?: string;
 }
 
 const warned = new Set<string>();
@@ -17,7 +18,7 @@ function warnOnce(table: string, msg: string): void {
 
 /** Ambil konteks chat: 10 pesan terakhir + ringkasan + koreksi. Tanpa DB = kosong. */
 export async function getContext(chatKey: string): Promise<ChatContext> {
-  const empty: ChatContext = { history: [], summary: null, corrections: [] };
+  const empty: ChatContext = { history: [], summary: null, corrections: [], chatId: chatKey };
   const c = db();
   if (!c) return empty;
   try {
@@ -36,6 +37,7 @@ export async function getContext(chatKey: string): Promise<ChatContext> {
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
       summary: (s.data as { summary?: string } | null)?.summary ?? null,
       corrections: ((k.data ?? []) as Array<{ correction: string }>).map((r) => r.correction),
+      chatId: chatKey,
     };
   } catch {
     return empty;

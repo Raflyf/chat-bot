@@ -1,6 +1,7 @@
 import { config } from './env.js';
 import { chat, type ChatMsg, type ContentPart } from './providers.js';
 import type { ChatContext } from './memory.js';
+import { buildUniversalTimePrompt } from './timezone.js';
 
 /** Satu-satunya pesan non-AI: hanya saat SEMUA provider mati total setelah retry. */
 function statusDown(): string {
@@ -220,38 +221,13 @@ export function sanitizeAssistantOutput(text: string): string {
   return redactOutput(cleaned);
 }
 
-function currentDateTimeStr(): { timeWIB: string; timeUTC: string; dayName: string } {
-  const now = new Date();
-  const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string = ''): string {
+  const historyText = ctx?.history?.slice(-3)?.map((h) => h.content)?.join(' ') || '';
+  const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, historyText);
 
-  const formatterWIB = new Intl.DateTimeFormat('id-ID', {
-    timeZone: 'Asia/Jakarta',
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-
-  const parts = formatterWIB.formatToParts(now);
-  const findPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
-  const dayName = findPart('weekday') || dayNames[now.getDay()];
-  const timeWIB = `${findPart('day')} ${findPart('month')} ${findPart('year')}, ${findPart('hour')}:${findPart('minute')}:${findPart('second')}`;
-  const timeUTC = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-
-  return { timeWIB, timeUTC, dayName };
-}
-
-function systemPrompt(ctx?: ChatContext, web?: string | null): string {
-  const dt = currentDateTimeStr();
   const instructions: string[] = [
     `Nama kamu ${config.botName}.`,
-    `Waktu dan Tanggal saat ini: ${dt.timeWIB} WIB (Waktu Indonesia Barat / Asia/Jakarta) atau ${dt.timeUTC}.`,
-    `Hari: ${dt.dayName}.`,
-    'Kamu mengetahui waktu, jam, hari, dan tanggal saat ini secara presisi.',
+    timeContext,
     'Kamu adalah sahabat karib sejati sekaligus partner diskusi cerdas serbabisa (polymath companion) di WhatsApp dan Telegram. Interaksimu selayaknya teman akrab di dunia nyata: manusiawi, hangat, santai, punya akal sehat, berwawasan sangat luas, peka rasa, dan mengalir mengikuti alur lawan bicara.',
     '',
     'PRINSIP INTERAKSI ALAMI SEORANG SAHABAT SEJATI (READ THE ROOM & FLOW CONSCIOUS):',
@@ -272,7 +248,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null): string {
     '',
     '4. KECERDASAN UNIVERSAL & FLEKSIBILITAS TANPA KEKAKUAN:',
     '   - Obrolan santai/sapaan: balas santai, mengalir, dan proporsional tanpa berpanjang kata.',
-    '   - Jam dan waktu: jika ditanya jam atau waktu, jawab langsung sesuai waktu saat ini di atas (WIB).',
+    '   - Jam dan waktu: jika ditanya jam atau waktu saat ini, jawab secara dinamis, presisi, dan percaya diri sesuai data waktu global di atas. Jika lawan bicara berada di luar WIB (misal WITA, WIT, atau di luar negeri), atau menanyakan waktu di kota/negara tertentu di dunia, berikan waktu zona tersebut secara tepat.',
     '   - Humor & tebakan: wajib interaktif dua arah (lempar pertanyaan/pancingan dulu, tunggu dia menebak, baru berikan punchline-nya di pesan berikutnya).',
     '   - Edukasi & konsep rumit: jelaskan dengan analogi membumi dan bahasa sederhana layaknya teman pintar yang sedang ngobrol santai di warung kopi.',
     '   - Ketika ditanya identitas ("kamu siapa"): jawab santai dan hangat layaknya teman ngobrol serbabisa di WhatsApp, bukan memuntahkan brosur produk atau template kaku.',
@@ -358,7 +334,7 @@ async function chatRetry(messages: ChatMsg[], vision: boolean): Promise<{ text: 
 }
 
 function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): ChatMsg[] {
-  const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt(ctx, web) }];
+  const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt(ctx, web, clean) }];
   const history = [...(ctx?.history.slice(-10) ?? [])];
 
   // Cegah duplikasi jika pesan pengguna saat ini kebetulan sudah tersimpan di ujung history
