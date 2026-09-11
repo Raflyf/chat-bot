@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from '../src/env.js';
 import { db } from '../src/db.js';
+import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
 
 function maskChatId(chatId: string): string {
   if (!chatId) return '-';
@@ -23,6 +24,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   // Hanya menerima GET
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method Not Allowed' });
+    return;
+  }
+
+  // Verifikasi Session Token Admin
+  const token = extractSessionToken(req) || (typeof req.query.token === 'string' ? req.query.token : null);
+  const isAuthed = token ? await verifySessionToken(token) : false;
+  if (!isAuthed) {
+    res.status(401).json({
+      ok: false,
+      error: 'Unauthorized. Akses dashboard memerlukan Master PIN admin yang valid.',
+      authRequired: true,
+    });
     return;
   }
 
