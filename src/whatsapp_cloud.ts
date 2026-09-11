@@ -305,7 +305,8 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               let webResults: string | null = null;
               if (needsSearch(transcription)) {
                 try {
-                  webResults = await searchWeb(transcription);
+                  const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+                  webResults = await searchWeb(transcription, prevContext);
                 } catch (err) {
                   console.warn('[wa-cloud] Gagal penelusuran web audio:', err);
                 }
@@ -422,7 +423,8 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         let webResults: string | null = null;
         if (needsSearch(text)) {
           try {
-            webResults = await searchWeb(text);
+            const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+            webResults = await searchWeb(text, prevContext);
           } catch (err) {
             console.warn('[wa-cloud] Gagal penelusuran web:', err);
           }

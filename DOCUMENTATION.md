@@ -1,7 +1,7 @@
-# DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.24.5  
+# DOKUMENTASI SISTEM - FreeAIBot / AgentKit
+**Versi:** v0.24.6  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 18:15 WIB  
+**Terakhir Diperbarui:** 2026-09-11 20:55 WIB  
 
 ---
 
@@ -191,6 +191,30 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.24.6 - 2026-09-11 20:55 WIB
+**Universal Real-Time Search Engine, Bing Redirect Decoders, Dual News RSS, Hugging Face AI Catalog, Anaphora Context Resolution & Anti-Refusal Tuning**
+- **Universal Multi-Engine Web Scraping & Bing Base64 Redirect Decoding (`src/web.ts`)**:
+  - Mengatasi kendala URL hasil penelusuran Bing yang berupa tautan redirect terenkripsi (`https://www.bing.com/ck/a?...&u=a1<base64>&ntb=1`). Mengintegrasikan `decodeBingUrl()` untuk mengekstrak URL artikel tujuan asli secara presisi sehingga scraper dapat mengunduh isi halaman lengkap dari portal berita atau situs produsen.
+  - Memperbaiki parameter kueri Bing: menghapus parameter `&sortby=Date` yang sebelumnya merusak relevansi dan hanya memunculkan halaman kosong atau portal acak, mengembalikan akurasi penelusuran tingkat tinggi.
+- **Pembersihan Noise Percakapan & Normalisasi Entitas Universal (`extractCoreEntity`, `formulateSmartSearchQueries`)**:
+  - Mengeliminasi kata pengantar percakapan kasual yang sering mengaburkan kueri pencarian (seperti "coba sekarang saya nanya", "coba deh ganti topik", "kalo hp", "yg kamu tahu", "kamu kenal").
+  - Menangani resolusi anafora (pertanyaan bertumpuk / referensi percakapan sebelumnya seperti "kalo calude", "kalo deepseek", "kalo dia") dengan memanfaatkan riwayat 3 pesan terakhir dari konteks percakapan.
+  - Memperbaiki typo umum nama model dan produk (misal "calude" -> "claude", "deepsik" -> "deepseek", "xiomi" -> "xiaomi") serta konversi istilah gawai ("hp <brand>" -> "<brand> smartphone") guna menjamin hasil penelusuran akurat.
+- **Dual Google News RSS Feed (Indonesia & Global English)**:
+  - Mengintegrasikan dua feed Google News RSS secara serentak (`hl=id-ID&gl=ID&ceid=ID:id` untuk berita nasional berbahasa Indonesia dan `hl=en-US&gl=US&ceid=US:en` untuk rilis global terkini) dengan parser XML toleran CDATA.
+- **Integrasi Langsung Hugging Face Model Hub API**:
+  - Menghubungkan endpoint resmi Hugging Face API (`https://huggingface.co/api/models?author=...&sort=lastModified&direction=-1&limit=5`) untuk organisasi model AI terkemuka (DeepSeek, Qwen, Mistral AI, Meta Llama) guna memperoleh nama model, versi rilis, dan tanggal modifikasi terkini dalam hitungan milidetik tanpa risiko halusinasi.
+- **Penjelajahan Halaman Rilis & Berita Produsen Global**:
+  - Menyediakan fallback penjelajahan langsung ke portal berita dan rilis resmi (Anthropic, OpenAI, Xiaomi Indonesia/Global, Samsung Newsroom, Apple Newsroom) dengan buffer hingga 4.500 karakter.
+- **Injeksi Waktu Real-Time WIB Presisi (`src/skills.ts`)**:
+  - Menambahkan fungsi `currentDateTimeStr()` pada system prompt yang menyuntikkan waktu WIB (Waktu Indonesia Barat / Asia/Jakarta), jam, menit, detik, hari, tanggal, dan UTC secara presisi ke dalam memori dasar model AI. Bot tidak akan lagi menolak pertanyaan seputar waktu atau jam lokal.
+- **Pengerasan Instruksi Anti-Penolakan & Anti-Disclaimer (Anti-Refusal Directives)**:
+  - Menetapkan larangan mutlak bagi model AI untuk mengeluarkan disclaimer pasif seperti "belum ada info resmi", "tidak mau ngarang", "batas pengetahuan training", atau "sering ketinggalan zaman" ketika data internet dan waktu riil telah disediakan.
+  - Mengharuskan bot menyebutkan nama model atau produk terbaru secara tegas dan percaya diri.
+  - Penegakan larangan tanda pisah em-dash (`—`) pada seluruh lapisan sanitasi teks keluaran asisten.
+- **Integrasi Riwayat Konteks pada Seluruh Saluran Komunikasi**:
+  - Mengalirkan riwayat percakapan sebelumnya (`prevContext`) ke dalam fungsi `searchWeb` pada Meta WhatsApp Cloud API (`src/whatsapp_cloud.ts`), WhatsApp Baileys Multi-Device (`src/whatsapp_baileys.ts`), dan Telegram Bot API (`src/telegram.ts`) untuk pesan teks maupun rekaman suara (Voice Note).
 
 ### v0.24.4 — 2026-09-11 17:55 WIB
 **Dynamic MRU Recency Shift for AI Model Matrix Cards (No Fixed Dropdown Fallback)**

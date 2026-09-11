@@ -67,14 +67,37 @@ export function cleanStr(str: string): string {
     '&lt;': '<',
     '&gt;': '>',
     '&nbsp;': ' ',
-    '&mdash;': '—',
-    '&ndash;': '–',
+    '&mdash;': ' - ',
+    '&ndash;': ' - ',
   };
   return str
     .replace(/<[^>]+>/g, '')
     .replace(/&(?:quot|#39|amp|lt|gt|nbsp|mdash|ndash);/g, (m) => entityMap[m] || m)
+    .replace(/[—–]/g, ' - ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Decode URL tujuan asli dari link klik redirect Bing (u=a1<base64>).
+ * Memungkinkan deep scraping langsung ke artikel/halaman target, bukan sekadar domain utama.
+ */
+export function decodeBingUrl(href: string): string | null {
+  if (!href) return null;
+  const cleanHref = href.replace(/&amp;/g, '&');
+  const m = cleanHref.match(/[?&]u=a1([a-zA-Z0-9_-]+)/);
+  if (!m) return null;
+  let b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4 !== 0) b64 += '=';
+  try {
+    const decoded = Buffer.from(b64, 'base64').toString('utf8');
+    if (decoded.startsWith('http://') || decoded.startsWith('https://')) {
+      return decoded;
+    }
+  } catch {
+    // fallback
+  }
+  return null;
 }
 
 /** Filter artikel sampah, zodiak, atau judi */
@@ -206,26 +229,86 @@ export function needsSearch(text: string): boolean {
 }
 
 /** Ekstrak entitas inti kueri penelusuran tanpa filler percakapan
- * Strip dua kategori:
- * 1. Kata filler percakapan: tolong, carikan, dong, sih, deh, dll.
- * 2. Kata penunjuk/tanya murni: itu, ini, yang, yg, apa — bukan konten
- * JANGAN strip: model, terbaru, baru, terkini, versi, info, web (kata konten)
+ * - Memperbaiki salah ketik / typo umum (calude -> claude, deepsik -> deepseek, xiomi -> xiaomi, dll).
+ * - Menormalkan kata ponsel / hp agar tidak rancu dengan Hewlett-Packard.
+ * - Menyingkirkan seluruh stop words percakapan (ganti topik, coba deh, kalo, kamu tahu, dll).
+ * - Mengaitkan konteks percakapan sebelumnya jika kueri pengguna pendek/merujuk (anaphora).
  */
-export function extractCoreEntity(query: string): string {
+export function extractCoreEntity(query: string, previousContext?: string): string {
   if (!query || typeof query !== 'string') return '';
-  const qNorm = query
-    .toLowerCase()
-    .replace(/https?:\/\/[^\s"'<>()]+/gi, ' ')
-    .replace(/www\.[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s"'<>()]*)?/gi, ' ')
-    .replace(
-      /\b(apakah|tolong|coba|carikan|cari|dong|sih|deh|lah|nih|web\s+nya|pokonya|pokoknya|namanya|bisa|dipercaya|apaan|apa|itu|ini|yang|yg|dan|di|ke|dari|adalah|mengenai|gimana|bagaimana|kabar|infokan|berikan|sama\s+kamu|menurutmu|menurut\s+anda|tolong\s+carikan|tolong\s+cari|sebutkan|jelaskan|tentang)\b/gi,
-      ' ',
-    )
-    .replace(/[^\w\s.-]/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  let q = query.toLowerCase();
 
-  return qNorm.slice(0, 120);
+  // 1. Perbaiki typo brand & kata kunci umum
+  q = q
+    .replace(/\bcalude\b/g, 'claude')
+    .replace(/\b(deepsik|deepsek|depseek)\b/g, 'deepseek')
+    .replace(/\b(xiomi|xiaomy|siomi)\b/g, 'xiaomi')
+    .replace(/\b(samung|samsun)\b/g, 'samsung')
+    .replace(/\b(ipon|aipon)\b/g, 'iphone')
+    .replace(/\bgemni\b/g, 'gemini')
+    .replace(/\bchat\s*gpt\b/g, 'chatgpt');
+
+  // 2. Normalisasi kata ponsel / smartphone agar tidak rancu dengan HP (Hewlett-Packard)
+  q = q.replace(/\bhp\s+([a-z0-9]+)/g, '$1 smartphone');
+  q = q.replace(/([a-z0-9]+)\s+hp\b/g, '$1 smartphone');
+  q = q.replace(/\bhp\b/g, 'smartphone');
+
+  // 3. Hapus URL atau domain mentah
+  q = q
+    .replace(/https?:\/\/[^\s"'<>()]+/gi, ' ')
+    .replace(/www\.[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s"'<>()]*)?/gi, ' ');
+
+  // 4. Hapus filler percakapan dan stop words menyeluruh
+  const stopWords = [
+    'coba deh', 'coba', 'deh', 'dong', 'sih', 'lah', 'nih', 'tuh', 'ya', 'kan', 'kok', 'loh',
+    'ganti topik', 'topik', 'pindah topik', 'ngomongin', 'bahas',
+    'kalo', 'kalau', 'klo', 'kl', 'gimana kalau', 'bagaimana kalau',
+    'lalu', 'terus', 'trus', 'kemudian', 'nah', 'jadi',
+    'kamu tahu', 'kamu tau', 'kamu ketahui', 'kamu pelajari', 'kamu ingat',
+    'yang kamu tahu', 'yg kamu tahu', 'yang kamu tau', 'yg kamu tau',
+    'kamu', 'kau', 'mu', 'anda', 'lu', 'loe', 'gue', 'gw',
+    'tahu', 'tau', 'ketahui', 'ingat',
+    'aja', 'saja', 'doang', 'hanya', 'cuma',
+    'atau', 'ataupun', 'maupun',
+    'apakah', 'apa', 'apaan', 'apanya',
+    'tolong', 'mohon', 'bantu', 'bantuin',
+    'carikan', 'cari', 'search', 'searching',
+    'infokan', 'kasih tahu', 'kasih tau', 'beritahu', 'beritau',
+    'sebutkan', 'jelaskan', 'ceritakan', 'tampilkan', 'berikan',
+    'yang', 'yg', 'itu', 'ini',
+    'menurutmu', 'menurut anda', 'menurut kamu',
+    'ada', 'nggak', 'ngga', 'ga', 'gak', 'tidak', 'bukan',
+    'sudah', 'udah', 'udh', 'belum', 'blm',
+    'tentang', 'mengenai', 'soal', 'terkait',
+    'pokonya', 'pokoknya', 'namanya', 'bisa', 'dipercaya',
+    'sama', 'dari', 'ke', 'di', 'dan', 'dengan', 'web nya',
+  ];
+
+  for (const sw of stopWords) {
+    const reg = new RegExp(`\\b${sw.replace(/\s+/g, '\\s+')}\\b`, 'gi');
+    q = q.replace(reg, ' ');
+  }
+
+  q = q.replace(/[^\w\s.-]/gi, ' ').replace(/\s+/g, ' ').trim();
+
+  // 5. Resolusi anaphora: jika kueri sangat pendek (misal "kalo calude" -> "claude" atau "model terakhir")
+  // dan ada konteks percakapan sebelumnya, sertakan kata kunci penting dari konteks sebelumnya
+  if (previousContext && (q.length < 5 || /\b(terakhir|terbaru|model|versi)\b/i.test(q))) {
+    const prevClean = previousContext
+      .toLowerCase()
+      .replace(/[^\w\s.-]/g, ' ')
+      .replace(/\b(halo|hai|oke|iya|ya|tidak|makasih|terima kasih)\b/gi, ' ')
+      .trim();
+    const prevMatch = prevClean.match(/\b(ai|model|gpt|claude|gemini|deepseek|qwen|mistral|smartphone|xiaomi|samsung|iphone)\b/gi);
+    if (prevMatch && prevMatch.length > 0) {
+      const topContextWord = prevMatch[prevMatch.length - 1];
+      if (!q.includes(topContextWord)) {
+        q = `${topContextWord} ${q}`.trim();
+      }
+    }
+  }
+
+  return q.slice(0, 120);
 }
 
 /** Deteksi apakah query berhubungan dengan informasi terkini / real-time */
@@ -235,16 +318,20 @@ function isRecencyQuery(query: string): boolean {
 
 /** Deteksi apakah query tentang AI/teknologi */
 function isTechQuery(query: string): boolean {
-  return /\b(gpt|claude|gemini|llm|ai|model|mistral|qwen|llama|deepseek|openai|anthropic|google|meta|nvidia|framework|library|sdk|api|github|release|versi|version|agentrouter|huggingface|ollama|groq|xkiro|openrouter)\b/i.test(query);
+  return /\b(gpt|claude|calude|gemini|llm|ai|model|mistral|qwen|llama|deepseek|openai|anthropic|google|meta|nvidia|framework|library|sdk|api|github|release|versi|version|agentrouter|huggingface|ollama|groq|xkiro|openrouter)\b/i.test(query);
 }
 
 /**
  * Ekstrak nama brand/produk tech dari query Indonesia dan bangun query Inggris bersih.
  * Contoh: "model terbaru claude" → "claude latest model 2026"
- * Ini penting karena Bing setlang=en bekerja lebih baik dengan query English.
+ * Ini penting karena Bing setlang=en dan Google News EN bekerja optimal dengan query English.
  */
 function extractEnglishTechQuery(query: string, currentYear: number): string | null {
-  const lower = query.toLowerCase();
+  const lower = query.toLowerCase()
+    .replace(/\bcalude\b/g, 'claude')
+    .replace(/\b(deepsik|deepsek|depseek)\b/g, 'deepseek')
+    .replace(/\b(xiomi|xiaomy|siomi)\b/g, 'xiaomi');
+
   // Daftar brand tech yang dikenali
   const techBrands = [
     'claude', 'anthropic', 'gpt', 'openai', 'chatgpt', 'gemini', 'google',
@@ -252,23 +339,23 @@ function extractEnglishTechQuery(query: string, currentYear: number): string | n
     'agentrouter', 'huggingface', 'ollama', 'openrouter', 'xkiro',
     'perplexity', 'cohere', 'grok', 'x.ai', 'copilot', 'microsoft',
     'stable diffusion', 'midjourney', 'runway', 'sora',
+    'xiaomi', 'samsung', 'apple', 'iphone', 'redmi', 'poco', 'huawei', 'oppo', 'vivo'
   ];
   const foundBrands = techBrands.filter((b) => lower.includes(b));
   if (foundBrands.length === 0) return null;
 
   const entity = foundBrands.join(' ');
   const isLatest = isRecencyQuery(query);
-  // Deteksi konteks: model, versi, update, rilis
-  const isModelContext = /\b(model|versi|version|rilis|release|update|terbaru|latest|new)\b/i.test(query);
+  const isModelContext = /\b(model|versi|version|rilis|release|update|terbaru|latest|new|smartphone|phone)\b/i.test(query);
 
-  if (isLatest && isModelContext) return `${entity} latest model release ${currentYear}`;
+  if (isLatest && isModelContext) return `${entity} latest release announcement ${currentYear}`;
   if (isLatest) return `${entity} latest update ${currentYear}`;
-  if (isModelContext) return `${entity} model ${currentYear}`;
+  if (isModelContext) return `${entity} release ${currentYear}`;
   return `${entity} ${currentYear}`;
 }
 
 /** Generator kueri cerdas paralel multi-engine */
-export function formulateSmartSearchQueries(query: string): string[] {
+export function formulateSmartSearchQueries(query: string, previousContext?: string): string[] {
   if (!query || typeof query !== 'string') return [];
 
   const cleanRawLower = query.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -289,7 +376,7 @@ export function formulateSmartSearchQueries(query: string): string[] {
     ];
   }
 
-  const coreEntity = extractCoreEntity(query);
+  const coreEntity = extractCoreEntity(query, previousContext);
   const targetSubject = coreEntity.length >= 2 ? coreEntity : cleanRawLower.slice(0, 80);
   const currentYear = new Date().getFullYear();
 
@@ -300,10 +387,16 @@ export function formulateSmartSearchQueries(query: string): string[] {
     queries.push(`${targetSubject} ${currentYear}`);
 
     if (isRecencyQuery(query) || isTechQuery(query)) {
-      // Tambahkan versi English yang bersih untuk Bing (lebih efektif)
+      // Tambahkan versi English yang bersih untuk Bing & Google News EN
       const englishQ = extractEnglishTechQuery(query, currentYear);
       if (englishQ) queries.push(englishQ);
-      else queries.push(`${targetSubject} latest release announcement ${currentYear}`);
+      else {
+        const enSubj = targetSubject
+          .replace(/\bterbaru\b/gi, 'latest')
+          .replace(/\brilis\b/gi, 'release')
+          .replace(/\bterakhir\b/gi, 'latest');
+        queries.push(`${enSubj} release ${currentYear}`);
+      }
     } else {
       queries.push(`${targetSubject} terbaru ${currentYear}`);
     }
@@ -317,20 +410,21 @@ export function formulateSmartSearchQueries(query: string): string[] {
 }
 
 /** Kompatibilitas fungsi keywords sebelumnya */
-export function keywords(query: string): string {
-  const queries = formulateSmartSearchQueries(query);
+export function keywords(query: string, previousContext?: string): string {
+  const queries = formulateSmartSearchQueries(query, previousContext);
   return queries[0] ?? query.slice(0, 60);
 }
 
 /**
  * Mesin Penelusuran & Penjelajahan Web Universal 2026:
  * - Mendeteksi dan men-scrape URL publik mana pun (Jina AI SPA Reader + Direct Fetch).
- * - Menelusuri seluruh indeks web global via Bing Web Search (mencakup situs, link, web app, tools, repo GitHub, dsb).
- * - Melakukan penelusuran berita terkini paralel via Google News (Global & Indonesia).
+ * - Menelusuri seluruh indeks web global via Bing Web Search dengan URL Click Decoder otomatis.
+ * - Melakukan penelusuran berita terkini paralel via Google News (Global EN & Indonesia ID).
+ * - Menghubungkan langsung ke Katalog Resmi Hugging Face API untuk info model AI open-weights terkini.
  * - Menyerap ensiklopedia Wikipedia (ID & EN) dan komunitas teknologi Hacker News.
  * - Secara otomatis melakukan Autonomous Deep-Scraping pada halaman web tujuan teratas yang ditemukan.
  */
-export async function searchWeb(query: string): Promise<string> {
+export async function searchWeb(query: string, previousContext?: string): Promise<string> {
   if (!query || typeof query !== 'string' || query.trim().length < 2) return '';
 
   const cleanQuery = query.trim();
@@ -369,7 +463,7 @@ export async function searchWeb(query: string): Promise<string> {
 
     const cleanD = cleanStr(desc || '').slice(0, 300);
     const linkSuffix = link && isSafePublicUrl(link) && !link.includes('bing.com') && !link.includes('google.com') ? ` | Sumber: ${link}` : '';
-    const fullText = cleanD && cleanD.length > 15 ? `${cleanT} — ${cleanD}` : cleanT;
+    const fullText = cleanD && cleanD.length > 15 ? `${cleanT}: ${cleanD}` : cleanT;
     const dateStr = pubDate ? ` (${pubDate.slice(0, 16)})` : '';
 
     structuredSnippets.push({
@@ -412,11 +506,11 @@ export async function searchWeb(query: string): Promise<string> {
     }
   }
 
-  // 2. Formulasi Kueri Entitas Multi-Engine
-  const searchQueries = formulateSmartSearchQueries(cleanQuery);
+  // 2. Formulasi Kueri Entitas Multi-Engine dengan Anaphora Resolution
+  const searchQueries = formulateSmartSearchQueries(cleanQuery, previousContext);
   const primaryQ = searchQueries[0] ?? cleanQuery.slice(0, 80);
   const secondaryQ = searchQueries[1] ?? primaryQ;
-  // entityQ: gunakan query asli (lebih lengkap) untuk Wikipedia & HN — jangan terlalu di-strip
+  const englishQ = searchQueries[2] ?? primaryQ;
   const entityQ = cleanQuery.slice(0, 100);
 
   const controller = new AbortController();
@@ -425,12 +519,11 @@ export async function searchWeb(query: string): Promise<string> {
   try {
     const fetches: Array<Promise<void>> = [];
 
-    // 2a. Bing Web Search + DuckDuckGo HTML sebagai backup
-    // Bing: 2 query paralel sorted by date
+    // 2a. Bing Web Search (Relevansi Akurat tanpa sortby=Date yang merusak indeks)
     const bingQueries = [primaryQ, secondaryQ].filter((q, i, arr) => arr.indexOf(q) === i).slice(0, 2);
     for (const bq of bingQueries) {
       fetches.push(
-        fetch(`https://www.bing.com/search?q=${encodeURIComponent(bq)}&setlang=en&sortby=Date`, {
+        fetch(`https://www.bing.com/search?q=${encodeURIComponent(bq)}&setlang=en`, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9,id-ID;q=0.8,id;q=0.7',
@@ -440,41 +533,43 @@ export async function searchWeb(query: string): Promise<string> {
           .then((r) => (r.ok ? r.text() : ''))
           .then((html) => {
             if (!html) return;
-            // Parser utama: b_algo list
             const items = html.split('<li class="b_algo"');
             for (let i = 1; i < Math.min(items.length, 8); i++) {
               const chunk = items[i];
-              const citeMatch = chunk.match(/<cite>([\s\S]*?)<\/cite>/i);
-              const titleMatch = chunk.match(/<h2><a[^>]*>([\s\S]*?)<\/a><\/h2>/i) || chunk.match(/<h2[^>]*><a[^>]*>([\s\S]*?)<\/a>/i);
+              const linkMatch = chunk.match(/<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
               const descMatch = chunk.match(/<div class="b_caption">[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i)
                 || chunk.match(/<p class="b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/i)
                 || chunk.match(/<p[^>]*>([\s\S]{20,300}?)<\/p>/i);
 
-              const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-              const cite = citeMatch ? citeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+              const rawHref = linkMatch ? linkMatch[1] : '';
+              const title = linkMatch ? linkMatch[2].replace(/<[^>]+>/g, '').trim() : '';
               const desc = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
 
               let directUrl = '';
-              const domainFromCite = cite.match(/https?:\/\/[^\s›>]+/i) || cite.match(/^([a-z0-9-]+\.[a-z0-9.-]+)/i);
-              if (domainFromCite) {
-                directUrl = domainFromCite[0].startsWith('http') ? domainFromCite[0] : `https://${domainFromCite[0]}`;
-                if (!directUrl.includes('bing.com') && !directUrl.includes('microsoft.com') && isSafePublicUrl(directUrl)) {
+              if (rawHref) {
+                const decoded = decodeBingUrl(rawHref);
+                directUrl = decoded || (rawHref.startsWith('http') ? rawHref : '');
+                if (directUrl && !/(bing\.com|microsoft\.com|msn\.com)/i.test(directUrl) && isSafePublicUrl(directUrl)) {
                   discoveredUrls.add(directUrl);
                 }
               }
-              if (title || desc) addSnippet('Bing Web', title || cite, desc, '', directUrl, 55);
+
+              if (title || desc) addSnippet('Bing Web', title, desc, '', directUrl, 55);
             }
 
-            // Fallback parser jika b_algo tidak ditemukan (Bing ganti struktur HTML)
+            // Fallback parser jika b_algo tidak ditemukan
             if (items.length <= 1) {
-              const linkMatches = html.matchAll(/<a[^>]+href="(https?:\/\/(?!www\.bing\.)[^"]+)"[^>]*>([^<]{10,120})<\/a>/gi);
+              const linkMatches = html.matchAll(/<a[^>]+href="([^"]+)"[^>]*>([^<]{10,120})<\/a>/gi);
               let count = 0;
               for (const m of linkMatches) {
                 if (count >= 6) break;
-                const url = m[1]; const title = m[2].trim();
-                if (isSafePublicUrl(url) && !/(bing\.com|microsoft\.com|msn\.com)/i.test(url)) {
-                  discoveredUrls.add(url);
-                  addSnippet('Bing Web (fallback)', title, '', '', url, 40);
+                const rawUrl = m[1];
+                const title = m[2].trim();
+                const decoded = decodeBingUrl(rawUrl);
+                const finalUrl = decoded || rawUrl;
+                if (isSafePublicUrl(finalUrl) && !/(bing\.com|microsoft\.com|msn\.com)/i.test(finalUrl)) {
+                  discoveredUrls.add(finalUrl);
+                  addSnippet('Bing Web (fallback)', title, '', '', finalUrl, 40);
                   count++;
                 }
               }
@@ -484,10 +579,9 @@ export async function searchWeb(query: string): Promise<string> {
       );
     }
 
-    // 2a-2. DuckDuckGo HTML — engine independen, tidak bergantung Bing
-    const englishQ = searchQueries[2] ?? primaryQ; // gunakan English query jika ada
+    // 2b. Google News Global (English) RSS
     fetches.push(
-      fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(englishQ)}`, {
+      fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(englishQ)}&hl=en-US&gl=US&ceid=US:en`, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
           'Accept-Language': 'en-US,en;q=0.9',
@@ -495,111 +589,16 @@ export async function searchWeb(query: string): Promise<string> {
         signal: controller.signal,
       })
         .then((r) => (r.ok ? r.text() : ''))
-        .then((html) => {
-          if (!html) return;
-          const results = html.split('class="result__body"');
-          for (let i = 1; i < Math.min(results.length, 6); i++) {
-            const chunk = results[i];
-            const titleM = chunk.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
-            const snippetM = chunk.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)
-              || chunk.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/span>/i);
-            const urlM = chunk.match(/class="result__url"[^>]*>([\s\S]*?)<\/a>/i)
-              || chunk.match(/href="(\/\/duckduckgo\.com\/l\/[^"]+)"/i);
-
-            const title = titleM ? titleM[1].replace(/<[^>]+>/g, '').trim() : '';
-            const snippet = snippetM ? snippetM[1].replace(/<[^>]+>/g, '').trim() : '';
-            let url = '';
-            if (urlM) {
-              const rawUrl = urlM[1].replace(/<[^>]+>/g, '').trim();
-              url = rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl;
-            }
-            if ((title || snippet) && url && isSafePublicUrl(url)) {
-              discoveredUrls.add(url);
-              addSnippet('DuckDuckGo', title, snippet, '', url, 52);
-            }
-          }
-        })
-        .catch(() => {}),
-    );
-
-    // 2a-3. Direct scrape sumber resmi brand saat query tentang tech brand spesifik
-    // URL dipilih yang bisa dibaca Jina AI (hindari SPA murni tanpa konten HTML)
-    // Untuk SPA: Jina AI tetap dapat render, tapi halaman /news atau /blog lebih baik
-    const brandNewsPages: Record<string, string[]> = {
-      claude:      ['https://www.anthropic.com/news', 'https://docs.anthropic.com/en/release-notes/overview'],
-      anthropic:   ['https://www.anthropic.com/news', 'https://docs.anthropic.com/en/release-notes/overview'],
-      openai:      ['https://openai.com/news', 'https://openai.com/blog'],
-      chatgpt:     ['https://openai.com/news', 'https://openai.com/blog'],
-      gpt:         ['https://openai.com/news', 'https://openai.com/blog'],
-      gemini:      ['https://blog.google/technology/google-deepmind/', 'https://ai.google.dev/gemini-api/docs/changelog'],
-      google:      ['https://blog.google/technology/ai/'],
-      mistral:     ['https://mistral.ai/news/', 'https://huggingface.co/mistralai'],
-      groq:        ['https://groq.com/blog/', 'https://console.groq.com/docs/changelog'],
-      deepseek:    ['https://huggingface.co/deepseek-ai', 'https://github.com/deepseek-ai/DeepSeek-V3/blob/main/README.md'],
-      perplexity:  ['https://www.perplexity.ai/hub/blog'],
-      meta:        ['https://ai.meta.com/blog/', 'https://huggingface.co/meta-llama'],
-      llama:       ['https://ai.meta.com/blog/', 'https://huggingface.co/meta-llama'],
-      qwen:        ['https://huggingface.co/Qwen', 'https://qwenlm.github.io/'],
-      cohere:      ['https://cohere.com/blog'],
-      nvidia:      ['https://blogs.nvidia.com/blog/category/generative-ai/'],
-      grok:        ['https://x.ai/blog', 'https://huggingface.co/xai-org'],
-      xai:         ['https://x.ai/blog'],
-      microsoft:   ['https://blogs.microsoft.com/ai/', 'https://azure.microsoft.com/en-us/blog/category/ai-and-machine-learning/'],
-      copilot:     ['https://blogs.microsoft.com/ai/'],
-      midjourney:  ['https://www.midjourney.com/updates'],
-      stability:   ['https://stability.ai/news'],
-      runway:      ['https://runwayml.com/blog/'],
-      sora:        ['https://openai.com/sora'],
-      openrouter:  ['https://openrouter.ai/announcements'],
-      agentrouter: ['https://agentrouter.org'],
-      huggingface: ['https://huggingface.co/blog'],
-      ollama:      ['https://ollama.com/blog'],
-    };
-    const queryLower = cleanQuery.toLowerCase();
-    for (const [brand, newsUrls] of Object.entries(brandNewsPages)) {
-      if (queryLower.includes(brand)) {
-        // Scrape URL pertama; jika gagal/kosong, coba URL kedua (fallback)
-        const tryUrls = Array.isArray(newsUrls) ? newsUrls : [newsUrls];
-        const scrapeWithFallback = async () => {
-          for (const newsUrl of tryUrls) {
-            try {
-              const content = await scrapeWebpage(newsUrl);
-              if (content && content.length > 80) {
-                let host = newsUrl;
-                try { host = new URL(newsUrl).hostname; } catch { /* */ }
-                structuredSnippets.unshift({
-                  text: `[Sumber Resmi ${brand.toUpperCase()} (${host})]:\n${content.slice(0, 3000)}`,
-                  timestamp: Date.now() + 2_000_000_000,
-                  score: 98,
-                });
-                return; // berhasil, tidak perlu fallback
-              }
-            } catch { /* coba URL berikutnya */ }
-          }
-        };
-        fetches.push(scrapeWithFallback());
-        break; // cukup satu brand per request
-      }
-    }
-
-    // 2b. Google News Indonesia & Global RSS
-    fetches.push(
-      fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(primaryQ)}&hl=id&gl=ID&ceid=ID:id`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        signal: controller.signal,
-      })
-        .then((r) => (r.ok ? r.text() : ''))
         .then((txt) => {
           if (!txt) return;
           const items = txt.match(/<item>[\s\S]*?<\/item>/gi) || [];
-          for (const item of items.slice(0, 5)) {
+          for (const item of items.slice(0, 6)) {
             const tm = item.match(/<title>([\s\S]*?)<\/title>/i);
             const dm = item.match(/<description>([\s\S]*?)<\/description>/i);
             const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
             const lm = item.match(/<link>([\s\S]*?)<\/link>/i);
             if (tm) {
-              addSnippet('Google Berita', tm[1], dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '', 40);
-              // Tambahkan URL artikel ke discoveredUrls untuk di-scrape universal
+              addSnippet('Google News Global', tm[1], dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '', 58);
               if (lm && lm[1] && isSafePublicUrl(lm[1].trim())) {
                 discoveredUrls.add(lm[1].trim());
               }
@@ -609,10 +608,131 @@ export async function searchWeb(query: string): Promise<string> {
         .catch(() => {}),
     );
 
-    // 2c. Wikipedia ID + EN paralel
+    // 2c. Hugging Face Direct API untuk Katalog Model AI Open-Weights (DeepSeek, Qwen, Mistral, Llama, Meta)
+    const queryLower = cleanQuery.toLowerCase();
+    const hfMap: Record<string, string> = {
+      deepseek: 'deepseek-ai',
+      qwen: 'Qwen',
+      mistral: 'mistralai',
+      llama: 'meta-llama',
+      meta: 'meta-llama',
+    };
+    for (const [key, author] of Object.entries(hfMap)) {
+      if (queryLower.includes(key)) {
+        fetches.push(
+          fetch(`https://huggingface.co/api/models?author=${author}&sort=lastModified&direction=-1&limit=5`, {
+            headers: { 'User-Agent': 'FreeAIBot/2026' },
+            signal: controller.signal,
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data: any) => {
+              if (Array.isArray(data) && data.length > 0) {
+                const list = data
+                  .map((m: any) => `- ${m.id} (rilis/pembaruan: ${m.lastModified ? m.lastModified.slice(0, 10) : 'terkini'})`)
+                  .join('\n');
+                structuredSnippets.unshift({
+                  text: `[Katalog Resmi Hugging Face (${author})]:\nModel ${key.toUpperCase()} paling mutakhir:\n${list}`,
+                  timestamp: Date.now() + 2_500_000_000,
+                  score: 99,
+                });
+              }
+            })
+            .catch(() => {}),
+        );
+        break;
+      }
+    }
+
+    // 2d. Direct scrape sumber resmi brand saat query tentang tech brand spesifik
+    const brandNewsPages: Record<string, string[]> = {
+      claude:      ['https://www.anthropic.com/news', 'https://docs.anthropic.com/en/release-notes/overview'],
+      anthropic:   ['https://www.anthropic.com/news', 'https://docs.anthropic.com/en/release-notes/overview'],
+      openai:      ['https://openai.com/news', 'https://openai.com/blog'],
+      chatgpt:     ['https://openai.com/news', 'https://openai.com/blog'],
+      gpt:         ['https://openai.com/news', 'https://openai.com/blog'],
+      gemini:      ['https://blog.google/technology/google-deepmind/', 'https://ai.google.dev/gemini-api/docs/changelog'],
+      google:      ['https://blog.google/technology/ai/'],
+      mistral:     ['https://mistral.ai/news/'],
+      groq:        ['https://groq.com/blog/', 'https://console.groq.com/docs/changelog'],
+      deepseek:    ['https://huggingface.co/deepseek-ai', 'https://github.com/deepseek-ai/DeepSeek-V3/blob/main/README.md'],
+      perplexity:  ['https://www.perplexity.ai/hub/blog'],
+      meta:        ['https://ai.meta.com/blog/'],
+      llama:       ['https://ai.meta.com/blog/'],
+      qwen:        ['https://qwenlm.github.io/'],
+      cohere:      ['https://cohere.com/blog'],
+      nvidia:      ['https://blogs.nvidia.com/blog/category/generative-ai/'],
+      grok:        ['https://x.ai/blog'],
+      xai:         ['https://x.ai/blog'],
+      microsoft:   ['https://blogs.microsoft.com/ai/'],
+      copilot:     ['https://blogs.microsoft.com/ai/'],
+      midjourney:  ['https://www.midjourney.com/updates'],
+      stability:   ['https://stability.ai/news'],
+      runway:      ['https://runwayml.com/blog/'],
+      sora:        ['https://openai.com/sora'],
+      openrouter:  ['https://openrouter.ai/announcements'],
+      agentrouter: ['https://agentrouter.org'],
+      huggingface: ['https://huggingface.co/blog'],
+      ollama:      ['https://ollama.com/blog'],
+      xiaomi:      ['https://www.mi.com/global/product-list/'],
+      samsung:     ['https://news.samsung.com/global/'],
+      apple:       ['https://www.apple.com/newsroom/'],
+    };
+
+    for (const [brand, newsUrls] of Object.entries(brandNewsPages)) {
+      if (queryLower.includes(brand)) {
+        const tryUrls = Array.isArray(newsUrls) ? newsUrls : [newsUrls];
+        const scrapeWithFallback = async () => {
+          for (const newsUrl of tryUrls) {
+            try {
+              const content = await scrapeWebpage(newsUrl);
+              if (content && content.length > 80) {
+                let host = newsUrl;
+                try { host = new URL(newsUrl).hostname; } catch { /* */ }
+                structuredSnippets.unshift({
+                  text: `[Sumber Resmi ${brand.toUpperCase()} (${host})]:\n${content.slice(0, 4500)}`,
+                  timestamp: Date.now() + 2_000_000_000,
+                  score: 98,
+                });
+                return;
+              }
+            } catch { /* coba fallback */ }
+          }
+        };
+        fetches.push(scrapeWithFallback());
+        break;
+      }
+    }
+
+    // 2e. Google News Indonesia RSS
+    fetches.push(
+      fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(primaryQ)}&hl=id&gl=ID&ceid=ID:id`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: controller.signal,
+      })
+        .then((r) => (r.ok ? r.text() : ''))
+        .then((txt) => {
+          if (!txt) return;
+          const items = txt.match(/<item>[\s\S]*?<\/item>/gi) || [];
+          for (const item of items.slice(0, 6)) {
+            const tm = item.match(/<title>([\s\S]*?)<\/title>/i);
+            const dm = item.match(/<description>([\s\S]*?)<\/description>/i);
+            const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+            const lm = item.match(/<link>([\s\S]*?)<\/link>/i);
+            if (tm) {
+              addSnippet('Google Berita', tm[1], dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '', 50);
+              if (lm && lm[1] && isSafePublicUrl(lm[1].trim())) {
+                discoveredUrls.add(lm[1].trim());
+              }
+            }
+          }
+        })
+        .catch(() => {}),
+    );
+
+    // 2f. Wikipedia ID + EN paralel
     const wikiQueries = [
       { lang: 'id', base: 'https://id.wikipedia.org', label: 'Wikipedia Indonesia', q: entityQ },
-      { lang: 'en', base: 'https://en.wikipedia.org', label: 'Wikipedia English', q: searchQueries[2] ?? primaryQ },
+      { lang: 'en', base: 'https://en.wikipedia.org', label: 'Wikipedia English', q: englishQ },
     ];
     for (const w of wikiQueries) {
       fetches.push(
@@ -632,7 +752,7 @@ export async function searchWeb(query: string): Promise<string> {
       );
     }
 
-    // 2d. Hacker News Algolia (Tech & Open-Source)
+    // 2g. Hacker News Algolia (Tech & Open-Source)
     fetches.push(
       fetch(`https://hn.algolia.com/api/v1/search_by_date?query=${encodeURIComponent(entityQ)}&tags=story&hitsPerPage=3`, {
         headers: { 'User-Agent': 'FreeAIBot/2026' },
