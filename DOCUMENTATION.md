@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.23.0  
+**Versi:** v0.23.1  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 15:00 WIB  
+**Terakhir Diperbarui:** 2026-09-11 15:25 WIB  
 
 ---
 
@@ -191,6 +191,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.23.1 — 2026-09-11 15:25 WIB
+**Observabilitas Lanjut: Monitoring Dual-Metric (Token per Chat & Token per Context Window) pada Seluruh API Key Provider**
+- **Dual-Metric Key Tracking (`api/stats.ts`, `public/dashboard.html`)**:
+  - Menerapkan pelacakan dua dimensi metrik kuota untuk **seluruh API Key** di seluruh provider (xKiro Gateway, Groq Cloud, Google Gemini, OpenRouter, dan Ollama Cloud).
+  - **Dimensi 1: Panggilan Chat (Requests/Calls)**: Menghitung total panggilan API yang dieksekusi vs batas chat harian (cap) per key, persentase keterpakaian, sisa kuota chat, dan progress bar status (`Optimal`, `Waspada`, atau `Limit Habis`).
+  - **Dimensi 2: Konsumsi Token vs Kuota Harian**: Mengestimasi akumulasi token yang terpakai hari ini (berdasarkan rerata percakapan ~380 token/chat dengan riwayat konteks) vs batas token harian per key (misal 5.000.000 token/hari di xKiro, 1.000.000 di Gemini, 500.000 di Groq, 250.000 di OpenRouter, 200.000 di Ollama). Dilengkapi indikator progress bar bergradien cyan.
+  - **Dimensi 3: Token Context Window (Token per Context)**: Menampilkan kapasitas jendela konteks maksimal per model (1M context untuk xKiro Qwen 3.8 & Gemini, 131K context untuk Groq & OpenRouter, 32K context untuk Ollama) pada tag kartu kunci maupun badge header provider.
+- **Pembaruan Ringkasan Eksekutif & Provider Header**:
+  - Kartu KPI *Panggilan API* di bagian atas dashboard kini menampilkan metrik ganda: jumlah panggilan dan estimasi total token (`~X Token • N Keys Terpantau`).
+  - Header setiap kartu provider menyajikan rangkuman total panggilan, total estimasi token terpakai, dan persentase kuota token harian seluruh key gabungan di pool tersebut.
 
 ### v0.23.0 — 2026-09-11 15:00 WIB
 **Perombakan Arsitektur AI: Integrasi xKiro Qwen 3.8 Max Flagship, 8-Layer Failover Chain & Konsol Matriks Model AI**
