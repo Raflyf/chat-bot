@@ -192,6 +192,22 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.23.6 — 2026-09-11 16:38 WIB
+**Live Remote Quota Sync (Real-Time Upstream Platform Token Tracking for xKiro & OpenRouter)**
+- **Integrasi Sinkronisasi Langsung dari Server Upstream (`api/stats.ts`)**:
+  - Mengatasi kendala penggunaan API key xKiro di luar chatbot (misal di IDE, CLI, atau skrip lain) yang sebelumnya tidak terlacak oleh database lokal bot.
+  - Menjalankan kueri paralel zero-latency bersamaan dengan database Supabase ke endpoint resmi xKiro (`GET https://api.xkiro.com/v1/usage`) dan OpenRouter (`GET https://openrouter.ai/api/v1/auth/key`).
+  - Menarik data faktual akun:
+    - **xKiro**: Mengambil `free_tokens.used_today`, `free_tokens.limit_per_day` (5M/hari), dan `free_tokens.remaining` langsung dari server web xKiro serta profil pengguna pemilik kunci.
+    - **OpenRouter**: Mengambil status tier, kredit akumulasi (`usage`), dan sisa limit kunci secara real-time.
+- **Antarmuka Observabilitas Live Sync (`public/dashboard.html`)**:
+  - Menambahkan badge hijau/cyan `● Live Sync` pada kartu kunci API dan header provider yang berhasil tersinkronisasi.
+  - Menampilkan baris metrik riil web per kunci: token terpakai hari ini vs limit harian, serta sisa kuota faktual.
+  - Menampilkan badge `● Live API Sync (Global di Semua App & IDE)` pada tabel matriks kuota token provider.
+- **Klarifikasi Provider Lain (Groq & Google Gemini)**:
+  - Groq dan Google Gemini (Google AI Studio) tidak menyediakan endpoint REST publik untuk pengecekan saldo/kuota via standard API key (Gemini memerlukan OAuth2 GCP IAM, Groq hanya menyertakan rate limit di header respons inferensi).
+  - Oleh karena itu, Groq dan Gemini tetap menggunakan pencatatan kuota internal database Supabase (`provider_quota`) yang akurat per panggilan bot.
+
 ### v0.23.5 — 2026-09-11 16:22 WIB
 **Comprehensive Ground-Zero Deep Audit & System Hardening (Ruflo Swarm Sub-Agents)**
 - **Audit Kode & Arsitektur Menyeluruh Multi-Perspektif**:
