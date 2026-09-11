@@ -206,8 +206,10 @@ export function needsSearch(text: string): boolean {
 }
 
 /** Ekstrak entitas inti kueri penelusuran tanpa filler percakapan
- * CATATAN: Hanya strip kata sambung/percakapan — JANGAN strip kata teknis
- * seperti "model", "baru", "terbaru", "versi", "update", "rilis", "launch", dsb.
+ * Strip dua kategori:
+ * 1. Kata filler percakapan: tolong, carikan, dong, sih, deh, dll.
+ * 2. Kata penunjuk/tanya murni: itu, ini, yang, yg, apa — bukan konten
+ * JANGAN strip: model, terbaru, baru, terkini, versi, info, web (kata konten)
  */
 export function extractCoreEntity(query: string): string {
   if (!query || typeof query !== 'string') return '';
@@ -215,9 +217,8 @@ export function extractCoreEntity(query: string): string {
     .toLowerCase()
     .replace(/https?:\/\/[^\s"'<>()]+/gi, ' ')
     .replace(/www\.[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s"'<>()]*)?/gi, ' ')
-    // Hanya strip filler percakapan, BUKAN kata teknis/informasional
     .replace(
-      /\b(apakah|tolong|coba|carikan|cari|dong|sih|deh|web\s+nya|pokonya|pokoknya|namanya|bisa|dipercaya|apaan|dan|di|ke|dari|adalah|mengenai|gimana|bagaimana|kabar|infokan|berikan|sama\s+kamu|menurutmu|menurut\s+anda|tolong\s+carikan|tolong\s+cari|sebutkan|jelaskan)\b/gi,
+      /\b(apakah|tolong|coba|carikan|cari|dong|sih|deh|lah|nih|web\s+nya|pokonya|pokoknya|namanya|bisa|dipercaya|apaan|apa|itu|ini|yang|yg|dan|di|ke|dari|adalah|mengenai|gimana|bagaimana|kabar|infokan|berikan|sama\s+kamu|menurutmu|menurut\s+anda|tolong\s+carikan|tolong\s+cari|sebutkan|jelaskan|tentang)\b/gi,
       ' ',
     )
     .replace(/[^\w\s.-]/gi, ' ')
@@ -227,20 +228,43 @@ export function extractCoreEntity(query: string): string {
   return qNorm.slice(0, 120);
 }
 
-/** Deteksi apakah query berhubungan dengan informasi terkini / real-time
- * Mencakup semua variasi temporal bahasa Indonesia & Inggris:
- * - Kata waktu relatif: sekarang, saat ini, hari ini, minggu ini, bulan ini, tahun ini
- * - Kata kualitas informasi: terbaru, terkini, baru, latest, new, current, now
- * - Kata perubahan: update, diperbarui, berubah, naik, turun, rilis
- * - Tahun eksplisit: 2023–2030
- */
+/** Deteksi apakah query berhubungan dengan informasi terkini / real-time */
 function isRecencyQuery(query: string): boolean {
-  return /\b(terbaru|terkini|baru|sekarang|saat\s*ini|kini|hari\s*ini|minggu\s*ini|bulan\s*ini|tahun\s*ini|malam\s*ini|siang\s*ini|pagi\s*ini|sore\s*ini|tadi|barusan|baru\s*saja|kemarin|besok|latest|new|current|now|today|tonight|update|updated|diperbarui|berubah|naik|turun|versi|version|rilis|release|launch|announced|diluncurkan|diumumkan|terkini|aktual|real-time|realtime|live|breaking|trending|viral|populer|202[3-9]|203[0-9])\b/i.test(query);
+  return /\b(terbaru|terkini|baru|sekarang|saat\s*ini|kini|hari\s*ini|minggu\s*ini|bulan\s*ini|tahun\s*ini|malam\s*ini|siang\s*ini|pagi\s*ini|sore\s*ini|tadi|barusan|baru\s*saja|kemarin|besok|latest|new|current|now|today|tonight|update|updated|diperbarui|berubah|naik|turun|versi|version|rilis|release|launch|announced|diluncurkan|diumumkan|aktual|real-time|realtime|live|breaking|trending|viral|populer|202[3-9]|203[0-9])\b/i.test(query);
 }
 
-/** Deteksi apakah query tentang AI/teknologi (nama model, framework, tools) */
+/** Deteksi apakah query tentang AI/teknologi */
 function isTechQuery(query: string): boolean {
-  return /\b(gpt|claude|gemini|llm|ai|model|mistral|qwen|llama|deepseek|openai|anthropic|google|meta|nvidia|framework|library|sdk|api|github|release|versi|version)\b/i.test(query);
+  return /\b(gpt|claude|gemini|llm|ai|model|mistral|qwen|llama|deepseek|openai|anthropic|google|meta|nvidia|framework|library|sdk|api|github|release|versi|version|agentrouter|huggingface|ollama|groq|xkiro|openrouter)\b/i.test(query);
+}
+
+/**
+ * Ekstrak nama brand/produk tech dari query Indonesia dan bangun query Inggris bersih.
+ * Contoh: "model terbaru claude" → "claude latest model 2026"
+ * Ini penting karena Bing setlang=en bekerja lebih baik dengan query English.
+ */
+function extractEnglishTechQuery(query: string, currentYear: number): string | null {
+  const lower = query.toLowerCase();
+  // Daftar brand tech yang dikenali
+  const techBrands = [
+    'claude', 'anthropic', 'gpt', 'openai', 'chatgpt', 'gemini', 'google',
+    'mistral', 'qwen', 'llama', 'deepseek', 'meta', 'nvidia', 'groq',
+    'agentrouter', 'huggingface', 'ollama', 'openrouter', 'xkiro',
+    'perplexity', 'cohere', 'grok', 'x.ai', 'copilot', 'microsoft',
+    'stable diffusion', 'midjourney', 'runway', 'sora',
+  ];
+  const foundBrands = techBrands.filter((b) => lower.includes(b));
+  if (foundBrands.length === 0) return null;
+
+  const entity = foundBrands.join(' ');
+  const isLatest = isRecencyQuery(query);
+  // Deteksi konteks: model, versi, update, rilis
+  const isModelContext = /\b(model|versi|version|rilis|release|update|terbaru|latest|new)\b/i.test(query);
+
+  if (isLatest && isModelContext) return `${entity} latest model release ${currentYear}`;
+  if (isLatest) return `${entity} latest update ${currentYear}`;
+  if (isModelContext) return `${entity} model ${currentYear}`;
+  return `${entity} ${currentYear}`;
 }
 
 /** Generator kueri cerdas paralel multi-engine */
@@ -267,21 +291,19 @@ export function formulateSmartSearchQueries(query: string): string[] {
 
   const coreEntity = extractCoreEntity(query);
   const targetSubject = coreEntity.length >= 2 ? coreEntity : cleanRawLower.slice(0, 80);
-  const currentYear = new Date().getFullYear(); // 2026 saat ini
+  const currentYear = new Date().getFullYear();
 
   const queries: string[] = [];
   if (targetSubject.length >= 2) {
-    // Query utama — selalu sertakan subject lengkap
     queries.push(targetSubject);
-
-    // Selalu tambahkan anchor tahun sebagai secondary query
-    // agar Bing memprioritaskan konten 2026 untuk SEMUA topik
+    // Selalu anchor tahun untuk semua query
     queries.push(`${targetSubject} ${currentYear}`);
 
-    // Untuk query tech/recency: tambahkan query spesifik sumber primer
     if (isRecencyQuery(query) || isTechQuery(query)) {
-      queries.push(`${targetSubject} latest release announcement ${currentYear}`);
-      queries.push(`${targetSubject} site:github.com OR site:huggingface.co OR site:openai.com OR site:anthropic.com`);
+      // Tambahkan versi English yang bersih untuk Bing (lebih efektif)
+      const englishQ = extractEnglishTechQuery(query, currentYear);
+      if (englishQ) queries.push(englishQ);
+      else queries.push(`${targetSubject} latest release announcement ${currentYear}`);
     } else {
       queries.push(`${targetSubject} terbaru ${currentYear}`);
     }
