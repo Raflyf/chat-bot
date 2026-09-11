@@ -1,6 +1,7 @@
 // Mesin Pencari & Penjelajah Web Bebas Real-Time 2026 (Zero-API-Key)
 // Menggabungkan Google News Global & ID, Bing News, Hacker News, Wikipedia (ID/EN), arXiv, serta Deep Webpage Scraper & Jina Reader.
 // Diadaptasi dari arsitektur teruji Terminal AI Portofolio Rafly Firmansyah.
+import { getKnowledge, saveKnowledge } from './knowledge.js';
 
 /** SSRF & Private Network Shield: mencegah scraping ke localhost, metadata cloud, atau IP privat. */
 export function isSafePublicUrl(urlString: string): boolean {
@@ -500,6 +501,18 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   if (!query || typeof query !== 'string' || query.trim().length < 2) return '';
 
   const cleanQuery = query.trim();
+
+  // 0. Cek Persistent Knowledge Memory (Hot Cache & Supabase web_knowledge)
+  // Jika fakta sudah pernah dipelajari dan masih berlaku segar, kembalikan instan (0 - 30ms)!
+  try {
+    const cached = await getKnowledge(cleanQuery);
+    if (cached && cached.knowledge && cached.knowledge.length > 50) {
+      return cached.knowledge;
+    }
+  } catch {
+    // Fail-safe: jika pencarian memori gagal, lanjutkan penelusuran web live
+  }
+
   const structuredSnippets: Array<{ text: string; timestamp: number; score: number }> = [];
   const seenTitles = new Set<string>();
   const discoveredUrls = new Set<string>();
@@ -884,6 +897,14 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   structuredSnippets.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp);
 
   const selected = structuredSnippets.slice(0, 14).map((s) => s.text);
-  return selected.join('\n\n');
+  const finalKnowledge = selected.join('\n\n');
+
+  // Simpan hasil ke Persistent Knowledge Memory secara non-blocking
+  if (finalKnowledge.length > 80) {
+    const sourceUrls = Array.from(discoveredUrls).slice(0, 5);
+    void saveKnowledge(cleanQuery, finalKnowledge, sourceUrls).catch(() => {});
+  }
+
+  return finalKnowledge;
 }
 
