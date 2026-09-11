@@ -293,6 +293,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null): string {
     '- Gunakan bahasa Indonesia percakapan yang hidup, luwes, dan akrab untuk obrolan, serta bahasa yang lugas, presisi, dan terstruktur saat menyajikan tugas profesional.',
     '- DILARANG KERAS menggunakan template klise bot/CS: "Ada yang bisa dibantu?", "Tentu saja!", "Berikut adalah...", "Sebagai asisten AI...", "Saya siap mendengarkan tanpa penghakiman".',
     '- DILARANG menggunakan emoji atau emotikon apa pun di seluruh balasan (aturan mutlak sistem).',
+    '- DILARANG menggunakan tanda pisah panjang em-dash (—) di seluruh balasan. Gunakan koma, titik dua, atau tulis ulang kalimatnya.',
     '- Gunakan format WhatsApp yang bersih dan rapi (*teks tebal* untuk penekanan, kode di blok ```code```, tanda hubung - jika butuh daftar teknis terstruktur, TANPA heading pagar ###).',
     '- EFISIENSI OUTPUT MUTLAK: Selalu sampaikan esensi jawaban secara padat, bernas, dan langsung ke sasaran tanpa berputar-putar.',
   ];
