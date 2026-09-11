@@ -45,15 +45,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const format = String(req.query.format || 'json').toLowerCase();
   const search = typeof req.query.q === 'string' ? req.query.q.toLowerCase().trim() : '';
   const platform = typeof req.query.platform === 'string' ? req.query.platform.toLowerCase().trim() : '';
+  const range = typeof req.query.range === 'string' ? req.query.range.toLowerCase().trim() : 'all';
+  const modelFilter = typeof req.query.model === 'string' ? req.query.model.toLowerCase().trim() : '';
   const limit = Math.min(1000, Math.max(10, Number(req.query.limit) || 200));
+
+  const now = new Date();
+  let startDateIso: string | null = null;
+  if (range === 'today') {
+    const todayStr = now.toISOString().slice(0, 10);
+    startDateIso = `${todayStr}T00:00:00.000Z`;
+  } else if (range === '7d') {
+    startDateIso = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  } else if (range === '14d') {
+    startDateIso = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  } else if (range === '30d') {
+    startDateIso = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  }
 
   try {
     // Ambil riwayat pesan terurut dari awal percakapan
-    const { data: allMsgs, error } = await c
-      .from('messages')
-      .select('*')
-      .order('id', { ascending: true })
-      .limit(3000);
+    let query = c.from('messages').select('*').order('id', { ascending: true }).limit(3000);
+    if (startDateIso) {
+      query = query.gte('created_at', startDateIso);
+    }
+    if (platform && platform !== 'all') {
+      query = query.eq('platform', platform);
+    }
+
+    const { data: allMsgs, error } = await query;
 
     if (error) throw error;
 
@@ -77,8 +96,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const via = botMsg?.via || '-';
         const pForm = userMsg.platform || 'whatsapp';
 
+        // Terapkan filter model/via
+        if (modelFilter && modelFilter !== 'all' && !via.toLowerCase().includes(modelFilter)) {
+          continue;
+        }
+
         // Terapkan filter pencarian
-        if (platform && pForm !== platform) continue;
+        if (platform && platform !== 'all' && pForm !== platform) continue;
         if (search) {
           const matchUser = prompt.toLowerCase().includes(search);
           const matchBot = reply.toLowerCase().includes(search);

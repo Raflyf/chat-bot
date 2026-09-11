@@ -192,6 +192,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.22.2 — 2026-09-11 13:32 WIB
+**Fitur & Analitik: Multi-Level Time Range & Section-Specific Filtering System**
+- **Filter Rentang Waktu Global (`Hari Ini`, `7 Hari`, `14 Hari`, `30 Hari`, `Semua Waktu`)**:
+  - Filter segmented pill terintegrasi di bagian atas dashboard yang mengontrol KPI cards, matriks provider, distribusi model, dan statistik media secara serentak.
+  - Perhitungan metrik kuota dan pesan adaptif di backend `api/stats.ts`: menjumlahkan penggunaan `provider_quota` dan riwayat `messages` sesuai periode yang dipilih.
+- **Filter Platform Global (`Semua`, `WhatsApp`, `Telegram`)**:
+  - Memungkinkan admin mengisolasi performa pesan, model AI, dan kuota untuk platform tertentu secara instan.
+- **Filter Matriks Pool API Key (`api/stats.ts`, `public/dashboard.html`)**:
+  - Filter Provider per tab: `Semua Provider`, `Groq`, `Google Gemini`, `OpenRouter`, `Ollama Cloud`.
+  - Filter Status Key: `Semua Status`, `Sehat (<80%)`, `Waspada (>=80%)`, `Limit Habis (Capped)`.
+- **Filter Dataset Evaluasi & Training AI (`api/dataset.ts`, `public/dashboard.html`)**:
+  - Tambahan filter rentang waktu (`today`, `7d`, `14d`, `30d`, `all`), platform (`whatsapp`, `telegram`), dan model/provider pada antarmuka tabel serta URL unduhan ekspor JSONL/CSV.
+- **Filter Log Aktivitas Percakapan (Live Table)**:
+  - Pencarian kata kunci live, filter platform, filter peran (`User`/`Bot`), dan filter jenis media (`Teks`, `Voice Note`, `Foto/Vision`, `Dokumen`, `Stiker`, `Video`).
+
 ### v0.22.1 — 2026-09-11 13:18 WIB
 **Penyempurnaan UI/UX: Restorasi Landing Page Publik di Root (/) & Eliminasi Keypad Virtual Manual**
 - **Restorasi Landing Page Publik (`public/index.html`)**: Rute utama (`/`) difungsikan sebagai Landing Page publik yang menyajikan status operasional bot online 24/7, kapabilitas multimodal (Voice Note Whisper, Dokumen PDF/Word, Gemini Vision, 4-Provider Failover), dan tombol CTA menuju panel monitoring.

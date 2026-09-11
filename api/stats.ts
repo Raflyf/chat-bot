@@ -45,41 +45,102 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
+  const range = String(req.query.range || 'today').toLowerCase();
+  const filterPlatform = typeof req.query.platform === 'string' ? req.query.platform.toLowerCase().trim() : '';
+
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const startOfDay = `${today}T00:00:00.000Z`;
+  const todayStr = now.toISOString().slice(0, 10);
+
+  let startDateIso: string | null = null;
+  let startDayStr: string | null = null;
+  let rangeLabel = 'Hari Ini';
+  let daysCount = 1;
+
+  if (range === '7d') {
+    const d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    startDateIso = d.toISOString();
+    startDayStr = d.toISOString().slice(0, 10);
+    rangeLabel = '7 Hari Terakhir';
+    daysCount = 7;
+  } else if (range === '14d') {
+    const d = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    startDateIso = d.toISOString();
+    startDayStr = d.toISOString().slice(0, 10);
+    rangeLabel = '14 Hari Terakhir';
+    daysCount = 14;
+  } else if (range === '30d') {
+    const d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    startDateIso = d.toISOString();
+    startDayStr = d.toISOString().slice(0, 10);
+    rangeLabel = '30 Hari Terakhir';
+    daysCount = 30;
+  } else if (range === 'all') {
+    startDateIso = null;
+    startDayStr = null;
+    rangeLabel = 'Semua Waktu';
+    daysCount = 0;
+  } else {
+    // default: today
+    startDateIso = `${todayStr}T00:00:00.000Z`;
+    startDayStr = todayStr;
+    rangeLabel = 'Hari Ini';
+    daysCount = 1;
+  }
 
   try {
-    // 1. Ambil data kuota hari ini dari provider_quota
-    const { data: quotasToday } = await c
-      .from('provider_quota')
-      .select('*')
-      .eq('day', today);
+    // 1. Ambil data kuota dari provider_quota sesuai rentang waktu
+    let quotaQuery = c.from('provider_quota').select('*');
+    if (startDayStr) {
+      if (range === 'today') {
+        quotaQuery = quotaQuery.eq('day', startDayStr);
+      } else {
+        quotaQuery = quotaQuery.gte('day', startDayStr);
+      }
+    }
+    const { data: quotasData } = await quotaQuery;
 
     const quotaMap = new Map<string, number>();
-    for (const q of quotasToday ?? []) {
-      quotaMap.set(`${q.kind}:${q.key_suffix}`, q.used || 0);
+    for (const q of quotasData ?? []) {
+      const key = `${q.kind}:${q.key_suffix}`;
+      quotaMap.set(key, (quotaMap.get(key) || 0) + (q.used || 0));
     }
 
-    // 2. Hitung jumlah total pesan & pesan hari ini
+    // 2. Hitung jumlah total pesan all-time & pesan dalam rentang waktu
+    let msgPeriodQuery = c.from('messages').select('*', { count: 'exact', head: true });
+    let waPeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'whatsapp');
+    let telePeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'telegram');
+
+    if (startDateIso) {
+      msgPeriodQuery = msgPeriodQuery.gte('created_at', startDateIso);
+      waPeriodQuery = waPeriodQuery.gte('created_at', startDateIso);
+      telePeriodQuery = telePeriodQuery.gte('created_at', startDateIso);
+    }
+
+    if (filterPlatform && filterPlatform !== 'all') {
+      msgPeriodQuery = msgPeriodQuery.eq('platform', filterPlatform);
+    }
+
     const [
       { count: totalMessagesAllTime },
-      { count: totalMessagesToday },
-      { count: waToday },
-      { count: teleToday },
+      { count: totalMessagesPeriod },
+      { count: waPeriod },
+      { count: telePeriod },
     ] = await Promise.all([
       c.from('messages').select('*', { count: 'exact', head: true }),
-      c.from('messages').select('*', { count: 'exact', head: true }).gte('created_at', startOfDay),
-      c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'whatsapp').gte('created_at', startOfDay),
-      c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'telegram').gte('created_at', startOfDay),
+      msgPeriodQuery,
+      waPeriodQuery,
+      telePeriodQuery,
     ]);
 
-    // 3. Ambil distribusi model 'via' hari ini
-    const { data: assistantMsgs } = await c
-      .from('messages')
-      .select('via')
-      .eq('role', 'assistant')
-      .gte('created_at', startOfDay);
+    // 3. Ambil distribusi model 'via' dalam rentang waktu
+    let assistantQuery = c.from('messages').select('via').eq('role', 'assistant');
+    if (startDateIso) {
+      assistantQuery = assistantQuery.gte('created_at', startDateIso);
+    }
+    if (filterPlatform && filterPlatform !== 'all') {
+      assistantQuery = assistantQuery.eq('platform', filterPlatform);
+    }
+    const { data: assistantMsgs } = await assistantQuery;
 
     const modelCounts: Record<string, number> = {};
     let totalModelCalls = 0;
@@ -141,32 +202,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     ];
 
     let totalPoolKeys = 0;
-    let totalCallsToday = 0;
+    let totalCallsPeriod = 0;
 
     const pools = providerDefs.map((p) => {
       totalPoolKeys += p.keys.length;
       let poolUsed = 0;
 
+      const effectiveCapPerKey = daysCount > 0 ? p.cap * daysCount : 0;
+
       const keysDetail = p.keys.map((k) => {
         const suffix = k.slice(-4);
         const used = quotaMap.get(`${p.kind}:${suffix}`) || 0;
         poolUsed += used;
-        totalCallsToday += used;
+        totalCallsPeriod += used;
 
-        const percent = p.cap > 0 ? Math.min(100, Math.round((used / p.cap) * 100)) : 0;
-        const status = used >= p.cap ? 'capped' : percent >= 80 ? 'warning' : 'healthy';
+        const percent = effectiveCapPerKey > 0 ? Math.min(100, Math.round((used / effectiveCapPerKey) * 100)) : 0;
+        const status = effectiveCapPerKey > 0 && used >= effectiveCapPerKey ? 'capped' : percent >= 80 ? 'warning' : 'healthy';
 
         return {
           suffix,
           used,
-          cap: p.cap,
-          remaining: Math.max(0, p.cap - used),
+          cap: effectiveCapPerKey,
+          remaining: effectiveCapPerKey > 0 ? Math.max(0, effectiveCapPerKey - used) : null,
           percent,
           status,
         };
       });
 
-      const totalPoolCap = p.keys.length * p.cap;
+      const totalPoolCap = effectiveCapPerKey * p.keys.length;
       const poolPercent = totalPoolCap > 0 ? Math.min(100, Math.round((poolUsed / totalPoolCap) * 100)) : 0;
 
       return {
@@ -175,20 +238,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         primaryModel: p.primaryModel,
         backupModel: p.backupModel,
         keyCount: p.keys.length,
-        capPerKey: p.cap,
+        capPerKey: effectiveCapPerKey,
         totalCap: totalPoolCap,
         usedToday: poolUsed,
+        usedPeriod: poolUsed,
         percent: poolPercent,
         keys: keysDetail,
       };
     });
 
-    // 5. Hitung jenis media dari pesan user hari ini
-    const { data: userMsgs } = await c
-      .from('messages')
-      .select('content')
-      .eq('role', 'user')
-      .gte('created_at', startOfDay);
+    // 5. Hitung jenis media dari pesan user dalam rentang waktu
+    let userMsgsQuery = c.from('messages').select('content').eq('role', 'user');
+    if (startDateIso) {
+      userMsgsQuery = userMsgsQuery.gte('created_at', startDateIso);
+    }
+    if (filterPlatform && filterPlatform !== 'all') {
+      userMsgsQuery = userMsgsQuery.eq('platform', filterPlatform);
+    }
+    const { data: userMsgs } = await userMsgsQuery;
 
     const mediaCounts = {
       voice: 0,
@@ -204,16 +271,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       mediaCounts[type]++;
     }
 
-    // 6. Ambil 25 aktivitas interaksi percakapan terbaru
-    const { data: recentMsgs } = await c
+    // 6. Ambil aktivitas interaksi percakapan terbaru sesuai rentang waktu & filter
+    let recentQuery = c
       .from('messages')
       .select('id, platform, chat_id, role, content, via, created_at')
-      .order('id', { ascending: false })
-      .limit(25);
+      .order('id', { ascending: false });
+
+    if (startDateIso) {
+      recentQuery = recentQuery.gte('created_at', startDateIso);
+    }
+    if (filterPlatform && filterPlatform !== 'all') {
+      recentQuery = recentQuery.eq('platform', filterPlatform);
+    }
+
+    const { data: recentMsgs } = await recentQuery.limit(50);
 
     const recentFormatted = (recentMsgs ?? []).map((m) => {
       const type = detectMessageType(m.content || '');
-      // Potong konten untuk preview aman
       let preview = m.content || '';
       if (preview.length > 280) {
         preview = preview.slice(0, 280) + '...';
@@ -236,14 +310,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       ok: true,
       botName: config.botName,
       serverTime: now.toISOString(),
-      today,
+      range,
+      rangeLabel,
+      platform: filterPlatform || 'all',
+      today: todayStr,
       summary: {
+        range,
+        rangeLabel,
+        daysCount,
         totalMessagesAllTime: totalMessagesAllTime ?? 0,
-        totalMessagesToday: totalMessagesToday ?? 0,
-        whatsappToday: waToday ?? 0,
-        telegramToday: teleToday ?? 0,
+        totalMessagesPeriod: totalMessagesPeriod ?? 0,
+        totalMessagesToday: totalMessagesPeriod ?? 0,
+        whatsappPeriod: waPeriod ?? 0,
+        whatsappToday: waPeriod ?? 0,
+        telegramPeriod: telePeriod ?? 0,
+        telegramToday: telePeriod ?? 0,
         totalKeys: totalPoolKeys,
-        totalCallsToday,
+        totalCallsPeriod,
+        totalCallsToday: totalCallsPeriod,
         modelsActiveCount: modelsBreakdown.length,
       },
       pools,
