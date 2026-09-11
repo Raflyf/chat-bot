@@ -548,14 +548,96 @@
       font-weight: 500;
       color: #e2e8f0;
       word-break: break-word;
-      line-height: 1.4;
+      line-height: 1.45;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 0.35rem;
     }
 
     .dataset-reply {
-      max-width: 440px;
+      max-width: 520px;
       color: #94a3b8;
       word-break: break-word;
-      line-height: 1.4;
+      line-height: 1.45;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 0.35rem;
+    }
+
+    .dataset-prompt::-webkit-scrollbar,
+    .dataset-reply::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .dataset-prompt::-webkit-scrollbar-thumb,
+    .dataset-reply::-webkit-scrollbar-thumb {
+      background: var(--border-subtle);
+      border-radius: 4px;
+    }
+
+    /* Pagination Component */
+    .pagination-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      padding-top: 1rem;
+      margin-top: 0.75rem;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .pagination-info {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+    }
+
+    .pagination-controls {
+      display: flex;
+      gap: 0.35rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .pagination-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 0.35rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      min-width: 32px;
+      text-align: center;
+      font-family: inherit;
+    }
+
+    .pagination-btn:hover:not(:disabled) {
+      border-color: var(--accent-blue);
+      color: #fff;
+      background: rgba(56, 189, 248, 0.1);
+    }
+
+    .pagination-btn.active {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: #0f172a;
+      font-weight: 700;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+    }
+
+    .pagination-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .pagination-ellipsis {
+      color: var(--text-dim);
+      padding: 0 0.25rem;
+      font-size: 0.8rem;
     }
 
     .search-input {
@@ -1210,6 +1292,14 @@
           </tbody>
         </table>
       </div>
+
+      <!-- PAGINATION BAR -->
+      <div class="pagination-bar" id="dataset-pagination-bar">
+        <div class="pagination-info" id="dataset-pagination-info">
+          Memuat data percakapan...
+        </div>
+        <div class="pagination-controls" id="dataset-pagination-controls"></div>
+      </div>
     </section>
 
     <footer>
@@ -1783,11 +1873,18 @@
 
 
     // =========================================================================
-    // DATASET EVALUATION & TRAINING LOADER
+    // DATASET EVALUATION & TRAINING LOADER (PAGINATED: 5 CHATS PER PAGE)
     // =========================================================================
+    let currentDatasetPage = 1;
+    const DATASET_PAGE_SIZE = 5;
+    let cachedDatasetPairs = [];
+
     function debounceDatasetSearch() {
       if (datasetSearchTimeout) clearTimeout(datasetSearchTimeout);
-      datasetSearchTimeout = setTimeout(fetchDataset, 350);
+      datasetSearchTimeout = setTimeout(() => {
+        currentDatasetPage = 1;
+        fetchDataset();
+      }, 350);
     }
 
     async function fetchDataset() {
@@ -1798,10 +1895,9 @@
       const range = document.getElementById("dataset-range-filter")?.value || "all";
       const platform = document.getElementById("dataset-platform-filter").value;
       const model = document.getElementById("dataset-model-filter")?.value || "";
-      const tbody = document.getElementById("dataset-tbody");
 
       try {
-        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&limit=100`;
+        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&limit=300`;
         const res = await fetch(url, {
           headers: { "x-admin-token": token },
         });
@@ -1813,45 +1909,118 @@
         }
 
         const data = await res.json();
-        tbody.innerHTML = "";
-
-        if (!data.pairs || data.pairs.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2.5rem;">Tidak ada data percakapan yang cocok dengan filter pencarian.</td></tr>`;
-          return;
-        }
-
-        data.pairs.forEach(p => {
-          const tr = document.createElement("tr");
-
-          const platformBadge = p.platform === "whatsapp"
-            ? `<span class="badge badge-wa">WhatsApp</span>`
-            : `<span class="badge badge-tele">Telegram</span>`;
-
-          tr.innerHTML = `
-            <td>
-              <div style="font-size: 0.775rem; color: var(--text-muted); font-family: var(--font-mono);">${formatDateTime(p.createdAt)}</div>
-              <div style="margin-top: 0.25rem;">${platformBadge}</div>
-            </td>
-            <td>
-              <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim);">${escapeHtml(p.chatIdMasked)}</div>
-              <div style="margin-top: 0.2rem;"><span class="model-tag">${escapeHtml(p.via || "Router")}</span></div>
-            </td>
-            <td>
-              <div class="dataset-prompt">${escapeHtml(p.userPrompt)}</div>
-            </td>
-            <td>
-              <div class="dataset-reply">${escapeHtml(p.botReply)}</div>
-            </td>
-            <td style="text-align: right;">
-              <button class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="copyPrompt('${escapeJs(p.userPrompt)}')">
-                Copy
-              </button>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
+        cachedDatasetPairs = data.pairs || [];
+        currentDatasetPage = 1;
+        renderDatasetTable();
       } catch (err) {
         console.error("fetchDataset error:", err);
+      }
+    }
+
+    function renderDatasetTable() {
+      const tbody = document.getElementById("dataset-tbody");
+      const infoEl = document.getElementById("dataset-pagination-info");
+      const controlsEl = document.getElementById("dataset-pagination-controls");
+      if (!tbody) return;
+
+      const total = cachedDatasetPairs.length;
+      if (total === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2.5rem;">Tidak ada data percakapan yang cocok dengan filter pencarian.</td></tr>`;
+        if (infoEl) infoEl.textContent = "Tidak ada percakapan ditemukan";
+        if (controlsEl) controlsEl.innerHTML = "";
+        return;
+      }
+
+      const totalPages = Math.ceil(total / DATASET_PAGE_SIZE);
+      if (currentDatasetPage > totalPages) currentDatasetPage = totalPages;
+      if (currentDatasetPage < 1) currentDatasetPage = 1;
+
+      const startIdx = (currentDatasetPage - 1) * DATASET_PAGE_SIZE;
+      const endIdx = Math.min(startIdx + DATASET_PAGE_SIZE, total);
+      const pageItems = cachedDatasetPairs.slice(startIdx, endIdx);
+
+      tbody.innerHTML = "";
+      pageItems.forEach(p => {
+        const tr = document.createElement("tr");
+
+        const platformBadge = p.platform === "whatsapp"
+          ? `<span class="badge badge-wa">WhatsApp</span>`
+          : `<span class="badge badge-tele">Telegram</span>`;
+
+        tr.innerHTML = `
+          <td>
+            <div style="font-size: 0.775rem; color: var(--text-muted); font-family: var(--font-mono);">${formatDateTime(p.createdAt)}</div>
+            <div style="margin-top: 0.25rem;">${platformBadge}</div>
+          </td>
+          <td>
+            <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim);">${escapeHtml(p.chatIdMasked)}</div>
+            <div style="margin-top: 0.2rem;"><span class="model-tag">${escapeHtml(p.via || "Router")}</span></div>
+          </td>
+          <td>
+            <div class="dataset-prompt">${escapeHtml(p.userPrompt)}</div>
+          </td>
+          <td>
+            <div class="dataset-reply">${escapeHtml(p.botReply)}</div>
+          </td>
+          <td style="text-align: right;">
+            <button class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="copyPrompt('${escapeJs(p.userPrompt)}')">
+              Copy
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // Update Pagination Text
+      if (infoEl) {
+        infoEl.textContent = `Menampilkan ${startIdx + 1}–${endIdx} dari ${total} Percakapan (Halaman ${currentDatasetPage} dari ${totalPages})`;
+      }
+
+      // Update Pagination Buttons
+      if (controlsEl) {
+        let paginationHtml = "";
+
+        const prevDisabled = currentDatasetPage <= 1 ? "disabled" : "";
+        paginationHtml += `<button class="pagination-btn" ${prevDisabled} onclick="goToDatasetPage(${currentDatasetPage - 1})">&laquo; Prev</button>`;
+
+        let startPage = Math.max(1, currentDatasetPage - 2);
+        let endPage = Math.min(totalPages, startPage + 4);
+        if (endPage - startPage < 4) {
+          startPage = Math.max(1, endPage - 4);
+        }
+
+        if (startPage > 1) {
+          paginationHtml += `<button class="pagination-btn" onclick="goToDatasetPage(1)">1</button>`;
+          if (startPage > 2) {
+            paginationHtml += `<span class="pagination-ellipsis">&hellip;</span>`;
+          }
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+          const activeClass = i === currentDatasetPage ? "active" : "";
+          paginationHtml += `<button class="pagination-btn ${activeClass}" onclick="goToDatasetPage(${i})">${i}</button>`;
+        }
+
+        if (endPage < totalPages) {
+          if (endPage < totalPages - 1) {
+            paginationHtml += `<span class="pagination-ellipsis">&hellip;</span>`;
+          }
+          paginationHtml += `<button class="pagination-btn" onclick="goToDatasetPage(${totalPages})">${totalPages}</button>`;
+        }
+
+        const nextDisabled = currentDatasetPage >= totalPages ? "disabled" : "";
+        paginationHtml += `<button class="pagination-btn ${nextDisabled} onclick="goToDatasetPage(${currentDatasetPage + 1})">Next &raquo;</button>`;
+
+        controlsEl.innerHTML = paginationHtml;
+      }
+    }
+
+    function goToDatasetPage(page) {
+      currentDatasetPage = page;
+      renderDatasetTable();
+      const section = document.getElementById("dataset-section");
+      if (section) {
+        section.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     }
 
