@@ -192,6 +192,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.23.5 — 2026-09-11 16:22 WIB
+**Comprehensive Ground-Zero Deep Audit & System Hardening (Ruflo Swarm Sub-Agents)**
+- **Audit Kode & Arsitektur Menyeluruh Multi-Perspektif**:
+  - Mengeksekusi inferensi LLM nyata tanpa batasan token via Ruflo Swarm runner (`swarm_runner.cjs`) yang menghubungkan 3 peran spesialis:
+    - *Security & RLS Architect* (Backend & Frontend Security Coder + OWASP + Timing-safe checks).
+    - *Database Optimizer & Concurrency Specialist* (Lost updates + Serverless lifecycle + Indexes).
+    - *Senior Code Reviewer* (Ponytail YAGNI + Karpathy Guidelines + Dead code hunting).
+- **Pengamanan Proteksi Data Sesi WhatsApp (`src/whatsapp_session.ts`)**:
+  - **Akar Masalah**: Fungsi `clearSessionInSupabase()` sebelumnya menjalankan `delete().neq('filename', '')` yang berisiko menghapus berkas `__admin_auth_config.json` saat sesi Baileys dibersihkan/direset pada mode dual-store.
+  - **Solusi**: Menambahkan klausa proteksi eksplisit `.neq('filename', '__admin_auth_config.json')` guna menjamin kredensial Master PIN admin tidak pernah terhapus saat pembersihan sesi WhatsApp.
+- **Penyempurnaan Penghitungan Kuota Provider (`src/providers.ts`)**:
+  - **Akar Masalah**: Blok catch `chat()` sebelumnya memanggil `keyUsed(step.kind, key)` untuk semua jenis error, memotong kuota harian kunci secara keliru saat terjadi kegagalan jaringan sementara (`ECONNRESET`, timeout) atau HTTP 500 dari upstream provider.
+  - **Solusi**: Menjaga integritas kuota dengan hanya memanggil `keyUsed` di blok catch jika error adalah `RATE_LIMITED` (429), mencegah penalti kuota pada kunci yang sebenarnya masih valid.
+- **Hardening Keamanan XSS Dashboard Evaluasi (`public/dashboard.html`)**:
+  - **Akar Masalah**: Tombol *Copy* pada tabel evaluasi menggunakan event handler inline `onclick="copyPrompt('${escapeJs(p.userPrompt)}')"` yang berisiko jika prompt memuat string khusus atau karakter penutup tag.
+  - **Solusi**: Mengganti mekanisme inline string interpolation dengan pencarian berbasis ID yang aman (`copyPromptById(p.id)`), mengambil isi teks prompt langsung dari memori aman JavaScript tanpa injeksi atribut HTML.
+- **Routing Pengingat Multi-Platform Telegram & WhatsApp (`api/cron/reminders.ts`)**:
+  - **Akar Masalah**: Cron pengingat sebelumnya hanya mengarahkan pengiriman ke `bot.sendMessage(chatId, text)` (Telegram). Jika pengingat dibuat oleh pengguna WhatsApp, pengiriman gagal dengan error Telegram 400 Bad Request.
+  - **Solusi**: Mengintegrasikan router cerdas yang mendeteksi nomor/JID WhatsApp dan mengirimkannya via `sendWhatsAppCloudMessageSafe`, serta menggunakan Telegram Bot untuk chatId numerik Telegram.
+
 ### v0.23.4 — 2026-09-11 16:00 WIB
 **Universal Full-Web Search Engine & Autonomous Deep Webpage Scraper**
 - **Penjelajahan Web Universal Bebas Domain (`src/web.ts`)**:

@@ -251,7 +251,10 @@ export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Pr
           return { text, via: `${step.kind}/${model}` };
         } catch (e) {
           lastError = e instanceof Error ? e.message : 'UNKNOWN';
-          keyUsed(step.kind, key);
+          // Catat pemakaian hanya jika rate limited (agar pool beralih), bukan pada error 500 atau kegagalan jaringan
+          if (lastError === 'RATE_LIMITED' || (e as { code?: string })?.code === 'RATE_LIMITED') {
+            keyUsed(step.kind, key);
+          }
         }
       }
     }

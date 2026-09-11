@@ -2928,7 +2928,7 @@
             <div class="dataset-reply">${escapeHtml(p.botReply)}</div>
           </td>
           <td style="text-align: right;">
-            <button class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="copyPrompt('${escapeJs(p.userPrompt)}')">
+            <button class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="copyPromptById(${p.id})">
               Copy
             </button>
           </td>
@@ -3025,7 +3025,10 @@
       return str.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, "\\n");
     }
 
-    function copyPrompt(text) {
+    function copyPromptById(id) {
+      const item = cachedDatasetPairs.find(x => x.id === id);
+      const text = item ? item.userPrompt : "";
+      if (!text) return;
       navigator.clipboard.writeText(text).then(() => {
         alert("Pertanyaan berhasil disalin ke clipboard.");
       }).catch(() => {});
