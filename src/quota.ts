@@ -3,7 +3,7 @@
 
 import { db } from './db.js';
 
-type ProviderKind = 'xkiro' | 'groq' | 'gemini' | 'openrouter' | 'ollama';
+type ProviderKind = 'xkiro' | 'groq' | 'gemini' | 'openrouter';
 
 interface Counter {
   date: string;

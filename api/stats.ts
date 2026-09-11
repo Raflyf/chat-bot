@@ -178,7 +178,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // 4. Bangun status Pool per Provider & tiap API Key
     const providerDefs: Array<{
-      kind: 'xkiro' | 'groq' | 'gemini' | 'openrouter' | 'ollama';
+      kind: 'xkiro' | 'groq' | 'gemini' | 'openrouter';
       displayName: string;
       keys: string[];
       cap: number;
@@ -241,19 +241,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.orPrimary,
         backupModel: config.models.orMini,
-      },
-      {
-        kind: 'ollama',
-        displayName: 'Ollama Cloud',
-        keys: config.pools.ollama,
-        cap: config.dailyCap.ollama,
-        tokenCapPerKey: 0,
-        tokenLimitType: 'monthly_credits',
-        tokenLimitLabel: 'Included Monthly Credits',
-        resetCycle: 'Siklus Bulanan Akun (Bukan Harian)',
-        contextWindow: '32.768 Token (32K)',
-        primaryModel: config.models.ollamaPrimary,
-        backupModel: config.models.ollamaBackup,
       },
     ];
 

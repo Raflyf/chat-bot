@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.23.2  
+**Versi:** v0.23.3  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 15:35 WIB  
+**Terakhir Diperbarui:** 2026-09-11 15:48 WIB  
 
 ---
 
@@ -191,6 +191,23 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.23.3 — 2026-09-11 15:48 WIB
+**Pengangkatan Penuh Provider Ollama, Perbaikan Tombol Paginasi Next, & Pelacakan Konsumsi Token per Chat di Dataset**
+- **Penghapusan Total Integrasi & API Key Ollama**:
+  - **Backend Runtime (`src/env.ts`, `src/quota.ts`, `src/providers.ts`, `api/stats.ts`)**: Menghapus definisi `ollama` dari `pools`, `models`, `dailyCap`, `ProviderKind`, rantai failover `steps()`, dan pemetaan prioritas. Seluruh fungsi pembantu `ollamaChat()` diangkat total.
+  - **Environment Configuration (`.env`, `.env.example`)**: Menghapus variabel `OLLAMA_KEYS`, `OLLAMA_MODEL_PRIMARY`, `OLLAMA_MODEL_BACKUP`, dan `DAILY_CAP_OLLAMA`.
+  - **Frontend UI & Katalog (`public/dashboard.html`, `public/index.html`, `README.md`)**: Menghapus tombol filter Ollama, pilihan dataset select, styling CSS `.tag-ollama`, teks siklus reset, kartu model Ollama (`Nemotron 3 Nano`, `GPT-OSS 20B`), serta merapikan narasi failover 4 provider (xKiro, Groq, Gemini, OpenRouter).
+- **Perbaikan Tombol Paginasi "Next" (`public/dashboard.html`)**:
+  - **Akar Masalah**: Terdapat kesalahan kutip pada atribut template literal `<button class="pagination-btn ${nextDisabled} onclick="...">` di mana tanda kutip penutup `class` hilang. Hal ini menyebabkan browser menganggap string `onclick="goToDatasetPage(...)"` sebagai bagian dari nilai atribut `class`, sehingga event handler klik tidak pernah terdaftar pada DOM.
+  - **Solusi**: Mengisolasi atribut `class="pagination-btn"`, mendefinisikan flag disabled HTML native secara terpisah (`${nextDisabledAttr}`), dan memastikan `onclick` terikat valid saat tombol aktif.
+- **Pelacakan Konsumsi Token Context & Total per Chat (`api/dataset.ts`, `public/dashboard.html`)**:
+  - Menambahkan kolom baru **Konsumsi Token** pada tabel evaluasi percakapan (`#dataset-tbody`).
+  - Menghitung secara presisi per interaksi chat:
+    - **Total Token**: Akumulasi token input context + token balasan bot.
+    - **Context Tokens (`Ctx`)**: Estimasi jendela konteks yang disuntikkan (System Prompt dasar ~650 token + Prompt pengguna).
+    - **Output Tokens (`Out`)**: Estimasi token generasi balasan AI.
+  - Memperbarui skema ekspor dataset (`api/dataset.ts`) baik CSV (kolom `Context_Tokens`, `Output_Tokens`, `Total_Tokens`) maupun JSONL (`metadata.context_tokens`, `metadata.output_tokens`, `metadata.total_tokens`).
 
 ### v0.23.2 — 2026-09-11 15:35 WIB
 **Restrukturisasi UI Observabilitas: Pemisahan Tabel Matriks Kuota Token & Perampingan Kartu Rotasi Kunci Provider**

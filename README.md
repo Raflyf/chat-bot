@@ -20,7 +20,7 @@ Asisten AI cerdas, multimodal, dan beroperasi 24/7 di WhatsApp dan Telegram. Dib
 ## Fitur Utama
 
 - **Multimodal Lengkap**: Transkripsi Voice Note Whisper (~500ms), analisis dokumen PDF/Word, serta pemahaman foto dan stiker.
-- **Rantai Failover 4 Provider**: Otomatis berganti secara cerdas antara Groq, Google Gemini, OpenRouter, dan Ollama Cloud saat limit tercapai.
+- **Rantai Failover 4 Provider**: Otomatis berganti secara cerdas antara xKiro Gateway, Groq, Google Gemini, dan OpenRouter saat limit tercapai.
 - **Gaya Percakapan Alami**: Responsif, hangat, dan to-the-point tanpa format robotik yang kaku.
 - **Memori Berkelanjutan**: Mengingat riwayat percakapan penting, ringkasan otomatis, dan perintah koreksi `/salah`.
 - **Panel Monitoring & Dataset AI**: Dashboard pemantauan kuota API real-time serta ekspor pasangan prompt-completion ke format JSONL dan CSV untuk fine-tuning.
