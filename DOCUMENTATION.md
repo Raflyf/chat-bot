@@ -17,6 +17,11 @@ Sistem dirancang dengan fleksibilitas tinggi menggunakan prinsip *Single Unified
    - **Supabase Cloud Session Persistence (`src/whatsapp_session.ts`)**: File sesi otentikasi disinkronkan otomatis ke tabel Supabase `whatsapp_sessions` dengan proteksi Row Level Security (RLS). Pengguna hanya perlu scan QR Code satu kali; bot langsung login otomatis saat container cloud gratis (seperti Render.com atau Koyeb) melakukan restart berkala.
    - Bebas batas kuota 1.000 pesan ($0 gratis selamanya).
    - Mendukung chat teks dengan *safe paragraph chunking* (> 4000 karakter) dan analisis gambar multimodal via Gemini Vision.
+3. **Unified Monitoring & Dataset Console (Vercel Serverless + Obsidian Web UI)**:
+   - Dashboard observabilitas real-time di `/` dan `/dashboard` untuk memantau status kesehatan 12 API key, konsumsi kuota harian, metrik platform, dan model AI terpopuler.
+   - **Otentikasi Kriptografis Master PIN**: Dilindungi oleh PIN default (`080402`), hashing SHA-256 + salt statis (`rafly_telemetry_salt`), komparasi timing-safe, token sesi acak (`adm_<hex32>`), serta sistem penguncian anti-brute force (5x salah = lockout 1 menit).
+   - **Pemulihan Lupa PIN via Resend Email OTP**: Kode OTP 6-digit acak dikirim ke email admin (`raflyfirmansyah02@gmail.com`) dengan validasi kedaluwarsa 10 menit dan pembatasan rate limiter 60 detik.
+   - **Dataset Engine Evaluasi & Fine-Tuning**: Endpoint `GET /api/dataset` memasangkan setiap pesan pengguna dengan balasan bot, mendukung ekspor instan JSONL (format fine-tuning OpenAI/ShareGPT) dan format CSV.
 
 ---
 
@@ -80,6 +85,13 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 7. Buka tab **Logs** di dashboard Render. Saat proses booting, QR Code akan muncul di log.
 8. Pindai QR Code tersebut sekali dari HP WhatsApp Anda.
 9. Sesi otomatis disinkronkan ke Supabase. Selesai! Bot WhatsApp Anda kini online 24 jam nonstop secara mandiri dan gratis.
+
+### E. Mengakses Dashboard Pemantauan & Evaluasi Dataset
+1. Buka URL deployment Vercel Anda di browser (misal `https://<domain-vercel-anda>.vercel.app`).
+2. Masukkan Master PIN (default: `080402`) pada modal gateway keamanan.
+3. Setelah masuk, token sesi aktif tersimpan selama 24 jam di browser Anda.
+4. Jika lupa PIN, klik tombol **"Lupa PIN? Reset via Email"** -> klik **"Kirim Kode OTP ke Email"** -> periksa email admin `raflyfirmansyah02@gmail.com` -> masukkan 6-digit kode OTP dan PIN baru Anda.
+5. Untuk melatih ulang (*fine-tuning*) model AI atau audit percakapan, buka bagian **"Evaluasi & Dataset Training AI"**, lalu klik tombol **Unduh JSONL** atau **Unduh CSV**.
 
 ---
 
@@ -178,6 +190,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.22.0 — 2026-09-11 13:10 WIB
+**Keamanan & Observabilitas: Master PIN Gateway, Email OTP Reset & Fine-Tuning Dataset Engine**
+- **Master PIN Security Gateway (`src/admin_auth.ts`, `api/admin-otp.ts`)**:
+  - Panel pemantauan (`/` dan `/dashboard`) kini dilindungi secara penuh oleh otentikasi Master PIN kriptografis.
+  - Hashing PIN menggunakan algoritma SHA-256 dipadu garam statis (`PIN_SALT = rafly_telemetry_salt`), komparasi timing-safe (`crypto.timingSafeEqual`) untuk menangkal serangan side-channel, dan penerbitan session token CSPRNG acak (`adm_<hex32>`).
+  - Proteksi anti-brute force bertingkat: 5 kali percobaan PIN salah langsung mengaktifkan penguncian (*lockout*) sistem selama 1 menit.
+- **Pemulihan Lupa PIN via Resend Email OTP**:
+  - Fitur "Lupa PIN?" terintegrasi dengan Resend REST API (`RESEND_API_KEY`) yang mengirimkan kode OTP 6-digit acak (*CSPRNG*) ke email admin (`raflyfirmansyah02@gmail.com`).
+  - Dilengkapi pembatasan frekuensi pengiriman OTP (*rate limiting*: jeda minimum 60 detik, maksimal 3 pengiriman per 10 menit per IP) dan validasi batas kedaluwarsa OTP 10 menit.
+  - Reset PIN otomatis menganulir (*invalidate*) seluruh token sesi aktif demi menjaga keamanan lintas perangkat secara real-time.
+- **Proteksi Endpoint Data Serverless (`api/stats.ts`, `api/dataset.ts`)**:
+  - Seluruh permintaan data metrik dan dataset wajib menyertakan token sesi valid via header `x-admin-token` atau `Authorization: Bearer <token>`. Akses tanpa otorisasi langsung ditolak (`401 Unauthorized`).
+- **Dataset Evaluasi Percakapan & Fine-Tuning LLM (`api/dataset.ts`, `public/index.html`)**:
+  - Engine dataset memasangkan setiap pertanyaan pengguna dengan balasan chatbot yang tersimpan di Supabase PostgreSQL.
+  - UI interaktif menampilkan tabel pasangan chat, pencarian kata kunci, dan filter platform (WhatsApp/Telegram).
+  - Ekspor instan ke format JSONL standar ShareGPT/OpenAI (siap pakai untuk fine-tuning model LLM lokal/cloud) dan format CSV untuk audit spreadsheet.
+- **Skrip Migrasi Supabase & Dual-Store Resilient (`sql/migrate_v12_admin_auth.sql`)**:
+  - Menyediakan skema tabel `admin_auth_config` dengan Row Level Security dan 3 fungsi PostgreSQL `SECURITY DEFINER` (`rpc_admin_verify_pin`, `rpc_admin_save_otp`, `rpc_admin_verify_otp_and_reset_pin`).
+  - Arsitektur dual-store otomatis memanfaatkan tabel `whatsapp_sessions` sebagai fallback penyimpanan persisten jika tabel `admin_auth_config` belum dieksekusi di Supabase SQL Editor.
+
 ### v0.21.0 — 2026-09-11 12:55 WIB
 **Pembaruan Utama: Unified Real-Time Monitoring Dashboard & Stats Engine**
 - **Dashboard Pemantauan Terpadu (`public/index.html` & `public/dashboard.html`)**:
@@ -239,26 +271,6 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - Penegakan prinsip proporsionalitas pesan: obrolan santai, curhat, dan cerita harian dibalas ringkas (1-3 kalimat) layaknya teman berkirim pesan di WhatsApp.
 - Larangan keras terhadap pengeluaran daftar langkah bernomor (1., 2., 3.), SOP darurat, atau panduan aksi yang tidak diminta saat pengguna sekadar bercerita santai.
 - Pengkhususan format daftar langkah teknis hanya untuk pertanyaan yang secara eksplisit meminta panduan, analisis mendalam, atau tutorial koding/akademik.
-
-### v0.22.0 — 2026-09-11 13:10 WIB
-**Keamanan & Observabilitas: Master PIN Gateway, Email OTP Reset & Fine-Tuning Dataset Engine**
-- **Master PIN Security Gateway (`src/admin_auth.ts`, `api/admin-otp.ts`)**:
-  - Panel pemantauan (`/` dan `/dashboard`) kini dilindungi secara penuh oleh otentikasi Master PIN kriptografis.
-  - Hashing PIN menggunakan algoritma SHA-256 dipadu garam statis (`PIN_SALT = rafly_telemetry_salt`), komparasi timing-safe (`crypto.timingSafeEqual`) untuk menangkal serangan side-channel, dan penerbitan session token CSPRNG acak (`adm_<hex32>`).
-  - Proteksi anti-brute force bertingkat: 5 kali percobaan PIN salah langsung mengaktifkan penguncian (*lockout*) sistem selama 1 menit.
-- **Pemulihan Lupa PIN via Resend Email OTP**:
-  - Fitur "Lupa PIN?" terintegrasi dengan Resend REST API (`RESEND_API_KEY`) yang mengirimkan kode OTP 6-digit acak (*CSPRNG*) ke email admin (`raflyfirmansyah02@gmail.com`).
-  - Dilengkapi pembatasan frekuensi pengiriman OTP (*rate limiting*: jeda minimum 60 detik, maksimal 3 pengiriman per 10 menit per IP) dan validasi batas kedaluwarsa OTP 10 menit.
-  - Reset PIN otomatis menganulir (*invalidate*) seluruh token sesi aktif demi menjaga keamanan lintas perangkat.
-- **Proteksi Endpoint Data Serverless (`api/stats.ts`, `api/dataset.ts`)**:
-  - Seluruh permintaan data metrik dan dataset wajib menyertakan token sesi valid via header `x-admin-token` atau `Authorization: Bearer <token>`. Akses tanpa otorisasi langsung ditolak (`401 Unauthorized`).
-- **Dataset Evaluasi Percakapan & Fine-Tuning LLM (`api/dataset.ts`, `public/index.html`)**:
-  - Engine dataset memasangkan setiap pertanyaan pengguna dengan balasan chatbot yang tersimpan di Supabase PostgreSQL.
-  - UI interaktif menampilkan tabel pasangan chat, pencarian kata kunci, dan filter platform (WhatsApp/Telegram).
-  - Ekspor instan ke format JSONL standar ShareGPT/OpenAI (siap pakai untuk fine-tuning model LLM lokal/cloud) dan format CSV untuk audit spreadsheet.
-- **Skrip Migrasi Supabase & Dual-Store Resilient (`sql/migrate_v12_admin_auth.sql`)**:
-  - Menyediakan skema tabel `admin_auth_config` dengan Row Level Security dan 3 fungsi PostgreSQL `SECURITY DEFINER` (`rpc_admin_verify_pin`, `rpc_admin_save_otp`, `rpc_admin_verify_otp_and_reset_pin`).
-  - Arsitektur dual-store otomatis memanfaatkan tabel `whatsapp_sessions` sebagai fallback penyimpanan persisten jika tabel `admin_auth_config` belum dieksekusi di Supabase SQL Editor.
 
 ### v0.16.0 — 2026-09-11 00:36 WIB
 **Interaksi Percakapan: Two-Way Conversational Flow & Interactive Banter**
