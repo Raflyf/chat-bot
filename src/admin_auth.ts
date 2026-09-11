@@ -154,16 +154,16 @@ export async function getAuthConfig(): Promise<AdminAuthConfig> {
  * Persist auth configuration back to Supabase.
  */
 export async function saveAuthConfig(updates: Partial<AdminAuthConfig>): Promise<boolean> {
-  // Update in-memory copy
-  inMemoryAuthConfig = {
-    ...inMemoryAuthConfig,
+  // Fetch latest state from Supabase to prevent overwriting concurrent updates
+  const latest = await getAuthConfig();
+  const current: AdminAuthConfig = {
+    ...latest,
     ...updates,
   };
+  inMemoryAuthConfig = current;
 
   const c = db();
   if (!c) return true;
-
-  const current = inMemoryAuthConfig;
 
   try {
     // 1. Try admin_auth_config table
