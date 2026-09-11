@@ -1,19 +1,24 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.2  
+**Versi:** v0.26.0  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 23:31 WIB  
+**Terakhir Diperbarui:** 2026-09-12 00:30 WIB  
 
 ---
 
-## Ringkasan Pembaruan v0.25.2 (Perbaikan Parsing Environment & Ketahanan Dashboard)
-1. **Parsing Variabel Lingkungan Kuat (*Robust Env Parsing*)**:
-   - `src/env.ts`: Memperkenalkan `cleanStr` dan `firstEnv` yang memangkas spasi/karakter newline (`.trim()`), membersihkan tanda kutip ganda/tunggal pembungkus (`"..."`, `'...'`), dan mengabaikan nilai kosong (`""`).
-   - Mendukung seluruh varian penamaan kunci Supabase: `SUPABASE_SERVICE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY`, `SUPABASE_KEY`, `SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-2. **Ketahanan Dashboard Telemetri (*Graceful Telemetry Degradation*)**:
-   - `api/stats.ts`: Metrik pool API Key (xKiro, Groq, Gemini, OpenRouter) dan sinkronisasi kuota upstream ke server xKiro & OpenRouter kini tetap dibangun dan disajikan ke dashboard meskipun Supabase sedang offline atau dalam proses sinkronisasi env.
-   - Menyajikan diagnostik transparan pada banner header mengenai ketersediaan `SUPABASE_URL` dan `SUPABASE_SERVICE_KEY` di container serverless.
-3. **Siklus Hidup Vercel Environment Variables**:
-   - Dokumentasi menegaskan bahwa penambahan Environment Variables di Project Settings Vercel mewajibkan proses build baru (*Redeploy* / git push) agar terinjeksi ke dalam container lambda aktif.
+## Ringkasan Pembaruan v0.26.0 (Sinkronisasi Model Aktif ke Dashboard Monitor & Label Kapabilitas)
+1. **Sinkronisasi Katalog Model Lengkap ke Dashboard (`public/dashboard.html`, `api/stats.ts`)**:
+   - Seluruh rantai failover model aktif (19 model) terpetakan 100% pada matriks kartu inferensi:
+     - xKiro (11 model): Qwen 3.8 Max Free, Qwen 3.6 Plus Free, Mistral Large 2512, Mistral Medium 3.5, SenseNova 6.8 Flash-Lite, DeepSeek V4 Pro, DeepSeek V4 Flash, MiniMax M2.7 Highspeed, MiniMax M3 Free, Mistral Codestral 2508, Qwen 3.7 Plus Free.
+     - Groq (3 model): Qwen 3.8 27B, Qwen 3.6 27B, Groq Whisper Turbo (Voice Note).
+     - Gemini (2 model): Gemini 3.8 Flash, Gemini 2.5 Flash.
+     - OpenRouter (3 model): Nex N2.5 Pro Free, Nex N2.5 Mini Free, Nemotron 3.5 Lightning.
+   - Endpoint `api/stats.ts` kini meneruskan properti `allModels` untuk setiap pool provider sehingga antarmuka dashboard memiliki visibilitas penuh atas model primer dan seluruh model cadangannya.
+2. **Label Kapabilitas Visual Kartu Model**:
+   - Menambahkan lencana kapabilitas pada setiap kartu model (`tag-cap`): Vision, Voice Note (VN), Code Expert, Fast Text, Reasoning.
+   - Kartu pool provider menampilkan jumlah cadangan terdaftar secara transparan (`(+N Cadangan)`).
+3. **Penyelarasan Model Multimodal & Media Standby**:
+   - Model multimodal vision tervalidasi aktif untuk pemrosesan gambar, foto, PDF, dan dokumen.
+   - Pipeline audio Voice Note (VN) dan media WhatsApp/Telegram standby penuh tanpa kendala.
 
 ---
 

@@ -141,6 +141,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       Promise.all(orLivePromises),
     ]);
 
+    type XkiroLiveItem = {
+      key: string;
+      userName: string | null;
+      userEmail: string | null;
+      usedToday: number;
+      limitPerDay: number;
+      remaining: number;
+    } | null;
+
+    type OrLiveItem = {
+      key: string;
+      usageUsd: number;
+      usageDailyUsd: number;
+      isFreeTier: boolean;
+      limitRemaining: number | null;
+    } | null;
+
+    let xkiroLiveResults: XkiroLiveItem[] = [];
+    let orLiveResults: OrLiveItem[] = [];
+
     if (c) {
       let quotaQuery = c.from('provider_quota').select('kind, key_suffix, used');
       if (startDayStr) {
@@ -204,7 +224,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         dbAsstRes,
         dbUserRes,
         dbWaMonthRes,
-        [xkiroLiveResults, orLiveResults],
+        liveResults,
       ] = await Promise.all([
         quotaQuery,
         c.from('messages').select('*', { count: 'exact', head: true }),
@@ -224,14 +244,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       userMsgs = (dbUserRes.data as any) || [];
       waMonthlyMsgs = (dbWaMonthRes.data as any) || [];
 
-      // Process and continue below with live results
-      var liveResultsTuple = [xkiroLiveResults, orLiveResults];
+      xkiroLiveResults = liveResults[0];
+      orLiveResults = liveResults[1];
     } else {
-      const [xkiroLiveResults, orLiveResults] = await liveFetchPromise;
-      var liveResultsTuple = [xkiroLiveResults, orLiveResults];
+      const [xk, or] = await liveFetchPromise;
+      xkiroLiveResults = xk;
+      orLiveResults = or;
     }
-
-    const [xkiroLiveResults, orLiveResults] = liveResultsTuple;
 
     const xkiroSyncMap = new Map<string, {
       key: string;
@@ -306,6 +325,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       contextWindow: string;
       primaryModel: string;
       backupModel: string;
+      allModels: string[];
     }> = [
       {
         kind: 'xkiro',
@@ -319,6 +339,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         contextWindow: '1.000.000 Token (1M)',
         primaryModel: config.models.xkiroPrimary,
         backupModel: config.models.xkiroBackup[0] || 'qwen/qwen3.6-plus:free',
+        allModels: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
       },
       {
         kind: 'groq',
@@ -332,6 +353,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.groqPrimary,
         backupModel: config.models.groqBackup,
+        allModels: [config.models.groqPrimary, config.models.groqBackup],
       },
       {
         kind: 'gemini',
@@ -345,6 +367,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         contextWindow: '1.000.000 Token (1M)',
         primaryModel: config.models.geminiPrimary,
         backupModel: config.models.geminiBackup,
+        allModels: [config.models.geminiPrimary, config.models.geminiBackup],
       },
       {
         kind: 'openrouter',
@@ -358,6 +381,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.orPrimary,
         backupModel: config.models.orMini,
+        allModels: [config.models.orPrimary, config.models.orMini, config.models.orText],
       },
     ];
 
@@ -437,6 +461,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         displayName: p.displayName,
         primaryModel: p.primaryModel,
         backupModel: p.backupModel,
+        allModels: p.allModels,
         contextWindow: p.contextWindow,
         tokenLimitType: p.tokenLimitType,
         tokenLimitLabel: p.tokenLimitLabel,
