@@ -205,22 +205,36 @@ export function needsSearch(text: string): boolean {
   return true;
 }
 
-/** Ekstrak entitas inti kueri penelusuran tanpa filler percakapan */
+/** Ekstrak entitas inti kueri penelusuran tanpa filler percakapan
+ * CATATAN: Hanya strip kata sambung/percakapan — JANGAN strip kata teknis
+ * seperti "model", "baru", "terbaru", "versi", "update", "rilis", "launch", dsb.
+ */
 export function extractCoreEntity(query: string): string {
   if (!query || typeof query !== 'string') return '';
   const qNorm = query
     .toLowerCase()
     .replace(/https?:\/\/[^\s"'<>()]+/gi, ' ')
     .replace(/www\.[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s"'<>()]*)?/gi, ' ')
+    // Hanya strip filler percakapan, BUKAN kata teknis/informasional
     .replace(
-      /\b(apakah|tolong|coba|carikan|cari|dong|sih|deh|web nya|web|website|situs|halaman|link|url|pokonya|pokoknya|namanya|itu|ini|bisa|dipercaya|apa|apaan|yang|yg|dan|di|ke|dari|adalah|tentang|mengenai|gimana|bagaimana|kabar|info|infokan|berikan|sama kamu|menurutmu|menurut anda|tolong carikan|tolong cari|sebutkan|jelaskan)\b/gi,
+      /\b(apakah|tolong|coba|carikan|cari|dong|sih|deh|web\s+nya|pokonya|pokoknya|namanya|bisa|dipercaya|apaan|dan|di|ke|dari|adalah|mengenai|gimana|bagaimana|kabar|infokan|berikan|sama\s+kamu|menurutmu|menurut\s+anda|tolong\s+carikan|tolong\s+cari|sebutkan|jelaskan)\b/gi,
       ' ',
     )
     .replace(/[^\w\s.-]/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  return qNorm.slice(0, 80);
+  return qNorm.slice(0, 120);
+}
+
+/** Deteksi apakah query berhubungan dengan informasi terkini / versi terbaru / rilis baru */
+function isRecencyQuery(query: string): boolean {
+  return /\b(terbaru|terkini|baru|latest|new|update|versi|version|rilis|release|launch|announced|diluncurkan|diumumkan|2024|2025|2026|2027)\b/i.test(query);
+}
+
+/** Deteksi apakah query tentang AI/teknologi (nama model, framework, tools) */
+function isTechQuery(query: string): boolean {
+  return /\b(gpt|claude|gemini|llm|ai|model|mistral|qwen|llama|deepseek|openai|anthropic|google|meta|nvidia|framework|library|sdk|api|github|release|versi|version)\b/i.test(query);
 }
 
 /** Generator kueri cerdas paralel multi-engine */
@@ -246,15 +260,25 @@ export function formulateSmartSearchQueries(query: string): string[] {
   }
 
   const coreEntity = extractCoreEntity(query);
-  const targetSubject = coreEntity.length >= 2 ? coreEntity : cleanRawLower.slice(0, 60);
+  const targetSubject = coreEntity.length >= 2 ? coreEntity : cleanRawLower.slice(0, 80);
 
   const queries: string[] = [];
   if (targetSubject.length >= 2) {
+    // Query utama — selalu sertakan subject lengkap
     queries.push(targetSubject);
-    queries.push(`${targetSubject} website info`);
-    queries.push(`${targetSubject} latest news`);
+
+    // Untuk query tentang hal terkini / teknologi, tambahkan anchor waktu
+    if (isRecencyQuery(query) || isTechQuery(query)) {
+      const currentYear = new Date().getFullYear();
+      queries.push(`${targetSubject} ${currentYear}`);
+      queries.push(`${targetSubject} latest release announcement`);
+      queries.push(`${targetSubject} site:github.com OR site:huggingface.co OR site:openai.com OR site:anthropic.com`);
+    } else {
+      queries.push(`${targetSubject} terbaru`);
+      queries.push(`${targetSubject} info`);
+    }
   } else {
-    queries.push(query.trim().slice(0, 60));
+    queries.push(query.trim().slice(0, 80));
   }
 
   return Array.from(new Set(queries)).filter((q) => q.length >= 2).slice(0, 4);
@@ -358,9 +382,10 @@ export async function searchWeb(query: string): Promise<string> {
 
   // 2. Formulasi Kueri Entitas Multi-Engine
   const searchQueries = formulateSmartSearchQueries(cleanQuery);
-  const primaryQ = searchQueries[0] ?? cleanQuery.slice(0, 60);
+  const primaryQ = searchQueries[0] ?? cleanQuery.slice(0, 80);
   const secondaryQ = searchQueries[1] ?? primaryQ;
-  const entityQ = extractCoreEntity(cleanQuery) || primaryQ;
+  // entityQ: gunakan query asli (lebih lengkap) untuk Wikipedia & HN — jangan terlalu di-strip
+  const entityQ = cleanQuery.slice(0, 100);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 6500);
@@ -368,46 +393,49 @@ export async function searchWeb(query: string): Promise<string> {
   try {
     const fetches: Array<Promise<void>> = [];
 
-    // 2a. Bing Web Search (Menjangkau Seluruh Web, Situs, Dokumentasi, & Halaman di Internet)
-    fetches.push(
-      fetch(`https://www.bing.com/search?q=${encodeURIComponent(primaryQ)}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-          'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-        },
-        signal: controller.signal,
-      })
-        .then((r) => (r.ok ? r.text() : ''))
-        .then((html) => {
-          if (!html) return;
-          const items = html.split('<li class="b_algo"');
-          for (let i = 1; i < Math.min(items.length, 8); i++) {
-            const chunk = items[i];
-            const citeMatch = chunk.match(/<cite>([\s\S]*?)<\/cite>/i);
-            const titleMatch = chunk.match(/<h2><a[^>]*>([\s\S]*?)<\/a><\/h2>/i) || chunk.match(/<h2[^>]*><a[^>]*>([\s\S]*?)<\/a>/i);
-            const descMatch = chunk.match(/<div class="b_caption">[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i);
+    // 2a. Bing Web Search — jalankan 2 query paralel untuk cakupan lebih luas
+    const bingQueries = [primaryQ, secondaryQ].filter((q, i, arr) => arr.indexOf(q) === i).slice(0, 2);
+    for (const bq of bingQueries) {
+      fetches.push(
+        fetch(`https://www.bing.com/search?q=${encodeURIComponent(bq)}&setlang=en`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9,id-ID;q=0.8,id;q=0.7',
+          },
+          signal: controller.signal,
+        })
+          .then((r) => (r.ok ? r.text() : ''))
+          .then((html) => {
+            if (!html) return;
+            const items = html.split('<li class="b_algo"');
+            for (let i = 1; i < Math.min(items.length, 8); i++) {
+              const chunk = items[i];
+              const citeMatch = chunk.match(/<cite>([\s\S]*?)<\/cite>/i);
+              const titleMatch = chunk.match(/<h2><a[^>]*>([\s\S]*?)<\/a><\/h2>/i) || chunk.match(/<h2[^>]*><a[^>]*>([\s\S]*?)<\/a>/i);
+              const descMatch = chunk.match(/<div class="b_caption">[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i);
 
-            const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-            const cite = citeMatch ? citeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-            const desc = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+              const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+              const cite = citeMatch ? citeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+              const desc = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
 
-            // Ekstrak URL website asli dari cite
-            let directUrl = '';
-            const domainFromCite = cite.match(/https?:\/\/[^\s›>]+/i) || cite.match(/^([a-z0-9-]+\.[a-z0-9.-]+)/i);
-            if (domainFromCite) {
-              directUrl = domainFromCite[0].startsWith('http') ? domainFromCite[0] : `https://${domainFromCite[0]}`;
-              if (!directUrl.includes('bing.com') && !directUrl.includes('microsoft.com') && isSafePublicUrl(directUrl)) {
-                discoveredUrls.add(directUrl);
+              // Ekstrak URL website asli dari cite
+              let directUrl = '';
+              const domainFromCite = cite.match(/https?:\/\/[^\s›>]+/i) || cite.match(/^([a-z0-9-]+\.[a-z0-9.-]+)/i);
+              if (domainFromCite) {
+                directUrl = domainFromCite[0].startsWith('http') ? domainFromCite[0] : `https://${domainFromCite[0]}`;
+                if (!directUrl.includes('bing.com') && !directUrl.includes('microsoft.com') && isSafePublicUrl(directUrl)) {
+                  discoveredUrls.add(directUrl);
+                }
+              }
+
+              if (title || desc) {
+                addSnippet(`Bing Web`, title || cite, desc, '', directUrl, 55);
               }
             }
-
-            if (title || desc) {
-              addSnippet('Bing Web', title || cite, desc, '', directUrl, 55);
-            }
-          }
-        })
-        .catch(() => {}),
-    );
+          })
+          .catch(() => {}),
+      );
+    }
 
     // 2b. Google News Indonesia & Global RSS
     fetches.push(
@@ -472,9 +500,10 @@ export async function searchWeb(query: string): Promise<string> {
   }
 
   // 3. Autonomous Deep Web Scraping untuk Discovered URL Teratas
-  // Jika pengguna bertanya tentang web/website/situs/layanan spesifik dan Bing menemukan URL website tujuannya
-  const isWebOrAppQuery = /(web|website|situs|link|url|platform|portal|halaman|app|tool|repo|github|apa itu|apakah)/i.test(cleanQuery);
-  if (targetUrls.size === 0 && discoveredUrls.size > 0 && isWebOrAppQuery) {
+  // Trigger untuk: web/app query, query tentang hal terkini, query teknologi, atau jika snippet terlalu sedikit
+  const isWebOrAppQuery = /(web|website|situs|link|url|platform|portal|halaman|app|tool|repo|github|apa\s+itu|apakah)/i.test(cleanQuery);
+  const needsDeepScrape = isWebOrAppQuery || isRecencyQuery(cleanQuery) || isTechQuery(cleanQuery) || structuredSnippets.length < 3;
+  if (targetUrls.size === 0 && discoveredUrls.size > 0 && needsDeepScrape) {
     const candidates = Array.from(discoveredUrls).filter(
       (u) => !/(kbbi\.|wikipedia\.org|youtube\.com|facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com)/i.test(u),
     );
