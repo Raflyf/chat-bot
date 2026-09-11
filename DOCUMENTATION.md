@@ -245,7 +245,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - **Master PIN Security Gateway (`src/admin_auth.ts`, `api/admin-otp.ts`)**:
   - Panel pemantauan (`/` dan `/dashboard`) kini dilindungi secara penuh oleh otentikasi Master PIN kriptografis.
   - Hashing PIN menggunakan algoritma SHA-256 dipadu garam statis (`PIN_SALT = rafly_telemetry_salt`), komparasi timing-safe (`crypto.timingSafeEqual`) untuk menangkal serangan side-channel, dan penerbitan session token CSPRNG acak (`adm_<hex32>`).
-  - Proteksi anti-brute force bertingkat: 5 kali percobaan PIN salah langsung mengaktifkan penguncian (*lockout*) sistem selama 15 menit.
+  - Proteksi anti-brute force bertingkat: 5 kali percobaan PIN salah langsung mengaktifkan penguncian (*lockout*) sistem selama 1 menit.
 - **Pemulihan Lupa PIN via Resend Email OTP**:
   - Fitur "Lupa PIN?" terintegrasi dengan Resend REST API (`RESEND_API_KEY`) yang mengirimkan kode OTP 6-digit acak (*CSPRNG*) ke email admin (`raflyfirmansyah02@gmail.com`).
   - Dilengkapi pembatasan frekuensi pengiriman OTP (*rate limiting*: jeda minimum 60 detik, maksimal 3 pengiriman per 10 menit per IP) dan validasi batas kedaluwarsa OTP 10 menit.

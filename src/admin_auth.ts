@@ -312,7 +312,7 @@ export async function verifyPin(
   // Gagal: tambah hitungan percobaan
   const newAttempts = current.lockoutAttempts + 1;
   const willLock = newAttempts >= 5;
-  const lockedUntil = willLock ? new Date(now + 15 * 60 * 1000).toISOString() : null;
+  const lockedUntil = willLock ? new Date(now + 1 * 60 * 1000).toISOString() : null;
 
   await saveAuthConfig({
     lockoutAttempts: newAttempts,
@@ -327,7 +327,7 @@ export async function verifyPin(
     lockoutAttempts: newAttempts,
     remainingAttempts: Math.max(0, 5 - newAttempts),
     message: willLock
-      ? 'Batas 5 kali percobaan PIN terlampaui. Sistem dikunci selama 15 menit. Silakan gunakan pemulihan OTP.'
+      ? 'Batas 5 kali percobaan PIN terlampaui. Sistem dikunci selama 1 menit. Silakan tunggu atau gunakan pemulihan OTP.'
       : `Master PIN salah. Sisa percobaan: ${Math.max(0, 5 - newAttempts)} kali.`,
   };
 }
