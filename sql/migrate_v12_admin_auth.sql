@@ -86,7 +86,7 @@ BEGIN
     -- JIKA PIN SALAH DAN BELUM TERKUNCI: Hitung percobaan
     v_new_attempts := COALESCE(v_row.lockout_attempts, 0) + 1;
     IF v_new_attempts >= 5 THEN
-        v_locked_until := now() + interval '15 minutes';
+        v_locked_until := now() + interval '1 minute';
     ELSE
         v_locked_until := NULL;
     END IF;
@@ -103,7 +103,7 @@ BEGIN
         'remaining_attempts', GREATEST(0, 5 - v_new_attempts),
         'locked_until', v_locked_until,
         'message', CASE 
-            WHEN v_locked_until IS NOT NULL THEN 'Batas 5 kali percobaan PIN terlampaui. Sistem dikunci 15 menit. Silakan gunakan pemulihan OTP.'
+            WHEN v_locked_until IS NOT NULL THEN 'Batas 5 kali percobaan PIN terlampaui. Sistem dikunci 1 menit. Silakan tunggu atau gunakan pemulihan OTP.'
             ELSE 'Master PIN salah. Sisa percobaan: ' || (5 - v_new_attempts) || ' kali.'
         END
     );
