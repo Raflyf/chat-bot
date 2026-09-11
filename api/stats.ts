@@ -161,6 +161,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     const modelCounts: Record<string, number> = {};
     let totalModelCalls = 0;
+    const latestActiveModel = assistantMsgs?.[0]?.via || null;
     for (const m of assistantMsgs ?? []) {
       const model = m.via || 'unknown';
       modelCounts[model] = (modelCounts[model] || 0) + 1;
@@ -177,13 +178,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // 4. Bangun status Pool per Provider & tiap API Key
     const providerDefs: Array<{
-      kind: 'groq' | 'gemini' | 'openrouter' | 'ollama';
+      kind: 'xkiro' | 'groq' | 'gemini' | 'openrouter' | 'ollama';
       displayName: string;
       keys: string[];
       cap: number;
       primaryModel: string;
       backupModel: string;
     }> = [
+      {
+        kind: 'xkiro',
+        displayName: 'xKiro Gateway (Qwen 3.8 Flagship)',
+        keys: config.pools.xkiro,
+        cap: config.dailyCap.xkiro,
+        primaryModel: config.models.xkiroPrimary,
+        backupModel: config.models.xkiroBackup[0] || 'qwen/qwen3.6-plus:free',
+      },
       {
         kind: 'groq',
         displayName: 'Groq Cloud API',
@@ -305,6 +314,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         modelsActiveCount: modelsBreakdown.length,
       },
       pools,
+      activeModel: latestActiveModel,
       modelsBreakdown,
       mediaCounts,
     });

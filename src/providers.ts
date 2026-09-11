@@ -18,7 +18,7 @@ export interface ChatMsg {
   content: string | ContentPart[];
 }
 
-type ProviderKind = 'openrouter' | 'groq' | 'gemini' | 'ollama';
+type ProviderKind = 'xkiro' | 'groq' | 'gemini' | 'openrouter' | 'ollama';
 
 interface CacheEntry {
   at: number;
@@ -187,6 +187,19 @@ interface Step {
 function steps(): Step[] {
   return [
     {
+      kind: 'xkiro',
+      keys: config.pools.xkiro,
+      models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
+      visionModels: [
+        'qwen/qwen3.8-max:free',
+        'qwen/qwen3.6-plus:free',
+        'qwen/qwen3-vl-plus:free',
+        'mistralai/mistral-large-2512',
+      ],
+      cap: config.dailyCap.xkiro,
+      run: (k, m, msgs) => openAiChat('https://api.xkiro.com/v1', k, m, msgs),
+    },
+    {
       kind: 'groq',
       keys: config.pools.groq,
       models: [config.models.groqPrimary, config.models.groqBackup],
@@ -235,9 +248,14 @@ export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Pr
 
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
-  // Untuk vision: utamakan provider yang memiliki visionModels (Gemini -> OpenRouter)
+  // Untuk vision: utamakan provider yang stabil menangani base64 buffer (Gemini -> OpenRouter -> xKiro)
   const orderedSteps = needVision
-    ? allSteps.filter((s) => s.visionModels.length > 0).sort((a, b) => (a.kind === 'gemini' ? -1 : 1))
+    ? allSteps
+        .filter((s) => s.visionModels.length > 0)
+        .sort((a, b) => {
+          const priority: Record<string, number> = { gemini: 1, openrouter: 2, xkiro: 3, groq: 4, ollama: 5 };
+          return (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
+        })
     : allSteps;
 
   for (const step of orderedSteps) {

@@ -985,6 +985,377 @@
       border-top: 1px solid var(--border-subtle);
       margin-top: 1rem;
     }
+
+    /* ==========================================================================
+       MATRIKS MODEL AI & MONITORING INFERENSI STYLING (MATCHING SCREENSHOT)
+       ========================================================================== */
+    .matrix-section {
+      background: #0b1120;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      position: relative;
+    }
+
+    .matrix-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .matrix-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .matrix-title-with-icon {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .matrix-icon-svg {
+      width: 22px;
+      height: 22px;
+      color: #38bdf8;
+      filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.6));
+      flex-shrink: 0;
+    }
+
+    .matrix-main-title {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: #f8fafc;
+      letter-spacing: -0.02em;
+    }
+
+    .matrix-subtitle {
+      font-size: 0.82rem;
+      color: #94a3b8;
+    }
+
+    .matrix-header-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .matrix-total-badge {
+      background: rgba(6, 182, 212, 0.12);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      color: #38bdf8;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.15);
+    }
+
+    .matrix-time-filters {
+      display: inline-flex;
+      background: #0f172a;
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .matrix-filter-pill {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .matrix-filter-pill:hover {
+      color: #f1f5f9;
+    }
+
+    .matrix-filter-pill.active {
+      background: #0284c7;
+      color: #ffffff;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4);
+    }
+
+    /* SMART AUTO GATEWAY HERO BANNER */
+    .smart-gateway-banner {
+      background: radial-gradient(ellipse at top left, rgba(14, 116, 144, 0.25), rgba(15, 23, 42, 0.9) 65%), #0f172a;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .smart-gateway-banner::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      background: radial-gradient(circle at 90% 10%, rgba(56, 189, 248, 0.06), transparent 50%);
+      pointer-events: none;
+    }
+
+    .gateway-info-col {
+      max-width: 800px;
+      z-index: 1;
+    }
+
+    .gateway-badges-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.45rem;
+      flex-wrap: wrap;
+    }
+
+    .gateway-badge-green {
+      background: rgba(16, 185, 129, 0.18);
+      border: 1px solid rgba(16, 185, 129, 0.5);
+      color: #34d399;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .gateway-badge-sub {
+      color: #94a3b8;
+      font-size: 0.74rem;
+      font-weight: 500;
+    }
+
+    .gateway-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 0.35rem;
+      letter-spacing: -0.01em;
+    }
+
+    .gateway-desc {
+      font-size: 0.82rem;
+      color: #cbd5e1;
+      line-height: 1.45;
+    }
+
+    .gateway-stat-box {
+      background: rgba(11, 17, 32, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 10px;
+      padding: 0.85rem 1.5rem;
+      text-align: center;
+      min-width: 170px;
+      z-index: 1;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+
+    .gateway-stat-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      margin-bottom: 0.2rem;
+    }
+
+    .gateway-stat-value {
+      font-family: var(--font-mono);
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: #38bdf8;
+      letter-spacing: -0.02em;
+      text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+    }
+
+    /* 4-COLUMN RESPONSIVE MODEL GRID */
+    .matrix-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+
+    @media (max-width: 1200px) {
+      .matrix-cards-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    @media (max-width: 850px) {
+      .matrix-cards-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 560px) {
+      .matrix-cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .model-matrix-card {
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 12px;
+      padding: 1.1rem 1.1rem 0.9rem 1.1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .model-matrix-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(56, 189, 248, 0.35);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .model-matrix-card.card-active {
+      border: 1.5px solid #06b6d4;
+      background: radial-gradient(ellipse at top right, rgba(6, 182, 212, 0.12), #0f172a 75%);
+      box-shadow: 0 0 25px rgba(6, 182, 212, 0.2), inset 0 0 15px rgba(6, 182, 212, 0.05);
+    }
+
+    .card-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.65rem;
+    }
+
+    .card-num-group {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .card-number {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #64748b;
+    }
+
+    .badge-active-live {
+      background: rgba(6, 182, 212, 0.15);
+      border: 1px solid rgba(6, 182, 212, 0.45);
+      color: #22d3ee;
+      font-size: 0.64rem;
+      font-weight: 800;
+      padding: 1px 7px;
+      border-radius: 9999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .pulse-dot-cyan {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #22d3ee;
+      box-shadow: 0 0 6px #22d3ee;
+    }
+
+    .tag-provider {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: 0.02em;
+    }
+
+    .tag-xkiro {
+      background: rgba(6, 182, 212, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(6, 182, 212, 0.35);
+    }
+
+    .tag-groq {
+      background: rgba(249, 115, 22, 0.15);
+      color: #fb923c;
+      border: 1px solid rgba(249, 115, 22, 0.35);
+    }
+
+    .tag-gemini {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.35);
+    }
+
+    .tag-openrouter {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+
+    .tag-ollama {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+    }
+
+    .card-model-name {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      line-height: 1.35;
+      margin-bottom: 0.35rem;
+    }
+
+    .card-model-desc {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      line-height: 1.4;
+      min-height: 2.4rem;
+    }
+
+    .card-footer-row {
+      margin-top: 0.85rem;
+      padding-top: 0.65rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-footer-label {
+      font-size: 0.72rem;
+      color: #64748b;
+    }
+
+    .card-footer-count {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
   </style>
 </head>
 <body>
@@ -1190,6 +1561,7 @@
         <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
           <div class="pill-filter-group" id="provider-filter-pills">
             <button class="pill-filter-btn active" data-provider="all" onclick="setProviderFilter('all')">Semua Provider</button>
+            <button class="pill-filter-btn" data-provider="xkiro" onclick="setProviderFilter('xkiro')">xKiro (Qwen 3.8)</button>
             <button class="pill-filter-btn" data-provider="groq" onclick="setProviderFilter('groq')">Groq</button>
             <button class="pill-filter-btn" data-provider="gemini" onclick="setProviderFilter('gemini')">Gemini</button>
             <button class="pill-filter-btn" data-provider="openrouter" onclick="setProviderFilter('openrouter')">OpenRouter</button>
@@ -1208,42 +1580,100 @@
       </div>
     </section>
 
-    <!-- Model Usage & Media Types -->
-    <section class="dual-grid">
-      <div class="panel-card">
-        <h2 class="section-title" id="models-section-title">Distribusi Model LLM Hari Ini</h2>
-        <div class="models-list" id="models-list">
-          <div style="color: var(--text-dim); font-size: 0.85rem;">Memuat metrik...</div>
+    <!-- ========================================================================
+         SECTION: MATRIKS MODEL AI & MONITORING INFERENSI (SMART CASCADES)
+         ======================================================================== -->
+    <section class="matrix-section" id="ai-model-matrix-section">
+      <!-- Header Bar -->
+      <div class="matrix-header">
+        <div class="matrix-title-group">
+          <div class="matrix-title-with-icon">
+            <svg class="matrix-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="4" ry="4"></rect>
+              <line x1="8" y1="2" x2="8" y2="22"></line>
+              <line x1="16" y1="2" x2="16" y2="22"></line>
+              <line x1="2" y1="8" x2="22" y2="8"></line>
+              <line x1="2" y1="16" x2="22" y2="16"></line>
+              <circle cx="12" cy="12" r="2" fill="currentColor"></circle>
+            </svg>
+            <h2 class="matrix-main-title">Matriks Model AI &amp; Monitoring Inferensi</h2>
+          </div>
+          <p class="matrix-subtitle">Status kesehatan, latensi rata-rata, dan statistik eksekusi router multi-tier.</p>
+        </div>
+
+        <div class="matrix-header-controls">
+          <div class="matrix-total-badge">
+            Total Inferensi: <span id="matrix-total-inferensi">0x</span>
+          </div>
+          <div class="matrix-time-filters" id="matrix-time-filters">
+            <button class="matrix-filter-pill active" data-range="today" onclick="setMatrixRange('today')">Hari Ini</button>
+            <button class="matrix-filter-pill" data-range="7d" onclick="setMatrixRange('7d')">7 Hari</button>
+            <button class="matrix-filter-pill" data-range="30d" onclick="setMatrixRange('30d')">30 Hari</button>
+            <button class="matrix-filter-pill" data-range="all" onclick="setMatrixRange('all')">Semua</button>
+          </div>
         </div>
       </div>
 
-      <div class="panel-card">
-        <h2 class="section-title" id="media-section-title">Pemrosesan Tipe Media (Hari Ini)</h2>
-        <div class="media-badges-grid">
-          <div class="media-box">
-            <div class="media-box-count" id="media-text">0</div>
-            <div class="media-box-label">Chat Teks</div>
+      <!-- Auto Gateway Router (Smart Cascades) Hero Box -->
+      <div class="smart-gateway-banner">
+        <div class="gateway-info-col">
+          <div class="gateway-badges-row">
+            <span class="gateway-badge-green">SMART AUTO GATEWAY</span>
+            <span class="gateway-badge-sub">Automatic Load-Balancing &amp; Failover</span>
           </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-voice" style="color: var(--accent-rose);">0</div>
-            <div class="media-box-label">Voice Note (VN)</div>
-          </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-image" style="color: var(--accent-emerald);">0</div>
-            <div class="media-box-label">Foto / Vision</div>
-          </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-sticker" style="color: var(--accent-purple);">0</div>
-            <div class="media-box-label">Stiker</div>
-          </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-doc" style="color: var(--accent-amber);">0</div>
-            <div class="media-box-label">Dokumen (PDF/Word)</div>
-          </div>
-          <div class="media-box">
-            <div class="media-box-count" id="media-video">0</div>
-            <div class="media-box-label">Video</div>
-          </div>
+          <h3 class="gateway-title">Auto Gateway Router (Smart Cascades)</h3>
+          <p class="gateway-desc">
+            Routing otomatis cerdas yang mendeteksi latensi, kuota, dan kapabilitas kueri pengguna untuk mengarahkan ke model AI terbaik secara real-time.
+          </p>
+        </div>
+        <div class="gateway-stat-box">
+          <div class="gateway-stat-label">TOTAL RESOLUSI ROUTER</div>
+          <div class="gateway-stat-value" id="gateway-total-resolusi">0x</div>
+        </div>
+      </div>
+
+      <!-- 4-Column Grid Model Cards -->
+      <div class="matrix-cards-grid" id="matrix-cards-grid">
+        <div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 2rem;">
+          Memuat matriks model inferensi...
+        </div>
+      </div>
+    </section>
+
+    <!-- Pemrosesan Tipe Media (Hari Ini) -->
+    <section class="activity-card" style="margin-bottom: 1.5rem;">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title" id="media-section-title">Pemrosesan Tipe Media (Hari Ini)</h2>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+            Volume pesan berdasarkan jenis konten: pesan suara (Voice Note), visual vision, dokumen, stiker, dan teks.
+          </p>
+        </div>
+      </div>
+      <div class="media-badges-grid" style="margin-top: 1rem;">
+        <div class="media-box">
+          <div class="media-box-count" id="media-text">0</div>
+          <div class="media-box-label">Chat Teks</div>
+        </div>
+        <div class="media-box">
+          <div class="media-box-count" id="media-voice" style="color: var(--accent-rose);">0</div>
+          <div class="media-box-label">Voice Note (VN)</div>
+        </div>
+        <div class="media-box">
+          <div class="media-box-count" id="media-image" style="color: var(--accent-emerald);">0</div>
+          <div class="media-box-label">Foto / Vision</div>
+        </div>
+        <div class="media-box">
+          <div class="media-box-count" id="media-sticker" style="color: var(--accent-purple);">0</div>
+          <div class="media-box-label">Stiker</div>
+        </div>
+        <div class="media-box">
+          <div class="media-box-count" id="media-doc" style="color: var(--accent-amber);">0</div>
+          <div class="media-box-label">Dokumen (PDF/Word)</div>
+        </div>
+        <div class="media-box">
+          <div class="media-box-count" id="media-video">0</div>
+          <div class="media-box-label">Video</div>
         </div>
       </div>
     </section>
@@ -1687,12 +2117,19 @@
       document.querySelectorAll("#time-filter-pills .pill-filter-btn").forEach(btn => {
         btn.classList.toggle("active", btn.getAttribute("data-range") === range);
       });
+      document.querySelectorAll("#matrix-time-filters .matrix-filter-pill").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-range") === range);
+      });
       // Sinkronkan juga filter rentang pada dataset
       const dsRange = document.getElementById("dataset-range-filter");
       if (dsRange) dsRange.value = range;
 
       fetchData();
       fetchDataset();
+    }
+
+    function setMatrixRange(range) {
+      setTimeRange(range);
     }
 
     function setPlatformFilter(platform) {
@@ -1803,30 +2240,9 @@
       const mediaH = document.getElementById("media-section-title");
       if (mediaH) mediaH.textContent = `Pemrosesan Tipe Media (${rangeLabel})`;
 
-      // Render Pools Matrix
+      // Render Pools Matrix & AI Model Router Matrix
       renderPoolMatrix(data);
-
-      // Models Breakdown
-      const modelsList = document.getElementById("models-list");
-      modelsList.innerHTML = "";
-      if (!data.modelsBreakdown || data.modelsBreakdown.length === 0) {
-        modelsList.innerHTML = `<div style="color: var(--text-dim); font-size: 0.85rem;">Belum ada riwayat model pada periode ini.</div>`;
-      } else {
-        data.modelsBreakdown.forEach(m => {
-          const row = document.createElement("div");
-          row.className = "model-item";
-          row.innerHTML = `
-            <div class="model-label-row">
-              <span class="model-name">${escapeHtml(m.name)}</span>
-              <span class="model-count">${m.count.toLocaleString()} (${m.percent}%)</span>
-            </div>
-            <div class="progress-bar-bg">
-              <div class="progress-bar-fill progress-emerald" style="width: ${m.percent}%"></div>
-            </div>
-          `;
-          modelsList.appendChild(row);
-        });
-      }
+      renderAiModelMatrix(data);
 
       // Media Counts
       const mc = data.mediaCounts || {};
@@ -1836,6 +2252,233 @@
       document.getElementById("media-sticker").textContent = (mc.sticker || 0).toLocaleString();
       document.getElementById("media-doc").textContent = (mc.document || 0).toLocaleString();
       document.getElementById("media-video").textContent = (mc.video || 0).toLocaleString();
+    }
+
+    function renderAiModelMatrix(data) {
+      const gridEl = document.getElementById("matrix-cards-grid");
+      if (!gridEl) return;
+
+      const totalInferensiEl = document.getElementById("matrix-total-inferensi");
+      const totalResolusiEl = document.getElementById("gateway-total-resolusi");
+
+      const modelsBreakdown = data.modelsBreakdown || [];
+      let totalCalls = modelsBreakdown.reduce((sum, m) => sum + (m.count || 0), 0);
+      if (totalCalls === 0 && data.summary) {
+        totalCalls = data.summary.totalCallsPeriod || data.summary.totalMessagesPeriod || 0;
+      }
+
+      if (totalInferensiEl) totalInferensiEl.textContent = `${totalCalls.toLocaleString()}x`;
+      if (totalResolusiEl) totalResolusiEl.textContent = `${totalCalls.toLocaleString()}x`;
+
+      // Sinkronkan active state filter waktu
+      document.querySelectorAll("#matrix-time-filters .matrix-filter-pill").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-range") === currentTimeRange);
+      });
+
+      // Pemetaan frekuensi pemanggilan model dari database
+      const countMap = new Map();
+      modelsBreakdown.forEach(m => {
+        const rawName = (m.name || "").toLowerCase();
+        countMap.set(rawName, m.count || 0);
+      });
+
+      function getCount(matchKeys) {
+        for (const k of matchKeys) {
+          const lower = k.toLowerCase();
+          for (const [name, cnt] of countMap.entries()) {
+            if (name.includes(lower) || lower.includes(name)) {
+              return cnt;
+            }
+          }
+        }
+        return 0;
+      }
+
+      // Katalog model router multi-tier (urutan sesuai prioritas router & screenshot)
+      const catalog = [
+        {
+          name: "Qwen 3.8 Max Free (xKiro)",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          desc: "Prioritas #1 - Model text-to-text flagship 1M konteks inferensi instan",
+          matchKeys: ["qwen/qwen3.8-max:free", "qwen3.8-max", "xkiro/qwen/qwen3.8-max:free"],
+        },
+        {
+          name: "Qwen 3.6 Plus Free (xKiro)",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          desc: "Prioritas #2 - Cadangan flagship Qwen 3.6 respons kilat 1M konteks",
+          matchKeys: ["qwen/qwen3.6-plus:free", "qwen3.6-plus", "xkiro/qwen/qwen3.6-plus:free"],
+        },
+        {
+          name: "DeepSeek V4 Pro (xKiro)",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          desc: "Frontier reasoning & logika koding mendalam",
+          matchKeys: ["deepseek/deepseek-v4-pro", "deepseek-v4-pro", "xkiro/deepseek/deepseek-v4-pro"],
+        },
+        {
+          name: "DeepSeek V4 Flash (xKiro)",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          desc: "Model penalaran super cepat teroptimasi latensi rendah",
+          matchKeys: ["deepseek/deepseek-v4-flash", "deepseek-v4-flash", "xkiro/deepseek/deepseek-v4-flash"],
+        },
+        {
+          name: "Mistral Codestral 2508 (xKiro)",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          desc: "Engine penalaran & arsitektur kode presisi tinggi",
+          matchKeys: ["mistralai/codestral-2508", "codestral-2508", "codestral"],
+        },
+        {
+          name: "Qwen 3 VL Plus Free (xKiro)",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          desc: "Model multimodal citra dan teks 256K konteks",
+          matchKeys: ["qwen/qwen3-vl-plus:free", "qwen3-vl-plus", "xkiro/qwen/qwen3-vl-plus:free"],
+        },
+        {
+          name: "Qwen 3.7 Plus Free (xKiro)",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          desc: "Cadangan Qwen 3.7 kecepatan tinggi",
+          matchKeys: ["qwen/qwen3.7-plus:free", "qwen3.7-plus", "xkiro/qwen/qwen3.7-plus:free"],
+        },
+        {
+          name: "Mistral Large 2512 (xKiro)",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          desc: "Frontier reasoning & multilingual reasoning 128K",
+          matchKeys: ["mistralai/mistral-large-2512", "mistral-large-2512", "mistral-large"],
+        },
+        {
+          name: "Qwen 3.8 27B (Groq)",
+          provider: "GROQ",
+          tagClass: "tag-groq",
+          desc: "Prioritas Failover Tier 2 - Respons kilat ~500 tok/s LPU",
+          matchKeys: ["groq/qwen/qwen3.8-27b", "groq/qwen3.8", "qwen3.8-27b"],
+        },
+        {
+          name: "Qwen 3.6 27B (Groq)",
+          provider: "GROQ",
+          tagClass: "tag-groq",
+          desc: "Cadangan Groq LPU kecepatan tinggi",
+          matchKeys: ["groq/qwen/qwen3.6-27b", "groq/qwen3.6", "qwen3.6-27b"],
+        },
+        {
+          name: "Groq Whisper Turbo (Groq Voice)",
+          provider: "GROQ",
+          tagClass: "tag-groq",
+          desc: "Transkripsi Voice Note audio sub-detik ~500ms",
+          matchKeys: ["whisper-large-v3-turbo", "whisper", "groq/whisper"],
+        },
+        {
+          name: "Gemini 3.8 Flash (Google Gemini)",
+          provider: "GEMINI",
+          tagClass: "tag-gemini",
+          desc: "Frontier multimodal native foto, PDF & dokumen",
+          matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
+        },
+        {
+          name: "Gemini 2.5 Flash (Google Gemini)",
+          provider: "GEMINI",
+          tagClass: "tag-gemini",
+          desc: "Cadangan multimodal vision stabil 1M konteks",
+          matchKeys: ["gemini/gemini-2.5-flash", "gemini-2.5-flash"],
+        },
+        {
+          name: "Nex N2.5 Pro Free (OpenRouter)",
+          provider: "OPENROUTER",
+          tagClass: "tag-openrouter",
+          desc: "Dynamic SOTA Free router otomatis OpenRouter",
+          matchKeys: ["openrouter/nex-agi/nex-n2.5-pro:free", "nex-n2.5-pro"],
+        },
+        {
+          name: "Nemotron 3.5 Lightning (OpenRouter)",
+          provider: "OPENROUTER",
+          tagClass: "tag-openrouter",
+          desc: "Model berkecepatan tinggi OpenRouter Cloud",
+          matchKeys: ["openrouter/nvidia/nemotron-3.5-lightning:free", "nemotron-3.5-lightning"],
+        },
+        {
+          name: "Nemotron 3 Nano (Ollama Cloud)",
+          provider: "OLLAMA CLOUD",
+          tagClass: "tag-ollama",
+          desc: "Model frontier reasoning di Ollama Cloud Gateway",
+          matchKeys: ["ollama/nemotron-3-nano:30b", "nemotron-3-nano"],
+        },
+        {
+          name: "GPT-OSS 20B (Ollama Cloud)",
+          provider: "OLLAMA CLOUD",
+          tagClass: "tag-ollama",
+          desc: "Model dense teroptimasi latensi rendah",
+          matchKeys: ["ollama/gpt-oss:20b", "gpt-oss"],
+        },
+      ];
+
+      // Identifikasi model yang sedang aktif merespon / paling baru digunakan
+      const activeRaw = (data.activeModel || (modelsBreakdown[0]?.name) || "qwen/qwen3.8-max:free").toLowerCase();
+
+      // Cari indeks model aktif di dalam katalog
+      let activeCatalogIdx = catalog.findIndex(item => {
+        return item.matchKeys.some(k => activeRaw.includes(k.toLowerCase()) || k.toLowerCase().includes(activeRaw));
+      });
+
+      let orderedCatalog = [...catalog];
+      if (activeCatalogIdx > 0) {
+        // Model ditemukan di posisi selain #1, angkat otomatis ke posisi #1!
+        const [activeItem] = orderedCatalog.splice(activeCatalogIdx, 1);
+        orderedCatalog.unshift(activeItem);
+      } else if (activeCatalogIdx === -1) {
+        // Model eksekusi baru di luar katalog statis, buatkan kartu dinamis di posisi #1!
+        let prov = "AI GATEWAY";
+        let tagCls = "tag-xkiro";
+        if (activeRaw.includes("groq")) { prov = "GROQ"; tagCls = "tag-groq"; }
+        else if (activeRaw.includes("gemini")) { prov = "GEMINI"; tagCls = "tag-gemini"; }
+        else if (activeRaw.includes("openrouter")) { prov = "OPENROUTER"; tagCls = "tag-openrouter"; }
+        else if (activeRaw.includes("ollama")) { prov = "OLLAMA CLOUD"; tagCls = "tag-ollama"; }
+        else if (activeRaw.includes("xkiro")) { prov = "XKIRO"; tagCls = "tag-xkiro"; }
+
+        const dynamicItem = {
+          name: data.activeModel || "Model Terpilih",
+          provider: prov,
+          tagClass: tagCls,
+          desc: "Model dinamis yang sedang aktif merespon pengguna saat ini",
+          matchKeys: [activeRaw],
+        };
+        orderedCatalog.unshift(dynamicItem);
+      }
+
+      // Render kartu dengan urutan baru: posisi #1 selalu model yang sedang aktif
+      gridEl.innerHTML = orderedCatalog.map((c, i) => {
+        const count = getCount(c.matchKeys);
+        const isActive = i === 0; // Posisi #1 selalu aktif terbaru
+        const activeBadge = isActive
+          ? `<span class="badge-active-live"><span class="pulse-dot-cyan"></span>AKTIF TERBARU</span>`
+          : ``;
+        const cardClass = isActive ? `model-matrix-card card-active` : `model-matrix-card`;
+
+        return `
+          <div class="${cardClass}">
+            <div>
+              <div class="card-top-row">
+                <div class="card-num-group">
+                  <span class="card-number">#${i + 1}</span>
+                  ${activeBadge}
+                </div>
+                <span class="tag-provider ${c.tagClass}">${c.provider}</span>
+              </div>
+              <div class="card-model-name">${escapeHtml(c.name)}</div>
+              <div class="card-model-desc">${escapeHtml(c.desc)}</div>
+            </div>
+            <div class="card-footer-row">
+              <span class="card-footer-label">Total Eksekusi</span>
+              <span class="card-footer-count">${count.toLocaleString()}x</span>
+            </div>
+          </div>
+        `;
+      }).join("");
     }
 
     function renderPoolMatrix(data) {
