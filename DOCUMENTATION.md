@@ -208,6 +208,8 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - Menghadirkan antarmuka Matriks Model AI responsif 4-kolom yang memetakan status kesehatan, tag provider, dan total eksekusi dari 17 model AI di router sistem.
   - Kartu aktif otomatis disorot dengan glowing cyan border (`● AKTIF TERBARU`).
   - Banner Auto Gateway Router (Smart Cascades) menyajikan total resolusi inferensi real-time dengan filter rentang waktu instan (Hari Ini, 7 Hari, 30 Hari, Semua).
+- **Logo & Favicon Browser Tab Resmi (`public/favicon.svg`)**:
+  - Menyematkan logo favicon neural chip AI berbasis vektor SVG beresolusi tinggi di seluruh halaman web (`index.html`, `dashboard.html`, `privacy.html`) agar logo bot tampil elegan di tab browser desktop maupun mobile.
 - **Validasi Empiris Status MiniMax xKiro**:
   - Penelusuran langsung melalui pemanggilan API membuktikan bahwa seluruh varian `minimax/*:free` di xKiro saat ini mengalami HTTP 500 (`internal_error`) dari upstream provider, sedangkan varian non-free mewajibkan deposit saldo (HTTP 403).
 
