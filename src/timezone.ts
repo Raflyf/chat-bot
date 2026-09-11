@@ -133,43 +133,45 @@ export interface LocationMatch {
 
 const LOCATION_MAP: LocationMatch[] = [
   // Indonesian WITA (UTC+8)
-  { keywords: ['bali', 'denpasar', 'kuta', 'ubud', 'gianyar', 'sanur', 'badung', 'tabanan', 'singaraja', 'buleleng'], zone: 'Asia/Makassar', label: 'Bali / WITA' },
-  { keywords: ['lombok', 'mataram', 'sumbawa', 'bima', 'ntb'], zone: 'Asia/Makassar', label: 'NTB / WITA' },
-  { keywords: ['kupang', 'flores', 'labuan bajo', 'sumba', 'ende', 'ntt'], zone: 'Asia/Makassar', label: 'NTT / WITA' },
-  { keywords: ['banjarmasin', 'banjarbaru', 'kalsel', 'kalimantan selatan'], zone: 'Asia/Makassar', label: 'Kalimantan Selatan / WITA' },
-  { keywords: ['samarinda', 'balikpapan', 'ikn', 'nusantara', 'bontang', 'kaltim', 'kalimantan timur'], zone: 'Asia/Makassar', label: 'Kalimantan Timur / WITA' },
-  { keywords: ['tarakan', 'tanjung selor', 'kaltara', 'kalimantan utara'], zone: 'Asia/Makassar', label: 'Kalimantan Utara / WITA' },
-  { keywords: ['makassar', 'gowa', 'maros', 'bone', 'palopo', 'parepare', 'sulsel', 'sulawesi selatan'], zone: 'Asia/Makassar', label: 'Sulawesi Selatan / WITA' },
-  { keywords: ['manado', 'bitung', 'tomohon', 'sulut', 'sulawesi utara'], zone: 'Asia/Makassar', label: 'Sulawesi Utara / WITA' },
-  { keywords: ['palu', 'luwuk', 'poso', 'sulteng', 'sulawesi tengah'], zone: 'Asia/Makassar', label: 'Sulawesi Tengah / WITA' },
-  { keywords: ['kendari', 'bau-bau', 'baubau', 'sultra', 'sulawesi tenggara'], zone: 'Asia/Makassar', label: 'Sulawesi Tenggara / WITA' },
-  { keywords: ['gorontalo'], zone: 'Asia/Makassar', label: 'Gorontalo / WITA' },
-  { keywords: ['mamuju', 'sulbar', 'sulawesi barat'], zone: 'Asia/Makassar', label: 'Sulawesi Barat / WITA' },
+  { keywords: ['bali', 'denpasar', 'kuta', 'ubud', 'gianyar', 'sanur', 'badung', 'tabanan', 'singaraja', 'buleleng', 'seminyak', 'canggu', 'jimbaran', 'nusa dua', 'klungkung', 'bangli', 'karangasem', 'jembrana', 'negara bali'], zone: 'Asia/Makassar', label: 'Bali / WITA' },
+  { keywords: ['lombok', 'mataram', 'praya', 'selong', 'sumbawa', 'sumbawa besar', 'bima', 'dompu', 'ntb', 'nusa tenggara barat'], zone: 'Asia/Makassar', label: 'NTB / WITA' },
+  { keywords: ['kupang', 'labuan bajo', 'flores', 'ende', 'maumere', 'sikka', 'ruteng', 'manggarai', 'bajawa', 'ngada', 'sumba', 'waingapu', 'waikabubak', 'alor', 'kalabahi', 'rote', 'atambua', 'belu', 'timor', 'ntt', 'nusa tenggara timur'], zone: 'Asia/Makassar', label: 'NTT / WITA' },
+  { keywords: ['banjarmasin', 'banjarbaru', 'martapura', 'kotabaru', 'barabai', 'kandangan', 'amuntai', 'tanjung kalsel', 'batulicin', 'tanah bumbu', 'pelaihari', 'tanah laut', 'tapin', 'rantau', 'kalsel', 'kalimantan selatan'], zone: 'Asia/Makassar', label: 'Kalimantan Selatan / WITA' },
+  { keywords: ['samarinda', 'balikpapan', 'bontang', 'ikn', 'nusantara', 'tenggarong', 'kutai', 'kutai kartanegara', 'berau', 'tanjung redeb', 'sangatta', 'penajam', 'paser', 'tanah grogot', 'kaltim', 'kalimantan timur'], zone: 'Asia/Makassar', label: 'Kalimantan Timur / WITA' },
+  { keywords: ['tarakan', 'tanjung selor', 'bulungan', 'nunukan', 'malinau', 'tana tidung', 'kaltara', 'kalimantan utara'], zone: 'Asia/Makassar', label: 'Kalimantan Utara / WITA' },
+  { keywords: ['makassar', 'ujung pandang', 'gowa', 'sungguminasa', 'maros', 'bone', 'watampone', 'palopo', 'parepare', 'bulukumba', 'bantaeng', 'jeneponto', 'takalar', 'sinjai', 'barru', 'pangkep', 'pinrang', 'sidrap', 'sidenreng rappang', 'soppeng', 'wajo', 'sengkang', 'tana toraja', 'toraja', 'makale', 'rantepao', 'luwu', 'belopa', 'masamba', 'malili', 'sulsel', 'sulawesi selatan'], zone: 'Asia/Makassar', label: 'Sulawesi Selatan / WITA' },
+  { keywords: ['mamuju', 'majene', 'polewali mandar', 'polman', 'mamasa', 'pasangkayu', 'sulbar', 'sulawesi barat'], zone: 'Asia/Makassar', label: 'Sulawesi Barat / WITA' },
+  { keywords: ['palu', 'luwuk', 'poso', 'donggala', 'morowali', 'bungku', 'kolonodale', 'parigi', 'toli-toli', 'tolitoli', 'banggai', 'buol', 'sigi', 'sulteng', 'sulawesi tengah'], zone: 'Asia/Makassar', label: 'Sulawesi Tengah / WITA' },
+  { keywords: ['kendari', 'bau-bau', 'baubau', 'kolaka', 'konawe', 'unaaha', 'muna', 'raha', 'wakatobi', 'wangi-wangi', 'bombana', 'sultra', 'sulawesi tenggara'], zone: 'Asia/Makassar', label: 'Sulawesi Tenggara / WITA' },
+  { keywords: ['manado', 'bitung', 'tomohon', 'kotamobagu', 'minahasa', 'tondano', 'amurang', 'airmadidi', 'sangihe', 'tahuna', 'talaud', 'bolmong', 'sulut', 'sulawesi utara'], zone: 'Asia/Makassar', label: 'Sulawesi Utara / WITA' },
+  { keywords: ['gorontalo', 'bone bolango', 'boalemo', 'pohuwato', 'kwandang'], zone: 'Asia/Makassar', label: 'Gorontalo / WITA' },
   { keywords: ['wita', 'utc+8', 'gmt+8'], zone: 'Asia/Makassar', label: 'WITA (Waktu Indonesia Tengah)' },
 
   // Indonesian WIT (UTC+9)
-  { keywords: ['jayapura', 'merauke', 'timika', 'mimika', 'wamena', 'nabire', 'biak', 'serui', 'papua'], zone: 'Asia/Jayapura', label: 'Papua / WIT' },
-  { keywords: ['sorong', 'manokwari', 'fakfak', 'kaimana', 'papua barat', 'papua barat daya'], zone: 'Asia/Jayapura', label: 'Papua Barat / WIT' },
-  { keywords: ['ambon', 'tual', 'banda', 'maluku'], zone: 'Asia/Jayapura', label: 'Maluku / WIT' },
-  { keywords: ['ternate', 'tidore', 'sofifi', 'halmahera', 'maluku utara'], zone: 'Asia/Jayapura', label: 'Maluku Utara / WIT' },
+  { keywords: ['ambon', 'tual', 'banda', 'banda neira', 'masohi', 'seram', 'buru', 'namlea', 'saumlaki', 'tanimbar', 'aru', 'dobo', 'maluku'], zone: 'Asia/Jayapura', label: 'Maluku / WIT' },
+  { keywords: ['ternate', 'tidore', 'sofifi', 'halmahera', 'tobelo', 'jailolo', 'weda', 'labuha', 'morotai', 'sula', 'sanana', 'maluku utara', 'malut'], zone: 'Asia/Jayapura', label: 'Maluku Utara / WIT' },
+  { keywords: ['jayapura', 'merauke', 'timika', 'mimika', 'wamena', 'nabire', 'biak', 'serui', 'sarmi', 'sorong', 'manokwari', 'fakfak', 'kaimana', 'raja ampat', 'boven digoel', 'asmat', 'paniai', 'puncak jaya', 'mulia', 'pegunungan bintang', 'oksibil', 'yahukimo', 'tolikara', 'lanny jaya', 'papua', 'papua barat', 'papua barat daya', 'papua tengah', 'papua pegunungan', 'papua selatan'], zone: 'Asia/Jayapura', label: 'Papua / WIT' },
   { keywords: ['wit', 'utc+9', 'gmt+9'], zone: 'Asia/Jayapura', label: 'WIT (Waktu Indonesia Timur)' },
 
   // Indonesian WIB (UTC+7)
-  { keywords: ['jakarta', 'bogor', 'depok', 'tangerang', 'bekasi', 'jabodetabek'], zone: 'Asia/Jakarta', label: 'Jakarta / WIB' },
-  { keywords: ['bandung', 'cirebon', 'sukabumi', 'tasikmalaya', 'jabar', 'jawa barat'], zone: 'Asia/Jakarta', label: 'Jawa Barat / WIB' },
-  { keywords: ['serang', 'cilegon', 'banten'], zone: 'Asia/Jakarta', label: 'Banten / WIB' },
-  { keywords: ['semarang', 'solo', 'surakarta', 'magelang', 'pekalongan', 'tegal', 'purwokerto', 'jateng', 'jawa tengah'], zone: 'Asia/Jakarta', label: 'Jawa Tengah / WIB' },
-  { keywords: ['jogja', 'yogyakarta', 'sleman', 'bantul', 'diy'], zone: 'Asia/Jakarta', label: 'Yogyakarta / WIB' },
-  { keywords: ['surabaya', 'malang', 'sidoarjo', 'banyuwangi', 'kediri', 'jember', 'madiun', 'jatim', 'jawa timur'], zone: 'Asia/Jakarta', label: 'Jawa Timur / WIB' },
-  { keywords: ['aceh', 'banda aceh'], zone: 'Asia/Jakarta', label: 'Aceh / WIB' },
-  { keywords: ['medan', 'sumut', 'sumatera utara'], zone: 'Asia/Jakarta', label: 'Sumatera Utara / WIB' },
-  { keywords: ['padang', 'bukittinggi', 'sumbar', 'sumatera barat'], zone: 'Asia/Jakarta', label: 'Sumatera Barat / WIB' },
-  { keywords: ['pekanbaru', 'dumai', 'riau'], zone: 'Asia/Jakarta', label: 'Riau / WIB' },
-  { keywords: ['batam', 'tanjungpinang', 'bintan', 'kepri', 'kepulauan riau'], zone: 'Asia/Jakarta', label: 'Kepulauan Riau / WIB' },
-  { keywords: ['palembang', 'sumsel', 'sumatera selatan'], zone: 'Asia/Jakarta', label: 'Sumatera Selatan / WIB' },
-  { keywords: ['lampung', 'bandar lampung'], zone: 'Asia/Jakarta', label: 'Lampung / WIB' },
-  { keywords: ['pontianak', 'singkawang', 'kalbar', 'kalimantan barat'], zone: 'Asia/Jakarta', label: 'Kalimantan Barat / WIB' },
-  { keywords: ['palangkaraya', 'kalteng', 'kalimantan tengah'], zone: 'Asia/Jakarta', label: 'Kalimantan Tengah / WIB' },
+  { keywords: ['jakarta', 'jaksel', 'jakbar', 'jaktim', 'jakpus', 'jakut', 'jabodetabek', 'kepulauan seribu'], zone: 'Asia/Jakarta', label: 'DKI Jakarta / WIB' },
+  { keywords: ['bandung', 'cimahi', 'bekasi', 'depok', 'bogor', 'cirebon', 'sukabumi', 'tasikmalaya', 'banjar', 'cianjur', 'garut', 'kuningan', 'majalengka', 'sumedang', 'indramayu', 'subang', 'purwakarta', 'karawang', 'ciamis', 'pangandaran', 'jabar', 'jawa barat', 'soreang', 'ngamprah', 'cikarang', 'cibinong', 'singaparna'], zone: 'Asia/Jakarta', label: 'Jawa Barat / WIB' },
+  { keywords: ['serang', 'cilegon', 'tangerang', 'tangsel', 'tangerang selatan', 'lebak', 'pandeglang', 'rangkasbitung', 'banten'], zone: 'Asia/Jakarta', label: 'Banten / WIB' },
+  { keywords: ['semarang', 'solo', 'surakarta', 'salatiga', 'magelang', 'pekalongan', 'tegal', 'cilacap', 'banyumas', 'purwokerto', 'brebes', 'kudus', 'jepara', 'pati', 'demak', 'kendal', 'batang', 'pemalang', 'purbalingga', 'banjarnegara', 'kebumen', 'purworejo', 'wonosobo', 'boyolali', 'klaten', 'sukoharjo', 'wonogiri', 'karanganyar', 'sragen', 'grobogan', 'purwodadi', 'blora', 'rembang', 'temanggung', 'jateng', 'jawa tengah', 'bumiayu'], zone: 'Asia/Jakarta', label: 'Jawa Tengah / WIB' },
+  { keywords: ['jogja', 'yogyakarta', 'sleman', 'bantul', 'kulon progo', 'wates', 'gunungkidul', 'wonosari', 'diy'], zone: 'Asia/Jakarta', label: 'DI Yogyakarta / WIB' },
+  { keywords: ['surabaya', 'malang', 'batu', 'kediri', 'blitar', 'madiun', 'mojokerto', 'pasuruan', 'probolinggo', 'sidoarjo', 'gresik', 'lamongan', 'tuban', 'bojonegoro', 'ngawi', 'magetan', 'ponorogo', 'pacitan', 'trenggalek', 'tulungagung', 'nganjuk', 'jombang', 'lumajang', 'jember', 'bondowoso', 'situbondo', 'banyuwangi', 'bangkalan', 'sampang', 'pamekasan', 'sumenep', 'madura', 'jatim', 'jawa timur', 'kepanjen', 'caruban'], zone: 'Asia/Jakarta', label: 'Jawa Timur / WIB' },
+  { keywords: ['aceh', 'banda aceh', 'sabang', 'lhokseumawe', 'langsa', 'subulussalam', 'meulaboh', 'bireuen', 'sigli', 'takengon', 'kutacane', 'tapaktuan', 'sinabang', 'calang', 'jantho', 'idi rayeuk'], zone: 'Asia/Jakarta', label: 'Aceh / WIB' },
+  { keywords: ['medan', 'binjai', 'tebing tinggi', 'pematangsiantar', 'siantar', 'tanjungbalai', 'sibolga', 'padangsidimpuan', 'gunungsitoli', 'nias', 'karo', 'kabanjahe', 'simalungun', 'toba', 'balige', 'dairi', 'sidikalang', 'samosir', 'deli serdang', 'asahan', 'kisaran', 'labuhanbatu', 'rantau prapat', 'langkat', 'stabat', 'sumut', 'sumatera utara'], zone: 'Asia/Jakarta', label: 'Sumatera Utara / WIB' },
+  { keywords: ['padang', 'bukittinggi', 'pariaman', 'payakumbuh', 'padang panjang', 'solok', 'sawahlunto', 'agam', 'lubuk basung', 'mentawai', 'tanah datar', 'batusangkar', 'pesisir selatan', 'painan', 'pasaman', 'dharmasraya', 'sijunjung', 'sumbar', 'sumatera barat'], zone: 'Asia/Jakarta', label: 'Sumatera Barat / WIB' },
+  { keywords: ['pekanbaru', 'dumai', 'bengkalis', 'duri', 'indragiri', 'tembilahan', 'rengat', 'kampar', 'bangkinang', 'meranti', 'selatpanjang', 'kuantan singingi', 'pelalawan', 'rokan', 'bagansiapiapi', 'pasir pengaraian', 'siak', 'riau'], zone: 'Asia/Jakarta', label: 'Riau / WIB' },
+  { keywords: ['batam', 'tanjungpinang', 'bintan', 'karimun', 'tanjung balai karimun', 'natuna', 'ranai', 'anambas', 'tarempa', 'lingga', 'kepri', 'kepulauan riau'], zone: 'Asia/Jakarta', label: 'Kepulauan Riau / WIB' },
+  { keywords: ['jambi', 'sungai penuh', 'kerinci', 'bungo', 'muara bungo', 'merangin', 'bangko', 'sarolangun', 'tebo', 'muaro jambi', 'batanghari'], zone: 'Asia/Jakarta', label: 'Jambi / WIB' },
+  { keywords: ['bengkulu', 'curup', 'rejang lebong', 'mukomuko', 'kaur', 'manna', 'kepahiang', 'lebong', 'seluma'], zone: 'Asia/Jakarta', label: 'Bengkulu / WIB' },
+  { keywords: ['palembang', 'lubuklinggau', 'prabumulih', 'pagar alam', 'lahat', 'banyuasin', 'muara enim', 'sekayu', 'musi banyuasin', 'musi rawas', 'ogan ilir', 'indralaya', 'oki', 'kayuagung', 'oku', 'baturaja', 'sumsel', 'sumatera selatan'], zone: 'Asia/Jakarta', label: 'Sumatera Selatan / WIB' },
+  { keywords: ['pangkalpinang', 'bangka', 'sungailiat', 'belitung', 'tanjung pandan', 'mentok', 'toboali', 'koba', 'manggar', 'babel', 'bangka belitung'], zone: 'Asia/Jakarta', label: 'Bangka Belitung / WIB' },
+  { keywords: ['lampung', 'bandar lampung', 'metro', 'kalianda', 'lampung selatan', 'gunung sugih', 'lampung tengah', 'kotabumi', 'pringsewu', 'tanggamus', 'kota agung', 'tulang bawang', 'menggala', 'way kanan'], zone: 'Asia/Jakarta', label: 'Lampung / WIB' },
+  { keywords: ['pontianak', 'singkawang', 'sambas', 'ketapang', 'sintang', 'sanggau', 'bengkayang', 'kubu raya', 'landak', 'ngabang', 'melawi', 'sekadau', 'kapuas hulu', 'putussibau', 'kalbar', 'kalimantan barat'], zone: 'Asia/Jakarta', label: 'Kalimantan Barat / WIB' },
+  { keywords: ['palangkaraya', 'palangka raya', 'sampit', 'pangkalan bun', 'kotawaringin', 'kapuas kalteng', 'kuala kapuas', 'barito', 'muara teweh', 'buntok', 'katingan', 'kasongan', 'seruyan', 'lamandau', 'kalteng', 'kalimantan tengah'], zone: 'Asia/Jakarta', label: 'Kalimantan Tengah / WIB' },
   { keywords: ['wib', 'utc+7', 'gmt+7'], zone: 'Asia/Jakarta', label: 'WIB (Waktu Indonesia Barat)' },
 
   // Asia & Oceania
@@ -259,6 +261,53 @@ export function detectLocation(text?: string): LocationMatch | null {
 }
 
 /**
+ * Periksa apakah user sedang bertanya tentang waktu/jam/kalender/jadwal
+ */
+export function isAskingTime(text?: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const q = text.toLowerCase().trim();
+  if (/\b(jam|pukul|waktu|hari|tanggal)\s*(berapa|apa|brp|skrg|sekarang|saat ini)?\b/i.test(q)) return true;
+  if (/\b(sekarang|saat ini|hari ini)\s*(jam|pukul|waktu|hari|tanggal)\b/i.test(q)) return true;
+  if (/\b(jam|pukul)\s*\?/i.test(q)) return true;
+  if (/\b(time|clock|date|today)\b/i.test(q)) return true;
+  return false;
+}
+
+/**
+ * Periksa apakah user sedang menyatakan lokasi tempat tinggal / keberadaan dirinya
+ * Contoh: "saya di cianjur", "aku di bali", "lagi di surabaya", "tinggal di jepang", "cianjur", dll.
+ */
+export function detectUserLocationDeclaration(text?: string): LocationMatch | null {
+  if (!text || typeof text !== 'string') return null;
+  const q = text.toLowerCase().trim();
+
+  // Jika pesan adalah pertanyaan waktu (misal "jam berapa di tokyo"), BUKAN deklarasi lokasi diri
+  if (isAskingTime(q)) {
+    const selfMatch = q.match(/\b(?:saya|aku|gua|gw|posisi|tinggal|rumah|domisili|lagi|sedang)\s*(?:di|daerah)\s+([a-z\s]+)/i);
+    if (selfMatch) {
+      return detectLocation(selfMatch[1]);
+    }
+    return null;
+  }
+
+  // Cek pola kalimat penanda lokasi diri
+  const selfMatch = q.match(/\b(?:saya|aku|gua|gw|kami|posisi|tinggal|rumah|domisili|lagi|sedang|berada|dari)\s*(?:di|ke|daerah)?\s+([a-z\s]+)/i);
+  if (selfMatch) {
+    const matched = detectLocation(selfMatch[1]);
+    if (matched) return matched;
+  }
+
+  // Jika user menjawab dengan jawaban pendek (misal menjawab "cianjur" atau "di cianjur")
+  const words = q.split(/\s+/);
+  if (words.length <= 4) {
+    const matched = detectLocation(q);
+    if (matched) return matched;
+  }
+
+  return null;
+}
+
+/**
  * Resolusi zona waktu dari koordinat GPS latitude dan longitude
  */
 export function resolveTimezoneFromCoords(lat: number, lon: number): { zone: string; label: string } {
@@ -310,63 +359,91 @@ export function buildUniversalTimePrompt(
   const parts: string[] = [];
   const utc = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 
-  parts.push(`[WAKTU & KALENDER GLOBAL (UNIVERSAL REAL-TIME CLOCK)]:`);
-  parts.push(`- Waktu Universal Standar: ${utc}`);
-
-  // 1. Deteksi lokasi spesifik yang ditanyakan pengguna di pesan saat ini atau tersimpan di profil/histori
-  const promptLoc = detectLocation(userPrompt);
-  const profileLoc = detectLocation(profileOrHistoryText);
-  const matchedLoc = promptLoc || profileLoc;
-
-  if (matchedLoc) {
-    const locTime = formatInZone(now, matchedLoc.zone);
-    const sourceLabel = promptLoc
-      ? `LOKASI SPESIFIK YANG DITANYAKAN PENGGUNA`
-      : `LOKASI TERSIMPAN DARI PROFIL / RIWAYAT PENGGUNA`;
-    parts.push(`- ${sourceLabel} (${matchedLoc.label}):`);
-    parts.push(`  * Jam & Waktu: ${locTime.time} ${locTime.tzName} (${locTime.full})`);
-    parts.push(`  * DIREKTIF: Jawab langsung pertanyaan jam pengguna menggunakan waktu lokasi ${matchedLoc.label} ini secara presisi!`);
-  }
-
-  // 2. Deteksi negara asal nomor pengguna (WhatsApp prefix)
-  const detectedUserCountry = detectUserCountry(chatKey);
-  if (detectedUserCountry) {
-    const userTzTime = formatInZone(now, detectedUserCountry.zone);
-    parts.push(`- LOKASI ASAL NOMOR PENGGUNA TERDETEKSI: ${detectedUserCountry.note}`);
-    parts.push(`  * Waktu di Negara Pengguna: ${userTzTime.time} ${userTzTime.tzName} (${userTzTime.dayName}, ${userTzTime.dateStr})`);
-  }
-
-  // 3. Matriks Tiga Zona Waktu Indonesia Lengkap
   const wib = formatInZone(now, 'Asia/Jakarta');
   const wita = formatInZone(now, 'Asia/Makassar');
   const wit = formatInZone(now, 'Asia/Jayapura');
+
+  const promptLoc = detectLocation(userPrompt);
+  const profileLoc = detectLocation(profileOrHistoryText);
+  const userDeclaringLoc = detectUserLocationDeclaration(userPrompt);
+  const askingTime = isAskingTime(userPrompt);
+  const detectedUserCountry = detectUserCountry(chatKey);
+
+  // KASUS 1: PENGGUNA TIDAK BERTANYA JAM DAN TIDAK MENYATAKAN LOKASI
+  // Berikan info waktu server secara pasif (hanya latar belakang).
+  // Larang keras bot mengungkit waktu atau menanyakan kota pengguna!
+  if (!askingTime && !userDeclaringLoc) {
+    parts.push(`[WAKTU & KALENDER SISTEM (BACKGROUND CONTEXT)]:`);
+    parts.push(`- Waktu Server Saat Ini: ${wib.dayName}, ${wib.dateStr} ${wib.time} WIB (UTC+7)`);
+    if (profileLoc) {
+      parts.push(`- Lokasi Pengguna Tersimpan: ${profileLoc.label} (Zona: ${profileLoc.zone})`);
+    } else if (detectedUserCountry) {
+      parts.push(`- Negara Pengguna: ${detectedUserCountry.country} (${detectedUserCountry.note})`);
+    }
+    parts.push(`[DIREKTIF MUTLAK KOMUNIKASI]:`);
+    parts.push(`- Teman bicaramu TIDAK sedang bertanya tentang jam, waktu, atau jadwal!`);
+    parts.push(`- DILARANG KERAS membuka jawaban dengan menyebutkan jam saat ini!`);
+    parts.push(`- DILARANG KERAS menanyakan lokasi, tempat tinggal, atau kota pengguna karena sama sekali tidak relevan dengan topik obrolan!`);
+    parts.push(`- Tanggapi HANYA pesan dan topik yang sedang dibahas oleh temanmu secara natural, hangat, dan mengalir!`);
+    return parts.join('\n');
+  }
+
+  // KASUS 2: PENGGUNA BARU SAJA MENYATAKAN / MENGONFIRMASI LOKASINYA (misal: "saya di cianjur", "lagi di bali")
+  if (userDeclaringLoc) {
+    const locTime = formatInZone(now, userDeclaringLoc.zone);
+    parts.push(`[PENGGUNA MENGONFIRMASI LOKASI KEBERADAANNYA]:`);
+    parts.push(`- Lokasi Pengguna: ${userDeclaringLoc.label} (Zona Waktu: ${userDeclaringLoc.zone})`);
+    parts.push(`- Jam Saat Ini di ${userDeclaringLoc.label}: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.dayName}, ${locTime.dateStr})`);
+    parts.push(`[DIREKTIF MENJAWAB KONFIRMASI LOKASI]:`);
+    parts.push(`- Temanmu memberitahukan bahwa dia berada di ${userDeclaringLoc.label}.`);
+    parts.push(`- Jawab santai dan hangat: akui lokasinya dan sebutkan waktu di lokasinya secara presisi (${locTime.time.slice(0, 5)} ${locTime.tzName}).`);
+    parts.push(`- DILARANG SALAH ZONA: Pastikan zona waktunya sesuai data resmi di atas (${userDeclaringLoc.label} adalah ${locTime.tzName})! DILARANG menyebut WITA jika lokasinya di Jawa/Sumatera (WIB), dan DILARANG menyebut WIB jika lokasinya di Bali/Sulawesi (WITA)!`);
+    parts.push(`- Lokasi ini sudah otomatis disimpan ke sistem memori, jadi DILARANG menanyakan kota/daerahnya lagi ke depannya!`);
+    parts.push(`- Lanjutkan obrolan dengan santai mengikuti konteksnya.`);
+    return parts.join('\n');
+  }
+
+  // KASUS 3: PENGGUNA BERTANYA TENTANG JAM / WAKTU (askingTime = true)
+  parts.push(`[WAKTU & KALENDER GLOBAL (UNIVERSAL REAL-TIME CLOCK)]:`);
+  parts.push(`- Waktu Universal Standar: ${utc}`);
+
+  // 3a. Pengguna menanyakan jam kota/negara spesifik di pesannya (misal "jam berapa di Tokyo/London/Bali")
+  if (promptLoc) {
+    const locTime = formatInZone(now, promptLoc.zone);
+    parts.push(`- LOKASI SPESIFIK YANG DITANYAKAN: ${promptLoc.label}`);
+    parts.push(`  * Jam & Waktu: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.full})`);
+    parts.push(`  * DIREKTIF: Jawab langsung jam di ${promptLoc.label} saat ini secara presisi!`);
+    return parts.join('\n');
+  }
+
+  // 3b. Pengguna bertanya "jam berapa sekarang?" dan lokasinya sudah tersimpan di profil/riwayat
+  if (profileLoc) {
+    const locTime = formatInZone(now, profileLoc.zone);
+    parts.push(`- LOKASI PENGGUNA TERSIMPAN DI MEMORI: ${profileLoc.label}`);
+    parts.push(`  * Jam di Lokasi Pengguna: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.full})`);
+    parts.push(`  * DIREKTIF: Temanmu bertanya jam sekarang. Karena kamu sudah tahu dia di ${profileLoc.label}, jawab langsung: "Sekarang jam ${locTime.time.slice(0, 5)} ${locTime.tzName}."`);
+    parts.push(`  * DILARANG menanyakan kembali dia berada di kota mana karena kamu sudah tahu dan mengingat lokasinya!`);
+    return parts.join('\n');
+  }
+
+  // 3c. Pengguna nomor luar negeri
+  if (detectedUserCountry && detectedUserCountry.country !== 'Indonesia') {
+    const userTzTime = formatInZone(now, detectedUserCountry.zone);
+    parts.push(`- LOKASI ASAL NOMOR PENGGUNA: ${detectedUserCountry.country} (${detectedUserCountry.note})`);
+    parts.push(`  * Waktu di Negara Pengguna: ${userTzTime.time.slice(0, 5)} ${userTzTime.tzName}`);
+    parts.push(`  * DIREKTIF: Jawab sesuai waktu di negara asal nomor pengguna (${userTzTime.time.slice(0, 5)} ${userTzTime.tzName}).`);
+    return parts.join('\n');
+  }
+
+  // 3d. Pengguna nomor Indonesia (+62) bertanya jam sekarang tapi lokasinya belum diketahui sama sekali
   parts.push(`- WAKTU INDONESIA (3 ZONA RESMI):`);
-  parts.push(`  * WIB (Indonesia Barat): ${wib.time} WIB (${wib.dayName}, ${wib.dateStr})`);
-  parts.push(`  * WITA (Indonesia Tengah): ${wita.time} WITA`);
-  parts.push(`  * WIT (Indonesia Timur): ${wit.time} WIT`);
-
-  // 4. Matriks Kota Acuan Global Utama Dunia
-  const tokyo = formatInZone(now, 'Asia/Tokyo');
-  const london = formatInZone(now, 'Europe/London');
-  const ny = formatInZone(now, 'America/New_York');
-  const berlin = formatInZone(now, 'Europe/Berlin');
-  const mekkah = formatInZone(now, 'Asia/Riyadh');
-  const sydney = formatInZone(now, 'Australia/Sydney');
-  parts.push(`- ACUAN KOTA DUNIA LAINNYA SAAT INI:`);
-  parts.push(`  * Tokyo: ${tokyo.time} ${tokyo.tzName} | Mekkah: ${mekkah.time} ${mekkah.tzName} | London: ${london.time} ${london.tzName}`);
-  parts.push(`  * Berlin/Paris: ${berlin.time} ${berlin.tzName} | New York: ${ny.time} ${ny.tzName} | Sydney: ${sydney.time} ${sydney.tzName}`);
-
-  // 5. Panduan Respon Jam Cerdas & Dinamis
-  parts.push(`[PANDUAN MENJAWAB JAM & WAKTU SECARA DINAMIS]:`);
-  parts.push(`1. Jika temanmu bertanya jam/waktu di kota/negara/daerah tertentu (misal: "jam berapa di Tokyo/London/Bali/Merauke/Paris/New York"): jawab tepat jam di kota tersebut.`);
-  parts.push(`2. Jika temanmu memiliki lokasi tersimpan di profil/riwayat (${profileLoc?.label || 'belum ada'}): jawab langsung menggunakan waktu lokasinya.`);
-  parts.push(`3. Jika temanmu bilang dia berada di daerah/negara tertentu (misal: "aku lagi di Bali/Jerman/Makassar, jam berapa sekarang?"): gunakan waktu zona tempat tinggalnya.`);
-  parts.push(`4. Jika temanmu memakai nomor luar negeri (${detectedUserCountry?.country || 'non-ID'}): sesuaikan dengan waktu lokal negaranya.`);
-  parts.push(`5. ATURAN KETIKA LOKASI PENGGUNA BELUM DIKETAHUI (NOMOR INDONESIA +62):`);
-  parts.push(`   - DILARANG menjabarkan daftar pulau/provinsi panjang seperti ensiklopedia/buku pelajaran.`);
-  parts.push(`   - Jawablah santai, hangat, dan ringkas (1-2 kalimat saja):`);
-  parts.push(`     Contoh: "Sekarang jam ${wib.time.slice(0, 5)} WIB (atau ${wita.time.slice(0, 5)} WITA / ${wit.time.slice(0, 5)} WIT). Kamu lagi di kota mana nih?"`);
-  parts.push(`- Kamu menguasai seluruh zona waktu dunia secara presisi tanpa ragu dan tidak pernah menolak pertanyaan jam/waktu.`);
+  parts.push(`  * WIB: ${wib.time.slice(0, 5)} WIB (${wib.dayName}, ${wib.dateStr})`);
+  parts.push(`  * WITA: ${wita.time.slice(0, 5)} WITA`);
+  parts.push(`  * WIT: ${wit.time.slice(0, 5)} WIT`);
+  parts.push(`[DIREKTIF MENJAWAB KARENA LOKASI BELUM DIKETAHUI]:`);
+  parts.push(`- Sampaikan waktu santai dan ringkas (1-2 kalimat saja), contoh:`);
+  parts.push(`  "Sekarang jam ${wib.time.slice(0, 5)} WIB (atau ${wita.time.slice(0, 5)} WITA / ${wit.time.slice(0, 5)} WIT). Kamu lagi di kota mana nih?"`);
+  parts.push(`- DILARANG menjabarkan daftar pulau/provinsi panjang seperti buku pelajaran.`);
 
   return parts.join('\n');
 }

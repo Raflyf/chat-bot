@@ -1,7 +1,7 @@
 import { config } from './env.js';
 import { chat, type ChatMsg, type ContentPart } from './providers.js';
-import type { ChatContext } from './memory.js';
-import { buildUniversalTimePrompt } from './timezone.js';
+import { saveCorrection, type ChatContext } from './memory.js';
+import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 
 /** Satu-satunya pesan non-AI: hanya saat SEMUA provider mati total setelah retry. */
 function statusDown(): string {
@@ -361,6 +361,21 @@ export async function autoReply(
 ): Promise<{ reply: string; escalate: boolean; via: string }> {
   const clean = userText.trim().slice(0, 32000);
   if (!clean) return { reply: statusDown(), escalate: true, via: 'empty' };
+
+  // Otomatis deteksi deklarasi lokasi tempat tinggal / keberadaan pengguna dan simpan ke memori permanen
+  if (ctx?.chatId) {
+    const locMatch = detectUserLocationDeclaration(clean);
+    if (locMatch) {
+      const correctionEntry = `Lokasi/domisili pengguna: ${locMatch.label} (Zona Waktu: ${locMatch.zone})`;
+      if (!ctx.corrections) ctx.corrections = [];
+      const alreadySaved = ctx.corrections.some((c) => c.includes(locMatch.label));
+      if (!alreadySaved) {
+        ctx.corrections.push(correctionEntry);
+        void saveCorrection(ctx.chatId, correctionEntry);
+      }
+    }
+  }
+
   try {
     const { text, via } = await chatRetry(buildMessages(clean, ctx, web), false);
     return { reply: sanitizeAssistantOutput(text), escalate: false, via };

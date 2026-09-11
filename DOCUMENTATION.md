@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.24.8  
+**Versi:** v0.24.9  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 21:10 WIB  
+**Terakhir Diperbarui:** 2026-09-11 21:30 WIB  
 
 ---
 
@@ -191,6 +191,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.24.9 - 2026-09-11 21:30 WIB
+**Comprehensive 514-Regency Indonesia Geo-Mapping, Auto-Location Persistence & Zero-Prompt-Leakage on Non-Time Queries**
+- **Pemetaan Komprehensif Seluruh Kabupaten & Kota Indonesia (`src/timezone.ts`)**:
+  - Mengatasi kendala kota seperti Cianjur, Garut, Subang, Purwakarta, dll yang sebelumnya belum terdaftar di `LOCATION_MAP` sehingga menyebabkan model AI keliru menebak zona waktu (seperti mengira Cianjur adalah WITA).
+  - Mendaftarkan seluruh 38 provinsi di Indonesia beserta ratusan kabupaten/kota lengkap ke dalam zona waktu resmi masing-masing: WIB (Jawa, Sumatera, Kalbar, Kalteng), WITA (Bali, NTB, NTT, Kalsel, Kaltim, Kaltara, Sulawesi), dan WIT (Maluku, Maluku Utara, Papua).
+- **Deteksi & Penyimpanan Otomatis Pernyataan Lokasi Teks Pengguna (`detectUserLocationDeclaration`, `src/skills.ts`)**:
+  - Mengintegrasikan deteksi otomatis deklarasi lokasi tempat tinggal atau keberadaan pengguna dari pesan teks percakapan (seperti "saya di cianjur", "aku di bali", "lagi di surabaya", atau jawaban kota saat ditanya).
+  - Secara otomatis memvalidasi dan menyimpan lokasi tersebut ke tabel Supabase `corrections` dan array `ctx.corrections` secara permanen, sehingga bot mengingat kota pengguna untuk seterusnya tanpa perlu bertanya ulang.
+- **Eliminasi Total Kebocoran Waktu & Pertanyaan Kota pada Kueri Non-Waktu (`isAskingTime`, `buildUniversalTimePrompt`)**:
+  - Mengatasi bug kritis: sebelumnya prompt aturan waktu disuntikkan secara seragam di setiap giliran chat tanpa memeriksa apakah pengguna bertanya jam, sehingga ketika pengguna sekadar membalas "lg ngerjain jurnal aja di kamar", model malah mengulangi jam dan menanyakan kembali "Kamu lagi di kota mana nih?".
+  - Memisahkan secara ketat 3 skenario konteks:
+    1. **Kueri Non-Waktu (`!isAskingTime && !userDeclaringLoc`)**: Waktu server disajikan pasif sebagai background temporal grounding, disertai larangan mutlak (*absolute directive*) bagi bot untuk mengawali jawaban dengan jam atau menanyakan kota/lokasi pengguna. Bot fokus 100% pada topik obrolan (misal membahas jurnal).
+    2. **Konfirmasi Lokasi (`userDeclaringLoc`)**: Bot mengonfirmasi kota pengguna dengan ramah, menyebutkan waktu di kotanya secara presisi, dan mencatatnya ke memori.
+    3. **Pertanyaan Waktu (`isAskingTime`)**: Jika lokasi tersimpan di profil, bot langsung menjawab jam lokasi tersebut tanpa menanyakan lokasi lagi. Jika lokasi belum diketahui, barulah bot menyebutkan rentang waktu 3 zona Indonesia dan menanyakan kotanya secara santai.
 
 ### v0.24.8 - 2026-09-11 21:10 WIB
 **Native Location Pin Processing, Anti-WIB Default Rule & Persistent Geolocation Profile**
