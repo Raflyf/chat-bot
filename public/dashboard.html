@@ -585,6 +585,81 @@
       cursor: pointer;
     }
 
+    /* Filter Bar Component */
+    .filter-dashboard-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 0.85rem 1.25rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    .filter-group-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-title-label {
+      font-size: 0.775rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .pill-filter-group {
+      display: inline-flex;
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9999px;
+      padding: 3px;
+      gap: 2px;
+      flex-wrap: wrap;
+    }
+
+    .pill-filter-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.775rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+
+    .pill-filter-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .pill-filter-btn.active {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #fff;
+      box-shadow: 0 0 12px rgba(37, 99, 235, 0.4);
+    }
+
+    .filter-badge-active {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--accent-blue);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+      margin-left: 0.4rem;
+    }
+
     /* ==========================================================================
        AUTHENTICATION GATEWAY MODAL (SLEEK KEYBOARD INPUT - NO ON-SCREEN NUMPAD)
        ========================================================================== */
@@ -957,10 +1032,33 @@
       </div>
     </header>
 
+    <!-- Global Dashboard Filters -->
+    <section class="filter-dashboard-bar">
+      <div class="filter-group-wrap">
+        <span class="filter-title-label">Rentang Waktu:</span>
+        <div class="pill-filter-group" id="time-filter-pills">
+          <button class="pill-filter-btn active" data-range="today" onclick="setTimeRange('today')">Hari Ini</button>
+          <button class="pill-filter-btn" data-range="7d" onclick="setTimeRange('7d')">7 Hari</button>
+          <button class="pill-filter-btn" data-range="14d" onclick="setTimeRange('14d')">14 Hari</button>
+          <button class="pill-filter-btn" data-range="30d" onclick="setTimeRange('30d')">30 Hari</button>
+          <button class="pill-filter-btn" data-range="all" onclick="setTimeRange('all')">Semua</button>
+        </div>
+      </div>
+
+      <div class="filter-group-wrap">
+        <span class="filter-title-label">Platform:</span>
+        <div class="pill-filter-group" id="platform-filter-pills">
+          <button class="pill-filter-btn active" data-platform="all" onclick="setPlatformFilter('all')">Semua</button>
+          <button class="pill-filter-btn" data-platform="whatsapp" onclick="setPlatformFilter('whatsapp')">WhatsApp</button>
+          <button class="pill-filter-btn" data-platform="telegram" onclick="setPlatformFilter('telegram')">Telegram</button>
+        </div>
+      </div>
+    </section>
+
     <!-- Top KPI Cards -->
     <section class="kpi-grid">
       <div class="kpi-card">
-        <div class="kpi-title">Pesan Hari Ini</div>
+        <div class="kpi-title" id="kpi-title-msgs">Pesan Hari Ini</div>
         <div class="kpi-value" id="kpi-today-msgs">-</div>
         <div class="kpi-subtext">
           <span class="badge badge-wa" id="kpi-wa">- WA</span>
@@ -975,13 +1073,13 @@
       </div>
 
       <div class="kpi-card">
-        <div class="kpi-title">Panggilan API Provider (Hari Ini)</div>
+        <div class="kpi-title" id="kpi-title-calls">Panggilan API Provider (Hari Ini)</div>
         <div class="kpi-value" id="kpi-calls-today">-</div>
         <div class="kpi-subtext" id="kpi-total-keys">- Keys Aktif Terpantau</div>
       </div>
 
       <div class="kpi-card">
-        <div class="kpi-title">Model Terpopuler Hari Ini</div>
+        <div class="kpi-title" id="kpi-title-model">Model Terpopuler Hari Ini</div>
         <div class="kpi-value" id="kpi-top-model" style="font-size: 1.25rem; word-break: break-all;">-</div>
         <div class="kpi-subtext">Distribusi Beban Otomatis</div>
       </div>
@@ -989,9 +1087,26 @@
 
     <!-- Pool API Key Matrix -->
     <section>
-      <div class="section-header">
-        <h2 class="section-title">Matriks Penggunaan Pool API Key</h2>
-        <span style="font-size: 0.8rem; color: var(--text-muted);">Reset Harian 00:00 UTC</span>
+      <div class="section-header" style="flex-wrap: wrap; gap: 0.75rem;">
+        <div>
+          <h2 class="section-title" id="pool-section-title">Matriks Penggunaan Pool API Key</h2>
+          <span style="font-size: 0.8rem; color: var(--text-muted);" id="pool-reset-label">Reset Harian 00:00 UTC</span>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <div class="pill-filter-group" id="provider-filter-pills">
+            <button class="pill-filter-btn active" data-provider="all" onclick="setProviderFilter('all')">Semua Provider</button>
+            <button class="pill-filter-btn" data-provider="groq" onclick="setProviderFilter('groq')">Groq</button>
+            <button class="pill-filter-btn" data-provider="gemini" onclick="setProviderFilter('gemini')">Gemini</button>
+            <button class="pill-filter-btn" data-provider="openrouter" onclick="setProviderFilter('openrouter')">OpenRouter</button>
+            <button class="pill-filter-btn" data-provider="ollama" onclick="setProviderFilter('ollama')">Ollama</button>
+          </div>
+          <select id="key-status-filter" class="filter-select" onchange="setKeyStatusFilter(this.value)">
+            <option value="all">Semua Status Key</option>
+            <option value="healthy">Sehat (&lt;80%)</option>
+            <option value="warning">Waspada (&ge;80%)</option>
+            <option value="capped">Limit Habis (Capped)</option>
+          </select>
+        </div>
       </div>
       <div class="pool-grid" id="pool-grid">
         <!-- Dimuat dinamis -->
@@ -1001,14 +1116,14 @@
     <!-- Model Usage & Media Types -->
     <section class="dual-grid">
       <div class="panel-card">
-        <h2 class="section-title">Distribusi Model LLM Hari Ini</h2>
+        <h2 class="section-title" id="models-section-title">Distribusi Model LLM Hari Ini</h2>
         <div class="models-list" id="models-list">
           <div style="color: var(--text-dim); font-size: 0.85rem;">Memuat metrik...</div>
         </div>
       </div>
 
       <div class="panel-card">
-        <h2 class="section-title">Pemrosesan Tipe Media (Hari Ini)</h2>
+        <h2 class="section-title" id="media-section-title">Pemrosesan Tipe Media (Hari Ini)</h2>
         <div class="media-badges-grid">
           <div class="media-box">
             <div class="media-box-count" id="media-text">0</div>
@@ -1040,7 +1155,7 @@
 
     <!-- SECTION: EVALUASI PERCAKAPAN & DATASET TRAINING AI -->
     <section class="activity-card" id="dataset-section">
-      <div class="section-header">
+      <div class="section-header" style="flex-wrap: wrap; gap: 0.75rem;">
         <div>
           <h2 class="section-title">Evaluasi &amp; Dataset Training AI (Fine-Tuning / Audit)</h2>
           <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
@@ -1048,11 +1163,25 @@
           </p>
         </div>
         <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
-          <input type="text" id="dataset-search" class="search-input" placeholder="Cari pertanyaan atau jawaban..." oninput="debounceDatasetSearch()">
+          <input type="text" id="dataset-search" class="search-input" placeholder="Cari pertanyaan / jawaban..." oninput="debounceDatasetSearch()">
+          <select id="dataset-range-filter" class="filter-select" onchange="fetchDataset()">
+            <option value="all">Semua Waktu</option>
+            <option value="today">Hari Ini</option>
+            <option value="7d">7 Hari Terakhir</option>
+            <option value="14d">14 Hari Terakhir</option>
+            <option value="30d">30 Hari Terakhir</option>
+          </select>
           <select id="dataset-platform-filter" class="filter-select" onchange="fetchDataset()">
             <option value="">Semua Platform</option>
             <option value="whatsapp">WhatsApp</option>
             <option value="telegram">Telegram</option>
+          </select>
+          <select id="dataset-model-filter" class="filter-select" onchange="fetchDataset()">
+            <option value="">Semua Model</option>
+            <option value="groq">Groq (Qwen/Whisper)</option>
+            <option value="gemini">Gemini</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="ollama">Ollama</option>
           </select>
           <button class="btn btn-primary" onclick="downloadDataset('jsonl')" title="Unduh format JSONL untuk Fine-Tuning LLM">
             <span>Unduh JSONL</span>
@@ -1085,8 +1214,33 @@
 
     <!-- Live Activity Log -->
     <section class="activity-card">
-      <div class="section-header">
-        <h2 class="section-title">Aktivitas Percakapan Terbaru (Live Log)</h2>
+      <div class="section-header" style="flex-wrap: wrap; gap: 0.75rem;">
+        <div>
+          <h2 class="section-title">Aktivitas Percakapan Terbaru (Live Log)</h2>
+          <span style="font-size: 0.8rem; color: var(--text-muted);" id="activity-count-label">50 Pesan Terbaru</span>
+        </div>
+        <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="activity-search" class="search-input" placeholder="Filter teks / chat ID..." oninput="filterActivityTable()" style="min-width: 180px;">
+          <select id="activity-platform-filter" class="filter-select" onchange="filterActivityTable()">
+            <option value="all">Semua Platform</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="telegram">Telegram</option>
+          </select>
+          <select id="activity-role-filter" class="filter-select" onchange="filterActivityTable()">
+            <option value="all">Semua Peran</option>
+            <option value="user">User</option>
+            <option value="bot">Bot / Assistant</option>
+          </select>
+          <select id="activity-type-filter" class="filter-select" onchange="filterActivityTable()">
+            <option value="all">Semua Tipe Media</option>
+            <option value="text">Teks</option>
+            <option value="voice">Voice Note (VN)</option>
+            <option value="document">Dokumen (PDF/Word)</option>
+            <option value="image">Foto / Vision</option>
+            <option value="sticker">Stiker</option>
+            <option value="video">Video</option>
+          </select>
+        </div>
       </div>
       <div class="table-container">
         <table>
@@ -1452,8 +1606,54 @@
     }
 
     // =========================================================================
-    // FETCH MONITORING STATS
+    // MULTI-LEVEL FILTERING STATE & DASHBOARD DATA LOADER
     // =========================================================================
+    let currentTimeRange = "today";
+    let currentPlatform = "all";
+    let currentProviderFilter = "all";
+    let currentKeyStatusFilter = "all";
+    let cachedDashboardData = null;
+    let cachedRecentActivity = [];
+
+    function setTimeRange(range) {
+      currentTimeRange = range;
+      document.querySelectorAll("#time-filter-pills .pill-filter-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-range") === range);
+      });
+      // Sinkronkan juga filter rentang pada dataset
+      const dsRange = document.getElementById("dataset-range-filter");
+      if (dsRange) dsRange.value = range;
+
+      fetchData();
+      fetchDataset();
+    }
+
+    function setPlatformFilter(platform) {
+      currentPlatform = platform;
+      document.querySelectorAll("#platform-filter-pills .pill-filter-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-platform") === platform);
+      });
+      // Sinkronkan juga filter platform pada dataset
+      const dsPlatform = document.getElementById("dataset-platform-filter");
+      if (dsPlatform) dsPlatform.value = platform === "all" ? "" : platform;
+
+      fetchData();
+      fetchDataset();
+    }
+
+    function setProviderFilter(provider) {
+      currentProviderFilter = provider;
+      document.querySelectorAll("#provider-filter-pills .pill-filter-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-provider") === provider);
+      });
+      if (cachedDashboardData) renderPoolMatrix(cachedDashboardData);
+    }
+
+    function setKeyStatusFilter(status) {
+      currentKeyStatusFilter = status;
+      if (cachedDashboardData) renderPoolMatrix(cachedDashboardData);
+    }
+
     async function fetchData() {
       const token = getStoredToken();
       if (!token) return;
@@ -1462,7 +1662,8 @@
       if (btnIcon) btnIcon.innerHTML = '<span class="pulse-dot"></span>';
 
       try {
-        const res = await fetch("/api/stats", {
+        const url = `/api/stats?range=${encodeURIComponent(currentTimeRange)}&platform=${encodeURIComponent(currentPlatform)}`;
+        const res = await fetch(url, {
           headers: { "x-admin-token": token },
         });
 
@@ -1474,6 +1675,8 @@
 
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
+        cachedDashboardData = data;
+        cachedRecentActivity = data.recentActivity || [];
         renderDashboard(data);
       } catch (err) {
         console.error("Gagal mengambil metrik:", err);
@@ -1485,82 +1688,60 @@
     function renderDashboard(data) {
       if (!data || !data.ok) return;
 
-      // Header
+      const rangeLabel = data.rangeLabel || "Hari Ini";
+      const platformLabel = data.platform === "whatsapp" ? " (WhatsApp)" : data.platform === "telegram" ? " (Telegram)" : "";
+
+      // Header Info
       document.getElementById("bot-name").textContent = data.botName || "FreeAIBot Console";
       document.getElementById("server-time").textContent =
-        "Tanggal Data: " + data.today + " \u2022 Sinkronisasi: " + formatTime(data.serverTime) + " WIB";
+        "Sinkronisasi: " + formatTime(data.serverTime) + " WIB \u2022 Periode: " + rangeLabel + platformLabel;
 
-      // KPI
-      document.getElementById("kpi-today-msgs").textContent = data.summary.totalMessagesToday.toLocaleString();
-      document.getElementById("kpi-total-msgs").textContent = data.summary.totalMessagesAllTime.toLocaleString();
-      document.getElementById("kpi-wa").textContent = data.summary.whatsappToday + " WA";
-      document.getElementById("kpi-tele").textContent = data.summary.telegramToday + " Tele";
-      document.getElementById("kpi-calls-today").textContent = data.summary.totalCallsToday.toLocaleString() + " calls";
-      document.getElementById("kpi-total-keys").textContent = data.summary.totalKeys + " Keys Aktif Terpantau";
+      // KPI Titles & Values
+      document.getElementById("kpi-title-msgs").textContent = `Pesan (${rangeLabel})`;
+      document.getElementById("kpi-today-msgs").textContent = (data.summary.totalMessagesPeriod ?? data.summary.totalMessagesToday ?? 0).toLocaleString();
+      document.getElementById("kpi-total-msgs").textContent = (data.summary.totalMessagesAllTime ?? 0).toLocaleString();
+      document.getElementById("kpi-wa").textContent = (data.summary.whatsappPeriod ?? data.summary.whatsappToday ?? 0) + " WA";
+      document.getElementById("kpi-tele").textContent = (data.summary.telegramPeriod ?? data.summary.telegramToday ?? 0) + " Tele";
 
+      document.getElementById("kpi-title-calls").textContent = `Panggilan API (${rangeLabel})`;
+      document.getElementById("kpi-calls-today").textContent = (data.summary.totalCallsPeriod ?? data.summary.totalCallsToday ?? 0).toLocaleString() + " calls";
+      document.getElementById("kpi-total-keys").textContent = data.summary.totalKeys + " Keys Terpantau";
+
+      document.getElementById("kpi-title-model").textContent = `Model Terpopuler (${rangeLabel})`;
       const topModel = data.modelsBreakdown && data.modelsBreakdown.length > 0
         ? data.modelsBreakdown[0].name
         : "Menunggu panggilan";
       document.getElementById("kpi-top-model").textContent = topModel;
 
-      // Pools Matrix
-      const poolGrid = document.getElementById("pool-grid");
-      poolGrid.innerHTML = "";
+      // Pool reset label
+      const poolReset = document.getElementById("pool-reset-label");
+      if (poolReset) {
+        if (data.range === "today") poolReset.textContent = "Reset Harian 00:00 UTC";
+        else poolReset.textContent = `Akumulasi ${rangeLabel}`;
+      }
 
-      (data.providers || []).forEach(p => {
-        const card = document.createElement("div");
-        card.className = "provider-card";
+      // Dynamic Section Titles
+      const modelsH = document.getElementById("models-section-title");
+      if (modelsH) modelsH.textContent = `Distribusi Model LLM (${rangeLabel})`;
+      const mediaH = document.getElementById("media-section-title");
+      if (mediaH) mediaH.textContent = `Pemrosesan Tipe Media (${rangeLabel})`;
 
-        let keysHtml = "";
-        p.keys.forEach(k => {
-          let progressColorClass = "progress-emerald";
-          if (k.percentUsed > 85) progressColorClass = "progress-rose";
-          else if (k.percentUsed > 50) progressColorClass = "progress-amber";
-
-          keysHtml += `
-            <div class="key-row">
-              <div class="key-info-line">
-                <span class="key-label">${k.suffix}</span>
-                <span class="key-stats">${k.used} / ${k.dailyCap} (${k.percentUsed}%)</span>
-              </div>
-              <div class="progress-bar-bg">
-                <div class="progress-bar-fill ${progressColorClass}" style="width: ${Math.min(100, k.percentUsed)}%"></div>
-              </div>
-            </div>
-          `;
-        });
-
-        card.innerHTML = `
-          <div class="provider-header">
-            <div>
-              <div class="provider-name">${p.displayName}</div>
-              <div class="provider-models">${p.primaryModel}</div>
-            </div>
-            <div class="provider-summary-stat">
-              <div class="provider-usage-text">${p.usedToday} Calls</div>
-              <div class="provider-cap-text">${p.keyCount} Keys &bull; Cap: ${p.totalCap}/hari</div>
-            </div>
-          </div>
-          <div class="keys-list">
-            ${keysHtml}
-          </div>
-        `;
-        poolGrid.appendChild(card);
-      });
+      // Render Pools Matrix
+      renderPoolMatrix(data);
 
       // Models Breakdown
       const modelsList = document.getElementById("models-list");
       modelsList.innerHTML = "";
       if (!data.modelsBreakdown || data.modelsBreakdown.length === 0) {
-        modelsList.innerHTML = `<div style="color: var(--text-dim); font-size: 0.85rem;">Belum ada riwayat model hari ini.</div>`;
+        modelsList.innerHTML = `<div style="color: var(--text-dim); font-size: 0.85rem;">Belum ada riwayat model pada periode ini.</div>`;
       } else {
         data.modelsBreakdown.forEach(m => {
           const row = document.createElement("div");
           row.className = "model-item";
           row.innerHTML = `
             <div class="model-label-row">
-              <span class="model-name">${m.name}</span>
-              <span class="model-count">${m.count} (${m.percent}%)</span>
+              <span class="model-name">${escapeHtml(m.name)}</span>
+              <span class="model-count">${m.count.toLocaleString()} (${m.percent}%)</span>
             </div>
             <div class="progress-bar-bg">
               <div class="progress-bar-fill progress-emerald" style="width: ${m.percent}%"></div>
@@ -1572,46 +1753,149 @@
 
       // Media Counts
       const mc = data.mediaCounts || {};
-      document.getElementById("media-text").textContent = mc.text || 0;
-      document.getElementById("media-voice").textContent = mc.voice || 0;
-      document.getElementById("media-image").textContent = mc.image || 0;
-      document.getElementById("media-sticker").textContent = mc.sticker || 0;
-      document.getElementById("media-doc").textContent = mc.document || 0;
-      document.getElementById("media-video").textContent = mc.video || 0;
+      document.getElementById("media-text").textContent = (mc.text || 0).toLocaleString();
+      document.getElementById("media-voice").textContent = (mc.voice || 0).toLocaleString();
+      document.getElementById("media-image").textContent = (mc.image || 0).toLocaleString();
+      document.getElementById("media-sticker").textContent = (mc.sticker || 0).toLocaleString();
+      document.getElementById("media-doc").textContent = (mc.document || 0).toLocaleString();
+      document.getElementById("media-video").textContent = (mc.video || 0).toLocaleString();
 
-      // Activity Table
-      const tbody = document.getElementById("activity-tbody");
-      tbody.innerHTML = "";
+      // Render Activity Table with Active Filters
+      filterActivityTable();
+    }
 
-      if (!data.recentActivity || data.recentActivity.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada aktivitas percakapan.</td></tr>`;
-      } else {
-        data.recentActivity.forEach(act => {
-          const tr = document.createElement("tr");
+    function renderPoolMatrix(data) {
+      const poolGrid = document.getElementById("pool-grid");
+      if (!poolGrid) return;
+      poolGrid.innerHTML = "";
 
-          const platformBadge = act.platform === "whatsapp"
-            ? `<span class="badge badge-wa">WhatsApp</span>`
-            : `<span class="badge badge-tele">Telegram</span>`;
+      const pools = data.pools || data.providers || [];
+      const filteredPools = pools.filter(p => {
+        if (currentProviderFilter !== "all" && p.kind !== currentProviderFilter) return false;
+        return true;
+      });
 
-          const roleBadge = act.role === "user"
-            ? `<span class="role-badge role-user">User</span>`
-            : `<span class="role-badge role-bot">Bot</span>`;
-
-          const typeClass = "type-" + act.type;
-          const typeBadge = `<span class="type-badge ${typeClass}">${act.type.toUpperCase()}</span>`;
-
-          tr.innerHTML = `
-            <td style="color: var(--text-dim); font-family: var(--font-mono);">${formatTime(act.createdAt)}</td>
-            <td>${platformBadge}</td>
-            <td style="font-family: var(--font-mono);">${act.chatIdMasked}</td>
-            <td>${roleBadge}</td>
-            <td>${typeBadge}</td>
-            <td><span class="model-tag">${act.via || "-"}</span></td>
-            <td><div class="msg-preview" title="${act.preview.replace(/"/g, '&quot;')}">${act.preview}</div></td>
-          `;
-          tbody.appendChild(tr);
-        });
+      if (filteredPools.length === 0) {
+        poolGrid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 2rem;">Tidak ada pool provider yang sesuai filter.</div>`;
+        return;
       }
+
+      filteredPools.forEach(p => {
+        const card = document.createElement("div");
+        card.className = "provider-card";
+
+        let keysHtml = "";
+        const filteredKeys = (p.keys || []).filter(k => {
+          if (currentKeyStatusFilter === "healthy" && k.status !== "healthy") return false;
+          if (currentKeyStatusFilter === "warning" && k.status !== "warning") return false;
+          if (currentKeyStatusFilter === "capped" && k.status !== "capped") return false;
+          return true;
+        });
+
+        if (filteredKeys.length === 0) {
+          keysHtml = `<div style="color: var(--text-dim); font-size: 0.8rem; padding: 0.5rem 0;">Tidak ada key dengan status ${currentKeyStatusFilter}.</div>`;
+        } else {
+          filteredKeys.forEach(k => {
+            let progressColorClass = "progress-emerald";
+            if (k.status === "capped" || k.percent >= 100) progressColorClass = "progress-rose";
+            else if (k.status === "warning" || k.percent >= 80) progressColorClass = "progress-amber";
+
+            const capLabel = k.cap > 0 ? `${k.used} / ${k.cap} (${k.percent}%)` : `${k.used} calls`;
+
+            keysHtml += `
+              <div class="key-row">
+                <div class="key-info-line">
+                  <span class="key-label">${escapeHtml(k.suffix)}</span>
+                  <span class="key-stats">${capLabel}</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill ${progressColorClass}" style="width: ${Math.min(100, k.percent || 0)}%"></div>
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        const usedValue = p.usedPeriod ?? p.usedToday ?? 0;
+        const capInfo = p.totalCap > 0 ? `Cap: ${p.totalCap.toLocaleString()}` : "Uncapped";
+
+        card.innerHTML = `
+          <div class="provider-header">
+            <div>
+              <div class="provider-name">${escapeHtml(p.displayName)}</div>
+              <div class="provider-models">${escapeHtml(p.primaryModel)}</div>
+            </div>
+            <div class="provider-summary-stat">
+              <div class="provider-usage-text">${usedValue.toLocaleString()} Calls</div>
+              <div class="provider-cap-text">${p.keyCount} Keys &bull; ${capInfo}</div>
+            </div>
+          </div>
+          <div class="keys-list">
+            ${keysHtml}
+          </div>
+        `;
+        poolGrid.appendChild(card);
+      });
+    }
+
+    function filterActivityTable() {
+      const tbody = document.getElementById("activity-tbody");
+      if (!tbody) return;
+
+      const search = (document.getElementById("activity-search")?.value || "").toLowerCase().trim();
+      const platform = document.getElementById("activity-platform-filter")?.value || "all";
+      const role = document.getElementById("activity-role-filter")?.value || "all";
+      const type = document.getElementById("activity-type-filter")?.value || "all";
+
+      const filtered = cachedRecentActivity.filter(act => {
+        if (platform !== "all" && act.platform !== platform) return false;
+        if (role !== "all" && act.role !== role) return false;
+        if (type !== "all" && act.type !== type) return false;
+        if (search) {
+          const matchMsg = (act.preview || "").toLowerCase().includes(search);
+          const matchChat = (act.chatIdMasked || "").toLowerCase().includes(search);
+          const matchVia = (act.via || "").toLowerCase().includes(search);
+          if (!matchMsg && !matchChat && !matchVia) return false;
+        }
+        return true;
+      });
+
+      const countLabel = document.getElementById("activity-count-label");
+      if (countLabel) {
+        countLabel.textContent = `${filtered.length} dari ${cachedRecentActivity.length} Aktivitas`;
+      }
+
+      tbody.innerHTML = "";
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">Tidak ada aktivitas percakapan yang cocok dengan filter.</td></tr>`;
+        return;
+      }
+
+      filtered.forEach(act => {
+        const tr = document.createElement("tr");
+
+        const platformBadge = act.platform === "whatsapp"
+          ? `<span class="badge badge-wa">WhatsApp</span>`
+          : `<span class="badge badge-tele">Telegram</span>`;
+
+        const roleBadge = act.role === "user"
+          ? `<span class="role-badge role-user">User</span>`
+          : `<span class="role-badge role-bot">Bot</span>`;
+
+        const typeClass = "type-" + act.type;
+        const typeBadge = `<span class="type-badge ${typeClass}">${act.type.toUpperCase()}</span>`;
+
+        tr.innerHTML = `
+          <td style="color: var(--text-dim); font-family: var(--font-mono);">${formatTime(act.createdAt)}</td>
+          <td>${platformBadge}</td>
+          <td style="font-family: var(--font-mono);">${escapeHtml(act.chatIdMasked)}</td>
+          <td>${roleBadge}</td>
+          <td>${typeBadge}</td>
+          <td><span class="model-tag">${escapeHtml(act.via || "-")}</span></td>
+          <td><div class="msg-preview" title="${escapeHtml(act.preview)}">${escapeHtml(act.preview)}</div></td>
+        `;
+        tbody.appendChild(tr);
+      });
     }
 
     // =========================================================================
@@ -1627,11 +1911,13 @@
       if (!token) return;
 
       const q = document.getElementById("dataset-search").value.trim();
+      const range = document.getElementById("dataset-range-filter")?.value || "all";
       const platform = document.getElementById("dataset-platform-filter").value;
+      const model = document.getElementById("dataset-model-filter")?.value || "";
       const tbody = document.getElementById("dataset-tbody");
 
       try {
-        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&platform=${encodeURIComponent(platform)}&limit=100`;
+        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&limit=100`;
         const res = await fetch(url, {
           headers: { "x-admin-token": token },
         });
@@ -1663,8 +1949,8 @@
               <div style="margin-top: 0.25rem;">${platformBadge}</div>
             </td>
             <td>
-              <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim);">${p.chatIdMasked}</div>
-              <div style="margin-top: 0.2rem;"><span class="model-tag">${p.via || "Router"}</span></div>
+              <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim);">${escapeHtml(p.chatIdMasked)}</div>
+              <div style="margin-top: 0.2rem;"><span class="model-tag">${escapeHtml(p.via || "Router")}</span></div>
             </td>
             <td>
               <div class="dataset-prompt">${escapeHtml(p.userPrompt)}</div>
@@ -1690,8 +1976,11 @@
       if (!token) return;
 
       const q = document.getElementById("dataset-search").value.trim();
+      const range = document.getElementById("dataset-range-filter")?.value || "all";
       const platform = document.getElementById("dataset-platform-filter").value;
-      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&platform=${encodeURIComponent(platform)}&limit=1000&token=${encodeURIComponent(token)}`;
+      const model = document.getElementById("dataset-model-filter")?.value || "";
+
+      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&limit=1000&token=${encodeURIComponent(token)}`;
 
       const a = document.createElement("a");
       a.href = url;
