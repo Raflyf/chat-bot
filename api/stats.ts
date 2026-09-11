@@ -80,8 +80,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   try {
-    // 1. Ambil data kuota dari provider_quota sesuai rentang waktu
-    let quotaQuery = c.from('provider_quota').select('*');
+    // 1. Siapkan query kuota provider (hanya kolom yang diperlukan)
+    let quotaQuery = c.from('provider_quota').select('kind, key_suffix, used');
     if (startDayStr) {
       if (range === 'today') {
         quotaQuery = quotaQuery.eq('day', startDayStr);
@@ -89,7 +89,62 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         quotaQuery = quotaQuery.gte('day', startDayStr);
       }
     }
-    const { data: quotasData } = await quotaQuery;
+
+    // 2. Siapkan query count pesan per platform
+    let waPeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'whatsapp');
+    let telePeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'telegram');
+
+    if (startDateIso) {
+      waPeriodQuery = waPeriodQuery.gte('created_at', startDateIso);
+      telePeriodQuery = telePeriodQuery.gte('created_at', startDateIso);
+    }
+
+    // 3. Siapkan query sampel representatif distribusi model AI (terbaru, limit 400 untuk respon instan)
+    let assistantQuery = c
+      .from('messages')
+      .select('via')
+      .eq('role', 'assistant')
+      .order('id', { ascending: false })
+      .limit(400);
+
+    if (startDateIso) {
+      assistantQuery = assistantQuery.gte('created_at', startDateIso);
+    }
+    if (filterPlatform && filterPlatform !== 'all') {
+      assistantQuery = assistantQuery.eq('platform', filterPlatform);
+    }
+
+    // 4. Siapkan query sampel representatif media pesan pengguna (terbaru, limit 300 untuk respon instan)
+    let userMsgsQuery = c
+      .from('messages')
+      .select('content')
+      .eq('role', 'user')
+      .order('id', { ascending: false })
+      .limit(300);
+
+    if (startDateIso) {
+      userMsgsQuery = userMsgsQuery.gte('created_at', startDateIso);
+    }
+    if (filterPlatform && filterPlatform !== 'all') {
+      userMsgsQuery = userMsgsQuery.eq('platform', filterPlatform);
+    }
+
+    // 5. Eksekusi SEMUA query database secara PARALEL (1 kali roundtrip network)
+    const [
+      { data: quotasData },
+      { count: totalMessagesAllTime },
+      { count: waPeriod },
+      { count: telePeriod },
+      { data: assistantMsgs },
+      { data: userMsgs },
+    ] = await Promise.all([
+      quotaQuery,
+      c.from('messages').select('*', { count: 'exact', head: true }),
+      waPeriodQuery,
+      telePeriodQuery,
+      assistantQuery,
+      userMsgsQuery,
+    ]);
 
     const quotaMap = new Map<string, number>();
     for (const q of quotasData ?? []) {
@@ -97,42 +152,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       quotaMap.set(key, (quotaMap.get(key) || 0) + (q.used || 0));
     }
 
-    // 2. Hitung jumlah total pesan all-time & pesan dalam rentang waktu
-    let msgPeriodQuery = c.from('messages').select('*', { count: 'exact', head: true });
-    let waPeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'whatsapp');
-    let telePeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'telegram');
-
-    if (startDateIso) {
-      msgPeriodQuery = msgPeriodQuery.gte('created_at', startDateIso);
-      waPeriodQuery = waPeriodQuery.gte('created_at', startDateIso);
-      telePeriodQuery = telePeriodQuery.gte('created_at', startDateIso);
-    }
-
-    if (filterPlatform && filterPlatform !== 'all') {
-      msgPeriodQuery = msgPeriodQuery.eq('platform', filterPlatform);
-    }
-
-    const [
-      { count: totalMessagesAllTime },
-      { count: totalMessagesPeriod },
-      { count: waPeriod },
-      { count: telePeriod },
-    ] = await Promise.all([
-      c.from('messages').select('*', { count: 'exact', head: true }),
-      msgPeriodQuery,
-      waPeriodQuery,
-      telePeriodQuery,
-    ]);
-
-    // 3. Ambil distribusi model 'via' dalam rentang waktu
-    let assistantQuery = c.from('messages').select('via').eq('role', 'assistant');
-    if (startDateIso) {
-      assistantQuery = assistantQuery.gte('created_at', startDateIso);
-    }
-    if (filterPlatform && filterPlatform !== 'all') {
-      assistantQuery = assistantQuery.eq('platform', filterPlatform);
-    }
-    const { data: assistantMsgs } = await assistantQuery;
+    const totalMessagesPeriod =
+      filterPlatform === 'whatsapp'
+        ? (waPeriod ?? 0)
+        : filterPlatform === 'telegram'
+        ? (telePeriod ?? 0)
+        : (waPeriod ?? 0) + (telePeriod ?? 0);
 
     const modelCounts: Record<string, number> = {};
     let totalModelCalls = 0;
@@ -239,16 +264,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       };
     });
 
-    // 5. Hitung jenis media dari pesan user dalam rentang waktu
-    let userMsgsQuery = c.from('messages').select('content').eq('role', 'user');
-    if (startDateIso) {
-      userMsgsQuery = userMsgsQuery.gte('created_at', startDateIso);
-    }
-    if (filterPlatform && filterPlatform !== 'all') {
-      userMsgsQuery = userMsgsQuery.eq('platform', filterPlatform);
-    }
-    const { data: userMsgs } = await userMsgsQuery;
-
+    // 6. Hitung jenis media dari sampel pesan pengguna
     const mediaCounts = {
       voice: 0,
       document: 0,
@@ -263,7 +279,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       mediaCounts[type]++;
     }
 
-    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=30');
     res.status(200).json({
       ok: true,
       botName: config.botName,

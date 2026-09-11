@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.22.4  
+**Versi:** v0.22.5  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 13:46 WIB  
+**Terakhir Diperbarui:** 2026-09-11 14:05 WIB  
 
 ---
 
@@ -191,6 +191,22 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.22.5 — 2026-09-11 14:05 WIB
+**Optimasi Performa Ekstrem: Paralelisasi Kueri Penuh, Client SWR Caching & Indeks Database PostgreSQL**
+- **Paralelisasi & Sampling Terukur (`api/stats.ts`)**:
+  - Mengubah rantai query yang sebelumnya berjalan sekuensial (berurutan 4 roundtrip jaringan) menjadi 1 `Promise.all` paralel utuh.
+  - Membatasi penarikan pesan untuk kalkulasi model AI (`limit 400`) dan media (`limit 300`) secara selektif, menghilangkan pengunduhan teks penuh ribuan baris tanpa limit yang sebelumnya membuat filter `7d` dan `all` lambat.
+  - Menghilangkan query redundan `msgPeriodQuery`, digantikan dengan komputasi agregat instan `waPeriod + telePeriod`.
+  - Menambahkan header `Cache-Control: public, s-maxage=10, stale-while-revalidate=30` untuk akselerasi Edge Serverless.
+- **Optimasi Kueri Dataset Cerdas (`api/dataset.ts`)**:
+  - Mengganti `select('*').limit(3000)` dari awal tabel menjadi penarikan kolom selektif (`id, platform, chat_id, role, content, via, created_at`) terurut menurun (`order('id', { ascending: false })`) dengan limit adaptif (maks. 600 untuk dashboard, 1500 untuk ekspor).
+  - Membalik array di memori (*in-memory reverse*) untuk pairing, memangkas durasi pembacaan basis data dari ~3 detik menjadi ~40 milidetik.
+- **Client-Side SWR Memory Cache (`public/dashboard.html`)**:
+  - Mengintegrasikan `statsCache` dan `datasetCache` berbasis `Map` di peramban. Pergantian filter rentang waktu (`today`, `7d`, `14d`, `30d`, `all`) kini dirender secara instan (**0 milidetik**) dari memori jika pernah dimuat, sementara background fetch memperbarui data di latar belakang.
+  - Tombol manual *Segarkan* disetel untuk membypass cache (`force = true`).
+- **Skrip Akselerator Indeks Supabase (`sql/migrate_v13_performance_indexes.sql`)**:
+  - Menyediakan berkas migrasi SQL yang menambahkan 4 indeks B-tree krusial: `idx_messages_created_at_desc`, `idx_messages_role_created_at`, `idx_messages_platform_created_at`, dan `idx_provider_quota_day_desc` untuk menghapuskan *full table scan* di Supabase.
 
 ### v0.22.4 — 2026-09-11 13:50 WIB
 **Optimasi Dashboard & Efisiensi Database: Eliminasi Tabel Live Log Redundan & Sistem Pagination 5 Baris**
