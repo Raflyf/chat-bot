@@ -1,11 +1,11 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.26.0  
+**Versi:** v0.25.5  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 00:30 WIB  
+**Terakhir Diperbarui:** 2026-09-12 00:45 WIB  
 
 ---
 
-## Ringkasan Pembaruan v0.26.0 (Sinkronisasi Model Aktif ke Dashboard Monitor & Label Kapabilitas)
+## Ringkasan Pembaruan v0.25.5 (Sinkronisasi Model Aktif Dashboard Monitor & Perapihan Tata Letak)
 1. **Sinkronisasi Katalog Model Lengkap ke Dashboard (`public/dashboard.html`, `api/stats.ts`)**:
    - Seluruh rantai failover model aktif (19 model) terpetakan 100% pada matriks kartu inferensi:
      - xKiro (11 model): Qwen 3.8 Max Free, Qwen 3.6 Plus Free, Mistral Large 2512, Mistral Medium 3.5, SenseNova 6.8 Flash-Lite, DeepSeek V4 Pro, DeepSeek V4 Flash, MiniMax M2.7 Highspeed, MiniMax M3 Free, Mistral Codestral 2508, Qwen 3.7 Plus Free.
@@ -212,6 +212,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.5 - 2026-09-12 00:45 WIB
+**Sinkronisasi Model Aktif ke Dashboard Monitor, Perapihan Tata Letak Kartu #1 & Pembersihan Judul Provider**
+- **Sinkronisasi Katalog Model Lengkap (`public/dashboard.html`, `api/stats.ts`)**:
+  - Seluruh 19 model aktif rantai failover runtime (xKiro 11 model, Groq 3 model, Gemini 2 model, OpenRouter 3 model) terdaftar 100% pada matriks kartu inferensi dashboard.
+  - Endpoint `api/stats.ts` meneruskan properti `allModels` untuk setiap pool provider sehingga antarmuka dashboard memiliki visibilitas penuh atas seluruh model primer dan model cadangannya.
+- **Perapihan Tata Letak Kartu #1 & Penataan Lencana Kapabilitas (`public/dashboard.html`)**:
+  - Memperbaiki lencana status aktif (`.badge-active-live`) dengan `white-space: nowrap` dan `flex-shrink: 0`, mengeliminasi pembungkusan teks dua baris ("AKTIF TERBARU") yang merusak proporsi visual kartu.
+  - Memindahkan lencana kapabilitas (`Code`, `Reasoning`, `Vision`, `Voice Note`, `Fast Text`) ke baris khusus (`.card-caps-row`) di bawah nama model, menjaga baris atas kartu tetap bersih dan seimbang.
+  - Menghapus imbuhan provider dalam tanda kurung pada nama model katalog (misal `DeepSeek V4 Pro` alih-alih `DeepSeek V4 Pro (xKiro)`).
+- **Pembersihan Nama Model Redundan pada Judul Provider (`api/stats.ts`, `public/dashboard.html`)**:
+  - Mengubah `displayName` di `api/stats.ts` menjadi nama provider murni tanpa embel-embel nama model di dalam tanda kurung (`xKiro Gateway`, `Groq Cloud API`, `Google Gemini API`, `OpenRouter AI`).
+  - Mengubah judul kolom tabel di `public/dashboard.html` dari `Provider & Model Flagship` menjadi `Provider`.
+- **Perbaikan Inferensi Tipe Data Serverless (`api/stats.ts`)**:
+  - Menyelesaikan error kompilasi TypeScript pada `liveResults` dengan mendeklarasikan tipe eksplisit `XkiroLiveItem[]` dan `OrLiveItem[]`, mencegah union collapse pada array perantara.
 
 ### v0.25.4 - 2026-09-12 00:20 WIB
 **Penyelarasan Model xKiro: SenseNova 6.8, Mistral Medium 3.5 & Eliminasi Model Berbayar**
