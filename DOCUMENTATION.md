@@ -19,6 +19,10 @@
 3. **Penyelarasan Model Multimodal & Media Standby**:
    - Model multimodal vision tervalidasi aktif untuk pemrosesan gambar, foto, PDF, dan dokumen.
    - Pipeline audio Voice Note (VN) dan media WhatsApp/Telegram standby penuh tanpa kendala.
+4. **Pembersihan Tampilan Antarmuka & Tata Letak Kartu Model (`public/dashboard.html`, `api/stats.ts`)**:
+   - Menghapus penyebutan nama model redundan pada judul provider (`displayName`) di kartu pool dan tabel matriks token, sehingga hanya menampilkan identitas provider murni (seperti `xKiro Gateway`).
+   - Merapikan kartu model aktif (#1): menambahkan properti `white-space: nowrap` dan memindahkan lencana kapabilitas ke baris khusus (`card-caps-row`) di bawah nama model agar tidak bertumpuk atau terpotong pada layar berukuran padat.
+   - Menghilangkan imbuhan nama provider dalam tanda kurung pada nama model di katalog kartu inferensi.
 
 ---
 
