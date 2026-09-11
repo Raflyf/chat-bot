@@ -6,6 +6,7 @@ import { saveMessage } from './db.js';
 import { getContext, noteExchange, saveCorrection } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
+import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 
 let sharedBot: TelegramBot | null = null;
 
@@ -252,6 +253,19 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         }
         return;
       }
+    }
+
+    // 6b. Lokasi Pengguna (Location Pin / Live Location)
+    if (msg.location) {
+      const lat = msg.location.latitude;
+      const lon = msg.location.longitude;
+      const tzInfo = resolveTimezoneFromCoords(lat, lon);
+      await saveCorrection(chatKey, `Lokasi pengguna berada di koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`);
+      const locTime = formatInZone(new Date(), tzInfo.zone);
+      const reply = `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
+      await sendTelegramMessageSafe(bot, chatId, reply);
+      await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply });
+      return;
     }
 
     // 7. Stiker Telegram

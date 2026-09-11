@@ -223,7 +223,8 @@ export function sanitizeAssistantOutput(text: string): string {
 
 function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string = ''): string {
   const historyText = ctx?.history?.slice(-3)?.map((h) => h.content)?.join(' ') || '';
-  const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, historyText);
+  const profileText = [historyText, ctx?.summary || '', ...(ctx?.corrections || [])].join(' ');
+  const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, profileText);
 
   const instructions: string[] = [
     `Nama kamu ${config.botName}.`,

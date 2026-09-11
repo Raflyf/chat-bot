@@ -13,8 +13,9 @@ import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage } from './db.js';
-import { getContext, noteExchange } from './memory.js';
+import { getContext, noteExchange, saveCorrection } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
+import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import {
   restoreSessionFromSupabase,
   syncSessionDirToSupabase,
@@ -474,6 +475,28 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     });
     noteExchange(chatKey);
     return;
+  }
+
+  // Kasus 6: Lokasi Pengguna (Share Location Pin / Live Location)
+  const locMsg = m.message?.locationMessage || m.message?.liveLocationMessage;
+  if (locMsg) {
+    const lat = locMsg.degreesLatitude;
+    const lon = locMsg.degreesLongitude;
+    if (typeof lat === 'number' && typeof lon === 'number') {
+      const tzInfo = resolveTimezoneFromCoords(lat, lon);
+      await saveCorrection(chatKey, `Lokasi pengguna berada di koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`);
+      const locTime = formatInZone(new Date(), tzInfo.zone);
+      const reply = `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
+      await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+      await saveMessage({
+        platform: 'whatsapp',
+        chat_id: chatKey,
+        role: 'assistant',
+        content: reply.slice(0, 4000),
+      });
+      noteExchange(chatKey);
+      return;
+    }
   }
 
   // Kasus 2: Pesan Teks
