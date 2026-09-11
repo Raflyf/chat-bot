@@ -226,7 +226,8 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
           let web: string | null = null;
           if (needsSearch(transcription)) {
-            const found = await searchWeb(transcription);
+            const prevContext = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+            const found = await searchWeb(transcription, prevContext);
             if (found) web = found;
           }
 
@@ -334,7 +335,8 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     const ctx = await getContext(chatKey);
     let web: string | null = null;
     if (needsSearch(text)) {
-      const found = await searchWeb(text);
+      const prevContext = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+      const found = await searchWeb(text, prevContext);
       if (found) web = found;
     }
     const { reply, escalate, via } = await autoReply(text, ctx, web);
