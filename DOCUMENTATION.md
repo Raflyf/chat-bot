@@ -116,18 +116,18 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
        │
        ▼
 [Klasifikasi Kueri Cerdas & Penelusuran Web (`src/web.ts`)]
-  ├── Bypassed untuk Soal Matematika, Algoritma Koding, & Definisi Baku (Hemat 3-4s)
-  └── Diaktifkan untuk Berita, Fakta Live, Harga, & Kueri URL/Domain:
+  ├── Bypassed untuk Sapaan Murni, Jam/Kalender Lokal, Identitas Bot, & Aritmatika Baku
+  └── Diaktifkan Universal untuk Semua Fakta, Situs/Web, Link URL, Produk, & Berita:
+        ├── Bing Universal Web Search (Full-Web Engine Scraper)
         ├── Google News Global & ID RSS
-        ├── Bing News RSS
         ├── Hacker News Algolia API
         ├── Wikipedia Full-Text Search (ID & EN)
-        └── Deep Webpage Scraper (Jina Reader)
+        └── Autonomous Deep Webpage Scraper (Jina Reader r.jina.ai & Direct Fetch)
        │
        ▼
 [Skills, Prompt Polymath & Multi-Domain Excellence (`src/skills.ts`)]
   ├── Standar Unggul: Matematika (Rumus abc), Koding (Type-Safe), Sains, Bahasa
-  ├── Mandat Grounding Fakta Real-Time 2026
+  ├── Mandat Grounding Fakta Real-Time 2026 & Penyerapan Isi Web Lengkap (8.500 Karakter)
   └── Larangan Residu Berpikir Internal (Zero-Noise Mandate)
        │
        ▼
@@ -153,11 +153,11 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 3. Fitur Utama Sistem
 
-### 3.1. Mesin Penelusuran Web Real-Time Bebas (v0.11.0)
-- Mengadopsi arsitektur pencarian terbuka dari Terminal AI Portofolio.
-- Menyediakan akses data mutakhir tanpa batas cut-off pelatihan model lama.
-- Penelusuran paralel sub-detik (~570ms) untuk mengumpulkan fakta terverifikasi lintas feed berita internasional dan nasional.
-- Pembaca halaman web otomatis (*Deep Webpage Reader*) yang mampu membedah isi tautan publik atau domain yang disertakan pengunjung.
+### 3.1. Mesin Penelusuran & Penjelajahan Web Universal (v0.23.4)
+- **Universal Full-Web Coverage**: Mengadopsi mesin penelusuran terbuka berbasis Bing Web Search scraper yang mampu menjangkau seluruh situs, layanan, tools, SaaS, dokumentasi, dan tautan di dunia tanpa terkekang hanya pada feed berita publisher.
+- **Autonomous Deep Web Scraper**: Jika pengguna menanyakan sebuah situs/website/layanan atau menyertakan tautan URL (misal `https://...` atau kueri "apakah web X bisa dipercaya?"), sistem otomatis menjelajahi URL target secara mendalam menggunakan Jina AI LLM Reader (`r.jina.ai`) dan direct fetch, menyedot isi halaman penuh (hingga ribuan karakter konten nyata) dan menyuntikkannya ke konteks LLM.
+- **Buffer Injeksi Diperluas**: Batas karakter konteks fakta web dinaikkan dari 4.500 menjadi 8.500 karakter di `src/skills.ts` agar sanggup menampung struktur dokumentasi, harga, fitur, dan terms of service dari situs yang dijelajahi.
+- **Multi-Source Fallback**: Terintegrasi harmonis dengan Google News Global/ID RSS, Bing News RSS, Hacker News API, dan Wikipedia full-text search.
 
 ### 3.2. Memori Berkelanjutan & Koreksi Dinamis
 - Riwayat percakapan disimpan secara aman di tabel `messages`.
@@ -191,6 +191,23 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.23.4 — 2026-09-11 16:00 WIB
+**Universal Full-Web Search Engine & Autonomous Deep Webpage Scraper**
+- **Penjelajahan Web Universal Bebas Domain (`src/web.ts`)**:
+  - **Akar Masalah Sebelumnya**: Mesin penelusuran lama hanya menembak Google News RSS dan Bing News RSS. Akibatnya, kueri mengenai produk, website SaaS, repositori, platform AI, atau tools baru (seperti situs `xkiro`, landing page, docs) menghasilkan 0 artikel berita dan mengembalikan string kosong, sehingga bot beralasan "kurang familiar" atau "belum menemukan referensi".
+  - **Bing Universal Web Engine**: Mengintegrasikan scraper live Bing Web Search (`https://www.bing.com/search?q=...`) untuk mengindeks seluruh halaman web di dunia tanpa batas API key atau sensor lokal (kebal blokir Telkomsel/Kominfo yang sebelumnya memblokir DuckDuckGo).
+  - **Normalisasi Kueri Bersih**: Mengoptimasi `extractCoreEntity` dan `formulateSmartSearchQueries` untuk membuang filler percakapan Indonesia/Inggris (`apakah`, `tolong carikan`, `web nya`, `pokoknya`, `bisa dipercaya`, dll), menghasilkan kata kunci tajam yang tepat sasaran.
+- **Autonomous Deep Web Scraper (`src/web.ts`)**:
+  - Jika kueri membahas sebuah situs/platform dan Bing menemukan URL tujuan teratas, atau jika pengguna menyertakan URL eksplisit (`https://...`), scraper secara otonom mendownload isi halaman penuh situs tersebut melalui Jina AI LLM Reader (`https://r.jina.ai/${url}`) atau direct fetch.
+  - Teks halaman web nyata (isi fitur, harga, deskripsi, terms, dokumentasi) disuntikkan secara utuh ke prompt bot sebagai `[Isi Lengkap Halaman Web (<host>)]: ...`.
+- **Ekspansi Buffer Konteks Fakta Web (`src/skills.ts`)**:
+  - Menaikkan kapasitas buffer penyerapan konteks web dari 4.500 karakter menjadi **8.500 karakter** (`web.slice(0, 8500)`) agar AI leluasa membaca dokumentasi dan isi halaman web yang panjang tanpa terpotong.
+- **Perluasan Trigger Pencarian Cerdas (`needsSearch`)**:
+  - Melonggarkan batasan pencarian agar seluruh pertanyaan tentang fakta, entitas, website, link, atau produk otomatis mengaktifkan web search, hanya mengecualikan sapaan murni, identitas bot, waktu lokal, dan aritmatika sederhana.
+- **Pembaruan Dashboard Observabilitas (`public/dashboard.html`)**:
+  - Menghapus teks `(Qwen 3.8)` pada pill filter xKiro menjadi `xKiro` murni.
+  - Menambahkan opsi model `xKiro` pada dropdown filter evaluasi dataset AI.
 
 ### v0.23.3 — 2026-09-11 15:48 WIB
 **Pengangkatan Penuh Provider Ollama, Perbaikan Tombol Paginasi Next, & Pelacakan Konsumsi Token per Chat di Dataset**
