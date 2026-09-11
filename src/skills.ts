@@ -229,6 +229,12 @@ export function cleanMathAndNoise(text: string): string {
   out = out.replace(/(?:,\s*ngebantu,\s*atau\s+ngegombalin\s+kamu)/gi, ', atau ngebantu kamu');
   out = out.replace(/(?:Kalo\s+mau\s+ngegombal\s+lagi[^.\n]*[.\n]?)/gi, '');
 
+  // 11b. Bersihkan racauan salah paham tangisan / loop permintaan maaf tawa dan template jokes berulang
+  out = out.replace(/(?:Hmm,\s*)?maaf\s+ya\s+kalo\s+bikin\s+lu\s+nangis[^.\n]*[.\n]?/gi, '');
+  out = out.replace(/Kenapa kucing selalu ngintip layar laptop\? Karena mereka suka debugging dari jauh wkwk\./gi, '');
+  out = out.replace(/Atau kenapa programmer selalu bawa kopi\? Karena mereka butuh syntax untuk hidup wkwkwk\./gi, '');
+  out = out.replace(/(?:mau\s+yang\s+(?:lagi\s+)?garing\s+lagi\s*\??\s*[\p{Extended_Pictographic}]*)/giu, '');
+
   // 12. Hapus seluruh tanda pisah panjang em-dash dan en-dash (\u2014 dan \u2013)
   out = out.replace(/[\u2014\u2013]/g, ', ');
 
@@ -290,14 +296,33 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '   - Saat temanmu curhat mengeluh lelah, galau, atau sedih: validasi perasaannya dulu, dengarkan dengan tenang, dan beri kata-kata penyemangat yang hangat tanpa langsung menggurui atau memuntahkan 10 tips motivasi klise.',
     '   - Saat temanmu menyapa ("halo", "hai", "kamu standby?", "pagi", "malam", "lagi ngapain"): sambut dengan antusias, ramah, dan bersahabat (contoh: "Halo! Standby terus dong, selalu siap nemenin kamu ngobrol. Lagi santai atau lagi ada kesibukan nih sekarang?"). Jangan pernah menjawab kaku seperti agen customer service.',
     '',
-    '2. RESPON SANTAI & NATURAL SAAT DILEDEK ATAU DIBILANG GA JELAS:',
-    '   - Jika temanmu berkata "ga jelas anjir", "apasih", "garing", "kaku", atau meledek: tanggapi santai, ringan, dan tidak baper. Cukup tertawa santai atau tanya balik mau bahas topik apa tanpa defensif dan tanpa minta maaf berlebihan.',
+    '2. RESPON SANTAI SAAT DILEDEK & MEMAHAMI EMOJI KETAWA GAUL (EMOJI 😭 BUKAN MENANGIS SEDIH):',
+    '   - MEMAHAMI EMOJI KETAWA BRUTAL (😭 / 😭😭):',
+    '     * Di percakapan gaul WhatsApp anak muda, emoji "😭" atau "😭😭" yang digabung dengan kata tawa/slang (seperti "ngakak😭", "anjggg ngakak😭", "lucu banget😭", "wkwk😭", "bjir😭", atau emot "🤣😭") artinya TERTAWA TERBAHAK-BAHAK SAMPAI KELUAR AIR MATA ("ngakak brutal / ketawa nangis"), SAMA SEKALI BUKAN MENANGIS SEDIH!',
+    '     * DILARANG KERAS MINTA MAAF SEOLAH MEMBUATNYA MENANGIS ("maaf ya kalo bikin lu nangis", "jangan nangis", dsb)!',
+    '     * Tanggapi dengan ikut tertawa puas, senang, dan asik selayaknya sesama teman (misal: "Wkwkwk puas kan lu!", "Hahaha ngakak kan lu!", "Gokil kan haha").',
+    '   - EMOJI TAWA BERTURUT-TURUT (🤣🤣🤣 / wkwkwk):',
+    '     * Cukup balas dengan tawa akrab atau banyolan santai. DILARANG mengulang lelucon lama atau meminta maaf!',
+    '   - RESPON SANTAI SAAT DILEDEK ATAU DIBILANG GA JELAS:',
+    '     * Jika temanmu berkata "ga jelas anjir", "apasih", "garing", "kaku", atau meledek: tanggapi santai, ringan, dan tidak baper. Cukup tertawa santai atau tanya balik mau bahas topik apa tanpa defensif dan tanpa minta maaf berlebihan.',
     '',
-    '3. HUMOR & PERMINTAAN GOMBALAN (HANYA KETIKA DIMINTA EKSPLISIT):',
-    '   - DILARANG KERAS MENAWARKAN GOMBALAN SENDIRI! Jangan pernah berinisiatif mengajak atau bertanya "mau digombalin lagi?", "mau gombal?", atau mempromosikan diri bisa ngegombal jika lawan bicara tidak memintanya!',
-    '   - Gombalan HANYA BOLEH keluar jika temanmu secara eksplisit memintanya (misal: "coba gombalin aku", "minta gombalan dong", "gombalin lagi").',
-    '   - Ketika temanmu memang meminta gombalan: LANGSUNG EKSEKUSI gombalan manis, lucu, atau cheesy yang cerdas tanpa narasi panggung gestur fisik.',
-    '   - Ketika melempar tebak-tebakan atau humor: lempar pertanyaannya dulu secara interaktif dua arah, tunggu tebakannya, baru berikan punchline di pesan berikutnya.',
+    '3. HUMOR, JOKES, & TEBAK-TEBAKAN INTERAKTIF DUA ARAH (DILARANG LANGSUNG BOCORKAN PUNCHLINE):',
+    '   - FORMAT JOKE / TEBAK-TEBAKAN DUA ARAH (INTERAKTIF):',
+    '     * Ketika temanmu meminta joke, lelucon, atau tebak-tebakan (misal: "coba kasih gua joke", "tebak-tebakan dong", "joke dong", "ceritain lelucon"):',
+    '     * DILARANG KERAS LANGSUNG MEMBERIKAN JAWABAN / PUNCHLINE DI PESAN YANG SAMA!',
+    '     * HANYA lemparkan pertanyaan atau setup tebakannya saja, lalu ajak temanmu menebak (contoh: "Oke nih, kenapa programmer selalu bawa payung? Coba tebak!").',
+    '     * Wajib tunggu respon dari temanmu (apakah dia bertanya "kenapa?", "emang kenapa?", atau mencoba menebak), BARU kamu berikan jawabannya / punchline-nya di pesan berikutnya!',
+    '   - KETIKA TEMANMU MERESPON TEBAKAN / TANYA "KENAPA?":',
+    '     * Berikan punchline-nya secara santai, lucu, dan natural (misal: "Karena mereka takut kena bug hujan wkwk").',
+    '   - VARIASI LEBAR HUMOR (JANGAN HANYA JOKES PROGRAMMING):',
+    '     * Utamakan joke umum, tebak-tebakan hewan, buah, benda, atau lelucon receh sehari-hari yang segar dan tidak terduga (seperti: "Kenapa nyamuk bunyinya nging nging? Karena kalau guk guk itu anjing wkwk").',
+    '     * Jika temanmu berkata "JANGAN JOKES PROGRAMMING" atau "coba jokes umum": DILARANG KERAS mengeluarkan jokes koding/IT lagi!',
+    '   - ANTI-REPETISI & JANGAN MENGULANG JOKE YANG SAMA:',
+    '     * DILARANG KERAS mengulang lelucon yang sudah pernah kamu keluarkan sebelumnya (seperti lelucon kucing ngintip laptop atau programmer bawa kopi). Selalu berikan lelucon baru yang fresh!',
+    '   - GOMBALAN (HANYA KETIKA DIMINTA EKSPLISIT):',
+    '     * DILARANG KERAS MENAWARKAN GOMBALAN SENDIRI! Jangan pernah berinisiatif mengajak atau bertanya "mau digombalin lagi?", "mau gombal?", atau mempromosikan diri bisa ngegombal jika lawan bicara tidak memintanya!',
+    '     * Gombalan HANYA BOLEH keluar jika temanmu secara eksplisit memintanya (misal: "coba gombalin aku", "minta gombalan dong", "gombalin lagi").',
+    '     * Ketika temanmu memang meminta gombalan: LANGSUNG EKSEKUSI gombalan manis, lucu, atau cheesy yang cerdas tanpa narasi panggung gestur fisik.',
     '',
     '4. DILARANG MEMBERI PANDUAN, FORMAT, ATAU SARAN YANG TIDAK DIMINTA (STRICT NO UNSOLICITED ADVICE):',
     '   - DILARANG KERAS MEMBUAT PANDUAN, FORMAT DOKUMEN, TEMPLATE MAKALAH/SKRIPSI/JURNAL, OUTLINE, ATAU DAFTAR BAB (Bab 1, 2, 3, dst.) JIKA TEMANMU TIDAK MEMINTANYA SECARA EKSPLISIT!',
@@ -379,6 +404,35 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     );
   }
 
+  const isJokeRequest = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu)\b/i.test(userPrompt);
+  if (isJokeRequest) {
+    const avoidProgramming = /\b(?:jangan\s+(?:jokes?\s+)?programming|bukan\s+programming|jokes?\s+umum|jangan\s+koding)\b/i.test(userPrompt);
+    instructions.push(
+      '',
+      '[PERINTAH SISTEM PRIORITAS TERTINGGI - JOKE & TEBAK-TEBAKAN DUA ARAH (INTERAKTIF)]:',
+      'TEMANMU SEDANG MEMINTA JOKE / TEBAK-TEBAKAN / LELUCON!',
+      'ATURAN MUTLAK:',
+      '1. HANYA LEMPARKAN SETUP / PERTANYAAN TEBAKANNYA SAJA (contoh: "Oke nih, kenapa programmer selalu bawa payung? Coba tebak!").',
+      '2. DILARANG KERAS LANGSUNG MEMBERIKAN JAWABAN ATAU PUNCHLINE DI PESAN INI!',
+      '3. Wajib biarkan temanmu penasaran dan menebak terlebih dahulu. JAWABAN / PUNCHLINE HANYA KAMU BERIKAN DI PESAN BERIKUTNYA setelah temanmu merespons (misal saat dia tanya "kenapa?", "emang kenapa?", atau mencoba menebak)!',
+      avoidProgramming
+        ? '4. TEMANMU MELARANG JOKES PROGRAMMING! Berikan lelucon umum / tebak-tebakan receh sehari-hari, JANGAN tentang koding/programmer!'
+        : '4. DILARANG mengulang joke yang sudah pernah keluar di riwayat percakapan sebelumnya!',
+    );
+  }
+
+  const isLaughter = /^(?:(?:anjg+|anjir+|bjir+|gokil+|buset+)?\s*(?:ngakak+|wkwk+|haha+|wkwkwk+|ngakak\s+brutal)\s*[😭🤣😂]*|[😭🤣😂\s]+)$/i.test(userPrompt.trim());
+  if (isLaughter) {
+    instructions.push(
+      '',
+      '[PERINTAH SISTEM - TEMANMU SEDANG KETAWA NGAKAK BRUTAL]:',
+      '- Temanmu sedang tertawa terbahak-bahak sampai keluar air mata (bukan menangis sedih)!',
+      '- DILARANG KERAS meminta maaf atau mengira temanmu menangis!',
+      '- Tanggapi dengan ikut tertawa santai dan akrab (misal: "Wkwkwk puas kan lu!", "Hahaha ngakak kan lu!", "Gokil kan haha").',
+      '- DILARANG mengulang lelucon lama!',
+    );
+  }
+
   if (ctx?.summary) {
     instructions.push(
       '',
@@ -444,6 +498,12 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
       if (/si botak|si kumis|teknologi canggih banget|siapa yang ngelawak aku|cuma bot yang dibuat sama Rafly|ngerasa aneh-aneh|masih bodo-bodoan/i.test(content)) {
         content = 'Santai aja haha, mau ngobrol apa nih?';
       }
+      if (/kucing selalu ngintip layar laptop|debugging dari jauh|butuh syntax untuk hidup/i.test(content)) {
+        content = 'Hahaha ngakak kan lu!';
+      }
+      if (/maaf ya kalo bikin lu nangis|bikin lu nangis/i.test(content)) {
+        content = 'Hahaha puas kan lu!';
+      }
       content = content.replace(/(?:,\s*atau\s+(?:malah\s+)?(?:nge)?gombalin\s+lagi\??)/gi, '');
       content = content.replace(/(?:,\s*ngebantu,\s*atau\s+ngegombalin\s+kamu)/gi, ', atau ngebantu kamu');
       content = content.replace(/(?:Kalo\s+mau\s+ngegombal\s+lagi[^.\n]*[.\n]?)/gi, '');
@@ -451,6 +511,19 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
       history.push({ role: 'assistant', content: content.trim() || 'Siap, mau ngobrol apa?' });
     } else {
       history.push(h);
+    }
+  }
+
+  // Deduplikasi respons asisten di riwayat percakapan agar tidak memicu few-shot repetition loop
+  const seenAssistantTexts = new Set<string>();
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].role === 'assistant') {
+      const norm = (history[i].content as string).toLowerCase().replace(/\s+/g, ' ').slice(0, 50);
+      if (seenAssistantTexts.has(norm)) {
+        history[i].content = 'Santai aja wkwk!';
+      } else {
+        seenAssistantTexts.add(norm);
+      }
     }
   }
 
@@ -494,7 +567,32 @@ export async function autoReply(
 
   try {
     const { text, via } = await chatRetry(buildMessages(clean, ctx, web), false);
-    return { reply: sanitizeAssistantOutput(text), escalate: false, via };
+    let reply = sanitizeAssistantOutput(text);
+
+    // Proteksi program: jika user meminta joke/tebakan dan model membocorkan punchline langsung di pesan yang sama
+    const isJokeReq = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu)\b/i.test(clean);
+    if (isJokeReq) {
+      const riddleMatch = reply.match(/^(.*?\?(?:\s*(?:coba\s+tebak[^.?!]*[.?!]?))?)\s*(?:(?:jawabannya\s*(?:adalah|karena|soalnya)?:?|karena|karna|soalnya|biar|gara-gara)\b[\s\S]*)$/i);
+      if (riddleMatch) {
+        let q = riddleMatch[1].trim();
+        if (!/coba\s+tebak/i.test(q)) {
+          q += ' Coba tebak!';
+        }
+        reply = q;
+      }
+    }
+
+    // Proteksi anti-loop respons identik: jika balasan persis sama dengan pesan asisten terakhir di history
+    const lastAssistantMsg = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
+    if (lastAssistantMsg && typeof lastAssistantMsg === 'string') {
+      const normLast = lastAssistantMsg.trim().toLowerCase();
+      const normReply = reply.trim().toLowerCase();
+      if (normLast.length > 20 && (normLast === normReply || (normReply.includes('kenapa kucing') && normLast.includes('kenapa kucing')))) {
+        reply = 'Anjir wkwk, nih yang beda: Kenapa zombie kalau nyerang bareng-bareng? Coba tebak!';
+      }
+    }
+
+    return { reply, escalate: false, via };
   } catch {
     return { reply: statusDown(), escalate: true, via: 'failed' };
   }
