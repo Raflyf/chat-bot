@@ -180,6 +180,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     res.status(400).json({ success: false, message: `Aksi tidak dikenal: ${action}` });
   } catch (err: any) {
     console.error('[api/admin-otp] Gateway error:', err);
-    res.status(500).json({ success: false, message: 'Terjadi kesalahan internal pada gateway autentikasi.' });
+    res.status(500).json({ success: false, message: String(err?.message || err), stack: String(err?.stack || '') });
   }
 }
