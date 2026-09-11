@@ -227,9 +227,15 @@ export function extractCoreEntity(query: string): string {
   return qNorm.slice(0, 120);
 }
 
-/** Deteksi apakah query berhubungan dengan informasi terkini / versi terbaru / rilis baru */
+/** Deteksi apakah query berhubungan dengan informasi terkini / real-time
+ * Mencakup semua variasi temporal bahasa Indonesia & Inggris:
+ * - Kata waktu relatif: sekarang, saat ini, hari ini, minggu ini, bulan ini, tahun ini
+ * - Kata kualitas informasi: terbaru, terkini, baru, latest, new, current, now
+ * - Kata perubahan: update, diperbarui, berubah, naik, turun, rilis
+ * - Tahun eksplisit: 2023–2030
+ */
 function isRecencyQuery(query: string): boolean {
-  return /\b(terbaru|terkini|baru|latest|new|update|versi|version|rilis|release|launch|announced|diluncurkan|diumumkan|2024|2025|2026|2027)\b/i.test(query);
+  return /\b(terbaru|terkini|baru|sekarang|saat\s*ini|kini|hari\s*ini|minggu\s*ini|bulan\s*ini|tahun\s*ini|malam\s*ini|siang\s*ini|pagi\s*ini|sore\s*ini|tadi|barusan|baru\s*saja|kemarin|besok|latest|new|current|now|today|tonight|update|updated|diperbarui|berubah|naik|turun|versi|version|rilis|release|launch|announced|diluncurkan|diumumkan|terkini|aktual|real-time|realtime|live|breaking|trending|viral|populer|202[3-9]|203[0-9])\b/i.test(query);
 }
 
 /** Deteksi apakah query tentang AI/teknologi (nama model, framework, tools) */
@@ -500,10 +506,10 @@ export async function searchWeb(query: string): Promise<string> {
   }
 
   // 3. Autonomous Deep Web Scraping untuk Discovered URL Teratas
-  // Trigger untuk: web/app query, query tentang hal terkini, query teknologi, atau jika snippet terlalu sedikit
-  const isWebOrAppQuery = /(web|website|situs|link|url|platform|portal|halaman|app|tool|repo|github|apa\s+itu|apakah)/i.test(cleanQuery);
-  const needsDeepScrape = isWebOrAppQuery || isRecencyQuery(cleanQuery) || isTechQuery(cleanQuery) || structuredSnippets.length < 3;
-  if (targetUrls.size === 0 && discoveredUrls.size > 0 && needsDeepScrape) {
+  // Selalu aktif jika Bing menemukan URL — tidak ada kondisi topik.
+  // Filosofi: jika web sudah menemukan halaman relevan, baca isinya langsung.
+  // Hanya skip untuk situs sosial/kamus yang tidak informatif.
+  if (targetUrls.size === 0 && discoveredUrls.size > 0) {
     const candidates = Array.from(discoveredUrls).filter(
       (u) => !/(kbbi\.|wikipedia\.org|youtube\.com|facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com)/i.test(u),
     );
