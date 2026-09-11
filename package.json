@@ -1,7 +1,7 @@
 {
   "name": "agentkit",
-  "version": "0.24.9",
-  "description": "AgentKit Universal Multi-Modal AI Assistant - Production Telegram & WhatsApp, $0 free-tier stack (P0: Telegram, P1: WhatsApp Baileys)",
+  "version": "0.25.0",
+  "description": "AgentKit Universal Multi-Modal AI Assistant - Production Telegram & WhatsApp",
   "type": "module",
   "license": "MIT",
   "scripts": {
