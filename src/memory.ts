@@ -44,11 +44,11 @@ export async function getContext(chatKey: string): Promise<ChatContext> {
 
 const counters = new Map<string, number>();
 
-/** Dipanggil tiap pertukaran user. Tiap 20 pesan: ringkas ulang konteks (fire-and-forget). */
+/** Dipanggil tiap pertukaran user. Tiap 8 pesan: distilasi memori & profil personal teman bicara secara adaptif (fire-and-forget). */
 export function noteExchange(chatKey: string): void {
   const n = (counters.get(chatKey) ?? 0) + 1;
   counters.set(chatKey, n);
-  if (n % 20 !== 0) return;
+  if (n % 8 !== 0) return;
   void (async () => {
     const c = db();
     if (!c) return;
@@ -58,16 +58,24 @@ export function noteExchange(chatKey: string): void {
         .select('role,content')
         .eq('chat_id', chatKey)
         .order('created_at', { ascending: false })
-        .limit(30);
+        .limit(25);
       if (h.error || !h.data?.length) return;
       const text = (h.data as Array<{ role: string; content: string }>)
         .reverse()
         .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
         .join('\n');
       const { text: summary } = await chat([
-        { role: 'user', content: `Ringkas fakta penting percakapan berikut dalam 5 kalimat Bahasa Indonesia (nama user, topik, preferensi, koreksi). Balas hanya ringkasan:\n${text.slice(0, 4000)}` },
+        {
+          role: 'user',
+          content: `Analisis riwayat obrolan ini dan buat catatan memori personal tentang teman bicaramu dalam 3-5 butir ringkas Bahasa Indonesia:\n- Nama/panggilan (jika ada)\n- Gaya komunikasi & preferensi\n- Topik, cerita, atau minat utama yang sedang dibahas\n- Hal penting yang perlu kamu ingat agar obrolan berikutnya semakin nyambung, akrab, dan mengerti dia.\nBalas HANYA butir-butir catatan tersebut:\n${text.slice(0, 4000)}`,
+        },
       ]);
-      await c.from('summaries').upsert({ chat_id: chatKey, summary, updated_at: new Date().toISOString() }, { onConflict: 'chat_id' });
+      await c
+        .from('summaries')
+        .upsert(
+          { chat_id: chatKey, summary, updated_at: new Date().toISOString() },
+          { onConflict: 'chat_id' },
+        );
     } catch (e) {
       console.error(`[memory] ringkas: ${String((e as Error).message ?? e)}`);
     }
