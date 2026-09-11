@@ -178,6 +178,14 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.20.1 — 2026-09-11 11:20 WIB
+**Perbaikan: Eliminasi Halusinasi Penolakan VN & Voice Note Self-Awareness**
+- **Penetapan Kesadaran Multimodal di `systemPrompt` (`src/skills.ts`)**:
+  - Menambahkan Bagian 5 pada instruksi sistem: menegaskan bahwa bot terhubung penuh ke sistem pendengaran dan penglihatan mutakhir.
+  - Melarang keras respons disclaimer bawaan model ("aku cuma bisa baca teks", "aku tidak bisa mendengar suara/VN").
+- **Pembingkaian Konteks Audio (*Voice Note Prompt Framing*)**:
+  - Pada `src/whatsapp_cloud.ts`, `src/whatsapp_baileys.ts`, dan `src/telegram.ts`, transkripsi audio dibingkai secara eksplisit sebagai `[Pesan Suara / Voice Note dari Temanmu]: "..." (Kamu mendengar rekaman suara ini secara jernih...)` agar AI sadar bahwa ia sedang merespons rekaman suara dan menjawab pertanyaannya secara alami tanpa menyangkal kemampuannya.
+
 ### v0.20.0 — 2026-09-11 10:50 WIB
 **Pembaruan Utama: Comprehensive Multimodal Media Engine (PDF, Word, Code/Data, Voice Note Whisper, Stickers & Videos)**
 - **Dokumen PDF Multimodal Native (`src/media.ts`)**:

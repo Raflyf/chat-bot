@@ -311,7 +311,8 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 }
               }
 
-              const { reply, via } = await autoReply(transcription, context, webResults);
+              const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
+              const { reply, via } = await autoReply(prompt, context, webResults);
               await sendWhatsAppCloudMessageSafe(from, reply);
               await saveMessage({
                 platform: 'whatsapp',
