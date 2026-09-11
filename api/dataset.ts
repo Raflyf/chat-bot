@@ -42,7 +42,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   const c = db();
   if (!c) {
-    res.status(503).json({ error: 'Database unavailable' });
+    const format = String(req.query.format || 'json').toLowerCase();
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="freeaibot_dataset_empty.csv"');
+      res.status(200).send('ID,Platform,Chat_ID,Created_At,Context_Tokens,Output_Tokens,Total_Tokens,User_Prompt,Bot_Reply\n');
+      return;
+    }
+    if (format === 'jsonl') {
+      res.setHeader('Content-Type', 'application/x-jsonlines; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="freeaibot_dataset_empty.jsonl"');
+      res.status(200).send('');
+      return;
+    }
+    res.status(200).json({
+      pairs: [],
+      total: 0,
+      isDatabaseConnected: false,
+      notice: 'Basis data Supabase belum terhubung di Vercel. Tambahkan SUPABASE_URL dan SUPABASE_SERVICE_KEY di dashboard Vercel.',
+    });
     return;
   }
 
