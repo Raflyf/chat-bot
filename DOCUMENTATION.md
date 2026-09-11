@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.24.3  
+**Versi:** v0.24.4  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 17:45 WIB  
+**Terakhir Diperbarui:** 2026-09-11 17:55 WIB  
 
 ---
 
@@ -191,6 +191,16 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.24.4 — 2026-09-11 17:55 WIB
+**Dynamic MRU Recency Shift for AI Model Matrix Cards (No Fixed Dropdown Fallback)**
+- **Mekanisme Pergeseran Kartu Berbasis Riwayat Inferensi Terkini (*Most Recently Used / MRU*) (`public/dashboard.html`)**:
+  - Mengatasi kendala pengurutan kartu: sebelumnya saat ada model baru yang aktif menjadi #1, model yang sebelumnya menempati #1 langsung terlempar kembali ke posisi statis tetap di bawah (misal ke slot #10), sementara model yang belum pernah dipakai (0x eksekusi) berada di posisi atasnya (#2, #3).
+  - Mengimplementasikan stack MRU dinamis: ketika model baru aktif melayani inferensi, ia langsung menempati posisi **#1** (`AKTIF TERBARU`), sedangkan model yang sebelumnya menempati #1 bergeser secara alami menjadi **#2**, model #2 sebelumnya bergeser menjadi **#3**, dan seterusnya.
+  - Model yang belum pernah dieksekusi (0x calls) tetap tersusun rapi di bagian bawah daftar sesuai urutan prioritas bawaan katalog.
+- **Backend Chronological Model Sequence Tracking (`api/stats.ts`)**:
+  - Menyaring urutan unik model yang melayani percakapan asisten dari `messages` terurut menurun (`order('id', { ascending: false })`).
+  - Mengirimkan array `recentModels` pada respons API serverless sehingga frontend selalu memiliki urutan kronologis inferensi nyata dari basis data Supabase lintas sesi dan refresh.
 
 ### v0.24.3 — 2026-09-11 17:45 WIB
 **Strict Vision Grounding, Anti-Overreact Engine & Peripheral Distraction Elimination**
