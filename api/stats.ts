@@ -74,100 +74,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   const c = db();
-  if (!c) {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.status(200).json({
-      ok: true,
-      botName: config.botName,
-      serverTime: now.toISOString(),
-      range,
-      rangeLabel,
-      platform: filterPlatform || 'all',
-      isDatabaseConnected: false,
-      databaseNotice: 'Basis data Supabase belum terhubung di Vercel. Tambahkan SUPABASE_URL dan SUPABASE_SERVICE_KEY di Project Settings > Environment Variables Vercel.',
-      summary: {
-        totalMessagesPeriod: 0,
-        totalMessagesToday: 0,
-        totalMessagesAllTime: 0,
-        whatsappPeriod: 0,
-        whatsappToday: 0,
-        telegramPeriod: 0,
-        telegramToday: 0,
-        totalCallsPeriod: 0,
-        totalCallsToday: 0,
-        totalTokensPeriod: 0,
-        totalKeys: 0,
-        whatsappMonthlySessions: { used: 0, limit: 1000, remaining: 1000, monthLabel: 'Sep 2026' },
-      },
-      modelsBreakdown: [],
-      mediaCounts: { text: 0, voice: 0, image: 0, sticker: 0, document: 0, video: 0 },
-      pools: [],
-      recentModels: [],
-    });
-    return;
-  }
 
   try {
-    // 1. Siapkan query kuota provider (hanya kolom yang diperlukan)
-    let quotaQuery = c.from('provider_quota').select('kind, key_suffix, used');
-    if (startDayStr) {
-      if (range === 'today') {
-        quotaQuery = quotaQuery.eq('day', startDayStr);
-      } else {
-        quotaQuery = quotaQuery.gte('day', startDayStr);
-      }
-    }
-
-    // 2. Siapkan query count pesan per platform
-    let waPeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'whatsapp');
-    let telePeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'telegram');
-
-    if (startDateIso) {
-      waPeriodQuery = waPeriodQuery.gte('created_at', startDateIso);
-      telePeriodQuery = telePeriodQuery.gte('created_at', startDateIso);
-    }
-
-    // 3. Siapkan query sampel representatif distribusi model AI (terbaru, limit 400 untuk respon instan)
-    let assistantQuery = c
-      .from('messages')
-      .select('via')
-      .eq('role', 'assistant')
-      .order('id', { ascending: false })
-      .limit(400);
-
-    if (startDateIso) {
-      assistantQuery = assistantQuery.gte('created_at', startDateIso);
-    }
-    if (filterPlatform && filterPlatform !== 'all') {
-      assistantQuery = assistantQuery.eq('platform', filterPlatform);
-    }
-
-    // 4. Siapkan query sampel representatif media pesan pengguna (terbaru, limit 300 untuk respon instan)
-    let userMsgsQuery = c
-      .from('messages')
-      .select('content')
-      .eq('role', 'user')
-      .order('id', { ascending: false })
-      .limit(300);
-
-    if (startDateIso) {
-      userMsgsQuery = userMsgsQuery.gte('created_at', startDateIso);
-    }
-    if (filterPlatform && filterPlatform !== 'all') {
-      userMsgsQuery = userMsgsQuery.eq('platform', filterPlatform);
-    }
-
-    // 5. Query sesi bulanan WhatsApp untuk pelacakan kuota 1.000 sesi/bulan (Meta Cloud API)
-    const startOfMonthIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-    const waMonthlyQuery = c
-      .from('messages')
-      .select('chat_id, created_at')
-      .eq('platform', 'whatsapp')
-      .gte('created_at', startOfMonthIso)
-      .order('created_at', { ascending: true })
-      .limit(2000);
-
-    // Fetch live usage dari remote provider API (xKiro & OpenRouter) secara paralel
+    // Siapkan live usage fetch dari remote provider API (xKiro & OpenRouter) secara paralel
     const xkiroLivePromises = config.pools.xkiro.map(async (k) => {
       try {
         const res = await fetch('https://api.xkiro.com/v1/usage', {
@@ -219,28 +128,110 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
     });
 
-    // 6. Eksekusi SEMUA query database & live provider fetch secara PARALEL (1 kali roundtrip)
-    const [
-      { data: quotasData },
-      { count: totalMessagesAllTime },
-      { count: waPeriod },
-      { count: telePeriod },
-      { data: assistantMsgs },
-      { data: userMsgs },
-      { data: waMonthlyMsgs },
-      xkiroLiveResults,
-      orLiveResults,
-    ] = await Promise.all([
-      quotaQuery,
-      c.from('messages').select('*', { count: 'exact', head: true }),
-      waPeriodQuery,
-      telePeriodQuery,
-      assistantQuery,
-      userMsgsQuery,
-      waMonthlyQuery,
+    let quotasData: Array<{ kind: string; key_suffix: string; used: number }> = [];
+    let totalMessagesAllTime: number = 0;
+    let waPeriod: number = 0;
+    let telePeriod: number = 0;
+    let assistantMsgs: Array<{ via: string | null }> = [];
+    let userMsgs: Array<{ content: string }> = [];
+    let waMonthlyMsgs: Array<{ chat_id: string; created_at: string }> = [];
+
+    const liveFetchPromise = Promise.all([
       Promise.all(xkiroLivePromises),
       Promise.all(orLivePromises),
     ]);
+
+    if (c) {
+      let quotaQuery = c.from('provider_quota').select('kind, key_suffix, used');
+      if (startDayStr) {
+        if (range === 'today') {
+          quotaQuery = quotaQuery.eq('day', startDayStr);
+        } else {
+          quotaQuery = quotaQuery.gte('day', startDayStr);
+        }
+      }
+
+      let waPeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'whatsapp');
+      let telePeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'telegram');
+
+      if (startDateIso) {
+        waPeriodQuery = waPeriodQuery.gte('created_at', startDateIso);
+        telePeriodQuery = telePeriodQuery.gte('created_at', startDateIso);
+      }
+
+      let assistantQuery = c
+        .from('messages')
+        .select('via')
+        .eq('role', 'assistant')
+        .order('id', { ascending: false })
+        .limit(400);
+
+      if (startDateIso) {
+        assistantQuery = assistantQuery.gte('created_at', startDateIso);
+      }
+      if (filterPlatform && filterPlatform !== 'all') {
+        assistantQuery = assistantQuery.eq('platform', filterPlatform);
+      }
+
+      let userMsgsQuery = c
+        .from('messages')
+        .select('content')
+        .eq('role', 'user')
+        .order('id', { ascending: false })
+        .limit(300);
+
+      if (startDateIso) {
+        userMsgsQuery = userMsgsQuery.gte('created_at', startDateIso);
+      }
+      if (filterPlatform && filterPlatform !== 'all') {
+        userMsgsQuery = userMsgsQuery.eq('platform', filterPlatform);
+      }
+
+      const startOfMonthIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+      const waMonthlyQuery = c
+        .from('messages')
+        .select('chat_id, created_at')
+        .eq('platform', 'whatsapp')
+        .gte('created_at', startOfMonthIso)
+        .order('created_at', { ascending: true })
+        .limit(2000);
+
+      const [
+        dbQuotaRes,
+        dbTotalRes,
+        dbWaRes,
+        dbTeleRes,
+        dbAsstRes,
+        dbUserRes,
+        dbWaMonthRes,
+        [xkiroLiveResults, orLiveResults],
+      ] = await Promise.all([
+        quotaQuery,
+        c.from('messages').select('*', { count: 'exact', head: true }),
+        waPeriodQuery,
+        telePeriodQuery,
+        assistantQuery,
+        userMsgsQuery,
+        waMonthlyQuery,
+        liveFetchPromise,
+      ]);
+
+      quotasData = (dbQuotaRes.data as any) || [];
+      totalMessagesAllTime = dbTotalRes.count || 0;
+      waPeriod = dbWaRes.count || 0;
+      telePeriod = dbTeleRes.count || 0;
+      assistantMsgs = (dbAsstRes.data as any) || [];
+      userMsgs = (dbUserRes.data as any) || [];
+      waMonthlyMsgs = (dbWaMonthRes.data as any) || [];
+
+      // Process and continue below with live results
+      var liveResultsTuple = [xkiroLiveResults, orLiveResults];
+    } else {
+      const [xkiroLiveResults, orLiveResults] = await liveFetchPromise;
+      var liveResultsTuple = [xkiroLiveResults, orLiveResults];
+    }
+
+    const [xkiroLiveResults, orLiveResults] = liveResultsTuple;
 
     const xkiroSyncMap = new Map<string, {
       key: string;
@@ -515,6 +506,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       rangeLabel,
       platform: filterPlatform || 'all',
       today: todayStr,
+      isDatabaseConnected: !!c,
+      databaseNotice: !c
+        ? `Supabase belum terhubung di container Vercel. Status: SUPABASE_URL (${config.supabaseUrl ? 'ADA' : 'KOSONG'}), SUPABASE_SERVICE_KEY (${config.supabaseKey ? 'ADA' : 'KOSONG'}). Pastikan Redeploy berhasil.`
+        : null,
       summary: {
         range,
         rangeLabel,
