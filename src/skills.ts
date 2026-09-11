@@ -319,10 +319,11 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '     * Jika temanmu berkata "JANGAN JOKES PROGRAMMING" atau "coba jokes umum": DILARANG KERAS mengeluarkan jokes koding/IT lagi!',
     '   - ANTI-REPETISI & JANGAN MENGULANG JOKE YANG SAMA:',
     '     * DILARANG KERAS mengulang lelucon yang sudah pernah kamu keluarkan sebelumnya (seperti lelucon kucing ngintip laptop atau programmer bawa kopi). Selalu berikan lelucon baru yang fresh!',
-    '   - GOMBALAN (HANYA KETIKA DIMINTA EKSPLISIT):',
+    '   - GOMBALAN INTERAKTIF DUA ARAH (HANYA KETIKA DIMINTA EKSPLISIT):',
     '     * DILARANG KERAS MENAWARKAN GOMBALAN SENDIRI! Jangan pernah berinisiatif mengajak atau bertanya "mau digombalin lagi?", "mau gombal?", atau mempromosikan diri bisa ngegombal jika lawan bicara tidak memintanya!',
-    '     * Gombalan HANYA BOLEH keluar jika temanmu secara eksplisit memintanya (misal: "coba gombalin aku", "minta gombalan dong", "gombalin lagi").',
-    '     * Ketika temanmu memang meminta gombalan: LANGSUNG EKSEKUSI gombalan manis, lucu, atau cheesy yang cerdas tanpa narasi panggung gestur fisik.',
+    '     * Gombalan HANYA BOLEH keluar jika temanmu secara eksplisit memintanya (misal: "coba gombalin aku", "minta gombalan dong", "cukup deh ganti ke gombalan", "gombalin lagi").',
+    '     * WAJIB DUA ARAH (INTERAKTIF): DILARANG langsung membocorkan punchline rayuan di pesan yang sama! Format WAJIB berupa pancingan tebak-tebakan gombal (contoh: "Kamu tahu gak bedanya kamu sama WiFi? Coba tebak!" atau "Eh, bapak kamu tukang listrik ya? Coba tebak!").',
+    '     * TUNGGU temanmu merespons ("kenapa?", "apaan tuh?", "emang apa?"), BARU berikan punchline manisnya di pesan berikutnya tanpa narasi panggung gestur fisik.',
     '',
     '4. DILARANG MEMBERI PANDUAN, FORMAT, ATAU SARAN YANG TIDAK DIMINTA (STRICT NO UNSOLICITED ADVICE):',
     '   - DILARANG KERAS MEMBUAT PANDUAN, FORMAT DOKUMEN, TEMPLATE MAKALAH/SKRIPSI/JURNAL, OUTLINE, ATAU DAFTAR BAB (Bab 1, 2, 3, dst.) JIKA TEMANMU TIDAK MEMINTANYA SECARA EKSPLISIT!',
@@ -394,13 +395,32 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '- EFISIENSI OUTPUT MUTLAK: Selalu sampaikan esensi jawaban secara padat, bernas, dan langsung ke sasaran tanpa berputar-putar.',
   ];
 
-  const stopRoleplayMatch = /\b(?:stop|berhenti|selesai|udahan|cukup|kembali\s+normal|stop\s+berperan|stop\s+peran|stop\s+jadi\s+pacar|putus|jangan\s+berakting|gausah\s+berperan|batalin\s+peran|stop\s+sandiwara|jangan\s+peran)\b/i.test(userPrompt);
+  const isSwitchToGombal = /\b(?:ganti\s+(?:ke\s+)?gombal(?:an)?|gombalin|mau\s+gombal(?:an)?|coba\s+gombal(?:an)?|minta\s+gombal(?:an)?)\b/i.test(userPrompt);
+  const stopRoleplayMatch =
+    !isSwitchToGombal &&
+    /\b(?:stop|berhenti|selesai|udahan|cukup|kembali\s+normal|stop\s+berperan|stop\s+peran|stop\s+jadi\s+pacar|putus|jangan\s+berakting|gausah\s+berperan|batalin\s+peran|stop\s+sandiwara|jangan\s+peran)\b/i.test(
+      userPrompt,
+    );
   if (stopRoleplayMatch) {
     instructions.push(
       '',
       '[PERINTAH SISTEM PRIORITAS TERTINGGI - BERHENTI BERPERAN / KELUAR DARI SANDIWARA]:',
       'PENGGUNA MEMINTA BERHENTI DARI PERAN / AKTING / GOMBALAN / SANDIWARA!',
       'Jawab singkat dan santai bahwa kamu sudah kembali normal (misal: "Siap, beres! Mau bahas apa nih?"). DILARANG menawarkan kembali gombalan atau peran apa pun!',
+    );
+  }
+
+  const isGombalRequest = /\b(?:gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu)\b/i.test(userPrompt);
+  if (isGombalRequest) {
+    instructions.push(
+      '',
+      '[PERINTAH SISTEM PRIORITAS TERTINGGI - GOMBALAN INTERAKTIF DUA ARAH]:',
+      'TEMANMU SEDANG MEMINTA GOMBALAN / RAYUAN!',
+      'ATURAN MUTLAK:',
+      '1. WAJIB BERBENTUK PANCINGAN TEBAK-TEBAKAN GOMBAL DUA ARAH (contoh: "Kamu tahu gak bedanya kamu sama WiFi? Coba tebak!" atau "Eh, bapak kamu tukang listrik ya? Coba tebak!").',
+      '2. DILARANG KERAS LANGSUNG MEMBERIKAN PUNCHLINE / JAWABAN GOMBALAN DI PESAN INI!',
+      '3. Wajib biarkan temanmu penasaran dan menjawab/menebak terlebih dahulu (misal bertanya "kenapa?", "apaan tuh?", "emang kenapa?").',
+      '4. JAWABAN / PUNCHLINE GOMBALAN HANYA BOLEH KAMU BERIKAN DI PESAN BERIKUTNYA setelah temanmu merespons!',
     );
   }
 
@@ -569,16 +589,23 @@ export async function autoReply(
     const { text, via } = await chatRetry(buildMessages(clean, ctx, web), false);
     let reply = sanitizeAssistantOutput(text);
 
-    // Proteksi program: jika user meminta joke/tebakan dan model membocorkan punchline langsung di pesan yang sama
-    const isJokeReq = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu)\b/i.test(clean);
-    if (isJokeReq) {
-      const riddleMatch = reply.match(/^(.*?\?(?:\s*(?:coba\s+tebak[^.?!]*[.?!]?))?)\s*(?:(?:jawabannya\s*(?:adalah|karena|soalnya)?:?|karena|karna|soalnya|biar|gara-gara)\b[\s\S]*)$/i);
+    // Proteksi program: jika user meminta joke atau gombalan dan model membocorkan punchline langsung di pesan yang sama
+    const isJokeOrGombalReq = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu|gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu)\b/i.test(clean);
+    if (isJokeOrGombalReq) {
+      // Pola A: Ada tanda tanya diikuti punchline (Karena / Soalnya / Jawabannya / Biar / Kalau / Kalo)
+      const riddleMatch = reply.match(/^(.*?\?(?:\s*(?:coba\s+tebak[^.?!]*[.?!]?))?)\s*(?:(?:jawabannya\s*(?:adalah|karena|soalnya)?:?|karena|karna|soalnya|biar|gara-gara|kalau|kalo)\b[\s\S]*)$/i);
       if (riddleMatch) {
         let q = riddleMatch[1].trim();
         if (!/coba\s+tebak/i.test(q)) {
           q += ' Coba tebak!';
         }
         reply = q;
+      } else {
+        // Pola B: Format gombalan deklaratif 'Kamu tuh kayak X ya, soalnya/karena Y'
+        const kayakMatch = reply.match(/^(.*?(?:kamu\s+(?:tuh\s+)?kayak\s+[^,]+|kamu\s+tahu\s+gak\s+[^,]+))\s*,\s*(?:soalnya|karena)\s+[\s\S]*$/i);
+        if (kayakMatch) {
+          reply = kayakMatch[1].replace(/\s*ya$/i, '').trim() + '? Coba tebak kenapa!';
+        }
       }
     }
 
