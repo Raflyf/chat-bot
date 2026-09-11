@@ -151,12 +151,12 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     if (msg.photo?.length) {
       const fileId = msg.photo[msg.photo.length - 1].file_id;
       const caption = msg.caption?.trim();
-      await saveMessage({
+      void saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
         content: caption ? `[Gambar] ${caption}` : '[Gambar]',
-      });
+      }).catch((err) => console.warn('[telegram] Gagal simpan pesan foto user:', err));
       try {
         if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
       } catch (err) {
@@ -173,35 +173,35 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
       // Jika berkas berupa gambar tanpa kompresi
       if (mime.startsWith('image/')) {
-        await saveMessage({
+        void saveMessage({
           platform: 'telegram',
           chat_id: chatKey,
           role: 'user',
           content: caption ? `[Gambar: ${filename}] ${caption}` : `[Gambar: ${filename}]`,
-        });
+        }).catch((err) => console.warn('[telegram] Gagal simpan pesan gambar doc user:', err));
         if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
       }
 
       // Berkas dokumen umum (PDF, DOCX, TXT, CSV, JSON, kode)
-      await saveMessage({
+      void saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
         content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
-      });
+      }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc user:', err));
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
         const ctx = await getContext(chatKey);
         const { reply, via } = await processIncomingDocument(dl.buffer, mime, filename, caption, ctx);
         await sendTelegramMessageSafe(bot, chatId, reply);
-        await saveMessage({
+        void saveMessage({
           platform: 'telegram',
           chat_id: chatKey,
           role: 'assistant',
           content: reply.slice(0, 4000),
           via,
-        });
+        }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc assistant:', err));
         noteExchange(chatKey);
         return;
       }
@@ -218,12 +218,12 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           const transcription = await transcribeAudio(dl.buffer, mime);
           const ctx = await getContext(chatKey);
 
-          await saveMessage({
+          void saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
             role: 'user',
             content: `[Voice Note]: "${transcription}"`,
-          });
+          }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN user:', err));
 
           let web: string | null = null;
           if (needsSearch(transcription)) {
@@ -235,13 +235,13 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
           const { reply, via } = await autoReply(prompt, ctx, web);
           await sendTelegramMessageSafe(bot, chatId, reply);
-          await saveMessage({
+          void saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
             role: 'assistant',
             content: reply.slice(0, 4000),
             via,
-          });
+          }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN assistant:', err));
           noteExchange(chatKey);
         } catch (err) {
           console.error('[telegram] Gagal transkripsi audio/VN:', err);
@@ -264,7 +264,8 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const locTime = formatInZone(new Date(), tzInfo.zone);
       const reply = `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
       await sendTelegramMessageSafe(bot, chatId, reply);
-      await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply });
+      void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply })
+        .catch((err) => console.warn('[telegram] Gagal simpan pesan lokasi assistant:', err));
       return;
     }
 
@@ -273,12 +274,12 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const emoji = msg.sticker.emoji;
       const ctx = await getContext(chatKey);
 
-      await saveMessage({
+      void saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
         content: `[Stiker Telegram${emoji ? `: ${emoji}` : ''}]`,
-      });
+      }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker user:', err));
 
       // Jika stiker statis (WebP), kita kirim ke Vision
       if (!msg.sticker.is_animated && !msg.sticker.is_video) {
@@ -286,13 +287,13 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         if (dl) {
           const { reply, via } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx);
           await sendTelegramMessageSafe(bot, chatId, reply);
-          await saveMessage({
+          void saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
             role: 'assistant',
             content: reply.slice(0, 4000),
             via,
-          });
+          }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker assistant:', err));
           noteExchange(chatKey);
           return;
         }
@@ -302,13 +303,13 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const prompt = `Pengguna mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya seorang sahabat mengobrol.`;
       const { reply, via } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
-      await saveMessage({
+      void saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'assistant',
         content: reply.slice(0, 4000),
         via,
-      });
+      }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker fallback assistant:', err));
       noteExchange(chatKey);
       return;
     }
@@ -318,12 +319,12 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const caption = msg.caption?.trim();
       const ctx = await getContext(chatKey);
 
-      await saveMessage({
+      void saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
         content: caption ? `[Video] ${caption}` : '[Video]',
-      });
+      }).catch((err) => console.warn('[telegram] Gagal simpan pesan video user:', err));
 
       const prompt = caption
         ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
@@ -331,13 +332,13 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
       const { reply, via } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
-      await saveMessage({
+      void saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'assistant',
         content: reply.slice(0, 4000),
         via,
-      });
+      }).catch((err) => console.warn('[telegram] Gagal simpan pesan video assistant:', err));
       noteExchange(chatKey);
       return;
     }
