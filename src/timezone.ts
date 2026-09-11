@@ -259,13 +259,53 @@ export function detectLocation(text?: string): LocationMatch | null {
 }
 
 /**
+ * Resolusi zona waktu dari koordinat GPS latitude dan longitude
+ */
+export function resolveTimezoneFromCoords(lat: number, lon: number): { zone: string; label: string } {
+  // Indonesia bounds: Lat -11.5 to 6.5, Lon 94.5 to 141.5
+  if (lat >= -11.5 && lat <= 6.5 && lon >= 94.5 && lon <= 141.5) {
+    if (lon < 114.3) {
+      return { zone: 'Asia/Jakarta', label: 'WIB (Waktu Indonesia Barat)' };
+    } else if (lon < 125.0) {
+      return { zone: 'Asia/Makassar', label: 'WITA (Waktu Indonesia Tengah)' };
+    } else {
+      return { zone: 'Asia/Jayapura', label: 'WIT (Waktu Indonesia Timur)' };
+    }
+  }
+
+  // Luar Indonesia
+  if (lat >= 24 && lat <= 50 && lon >= -125 && lon <= -66) {
+    if (lon >= -85) return { zone: 'America/New_York', label: 'AS Eastern (EDT/EST)' };
+    if (lon >= -100) return { zone: 'America/Chicago', label: 'AS Central (CDT/CST)' };
+    if (lon >= -115) return { zone: 'America/Denver', label: 'AS Mountain (MDT/MST)' };
+    return { zone: 'America/Los_Angeles', label: 'AS Pacific (PDT/PST)' };
+  }
+  if (lat >= 35 && lat <= 70 && lon >= -10 && lon <= 40) {
+    if (lon < 2) return { zone: 'Europe/London', label: 'Inggris / UK (GMT/BST)' };
+    if (lon < 25) return { zone: 'Europe/Berlin', label: 'Eropa Tengah (CET/CEST)' };
+    return { zone: 'Europe/Helsinki', label: 'Eropa Timur (EET/EEST)' };
+  }
+  if (lat >= -45 && lat <= -10 && lon >= 110 && lon <= 160) {
+    if (lon < 129) return { zone: 'Australia/Perth', label: 'Australia Barat (AWST)' };
+    if (lon < 138) return { zone: 'Australia/Adelaide', label: 'Australia Tengah (ACST)' };
+    return { zone: 'Australia/Sydney', label: 'Australia Timur (AEST/AEDT)' };
+  }
+  if (lat >= 20 && lat <= 45 && lon >= 125 && lon <= 145) {
+    return { zone: 'Asia/Tokyo', label: 'Jepang (JST)' };
+  }
+
+  const offsetHours = Math.round(lon / 15);
+  return { zone: 'UTC', label: `UTC${offsetHours >= 0 ? '+' : ''}${offsetHours}` };
+}
+
+/**
  * Bangun blok konteks waktu universal yang dinamis untuk systemPrompt.
  */
 export function buildUniversalTimePrompt(
   now: Date = new Date(),
   chatKey: string = '',
   userPrompt: string = '',
-  historyText: string = '',
+  profileOrHistoryText: string = '',
 ): string {
   const parts: string[] = [];
   const utc = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
@@ -273,13 +313,19 @@ export function buildUniversalTimePrompt(
   parts.push(`[WAKTU & KALENDER GLOBAL (UNIVERSAL REAL-TIME CLOCK)]:`);
   parts.push(`- Waktu Universal Standar: ${utc}`);
 
-  // 1. Deteksi lokasi spesifik yang ditanyakan pengguna di pesan saat ini atau histori
-  const matchedLoc = detectLocation(userPrompt) || detectLocation(historyText);
+  // 1. Deteksi lokasi spesifik yang ditanyakan pengguna di pesan saat ini atau tersimpan di profil/histori
+  const promptLoc = detectLocation(userPrompt);
+  const profileLoc = detectLocation(profileOrHistoryText);
+  const matchedLoc = promptLoc || profileLoc;
+
   if (matchedLoc) {
     const locTime = formatInZone(now, matchedLoc.zone);
-    parts.push(`- LOKASI SPESIFIK YANG DITANYAKAN / DISEBUT PENGGUNA (${matchedLoc.label}):`);
+    const sourceLabel = promptLoc
+      ? `LOKASI SPESIFIK YANG DITANYAKAN PENGGUNA`
+      : `LOKASI TERSIMPAN DARI PROFIL / RIWAYAT PENGGUNA`;
+    parts.push(`- ${sourceLabel} (${matchedLoc.label}):`);
     parts.push(`  * Jam & Waktu: ${locTime.time} ${locTime.tzName} (${locTime.full})`);
-    parts.push(`  * DIREKTIF: Jawab langsung pertanyaan jam pengguna menggunakan waktu lokasi ini secara presisi!`);
+    parts.push(`  * DIREKTIF: Jawab langsung pertanyaan jam pengguna menggunakan waktu lokasi ${matchedLoc.label} ini secara presisi!`);
   }
 
   // 2. Deteksi negara asal nomor pengguna (WhatsApp prefix)
@@ -290,7 +336,7 @@ export function buildUniversalTimePrompt(
     parts.push(`  * Waktu di Negara Pengguna: ${userTzTime.time} ${userTzTime.tzName} (${userTzTime.dayName}, ${userTzTime.dateStr})`);
   }
 
-  // 3. Matriks Tiga Zona Waktu Indonesia
+  // 3. Matriks Tiga Zona Waktu Indonesia Lengkap
   const wib = formatInZone(now, 'Asia/Jakarta');
   const wita = formatInZone(now, 'Asia/Makassar');
   const wit = formatInZone(now, 'Asia/Jayapura');
@@ -312,10 +358,14 @@ export function buildUniversalTimePrompt(
 
   // 5. Panduan Respon Jam Cerdas & Dinamis
   parts.push(`[PANDUAN MENJAWAB JAM & WAKTU SECARA DINAMIS]:`);
-  parts.push(`- Jika temanmu bertanya jam/waktu di kota/negara/daerah tertentu (misal: "jam berapa di Tokyo/London/Bali/Merauke/Paris/New York"): jawab tepat jam di kota tersebut.`);
-  parts.push(`- Jika temanmu bilang dia berada di daerah/negara tertentu (misal: "aku lagi di Bali/Jerman/Makassar, jam berapa sekarang?"): gunakan waktu zona tempat tinggalnya.`);
-  parts.push(`- Jika temanmu memakai nomor luar negeri (${detectedUserCountry?.country || 'non-ID'}): sesuaikan dengan waktu lokal negaranya atau sebutkan waktu di sana.`);
-  parts.push(`- Jika temanmu nomor Indonesia (+62) dan bertanya "jam berapa sekarang" tanpa menyebut lokasi: utamakan waktu WIB, namun kamu boleh ramah menyertakan opsi waktu WITA/WIT jika relevan.`);
+  parts.push(`1. Jika temanmu bertanya jam/waktu di kota/negara/daerah tertentu (misal: "jam berapa di Tokyo/London/Bali/Merauke/Paris/New York"): jawab tepat jam di kota tersebut.`);
+  parts.push(`2. Jika temanmu memiliki lokasi tersimpan di profil/riwayat (${profileLoc?.label || 'belum ada'}): jawab langsung menggunakan waktu lokasinya.`);
+  parts.push(`3. Jika temanmu bilang dia berada di daerah/negara tertentu (misal: "aku lagi di Bali/Jerman/Makassar, jam berapa sekarang?"): gunakan waktu zona tempat tinggalnya.`);
+  parts.push(`4. Jika temanmu memakai nomor luar negeri (${detectedUserCountry?.country || 'non-ID'}): sesuaikan dengan waktu lokal negaranya.`);
+  parts.push(`5. ATURAN MUTLAK KETIKA LOKASI PENGGUNA BELUM DIKETAHUI (NOMOR INDONESIA +62):`);
+  parts.push(`   - DILARANG KERAS berasumsi semua orang berada di WIB atau hanya menjawab waktu WIB seolah-olah WITA dan WIT tidak ada.`);
+  parts.push(`   - Sajikan ketiga zona waktu Indonesia secara serentak, jelas, dan ramah:`);
+  parts.push(`     Contoh: "Sekarang jam ${wib.time} WIB | ${wita.time} WITA | ${wit.time} WIT. Kamu lagi di daerah mana nih? (Boleh kasih tahu kotamu biar lokasimu bisa aku ingat untuk seterusnya)."`);
   parts.push(`- Kamu menguasai seluruh zona waktu dunia secara presisi tanpa ragu dan tidak pernah menolak pertanyaan jam/waktu.`);
 
   return parts.join('\n');

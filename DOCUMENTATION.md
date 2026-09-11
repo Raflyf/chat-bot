@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.24.7  
+**Versi:** v0.24.8  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 21:05 WIB  
+**Terakhir Diperbarui:** 2026-09-11 21:10 WIB  
 
 ---
 
@@ -191,6 +191,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.24.8 - 2026-09-11 21:10 WIB
+**Native Location Pin Processing, Anti-WIB Default Rule & Persistent Geolocation Profile**
+- **Penanganan Pesan Lokasi Asli WhatsApp & Telegram (`src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`, `src/telegram.ts`)**:
+  - Mengaktifkan penanganan pesan lokasi (`locationMessage` di WhatsApp Baileys, `type === 'location'` di WhatsApp Cloud API, dan `msg.location` di Telegram Bot API).
+  - Ketika pengguna membagikan pin lokasi (*Share Location / Live Location*), bot membaca koordinat GPS (`latitude` & `longitude`), menentukan zona waktu via `resolveTimezoneFromCoords()`, dan menyimpannya secara persisten ke tabel Supabase `corrections`.
+- **Eliminasi Asumsi Tunggal WIB (Anti-WIB Defaulting Rule)**:
+  - Melarang keras bot mengasumsikan atau hanya menjawab waktu WIB ketika lokasi pengguna belum diketahui pada nomor Indonesia (+62).
+  - Sistem secara otomatis menyajikan ketiga zona waktu Indonesia sekaligus (WIB, WITA, WIT) secara ramah dan ringkas, sembari menawarkan pengguna untuk menyebutkan kota atau membagikan pin lokasi agar bot dapat mengingatnya secara permanen.
+- **Integrasi Memori Profil Lokasi Berkelanjutan (`src/skills.ts`)**:
+  - Menghubungkan seluruh memori profil pengguna (`corrections`, `summary`, dan riwayat pesan) ke dalam parser waktu. Jika pengguna pernah menyebutkan kotanya atau pernah mengirim lokasi, bot secara otomatis mengingat dan mengunci waktu lokal pengguna pada setiap interaksi berikutnya.
 
 ### v0.24.7 - 2026-09-11 21:05 WIB
 **Universal Dynamic Global Timezone Engine, Phone Country Auto-Detection & Multi-Continent Real-Time Clock**
