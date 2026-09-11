@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.23.7  
+**Versi:** v0.23.8  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 16:47 WIB  
+**Terakhir Diperbarui:** 2026-09-11 16:49 WIB  
 
 ---
 
@@ -191,6 +191,16 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.23.8 — 2026-09-11 16:49 WIB
+**Smart Sticky Navbar with Smooth Scroll Reveal & Dynamic Glassmorphism**
+- **Navigasi Sticky Dinamis & Auto-Hide/Reveal (`public/dashboard.html`)**:
+  - Mengubah navbar `<header>` menjadi `position: sticky; top: 1rem; z-index: 1000;` dengan efek glassmorphism blur (`backdrop-filter: blur(16px)`).
+  - Mengimplementasikan pengontrol scroll interaktif berbasis `requestAnimationFrame`:
+    - **Scroll ke Bawah (Scroll Down)**: Navbar otomatis meluncur naik dan tersembunyi halus (`transform: translateY(calc(-100% - 2.5rem)); opacity: 0;`).
+    - **Scroll ke Atas (Scroll Up)**: Navbar otomatis meluncur turun kembali ke pandangan pengguna (`transform: translateY(0); opacity: 1;`).
+    - **Puncak Halaman (Scroll Top <= 30px)**: Kembali ke styling natural awal tanpa bayangan berlebih.
+  - Memanfaatkan kurva easing organik (`cubic-bezier(0.16, 1, 0.3, 1)`) dan mendukung preferensi aksesibilitas `prefers-reduced-motion`.
 
 ### v0.23.7 — 2026-09-11 16:47 WIB
 **Dedicated Live Upstream Quota & Token Table Card (UI/UX Refactoring & Zero Clutter)**
