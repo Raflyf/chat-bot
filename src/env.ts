@@ -17,12 +17,26 @@ export const config = {
   telegramToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
   ownerChatId: process.env.OWNER_CHAT_ID ?? '',
   pools: {
+    xkiro: csv('XKIRO_KEYS'),
     openrouter: csv('OPENROUTER_KEYS'),
     groq: csv('GROQ_KEYS'),
     gemini: csv('GEMINI_KEYS'),
     ollama: csv('OLLAMA_KEYS'),
   },
   models: {
+    xkiroPrimary: process.env.XKIRO_MODEL_PRIMARY ?? 'qwen/qwen3.8-max:free',
+    xkiroBackup:
+      csv('XKIRO_MODEL_BACKUPS').length > 0
+        ? csv('XKIRO_MODEL_BACKUPS')
+        : [
+            'qwen/qwen3.6-plus:free',
+            'deepseek/deepseek-v4-pro',
+            'deepseek/deepseek-v4-flash',
+            'mistralai/codestral-2508',
+            'qwen/qwen3-vl-plus:free',
+            'qwen/qwen3.7-plus:free',
+            'mistralai/mistral-large-2512',
+          ],
     orPrimary: process.env.OR_MODEL_PRIMARY ?? 'nex-agi/nex-n2.5-pro:free',
     orMini: process.env.OR_MODEL_MINI ?? 'nex-agi/nex-n2.5-mini:free',
     orText: process.env.OR_MODEL_TEXT ?? 'nvidia/nemotron-3.5-lightning:free',
@@ -59,6 +73,7 @@ export const config = {
   cacheTtlMs: num('CACHE_TTL_MS', 3600000),
   isServerless: process.env.VERCEL === '1' || !!process.env.AWS_LAMBDA_FUNCTION_NAME,
   dailyCap: {
+    xkiro: num('DAILY_CAP_XKIRO', 50000),
     openrouter: num('DAILY_CAP_OPENROUTER', 180),
     groq: num('DAILY_CAP_GROQ', 800),
     gemini: num('DAILY_CAP_GEMINI', 1400),
@@ -82,6 +97,7 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
     throw new Error('TELEGRAM_BOT_TOKEN kosong. Salin .env.example ke .env lalu isi.');
   }
   const totalKeys =
+    config.pools.xkiro.length +
     config.pools.openrouter.length +
     config.pools.groq.length +
     config.pools.gemini.length +

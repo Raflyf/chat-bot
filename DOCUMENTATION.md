@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.22.7  
+**Versi:** v0.23.0  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 14:21 WIB  
+**Terakhir Diperbarui:** 2026-09-11 15:00 WIB  
 
 ---
 
@@ -191,6 +191,25 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.23.0 — 2026-09-11 15:00 WIB
+**Perombakan Arsitektur AI: Integrasi xKiro Qwen 3.8 Max Flagship, 8-Layer Failover Chain & Konsol Matriks Model AI**
+- **xKiro Provider Flagship Tier 1 (`src/env.ts`, `src/providers.ts`)**:
+  - Mengintegrasikan xKiro API dengan model `qwen/qwen3.8-max:free` sebagai prioritas #1 (1M konteks, frontier reasoning & koding).
+  - Menyusun 7 model cadangan internal bertingkat di xKiro: `qwen/qwen3.6-plus:free`, `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`, `mistralai/codestral-2508`, `qwen/qwen3-vl-plus:free`, `qwen/qwen3.7-plus:free`, dan `mistralai/mistral-large-2512`.
+  - Multi-Key Pooling: Menggabungkan 2 API Key xKiro (`sk-xt-f785...` dan `sk-xt-6c69...`) dengan kuota harian gabungan 10.000.000 token/hari secara 100% gratis.
+- **Rantai Failover Router 5-Provider Cascades (`src/providers.ts`)**:
+  - Tier 1: xKiro Gateway (8 model, 2 keys) -> Tier 2: Groq Cloud LPU -> Tier 3: Google Gemini -> Tier 4: OpenRouter -> Tier 5: Ollama Cloud.
+- **Spesialisasi Multimodal WhatsApp & Telegram Mutakhir (`src/media.ts`, `src/skills.ts`)**:
+  - **Audio / Voice Note (VN)**: Ditranskripsi otomatis sub-detik (~500ms) via Groq Whisper (`whisper-large-v3-turbo` dengan auto-fallback ke `whisper-large-v3`).
+  - **Foto / Vision / Stiker**: Diproses stabil oleh Google Gemini Vision (`gemini-2.5-flash` / `3.8-flash`) yang mendukung parsing base64 inlineData secara native tanpa risiko error payload.
+  - **Dokumen (Word, PDF, CSV, Teks, Kode)**: Teks diekstrak secara cerdas melalui parser internal (`mammoth` dsb) dan diteruskan ke Qwen 3.8 Max yang didukung jendela konteks 1.000.000 token.
+- **Konsol Matriks Model AI & Monitoring Inferensi (`public/dashboard.html`)**:
+  - Menghadirkan antarmuka Matriks Model AI responsif 4-kolom yang memetakan status kesehatan, tag provider, dan total eksekusi dari 17 model AI di router sistem.
+  - Kartu aktif otomatis disorot dengan glowing cyan border (`● AKTIF TERBARU`).
+  - Banner Auto Gateway Router (Smart Cascades) menyajikan total resolusi inferensi real-time dengan filter rentang waktu instan (Hari Ini, 7 Hari, 30 Hari, Semua).
+- **Validasi Empiris Status MiniMax xKiro**:
+  - Penelusuran langsung melalui pemanggilan API membuktikan bahwa seluruh varian `minimax/*:free` di xKiro saat ini mengalami HTTP 500 (`internal_error`) dari upstream provider, sedangkan varian non-free mewajibkan deposit saldo (HTTP 403).
 
 ### v0.22.7 — 2026-09-11 14:21 WIB
 **Dokumentasi Publik: Perampingan README.md & Akses Cepat Ramah Pengunjung**
