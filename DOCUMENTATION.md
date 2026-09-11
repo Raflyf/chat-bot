@@ -1,28 +1,22 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.5  
+**Versi:** v0.25.6  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 00:45 WIB  
+**Terakhir Diperbarui:** 2026-09-12 01:05 WIB  
 
 ---
 
-## Ringkasan Pembaruan v0.25.5 (Sinkronisasi Model Aktif Dashboard Monitor & Perapihan Tata Letak)
-1. **Sinkronisasi Katalog Model Lengkap ke Dashboard (`public/dashboard.html`, `api/stats.ts`)**:
-   - Seluruh rantai failover model aktif (19 model) terpetakan 100% pada matriks kartu inferensi:
-     - xKiro (11 model): Qwen 3.8 Max Free, Qwen 3.6 Plus Free, Mistral Large 2512, Mistral Medium 3.5, SenseNova 6.8 Flash-Lite, DeepSeek V4 Pro, DeepSeek V4 Flash, MiniMax M2.7 Highspeed, MiniMax M3 Free, Mistral Codestral 2508, Qwen 3.7 Plus Free.
-     - Groq (3 model): Qwen 3.8 27B, Qwen 3.6 27B, Groq Whisper Turbo (Voice Note).
-     - Gemini (2 model): Gemini 3.8 Flash, Gemini 2.5 Flash.
-     - OpenRouter (3 model): Nex N2.5 Pro Free, Nex N2.5 Mini Free, Nemotron 3.5 Lightning.
-   - Endpoint `api/stats.ts` kini meneruskan properti `allModels` untuk setiap pool provider sehingga antarmuka dashboard memiliki visibilitas penuh atas model primer dan seluruh model cadangannya.
-2. **Label Kapabilitas Visual Kartu Model**:
-   - Menambahkan lencana kapabilitas pada setiap kartu model (`tag-cap`): Vision, Voice Note (VN), Code Expert, Fast Text, Reasoning.
-   - Kartu pool provider menampilkan jumlah cadangan terdaftar secara transparan (`(+N Cadangan)`).
-3. **Penyelarasan Model Multimodal & Media Standby**:
-   - Model multimodal vision tervalidasi aktif untuk pemrosesan gambar, foto, PDF, dan dokumen.
-   - Pipeline audio Voice Note (VN) dan media WhatsApp/Telegram standby penuh tanpa kendala.
-4. **Pembersihan Tampilan Antarmuka & Tata Letak Kartu Model (`public/dashboard.html`, `api/stats.ts`)**:
-   - Menghapus penyebutan nama model redundan pada judul provider (`displayName`) di kartu pool dan tabel matriks token, sehingga hanya menampilkan identitas provider murni (seperti `xKiro Gateway`).
-   - Merapikan kartu model aktif (#1): menambahkan properti `white-space: nowrap` dan memindahkan lencana kapabilitas ke baris khusus (`card-caps-row`) di bawah nama model agar tidak bertumpuk atau terpotong pada layar berukuran padat.
-   - Menghilangkan imbuhan nama provider dalam tanda kurung pada nama model di katalog kartu inferensi.
+## Ringkasan Pembaruan v0.25.6 (Audit & Optimalisasi Desain Responsif Multi-Device: Mobile, Tablet & Desktop)
+1. **Optimalisasi Responsif Halaman Depan (`public/index.html`)**:
+   - Menata ulang grid fitur utama (`features-grid`) menggunakan kalkulasi dinamis `minmax(min(100%, 280px), 1fr)` guna mencegah scroll horizontal atau pemotongan konten pada perangkat layar sempit (seperti smartphone 320px - 375px).
+   - Memperkenalkan fluid typography berbasis `clamp()` pada judul hero (`hero-title`) serta penataan vertikal penuh tombol CTA aksi chat WhatsApp, Telegram, dan Dashboard pada viewport mobile (<= 580px).
+   - Menyederhanakan bilah navigasi header pada layar mobile dengan menyembunyikan subtitle merek dan mereduksi padding tombol tanpa mengurangi target sentuh minimum WCAG 2.2.
+   - Mengubah tata letak banner promosi dashboard (`dashboard-teaser`) menjadi bertumpuk vertikal dengan tombol akses selebar kontainer pada perangkat mobile dan tablet.
+2. **Optimalisasi Responsif Dashboard Pemantauan (`public/dashboard.html`)**:
+   - Menyesuaikan padding dasar viewport body pada perangkat mobile (<= 640px) dari 1.5rem menjadi 0.75rem, memaksimalkan rasio area kerja data tabel dan kartu metrik.
+   - Mengimplementasikan penanganan kontainer filter waktu dan pill provider (`pill-filter-group`, `matrix-time-filters`) dengan scroll horizontal halus (`overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;`) tanpa pemotongan atau pembungkusan multi-baris yang canggung.
+   - Memperbaiki fluiditas grid kartu ringkasan KPI (`kpi-grid`), grid kartu pool provider (`pool-grid`), serta pita ringkasan live stats upstream (`live-stats-ribbon`) agar bertransformasi menjadi 1-kolom atau 2-kolom adaptif di smartphone.
+   - Mengoptimasi komponen form modal otentikasi Master PIN (`auth-card`) dan pemulihan OTP dengan batas padding yang nyaman di layar sentuh kecil.
+   - Memperkuat akselerasi sentuh perangkat mobile (`-webkit-overflow-scrolling: touch`) pada kontainer tabel riwayat percakapan (`table-container`) dan tabel kuota token (`token-table-container`).
 
 ---
 
@@ -212,6 +206,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.6 - 2026-09-12 01:05 WIB
+**Audit & Peningkatan Desain Responsif Multi-Device (Mobile, Tablet, Desktop)**
+- **Penyesuaian Responsif Landing Page (`public/index.html`)**:
+  - Mengubah kalkulasi grid fitur `features-grid` menjadi `minmax(min(100%, 280px), 1fr)` untuk melenyapkan resiko horizontal overflow pada smartphone kecil (320px - 375px).
+  - Mengimplementasikan fluid typography judul hero (`clamp(1.75rem, 5vw + 0.5rem, 2.25rem)`) dan konversi tombol aksi chat menjadi selebar 100% pada tampilan smartphone (<= 580px).
+  - Merapikan header bilah navigasi dengan menyembunyikan subtitle merek dan mengoptimalkan padding tombol tanpa melanggar standar minimum target sentuh WCAG 2.2.
+  - Menata kartu promosi dashboard (`dashboard-teaser`) agar terkonfigurasi vertikal terpadu di layar mobile/tablet.
+  - Memperbarui nomor versi di footer halaman beranda ke `v0.25.6`.
+- **Penyesuaian Responsif Dashboard Pemantauan (`public/dashboard.html`)**:
+  - Mengurangi padding tepi body pada layar mobile (<= 640px) dari 1.5rem menjadi 0.75rem dan menyelaraskan margin header agar pas di tepian layar.
+  - Memperbaiki grup filter waktu dan pill model provider (`pill-filter-group`, `matrix-time-filters`) dengan dukungan scroll horizontal (`overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;`) tanpa pemotongan atau wrap bertumpuk.
+  - Memperbaiki batas minimal grid kartu ringkasan KPI (`kpi-grid`), pool provider (`pool-grid`), dan pita statistik upstream (`live-stats-ribbon`) menjadi nilai fleksibel `min(100%, ...)` agar beralih otomatis ke mode 1 kolom di layar ponsel sempit.
+  - Memastikan seluruh kontainer tabel data (`table-container`, `token-table-container`) mendukung gestur gulir sentuh akselerasi hardware iOS/Android (`-webkit-overflow-scrolling: touch`).
+  - Mengoptimasi tata letak modal Master PIN dan reset OTP di layar ponsel kecil.
 
 ### v0.25.5 - 2026-09-12 00:45 WIB
 **Sinkronisasi Model Aktif ke Dashboard Monitor, Perapihan Tata Letak Kartu #1 & Pembersihan Judul Provider**

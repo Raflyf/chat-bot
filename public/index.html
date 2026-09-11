@@ -251,12 +251,6 @@
       -webkit-text-fill-color: transparent;
     }
 
-    @media (max-width: 768px) {
-      .hero-title {
-        font-size: 2rem;
-      }
-    }
-
     .hero-subtitle {
       font-size: 1.05rem;
       color: var(--text-muted);
@@ -298,7 +292,7 @@
 
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
       gap: 1.5rem;
     }
 
@@ -401,6 +395,107 @@
       text-align: center;
       color: var(--text-dim);
       font-size: 0.825rem;
+    }
+
+    /* Responsive Breakpoints & Device Adaptation */
+    @media (max-width: 768px) {
+      .hero {
+        padding: 3.25rem 0 2.25rem;
+      }
+      .hero-title {
+        font-size: clamp(1.75rem, 5vw + 0.5rem, 2.25rem);
+      }
+      .hero-subtitle {
+        font-size: 0.95rem;
+        margin-bottom: 1.75rem;
+      }
+      .features-section {
+        padding: 2.5rem 0;
+      }
+      .section-title {
+        font-size: 1.5rem;
+      }
+      .dashboard-teaser {
+        padding: 1.75rem 1.25rem;
+        margin: 1.5rem 0 2.5rem;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .dashboard-teaser > div:last-child {
+        width: 100%;
+      }
+      .dashboard-teaser .btn-primary {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    @media (max-width: 580px) {
+      .container {
+        padding: 0 1rem;
+      }
+      .nav-inner {
+        padding: 0.75rem 0;
+      }
+      .brand-icon {
+        width: 34px;
+        height: 34px;
+        font-size: 1rem;
+        border-radius: 10px;
+      }
+      .brand-text h1 {
+        font-size: 1.05rem;
+      }
+      .brand-text p {
+        display: none;
+      }
+      .status-pill {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.72rem;
+      }
+      .btn-dashboard {
+        padding: 0.42rem 0.75rem;
+        font-size: 0.78rem;
+      }
+      .btn-dashboard span:last-child {
+        display: none;
+      }
+      .hero-badge {
+        font-size: 0.7rem;
+        padding: 0.3rem 0.75rem;
+        letter-spacing: 0.02em;
+      }
+      .hero-cta-group {
+        flex-direction: column;
+        width: 100%;
+        gap: 0.75rem;
+      }
+      .hero-cta-group .btn {
+        width: 100%;
+        justify-content: center;
+        text-align: center;
+        padding: 0.8rem 1rem !important;
+        font-size: 0.9rem !important;
+      }
+      .feature-card {
+        padding: 1.35rem 1.15rem;
+      }
+      .section-title-wrap {
+        margin-bottom: 1.75rem;
+      }
+    }
+
+    @media (max-width: 400px) {
+      .status-pill span:not(.pulse-dot) {
+        display: none;
+      }
+      .status-pill {
+        padding: 0.35rem;
+        border-radius: 50%;
+      }
+      .hero-title {
+        font-size: 1.55rem;
+      }
     }
   </style>
 </head>
@@ -541,7 +636,7 @@
   <!-- Footer -->
   <footer>
     <div class="container">
-      FreeAiBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.24.2
+      FreeAiBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.25.6
     </div>
   </footer>
 
