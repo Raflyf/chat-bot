@@ -129,6 +129,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       userMsgsQuery = userMsgsQuery.eq('platform', filterPlatform);
     }
 
+    // 5. Query sesi bulanan WhatsApp untuk pelacakan kuota 1.000 sesi/bulan (Meta Cloud API)
+    const startOfMonthIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    const waMonthlyQuery = c
+      .from('messages')
+      .select('chat_id, created_at')
+      .eq('platform', 'whatsapp')
+      .gte('created_at', startOfMonthIso)
+      .order('created_at', { ascending: true })
+      .limit(2000);
+
     // Fetch live usage dari remote provider API (xKiro & OpenRouter) secara paralel
     const xkiroLivePromises = config.pools.xkiro.map(async (k) => {
       try {
@@ -181,7 +191,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
     });
 
-    // 5. Eksekusi SEMUA query database & live provider fetch secara PARALEL (1 kali roundtrip)
+    // 6. Eksekusi SEMUA query database & live provider fetch secara PARALEL (1 kali roundtrip)
     const [
       { data: quotasData },
       { count: totalMessagesAllTime },
@@ -189,6 +199,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       { count: telePeriod },
       { data: assistantMsgs },
       { data: userMsgs },
+      { data: waMonthlyMsgs },
       xkiroLiveResults,
       orLiveResults,
     ] = await Promise.all([
@@ -198,6 +209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       telePeriodQuery,
       assistantQuery,
       userMsgsQuery,
+      waMonthlyQuery,
       Promise.all(xkiroLivePromises),
       Promise.all(orLivePromises),
     ]);
@@ -433,6 +445,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       mediaCounts[type]++;
     }
 
+    // 7. Hitung Sesi Layanan WhatsApp Meta Cloud API (1.000 Sesi Percakapan Gratis per Bulan)
+    // 1 sesi = jendela waktu 24 jam per pengguna unik (chat bolak-balik tanpa batas selama 24 jam dihitung 1 sesi)
+    const waSessionsByUser = new Map<string, number>();
+    const userLastSessionEnd = new Map<string, number>();
+    const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+
+    for (const m of waMonthlyMsgs ?? []) {
+      const chatId = String(m.chat_id || 'unknown');
+      const msgTime = new Date(m.created_at).getTime();
+      const lastEnd = userLastSessionEnd.get(chatId) || 0;
+
+      if (msgTime >= lastEnd) {
+        userLastSessionEnd.set(chatId, msgTime + TWENTY_FOUR_HOURS_MS);
+        waSessionsByUser.set(chatId, (waSessionsByUser.get(chatId) || 0) + 1);
+      }
+    }
+
+    let totalWaSessionsMonth = 0;
+    for (const count of waSessionsByUser.values()) {
+      totalWaSessionsMonth += count;
+    }
+    const waMonthlyLimit = 1000;
+    const waMonthlyRemaining = Math.max(0, waMonthlyLimit - totalWaSessionsMonth);
+    const waMonthlyPercent = Math.min(100, Math.round((totalWaSessionsMonth / waMonthlyLimit) * 100));
+    const waMonthLabel = now.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+
     res.setHeader('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=30');
     res.status(200).json({
       ok: true,
@@ -460,6 +498,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         totalTokensToday: totalCallsPeriod * 380,
         avgTokensPerChat: 380,
         modelsActiveCount: modelsBreakdown.length,
+        whatsappMonthlySessions: {
+          used: totalWaSessionsMonth,
+          limit: waMonthlyLimit,
+          remaining: waMonthlyRemaining,
+          percent: waMonthlyPercent,
+          monthLabel: waMonthLabel,
+          uniqueUsers: waSessionsByUser.size,
+        },
       },
       pools,
       activeModel: latestActiveModel,

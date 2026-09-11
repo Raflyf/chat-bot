@@ -253,6 +253,7 @@ export async function verifyPin(
   success: boolean;
   verified: boolean;
   sessionToken?: string;
+  expiresAt?: number;
   isLocked?: boolean;
   lockedUntil?: string | null;
   lockoutAttempts?: number;
@@ -282,9 +283,9 @@ export async function verifyPin(
 
   // Match comparison
   if (timingSafeMatch(inputHash, current.pinHash)) {
-    // Berhasil: buat session token baru
+    // Berhasil: buat session token baru dengan batas waktu 15 menit ketat
     const sessionToken = 'adm_' + crypto.randomBytes(32).toString('hex');
-    const expiresAt = now + 24 * 60 * 60 * 1000; // 24 jam
+    const expiresAt = now + 15 * 60 * 1000; // 15 menit ketat
 
     const updatedTokens = [
       ...current.sessionTokens.filter(s => Number(s.exp) > now),
@@ -301,6 +302,7 @@ export async function verifyPin(
       success: true,
       verified: true,
       sessionToken,
+      expiresAt,
       isLocked: false,
       lockedUntil: null,
       lockoutAttempts: 0,

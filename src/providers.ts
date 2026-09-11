@@ -183,7 +183,6 @@ function steps(): Step[] {
         'qwen/qwen3.8-max:free',
         'qwen/qwen3.6-plus:free',
         'qwen/qwen3-vl-plus:free',
-        'mistralai/mistral-large-2512',
       ],
       cap: config.dailyCap.xkiro,
       run: (k, m, msgs) => openAiChat('https://api.xkiro.com/v1', k, m, msgs),
@@ -217,8 +216,8 @@ function steps(): Step[] {
 
 /**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: Groq (ultra-cepat ~2s) > Gemini > OpenRouter.
- * - Vision / gambar: Gemini (nativ multimodal ~1.7s) > OpenRouter Vision.
+ * - Teks umum / matematika / koding: xKiro (Qwen 3.8 / 3.6) > Groq > Gemini > OpenRouter.
+ * - Vision / foto / gambar: xKiro Qwen 3.8 / 3.6 (Utama) > OpenRouter Vision > Gemini (Fallback terakhir).
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
 export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Promise<{ text: string; via: string }> {
@@ -229,12 +228,12 @@ export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Pr
 
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
-  // Untuk vision: utamakan provider yang stabil menangani base64 buffer (Gemini -> OpenRouter -> xKiro)
+  // Untuk vision: utamakan xKiro (Qwen 3.8 / 3.6) sebagai prioritas utama, lalu OpenRouter, dan Gemini sebagai fallback cadangan
   const orderedSteps = needVision
     ? allSteps
         .filter((s) => s.visionModels.length > 0)
         .sort((a, b) => {
-          const priority: Record<string, number> = { gemini: 1, openrouter: 2, xkiro: 3, groq: 4 };
+          const priority: Record<string, number> = { xkiro: 1, openrouter: 2, gemini: 3, groq: 4 };
           return (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
         })
     : allSteps;

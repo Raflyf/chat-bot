@@ -62,6 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         success: result.success,
         verified: result.verified,
         session_token: result.sessionToken,
+        expires_at: result.expiresAt,
         is_locked: result.isLocked,
         locked_until: result.lockedUntil,
         lockout_attempts: result.lockoutAttempts,
