@@ -425,7 +425,8 @@ export async function searchWeb(query: string): Promise<string> {
   try {
     const fetches: Array<Promise<void>> = [];
 
-    // 2a. Bing Web Search — jalankan 2 query paralel untuk cakupan lebih luas
+    // 2a. Bing Web Search + DuckDuckGo HTML sebagai backup
+    // Bing: 2 query paralel sorted by date
     const bingQueries = [primaryQ, secondaryQ].filter((q, i, arr) => arr.indexOf(q) === i).slice(0, 2);
     for (const bq of bingQueries) {
       fetches.push(
@@ -439,18 +440,20 @@ export async function searchWeb(query: string): Promise<string> {
           .then((r) => (r.ok ? r.text() : ''))
           .then((html) => {
             if (!html) return;
+            // Parser utama: b_algo list
             const items = html.split('<li class="b_algo"');
             for (let i = 1; i < Math.min(items.length, 8); i++) {
               const chunk = items[i];
               const citeMatch = chunk.match(/<cite>([\s\S]*?)<\/cite>/i);
               const titleMatch = chunk.match(/<h2><a[^>]*>([\s\S]*?)<\/a><\/h2>/i) || chunk.match(/<h2[^>]*><a[^>]*>([\s\S]*?)<\/a>/i);
-              const descMatch = chunk.match(/<div class="b_caption">[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i);
+              const descMatch = chunk.match(/<div class="b_caption">[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i)
+                || chunk.match(/<p class="b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/i)
+                || chunk.match(/<p[^>]*>([\s\S]{20,300}?)<\/p>/i);
 
               const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
               const cite = citeMatch ? citeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
               const desc = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
 
-              // Ekstrak URL website asli dari cite
               let directUrl = '';
               const domainFromCite = cite.match(/https?:\/\/[^\s›>]+/i) || cite.match(/^([a-z0-9-]+\.[a-z0-9.-]+)/i);
               if (domainFromCite) {
@@ -459,14 +462,105 @@ export async function searchWeb(query: string): Promise<string> {
                   discoveredUrls.add(directUrl);
                 }
               }
+              if (title || desc) addSnippet('Bing Web', title || cite, desc, '', directUrl, 55);
+            }
 
-              if (title || desc) {
-                addSnippet(`Bing Web`, title || cite, desc, '', directUrl, 55);
+            // Fallback parser jika b_algo tidak ditemukan (Bing ganti struktur HTML)
+            if (items.length <= 1) {
+              const linkMatches = html.matchAll(/<a[^>]+href="(https?:\/\/(?!www\.bing\.)[^"]+)"[^>]*>([^<]{10,120})<\/a>/gi);
+              let count = 0;
+              for (const m of linkMatches) {
+                if (count >= 6) break;
+                const url = m[1]; const title = m[2].trim();
+                if (isSafePublicUrl(url) && !/(bing\.com|microsoft\.com|msn\.com)/i.test(url)) {
+                  discoveredUrls.add(url);
+                  addSnippet('Bing Web (fallback)', title, '', '', url, 40);
+                  count++;
+                }
               }
             }
           })
           .catch(() => {}),
       );
+    }
+
+    // 2a-2. DuckDuckGo HTML — engine independen, tidak bergantung Bing
+    const englishQ = searchQueries[2] ?? primaryQ; // gunakan English query jika ada
+    fetches.push(
+      fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(englishQ)}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        signal: controller.signal,
+      })
+        .then((r) => (r.ok ? r.text() : ''))
+        .then((html) => {
+          if (!html) return;
+          const results = html.split('class="result__body"');
+          for (let i = 1; i < Math.min(results.length, 6); i++) {
+            const chunk = results[i];
+            const titleM = chunk.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
+            const snippetM = chunk.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)
+              || chunk.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/span>/i);
+            const urlM = chunk.match(/class="result__url"[^>]*>([\s\S]*?)<\/a>/i)
+              || chunk.match(/href="(\/\/duckduckgo\.com\/l\/[^"]+)"/i);
+
+            const title = titleM ? titleM[1].replace(/<[^>]+>/g, '').trim() : '';
+            const snippet = snippetM ? snippetM[1].replace(/<[^>]+>/g, '').trim() : '';
+            let url = '';
+            if (urlM) {
+              const rawUrl = urlM[1].replace(/<[^>]+>/g, '').trim();
+              url = rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl;
+            }
+            if ((title || snippet) && url && isSafePublicUrl(url)) {
+              discoveredUrls.add(url);
+              addSnippet('DuckDuckGo', title, snippet, '', url, 52);
+            }
+          }
+        })
+        .catch(() => {}),
+    );
+
+    // 2a-3. Direct scrape sumber resmi brand saat query tentang tech brand spesifik
+    // Ini bypass semua search engine — langsung ke halaman berita/blog resmi
+    const brandNewsPages: Record<string, string> = {
+      claude:     'https://www.anthropic.com/news',
+      anthropic:  'https://www.anthropic.com/news',
+      openai:     'https://openai.com/blog',
+      chatgpt:    'https://openai.com/blog',
+      gpt:        'https://openai.com/blog',
+      gemini:     'https://blog.google/technology/ai/',
+      mistral:    'https://mistral.ai/news/',
+      groq:       'https://groq.com/blog/',
+      deepseek:   'https://deepseek.com',
+      perplexity: 'https://www.perplexity.ai/hub/blog',
+      meta:       'https://ai.meta.com/blog/',
+      llama:      'https://ai.meta.com/blog/',
+      cohere:     'https://cohere.com/blog',
+      nvidia:     'https://blogs.nvidia.com/blog/category/generative-ai/',
+    };
+    const queryLower = cleanQuery.toLowerCase();
+    for (const [brand, newsUrl] of Object.entries(brandNewsPages)) {
+      if (queryLower.includes(brand)) {
+        // Jadwalkan scrape halaman resmi brand secara paralel
+        fetches.push(
+          scrapeWebpage(newsUrl)
+            .then((content) => {
+              if (content && content.length > 80) {
+                let host = newsUrl;
+                try { host = new URL(newsUrl).hostname; } catch { /* */ }
+                structuredSnippets.unshift({
+                  text: `[Halaman Resmi ${brand.toUpperCase()} (${host})]:\n${content.slice(0, 3000)}`,
+                  timestamp: Date.now() + 2_000_000_000,
+                  score: 98,
+                });
+              }
+            })
+            .catch(() => {})
+        );
+        break; // cukup satu brand per request
+      }
     }
 
     // 2b. Google News Indonesia & Global RSS
@@ -490,22 +584,28 @@ export async function searchWeb(query: string): Promise<string> {
         .catch(() => {}),
     );
 
-    // 2c. Wikipedia (ID & EN)
-    fetches.push(
-      fetch(`https://id.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(entityQ)}&format=json&origin=*`, {
-        headers: { 'User-Agent': 'FreeAIBot/2026' },
-        signal: controller.signal,
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          const hits = (data as { query?: { search?: Array<{ title: string; snippet: string }> } })?.query?.search;
-          if (Array.isArray(hits) && hits.length > 0) {
-            const top = hits[0];
-            addSnippet('Wikipedia Indonesia', top.title, top.snippet, '', `https://id.wikipedia.org/wiki/${encodeURIComponent(top.title)}`, 35);
-          }
+    // 2c. Wikipedia ID + EN paralel
+    const wikiQueries = [
+      { lang: 'id', base: 'https://id.wikipedia.org', label: 'Wikipedia Indonesia', q: entityQ },
+      { lang: 'en', base: 'https://en.wikipedia.org', label: 'Wikipedia English', q: searchQueries[2] ?? primaryQ },
+    ];
+    for (const w of wikiQueries) {
+      fetches.push(
+        fetch(`${w.base}/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(w.q)}&format=json&origin=*`, {
+          headers: { 'User-Agent': 'FreeAIBot/2026' },
+          signal: controller.signal,
         })
-        .catch(() => {}),
-    );
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            const hits = (data as { query?: { search?: Array<{ title: string; snippet: string }> } })?.query?.search;
+            if (Array.isArray(hits) && hits.length > 0) {
+              const top = hits[0];
+              addSnippet(w.label, top.title, top.snippet, '', `${w.base}/wiki/${encodeURIComponent(top.title)}`, 35);
+            }
+          })
+          .catch(() => {}),
+      );
+    }
 
     // 2d. Hacker News Algolia (Tech & Open-Source)
     fetches.push(
