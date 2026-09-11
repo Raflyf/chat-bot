@@ -309,7 +309,7 @@ export async function autoReply(
   ctx?: ChatContext,
   web?: string | null,
 ): Promise<{ reply: string; escalate: boolean; via: string }> {
-  const clean = userText.trim().slice(0, 3000);
+  const clean = userText.trim().slice(0, 32000);
   if (!clean) return { reply: statusDown(), escalate: true, via: 'empty' };
   try {
     const { text, via } = await chatRetry(buildMessages(clean, ctx, web), false);
@@ -319,12 +319,35 @@ export async function autoReply(
   }
 }
 
-/** Jelaskan gambar secara dinamis via model vision. Caption opsional dari user. */
+/** Jelaskan gambar / media visual / dokumen secara dinamis via model vision. Caption opsional dari user. */
 export async function describeImage(
   base64: string,
   mime: string,
   caption?: string,
 ): Promise<{ reply: string; via: string }> {
+  let promptText: string;
+  if (!caption || !caption.trim()) {
+    if (mime === 'application/pdf') {
+      promptText = 'Tolong baca, pelajari, dan rangkum poin-poin utama dalam dokumen PDF ini secara terstruktur, jelas, dan akurat dalam Bahasa Indonesia.';
+    } else if (mime.includes('webp')) {
+      promptText = 'Pengguna mengirim stiker ini. Pahami ekspresi, emosi, atau humor dalam stiker ini, lalu respon secara hangat, santai, dan bersahabat layaknya teman mengobrol.';
+    } else {
+      promptText = 'Jelaskan isi gambar ini secara jelas, informatif, dan terstruktur dalam Bahasa Indonesia.';
+    }
+  } else {
+    const trimmed = caption.trim();
+    if (
+      trimmed.startsWith('Pengguna') ||
+      trimmed.startsWith('[') ||
+      trimmed.startsWith('Tolong') ||
+      trimmed.startsWith('Analisis')
+    ) {
+      promptText = trimmed.slice(0, 3000);
+    } else {
+      promptText = `Pertanyaan / instruksi user tentang media ini: ${trimmed.slice(0, 2000)}`;
+    }
+  }
+
   const parts: ContentPart[] = [
     {
       type: 'image_url',
@@ -332,9 +355,7 @@ export async function describeImage(
     },
     {
       type: 'text',
-      text: caption?.trim()
-        ? `Pertanyaan user tentang gambar ini: ${caption.trim().slice(0, 800)}`
-        : 'Jelaskan isi gambar ini secara jelas, informatif, dan terstruktur dalam Bahasa Indonesia.',
+      text: promptText,
     },
   ];
   const messages: ChatMsg[] = [

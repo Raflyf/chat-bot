@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { config } from './env.js';
 import { autoReply, describeImage } from './skills.js';
+import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage } from './db.js';
 import { getContext, noteExchange } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -153,9 +154,9 @@ export async function markWhatsAppCloudMessageRead(messageId: string): Promise<v
 }
 
 /**
- * Mengunduh media gambar dari Meta Graph API dan mengubahnya menjadi base64.
+ * Mengunduh media (gambar, dokumen, audio, stiker) dari Meta Graph API.
  */
-async function downloadWhatsAppCloudMedia(mediaId: string): Promise<{ base64: string; mime: string } | null> {
+async function downloadWhatsAppCloudMedia(mediaId: string): Promise<{ buffer: Buffer; base64: string; mime: string } | null> {
   if (!config.whatsappToken) return null;
 
   try {
@@ -174,11 +175,12 @@ async function downloadWhatsAppCloudMedia(mediaId: string): Promise<{ base64: st
     if (!fileRes.ok) return null;
 
     const buf = Buffer.from(await fileRes.arrayBuffer());
-    if (buf.length === 0 || buf.length > 8_000_000) return null;
+    if (buf.length === 0 || buf.length > 20_000_000) return null;
 
     return {
+      buffer: buf,
       base64: buf.toString('base64'),
-      mime: metaData.mime_type || 'image/jpeg',
+      mime: metaData.mime_type || 'application/octet-stream',
     };
   } catch (err) {
     console.error('[wa-cloud] Gagal mengunduh media dari Meta:', err);
@@ -219,12 +221,19 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         const chatKey = 'wa_' + from;
         const msgType = m.type;
 
-        // Kasus 1: Pesan Gambar
+        // Kasus 1: Pesan Gambar / Foto
         if (msgType === 'image' && m.image?.id) {
           const caption = m.image.caption || undefined;
           const media = await downloadWhatsAppCloudMedia(m.image.id);
 
           if (media) {
+            await saveMessage({
+              platform: 'whatsapp',
+              chat_id: chatKey,
+              role: 'user',
+              content: caption ? `[Gambar] ${caption}` : '[Gambar]',
+            });
+
             const { reply, via } = await describeImage(media.base64, media.mime, caption);
             await sendWhatsAppCloudMessageSafe(from, reply);
             await saveMessage({
@@ -234,11 +243,157 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               content: reply.slice(0, 4000),
               via,
             });
+            noteExchange(chatKey);
             continue;
           }
         }
 
-        // Kasus 2: Pesan Teks
+        // Kasus 2: Dokumen (PDF, Word .docx, Teks, CSV, JSON, Kode)
+        if (msgType === 'document' && m.document?.id) {
+          const filename = m.document.filename || 'dokumen';
+          const mime = m.document.mime_type || 'application/octet-stream';
+          const caption = m.document.caption?.trim() || undefined;
+          const media = await downloadWhatsAppCloudMedia(m.document.id);
+
+          if (media) {
+            const context = await getContext(chatKey);
+            await saveMessage({
+              platform: 'whatsapp',
+              chat_id: chatKey,
+              role: 'user',
+              content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
+            });
+
+            const { reply, via } = await processIncomingDocument(
+              media.buffer,
+              mime,
+              filename,
+              caption,
+              context,
+            );
+
+            await sendWhatsAppCloudMessageSafe(from, reply);
+            await saveMessage({
+              platform: 'whatsapp',
+              chat_id: chatKey,
+              role: 'assistant',
+              content: reply.slice(0, 4000),
+              via,
+            });
+            noteExchange(chatKey);
+            continue;
+          }
+        }
+
+        // Kasus 3: Voice Note / Rekaman Audio
+        if (msgType === 'audio' && m.audio?.id) {
+          const mime = m.audio.mime_type || 'audio/ogg';
+          const media = await downloadWhatsAppCloudMedia(m.audio.id);
+
+          if (media) {
+            try {
+              const transcription = await transcribeAudio(media.buffer, mime);
+              const context = await getContext(chatKey);
+
+              await saveMessage({
+                platform: 'whatsapp',
+                chat_id: chatKey,
+                role: 'user',
+                content: `[Voice Note]: "${transcription}"`,
+              });
+
+              let webResults: string | null = null;
+              if (needsSearch(transcription)) {
+                try {
+                  webResults = await searchWeb(transcription);
+                } catch (err) {
+                  console.warn('[wa-cloud] Gagal penelusuran web audio:', err);
+                }
+              }
+
+              const { reply, via } = await autoReply(transcription, context, webResults);
+              await sendWhatsAppCloudMessageSafe(from, reply);
+              await saveMessage({
+                platform: 'whatsapp',
+                chat_id: chatKey,
+                role: 'assistant',
+                content: reply.slice(0, 4000),
+                via,
+              });
+              noteExchange(chatKey);
+            } catch (err) {
+              console.error('[wa-cloud] Gagal transkripsi audio/VN:', err);
+              await sendWhatsAppCloudMessageSafe(
+                from,
+                'Suara dalam rekaman audio tidak terdengar jelas atau kosong. Boleh tolong kirim ulang atau ketik melalui teks?',
+              );
+            }
+            continue;
+          }
+        }
+
+        // Kasus 4: Stiker WhatsApp (.webp)
+        if (msgType === 'sticker' && m.sticker?.id) {
+          const media = await downloadWhatsAppCloudMedia(m.sticker.id);
+          if (media) {
+            const context = await getContext(chatKey);
+            await saveMessage({
+              platform: 'whatsapp',
+              chat_id: chatKey,
+              role: 'user',
+              content: '[Stiker WhatsApp]',
+            });
+
+            const { reply, via } = await processIncomingSticker(
+              media.buffer,
+              media.mime || 'image/webp',
+              undefined,
+              context,
+            );
+
+            await sendWhatsAppCloudMessageSafe(from, reply);
+            await saveMessage({
+              platform: 'whatsapp',
+              chat_id: chatKey,
+              role: 'assistant',
+              content: reply.slice(0, 4000),
+              via,
+            });
+            noteExchange(chatKey);
+            continue;
+          }
+        }
+
+        // Kasus 5: Video
+        if (msgType === 'video' && m.video?.id) {
+          const caption = m.video.caption?.trim();
+          const context = await getContext(chatKey);
+
+          await saveMessage({
+            platform: 'whatsapp',
+            chat_id: chatKey,
+            role: 'user',
+            content: `[Video] ${caption || ''}`.trim(),
+          });
+
+          const prompt = caption
+            ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, jelas, dan bersahabat.`
+            : 'User mengirim video. Beritahukan dengan ramah bahwa videonya diterima, dan tanyakan apa yang ingin didiskusikan.';
+
+          const { reply, via } = await autoReply(prompt, context);
+          await sendWhatsAppCloudMessageSafe(from, reply);
+          await saveMessage({
+            platform: 'whatsapp',
+            chat_id: chatKey,
+            role: 'assistant',
+            content: reply.slice(0, 4000),
+            via,
+          });
+          noteExchange(chatKey);
+          continue;
+        }
+
+        // Kasus 6: Pesan Teks & Tombol Interaktif
         let text = '';
         if (msgType === 'text' && m.text?.body) {
           text = m.text.body.trim();
