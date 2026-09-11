@@ -178,6 +178,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.21.0 — 2026-09-11 12:55 WIB
+**Pembaruan Utama: Unified Real-Time Monitoring Dashboard & Stats Engine**
+- **Dashboard Pemantauan Terpadu (`public/index.html` & `public/dashboard.html`)**:
+  - Halaman web monitoring modern bertema dark-mode yang menyajikan visualisasi menyeluruh dalam satu layar tanpa perlu login terpisah ke provider atau database.
+  - Memuat metrik performa real-time dengan auto-refresh otomatis per 15 detik (dapat diaktifkan/dinonaktifkan dan di-refresh manual).
+- **Endpoint Analitik Real-Time (`api/stats.ts`)**:
+  - Mengagregasi data kuota langsung dari tabel Supabase `provider_quota` dan log percakapan tabel `messages`.
+  - Melacak status kesehatan 12 API Key secara individual (Groq, Gemini, OpenRouter, Ollama) berdasarkan akhiran 4 karakter (*masked suffix*), kuota terpakai, batas harian, dan persentase penggunaan dengan penanda visual (Healthy, Warning >80%, Capped).
+  - Menghitung statistik pesan hari ini vs semua waktu, proporsi traffic WhatsApp vs Telegram, distribusi pemanggilan model AI, dan kuantitas pemrosesan media (Voice Note Whisper, Dokumen PDF/Word, Foto, Stiker, dan Teks).
+  - Menampilkan log aktivitas 25 percakapan terbaru dengan penyamaran nomor telepon (*privacy masking*) demi keamanan privasi data pengguna.
+
 ### v0.20.1 — 2026-09-11 11:20 WIB
 **Perbaikan: Eliminasi Halusinasi Penolakan VN & Voice Note Self-Awareness**
 - **Penetapan Kesadaran Multimodal di `systemPrompt` (`src/skills.ts`)**:

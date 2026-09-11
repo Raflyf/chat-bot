@@ -11,6 +11,9 @@
     },
     "api/cron/reminders.ts": {
       "maxDuration": 30
+    },
+    "api/stats.ts": {
+      "maxDuration": 15
     }
   },
   "headers": [
