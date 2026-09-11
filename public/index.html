@@ -11,6 +11,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script>
+    // Keamanan Sesi Admin: Saat pengguna berada di halaman utama / beranda,
+    // sesi admin dimusnahkan sehingga kunjungan berikutnya ke panel admin wajib memasukkan Master PIN.
+    (function() {
+      try {
+        sessionStorage.removeItem("freeaibot_admin_session_token");
+        sessionStorage.removeItem("freeaibot_admin_session_exp");
+        localStorage.removeItem("freeaibot_admin_session_token");
+        localStorage.removeItem("freeaibot_admin_session_exp");
+      } catch (_) {}
+    })();
+  </script>
   <style>
     :root {
       --bg-base: #090d16;
@@ -528,7 +540,7 @@
   <!-- Footer -->
   <footer>
     <div class="container">
-      FreeAiBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.22.6
+      FreeAiBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.24.1
     </div>
   </footer>
 

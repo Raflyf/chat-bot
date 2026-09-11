@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.23.9  
+**Versi:** v0.24.1  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 17:05 WIB  
+**Terakhir Diperbarui:** 2026-09-11 17:30 WIB  
 
 ---
 
@@ -191,6 +191,32 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.24.1 — 2026-09-11 17:30 WIB
+**Qwen xKiro Primary Vision Prioritization, WhatsApp 1,000 Monthly Sessions Tracker & Flush-Top Compact Navbar**
+- **Prioritas Utama Model Vision Qwen xKiro (`src/providers.ts`)**:
+  - Mengubah urutan prioritas pemrosesan foto/gambar (*vision modality*): menempatkan xKiro (model `qwen/qwen3.8-max:free`, `qwen/qwen3.6-plus:free`, `qwen/qwen3-vl-plus:free`) sebagai prioritas nomor 1 (`priority: 1`).
+  - Menempatkan OpenRouter Vision sebagai cadangan (`priority: 2`) dan Google Gemini sebagai fallback terakhir (`priority: 3`), sehingga Gemini hanya digunakan jika xKiro dan OpenRouter tidak merespons.
+- **Monitoring Kuota Sesi Bulanan WhatsApp Meta Cloud API (`api/stats.ts`, `public/dashboard.html`)**:
+  - Menghitung jumlah sesi percakapan WhatsApp bulan ini berbasis jendela waktu 24 jam per nomor pengguna (*Service Conversations*).
+  - Edukasi Kuota Meta 1.000 Sesi/Bulan: Jendela 24 jam dihitung sejak pesan pertama pengguna; interaksi chat bolak-balik tanpa batas selama 24 jam tersebut hanya dihitung 1 sesi tunggal ($0 free-tier).
+  - Menyematkan kartu metrik *Sesi WhatsApp (Meta Cloud)* pada ribbon monitoring dashboard (`used / 1.000 limit`, sisa kuota sesi gratis bulan ini, dan status Free Tier).
+- **Redesain Navbar Dashboard: Rapat ke Atas & Lebih Ramping (`public/dashboard.html`)**:
+  - Menghilangkan celah melayang: navbar kini rapat menempel persis ke batas atas peramban (`top: 0`, `margin: 0 -1.5rem 1.25rem -1.5rem`, `border-radius: 0`, `border-bottom: 1px solid var(--border-subtle)`).
+  - Desain lebih ramping dan proporsional: ukuran icon dikecilkan dari 44px menjadi 32px, tipografi disederhanakan, dan padding tombol header diperkecil agar tidak memakan ruang vertikal layar.
+
+### v0.24.0 — 2026-09-11 17:20 WIB
+**Strict Admin Session Isolation, Zero Tab Persistence & 15-Minute Auto-Lock Timeout**
+- **Isolasi Sesi Per Tab (Zero Persistent Storage)**:
+  - Mengeliminasi penyimpanan token sesi admin di `localStorage`, beralih murni menggunakan `sessionStorage`.
+  - Sesi otomatis hancur seketika saat tab atau peramban ditutup; membuka kembali tab admin wajib memasukkan Master PIN dari awal.
+- **Pembersihan Otomatis Saat Navigasi ke Beranda (Leave-to-Home)**:
+  - Menyematkan handler `leaveToHome(event)` pada tombol `← Beranda` di modal login dan navbar header dashboard yang membersihkan seluruh sisa token sebelum beralih ke halaman utama.
+  - Memasang skrip pembersih sesi di `<head>` landing page (`public/index.html`) guna menjamin setiap kali pengunjung kembali ke landing page, sesi admin dimusnahkan secara menyeluruh.
+- **Batas Waktu Sesi 15 Menit Ketat (15-Minute Auto-Lock)**:
+  - Backend (`src/admin_auth.ts`): Memperketat masa berlaku token sesi dari 24 jam menjadi 15 menit (`now + 15 * 60 * 1000`) dan menyertakan timestamp `expires_at` pada respons autentikasi `api/admin-otp.ts`.
+  - Frontend (`public/dashboard.html`): Mengimplementasikan countdown timer dinamis (`startSessionExpiryCountdown`). Ketika durasi 15 menit tercapai, sistem secara otomatis mengunci tampilan dashboard (`triggerSessionExpired`), menghancurkan token, dan memunculkan modal PIN dengan notifikasi bahwa sesi telah berakhir untuk keamanan.
+  - Penanganan Terpadu Status HTTP 401: Pemanggilan `fetchData` atau `fetchDataset` yang menemui token kedaluwarsa langsung memicu penguncian layar otomatis.
 
 ### v0.23.9 — 2026-09-11 17:05 WIB
 **Refined 5-Column Ledger & Universal Quota Aggregation Across All Providers**
