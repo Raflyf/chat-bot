@@ -18,7 +18,7 @@ export interface ChatMsg {
   content: string | ContentPart[];
 }
 
-type ProviderKind = 'xkiro' | 'groq' | 'gemini' | 'openrouter' | 'ollama';
+type ProviderKind = 'xkiro' | 'groq' | 'gemini' | 'openrouter';
 
 interface CacheEntry {
   at: number;
@@ -163,17 +163,6 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[]): Prom
   return text;
 }
 
-async function ollamaChat(key: string, model: string, messages: ChatMsg[]): Promise<string> {
-  const data = (await postJson('https://ollama.com/api/chat', key, {
-    model,
-    messages,
-    stream: false,
-  })) as { message?: { content?: string } };
-  const text = data.message?.content?.trim() ?? '';
-  if (!text) throw new Error('EMPTY_RESPONSE');
-  return text;
-}
-
 interface Step {
   kind: ProviderKind;
   keys: string[];
@@ -223,20 +212,12 @@ function steps(): Step[] {
       cap: config.dailyCap.openrouter,
       run: (k, m, msgs) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs),
     },
-    {
-      kind: 'ollama',
-      keys: config.pools.ollama,
-      models: [config.models.ollamaPrimary, config.models.ollamaBackup],
-      visionModels: [],
-      cap: config.dailyCap.ollama,
-      run: (k, m, msgs) => ollamaChat(k, m, msgs),
-    },
   ];
 }
 
 /**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: Groq (ultra-cepat ~2s) > Gemini > OpenRouter > Ollama.
+ * - Teks umum / matematika / koding: Groq (ultra-cepat ~2s) > Gemini > OpenRouter.
  * - Vision / gambar: Gemini (nativ multimodal ~1.7s) > OpenRouter Vision.
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
@@ -253,7 +234,7 @@ export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Pr
     ? allSteps
         .filter((s) => s.visionModels.length > 0)
         .sort((a, b) => {
-          const priority: Record<string, number> = { gemini: 1, openrouter: 2, xkiro: 3, groq: 4, ollama: 5 };
+          const priority: Record<string, number> = { gemini: 1, openrouter: 2, xkiro: 3, groq: 4 };
           return (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
         })
     : allSteps;

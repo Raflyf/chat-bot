@@ -1475,12 +1475,6 @@
       border: 1px solid rgba(16, 185, 129, 0.35);
     }
 
-    .tag-ollama {
-      background: rgba(245, 158, 11, 0.15);
-      color: #fbbf24;
-      border: 1px solid rgba(245, 158, 11, 0.35);
-    }
-
     .card-model-name {
       font-size: 0.92rem;
       font-weight: 700;
@@ -1725,7 +1719,6 @@
             <button class="pill-filter-btn" data-provider="groq" onclick="setProviderFilter('groq')">Groq</button>
             <button class="pill-filter-btn" data-provider="gemini" onclick="setProviderFilter('gemini')">Gemini</button>
             <button class="pill-filter-btn" data-provider="openrouter" onclick="setProviderFilter('openrouter')">OpenRouter</button>
-            <button class="pill-filter-btn" data-provider="ollama" onclick="setProviderFilter('ollama')">Ollama</button>
           </div>
           <select id="key-status-filter" class="filter-select" onchange="setKeyStatusFilter(this.value)">
             <option value="all">Semua Status Key</option>
@@ -1895,10 +1888,10 @@
           </select>
           <select id="dataset-model-filter" class="filter-select" onchange="fetchDataset()">
             <option value="">Semua Model</option>
+            <option value="xkiro">xKiro (Qwen 3.8)</option>
             <option value="groq">Groq (Qwen/Whisper)</option>
             <option value="gemini">Gemini</option>
             <option value="openrouter">OpenRouter</option>
-            <option value="ollama">Ollama</option>
           </select>
           <button class="btn btn-primary" onclick="downloadDataset('jsonl')" title="Unduh format JSONL untuk Fine-Tuning LLM">
             <span>Unduh JSONL</span>
@@ -1915,14 +1908,15 @@
             <tr>
               <th style="width: 125px; white-space: nowrap;">Waktu &amp; Platform</th>
               <th style="width: 130px; white-space: nowrap;">Chat ID &amp; Model</th>
+              <th style="width: 140px; white-space: nowrap;">Konsumsi Token</th>
               <th style="width: 25%; min-width: 180px;">Pertanyaan Pengguna (Prompt)</th>
-              <th style="min-width: 320px;">Jawaban Chatbot (Completion)</th>
+              <th style="min-width: 300px;">Jawaban Chatbot (Completion)</th>
               <th style="width: 70px; text-align: right;">Aksi</th>
             </tr>
           </thead>
           <tbody id="dataset-tbody">
             <tr>
-              <td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat dataset evaluasi...</td>
+              <td colspan="6" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat dataset evaluasi...</td>
             </tr>
           </tbody>
         </table>
@@ -2437,7 +2431,7 @@
       // Pool reset label
       const poolReset = document.getElementById("pool-reset-label");
       if (poolReset) {
-        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (xKiro, Groq, OpenRouter) \u2022 00:00 PT (Gemini) \u2022 Siklus Bulanan (Ollama)";
+        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (xKiro, Groq, OpenRouter) \u2022 00:00 PT (Gemini)";
         else poolReset.textContent = `Akumulasi Periode ${rangeLabel}`;
       }
 
@@ -2609,20 +2603,6 @@
           desc: "Model berkecepatan tinggi OpenRouter Cloud",
           matchKeys: ["openrouter/nvidia/nemotron-3.5-lightning:free", "nemotron-3.5-lightning"],
         },
-        {
-          name: "Nemotron 3 Nano (Ollama Cloud)",
-          provider: "OLLAMA CLOUD",
-          tagClass: "tag-ollama",
-          desc: "Model frontier reasoning di Ollama Cloud Gateway",
-          matchKeys: ["ollama/nemotron-3-nano:30b", "nemotron-3-nano"],
-        },
-        {
-          name: "GPT-OSS 20B (Ollama Cloud)",
-          provider: "OLLAMA CLOUD",
-          tagClass: "tag-ollama",
-          desc: "Model dense teroptimasi latensi rendah",
-          matchKeys: ["ollama/gpt-oss:20b", "gpt-oss"],
-        },
       ];
 
       // Identifikasi model yang sedang aktif merespon / paling baru digunakan
@@ -2645,7 +2625,6 @@
         if (activeRaw.includes("groq")) { prov = "GROQ"; tagCls = "tag-groq"; }
         else if (activeRaw.includes("gemini")) { prov = "GEMINI"; tagCls = "tag-gemini"; }
         else if (activeRaw.includes("openrouter")) { prov = "OPENROUTER"; tagCls = "tag-openrouter"; }
-        else if (activeRaw.includes("ollama")) { prov = "OLLAMA CLOUD"; tagCls = "tag-ollama"; }
         else if (activeRaw.includes("xkiro")) { prov = "XKIRO"; tagCls = "tag-xkiro"; }
 
         const dynamicItem = {
@@ -2896,7 +2875,7 @@
 
       const total = cachedDatasetPairs.length;
       if (total === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2.5rem;">Tidak ada data percakapan yang cocok dengan filter pencarian.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 2.5rem;">Tidak ada data percakapan yang cocok dengan filter pencarian.</td></tr>`;
         if (infoEl) infoEl.textContent = "Tidak ada percakapan ditemukan";
         if (controlsEl) controlsEl.innerHTML = "";
         return;
@@ -2918,6 +2897,12 @@
           ? `<span class="badge badge-wa">WhatsApp</span>`
           : `<span class="badge badge-tele">Telegram</span>`;
 
+        // Metrik token per chat (Input Prompt, Context total, Output Reply, Total Terpakai)
+        const promptTk = Number(p.promptTokens) || Math.max(1, Math.ceil(((p.userPrompt || "")).length / 3.8));
+        const outTk = Number(p.completionTokens) || (p.botReply ? Math.max(1, Math.ceil(p.botReply.length / 3.8)) : 0);
+        const ctxTk = Number(p.contextTokens) || (650 + promptTk);
+        const totalTk = Number(p.totalTokens) || (ctxTk + outTk);
+
         tr.innerHTML = `
           <td>
             <div style="font-size: 0.775rem; color: var(--text-muted); font-family: var(--font-mono);">${formatDateTime(p.createdAt)}</div>
@@ -2926,6 +2911,15 @@
           <td>
             <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim);">${escapeHtml(p.chatIdMasked)}</div>
             <div style="margin-top: 0.2rem;"><span class="model-tag">${escapeHtml(p.via || "Router")}</span></div>
+          </td>
+          <td>
+            <div style="font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; color: var(--accent-cyan); display: flex; align-items: center; gap: 0.35rem;">
+              <span>${totalTk.toLocaleString("id-ID")}</span>
+              <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal;">tk</span>
+            </div>
+            <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;" title="Context: Base System (~650) + Prompt (${promptTk}) = ${ctxTk} | Output: ${outTk}">
+              <span style="color: var(--text-muted);">Ctx:</span> ${ctxTk.toLocaleString("id-ID")} &bull; <span style="color: var(--text-muted);">Out:</span> ${outTk.toLocaleString("id-ID")}
+            </div>
           </td>
           <td>
             <div class="dataset-prompt">${escapeHtml(p.userPrompt)}</div>
@@ -2951,8 +2945,9 @@
       if (controlsEl) {
         let paginationHtml = "";
 
-        const prevDisabled = currentDatasetPage <= 1 ? "disabled" : "";
-        paginationHtml += `<button class="pagination-btn" ${prevDisabled} onclick="goToDatasetPage(${currentDatasetPage - 1})">&laquo; Prev</button>`;
+        const prevDisabledAttr = currentDatasetPage <= 1 ? "disabled" : "";
+        const prevAction = currentDatasetPage <= 1 ? "" : `onclick="goToDatasetPage(${currentDatasetPage - 1})"`;
+        paginationHtml += `<button class="pagination-btn" ${prevDisabledAttr} ${prevAction}>&laquo; Prev</button>`;
 
         let startPage = Math.max(1, currentDatasetPage - 2);
         let endPage = Math.min(totalPages, startPage + 4);
@@ -2979,8 +2974,9 @@
           paginationHtml += `<button class="pagination-btn" onclick="goToDatasetPage(${totalPages})">${totalPages}</button>`;
         }
 
-        const nextDisabled = currentDatasetPage >= totalPages ? "disabled" : "";
-        paginationHtml += `<button class="pagination-btn ${nextDisabled} onclick="goToDatasetPage(${currentDatasetPage + 1})">Next &raquo;</button>`;
+        const nextDisabledAttr = currentDatasetPage >= totalPages ? "disabled" : "";
+        const nextAction = currentDatasetPage >= totalPages ? "" : `onclick="goToDatasetPage(${currentDatasetPage + 1})"`;
+        paginationHtml += `<button class="pagination-btn" ${nextDisabledAttr} ${nextAction}>Next &raquo;</button>`;
 
         controlsEl.innerHTML = paginationHtml;
       }

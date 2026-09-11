@@ -21,7 +21,6 @@ export const config = {
     openrouter: csv('OPENROUTER_KEYS'),
     groq: csv('GROQ_KEYS'),
     gemini: csv('GEMINI_KEYS'),
-    ollama: csv('OLLAMA_KEYS'),
   },
   models: {
     xkiroPrimary: process.env.XKIRO_MODEL_PRIMARY ?? 'qwen/qwen3.8-max:free',
@@ -44,8 +43,6 @@ export const config = {
     groqBackup: process.env.GROQ_MODEL_BACKUP ?? 'qwen/qwen3.6-27b',
     geminiPrimary: process.env.GEMINI_MODEL_PRIMARY ?? 'gemini-3.8-flash',
     geminiBackup: process.env.GEMINI_MODEL_BACKUP ?? 'gemini-2.5-flash',
-    ollamaPrimary: process.env.OLLAMA_MODEL_PRIMARY ?? 'nemotron-3-nano:30b',
-    ollamaBackup: process.env.OLLAMA_MODEL_BACKUP ?? 'gpt-oss:20b',
   },
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
   // Service-role diutamakan (server-side only); mendukung format integrasi Supabase Vercel
@@ -77,7 +74,6 @@ export const config = {
     openrouter: num('DAILY_CAP_OPENROUTER', 50),
     groq: num('DAILY_CAP_GROQ', 1000),
     gemini: num('DAILY_CAP_GEMINI', 1500),
-    ollama: num('DAILY_CAP_OLLAMA', 1000),
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
@@ -100,7 +96,6 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
     config.pools.xkiro.length +
     config.pools.openrouter.length +
     config.pools.groq.length +
-    config.pools.gemini.length +
-    config.pools.ollama.length;
+    config.pools.gemini.length;
   if (totalKeys === 0) throw new Error('Semua pool key kosong. Isi minimal satu provider di .env.');
 }

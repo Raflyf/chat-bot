@@ -17,6 +17,10 @@ export interface DatasetPair {
   botReply: string;
   via: string;
   createdAt: string;
+  promptTokens: number;
+  completionTokens: number;
+  contextTokens: number;
+  totalTokens: number;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
@@ -117,6 +121,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           if (!matchUser && !matchBot && !matchVia) continue;
         }
 
+        // Estimasi token per chat: Base system context (~650 tk) + prompt user + output bot
+        const promptTokens = Math.max(1, Math.ceil(prompt.length / 3.8));
+        const completionTokens = reply ? Math.max(1, Math.ceil(reply.length / 3.8)) : 0;
+        const contextTokens = 650 + promptTokens;
+        const totalTokens = contextTokens + completionTokens;
+
         pairs.push({
           id: userMsg.id,
           platform: pForm,
@@ -125,6 +135,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           botReply: reply,
           via,
           createdAt: botMsg?.created_at || userMsg.created_at,
+          promptTokens,
+          completionTokens,
+          contextTokens,
+          totalTokens,
         });
       }
     }
@@ -150,6 +164,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
               platform: p.platform,
               model_via: p.via,
               timestamp: p.createdAt,
+              context_tokens: p.contextTokens,
+              output_tokens: p.completionTokens,
+              total_tokens: p.totalTokens,
             },
           }),
         );
@@ -166,7 +183,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Format 2: CSV (Format Evaluasi Spreadsheet / Excel)
     if (format === 'csv') {
       const escapeCsv = (str: string) => `"${(str || '').replace(/"/g, '""')}"`;
-      const csvHeader = 'ID,Waktu,Platform,User_Chat,Jawaban_Bot,Model_Via\n';
+      const csvHeader = 'ID,Waktu,Platform,User_Chat,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens\n';
       const csvRows = finalPairs
         .map((p) =>
           [
@@ -176,6 +193,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
             escapeCsv(p.userPrompt),
             escapeCsv(p.botReply),
             escapeCsv(p.via),
+            p.contextTokens,
+            p.completionTokens,
+            p.totalTokens,
           ].join(','),
         )
         .join('\n');
