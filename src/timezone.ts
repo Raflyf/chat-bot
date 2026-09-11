@@ -341,9 +341,9 @@ export function buildUniversalTimePrompt(
   const wita = formatInZone(now, 'Asia/Makassar');
   const wit = formatInZone(now, 'Asia/Jayapura');
   parts.push(`- WAKTU INDONESIA (3 ZONA RESMI):`);
-  parts.push(`  * WIB (Barat - Jawa, Sumatera, Kalbar, Kalteng): ${wib.time} WIB (${wib.dayName}, ${wib.dateStr})`);
-  parts.push(`  * WITA (Tengah - Bali, NTB, NTT, Kalsel, Kaltim, Kaltara, Sulawesi): ${wita.time} WITA`);
-  parts.push(`  * WIT (Timur - Papua, Maluku): ${wit.time} WIT`);
+  parts.push(`  * WIB (Indonesia Barat): ${wib.time} WIB (${wib.dayName}, ${wib.dateStr})`);
+  parts.push(`  * WITA (Indonesia Tengah): ${wita.time} WITA`);
+  parts.push(`  * WIT (Indonesia Timur): ${wit.time} WIT`);
 
   // 4. Matriks Kota Acuan Global Utama Dunia
   const tokyo = formatInZone(now, 'Asia/Tokyo');
@@ -362,10 +362,10 @@ export function buildUniversalTimePrompt(
   parts.push(`2. Jika temanmu memiliki lokasi tersimpan di profil/riwayat (${profileLoc?.label || 'belum ada'}): jawab langsung menggunakan waktu lokasinya.`);
   parts.push(`3. Jika temanmu bilang dia berada di daerah/negara tertentu (misal: "aku lagi di Bali/Jerman/Makassar, jam berapa sekarang?"): gunakan waktu zona tempat tinggalnya.`);
   parts.push(`4. Jika temanmu memakai nomor luar negeri (${detectedUserCountry?.country || 'non-ID'}): sesuaikan dengan waktu lokal negaranya.`);
-  parts.push(`5. ATURAN MUTLAK KETIKA LOKASI PENGGUNA BELUM DIKETAHUI (NOMOR INDONESIA +62):`);
-  parts.push(`   - DILARANG KERAS berasumsi semua orang berada di WIB atau hanya menjawab waktu WIB seolah-olah WITA dan WIT tidak ada.`);
-  parts.push(`   - Sajikan ketiga zona waktu Indonesia secara serentak, jelas, dan ramah:`);
-  parts.push(`     Contoh: "Sekarang jam ${wib.time} WIB | ${wita.time} WITA | ${wit.time} WIT. Kamu lagi di daerah mana nih? (Boleh kasih tahu kotamu biar lokasimu bisa aku ingat untuk seterusnya)."`);
+  parts.push(`5. ATURAN KETIKA LOKASI PENGGUNA BELUM DIKETAHUI (NOMOR INDONESIA +62):`);
+  parts.push(`   - DILARANG menjabarkan daftar pulau/provinsi panjang seperti ensiklopedia/buku pelajaran.`);
+  parts.push(`   - Jawablah santai, hangat, dan ringkas (1-2 kalimat saja):`);
+  parts.push(`     Contoh: "Sekarang jam ${wib.time.slice(0, 5)} WIB (atau ${wita.time.slice(0, 5)} WITA / ${wit.time.slice(0, 5)} WIT). Kamu lagi di kota mana nih?"`);
   parts.push(`- Kamu menguasai seluruh zona waktu dunia secara presisi tanpa ragu dan tidak pernah menolak pertanyaan jam/waktu.`);
 
   return parts.join('\n');
