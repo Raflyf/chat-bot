@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.23.1  
+**Versi:** v0.23.2  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 15:25 WIB  
+**Terakhir Diperbarui:** 2026-09-11 15:35 WIB  
 
 ---
 
@@ -191,6 +191,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.23.2 — 2026-09-11 15:35 WIB
+**Restrukturisasi UI Observabilitas: Pemisahan Tabel Matriks Kuota Token & Perampingan Kartu Rotasi Kunci Provider**
+- **Pemisahan Matriks Token & Konteks dari Kartu Kunci (`public/dashboard.html`)**:
+  - Menjawab umpan balik tata letak: Menghilangkan sub-box ganda yang berdesakan di dalam kartu baris API key sempit.
+  - Mengembalikan baris kartu kunci API (`#pool-grid`) ke format minimalis, lega, dan elegan (sufiks kunci, badge status optimal/waspada/capped, total calls, dan progress bar mulus).
+  - Membangun **Panel Tabel Khusus "Matriks Kuota Token & Siklus Limit Provider"** (`#token-matrix-section`) terpisah di bawah pool key, menyajikan perbandingan komprehensif tingkat provider secara horizontal dan luas tanpa berdesakan.
+- **Validasi Empiris & Penyelarasan Faktual Batasan Kuota Provider**:
+  - **xKiro Gateway**: 5.000.000 Token/hari per key (Daily Token Cap), 1M Context Window, reset harian 00:00 UTC.
+  - **Groq Cloud API**: 200.000 Token/hari (200K TPD untuk model teks seperti Qwen 3.8 / GPT-OSS) & 1.000 RPD, Whisper 2.000 RPD, 131K Context Window, reset harian 00:00 UTC.
+  - **Google Gemini (Google AI Studio Free Tier)**: Bebas kuota token harian mutlak! Pembatasan murni berdasarkan **Permintaan (1.500 RPD Flash/Flash-Lite)**, 1M TPM, dan 1M Context Window, reset harian 00:00 Pacific Time.
+  - **OpenRouter AI Pool**: Bebas kuota token harian mutlak untuk model free! Dibatasi murni **50 RPD (Free Baru) / 1.000 RPD (Deposit $10)** dan 20 RPM, 131K Context Window, reset harian 00:00 UTC.
+  - **Ollama Cloud**: Terbukti empiris menggunakan **Siklus Reset Bulanan (Monthly Included Usage Credits)**, bukan reset harian.
+- **Pembaruan Default Runtime (`src/env.ts`, `api/stats.ts`)**:
+  - Menyelaraskan nilai default `dailyCap` dengan angka RPD aktual: Groq (1.000 RPD), Gemini (1.500 RPD), OpenRouter (50 RPD).
 
 ### v0.23.1 — 2026-09-11 15:25 WIB
 **Observabilitas Lanjut: Monitoring Dual-Metric (Token per Chat & Token per Context Window) pada Seluruh API Key Provider**
