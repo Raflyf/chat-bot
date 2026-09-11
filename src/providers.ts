@@ -183,6 +183,7 @@ function steps(): Step[] {
         'qwen/qwen3.8-max:free',
         'qwen/qwen3.6-plus:free',
         'qwen/qwen3-vl-plus:free',
+        'mistralai/mistral-large-2512',
       ],
       cap: config.dailyCap.xkiro,
       run: (k, m, msgs) => openAiChat('https://api.xkiro.com/v1', k, m, msgs),
@@ -191,7 +192,7 @@ function steps(): Step[] {
       kind: 'groq',
       keys: config.pools.groq,
       models: [config.models.groqPrimary, config.models.groqBackup],
-      visionModels: [],
+      visionModels: [config.models.groqPrimary, config.models.groqBackup],
       cap: config.dailyCap.groq,
       run: (k, m, msgs) => openAiChat('https://api.groq.com/openai/v1', k, m, msgs),
     },
@@ -217,7 +218,7 @@ function steps(): Step[] {
 /**
  * Chat dengan failover cerdas:
  * - Teks umum / matematika / koding: xKiro (Qwen 3.8 / 3.6) > Groq > Gemini > OpenRouter.
- * - Vision / foto / gambar: xKiro Qwen 3.8 / 3.6 (Utama) > OpenRouter Vision > Gemini (Fallback terakhir).
+ * - Vision / foto / gambar: xKiro (Qwen / Mistral) > Groq Qwen > Gemini > OpenRouter.
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
 export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Promise<{ text: string; via: string }> {
@@ -228,12 +229,12 @@ export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Pr
 
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
-  // Untuk vision: utamakan xKiro (Qwen 3.8 / 3.6) sebagai prioritas utama, lalu OpenRouter, dan Gemini sebagai fallback cadangan
+  // Untuk vision: Urutan sesuai instruksi (xKiro -> Groq Qwen -> Gemini -> OpenRouter)
   const orderedSteps = needVision
     ? allSteps
         .filter((s) => s.visionModels.length > 0)
         .sort((a, b) => {
-          const priority: Record<string, number> = { xkiro: 1, openrouter: 2, gemini: 3, groq: 4 };
+          const priority: Record<string, number> = { xkiro: 1, groq: 2, gemini: 3, openrouter: 4 };
           return (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
         })
     : allSteps;
