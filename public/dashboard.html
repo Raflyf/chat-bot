@@ -2678,10 +2678,13 @@
       const rangeLabel = data.rangeLabel || "Hari Ini";
       const platformLabel = data.platform === "whatsapp" ? " (WhatsApp)" : data.platform === "telegram" ? " (Telegram)" : "";
 
-      // Header Info
-      document.getElementById("bot-name").textContent = data.botName || "FreeAIBot Console";
-      document.getElementById("server-time").textContent =
-        "Sinkronisasi: " + formatTime(data.serverTime) + " WIB \u2022 Periode: " + rangeLabel + platformLabel;
+      if (data.isDatabaseConnected === false) {
+        document.getElementById("server-time").textContent =
+          "Sinkronisasi: " + formatTime(data.serverTime) + " WIB \u2022 Supabase Belum Terhubung di Vercel Env";
+      } else {
+        document.getElementById("server-time").textContent =
+          "Sinkronisasi: " + formatTime(data.serverTime) + " WIB \u2022 Periode: " + rangeLabel + platformLabel;
+      }
 
       // KPI Titles & Values
       document.getElementById("kpi-title-msgs").textContent = `Pesan (${rangeLabel})`;

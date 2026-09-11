@@ -31,12 +31,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  const c = db();
-  if (!c) {
-    res.status(503).json({ error: 'Database client unavailable' });
-    return;
-  }
-
   const range = String(req.query.range || 'today').toLowerCase();
   const filterPlatform = typeof req.query.platform === 'string' ? req.query.platform.toLowerCase().trim() : '';
 
@@ -77,6 +71,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     startDayStr = todayStr;
     rangeLabel = 'Hari Ini';
     daysCount = 1;
+  }
+
+  const c = db();
+  if (!c) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.status(200).json({
+      ok: true,
+      botName: config.botName,
+      serverTime: now.toISOString(),
+      range,
+      rangeLabel,
+      platform: filterPlatform || 'all',
+      isDatabaseConnected: false,
+      databaseNotice: 'Basis data Supabase belum terhubung di Vercel. Tambahkan SUPABASE_URL dan SUPABASE_SERVICE_KEY di Project Settings > Environment Variables Vercel.',
+      summary: {
+        totalMessagesPeriod: 0,
+        totalMessagesToday: 0,
+        totalMessagesAllTime: 0,
+        whatsappPeriod: 0,
+        whatsappToday: 0,
+        telegramPeriod: 0,
+        telegramToday: 0,
+        totalCallsPeriod: 0,
+        totalCallsToday: 0,
+        totalTokensPeriod: 0,
+        totalKeys: 0,
+        whatsappMonthlySessions: { used: 0, limit: 1000, remaining: 1000, monthLabel: 'Sep 2026' },
+      },
+      modelsBreakdown: [],
+      mediaCounts: { text: 0, voice: 0, image: 0, sticker: 0, document: 0, video: 0 },
+      pools: [],
+      recentModels: [],
+    });
+    return;
   }
 
   try {
