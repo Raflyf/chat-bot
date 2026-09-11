@@ -573,35 +573,19 @@
 
     /* Dataset Pair Styling */
     .dataset-prompt {
-      max-width: 320px;
+      max-width: 100%;
       font-weight: 500;
       color: #e2e8f0;
       word-break: break-word;
-      line-height: 1.45;
-      max-height: 220px;
-      overflow-y: auto;
-      padding-right: 0.35rem;
+      line-height: 1.5;
     }
 
     .dataset-reply {
-      max-width: 520px;
+      max-width: 100%;
       color: #94a3b8;
       word-break: break-word;
-      line-height: 1.45;
-      max-height: 220px;
-      overflow-y: auto;
-      padding-right: 0.35rem;
-    }
-
-    .dataset-prompt::-webkit-scrollbar,
-    .dataset-reply::-webkit-scrollbar {
-      width: 4px;
-    }
-
-    .dataset-prompt::-webkit-scrollbar-thumb,
-    .dataset-reply::-webkit-scrollbar-thumb {
-      background: var(--border-subtle);
-      border-radius: 4px;
+      line-height: 1.5;
+      white-space: pre-wrap;
     }
 
     /* Pagination Component */
@@ -1307,11 +1291,11 @@
         <table>
           <thead>
             <tr>
-              <th style="width: 130px;">Waktu &amp; Platform</th>
-              <th style="width: 140px;">Chat ID &amp; Model</th>
-              <th>Pertanyaan Pengguna (Prompt)</th>
-              <th>Jawaban Chatbot (Completion)</th>
-              <th style="width: 80px; text-align: right;">Aksi</th>
+              <th style="width: 125px; white-space: nowrap;">Waktu &amp; Platform</th>
+              <th style="width: 130px; white-space: nowrap;">Chat ID &amp; Model</th>
+              <th style="width: 25%; min-width: 180px;">Pertanyaan Pengguna (Prompt)</th>
+              <th style="min-width: 320px;">Jawaban Chatbot (Completion)</th>
+              <th style="width: 70px; text-align: right;">Aksi</th>
             </tr>
           </thead>
           <tbody id="dataset-tbody">
