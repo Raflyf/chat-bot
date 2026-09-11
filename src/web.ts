@@ -267,24 +267,28 @@ export function formulateSmartSearchQueries(query: string): string[] {
 
   const coreEntity = extractCoreEntity(query);
   const targetSubject = coreEntity.length >= 2 ? coreEntity : cleanRawLower.slice(0, 80);
+  const currentYear = new Date().getFullYear(); // 2026 saat ini
 
   const queries: string[] = [];
   if (targetSubject.length >= 2) {
     // Query utama — selalu sertakan subject lengkap
     queries.push(targetSubject);
 
-    // Untuk query tentang hal terkini / teknologi, tambahkan anchor waktu
+    // Selalu tambahkan anchor tahun sebagai secondary query
+    // agar Bing memprioritaskan konten 2026 untuk SEMUA topik
+    queries.push(`${targetSubject} ${currentYear}`);
+
+    // Untuk query tech/recency: tambahkan query spesifik sumber primer
     if (isRecencyQuery(query) || isTechQuery(query)) {
-      const currentYear = new Date().getFullYear();
-      queries.push(`${targetSubject} ${currentYear}`);
-      queries.push(`${targetSubject} latest release announcement`);
+      queries.push(`${targetSubject} latest release announcement ${currentYear}`);
       queries.push(`${targetSubject} site:github.com OR site:huggingface.co OR site:openai.com OR site:anthropic.com`);
     } else {
-      queries.push(`${targetSubject} terbaru`);
-      queries.push(`${targetSubject} info`);
+      queries.push(`${targetSubject} terbaru ${currentYear}`);
     }
   } else {
-    queries.push(query.trim().slice(0, 80));
+    const raw = query.trim().slice(0, 80);
+    queries.push(raw);
+    queries.push(`${raw} ${currentYear}`);
   }
 
   return Array.from(new Set(queries)).filter((q) => q.length >= 2).slice(0, 4);
@@ -403,7 +407,7 @@ export async function searchWeb(query: string): Promise<string> {
     const bingQueries = [primaryQ, secondaryQ].filter((q, i, arr) => arr.indexOf(q) === i).slice(0, 2);
     for (const bq of bingQueries) {
       fetches.push(
-        fetch(`https://www.bing.com/search?q=${encodeURIComponent(bq)}&setlang=en`, {
+        fetch(`https://www.bing.com/search?q=${encodeURIComponent(bq)}&setlang=en&sortby=Date`, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9,id-ID;q=0.8,id;q=0.7',
