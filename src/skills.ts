@@ -244,6 +244,16 @@ export function cleanMathAndNoise(text: string): string {
   out = out.replace(/[ \t]{2,}/g, ' ');
   out = out.replace(/\n{3,}/g, '\n\n').trim();
 
+  // 16. Normalisasi newline berlebihan pada percakapan santai
+  // Jika obrolan santai (< 400 karakter) dipecah enter/newline tanpa format list atau kode, satukan menjadi paragraf mengalir
+  if (!out.includes('```') && !out.includes('|') && out.length < 400) {
+    const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const hasListOrHeading = lines.some((l) => /^[-*•\d+>]|\*.*?\*:\s*$/.test(l));
+    if (!hasListOrHeading && lines.length > 1 && lines.length <= 3 && lines.every((l) => l.length < 160)) {
+      out = lines.join(' ');
+    }
+  }
+
   return out;
 }
 
@@ -350,6 +360,10 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '- DILARANG KERAS menggunakan template klise bot/CS: "Ada yang bisa dibantu?", "Tentu saja!", "Berikut adalah...", "Sebagai asisten AI...", "Saya siap mendengarkan tanpa penghakiman", "Jika Anda membutuhkan bantuan lebih lanjut, silakan tanyakan!".',
     '- DILARANG menggunakan tanda pisah panjang em-dash (—) di seluruh balasan. Gunakan koma, titik dua, atau tulis ulang kalimatnya.',
     '- Gunakan format WhatsApp yang bersih dan rapi (*teks tebal* untuk penekanan, kode di blok ```code```, tanda hubung - jika butuh daftar teknis terstruktur, TANPA heading pagar ###).',
+    '- STRUKTUR PARAGRAF WAJAR & ANTI-NEWLINE BERLEBIHAN:',
+    '  * DILARANG MEMECAH KALIMAT OBROLAN BIASA DENGAN ENTER / BARIS KOSONG (NEWLINE)!',
+    '  * Jika hanya obrolan santai atau terdiri dari 1-3 kalimat pendek, satukan dalam 1 paragraf mengalir alami layaknya manusia chatting di WhatsApp.',
+    '  * Baris baru (newline) HANYA dipakai jika memang perlu: seperti daftar poin (-), blok kode, atau penjelasan topik berbeda yang panjang.',
     '- EFISIENSI OUTPUT MUTLAK: Selalu sampaikan esensi jawaban secara padat, bernas, dan langsung ke sasaran tanpa berputar-putar.',
   ];
 

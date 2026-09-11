@@ -1,7 +1,17 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.10  
+**Versi:** v0.25.11  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 02:11 WIB  
+**Terakhir Diperbarui:** 2026-09-12 02:16 WIB  
+
+---
+
+## Ringkasan Pembaruan v0.25.11 (Normalisasi Newline Obrolan Santai & Penyatuan Paragraf Mengalir Alami)
+1. **Penyatuan Kalimat Obrolan Santai Alami (Eliminasi Newline Kosong / Enter Berlebihan)**:
+   - Menghapus kebiasaan memecah obrolan santai 1–3 kalimat menjadi baris-baris terpisah dengan enter kosong di tengah pesan.
+   - Mengimplementasikan Rule 16 pada `cleanMathAndNoise` di `src/skills.ts`: secara otomatis menyatukan obrolan santai pendek (< 400 karakter) yang dipecah newline tanpa adanya list atau kode menjadi satu paragraf yang mengalir lancar.
+   - Format teknis yang memang membutuhkan baris baru (seperti daftar poin `-`, blok kode ```, heading teks) tetap terlindungi dan mempertahankan newline secara rapi.
+2. **Pedoman Prompt Struktur Paragraf Wajar**:
+   - Menambahkan instruksi eksplisit agar model tidak memecah percakapan santai dengan baris baru yang mengganggu, menjaga obrolan menyerupai gaya berkirim pesan WhatsApp manusia normal.
 
 ---
 
