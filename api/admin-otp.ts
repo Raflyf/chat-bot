@@ -32,9 +32,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // 1. GET AUTH STATE
     if (action === 'get_auth_state' || (!action && req.method === 'GET')) {
       const state = await getPublicAuthState(clientIp);
+      const dbEnvKeys = Object.keys(process.env).filter(k => k.toLowerCase().includes('supabase') || k.toLowerCase().includes('postgres'));
       res.status(200).json({
         success: true,
         ...state,
+        _db_diagnostic: {
+          hasSupabaseUrl: !!config.supabaseUrl,
+          hasSupabaseKey: !!config.supabaseKey,
+          foundKeys: dbEnvKeys,
+        },
       });
       return;
     }
