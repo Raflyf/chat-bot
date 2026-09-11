@@ -3,14 +3,6 @@ import { config } from '../src/env.js';
 import { db } from '../src/db.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
 
-function maskChatId(chatId: string): string {
-  if (!chatId) return '-';
-  if (chatId.length <= 6) return chatId;
-  const prefix = chatId.slice(0, 3);
-  const suffix = chatId.slice(-4);
-  return `${prefix}...${suffix}`;
-}
-
 function detectMessageType(content: string): 'voice' | 'document' | 'image' | 'sticker' | 'video' | 'text' {
   if (content.startsWith('[Voice Note]')) return 'voice';
   if (content.startsWith('[Dokumen:')) return 'document';
@@ -271,40 +263,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       mediaCounts[type]++;
     }
 
-    // 6. Ambil aktivitas interaksi percakapan terbaru sesuai rentang waktu & filter
-    let recentQuery = c
-      .from('messages')
-      .select('id, platform, chat_id, role, content, via, created_at')
-      .order('id', { ascending: false });
-
-    if (startDateIso) {
-      recentQuery = recentQuery.gte('created_at', startDateIso);
-    }
-    if (filterPlatform && filterPlatform !== 'all') {
-      recentQuery = recentQuery.eq('platform', filterPlatform);
-    }
-
-    const { data: recentMsgs } = await recentQuery.limit(50);
-
-    const recentFormatted = (recentMsgs ?? []).map((m) => {
-      const type = detectMessageType(m.content || '');
-      let preview = m.content || '';
-      if (preview.length > 280) {
-        preview = preview.slice(0, 280) + '...';
-      }
-
-      return {
-        id: m.id,
-        platform: m.platform,
-        chatIdMasked: maskChatId(m.chat_id),
-        role: m.role,
-        type,
-        preview,
-        via: m.via,
-        createdAt: m.created_at,
-      };
-    });
-
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.status(200).json({
       ok: true,
@@ -333,7 +291,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       pools,
       modelsBreakdown,
       mediaCounts,
-      recentActivity: recentFormatted,
     });
   } catch (err) {
     console.error('[api/stats] Gagal mengumpulkan metrik:', err);
