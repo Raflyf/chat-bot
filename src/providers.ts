@@ -83,7 +83,8 @@ async function openAiChat(baseUrl: string, key: string, model: string, messages:
     messages,
     max_tokens: config.maxOutputTokens,
     temperature: 0.7,
-    presence_penalty: 0.3,
+    presence_penalty: 0.5,
+    frequency_penalty: 0.3,
   })) as { choices?: Array<{ message?: { content?: string } }> };
   const text = data.choices?.[0]?.message?.content?.trim() ?? '';
   if (!text) throw new Error('EMPTY_RESPONSE');

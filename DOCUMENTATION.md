@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.12  
+**Versi:** v0.25.13  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 02:20 WIB  
+**Terakhir Diperbarui:** 2026-09-12 02:36 WIB  
 
 ---
 
@@ -191,6 +191,22 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.13 - 2026-09-12 02:36 WIB
+**Jokes & Tebak-tebakan Interaktif Dua Arah, Pemahaman Emoji Tawa Gaul & Eliminasi Repetisi Respons**
+- **Mekanisme Joke & Tebak-tebakan Interaktif Dua Arah (`src/skills.ts`)**:
+  - Menetapkan aturan mutlak bahwa saat pengguna meminta joke atau tebak-tebakan, bot HANYA memberikan pertanyaan setup tebakan dan mengajak menebak tanpa membocorkan punchline langsung di pesan yang sama.
+  - Menunggu respon lawan bicara (seperti pertanyaan "kenapa?", "emang kenapa?", atau tebakan pengguna) sebelum memberikan jawaban punchline di giliran berikutnya.
+  - Menambahkan pengaman kode terprogram pada `autoReply` untuk mendeteksi dan memisahkan punchline jika model secara tidak sengaja menggabungkan pertanyaan dan jawaban dalam satu pesan.
+  - Memperluas variasi humor ke lelucon umum sehari-hari (bukan hanya lelucon koding/programming) serta mematuhi larangan jika pengguna meminta menghindari joke programming.
+- **Pemahaman Slang & Emoji Tawa Gaul (Emoji 😭 / 😭😭 = Ngakak Brutal, `src/skills.ts`)**:
+  - Mengedukasi model bahwa emoji `😭` atau `😭😭` yang digabung dengan kata tawa (seperti `ngakak😭`, `anjggg ngakak😭`, `lucu banget😭`) merupakan ekspresi tertawa terbahak-bahak sampai menangis (ngakak brutal), bukan menangis sedih.
+  - Melarang keras bot meminta maaf seolah-olah membuat pengguna sedih ("maaf ya kalo bikin lu nangis", dsb) dan mengarahkan bot untuk ikut tertawa lepas bersama pengguna.
+- **Eliminasi Total Repetisi Respons & Pemutusan Attractor Loop (`src/skills.ts`, `src/providers.ts`)**:
+  - Mengimplementasikan deduplikasi pesan asisten pada `buildMessages` agar riwayat percakapan yang tersimpan di basis data tidak memasukkan respons identik berulang ke dalam context few-shot model.
+  - Menambahkan sanitasi otomatis untuk membersihkan template lelucon lama (seperti lelucon kucing ngintip laptop) dan kalimat salah paham tangisan dari riwayat percakapan.
+  - Menambahkan deteksi pengulangan balasan identik pada `autoReply` yang otomatis mengganti respon menjadi tebakan segar jika model mencoba mengulang pesan sebelumnya.
+  - Meningkatkan `presence_penalty` menjadi 0.5 dan menambahkan `frequency_penalty: 0.3` pada inferensi provider OpenAI-compatible untuk menekan probabilitas pengulangan token dan frasa identik.
 
 ### v0.25.12 - 2026-09-12 02:20 WIB
 **Proteksi Anti-Bocor Memori & Penguncian Fitur Gombal Eksklusif On-Demand**
