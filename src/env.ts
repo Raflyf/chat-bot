@@ -50,8 +50,10 @@ export const config = {
     process.env.SUPABASE_SERVICE_KEY ??
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
     process.env.SUPABASE_SECRET_KEY ??
+    process.env.SUPABASE_KEY ??
     process.env.SUPABASE_ANON_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_KEY ??
     '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
   cronSecret: process.env.CRON_SECRET ?? '',

@@ -133,17 +133,8 @@ export async function getAuthConfig(): Promise<AdminAuthConfig> {
       }
     }
 
-    // 3. If missing in both, seed __admin_auth_config.json in whatsapp_sessions
-    const initialConfig: AdminAuthConfig = {
-      pinHash: DEFAULT_PIN_HASH,
-      lockoutAttempts: 0,
-      lockedUntil: null,
-      otpCodeHash: null,
-      otpExpiresAt: null,
-      sessionTokens: [],
-    };
-    await saveAuthConfig(initialConfig);
-    return initialConfig;
+    // 3. If missing in both, fallback to memory
+    return inMemoryAuthConfig;
   } catch (e) {
     console.warn('[admin-auth] getAuthConfig error, fallback to memory:', e);
     return inMemoryAuthConfig;
@@ -204,14 +195,77 @@ export async function saveAuthConfig(updates: Partial<AdminAuthConfig>): Promise
 }
 
 /**
- * Validasi token sesi admin (digunakan oleh middleware endpoint /api/stats, /api/dataset).
+ * Buat token sesi kriptografis HMAC-SHA256 stateless.
+ * Token memuat payload waktu terenkapsulasi dan tanda tangan HMAC yang terikat ke PIN_SALT + pinHash.
+ * Jika PIN diubah atau direset, seluruh token aktif sebelumnya otomatis gugur secara universal di semua instance serverless.
+ */
+export function createSessionToken(
+  currentPinHash: string,
+  durationMs: number = 15 * 60 * 1000
+): { token: string; exp: number } {
+  const now = Date.now();
+  const exp = now + durationMs;
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const payloadObj = { iat: now, exp, nonce };
+  const payloadStr = Buffer.from(JSON.stringify(payloadObj), 'utf8').toString('base64url');
+
+  const hmacKey = crypto.createHash('sha256').update(PIN_SALT + ':' + currentPinHash).digest();
+  const signature = crypto.createHmac('sha256', hmacKey).update(payloadStr).digest('hex');
+
+  const token = `adm_${payloadStr}.${signature}`;
+  return { token, exp };
+}
+
+/**
+ * Validasi token sesi admin (digunakan oleh middleware endpoint /api/stats, /api/dataset, /api/admin-otp).
  */
 export async function verifySessionToken(token: string): Promise<boolean> {
   if (!token || typeof token !== 'string' || !token.startsWith('adm_')) {
     return false;
   }
+
   const config = await getAuthConfig();
   const now = Date.now();
+
+  // 1. Cek token kriptografis HMAC: adm_<payload_base64url>.<signature_hex>
+  const raw = token.slice(4); // hilangkan 'adm_'
+  const dotIdx = raw.indexOf('.');
+  if (dotIdx > 0) {
+    const payloadStr = raw.slice(0, dotIdx);
+    const signature = raw.slice(dotIdx + 1);
+
+    try {
+      const hmacKey = crypto.createHash('sha256').update(PIN_SALT + ':' + config.pinHash).digest();
+      const expectedSig = crypto.createHmac('sha256', hmacKey).update(payloadStr).digest('hex');
+
+      if (!timingSafeMatch(signature, expectedSig)) {
+        return false;
+      }
+
+      const payloadJson = Buffer.from(payloadStr, 'base64url').toString('utf8');
+      const payload = JSON.parse(payloadJson);
+
+      if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number') {
+        return false;
+      }
+
+      // Pastikan token belum kedaluwarsa
+      if (now > payload.exp) {
+        return false;
+      }
+
+      // Pastikan rentang waktu wajar (maksimal 16 menit dari penerbitan untuk mencegah manipulasi waktu)
+      if (payload.exp - payload.iat > 16 * 60 * 1000 || payload.iat > now + 60 * 1000) {
+        return false;
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // 2. Fallback untuk token legasi (adm_<hex64>) yang tersimpan di memori/database
   const valid = config.sessionTokens.some(
     s => s && timingSafeMatch(s.token, token) && Number(s.exp) > now
   );
@@ -283,20 +337,19 @@ export async function verifyPin(
 
   // Match comparison
   if (timingSafeMatch(inputHash, current.pinHash)) {
-    // Berhasil: buat session token baru dengan batas waktu 15 menit ketat
-    const sessionToken = 'adm_' + crypto.randomBytes(32).toString('hex');
-    const expiresAt = now + 15 * 60 * 1000; // 15 menit ketat
+    // Berhasil: buat session token kriptografis HMAC 15 menit
+    const { token: sessionToken, exp: expiresAt } = createSessionToken(current.pinHash, 15 * 60 * 1000);
 
     const updatedTokens = [
       ...current.sessionTokens.filter(s => Number(s.exp) > now),
       { token: sessionToken, exp: expiresAt }
     ].slice(-10); // Simpan maks 10 sesi aktif
 
-    await saveAuthConfig({
+    saveAuthConfig({
       lockoutAttempts: 0,
       lockedUntil: null,
       sessionTokens: updatedTokens,
-    });
+    }).catch(e => console.warn('[admin-auth] saveAuthConfig async error:', e));
 
     return {
       success: true,

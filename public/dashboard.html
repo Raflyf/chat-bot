@@ -2166,7 +2166,8 @@
       const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
       const exp = Number(sessionStorage.getItem(SESSION_EXP_KEY) || 0);
       const now = Date.now();
-      if (!token || !exp || now >= exp) {
+      // Berikan toleransi 30 detik untuk clock drift
+      if (!token || (exp && now >= exp + 30000)) {
         clearStoredToken();
         return "";
       }
@@ -2209,13 +2210,14 @@
       }
       const exp = Number(expTimestamp) || (Date.now() + 15 * 60 * 1000);
       const remainingMs = exp - Date.now();
-      if (remainingMs <= 0) {
+      if (remainingMs <= 0 && (Date.now() - exp > 30000)) {
         triggerSessionExpired();
         return;
       }
+      const safeDuration = Math.max(10000, Math.min(15 * 60 * 1000, remainingMs > 0 ? remainingMs : 15 * 60 * 1000));
       sessionExpiryTimer = setTimeout(() => {
         triggerSessionExpired();
-      }, remainingMs);
+      }, safeDuration);
     }
 
     function triggerSessionExpired() {
@@ -2295,9 +2297,10 @@
         const data = await res.json();
 
         if (res.ok && data.verified && data.session_token) {
-          const expTime = data.expires_at || (Date.now() + 15 * 60 * 1000);
-          setStoredSession(data.session_token, expTime);
-          startSessionExpiryCountdown(expTime);
+          const duration = Number(data.duration_ms) || (15 * 60 * 1000);
+          const clientExp = Date.now() + duration;
+          setStoredSession(data.session_token, clientExp);
+          startSessionExpiryCountdown(clientExp);
           document.documentElement.classList.remove("not-authenticated");
           document.documentElement.classList.add("authenticated");
           document.getElementById("auth-modal").classList.add("hidden");
@@ -2531,8 +2534,12 @@
         });
         const data = await res.json();
         if (res.ok && data.valid) {
-          const exp = Number(sessionStorage.getItem(SESSION_EXP_KEY) || 0);
-          startSessionExpiryCountdown(exp || (Date.now() + 15 * 60 * 1000));
+          let exp = Number(sessionStorage.getItem(SESSION_EXP_KEY) || 0);
+          if (!exp || exp <= Date.now()) {
+            exp = Date.now() + 15 * 60 * 1000;
+            sessionStorage.setItem(SESSION_EXP_KEY, String(exp));
+          }
+          startSessionExpiryCountdown(exp);
           document.documentElement.classList.remove("not-authenticated");
           document.documentElement.classList.add("authenticated");
           document.getElementById("auth-modal").classList.add("hidden");
