@@ -1,22 +1,27 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.6  
+**Versi:** v0.25.7  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 01:05 WIB  
+**Terakhir Diperbarui:** 2026-09-12 01:28 WIB  
 
 ---
 
-## Ringkasan Pembaruan v0.25.6 (Audit & Optimalisasi Desain Responsif Multi-Device: Mobile, Tablet & Desktop)
-1. **Optimalisasi Responsif Halaman Depan (`public/index.html`)**:
-   - Menata ulang grid fitur utama (`features-grid`) menggunakan kalkulasi dinamis `minmax(min(100%, 280px), 1fr)` guna mencegah scroll horizontal atau pemotongan konten pada perangkat layar sempit (seperti smartphone 320px - 375px).
-   - Memperkenalkan fluid typography berbasis `clamp()` pada judul hero (`hero-title`) serta penataan vertikal penuh tombol CTA aksi chat WhatsApp, Telegram, dan Dashboard pada viewport mobile (<= 580px).
-   - Menyederhanakan bilah navigasi header pada layar mobile dengan menyembunyikan subtitle merek dan mereduksi padding tombol tanpa mengurangi target sentuh minimum WCAG 2.2.
-   - Mengubah tata letak banner promosi dashboard (`dashboard-teaser`) menjadi bertumpuk vertikal dengan tombol akses selebar kontainer pada perangkat mobile dan tablet.
-2. **Optimalisasi Responsif Dashboard Pemantauan (`public/dashboard.html`)**:
-   - Menyesuaikan padding dasar viewport body pada perangkat mobile (<= 640px) dari 1.5rem menjadi 0.75rem, memaksimalkan rasio area kerja data tabel dan kartu metrik.
-   - Mengimplementasikan penanganan kontainer filter waktu dan pill provider (`pill-filter-group`, `matrix-time-filters`) dengan scroll horizontal halus (`overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;`) tanpa pemotongan atau pembungkusan multi-baris yang canggung.
-   - Memperbaiki fluiditas grid kartu ringkasan KPI (`kpi-grid`), grid kartu pool provider (`pool-grid`), serta pita ringkasan live stats upstream (`live-stats-ribbon`) agar bertransformasi menjadi 1-kolom atau 2-kolom adaptif di smartphone.
-   - Mengoptimasi komponen form modal otentikasi Master PIN (`auth-card`) dan pemulihan OTP dengan batas padding yang nyaman di layar sentuh kecil.
-   - Memperkuat akselerasi sentuh perangkat mobile (`-webkit-overflow-scrolling: touch`) pada kontainer tabel riwayat percakapan (`table-container`) dan tabel kuota token (`token-table-container`).
+## Ringkasan Pembaruan v0.25.7 (Ekspor CSV Filter Hari Ini, Exit Roleplay Protocol, Resolusi Lokasi & Optimasi Failover Model)
+1. **Fitur Ekspor CSV Khusus Hari Ini (`api/dataset.ts` & `public/dashboard.html`)**:
+   - Menambahkan tombol aksi khusus `Unduh CSV (Hari Ini)` pada bilah filter tabel evaluasi dataset dashboard monitoring agar admin dapat mengunduh data percakapan hari ini saja secara ringkas, cepat, dan hemat ukuran file (~21 KB vs ~87 KB riwayat penuh).
+   - Menambahkan opsi filter rentang waktu eksplisit `Hari Ini Saja (WIB)` pada dropdown filter tabel.
+   - Endpoint `GET /api/dataset` kini mendukung penentuan batas awal dan akhir hari secara presisi (`startDateIso` dan `endDateIso`) dengan zona waktu lokal Indonesia (`Asia/Jakarta` / UTC+7).
+   - Penamaan berkas otomatis diberi label deskriptif (`evaluasi_chatbot_hari_ini_YYYY-MM-DD.csv`, `training_dataset_hari_ini_YYYY-MM-DD.jsonl`, `evaluasi_chatbot_semua_YYYY-MM-DD.csv`).
+2. **Protokol Keluar Peran / Instant Exit Roleplay Protocol (`src/skills.ts`)**:
+   - Memperbaiki masalah di mana chatbot enggan keluar dari permainan peran (seperti tetap berakting pacar/drakor dan mengulang pilihan menu) saat pengguna menyuruh berhenti (`stop berperan`, `kita putus`, `stop peran`).
+   - Menyuntikkan peringatan sistem prioritas tertinggi secara dinamis ketika pengguna meminta berhenti bermain peran, memerintahkan model untuk 100% keluar dari peran seketika dan kembali ke persona ramah FreeAIBot normal tanpa baper/merajuk.
+   - Menambahkan pembersihan otomatis ekspresi kurung siku panggung (`*[suara jadi dingin]*`, `*(sengau dalam-dalam)*`, dll) dan pemangkasan trailer menu pilihan kaku pada fungsi `cleanMathAndNoise`.
+3. **Resolusi False-Positive Lokasi 'Tua Bangka' & Identitas Developer (`src/timezone.ts`, `src/skills.ts`)**:
+   - Memperketat regex lokasi di `src/timezone.ts` agar membutuhkan preposisi tempat eksplisit dan mengabaikan idiom peyoratif seperti `tua bangka` agar tidak keliru mendeteksi provinsi Bangka Belitung.
+   - Menghapus riwayat koreksi Bangka Belitung yang sempat tersimpan secara keliru pada tabel `corrections` Supabase.
+   - Menegaskan identitas developer utama bot adalah Rafly (Rflyyyf) pada prompt sistem dan melarang bot menyangkal atau berhalusinasi pacaran dengan developernya.
+4. **Optimalisasi Failover Model & Pencegahan Perulangan Kaku (`src/env.ts`, `src/providers.ts`, `.env`)**:
+   - Mengurutkan ulang failover chain xKiro dengan menempatkan model percakapan alami berkinerja tinggi (`mistralai/mistral-large-2512`, `mistralai/mistral-medium-3.5`, `sensenova/sensenova-6.8-flash-lite`) di posisi terdepan, serta mendemosi model kode kaku (`codestral-2508`) ke urutan cadangan terakhir.
+   - Mengaktifkan `presence_penalty: 0.3` pada inferensi OpenAI-compatible untuk mencegah perulangan frasa dan lelucon yang identik.
 
 ---
 
@@ -206,6 +211,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.7 - 2026-09-12 01:28 WIB
+**Ekspor CSV Filter Hari Ini, Exit Roleplay Protocol, Resolusi Lokasi & Optimasi Failover Model**
+- **Fitur Ekspor CSV Khusus Hari Ini (`api/dataset.ts`, `public/dashboard.html`)**:
+  - Menambahkan tombol aksi cepat `Unduh CSV (Hari Ini)` di panel dataset evaluasi dashboard monitoring dengan penataan visual kontras hijau aksen `.btn-today`.
+  - Mengizinkan pengunduhan langsung data interaksi hari ini saja tanpa mengunduh seluruh data historis basis data (~21 KB vs ~87 KB).
+  - Memperbarui kalkulasi `range === 'today'` pada `api/dataset.ts` menggunakan batas awal dan akhir hari WIB (`Asia/Jakarta` / UTC+7) yang presisi (`startDateIso` dan `endDateIso`), serta mendukung parameter `date=YYYY-MM-DD` atau `date=today`.
+  - Memberikan penamaan berkas unduhan yang terstruktur dan deskriptif (`evaluasi_chatbot_hari_ini_YYYY-MM-DD.csv`, `training_dataset_hari_ini_YYYY-MM-DD.jsonl`, `evaluasi_chatbot_semua_YYYY-MM-DD.csv`).
+  - Menyelaraskan filter dropdown `dataset-range-filter` dengan opsi `Hari Ini Saja (WIB)` dan menyertakan parameter `tz` pada fetch request tabel.
+- **Protokol Keluar Peran / Instant Exit Roleplay Protocol (`src/skills.ts`)**:
+  - Memperbaiki kegagalan bot keluar dari sandiwara/peran (seperti tetap berakting pacar/drakor dan mengulang template pilihan bertumpuk) saat pengguna meminta berhenti (`stop berperan`, `kita putus`, `stop peran`).
+  - Menambahkan deteksi intent penghentian peran secara dinamis pada `systemPrompt`: jika terdeteksi, instruksi prioritas tertinggi disuntikkan seketika agar model 100% berhenti berakting, tidak merajuk/baper seolah patah hati, dan kembali ke persona ramah FreeAIBot normal.
+  - Memperkaya pembersihan output di `cleanMathAndNoise` untuk melenyapkan ekspresi kurung siku panggung (`*[suara jadi dingin]*`, `*(sengau dalam-dalam)*`, dll) serta memotong trailer menu pilihan kaku (`--- *Pilihan kamu:*`).
+- **Resolusi False-Positive Lokasi 'Tua Bangka' & Identitas Developer (`src/timezone.ts`, `src/skills.ts`)**:
+  - Memperketat regex lokasi di `src/timezone.ts` dengan mewajibkan preposisi tempat eksplisit dan mengabaikan idiom peyoratif seperti `tua bangka` agar tidak keliru mendeteksi provinsi Bangka Belitung.
+  - Menghapus riwayat koreksi halusinasi Bangka Belitung yang sempat tersimpan pada tabel `corrections` Supabase.
+  - Menegaskan identitas pencipta/developer utama bot adalah Rafly (Rflyyyf) pada prompt sistem dan melarang bot menyangkal atau berhalusinasi pacaran dengan developernya.
+- **Optimalisasi Failover Model & Pencegahan Perulangan Kaku (`src/env.ts`, `src/providers.ts`, `.env`)**:
+  - Mengurutkan ulang failover chain xKiro dengan menempatkan model percakapan alami berkinerja tinggi (`mistralai/mistral-large-2512`, `mistralai/mistral-medium-3.5`, `sensenova/sensenova-6.8-flash-lite`) di posisi terdepan, serta mendemosi model kode kaku (`codestral-2508`) ke urutan cadangan terakhir.
+  - Mengaktifkan `presence_penalty: 0.3` pada inferensi OpenAI-compatible untuk mencegah perulangan frasa dan lelucon yang identik.
 
 ### v0.25.6 - 2026-09-12 01:05 WIB
 **Audit & Peningkatan Desain Responsif Multi-Device (Mobile, Tablet, Desktop)**

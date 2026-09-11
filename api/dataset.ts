@@ -23,6 +23,89 @@ export interface DatasetPair {
   totalTokens: number;
 }
 
+function calculateTimeBounds(
+  range: string,
+  dateParam?: string | null,
+  tz: string = 'Asia/Jakarta',
+): {
+  startDateIso: string | null;
+  endDateIso: string | null;
+  localTodayStr: string;
+  fileLabel: string;
+} {
+  const now = new Date();
+  let startDateIso: string | null = null;
+  let endDateIso: string | null = null;
+
+  let localTodayStr = 'today';
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    localTodayStr = fmt.format(now);
+  } catch {
+    localTodayStr = now.toISOString().slice(0, 10);
+  }
+
+  function getTzOffset(date: Date, timeZone: string): string {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour: 'numeric',
+        hour12: false,
+        timeZoneName: 'shortOffset',
+      }).formatToParts(date);
+      const tzPart = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT+7';
+      const m = tzPart.match(/GMT([+-]\d+)(?::(\d+))?/);
+      if (m) {
+        const sign = m[1][0];
+        const h = Math.abs(parseInt(m[1], 10)).toString().padStart(2, '0');
+        const min = (m[2] || '00').padStart(2, '0');
+        return sign + h + ':' + min;
+      }
+    } catch {}
+    return '+07:00';
+  }
+
+  const offset = getTzOffset(now, tz);
+
+  if (dateParam) {
+    const targetDate = dateParam === 'today' ? localTodayStr : dateParam.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+      startDateIso = new Date(`${targetDate}T00:00:00${offset}`).toISOString();
+      endDateIso = new Date(`${targetDate}T23:59:59.999${offset}`).toISOString();
+      return {
+        startDateIso,
+        endDateIso,
+        localTodayStr,
+        fileLabel: targetDate === localTodayStr ? `hari_ini_${targetDate}` : `tgl_${targetDate}`,
+      };
+    }
+  }
+
+  let fileLabel = `${range}_${localTodayStr}`;
+  if (range === 'today') {
+    startDateIso = new Date(`${localTodayStr}T00:00:00${offset}`).toISOString();
+    fileLabel = `hari_ini_${localTodayStr}`;
+  } else if (range === '7d') {
+    startDateIso = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    fileLabel = `7_hari_${localTodayStr}`;
+  } else if (range === '14d') {
+    startDateIso = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    fileLabel = `14_hari_${localTodayStr}`;
+  } else if (range === '30d') {
+    startDateIso = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    fileLabel = `30_hari_${localTodayStr}`;
+  } else {
+    fileLabel = `semua_${localTodayStr}`;
+  }
+
+  return { startDateIso, endDateIso, localTodayStr, fileLabel };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method Not Allowed' });
@@ -68,21 +151,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const search = typeof req.query.q === 'string' ? req.query.q.toLowerCase().trim() : '';
   const platform = typeof req.query.platform === 'string' ? req.query.platform.toLowerCase().trim() : '';
   const range = typeof req.query.range === 'string' ? req.query.range.toLowerCase().trim() : 'all';
+  const dateParam = typeof req.query.date === 'string' ? req.query.date.trim() : null;
+  const tzParam = typeof req.query.tz === 'string' ? req.query.tz.trim() : 'Asia/Jakarta';
   const modelFilter = typeof req.query.model === 'string' ? req.query.model.toLowerCase().trim() : '';
   const limit = Math.min(1000, Math.max(10, Number(req.query.limit) || 200));
 
-  const now = new Date();
-  let startDateIso: string | null = null;
-  if (range === 'today') {
-    const todayStr = now.toISOString().slice(0, 10);
-    startDateIso = `${todayStr}T00:00:00.000Z`;
-  } else if (range === '7d') {
-    startDateIso = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  } else if (range === '14d') {
-    startDateIso = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  } else if (range === '30d') {
-    startDateIso = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  }
+  const { startDateIso, endDateIso, fileLabel } = calculateTimeBounds(range, dateParam, tzParam);
 
   try {
     // Optimasi performa: tarik hanya kolom penting secara descending dari pesan terbaru
@@ -97,6 +171,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     if (startDateIso) {
       query = query.gte('created_at', startDateIso);
+    }
+    if (endDateIso) {
+      query = query.lte('created_at', endDateIso);
     }
     if (platform && platform !== 'all') {
       query = query.eq('platform', platform);
@@ -192,7 +269,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       res.setHeader('Content-Type', 'application/x-jsonlines; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="training_dataset_${new Date().toISOString().slice(0, 10)}.jsonl"`,
+        `attachment; filename="training_dataset_${fileLabel}.jsonl"`,
       );
       res.status(200).send(lines.join('\n'));
       return;
@@ -221,7 +298,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="evaluasi_chatbot_${new Date().toISOString().slice(0, 10)}.csv"`,
+        `attachment; filename="evaluasi_chatbot_${fileLabel}.csv"`,
       );
       res.status(200).send('\uFEFF' + csvHeader + csvRows); // BOM untuk Excel UTF-8
       return;
