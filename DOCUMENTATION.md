@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.13  
+**Versi:** v0.25.14  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 02:36 WIB  
+**Terakhir Diperbarui:** 2026-09-12 02:44 WIB  
 
 ---
 
@@ -191,6 +191,16 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.14 - 2026-09-12 02:44 WIB
+**Gombalan Interaktif Dua Arah & Resolusi Transisi Roleplay ke Rayuan**
+- **Format Gombalan Interaktif Dua Arah (`src/skills.ts`)**:
+  - Mengubah paradigma gombalan dari eksekusi langsung satu pesan menjadi format pancingan tebak-tebakan gombal dua arah (contoh: "Eh, kamu tahu gak bedanya kamu sama jam dinding? Coba tebak!").
+  - Menahan punchline rayuan manis hingga pengguna merespons di giliran berikutnya ("kenapa?", "apaan tuh?", "emang apa?"), menciptakan sensasi interaksi mengobrol yang hidup, seru, dan membuat penasaran.
+- **Resolusi Transisi Pergantian Topik dari Penutupan Peran (`src/skills.ts`)**:
+  - Memperbaiki `stopRoleplayMatch` agar tidak menekan permintaan gombalan ketika pengguna menggunakan frasa peralihan seperti "cukup deh ganti ke gombalan".
+- **Pengaman Kode Terprogram Pemisah Punchline Rayuan (`src/skills.ts`)**:
+  - Menambahkan deteksi pola rayuan deklaratif ("Kamu tuh kayak X ya, soalnya Y") pada `autoReply` yang otomatis mengubah kalimat menjadi pertanyaan pancingan interaktif ("Kamu tahu gak kenapa kamu tuh kayak X? Coba tebak!") jika model secara tidak sengaja memuntahkan rayuan lengkap dalam satu putaran.
 
 ### v0.25.13 - 2026-09-12 02:36 WIB
 **Jokes & Tebak-tebakan Interaktif Dua Arah, Pemahaman Emoji Tawa Gaul & Eliminasi Repetisi Respons**
