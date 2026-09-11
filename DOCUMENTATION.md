@@ -5,58 +5,6 @@
 
 ---
 
-## Ringkasan Pembaruan v0.25.12 (Proteksi Anti-Bocor Memori & Penguncian Fitur Gombal Eksklusif On-Demand)
-1. **Proteksi Anti-Bocor Memori (Zero Memory Leakage & Noise Isolation)**:
-   - Mengunci `ctx.summary` sebagai referensi pasif internal murni dengan aturan mutlak agar model tidak pernah mengungkit atau menyinggung topik masa lalu di luar konteks pesan saat ini.
-   - Melarang keras membawa-bawa topik riwayat lama (seperti skincare, curhatan masa lalu, atau figur lain) jika pengguna tidak sedang membicarakannya.
-2. **Isolasi Fitur Gombalan Eksklusif Berbasis Permintaan Eksplisit**:
-   - Menghapus total inisiatif penawaran gombalan dari bot ("mau digombalin lagi?", "siap ngegombal kapan aja").
-   - Gombalan hanya dan eksklusif aktif ketika lawan bicara meminta secara terang-terangan (misal: "coba gombalin aku").
-   - Menghapus kata "gombalan" dari deskripsi umum gaya bahasa gaul WhatsApp agar tidak terjadi over-priming pada model.
-3. **Sanitasi Riwayat Asisten & Pembersih Output Lanjutan**:
-   - Membersihkan residu penawaran gombal atau racauan lama yang tersimpan di riwayat pesan DB sebelum disuntikkan ke model pada `buildMessages`.
-   - Menambahkan filter pemotong sisa penawaran gombal yang tidak diminta pada `cleanMathAndNoise`.
-
----
-
-## Ringkasan Pembaruan v0.25.11 (Normalisasi Newline Obrolan Santai & Penyatuan Paragraf Mengalir Alami)
-1. **Penyatuan Kalimat Obrolan Santai Alami (Eliminasi Newline Kosong / Enter Berlebihan)**:
-   - Menghapus kebiasaan memecah obrolan santai 1–3 kalimat menjadi baris-baris terpisah dengan enter kosong di tengah pesan.
-   - Mengimplementasikan Rule 16 pada `cleanMathAndNoise` di `src/skills.ts`: secara otomatis menyatukan obrolan santai pendek (< 400 karakter) yang dipecah newline tanpa adanya list atau kode menjadi satu paragraf yang mengalir lancar.
-   - Format teknis yang memang membutuhkan baris baru (seperti daftar poin `-`, blok kode ```, heading teks) tetap terlindungi dan mempertahankan newline secara rapi.
-2. **Pedoman Prompt Struktur Paragraf Wajar**:
-   - Menambahkan instruksi eksplisit agar model tidak memecah percakapan santai dengan baris baru yang mengganggu, menjaga obrolan menyerupai gaya berkirim pesan WhatsApp manusia normal.
-
----
-
-## Ringkasan Pembaruan v0.25.10 (Pembatasan Ketat Penggunaan Emoji & Naturalisasi Sapaan Identitas)
-1. **Pembatasan Ketat Emoji (Anti-Over-Emoji & Zero Robot Emoji)**:
-   - Menetapkan aturan prompt sistem agar emoji digunakan secara sangat hemat (maksimal 1 emoji per pesan atau tanpa emoji sama sekali jika tidak perlu).
-   - Menghapus total emoji robot (`🤖`) yang terkesan kaku dan murahan.
-   - Mengimplementasikan sanitasi kode terprogram pada Rule 6 di `cleanMathAndNoise` (`src/skills.ts`): secara otomatis memotong emoji berlebih jika model mengeluarkan lebih dari 1 emoji (maksimal 2 untuk teks sangat panjang), menjamin 100% obrolan di WhatsApp/Telegram tidak lagi dibanjiri spam emoji di setiap baris kalimat.
-2. **Naturalisasi Respon "Kamu Siapa" & Sapaan Developer**:
-   - Jika pengguna bertanya siapa bot tersebut, bot menjawab santai sebagai teman ngobrol bernama FreeAIBot tanpa memuntahkan daftar panjang kemampuan atau pamer fitur ala sales.
-   - Jika lawan bicara mengaku sebagai Rafly, bot menyapa akrab dan santai layaknya teman ngobrol biasa tanpa reaksi heboh yang berlebihan.
-
----
-
-## Ringkasan Pembaruan v0.25.9 (Eliminasi Jawaban Template, Respon Dinamis Inti Developer, & Pembersihan Negative Priming)
-1. **Penyederhanaan Inti Identitas Developer Tanpa Template Kaku (`src/skills.ts`)**:
-   - Menghapus seluruh kalimat skrip template dalam tanda kutip pada instruksi developer.
-   - Menggantinya dengan fakta inti esensial: developer utama adalah Rafly Firmansyah (Rafly atau Rflyyyf).
-   - Membebaskan model untuk menyusun kalimat balasan secara dinamis, santai, dan mengalir natural sesuai gaya obrolan akrab tanpa bertele-tele.
-2. **Eliminasi Total Negative Priming & Racauan Boilerplate**:
-   - Menghapus daftar larangan kata yang memicu model menyebut teknologi (Vercel, Supabase, PostgreSQL) atau julukan fisik di luar konteks.
-   - Menghapus frasa defensif bot ("aku kan cuma bot", "aku lagi belajar") yang sebelumnya memicu model meniru pola tersebut saat diledek.
-   - Menambahkan filter pembersih racauan pada `cleanMathAndNoise` dan sanitasi riwayat percakapan di `buildMessages` agar kalimat rusak sebelumnya tidak menular ke giliran chat berikutnya.
-3. **Penghentian Instan Saat Kata "Cukup" Diterima**:
-   - Menambahkan kata `cukup` ke dalam regex `stopRoleplayMatch`.
-   - Menginstruksikan bot untuk langsung menyudahi akting/gombalan tanpa menawarkan kembali rayuan atau menu peran baru.
-4. **Pembersihan Aksi Panggung Asteris (`*ngakak*`, `*ketawa*`)**:
-   - Memperluas pembersih gestur fisik Rule 13b di `cleanMathAndNoise` agar kata tawa diapit bintang dibersihkan sehingga teks percakapan tampil bersih di WhatsApp dan Telegram.
-
----
-
 ## 1. Arsitektur Multi-Platform (Telegram & WhatsApp)
 
 Sistem dirancang dengan fleksibilitas tinggi menggunakan prinsip *Single Unified Brain, Multi-Channel Execution*:
@@ -243,6 +191,67 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.12 - 2026-09-12 02:20 WIB
+**Proteksi Anti-Bocor Memori & Penguncian Fitur Gombal Eksklusif On-Demand**
+- **Proteksi Anti-Bocor Memori (Zero Memory Leakage & Noise Isolation, `src/skills.ts`)**:
+  - Mengunci `ctx.summary` sebagai referensi pasif internal murni berlabel `[MEMORI & LATAR BELAKANG TEMAN BICARA]`, disertai direktif mutlak agar model tidak mengungkit topik masa lalu yang tidak relevan dengan pesan saat ini.
+  - Melarang keras membawa-bawa riwayat lama (seperti rekomendasi skincare, curhatan lampau, atau nama pihak ketiga) ke percakapan baru yang tidak membahas hal tersebut.
+- **Isolasi Fitur Gombalan Eksklusif Berbasis Permintaan Eksplisit (`src/skills.ts`)**:
+  - Menghapus total inisiatif penawaran gombalan dari bot ("mau digombalin lagi?", "siap ngegombal kapan aja").
+  - Menetapkan aturan bahwa gombalan hanya dan eksklusif aktif apabila lawan bicara meminta secara eksplisit (misal: "coba gombalin aku").
+  - Menghilangkan kata "gombalan" dari deskripsi umum gaya bahasa WhatsApp agar tidak terjadi over-priming pada model.
+- **Sanitasi Riwayat Asisten & Pembersih Output Lanjutan (`src/skills.ts`)**:
+  - Membersihkan residu penawaran gombal atau racauan lama yang tersimpan di riwayat pesan basis data sebelum disuntikkan ke model pada `buildMessages`.
+  - Menambahkan filter pemotong sisa penawaran gombal yang tidak diminta pada `cleanMathAndNoise`.
+
+### v0.25.11 - 2026-09-12 02:16 WIB
+**Normalisasi Newline Obrolan Santai & Penyatuan Paragraf Mengalir Alami**
+- **Penyatuan Kalimat Obrolan Santai Alami (`src/skills.ts`)**:
+  - Menghapus kebiasaan memecah obrolan santai 1-3 kalimat menjadi baris-baris terpisah dengan enter kosong di tengah pesan.
+  - Mengimplementasikan Rule 16 pada `cleanMathAndNoise` di `src/skills.ts`: secara otomatis menyatukan obrolan santai pendek (< 400 karakter) yang terpecah newline ganda tanpa daftar poin atau blok kode menjadi satu paragraf yang mengalir lancar.
+  - Format teknis yang membutuhkan baris baru (daftar poin `-`, blok kode, heading teks) tetap terlindungi dan mempertahankan newline secara rapi.
+- **Pedoman Prompt Struktur Paragraf Wajar (`src/skills.ts`)**:
+  - Menambahkan instruksi eksplisit agar model tidak memecah percakapan santai dengan baris baru yang mengganggu, menjaga pesan menyerupai gaya berkirim pesan WhatsApp manusia normal.
+
+### v0.25.10 - 2026-09-12 02:11 WIB
+**Pembatasan Ketat Penggunaan Emoji & Naturalisasi Sapaan Identitas**
+- **Pembatasan Ketat Emoji (Anti-Over-Emoji & Zero Robot Emoji, `src/skills.ts`)**:
+  - Menetapkan aturan prompt sistem agar emoji digunakan secara sangat hemat (maksimal 1 emoji per pesan atau tanpa emoji sama sekali jika tidak perlu).
+  - Menghapus total emoji robot yang terkesan kaku dan murahan.
+  - Mengimplementasikan sanitasi kode terprogram pada Rule 6 di `cleanMathAndNoise` (`src/skills.ts`): secara otomatis memangkas emoji berlebih jika model mengeluarkan lebih dari 1 emoji (maksimal 2 untuk teks sangat panjang), menjamin obrolan di WhatsApp dan Telegram tidak dibanjiri emoji di setiap baris kalimat.
+- **Naturalisasi Respon Identitas Diri & Sapaan Developer (`src/skills.ts`)**:
+  - Jika pengguna bertanya siapa bot tersebut, bot menjawab santai sebagai teman ngobrol bernama FreeAIBot tanpa memuntahkan daftar panjang kemampuan teknis atau pamer fitur.
+  - Jika lawan bicara mengaku sebagai Rafly, bot menyapa akrab dan santai layaknya teman ngobrol biasa tanpa reaksi berlebihan.
+
+### v0.25.9 - 2026-09-12 02:05 WIB
+**Eliminasi Jawaban Template, Respon Dinamis Inti Developer, & Pembersihan Negative Priming**
+- **Penyederhanaan Inti Identitas Developer Tanpa Template Kaku (`src/skills.ts`)**:
+  - Menghapus seluruh kalimat skrip template dalam tanda kutip pada instruksi developer.
+  - Menggantinya dengan fakta inti esensial: developer utama adalah Rafly Firmansyah (Rafly atau Rflyyyf).
+  - Membebaskan model untuk menyusun kalimat balasan secara dinamis, santai, dan mengalir natural sesuai gaya obrolan akrab tanpa bertele-tele.
+- **Eliminasi Total Negative Priming & Racauan Boilerplate (`src/skills.ts`)**:
+  - Menghapus daftar larangan kata yang memicu model menyebut teknologi (Vercel, Supabase, PostgreSQL) atau julukan fisik di luar konteks.
+  - Menghapus frasa defensif bot ("aku kan cuma bot", "aku lagi belajar") yang sebelumnya memicu model meniru pola tersebut saat diledek.
+  - Menambahkan filter pembersih racauan pada `cleanMathAndNoise` dan sanitasi riwayat percakapan di `buildMessages` agar kalimat rusak sebelumnya tidak menular ke giliran chat berikutnya.
+- **Penghentian Instan Saat Kata "Cukup" Diterima (`src/skills.ts`)**:
+  - Menambahkan kata `cukup` ke dalam regex `stopRoleplayMatch`.
+  - Menginstruksikan bot untuk langsung menyudahi akting atau gombalan tanpa menawarkan kembali rayuan atau menu peran baru.
+- **Pembersihan Aksi Panggung Asteris (`*ngakak*`, `*ketawa*`, `src/skills.ts`)**:
+  - Memperluas pembersih gestur fisik Rule 13b di `cleanMathAndNoise` agar kata tawa diapit bintang dibersihkan sehingga teks percakapan tampil bersih di WhatsApp dan Telegram.
+
+### v0.25.8 - 2026-09-12 01:42 WIB
+**Tuning Respon Percakapan High-EQ, Bahasa Gaul Indonesia & Pengenalan Identitas Developer**
+- **Adopsi Slang & Bahasa Gaul Indonesia Terkontrol (`src/skills.ts`)**:
+  - Memasukkan slang percakapan anak muda Indonesia (seperti anjir, bjir, anjay, wkwk, santai, dsb) secara luwes, kasual, dan kontekstual.
+  - Mendukung penggunaan emoji ekspresif yang relevan dengan kondisi emosional kalimat secara proporsional.
+- **Penegasan Identitas Lengkap Developer (`src/skills.ts`)**:
+  - Menetapkan nama resmi developer adalah Rafly Firmansyah (Rafly atau Rflyyyf).
+  - Mendukung sinonim pertanyaan identitas pembuat (developer, author, pembuat, pencipta, programmer, yang bikin).
+  - Menerima candaan dan ledekan nama panggilan untuk developer secara santai tanpa perlu membela diri secara kaku.
+- **Penyempurnaan Kecerdasan Emosional (High-EQ Conversational Tuning, `src/skills.ts`)**:
+  - Merespons curhatan atau obrolan santai pengguna dengan empati mendalam tanpa menggurui atau terkesan mekanis.
+  - Menghapus frasa aksi fisik dalam kurung siku atau tanda bintang agar format pesan terasa seperti percakapan nyata.
 
 ### v0.25.7 - 2026-09-12 01:28 WIB
 **Ekspor CSV Filter Hari Ini, Exit Roleplay Protocol, Resolusi Lokasi & Optimasi Failover Model**
