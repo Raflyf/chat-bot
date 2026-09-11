@@ -13,7 +13,7 @@ import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage } from './db.js';
-import { getContext, noteExchange, saveCorrection } from './memory.js';
+import { getContext, noteExchange, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import {
@@ -510,16 +510,17 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   }
 
   try {
-    // 1. Ambil konteks percakapan sebelumnya dari Supabase
+    // 1. Ambil konteks percakapan sebelumnya (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
     const context = await getContext(chatKey);
 
-    // 2. Simpan pesan user ke basis data
-    await saveMessage({
+    // 2. Simpan pesan user ke basis data secara non-blocking & update cache memori
+    updateContextCache(chatKey, 'user', text);
+    void saveMessage({
       platform: 'whatsapp',
       chat_id: chatKey,
       role: 'user',
       content: text,
-    });
+    }).catch((err) => console.warn('[whatsapp] Gagal simpan pesan user:', err));
 
     // 3. Periksa kebutuhan penelusuran web real-time 2026
     let webResults: string | null = null;
@@ -532,20 +533,21 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       }
     }
 
-    // 4. Panggil model AI universal (Groq -> Gemini -> OpenRouter)
+    // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
     const { reply, via } = await autoReply(text, context, webResults);
 
-    // 5. Kirim balasan ke WhatsApp dengan aman
+    // 5. Kirim balasan ke WhatsApp secepat mungkin
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
 
-    // 6. Simpan balasan asisten ke database
-    await saveMessage({
+    // 6. Update cache memori & simpan balasan asisten ke database secara non-blocking
+    updateContextCache(chatKey, 'assistant', reply);
+    void saveMessage({
       platform: 'whatsapp',
       chat_id: chatKey,
       role: 'assistant',
       content: reply.slice(0, 4000),
       via,
-    });
+    }).catch((err) => console.warn('[whatsapp] Gagal simpan pesan assistant:', err));
 
     // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat
     noteExchange(chatKey);

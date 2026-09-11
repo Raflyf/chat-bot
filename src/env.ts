@@ -76,7 +76,7 @@ export const config = {
     process.env.BOT_PROFILE ??
     'Asisten AI umum berbahasa Indonesia. Cerdas, adaptif, jujur, dan berwawasan luas.',
   // Waktu tunggu respon koneksi/header API key (jika mati/429/error, langsung failover cepat)
-  connectTimeoutMs: num('CONNECT_TIMEOUT_MS', 8000),
+  connectTimeoutMs: num('CONNECT_TIMEOUT_MS', 4500),
   // Waktu tunggu model berpikir & menyelesaikan generasi teks lengkap
   timeoutMs: num('REQUEST_TIMEOUT_MS', 90000),
   // Kapasitas output token agar AI mampu menjelaskan detail & koding tanpa terpotong

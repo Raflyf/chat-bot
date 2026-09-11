@@ -16,9 +16,38 @@ function warnOnce(table: string, msg: string): void {
   console.error(`[memory] tabel ${table} belum ada: ${msg}. Jalankan sql/migrate_v08.sql.`);
 }
 
+interface CachedContext {
+  at: number;
+  data: ChatContext;
+}
+
+const contextCache = new Map<string, CachedContext>();
+const CONTEXT_TTL_MS = 25000; // 25 detik (jendela percakapan cepat aktif)
+
+export function updateContextCache(chatKey: string, role: 'user' | 'assistant', content: string): void {
+  const cached = contextCache.get(chatKey);
+  if (cached && Date.now() - cached.at < CONTEXT_TTL_MS) {
+    cached.data.history.push({ role, content });
+    if (cached.data.history.length > 10) cached.data.history.shift();
+    cached.at = Date.now();
+  }
+}
+
 /** Ambil konteks chat: 10 pesan terakhir + ringkasan + koreksi. Tanpa DB = kosong. */
 export async function getContext(chatKey: string): Promise<ChatContext> {
   const empty: ChatContext = { history: [], summary: null, corrections: [], chatId: chatKey };
+
+  // Fast-path in-memory cache: respon instan 0ms saat user sedang aktif chatting
+  const cached = contextCache.get(chatKey);
+  if (cached && Date.now() - cached.at < CONTEXT_TTL_MS) {
+    return {
+      history: [...cached.data.history],
+      summary: cached.data.summary,
+      corrections: [...cached.data.corrections],
+      chatId: chatKey,
+    };
+  }
+
   const c = db();
   if (!c) return empty;
   try {
@@ -30,7 +59,8 @@ export async function getContext(chatKey: string): Promise<ChatContext> {
     if (h.error) warnOnce('messages', h.error.message);
     if (s.error && s.error.code !== 'PGRST116') warnOnce('summaries', s.error.message);
     if (k.error) warnOnce('corrections', k.error.message);
-    return {
+
+    const ctx: ChatContext = {
       history: ((h.data ?? []) as Array<{ role: string; content: string }>)
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .reverse()
@@ -39,6 +69,9 @@ export async function getContext(chatKey: string): Promise<ChatContext> {
       corrections: ((k.data ?? []) as Array<{ correction: string }>).map((r) => r.correction),
       chatId: chatKey,
     };
+
+    contextCache.set(chatKey, { at: Date.now(), data: ctx });
+    return ctx;
   } catch {
     return empty;
   }
