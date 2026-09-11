@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.24.1  
+**Versi:** v0.24.2  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 17:30 WIB  
+**Terakhir Diperbarui:** 2026-09-11 17:35 WIB  
 
 ---
 
@@ -191,6 +191,19 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.24.2 — 2026-09-11 17:35 WIB
+**Fine-Tuned 4-Tier Vision Failover Sequence, MistralAI Restoration & Standard CSS background-clip Compliance**
+- **Penataan Ulang 4-Tier Rantai Prioritas Vision (`src/providers.ts`)**:
+  - Menyusun urutan prioritas eksekusi model penglihatan (*vision*) sesuai permintaan pengguna:
+    1. **Tier 1 (Utama)**: `xkiro` (model `qwen/qwen3.8-max:free`, `qwen/qwen3.6-plus:free`, `qwen/qwen3-vl-plus:free`, dan `mistralai/mistral-large-2512`).
+    2. **Tier 2**: `groq` (model `qwen/qwen3.8-27b`, `qwen/qwen3.6-27b`).
+    3. **Tier 3**: `gemini` (`gemini-3.8-flash`, `gemini-2.5-flash`).
+    4. **Tier 4 (Fallback Akhir)**: `openrouter` (`nex-agi/nex-n2.5:free`, `nex-agi/nex-n2.5-mini:free`).
+- **Restorasi Model Mistral Large di xKiro (`src/providers.ts`)**:
+  - Mengembalikan `mistralai/mistral-large-2512` ke dalam daftar `visionModels` pada provider xKiro.
+- **Kepatuhan Standar CSS W3C & Cross-Browser Styling (`public/index.html`)**:
+  - Menambahkan deklarasi properti standar `background-clip: text` berdampingan dengan `-webkit-background-clip: text` pada elemen `.hero-title` di Landing Page untuk memastikan kompatibilitas penuh lintas peramban modern (Firefox, Chrome, Safari, Edge) dan membersihkan peringatan CSS linter.
 
 ### v0.24.1 — 2026-09-11 17:30 WIB
 **Qwen xKiro Primary Vision Prioritization, WhatsApp 1,000 Monthly Sessions Tracker & Flush-Top Compact Navbar**
