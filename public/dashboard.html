@@ -73,7 +73,7 @@
       min-height: 100vh;
       line-height: 1.5;
       padding: 1.5rem;
-      overflow-x: hidden;
+      overflow-x: clip;
     }
 
     .container {
@@ -84,18 +84,43 @@
       gap: 1.75rem;
     }
 
-    /* Top Navigation */
+    /* Top Navigation - Smart Sticky & Smooth Scroll Reveal */
     header {
+      position: sticky;
+      top: 1rem;
+      z-index: 1000;
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
       gap: 1rem;
       padding: 1rem 1.5rem;
-      background: var(--bg-surface);
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--border-subtle);
       border-radius: 16px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease, box-shadow 0.25s ease, background-color 0.25s ease, border-color 0.25s ease;
+      will-change: transform, opacity;
+    }
+
+    header.header-hidden {
+      transform: translateY(calc(-100% - 2.5rem));
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    header.header-scrolled {
+      background: rgba(15, 23, 42, 0.95);
+      border-color: rgba(56, 189, 248, 0.25);
+      box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.65), 0 0 20px rgba(56, 189, 248, 0.12);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      header {
+        transition: none !important;
+      }
     }
 
     .brand {
@@ -3424,6 +3449,48 @@
         if (refreshTimer) clearInterval(refreshTimer);
       }
     }
+
+    // =========================================================================
+    // SMART STICKY HEADER SCROLL CONTROLLER (HIDE ON SCROLL DOWN, REVEAL ON SCROLL UP)
+    // =========================================================================
+    (() => {
+      let lastScrollY = window.pageYOffset || document.documentElement.scrollTop;
+      let ticking = false;
+      const scrollThreshold = 8;
+      const headerEl = document.querySelector("header");
+      if (!headerEl) return;
+
+      function updateHeaderOnScroll() {
+        const currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
+        const delta = currentScrollY - lastScrollY;
+
+        if (currentScrollY <= 30) {
+          // Posisi awal paling atas: selalu tampilkan normal
+          headerEl.classList.remove("header-hidden");
+          headerEl.classList.remove("header-scrolled");
+        } else {
+          headerEl.classList.add("header-scrolled");
+
+          if (delta > scrollThreshold && currentScrollY > 80) {
+            // Scroll ke bawah: sembunyikan secara halus ke atas
+            headerEl.classList.add("header-hidden");
+          } else if (delta < -scrollThreshold) {
+            // Scroll ke atas: tampilkan kembali secara halus dari atas
+            headerEl.classList.remove("header-hidden");
+          }
+        }
+
+        lastScrollY = Math.max(0, currentScrollY);
+        ticking = false;
+      }
+
+      window.addEventListener("scroll", () => {
+        if (!ticking) {
+          window.requestAnimationFrame(updateHeaderOnScroll);
+          ticking = true;
+        }
+      }, { passive: true });
+    })();
 
     // =========================================================================
     // INITIALIZATION
