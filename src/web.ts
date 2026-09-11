@@ -597,7 +597,13 @@ export async function searchWeb(query: string): Promise<string> {
             const dm = item.match(/<description>([\s\S]*?)<\/description>/i);
             const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
             const lm = item.match(/<link>([\s\S]*?)<\/link>/i);
-            if (tm) addSnippet('Google Berita', tm[1], dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '', 40);
+            if (tm) {
+              addSnippet('Google Berita', tm[1], dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '', 40);
+              // Tambahkan URL artikel ke discoveredUrls untuk di-scrape universal
+              if (lm && lm[1] && isSafePublicUrl(lm[1].trim())) {
+                discoveredUrls.add(lm[1].trim());
+              }
+            }
           }
         })
         .catch(() => {}),
@@ -650,33 +656,32 @@ export async function searchWeb(query: string): Promise<string> {
     clearTimeout(timeout);
   }
 
-  // 3. Autonomous Deep Web Scraping untuk Discovered URL Teratas
-  // Selalu aktif jika Bing menemukan URL — tidak ada kondisi topik.
-  // Filosofi: jika web sudah menemukan halaman relevan, baca isinya langsung.
-  // Hanya skip untuk situs sosial/kamus yang tidak informatif.
-  if (targetUrls.size === 0 && discoveredUrls.size > 0) {
-    const candidates = Array.from(discoveredUrls).filter(
-      (u) => !/(kbbi\.|wikipedia\.org|youtube\.com|facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com)/i.test(u),
+  // 3. Universal Autonomous Deep Web Scraping
+  // Scrape top 3 URL dari SEMUA hasil pencarian (Bing + DDG + Google News)
+  // Universal: berlaku untuk query apapun, tidak bergantung pada topik atau brand
+  const skippedDomains = /(kbbi\.|wikipedia\.org|youtube\.com|facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com|google\.com\/search|bing\.com|duckduckgo\.com)/i;
+  const scrapeTargets = [
+    // Prioritas: URL yang eksplisit disebut user
+    ...Array.from(targetUrls),
+    // Lalu URL dari hasil pencarian
+    ...Array.from(discoveredUrls).filter((u) => !skippedDomains.test(u)),
+  ].slice(0, targetUrls.size > 0 ? 2 : 3); // Scrape maks 3 URL jika tidak ada URL eksplisit
+
+  if (scrapeTargets.length > 0) {
+    // Scrape paralel semua target sekaligus
+    const scrapeResults = await Promise.allSettled(
+      scrapeTargets.map((url) => scrapeWebpage(url).then((content) => ({ url, content })))
     );
-    const topDiscovered = candidates[0];
-    if (topDiscovered) {
-      try {
-        const deepScraped = await scrapeWebpage(topDiscovered);
-        if (deepScraped && deepScraped.length > 80) {
-          let host = topDiscovered;
-          try {
-            host = new URL(topDiscovered).hostname;
-          } catch {
-            // abaikan
-          }
-          structuredSnippets.unshift({
-            text: `[Isi Lengkap Halaman Web (${host})]:\n${deepScraped.slice(0, 4500)}`,
-            timestamp: Date.now() + 500_000_000,
-            score: 95,
-          });
-        }
-      } catch {
-        // abaikan jika gagal deep scrape
+    for (const result of scrapeResults) {
+      if (result.status === 'fulfilled' && result.value.content && result.value.content.length > 80) {
+        const { url, content } = result.value;
+        let host = url;
+        try { host = new URL(url).hostname; } catch { /* */ }
+        structuredSnippets.unshift({
+          text: `[Isi Halaman Web (${host})]:\n${content.slice(0, 4000)}`,
+          timestamp: Date.now() + 500_000_000,
+          score: 95,
+        });
       }
     }
   }
@@ -686,7 +691,7 @@ export async function searchWeb(query: string): Promise<string> {
   // Urutkan bukti: artikel terbaca langsung di paling atas, kemudian berdasarkan recency & relevansi skor
   structuredSnippets.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp);
 
-  const selected = structuredSnippets.slice(0, 10).map((s) => s.text);
+  const selected = structuredSnippets.slice(0, 14).map((s) => s.text);
   return selected.join('\n\n');
 }
 
