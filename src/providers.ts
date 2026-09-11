@@ -184,6 +184,7 @@ function steps(): Step[] {
         'qwen/qwen3.6-plus:free',
         'qwen/qwen3-vl-plus:free',
         'mistralai/mistral-large-2512',
+        'mistralai/mistral-medium-3.5',
       ],
       cap: config.dailyCap.xkiro,
       run: (k, m, msgs) => openAiChat('https://api.xkiro.com/v1', k, m, msgs),

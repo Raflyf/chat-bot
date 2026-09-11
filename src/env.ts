@@ -44,10 +44,12 @@ export const config = {
         : [
             'qwen/qwen3.6-plus:free',
             'mistralai/mistral-large-2512',
+            'mistralai/mistral-medium-3.5',
+            'sensenova/sensenova-6.8-flash-lite',
             'deepseek/deepseek-v4-pro',
             'deepseek/deepseek-v4-flash',
+            'minimax/minimax-m2.7-highspeed:free',
             'minimax/minimax-m3:free',
-            'openai/gpt-5.3-codex-spark',
             'mistralai/codestral-2508',
             'qwen/qwen3-vl-plus:free',
             'qwen/qwen3.7-plus:free',
