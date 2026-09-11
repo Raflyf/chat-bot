@@ -194,6 +194,9 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ### v0.22.4 — 2026-09-11 13:50 WIB
 **Optimasi Dashboard & Efisiensi Database: Eliminasi Tabel Live Log Redundan & Sistem Pagination 5 Baris**
+- **Pelebaran Responsif Kolom Jawaban Chatbot (`public/dashboard.html`)**:
+  - Mengeliminasi pembatasan kaku `max-width: 520px` pada sel `.dataset-reply`, menggantinya dengan `max-width: 100%` serta mengalokasikan sisa ruang horizontal tabel secara maksimal untuk kolom *Jawaban Chatbot (Completion)*.
+  - Teks jawaban bot kini membentang luas ke kanan memanfaatkan ruang layar yang lega, sehingga baris tabel tidak lagi memanjang ke bawah dan jauh lebih nyaman dipindai.
 - **Sistem Penomoran Halaman (Pagination 5 Baris) Dataset Evaluasi (`public/dashboard.html`)**:
   - Membatasi tampilan tabel dataset evaluasi secara presisi menjadi 5 pasangan percakapan per halaman sehingga layout panel tetap rapi dan tidak memanjang ke bawah.
   - Mengintegrasikan kontrol navigasi pagination interaktif (tombol `Prev`, nomor halaman `1`, `2`, `3`, ..., dan `Next`) serta teks indikator jumlah percakapan yang ditampilkan.
