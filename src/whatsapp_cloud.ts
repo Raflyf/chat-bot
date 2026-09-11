@@ -3,7 +3,7 @@ import { config } from './env.js';
 import { autoReply, describeImage } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage } from './db.js';
-import { getContext, noteExchange, saveCorrection } from './memory.js';
+import { getContext, noteExchange, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 
@@ -430,16 +430,17 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         if (!text) continue;
 
-        // 1. Ambil riwayat percakapan dari Supabase
+        // 1. Ambil riwayat percakapan (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
         const context = await getContext(chatKey);
 
-        // 2. Simpan pesan pengguna
-        await saveMessage({
+        // 2. Simpan pesan pengguna secara non-blocking & update cache in-memory langsung
+        updateContextCache(chatKey, 'user', text);
+        void saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'user',
           content: text,
-        });
+        }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan user:', err));
 
         // 3. Periksa kebutuhan pencarian web real-time 2026
         let webResults: string | null = null;
@@ -452,20 +453,21 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           }
         }
 
-        // 4. Panggil model AI universal (Groq -> Gemini -> OpenRouter)
+        // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
         const { reply, via } = await autoReply(text, context, webResults);
 
-        // 5. Kirim balasan ke WhatsApp pengguna
+        // 5. Kirim balasan ke WhatsApp pengguna secepat mungkin
         await sendWhatsAppCloudMessageSafe(from, reply);
 
-        // 6. Simpan balasan asisten ke database Supabase
-        await saveMessage({
+        // 6. Update cache memori & simpan balasan asisten ke database Supabase secara non-blocking
+        updateContextCache(chatKey, 'assistant', reply);
+        void saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',
           content: reply.slice(0, 4000),
           via,
-        });
+        }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan assistant:', err));
 
         // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat
         noteExchange(chatKey);

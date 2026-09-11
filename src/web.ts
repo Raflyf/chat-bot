@@ -151,7 +151,7 @@ export async function scrapeWebpage(url: string): Promise<string> {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         Accept: 'text/plain',
       },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(2800),
     });
     if (jinaRes.ok) {
       const text = await jinaRes.text();
@@ -170,7 +170,7 @@ export async function scrapeWebpage(url: string): Promise<string> {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 FreeAIBot/2026',
         Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
       },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(2500),
     });
     if (res.ok) {
       const raw = await res.text();
@@ -201,10 +201,11 @@ export function needsSearch(text: string): boolean {
 
   const qNorm = q.toLowerCase().replace(/[?!.,]/g, '').replace(/\s+/g, ' ').trim();
 
-  // 2. Sapaan murni dan ucapan terima kasih pendek: lewati search
+  // 2. Sapaan murni, salam, dan ucapan terima kasih: lewati search
   if (
     /^(?:halo|hai|hey|hei|assalamu(?:'|a)?laikum|selamat\s*(?:pagi|siang|sore|malam)|pagi|siang|sore|malam)(?:\s+(?:halo|hai|hey|hei|apa kabar|kawan|bro|kak|min|semuanya|sahabat))?$/i.test(qNorm) ||
-    /^(?:apa kabar|gimana kabarnya|kabarmu gimana|makasih|terima kasih|thanks|thx|oke|ok|sip|siap|mantap|keren|yup|yes|ya|iya|bye|dadah)$/i.test(qNorm)
+    /^(?:apa kabar|gimana kabarnya|kabarmu gimana)(?:\s+(?:kawan|bro|kak|min|kamu|sahabat|semuanya))?$/i.test(qNorm) ||
+    /^(?:makasih|terima kasih|thanks|thx|oke|ok|sip|siap|mantap|keren|yup|yes|ya|iya|bye|dadah)$/i.test(qNorm)
   ) {
     return false;
   }
@@ -225,13 +226,78 @@ export function needsSearch(text: string): boolean {
     }
   }
 
-  // 5. Soal aritmatika murni tanpa teks kata: e.g. "12 + 15" atau "50 * 4 / 2"
+  // 5. Soal aritmatika murni: e.g. "12 + 15" atau "50 * 4 / 2"
   if (/^[\d\s+\-*/^()=.,]+$/.test(qNorm)) {
     return false;
   }
 
-  // Seluruh pertanyaan fakta, website, informasi, nama produk, kata kunci, opini web: SEARCH LIVE
-  return true;
+  // 6. Percakapan santai, curhat, perasaan, dan kondisi fisik/mental: LEWATI search (Menghemat 7-10 detik latency)
+  if (
+    /\b(?:laper|lapar|mager|curhat|capek|ngantuk|pusing|sedih|senang|seneng|bosan|bosen|kesepian|kangen|galau)\b/i.test(qNorm) ||
+    /^(?:aku|saya|gue|gw)\s+(?:laper|lapar|mager|capek|ngantuk|pusing|sedih|senang|bosan|galau)/i.test(qNorm) ||
+    /\b(?:lagi ngapain|lagi apa|kamu lagi apa|kamu udah makan|udah makan belum)\b/i.test(qNorm) ||
+    /^(?:saya|aku|gw|gue)\s+(?:di|lagi di)\s+[a-z\s]+$/i.test(qNorm)
+  ) {
+    return false;
+  }
+
+  // 7. Tanya saran / rekomendasi makanan, ide santai, kado, tempat nongkrong: LEWATI search
+  if (
+    /\b(?:rekomendasi makanan|menu makanan|makan apa|masak apa|saran makanan|rekomendasi kuliner)\b/i.test(qNorm) ||
+    /\b(?:ide kado|rekomendasi hadiah|rekomendasi film|film bagus|lagu enak|tempat nongkrong)\b/i.test(qNorm) ||
+    /\b(?:mending mana|bagusan mana|pilih mana|saran dong|menurutmu gimana)\b/i.test(qNorm)
+  ) {
+    return false;
+  }
+
+  // 8. Pembahasan seputar tugas kuliah, skripsi, jurnal, atau pekerjaan tanpa minta data internet: LEWATI search
+  if (
+    /^(?:tugas akhir|skripsi|jurnal|makalah|tugas kuliah|tugas sekolah|pr|kerjaan|proyek|thesis|tesis)(?:\s+(?:kuliah|sekolah|kantor))?$/i.test(qNorm) ||
+    /^(?:lagi|lg)\s+ngerjain\s+(?:jurnal|skripsi|tugas|makalah|pr|laporan)/i.test(qNorm)
+  ) {
+    return false;
+  }
+
+  // 9. Koding, matematika, rumus, atau konsep sains umum tanpa merujuk software rilis baru: LEWATI search
+  if (
+    /^(?:buatkan|tuliskan|bikin|kode|script|fungsi|function|regex|sql query|algoritma)\s+/i.test(qNorm) ||
+    /\b(?:hitung|rumus|cara koding|cara buat fungsi|contoh koding)\b/i.test(qNorm) ||
+    /^(?:apa itu|jelaskan apa itu|pengertian|definisi)\s+(?:fotosintesis|gravitasi|mitokondria|oop|polimorfisme|rekursi|stack|queue)/i.test(qNorm)
+  ) {
+    return false;
+  }
+
+  // 10. TRIGGER EKSPLISIT SEARCH LIVE:
+  // - Keyword berita, recency, harga, cuaca, skor, event, live status
+  if (
+    /\b(?:berita|kabar|terkini|terbaru|update|rilis|release|launch|harga|kurs|saham|cuaca|gempa|banjir|skor|klasemen|jadwal|pemilu|presiden|menteri|viral)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
+  // - Kata kunci brand teknologi & model AI (Xiaomi, Claude, DeepSeek, ChatGPT, Gemini, Qwen, iPhone, Samsung, dll)
+  if (
+    /\b(?:xiaomi|samsung|iphone|apple|redmi|poco|vivo|oppo|asus|lenovo|deepseek|claude|openai|chatgpt|gpt|gemini|qwen|mistral|llama|grok|nvidia|intel|amd|snapdragon|rtx)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
+  // - Anchor tahun terkini (2024, 2025, 2026, tahun ini, bulan ini)
+  if (/\b(?:2024|2025|2026|tahun ini|bulan ini|minggu ini|hari ini|kemarin)\b/i.test(qNorm)) {
+    return true;
+  }
+
+  // - Kata tanya fakta eksplisit: "kapan rilis", "siapa juara", "berapa harga", "ada apa di"
+  if (/\b(?:kapan rilis|kapan tayang|siapa juara|berapa harga|ada apa di|kenapa sekarang|apa yang terjadi)\b/i.test(qNorm)) {
+    return true;
+  }
+
+  // Default untuk pertanyaan umum yang memuat kata tanya fakta:
+  if (/\b(?:siapa|dimana|kapan|kenapa|mengapa)\b/i.test(qNorm) && qNorm.length > 20) {
+    return true;
+  }
+
+  return false;
 }
 
 /** Ekstrak entitas inti kueri penelusuran tanpa filler percakapan
@@ -520,7 +586,7 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   const entityQ = cleanQuery.slice(0, 100);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6500);
+  const timeout = setTimeout(() => controller.abort(), 3200);
 
   try {
     const fetches: Array<Promise<void>> = [];
@@ -783,18 +849,18 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   }
 
   // 3. Universal Autonomous Deep Web Scraping
-  // Scrape top 3 URL dari SEMUA hasil pencarian (Bing + DDG + Google News)
-  // Universal: berlaku untuk query apapun, tidak bergantung pada topik atau brand
+  // Hanya lakukan deep-scraping halaman jika user menyertakan link eksplisit atau jika hasil snippet pencarian masih minim (< 2)
+  const shouldDeepScrape = targetUrls.size > 0 || structuredSnippets.length < 2;
   const skippedDomains = /(kbbi\.|wikipedia\.org|youtube\.com|facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com|google\.com\/search|bing\.com|duckduckgo\.com)/i;
-  const scrapeTargets = [
-    // Prioritas: URL yang eksplisit disebut user
-    ...Array.from(targetUrls),
-    // Lalu URL dari hasil pencarian
-    ...Array.from(discoveredUrls).filter((u) => !skippedDomains.test(u)),
-  ].slice(0, targetUrls.size > 0 ? 2 : 3); // Scrape maks 3 URL jika tidak ada URL eksplisit
+  const scrapeTargets = shouldDeepScrape
+    ? [
+        ...Array.from(targetUrls),
+        ...Array.from(discoveredUrls).filter((u) => !skippedDomains.test(u)),
+      ].slice(0, targetUrls.size > 0 ? 2 : 1)
+    : [];
 
   if (scrapeTargets.length > 0) {
-    // Scrape paralel semua target sekaligus
+    // Scrape paralel dengan batas waktu cepat 2500ms
     const scrapeResults = await Promise.allSettled(
       scrapeTargets.map((url) => scrapeWebpage(url).then((content) => ({ url, content })))
     );

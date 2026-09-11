@@ -3,7 +3,7 @@ import { config } from './env.js';
 import { autoReply, describeImage } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage } from './db.js';
-import { getContext, noteExchange, saveCorrection } from './memory.js';
+import { getContext, noteExchange, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -344,9 +344,15 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
     // 9. Pesan teks umum
     if (!text || text.startsWith('/')) return;
-    await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'user', content: text });
 
+    // Fast-path in-memory context (0ms saat aktif)
     const ctx = await getContext(chatKey);
+
+    // Simpan pesan user ke database secara non-blocking & update cache in-memory
+    updateContextCache(chatKey, 'user', text);
+    void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'user', content: text })
+      .catch((err) => console.warn('[telegram] Gagal simpan pesan user:', err));
+
     let web: string | null = null;
     if (needsSearch(text)) {
       const prevContext = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
@@ -355,7 +361,11 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     }
     const { reply, escalate, via } = await autoReply(text, ctx, web);
     await sendTelegramMessageSafe(bot, chatId, reply);
-    await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via });
+
+    // Update cache memori & simpan balasan asisten ke database secara non-blocking
+    updateContextCache(chatKey, 'assistant', reply);
+    void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via })
+      .catch((err) => console.warn('[telegram] Gagal simpan pesan assistant:', err));
     noteExchange(chatKey);
 
     if (escalate && ownerId) {

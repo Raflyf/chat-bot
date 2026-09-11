@@ -311,8 +311,8 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     const nowYear = new Date().getFullYear();
     instructions.push(
       '',
-      `[DATA INTERNET REAL-TIME — PRIORITAS MUTLAK DI ATAS PENGETAHUAN TRAINING]:
-${web.slice(0, 8500)}
+      `[DATA INTERNET REAL-TIME - PRIORITAS MUTLAK DI ATAS PENGETAHUAN TRAINING]:
+${web.slice(0, 3800)}
 
 PEDOMAN WAJIB (TIDAK BOLEH DILANGGAR):
 - Data internet di atas adalah SUMBER KEBENARAN UTAMA untuk semua klaim faktual: angka, nama, status, versi, harga, rilis produk, atau kejadian terkini.
