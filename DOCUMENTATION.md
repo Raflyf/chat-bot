@@ -1,7 +1,18 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.9  
+**Versi:** v0.25.10  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 02:05 WIB  
+**Terakhir Diperbarui:** 2026-09-12 02:11 WIB  
+
+---
+
+## Ringkasan Pembaruan v0.25.10 (Pembatasan Ketat Penggunaan Emoji & Naturalisasi Sapaan Identitas)
+1. **Pembatasan Ketat Emoji (Anti-Over-Emoji & Zero Robot Emoji)**:
+   - Menetapkan aturan prompt sistem agar emoji digunakan secara sangat hemat (maksimal 1 emoji per pesan atau tanpa emoji sama sekali jika tidak perlu).
+   - Menghapus total emoji robot (`🤖`) yang terkesan kaku dan murahan.
+   - Mengimplementasikan sanitasi kode terprogram pada Rule 6 di `cleanMathAndNoise` (`src/skills.ts`): secara otomatis memotong emoji berlebih jika model mengeluarkan lebih dari 1 emoji (maksimal 2 untuk teks sangat panjang), menjamin 100% obrolan di WhatsApp/Telegram tidak lagi dibanjiri spam emoji di setiap baris kalimat.
+2. **Naturalisasi Respon "Kamu Siapa" & Sapaan Developer**:
+   - Jika pengguna bertanya siapa bot tersebut, bot menjawab santai sebagai teman ngobrol bernama FreeAIBot tanpa memuntahkan daftar panjang kemampuan atau pamer fitur ala sales.
+   - Jika lawan bicara mengaku sebagai Rafly, bot menyapa akrab dan santai layaknya teman ngobrol biasa tanpa reaksi heboh yang berlebihan.
 
 ---
 
