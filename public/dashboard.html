@@ -581,6 +581,9 @@
       color: #e2e8f0;
       word-break: break-word;
       line-height: 1.5;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 6px;
     }
 
     .dataset-reply {
@@ -589,6 +592,32 @@
       word-break: break-word;
       line-height: 1.5;
       white-space: pre-wrap;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 6px;
+    }
+
+    /* Custom scrollbar ramping & elegan untuk prompt & jawaban dataset */
+    .dataset-prompt::-webkit-scrollbar,
+    .dataset-reply::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .dataset-prompt::-webkit-scrollbar-track,
+    .dataset-reply::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 4px;
+    }
+
+    .dataset-prompt::-webkit-scrollbar-thumb,
+    .dataset-reply::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.25);
+      border-radius: 4px;
+    }
+
+    .dataset-prompt::-webkit-scrollbar-thumb:hover,
+    .dataset-reply::-webkit-scrollbar-thumb:hover {
+      background: rgba(56, 189, 248, 0.5);
     }
 
     /* Pagination Component */
