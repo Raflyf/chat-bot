@@ -1,27 +1,25 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.7  
+**Versi:** v0.25.8  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 01:28 WIB  
+**Terakhir Diperbarui:** 2026-09-12 01:42 WIB  
 
 ---
 
-## Ringkasan Pembaruan v0.25.7 (Ekspor CSV Filter Hari Ini, Exit Roleplay Protocol, Resolusi Lokasi & Optimasi Failover Model)
-1. **Fitur Ekspor CSV Khusus Hari Ini (`api/dataset.ts` & `public/dashboard.html`)**:
-   - Menambahkan tombol aksi khusus `Unduh CSV (Hari Ini)` pada bilah filter tabel evaluasi dataset dashboard monitoring agar admin dapat mengunduh data percakapan hari ini saja secara ringkas, cepat, dan hemat ukuran file (~21 KB vs ~87 KB riwayat penuh).
-   - Menambahkan opsi filter rentang waktu eksplisit `Hari Ini Saja (WIB)` pada dropdown filter tabel.
-   - Endpoint `GET /api/dataset` kini mendukung penentuan batas awal dan akhir hari secara presisi (`startDateIso` dan `endDateIso`) dengan zona waktu lokal Indonesia (`Asia/Jakarta` / UTC+7).
-   - Penamaan berkas otomatis diberi label deskriptif (`evaluasi_chatbot_hari_ini_YYYY-MM-DD.csv`, `training_dataset_hari_ini_YYYY-MM-DD.jsonl`, `evaluasi_chatbot_semua_YYYY-MM-DD.csv`).
-2. **Protokol Keluar Peran / Instant Exit Roleplay Protocol (`src/skills.ts`)**:
-   - Memperbaiki masalah di mana chatbot enggan keluar dari permainan peran (seperti tetap berakting pacar/drakor dan mengulang pilihan menu) saat pengguna menyuruh berhenti (`stop berperan`, `kita putus`, `stop peran`).
-   - Menyuntikkan peringatan sistem prioritas tertinggi secara dinamis ketika pengguna meminta berhenti bermain peran, memerintahkan model untuk 100% keluar dari peran seketika dan kembali ke persona ramah FreeAIBot normal tanpa baper/merajuk.
-   - Menambahkan pembersihan otomatis ekspresi kurung siku panggung (`*[suara jadi dingin]*`, `*(sengau dalam-dalam)*`, dll) dan pemangkasan trailer menu pilihan kaku pada fungsi `cleanMathAndNoise`.
-3. **Resolusi False-Positive Lokasi 'Tua Bangka' & Identitas Developer (`src/timezone.ts`, `src/skills.ts`)**:
-   - Memperketat regex lokasi di `src/timezone.ts` agar membutuhkan preposisi tempat eksplisit dan mengabaikan idiom peyoratif seperti `tua bangka` agar tidak keliru mendeteksi provinsi Bangka Belitung.
-   - Menghapus riwayat koreksi Bangka Belitung yang sempat tersimpan secara keliru pada tabel `corrections` Supabase.
-   - Menegaskan identitas developer utama bot adalah Rafly (Rflyyyf) pada prompt sistem dan melarang bot menyangkal atau berhalusinasi pacaran dengan developernya.
-4. **Optimalisasi Failover Model & Pencegahan Perulangan Kaku (`src/env.ts`, `src/providers.ts`, `.env`)**:
-   - Mengurutkan ulang failover chain xKiro dengan menempatkan model percakapan alami berkinerja tinggi (`mistralai/mistral-large-2512`, `mistralai/mistral-medium-3.5`, `sensenova/sensenova-6.8-flash-lite`) di posisi terdepan, serta mendemosi model kode kaku (`codestral-2508`) ke urutan cadangan terakhir.
-   - Mengaktifkan `presence_penalty: 0.3` pada inferensi OpenAI-compatible untuk mencegah perulangan frasa dan lelucon yang identik.
+## Ringkasan Pembaruan v0.25.8 (Tuning Respon Percakapan High-EQ, Playful Banter, Gombalan Spontan & Eliminasi Gestur Fisik Kaku)
+1. **Tuning Respon & Persona Sahabat Akrab (High-EQ Companion)**:
+   - Mengoptimalkan `systemPrompt` di `src/skills.ts` agar chatbot berbicara lebih santai, hangat, luwes, dan cerdas sehingga pengguna merasa nyaman dan betah mengobrol berlama-lama.
+   - Sapaan masuk ("halo", "kamu standby?", "pagi") disambut dengan antusiasme seorang teman akrab yang selalu siap menemani.
+2. **Playful Banter & Anti-Defensif Saat Diledek**:
+   - Menghapus total sikap defensif bot atau rengekan minta kasihan ("aku terpukul", "aku cuma bot yang belajar", "namanya juga bot yang harus kalem") saat diejek lelucon garing atau kaku.
+   - Diganti dengan respon *playful banter*: membalas ledekan dengan tawa santai, humor cerdas, dan tantangan balik yang asik ("Hahaha ya maap namanya juga usaha! Sini coba gantian kamu yang ngelawak, awas aja kalo lebih garing ya haha!").
+3. **Eksekusi Gombalan & Rayuan Spontan**:
+   - Permintaan gombalan atau rayuan ("coba gombalin", "ngegombal lagi") langsung dieksekusi dengan analogi manis, kreatif, atau lelucon cheesy yang menyenangkan tanpa drama peran, penolakan kaku, atau menu pilihan.
+4. **Pembersihan Gestur Panggung Fisik & Menu Opsi Kaku (`src/skills.ts`)**:
+   - Menambahkan aturan sanitasi Rule 13b pada `cleanMathAndNoise` untuk menyaring teks gestur fisik bertanda bintang (`*menyentuh tanganmu*`, `*tersenyum manis*`, `*ngeliat ke samping*`) agar obrolan murni berbentuk percakapan pesan teks WA yang natural.
+   - Memperketat Rule 14 regex pembersih trailer menu kaku (`*Pilihan kamu:* 1. ... 2. ...`) agar terpotong secara instan dengan atau tanpa garis pemisah `---`.
+   - Melarang keras bot mengusulkan diri menjadi pacar fiktif secara sepihak jika pengguna tidak pernah memintanya.
+5. **Integritas Konfigurasi Model Tetap Utuh 100%**:
+   - Menjaga seluruh konfigurasi pool model AI di `src/env.ts` dan `.env` tetap lengkap (10 model cadangan failover xKiro dan model utama) tanpa ada yang dihilangkan.
 
 ---
 
