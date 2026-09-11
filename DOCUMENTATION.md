@@ -1,33 +1,24 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.8  
+**Versi:** v0.25.9  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 01:42 WIB  
+**Terakhir Diperbarui:** 2026-09-12 02:05 WIB  
 
 ---
 
-## Ringkasan Pembaruan v0.25.8 (Tuning Respon Percakapan High-EQ, Playful Banter, Gombalan Spontan & Eliminasi Gestur Fisik Kaku)
-1. **Tuning Respon & Persona Sahabat Akrab (High-EQ Companion)**:
-   - Mengoptimalkan `systemPrompt` di `src/skills.ts` agar chatbot berbicara lebih santai, hangat, luwes, dan cerdas sehingga pengguna merasa nyaman dan betah mengobrol berlama-lama.
-   - Sapaan masuk ("halo", "kamu standby?", "pagi") disambut dengan antusiasme seorang teman akrab yang selalu siap menemani.
-2. **Playful Banter & Anti-Defensif Saat Diledek**:
-   - Menghapus total sikap defensif bot atau rengekan minta kasihan ("aku terpukul", "aku cuma bot yang belajar", "namanya juga bot yang harus kalem") saat diejek lelucon garing atau kaku.
-   - Diganti dengan respon *playful banter*: membalas ledekan dengan tawa santai, humor cerdas, dan tantangan balik yang asik ("Hahaha ya maap namanya juga usaha! Sini coba gantian kamu yang ngelawak, awas aja kalo lebih garing ya haha!").
-3. **Eksekusi Gombalan & Rayuan Spontan**:
-   - Permintaan gombalan atau rayuan ("coba gombalin", "ngegombal lagi") langsung dieksekusi dengan analogi manis, kreatif, atau lelucon cheesy yang menyenangkan tanpa drama peran, penolakan kaku, atau menu pilihan.
-4. **Pembersihan Gestur Panggung Fisik & Menu Opsi Kaku (`src/skills.ts`)**:
-   - Menambahkan aturan sanitasi Rule 13b pada `cleanMathAndNoise` untuk menyaring teks gestur fisik bertanda bintang (`*menyentuh tanganmu*`, `*tersenyum manis*`, `*ngeliat ke samping*`) agar obrolan murni berbentuk percakapan pesan teks WA yang natural.
-   - Memperketat Rule 14 regex pembersih trailer menu kaku (`*Pilihan kamu:* 1. ... 2. ...`) agar terpotong secara instan dengan atau tanpa garis pemisah `---`.
-   - Melarang keras bot mengusulkan diri menjadi pacar fiktif secara sepihak jika pengguna tidak pernah memintanya.
-5. **Nama Lengkap Developer (Rafly Firmansyah) & Penyederhanaan Respon Alami**:
-   - Menetapkan nama lengkap developer utama sebagai **Rafly Firmansyah** (Rafly / Rflyyyf).
-   - Jawaban saat ditanya identitas developer dibuat padat, wajar, dan natural (1–2 kalimat), melarang pamer stack teknologi (Vercel, Supabase, Baileys) dan melarang mengoceh julukan nama atau halusinasi peran jika lawan bicara tidak menanyakannya secara spesifik.
-   - Menginstruksikan bot untuk menerima julukan santai apa pun untuk Rafly dan menjadikannya bahan lelucon bersama tanpa kaku.
-6. **Adopsi Bahasa Slang Gaul WhatsApp & Ekspresi Emoji Kontekstual**:
-   - Mengintegrasikan kosakata gaul/slang internet terkini (`anjir`, `bjir`, `anjaiii / anjay`, `buset`, `gokil`, `wkwk`, `ngakak`, `santuy`, `salting`, `mager`, `gabut`, `relate`, dll) untuk suasana mengobrol yang sangat luwes dan hidup.
-   - Mengizinkan dan menganjurkan bot mengekspresikan emosi dengan emoji kontekstual (tertawa ngakak, salting, kaget, santai, penasaran, sedih/empati, atau roasting lucu) secara proporsional (1–2 emoji per pesan).
-   - Menghapus regex pembersih emoji pada `cleanMathAndNoise` di `src/skills.ts` sehingga emoji dapat tampil utuh di WhatsApp dan Telegram.
-7. **Integritas Konfigurasi Model Tetap Utuh 100%**:
-   - Menjaga seluruh konfigurasi pool model AI di `src/env.ts` dan `.env` tetap lengkap (10 model cadangan failover xKiro dan model utama) tanpa ada yang dihilangkan.
+## Ringkasan Pembaruan v0.25.9 (Eliminasi Jawaban Template, Respon Dinamis Inti Developer, & Pembersihan Negative Priming)
+1. **Penyederhanaan Inti Identitas Developer Tanpa Template Kaku (`src/skills.ts`)**:
+   - Menghapus seluruh kalimat skrip template dalam tanda kutip pada instruksi developer.
+   - Menggantinya dengan fakta inti esensial: developer utama adalah Rafly Firmansyah (Rafly atau Rflyyyf).
+   - Membebaskan model untuk menyusun kalimat balasan secara dinamis, santai, dan mengalir natural sesuai gaya obrolan akrab tanpa bertele-tele.
+2. **Eliminasi Total Negative Priming & Racauan Boilerplate**:
+   - Menghapus daftar larangan kata yang memicu model menyebut teknologi (Vercel, Supabase, PostgreSQL) atau julukan fisik di luar konteks.
+   - Menghapus frasa defensif bot ("aku kan cuma bot", "aku lagi belajar") yang sebelumnya memicu model meniru pola tersebut saat diledek.
+   - Menambahkan filter pembersih racauan pada `cleanMathAndNoise` dan sanitasi riwayat percakapan di `buildMessages` agar kalimat rusak sebelumnya tidak menular ke giliran chat berikutnya.
+3. **Penghentian Instan Saat Kata "Cukup" Diterima**:
+   - Menambahkan kata `cukup` ke dalam regex `stopRoleplayMatch`.
+   - Menginstruksikan bot untuk langsung menyudahi akting/gombalan tanpa menawarkan kembali rayuan atau menu peran baru.
+4. **Pembersihan Aksi Panggung Asteris (`*ngakak*`, `*ketawa*`)**:
+   - Memperluas pembersih gestur fisik Rule 13b di `cleanMathAndNoise` agar kata tawa diapit bintang dibersihkan sehingga teks percakapan tampil bersih di WhatsApp dan Telegram.
 
 ---
 
