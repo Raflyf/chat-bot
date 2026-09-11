@@ -204,6 +204,15 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.4 - 2026-09-12 00:15 WIB
+**Ekspansi Model xKiro Gateway & Validasi Ketersediaan Live (Mistral Large 2512, MiniMax, GPT-5.3 Codex Spark)**
+- **Integrasi Model Cadangan xKiro (`src/env.ts`)**:
+  - Menambahkan `mistralai/mistral-large-2512`, `minimax/minimax-m3:free`, dan `openai/gpt-5.3-codex-spark` ke dalam array konfigurasi failover model `xkiroBackup`.
+- **Hasil Pengujian Faktual Live**:
+  1. `mistralai/mistral-large-2512`: Terbukti aktif 100% (HTTP 200 OK), merespon dengan cepat, dan mendukung pemrosesan teks serta penglihatan visual (Vision).
+  2. `minimax/minimax-m3:free`: Terdaftar pada katalog free model xKiro, namun saat ini server upstream xKiro mengembalikan HTTP 500 internal server error. Dilindungi oleh rantai failover otomatis.
+  3. `openai/gpt-5.3-codex-spark`: Terdaftar di katalog xKiro sebagai model berbayar (*paying customers only* / HTTP 403 untuk free pool key). Otomatis dialihkan ke model berikutnya dalam rantai rolling.
+
 ### v0.25.3 - 2026-09-12 00:08 WIB
 **Persistent Knowledge Memory with Dynamic TTL, Shared Multi-Platform Intelligence & Sub-Millisecond Cache Lookup**
 - **Sistem Memori Pengetahuan Bersama Permanen (`src/knowledge.ts`, `sql/migrate_v14_web_knowledge.sql`)**:
