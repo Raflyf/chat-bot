@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.24.2  
+**Versi:** v0.24.3  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 17:35 WIB  
+**Terakhir Diperbarui:** 2026-09-11 17:45 WIB  
 
 ---
 
@@ -191,6 +191,16 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.24.3 — 2026-09-11 17:45 WIB
+**Strict Vision Grounding, Anti-Overreact Engine & Peripheral Distraction Elimination**
+- **Eliminasi Respons Over-React & Basa-Basi Klise (`src/skills.ts`)**:
+  - Mengatasi kendala model multimodal yang merespons foto secara berlebihan (*over-reacting*), seperti pujian hiperbolis ("Wah, ini kokpitnya ya? Rapi banget..."), tebakan periferal fisik di luar layar (mengomentari merek laptop ASUS, lampu RGB menyala-nyala, keyboard), serta pertanyaan retoris tak bermutu di akhir ("Gimana, performanya nge-lag gak di situ?").
+  - Menegakkan prinsip *Anti-Distraksi Hardware/Periferal*: model AI diwajibkan memfokuskan analisis HANYA pada subjek utama/isi konten layar yang diperlihatkan pengguna, serta dilarang keras mengomentari perangkat keras fisik di luar layar kecuali ditanyakan secara spesifik.
+- **Strict Grounding & Presisi OCR Metrik Dashboard (`src/skills.ts`)**:
+  - Mengatasi halusinasi pertukaran angka antar kartu/provider (sebelumnya model menukar metrik 93 calls milik Groq dengan Gemini 7 calls).
+  - Menyuntikkan direktif OCR ketat pada `describeImage` dan `systemPrompt` (Bagian 5): model diwajibkan membaca teks dan kartu metrik secara teliti per kolom dari kiri ke kanan, memetakan setiap angka tepat ke judul provider masing-masing, serta dilarang menebak atau menukar nilai.
+  - Membatasi panjang respon visual menjadi proporsional, santai, tenang, dan to-the-point (1-2 kalimat padat atau butir poin terstruktur).
 
 ### v0.24.2 — 2026-09-11 17:35 WIB
 **Fine-Tuned 4-Tier Vision Failover Sequence, MistralAI Restoration & Standard CSS background-clip Compliance**
