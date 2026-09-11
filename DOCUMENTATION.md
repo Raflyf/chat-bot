@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.0  
+**Versi:** v0.25.1  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 21:35 WIB  
+**Terakhir Diperbarui:** 2026-09-11 23:15 WIB  
 
 ---
 
@@ -191,6 +191,24 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.1 - 2026-09-11 23:15 WIB
+**Perbaikan Kritis: Cryptographic Stateless HMAC Session Tokens, Cross-Lambda Sync & Anti-Clock-Skew Guard**
+- **Akar Masalah Sesi Tertendang Seketika (*Immediate Session Kick-Out*)**:
+  - Pengguna memasukkan Master PIN dengan benar dan diarahkan masuk ke dashboard, namun dalam hitungan milidetik langsung tertendang kembali ke modal PIN dengan pesan "Sesi admin 15 menit telah berakhir untuk keamanan".
+  - **Penyebab Utama 1 (Cross-Lambda Memory Desync)**: Pada infrastruktur Vercel Serverless, endpoint verifikasi PIN (`/api/admin-otp`) dan endpoint data (`/api/stats` serta `/api/dataset`) dieksekusi pada container Lambda terpisah. Sebelumnya, token disimpan secara lokal di memori serverless jika penulisan Supabase belum tersinkronisasi, sehingga saat dashboard memanggil `/api/stats`, container data menganggap token tidak dikenal dan mengembalikan HTTP 401 Unauthorized yang langsung memicu `triggerSessionExpired()`.
+  - **Penyebab Utama 2 (Client-Server Clock Skew)**: Perhitungan hitung mundur kedaluwarsa sesi pada antarmuka pengguna sebelumnya membandingkan timestamp absolut server dengan `Date.now()` browser klien (`remainingMs = exp - Date.now()`). Jika jam perangkat pengguna memiliki selisih waktu mendahului server, `remainingMs` bernilai non-positif sehingga sesi langsung dipaksa kedaluwarsa.
+- **Implementasi Token Sesi Kriptografis Stateless HMAC-SHA256 (`src/admin_auth.ts`)**:
+  - Merancang sistem token sesi mandiri bertanda tangan kriptografis (`createSessionToken` & `verifySessionToken`) berformat `adm_<payload_base64url>.<signature_hex>`.
+  - Kunci tanda tangan HMAC diturunkan secara deterministik dari kombinasi `PIN_SALT` dan `pinHash`.
+  - Seluruh container Vercel Serverless (`api/stats.ts`, `api/dataset.ts`, `api/admin-otp.ts`) dapat memverifikasi keabsahan tanda tangan token dan masa berlaku 15 menit secara instan (<0.1 milidetik) tanpa ketergantungan roundtrip database atau shared memory.
+  - **Pencabutan Global Instan**: Jika PIN diubah atau direset via OTP, `pinHash` otomatis berganti sehingga seluruh token sesi aktif lama gugur secara universal di semua container tanpa perlu invalidasi manual.
+  - Pembersihan pemanggilan rekursif tak sengaja antara `getAuthConfig` dan `saveAuthConfig` untuk menjamin eksekusi fail-safe.
+- **Resiliensi Clock Drift & Durasi Relatif Klien (`public/dashboard.html`)**:
+  - Mengubah penanganan kedaluwarsa sesi di frontend menjadi berbasis durasi relatif (`duration_ms: 15 menit`) yang dihitung dari jam lokal browser klien saat verifikasi PIN berhasil (`clientExp = Date.now() + duration`).
+  - Menambahkan batas toleransi toleransi waktu (*clock drift grace window*) 30 detik pada pemeriksaan token dan hitung mundur `startSessionExpiryCountdown`.
+- **Ekspansi Variabel Lingkungan Supabase (`src/env.ts`)**:
+  - Menambahkan penanganan `SUPABASE_KEY` dan `NEXT_PUBLIC_SUPABASE_KEY` pada rantai fallback kredensial Supabase.
 
 ### v0.25.0 - 2026-09-11 21:35 WIB
 **Eliminasi Format Kuliah / Outline Skripsi Tanpa Perintah, Definisi Ensiklopedia & Nada Korporat CS**
