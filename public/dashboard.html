@@ -70,6 +70,8 @@
       display: flex;
       align-items: center;
       gap: 0.85rem;
+      text-decoration: none;
+      color: var(--text-main);
     }
 
     .brand-icon {
@@ -146,6 +148,7 @@
       font-size: 0.85rem;
       font-weight: 600;
       cursor: pointer;
+      text-decoration: none;
       transition: all 0.2s ease;
       font-family: inherit;
     }
@@ -583,7 +586,7 @@
     }
 
     /* ==========================================================================
-       AUTHENTICATION & RESET PIN MODAL (OBSIDIAN GLASS)
+       AUTHENTICATION GATEWAY MODAL (SLEEK KEYBOARD INPUT - NO ON-SCREEN NUMPAD)
        ========================================================================== */
     .modal-overlay {
       position: fixed;
@@ -611,7 +614,7 @@
 
     .auth-card {
       width: 100%;
-      max-width: 420px;
+      max-width: 400px;
       background: #0f172a;
       border: 1px solid rgba(56, 189, 248, 0.3);
       border-radius: 20px;
@@ -623,6 +626,32 @@
       text-align: center;
       gap: 1.25rem;
       position: relative;
+    }
+
+    .auth-top-nav {
+      position: absolute;
+      top: 1.25rem;
+      left: 1.25rem;
+    }
+
+    .auth-back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.75rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 9999px;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .auth-back-link:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
     }
 
     .auth-shield-icon {
@@ -637,6 +666,7 @@
       font-size: 1.6rem;
       color: var(--accent-blue);
       box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+      margin-top: 0.5rem;
     }
 
     .auth-title {
@@ -652,70 +682,40 @@
       line-height: 1.45;
     }
 
-    .pin-display-group {
+    .auth-form {
+      width: 100%;
       display: flex;
-      gap: 0.65rem;
-      margin: 0.5rem 0;
+      flex-direction: column;
+      gap: 1rem;
     }
 
-    .pin-dot {
-      width: 44px;
+    .pin-input-field {
+      width: 100%;
       height: 52px;
       background: #1e293b;
       border: 1.5px solid var(--border-subtle);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      border-radius: 12px;
+      padding: 0 1rem;
+      color: #fff;
       font-size: 1.75rem;
       font-weight: 800;
-      color: var(--accent-blue);
+      text-align: center;
+      letter-spacing: 0.4em;
       transition: all 0.2s ease;
-    }
-
-    .pin-dot.filled {
-      border-color: var(--accent-blue);
-      background: rgba(56, 189, 248, 0.1);
-      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
-    }
-
-    .keypad-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 0.65rem;
-      width: 100%;
-      margin-top: 0.5rem;
-    }
-
-    .key-btn {
-      height: 50px;
-      background: #1e293b;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 12px;
-      color: var(--text-main);
-      font-size: 1.25rem;
-      font-weight: 700;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s ease;
       font-family: inherit;
     }
 
-    .key-btn:hover {
-      background: #27354f;
+    .pin-input-field:focus {
+      outline: none;
       border-color: var(--accent-blue);
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
     }
 
-    .key-btn:active {
-      transform: scale(0.96);
-    }
-
-    .key-btn-action {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-muted);
+    .pin-input-field::placeholder {
+      font-size: 1.1rem;
+      letter-spacing: normal;
+      color: var(--text-dim);
+      font-weight: 500;
     }
 
     .auth-alert {
@@ -813,53 +813,52 @@
       color: var(--text-dim);
       font-size: 0.8rem;
       border-top: 1px solid var(--border-subtle);
+      margin-top: 1rem;
     }
   </style>
 </head>
 <body>
 
   <!-- ========================================================================
-       MODAL 1: PIN LOGIN GATEWAY
+       MODAL 1: PIN LOGIN GATEWAY (KEYBOARD DRIVEN - NO MANUAL BUTTONS)
        ======================================================================== -->
   <div id="auth-modal" class="modal-overlay">
     <div class="auth-card" id="pin-card">
+      <div class="auth-top-nav">
+        <a href="/" class="auth-back-link" title="Kembali ke Landing Page">
+          <span>&larr; Beranda</span>
+        </a>
+      </div>
+
       <div class="auth-shield-icon">&#128274;</div>
       <div>
-        <h2 class="auth-title">Admin Observability Gateway</h2>
+        <h2 class="auth-title">Admin Security Gateway</h2>
         <p class="auth-subtitle">Masukkan Master PIN untuk membuka panel monitoring &amp; evaluasi.</p>
       </div>
 
       <!-- Alert Status -->
       <div id="auth-alert" class="auth-alert auth-alert-error"></div>
 
-      <!-- PIN Display Dots -->
-      <div class="pin-display-group">
-        <div class="pin-dot" id="dot-0"></div>
-        <div class="pin-dot" id="dot-1"></div>
-        <div class="pin-dot" id="dot-2"></div>
-        <div class="pin-dot" id="dot-3"></div>
-        <div class="pin-dot" id="dot-4"></div>
-        <div class="pin-dot" id="dot-5"></div>
-      </div>
+      <!-- Native PIN Form (Keyboard / Touch / Numpad Supported) -->
+      <form id="pin-form" class="auth-form" onsubmit="handlePinSubmit(event)">
+        <input
+          type="password"
+          id="pin-input"
+          class="pin-input-field"
+          placeholder="Masukkan PIN"
+          maxlength="8"
+          autofocus
+          autocomplete="current-password"
+        >
+
+        <button type="submit" class="btn btn-primary" id="btn-submit-pin" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
+          <span>Buka Dashboard</span>
+          <span>&rarr;</span>
+        </button>
+      </form>
 
       <div style="font-size: 0.775rem; color: var(--text-dim);" id="attempts-label">
         Sisa percobaan: 5 kali
-      </div>
-
-      <!-- Keypad -->
-      <div class="keypad-grid">
-        <button class="key-btn" onclick="pressKey('1')">1</button>
-        <button class="key-btn" onclick="pressKey('2')">2</button>
-        <button class="key-btn" onclick="pressKey('3')">3</button>
-        <button class="key-btn" onclick="pressKey('4')">4</button>
-        <button class="key-btn" onclick="pressKey('5')">5</button>
-        <button class="key-btn" onclick="pressKey('6')">6</button>
-        <button class="key-btn" onclick="pressKey('7')">7</button>
-        <button class="key-btn" onclick="pressKey('8')">8</button>
-        <button class="key-btn" onclick="pressKey('9')">9</button>
-        <button class="key-btn key-btn-action" onclick="clearPin()">C</button>
-        <button class="key-btn" onclick="pressKey('0')">0</button>
-        <button class="key-btn key-btn-action" onclick="deleteKey()">&#9003;</button>
       </div>
 
       <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; margin-top: 0.25rem;">
@@ -873,11 +872,11 @@
        MODAL 2: RESET MASTER PIN VIA EMAIL OTP
        ======================================================================== -->
   <div id="reset-modal" class="modal-overlay hidden">
-    <div class="auth-card" style="max-width: 460px;">
+    <div class="auth-card" style="max-width: 440px;">
       <div class="auth-shield-icon" style="color: var(--accent-purple);">&#9993;</div>
       <div>
         <h2 class="auth-title">Reset Master PIN Keamanan</h2>
-        <p class="auth-subtitle">Verifikasi OTP dikirim ke email terdaftar: <span id="reset-target-email" style="color: var(--accent-blue); font-weight: 600;">raf***@gmail.com</span></p>
+        <p class="auth-subtitle">Verifikasi OTP dikirim ke email admin: <span id="reset-target-email" style="color: var(--accent-blue); font-weight: 600;">raf***@gmail.com</span></p>
       </div>
 
       <div id="reset-alert" class="auth-alert"></div>
@@ -928,12 +927,17 @@
   <div class="container" id="main-content">
     <!-- Header -->
     <header>
-      <div class="brand">
-        <div class="brand-icon">AI</div>
-        <div class="brand-info">
-          <h1 id="bot-name">FreeAIBot Console</h1>
-          <p id="server-time">Memuat sinkronisasi sistem...</p>
-        </div>
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <a href="/" class="btn" title="Kembali ke Landing Page Utama" style="padding: 0.4rem 0.8rem;">
+          <span>&larr; Beranda</span>
+        </a>
+        <a href="/dashboard.html" class="brand">
+          <div class="brand-icon">AI</div>
+          <div class="brand-info">
+            <h1 id="bot-name">FreeAIBot Console</h1>
+            <p id="server-time">Memuat sinkronisasi sistem...</p>
+          </div>
+        </a>
       </div>
       <div class="header-actions">
         <div class="status-pill">
@@ -1118,7 +1122,6 @@
     const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     const PIN_SALT = "rafly_telemetry_salt";
 
-    let currentPinInput = "";
     let autoRefresh = true;
     let refreshTimer = null;
     let resendCountdownTimer = null;
@@ -1159,66 +1162,27 @@
     }
 
     // =========================================================================
-    // PIN KEYPAD & SUBMIT LOGIC
+    // NATIVE PIN SUBMISSION (KEYBOARD-DRIVEN)
     // =========================================================================
-    function updatePinDots() {
-      for (let i = 0; i < 6; i++) {
-        const dot = document.getElementById(`dot-${i}`);
-        if (i < currentPinInput.length) {
-          dot.classList.add("filled");
-          dot.textContent = "●";
-        } else {
-          dot.classList.remove("filled");
-          dot.textContent = "";
-        }
+    async function handlePinSubmit(e) {
+      if (e) e.preventDefault();
+      const pinField = document.getElementById("pin-input");
+      const pinValue = pinField.value.trim();
+
+      if (!pinValue) {
+        pinField.focus();
+        return;
       }
-    }
-
-    function pressKey(num) {
-      if (currentPinInput.length < 6) {
-        currentPinInput += num;
-        updatePinDots();
-        if (currentPinInput.length === 6) {
-          setTimeout(submitPin, 120);
-        }
-      }
-    }
-
-    function deleteKey() {
-      if (currentPinInput.length > 0) {
-        currentPinInput = currentPinInput.slice(0, -1);
-        updatePinDots();
-      }
-    }
-
-    function clearPin() {
-      currentPinInput = "";
-      updatePinDots();
-    }
-
-    // Keyboard support
-    window.addEventListener("keydown", (e) => {
-      const authModal = document.getElementById("auth-modal");
-      if (!authModal.classList.contains("hidden")) {
-        if (e.key >= "0" && e.key <= "9") {
-          pressKey(e.key);
-        } else if (e.key === "Backspace") {
-          deleteKey();
-        } else if (e.key === "Escape" || e.key === "c" || e.key === "C") {
-          clearPin();
-        }
-      }
-    });
-
-    async function submitPin() {
-      if (currentPinInput.length !== 6) return;
 
       const alertEl = document.getElementById("auth-alert");
       alertEl.className = "auth-alert";
       alertEl.textContent = "";
 
+      const submitBtn = document.getElementById("btn-submit-pin");
+      submitBtn.disabled = true;
+
       try {
-        const pinHash = await sha256(currentPinInput + PIN_SALT);
+        const pinHash = await sha256(pinValue + PIN_SALT);
         const res = await fetch("/api/admin-otp?action=verify_pin", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1230,7 +1194,7 @@
         if (res.ok && data.verified && data.session_token) {
           setStoredToken(data.session_token);
           document.getElementById("auth-modal").classList.add("hidden");
-          clearPin();
+          pinField.value = "";
           fetchData();
           fetchDataset();
         } else {
@@ -1238,7 +1202,8 @@
           const card = document.getElementById("pin-card");
           card.classList.add("shake");
           setTimeout(() => card.classList.remove("shake"), 400);
-          clearPin();
+          pinField.value = "";
+          pinField.focus();
 
           alertEl.className = "auth-alert auth-alert-error show";
           alertEl.textContent = data.message || "Master PIN salah.";
@@ -1247,14 +1212,15 @@
             document.getElementById("attempts-label").textContent = `Sisa percobaan: ${data.remaining_attempts} kali`;
           }
           if (data.is_locked) {
-            document.getElementById("attempts-label").textContent = "Sistem Terkunci. Gunakan Reset via Email.";
+            document.getElementById("attempts-label").textContent = "Sistem Terkunci 1 Menit. Gunakan Reset via Email.";
           }
         }
       } catch (err) {
         console.error("PIN verification error:", err);
         alertEl.className = "auth-alert auth-alert-error show";
         alertEl.textContent = "Gagal menghubungi server keamanan. Silakan coba lagi.";
-        clearPin();
+      } finally {
+        submitBtn.disabled = false;
       }
     }
 
@@ -1274,7 +1240,11 @@
     function closeResetModal() {
       document.getElementById("reset-modal").classList.add("hidden");
       document.getElementById("auth-modal").classList.remove("hidden");
-      clearPin();
+      const pinField = document.getElementById("pin-input");
+      if (pinField) {
+        pinField.value = "";
+        pinField.focus();
+      }
     }
 
     async function handleSendOtp() {
@@ -1417,7 +1387,11 @@
       }
       clearStoredToken();
       document.getElementById("auth-modal").classList.remove("hidden");
-      clearPin();
+      const pinField = document.getElementById("pin-input");
+      if (pinField) {
+        pinField.value = "";
+        pinField.focus();
+      }
     }
 
     // =========================================================================
@@ -1428,6 +1402,8 @@
       if (!token) {
         document.getElementById("auth-modal").classList.remove("hidden");
         fetchAuthState();
+        const pinField = document.getElementById("pin-input");
+        if (pinField) pinField.focus();
         return false;
       }
 
@@ -1444,6 +1420,8 @@
           clearStoredToken();
           document.getElementById("auth-modal").classList.remove("hidden");
           fetchAuthState();
+          const pinField = document.getElementById("pin-input");
+          if (pinField) pinField.focus();
           return false;
         }
       } catch {
@@ -1464,7 +1442,7 @@
           if (data.is_locked) {
             const alertEl = document.getElementById("auth-alert");
             alertEl.className = "auth-alert auth-alert-error show";
-            alertEl.textContent = "Akses sedang terkunci karena batas percobaan terlampaui. Gunakan Reset via Email.";
+            alertEl.textContent = "Akses sedang terkunci karena batas percobaan terlampaui. Tunggu 1 menit atau gunakan Reset via Email.";
             document.getElementById("attempts-label").textContent = "Sistem Terkunci";
           } else if (data.remaining_attempts !== undefined) {
             document.getElementById("attempts-label").textContent = `Sisa percobaan: ${data.remaining_attempts} kali`;
