@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM — FreeAIBot / AgentKit
-**Versi:** v0.22.5  
+**Versi:** v0.22.6  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-11 14:05 WIB  
+**Terakhir Diperbarui:** 2026-09-11 14:10 WIB  
 
 ---
 
@@ -191,6 +191,13 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.22.6 — 2026-09-11 14:10 WIB
+**Sinkronisasi Identitas: Profil Resmi Bot Telegram FreeAiBot (@chatkita_bot) pada Landing Page**
+- **Koreksi Tautan & Identitas Telegram (`public/index.html`)**:
+  - Mengoreksi tautan tombol CTA Telegram yang sebelumnya keliru mengarah ke `https://t.me/FreeAIBot` menjadi URL resmi `https://t.me/chatkita_bot`.
+  - Menyelaraskan teks tampilan tombol menjadi `Mulai Chat di Telegram (@chatkita_bot)` dan title tooltip agar pengguna langsung mengetahui username bot Telegram yang valid.
+  - Memastikan konsistensi penulisan nama bot `FreeAiBot` pada judul navigasi, title dokumen, dan footer rilis aplikasi.
 
 ### v0.22.5 — 2026-09-11 14:05 WIB
 **Optimasi Performa Ekstrem: Paralelisasi Kueri Penuh, Client SWR Caching & Indeks Database PostgreSQL**
