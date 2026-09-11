@@ -192,6 +192,16 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.22.3 — 2026-09-11 13:38 WIB
+**Optimasi Respon & Kepadatan Bahasa: Universal Conciseness & Anti-Wall-of-Text Engine**
+- **Prinsip Anti-Wall-of-Text Universal (`src/skills.ts`)**:
+  - Mengatasi kendala respons bertele-tele dan panjang yang membuat pengguna pusing atau malas membaca di layar ponsel.
+  - Standarisasi panjang jawaban secara universal: obrolan santai/sapaan/curhat (1–3 kalimat hangat), tanya jawab/konsultasi/rekomendasi (maksimal 2–3 paragraf pendek atau 1 pengantar ringkas + 2–3 butir poin inti, ~50–120 kata), dan koding/tugas teknis (langsung kode solusi presisi tanpa pengantar teoritis panjang).
+  - Melarang daftar poin bertingkat atau penjelasan ensiklopedia yang tidak ditanyakan; langsung menyajikan inti masalah dan 1–2 rekomendasi terbaik.
+  - Mempertahankan 100% kepribadian asli bot: tetap menjadi sahabat karib yang hangat, santai, akrab, dan peka rasa.
+- **Penyempurnaan Prompt Multimodal Vision & Dokumen**:
+  - Instruksi analisis gambar, stiker, dan dokumen PDF disetel agar menghasilkan ringkasan padat dan to-the-point.
+
 ### v0.22.2 — 2026-09-11 13:32 WIB
 **Fitur & Analitik: Multi-Level Time Range & Section-Specific Filtering System**
 - **Filter Rentang Waktu Global (`Hari Ini`, `7 Hari`, `14 Hari`, `30 Hari`, `Semua Waktu`)**:
