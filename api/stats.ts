@@ -182,6 +182,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       displayName: string;
       keys: string[];
       cap: number;
+      tokenCapPerKey: number;
+      contextWindow: string;
       primaryModel: string;
       backupModel: string;
     }> = [
@@ -190,6 +192,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         displayName: 'xKiro Gateway (Qwen 3.8 Flagship)',
         keys: config.pools.xkiro,
         cap: config.dailyCap.xkiro,
+        tokenCapPerKey: 5000000,
+        contextWindow: '1.000.000 Token (1M)',
         primaryModel: config.models.xkiroPrimary,
         backupModel: config.models.xkiroBackup[0] || 'qwen/qwen3.6-plus:free',
       },
@@ -198,6 +202,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         displayName: 'Groq Cloud API',
         keys: config.pools.groq,
         cap: config.dailyCap.groq,
+        tokenCapPerKey: 500000,
+        contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.groqPrimary,
         backupModel: config.models.groqBackup,
       },
@@ -206,6 +212,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         displayName: 'Google Gemini API',
         keys: config.pools.gemini,
         cap: config.dailyCap.gemini,
+        tokenCapPerKey: 1000000,
+        contextWindow: '1.000.000 Token (1M)',
         primaryModel: config.models.geminiPrimary,
         backupModel: config.models.geminiBackup,
       },
@@ -214,6 +222,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         displayName: 'OpenRouter AI Pool',
         keys: config.pools.openrouter,
         cap: config.dailyCap.openrouter,
+        tokenCapPerKey: 250000,
+        contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.orPrimary,
         backupModel: config.models.orMini,
       },
@@ -222,6 +232,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         displayName: 'Ollama Cloud',
         keys: config.pools.ollama,
         cap: config.dailyCap.ollama,
+        tokenCapPerKey: 200000,
+        contextWindow: '32.768 Token (32K)',
         primaryModel: config.models.ollamaPrimary,
         backupModel: config.models.ollamaBackup,
       },
@@ -235,6 +247,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       let poolUsed = 0;
 
       const effectiveCapPerKey = daysCount > 0 ? p.cap * daysCount : 0;
+      const effectiveTokenCapPerKey = daysCount > 0 ? p.tokenCapPerKey * daysCount : 0;
 
       const keysDetail = p.keys.map((k) => {
         const suffix = k.slice(-4);
@@ -242,7 +255,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         poolUsed += used;
         totalCallsPeriod += used;
 
+        const tokensUsed = used * 380;
         const percent = effectiveCapPerKey > 0 ? Math.min(100, Math.round((used / effectiveCapPerKey) * 100)) : 0;
+        const tokenPercent = effectiveTokenCapPerKey > 0 ? Math.min(100, Math.round((tokensUsed / effectiveTokenCapPerKey) * 100)) : 0;
         const status = effectiveCapPerKey > 0 && used >= effectiveCapPerKey ? 'capped' : percent >= 80 ? 'warning' : 'healthy';
 
         return {
@@ -251,24 +266,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           cap: effectiveCapPerKey,
           remaining: effectiveCapPerKey > 0 ? Math.max(0, effectiveCapPerKey - used) : null,
           percent,
+          tokensUsed,
+          tokenCap: effectiveTokenCapPerKey,
+          tokenPercent,
+          contextWindow: p.contextWindow,
+          avgTokensPerChat: 380,
           status,
         };
       });
 
       const totalPoolCap = effectiveCapPerKey * p.keys.length;
+      const totalTokenPoolCap = effectiveTokenCapPerKey * p.keys.length;
       const poolPercent = totalPoolCap > 0 ? Math.min(100, Math.round((poolUsed / totalPoolCap) * 100)) : 0;
+      const poolTokensUsed = poolUsed * 380;
+      const poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolTokensUsed / totalTokenPoolCap) * 100)) : 0;
 
       return {
         kind: p.kind,
         displayName: p.displayName,
         primaryModel: p.primaryModel,
         backupModel: p.backupModel,
+        contextWindow: p.contextWindow,
         keyCount: p.keys.length,
         capPerKey: effectiveCapPerKey,
         totalCap: totalPoolCap,
         usedToday: poolUsed,
         usedPeriod: poolUsed,
         percent: poolPercent,
+        tokenCapPerKey: effectiveTokenCapPerKey,
+        totalTokenCap: totalTokenPoolCap,
+        totalTokensUsed: poolTokensUsed,
+        tokenPercent: poolTokenPercent,
         keys: keysDetail,
       };
     });
@@ -311,6 +339,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         totalKeys: totalPoolKeys,
         totalCallsPeriod,
         totalCallsToday: totalCallsPeriod,
+        totalTokensPeriod: totalCallsPeriod * 380,
+        totalTokensToday: totalCallsPeriod * 380,
+        avgTokensPerChat: 380,
         modelsActiveCount: modelsBreakdown.length,
       },
       pools,
