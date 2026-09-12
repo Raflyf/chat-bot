@@ -38,19 +38,31 @@ export const config = {
   },
   models: {
     xkiroPrimary: cleanStr('XKIRO_MODEL_PRIMARY') || 'qwen/qwen3.8-max:free',
-    xkiroBackup:
-      csv('XKIRO_MODEL_BACKUPS').length > 0
-        ? csv('XKIRO_MODEL_BACKUPS')
-        : [
-            'deepseek/deepseek-v4-flash',
-            'qwen/qwen3.6-plus:free',
-            'mistralai/mistral-large-2512',
-            'deepseek/deepseek-chat-v3.1',
-            'deepseek/deepseek-v4-pro',
-            'qwen/qwen3.7-max:free',
-            'mistralai/mistral-medium-3.5',
-            'mistralai/mistral-small-2603',
-          ],
+    xkiroBackup: (() => {
+      const preferred = [
+        'deepseek/deepseek-v4-flash',
+        'deepseek/deepseek-chat-v3.1',
+        'deepseek/deepseek-v4-pro',
+        'qwen/qwen3.6-plus:free',
+        'qwen/qwen3.7-max:free',
+        'mistralai/mistral-large-2512',
+      ];
+      const raw = csv('XKIRO_MODEL_BACKUPS');
+      const list = raw.length > 0 ? raw : preferred;
+      const set = new Set(list);
+      const result: string[] = [];
+      for (const m of preferred) {
+        result.push(m);
+        set.delete(m);
+      }
+      for (const m of set) {
+        // Jangan gunakan model yang menghasilkan halusinasi bahasa terjemahan rusak untuk chat teks
+        if (m !== 'mistralai/mistral-medium-3.5' && m !== 'mistralai/mistral-small-2603') {
+          result.push(m);
+        }
+      }
+      return result;
+    })(),
     orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
     orMini: cleanStr('OR_MODEL_MINI') || 'nex-agi/nex-n2.5-mini:free',
     orText: cleanStr('OR_MODEL_TEXT') || 'nvidia/nemotron-3.5-lightning:free',
