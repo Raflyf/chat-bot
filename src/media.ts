@@ -147,7 +147,7 @@ async function processPdfViaGemini(
   buffer: Buffer,
   prompt: string,
   model: string,
-): Promise<{ reply: string; via: string } | null> {
+): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } } | null> {
   const keys = config.pools.gemini;
   if (!keys || keys.length === 0) return null;
 
@@ -169,10 +169,24 @@ async function processPdfViaGemini(
       });
 
       if (!res.ok) continue;
-      const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const data = (await res.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        usageMetadata?: {
+          promptTokenCount?: number;
+          candidatesTokenCount?: number;
+          totalTokenCount?: number;
+        };
+      };
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
       if (text) {
-        return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}` };
+        const tokens = data.usageMetadata
+          ? {
+              prompt: Number(data.usageMetadata.promptTokenCount) || 0,
+              completion: Number(data.usageMetadata.candidatesTokenCount) || 0,
+              total: Number(data.usageMetadata.totalTokenCount) || 0,
+            }
+          : undefined;
+        return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}`, tokens };
       }
     } catch (err) {
       console.warn(`[media] Gemini PDF [${model}] gagal:`, err);
@@ -258,7 +272,7 @@ export async function processIncomingDocument(
   filename: string,
   caption?: string,
   ctx?: ChatContext,
-): Promise<{ reply: string; via: string }> {
+): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const lowerName = filename.toLowerCase();
 
   // Kasus A: Dokumen PDF
@@ -289,7 +303,7 @@ export async function processIncomingDocument(
           : 'Tolong baca dan rangkum inti dokumen PDF ini secara jelas, padat, dan terstruktur.',
       ].join('\n');
       const autoRes = await autoReply(localPrompt, ctx);
-      return { reply: autoRes.reply, via: `local-parser/${autoRes.via}` };
+      return { reply: autoRes.reply, via: `local-parser/${autoRes.via}`, tokens: autoRes.tokens };
     }
 
     return {
@@ -330,7 +344,7 @@ export async function processIncomingVideo(
   mime: string = 'video/mp4',
   filename: string = 'video.mp4',
   caption?: string,
-): Promise<{ reply: string; via: string }> {
+): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const prompt = caption && caption.trim()
     ? `Pengguna mengirim video "${filename}". Pertanyaan / instruksi:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, santai, dan alami tanpa kalimat pembuka robotik seperti "Video ini menampilkan...".`
     : `Pengguna mengirim video "${filename}". Tonton dan tanggapi kejadian atau suasana dalam video ini secara wajar, santai, dan seru layaknya teman yang baru saja menonton bersama. DILARANG membuka dengan "Video ini memperlihatkan...".`;
@@ -357,10 +371,24 @@ export async function processIncomingVideo(
         });
 
         if (!res.ok) continue;
-        const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+        const data = (await res.json()) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: {
+            promptTokenCount?: number;
+            candidatesTokenCount?: number;
+            totalTokenCount?: number;
+          };
+        };
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if (text) {
-          return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}` };
+          const tokens = data.usageMetadata
+            ? {
+                prompt: Number(data.usageMetadata.promptTokenCount) || 0,
+                completion: Number(data.usageMetadata.candidatesTokenCount) || 0,
+                total: Number(data.usageMetadata.totalTokenCount) || 0,
+              }
+            : undefined;
+          return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}`, tokens };
         }
       } catch (err) {
         console.warn(`[media] Video via Gemini [${model}] gagal:`, err);
@@ -382,7 +410,7 @@ export async function processIncomingSticker(
   mime: string = 'image/webp',
   emoji?: string,
   _ctx?: ChatContext,
-): Promise<{ reply: string; via: string }> {
+): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const prompt = emoji
     ? `Pengguna mengirim stiker ekspresi (terkait dengan emoji: ${emoji}). Tolong pahami emosi atau konteks humor dari stiker ini dan tanggapi secara santai, akrab, dan bersahabat layaknya seorang teman mengobrol.`
     : 'Pengguna mengirim stiker ini. Tolong pahami emosi atau konteks humor dari stiker ini dan tanggapi secara santai, akrab, dan bersahabat layaknya seorang teman mengobrol.';

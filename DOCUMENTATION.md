@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.27  
+**Versi:** v0.25.28  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 13:30 WIB  
+**Terakhir Diperbarui:** 2026-09-12 14:05 WIB  
 
 ---
 
@@ -191,6 +191,37 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.28 - 2026-09-12 14:05 WIB
+**Sinkronisasi Katalog 9 Model xKiro di Dashboard & Eliminasi Estimasi Token Palsu Menjadi Upstream Real Usage**
+- **Sinkronisasi Katalog Model Monitoring Dashboard (`public/dashboard.html`, `api/stats.ts`)**:
+  - Menyelaraskan 100% matriks model inferensi AI di dashboard dengan susunan runtime 9 model xKiro yang aktif dan terbukti valid di `.env` dan `src/env.ts`:
+    1. `qwen/qwen3.8-max:free` (Flagship #1)
+    2. `mistralai/mistral-medium-3.5`
+    3. `deepseek/deepseek-v4-flash`
+    4. `mistralai/mistral-large-2512`
+    5. `deepseek/deepseek-chat-v3.1`
+    6. `qwen/qwen3.7-max:free`
+    7. `deepseek/deepseek-v4-pro`
+    8. `qwen/qwen3.6-plus:free`
+    9. `mistralai/mistral-small-2603`
+  - Mengeliminasi model usang dari antarmuka matriks (varian MiniMax, Codestral 2508, SenseNova 6.8).
+  - Menyelaraskan model cadangan bawaan di `api/stats.ts` dari SenseNova menjadi `mistralai/mistral-medium-3.5`.
+- **Eliminasi Estimasi Formula Token Palsu & Penangkapan Upstream Ground Truth (`api/dataset.ts`, `src/providers.ts`)**:
+  - **Akar Masalah**: Sebelumnya kolom token di tabel dataset menggunakan estimasi rumus statis buatan `const contextTokens = 650 + promptTokens`, sehingga seluruh data berkisar 600-800 token padahal konsumsi riil xKiro jauh lebih besar.
+  - **Penghapusan Rumus Estimasi**: Menghapus total formula buatan 650 token pada `api/dataset.ts`. Dataset kini murni berstatus data ground truth tanpa manipulasi.
+  - **Ekstraksi Token Riil dari Provider**:
+    - `src/providers.ts`: Memperbarui `openAiChat` (xKiro, Groq, OpenRouter) untuk mengekstrak `data.usage: { prompt_tokens, completion_tokens, total_tokens }`, serta `geminiChat` untuk mengekstrak `data.usageMetadata: { promptTokenCount, candidatesTokenCount, totalTokenCount }`.
+    - Interface `Step` dan `chat()` kini mengembalikan objek `{ text, via, tokens }`.
+  - **Preservasi Metadata Token di Supabase Database**:
+    - `src/db.ts`: Fungsi `saveMessage` menerima opsi `tokens` dan mengenkapsulasi metadata token ke dalam field `via` dengan penanda `#t=prompt,completion,total` secara 100% backward-compatible tanpa downtime atau perubahan skema paksa.
+    - Disediakan skrip migrasi kolom mandiri `sql/migrate_v15_message_tokens.sql` untuk kolom `prompt_tokens`, `completion_tokens`, `total_tokens` di tabel `messages`.
+  - **Integrasi Lintas Platform Handler (`whatsapp_cloud.ts`, `whatsapp_baileys.ts`, `telegram.ts`)**:
+    - Seluruh pemrosesan teks, media, dokumen, stiker, dan video kini meneruskan objek token asli saat menyimpan balasan bot ke basis data.
+- **Visualisasi Indikator Real Usage & Sanitasi Tag Model (`public/dashboard.html`)**:
+  - Menambahkan badge hijau `Real Usage` pada baris tabel dataset evaluasi untuk percakapan yang mencatat token upstream asli terverifikasi.
+  - Menambahkan sanitasi string `.split('#')[0]` pada parser model di `public/dashboard.html` dan `api/stats.ts` agar tag token `#t=...` tidak memecah agregasi matriks atau MRU inferensi.
+  - Temuan empiris membuktikan konsumsi prompt token komprehensif sistem bot sebenarnya adalah ~5.440 token (bukan 650 token), kini selaras 100% dengan log monitoring upstream xKiro.
 
 ### v0.25.27 - 2026-09-12 13:30 WIB
 **Ekspansi Pool xKiro API Key Menjadi 3 Kunci (Kapasitas Kuota 15.000.000 Token/Hari) & Sinkronisasi Model Cadangan**

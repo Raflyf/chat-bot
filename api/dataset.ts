@@ -286,11 +286,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
         const prompt = userMsg.content || '';
         const reply = botMsg ? (botMsg.content || '') : '';
-        const via = botMsg?.via || '-';
+        const rawVia = botMsg?.via || '-';
         const pForm = userMsg.platform || 'whatsapp';
 
         // Terapkan filter model/via
-        if (modelFilter && modelFilter !== 'all' && !via.toLowerCase().includes(modelFilter)) {
+        if (modelFilter && modelFilter !== 'all' && !rawVia.toLowerCase().includes(modelFilter)) {
           continue;
         }
 
@@ -299,15 +299,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         if (search) {
           const matchUser = prompt.toLowerCase().includes(search);
           const matchBot = reply.toLowerCase().includes(search);
-          const matchVia = via.toLowerCase().includes(search);
+          const matchVia = rawVia.toLowerCase().includes(search);
           if (!matchUser && !matchBot && !matchVia) continue;
         }
 
-        // Estimasi token per chat: Base system context (~650 tk) + prompt user + output bot
-        const promptTokens = Math.max(1, Math.ceil(prompt.length / 3.8));
-        const completionTokens = reply ? Math.max(1, Math.ceil(reply.length / 3.8)) : 0;
-        const contextTokens = 650 + promptTokens;
-        const totalTokens = contextTokens + completionTokens;
+        // Ekstraksi Token Usage Asli Upstream (Bukan Estimasi Buatan)
+        // Format metadata via: "provider/model#t=prompt,completion,total"
+        let via = rawVia;
+        let promptTokens = 0;
+        let completionTokens = 0;
+        let contextTokens = 0;
+        let totalTokens = 0;
+        let isRealUsage = false;
+
+        const tokenMatch = rawVia.match(/#t=(\d+),(\d+),(\d+)/);
+        if (tokenMatch) {
+          via = rawVia.replace(/#t=\d+,\d+,\d+/, '').trim();
+          contextTokens = parseInt(tokenMatch[1], 10);
+          completionTokens = parseInt(tokenMatch[2], 10);
+          totalTokens = parseInt(tokenMatch[3], 10);
+          promptTokens = Math.max(1, Math.ceil(prompt.length / 3.8));
+          isRealUsage = true;
+        } else if (botMsg && ((botMsg as { total_tokens?: number }).total_tokens || (botMsg as { prompt_tokens?: number }).prompt_tokens)) {
+          contextTokens = Number((botMsg as { prompt_tokens?: number }).prompt_tokens) || 0;
+          completionTokens = Number((botMsg as { completion_tokens?: number }).completion_tokens) || 0;
+          totalTokens = Number((botMsg as { total_tokens?: number }).total_tokens) || 0;
+          promptTokens = Math.max(1, Math.ceil(prompt.length / 3.8));
+          isRealUsage = true;
+        } else {
+          // Data historis lama sebelum token logging aktif:
+          // Hitung representasi panjang payload nyata sistem (system prompt ~18K karakter)
+          promptTokens = Math.max(1, Math.ceil(prompt.length / 3.8));
+          completionTokens = reply ? Math.max(1, Math.ceil(reply.length / 3.8)) : 0;
+          contextTokens = 2400 + promptTokens;
+          totalTokens = contextTokens + completionTokens;
+          isRealUsage = false;
+        }
 
         const tsRaw = botMsg?.created_at || userMsg.created_at;
         const timeInfo = formatLocalComponents(tsRaw, tzParam);
@@ -327,6 +354,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           completionTokens,
           contextTokens,
           totalTokens,
+          isRealUsage,
         });
       }
     }
