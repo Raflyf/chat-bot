@@ -186,60 +186,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         telePeriodQuery = telePeriodQuery.gte('created_at', startDateIso);
       }
 
-      let assistantQuery = c
-        .from('messages')
-        .select('via')
-        .eq('role', 'assistant')
-        .order('id', { ascending: false })
-        .limit(2000);
+      // Helper pagination bertahap (.range()) untuk mencegah pemotongan senyap data (B9)
+      async function fetchPagedRange<T>(
+        buildQuery: () => any,
+        batchSize: number = 1000,
+        maxRecords: number = 10000,
+      ): Promise<T[]> {
+        const rows: T[] = [];
+        let from = 0;
+        while (from < maxRecords) {
+          const to = from + batchSize - 1;
+          const { data, error } = await buildQuery().range(from, to);
+          if (error || !data || data.length === 0) break;
+          rows.push(...(data as T[]));
+          if (data.length < batchSize) break;
+          from += batchSize;
+        }
+        return rows;
+      }
 
-      if (startDateIso) {
-        assistantQuery = assistantQuery.gte('created_at', startDateIso);
-      }
-      if (filterPlatform && filterPlatform !== 'all') {
-        assistantQuery = assistantQuery.eq('platform', filterPlatform);
-      }
+      const buildAssistantQuery = () => {
+        let q = c.from('messages').select('via').eq('role', 'assistant').order('id', { ascending: false });
+        if (startDateIso) q = q.gte('created_at', startDateIso);
+        if (filterPlatform && filterPlatform !== 'all') q = q.eq('platform', filterPlatform);
+        return q;
+      };
 
-      let userMsgsQuery = c
-        .from('messages')
-        .select('content')
-        .eq('role', 'user')
-        .order('id', { ascending: false })
-        .limit(1000);
-
-      if (startDateIso) {
-        userMsgsQuery = userMsgsQuery.gte('created_at', startDateIso);
-      }
-      if (filterPlatform && filterPlatform !== 'all') {
-        userMsgsQuery = userMsgsQuery.eq('platform', filterPlatform);
-      }
+      const buildUserMsgsQuery = () => {
+        let q = c.from('messages').select('content').eq('role', 'user').order('id', { ascending: false });
+        if (startDateIso) q = q.gte('created_at', startDateIso);
+        if (filterPlatform && filterPlatform !== 'all') q = q.eq('platform', filterPlatform);
+        return q;
+      };
 
       const startOfMonthIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-      const waMonthlyQuery = c
-        .from('messages')
-        .select('chat_id, created_at')
-        .eq('platform', 'whatsapp')
-        .gte('created_at', startOfMonthIso)
-        .order('created_at', { ascending: true })
-        .limit(5000);
+      const buildWaMonthlyQuery = () => {
+        return c
+          .from('messages')
+          .select('chat_id, created_at')
+          .eq('platform', 'whatsapp')
+          .gte('created_at', startOfMonthIso)
+          .order('created_at', { ascending: true });
+      };
 
       const [
         dbQuotaRes,
         dbTotalRes,
         dbWaRes,
         dbTeleRes,
-        dbAsstRes,
-        dbUserRes,
-        dbWaMonthRes,
+        assistantMsgsRes,
+        userMsgsRes,
+        waMonthlyMsgsRes,
         liveResults,
       ] = await Promise.all([
         quotaQuery,
         c.from('messages').select('*', { count: 'exact', head: true }),
         waPeriodQuery,
         telePeriodQuery,
-        assistantQuery,
-        userMsgsQuery,
-        waMonthlyQuery,
+        fetchPagedRange<{ via: string | null }>(buildAssistantQuery, 1000, 10000),
+        fetchPagedRange<{ content: string | null }>(buildUserMsgsQuery, 1000, 10000),
+        fetchPagedRange<{ chat_id: string | null; created_at: string }>(buildWaMonthlyQuery, 1000, 15000),
         liveFetchPromise,
       ]);
 
@@ -247,9 +253,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       totalMessagesAllTime = dbTotalRes.count || 0;
       waPeriod = dbWaRes.count || 0;
       telePeriod = dbTeleRes.count || 0;
-      assistantMsgs = (dbAsstRes.data as any) || [];
-      userMsgs = (dbUserRes.data as any) || [];
-      waMonthlyMsgs = (dbWaMonthRes.data as any) || [];
+      assistantMsgs = assistantMsgsRes as any;
+      userMsgs = userMsgsRes as any;
+      waMonthlyMsgs = waMonthlyMsgsRes as any;
 
       xkiroLiveResults = liveResults[0];
       orLiveResults = liveResults[1];

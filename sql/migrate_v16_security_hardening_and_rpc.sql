@@ -75,16 +75,19 @@ $$;
 REVOKE ALL ON FUNCTION public.atomic_increment_provider_quota(text, text, date, int) FROM anon, authenticated, public;
 GRANT EXECUTE ON FUNCTION public.atomic_increment_provider_quota(text, text, date, int) TO service_role;
 
--- 4. Tambahkan Kolom Platform, CHECK Constraint & Atomic Claim pada Reminders (Temuan High Fase 4 / P1-6 & Regresi #1)
+-- 4. Tambahkan Kolom Platform, CHECK Constraint, lease_until & Atomic Claim pada Reminders (Temuan High Fase 4 / P1-6 & Regresi #1)
 ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS platform text DEFAULT 'telegram';
+ALTER TABLE public.reminders ADD COLUMN IF NOT EXISTS lease_until timestamptz NULL;
 ALTER TABLE public.reminders DROP CONSTRAINT IF EXISTS reminders_status_check;
 ALTER TABLE public.reminders ADD CONSTRAINT reminders_status_check CHECK (status IN ('pending', 'processing', 'sent', 'failed'));
 CREATE INDEX IF NOT EXISTS idx_reminders_status_due_platform ON public.reminders(status, due_at, platform);
+CREATE INDEX IF NOT EXISTS idx_reminders_lease_until ON public.reminders(status, lease_until);
 
--- 5. CHECK Constraint Platform pada Messages & Kolom msg_id untuk Deduplikasi Persisten (Regresi #8 & P1-8)
+-- 5. CHECK Constraint Platform pada Messages, Kolom msg_id & processed_at untuk Deduplikasi Persisten (Regresi #8 & P1-8)
 ALTER TABLE public.messages DROP CONSTRAINT IF EXISTS messages_platform_check;
 ALTER TABLE public.messages ADD CONSTRAINT messages_platform_check CHECK (platform IN ('telegram', 'whatsapp', 'web', 'api'));
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS msg_id text NULL;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS processed_at timestamptz NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_platform_msg_id ON public.messages(platform, msg_id) WHERE msg_id IS NOT NULL;
 
 -- 6. Perkuat RLS pada web_knowledge (Temuan High Fase 4.3)

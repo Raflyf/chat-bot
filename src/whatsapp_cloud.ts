@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { config } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
-import { saveMessage, isMessageProcessed, claimIncomingMessage } from './db.js';
+import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -232,6 +232,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
             const { reply, via, tokens } = await describeImage(media.base64, media.mime, caption, context);
             await sendWhatsAppCloudMessageSafe(from, reply);
+            void markMessageProcessed('whatsapp', messageId);
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
@@ -259,6 +260,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               chat_id: chatKey,
               role: 'user',
               content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
+              msg_id: messageId,
             });
 
             const { reply, via, tokens } = await processIncomingDocument(
@@ -270,6 +272,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             );
 
             await sendWhatsAppCloudMessageSafe(from, reply);
+            void markMessageProcessed('whatsapp', messageId);
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
@@ -298,6 +301,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 chat_id: chatKey,
                 role: 'user',
                 content: `[Voice Note]: "${transcription}"`,
+                msg_id: messageId,
               });
 
               let webResults: string | null = null;
@@ -313,6 +317,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
               const { reply, via, tokens } = await autoReply(prompt, context, webResults);
               await sendWhatsAppCloudMessageSafe(from, reply);
+              void markMessageProcessed('whatsapp', messageId);
               await saveMessage({
                 platform: 'whatsapp',
                 chat_id: chatKey,
@@ -343,6 +348,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               chat_id: chatKey,
               role: 'user',
               content: '[Stiker WhatsApp]',
+              msg_id: messageId,
             });
 
             const { reply, via, tokens } = await processIncomingSticker(
@@ -353,6 +359,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             );
 
             await sendWhatsAppCloudMessageSafe(from, reply);
+            void markMessageProcessed('whatsapp', messageId);
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
@@ -376,6 +383,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             chat_id: chatKey,
             role: 'user',
             content: `[Video] ${caption || ''}`.trim(),
+            msg_id: messageId,
           });
 
           const prompt = caption
@@ -384,6 +392,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
           const { reply, via, tokens } = await autoReply(prompt, context);
           await sendWhatsAppCloudMessageSafe(from, reply);
+          void markMessageProcessed('whatsapp', messageId);
           await saveMessage({
             platform: 'whatsapp',
             chat_id: chatKey,
@@ -406,6 +415,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             const locTime = formatInZone(new Date(), tzInfo.zone);
             const reply = `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
             await sendWhatsAppCloudMessageSafe(from, reply);
+            void markMessageProcessed('whatsapp', messageId);
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
@@ -434,6 +444,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         if (isResetCommand(text)) {
           const reply = await resetSession(chatKey, 'whatsapp');
           await sendWhatsAppCloudMessageSafe(from, reply);
+          void markMessageProcessed('whatsapp', messageId);
           void saveMessage({
             platform: 'whatsapp',
             chat_id: chatKey,
@@ -449,10 +460,12 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           const correction = text.replace(/^\/salah\s*/, '').trim();
           if (!correction) {
             await sendWhatsAppCloudMessageSafe(from, 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
+            void markMessageProcessed('whatsapp', messageId);
             continue;
           }
           await saveCorrection(chatKey, correction);
           await sendWhatsAppCloudMessageSafe(from, `Siap kak, koreksinya sudah dicatat: "${correction}". Aku akan mengingat ini untuk obrolan berikutnya.`);
+          void markMessageProcessed('whatsapp', messageId);
           continue;
         }
 
@@ -462,17 +475,20 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           const mRemind = args.match(/^(\d+)\s+([\s\S]+)/);
           if (!mRemind) {
             await sendWhatsAppCloudMessageSafe(from, 'Format: /remind <menit> <pesan>\nContoh: /remind 10 matikan kompor');
+            void markMessageProcessed('whatsapp', messageId);
             continue;
           }
           const minutes = Number(mRemind[1]);
           const message = mRemind[2].trim().slice(0, 500);
           if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440 || !message) {
             await sendWhatsAppCloudMessageSafe(from, 'Waktu pengingat harus antara 1 sampai 1440 menit (24 jam).');
+            void markMessageProcessed('whatsapp', messageId);
             continue;
           }
           const dueAt = new Date(Date.now() + minutes * 60_000);
           await saveReminderToDb(from, message, dueAt, 'whatsapp');
           await sendWhatsAppCloudMessageSafe(from, `Pengingat "${message}" berhasil dicatat dan akan dikirim ${minutes} menit lagi via WhatsApp.`);
+          void markMessageProcessed('whatsapp', messageId);
           continue;
         }
 
@@ -498,6 +514,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         // 5. Kirim balasan ke WhatsApp pengguna secepat mungkin
         await sendWhatsAppCloudMessageSafe(from, reply);
+        void markMessageProcessed('whatsapp', messageId);
 
         // 6. Update cache memori & simpan balasan asisten ke database Supabase secara non-blocking
         updateContextCache(chatKey, 'assistant', reply);

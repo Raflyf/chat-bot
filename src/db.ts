@@ -76,9 +76,27 @@ export async function isMessageProcessed(platform: string, msgId: string): Promi
 }
 
 /**
- * Klaim pesan masuk secara atomik via INSERT ke tabel messages (C3 & F2).
- * Jika platform + msg_id sudah ada, unique index idx_messages_platform_msg_id
- * menolak insert (code 23505), mengembalikan false seketika (Zero TOCTOU).
+ * Tandai pesan masuk telah selesai diproses oleh asisten (durability & anti-lockout).
+ */
+export async function markMessageProcessed(platform: string, msgId: string): Promise<void> {
+  if (!msgId) return;
+  const c = db();
+  if (!c) return;
+  try {
+    await c
+      .from('messages')
+      .update({ processed_at: new Date().toISOString() })
+      .eq('platform', platform)
+      .eq('msg_id', msgId);
+  } catch {
+    // best-effort
+  }
+}
+
+/**
+ * Klaim pesan masuk secara atomik via INSERT ke tabel messages.
+ * Fail-closed: jika DB error, return false untuk memicu retry platform yang aman.
+ * Anti-lockout: jika worker sebelumnya crash (>45 detik tanpa processed_at), izinkan re-claim.
  */
 export async function claimIncomingMessage(
   platform: string,
@@ -88,7 +106,7 @@ export async function claimIncomingMessage(
 ): Promise<boolean> {
   if (!msgId) return true;
   const c = db();
-  if (!c) return true;
+  if (!c) return false; // fail-closed jika DB tidak terhubung
 
   try {
     const { error } = await c
@@ -101,22 +119,51 @@ export async function claimIncomingMessage(
         msg_id: msgId,
       });
 
-    if (error) {
-      if (
-        error.code === '23505' ||
-        error.message?.includes('duplicate key') ||
-        error.message?.includes('idx_messages_platform_msg_id')
-      ) {
-        console.warn(`[db] Pesan duplikat terdeteksi & diblokir secara atomik: platform=${platform}, msg_id=${msgId}`);
-        return false;
-      }
-      console.warn(`[db] claimIncomingMessage warning (${error.code || 'unknown'}): ${error.message}`);
+    if (!error) {
       return true;
     }
 
-    return true;
+    // Jika duplicate key (pesan sudah ada di database)
+    if (
+      error.code === '23505' ||
+      error.message?.includes('duplicate key') ||
+      error.message?.includes('idx_messages_platform_msg_id')
+    ) {
+      try {
+        const { data: existing } = await c
+          .from('messages')
+          .select('processed_at, created_at')
+          .eq('platform', platform)
+          .eq('msg_id', msgId)
+          .maybeSingle();
+
+        if (existing) {
+          // Jika pesan ini sudah sukses diproses, tolak duplikat secara permanen
+          if (existing.processed_at) {
+            console.warn(`[db] Pesan duplikat (sudah selesai diproses) diblokir: platform=${platform}, msg_id=${msgId}`);
+            return false;
+          }
+
+          // Durability check: jika worker sebelumnya crash (>45 detik tanpa processed_at):
+          const ageMs = Date.now() - new Date(existing.created_at).getTime();
+          if (ageMs > 45_000) {
+            console.warn(`[db] Re-claiming stuck/crashed message: platform=${platform}, msg_id=${msgId}, age=${ageMs}ms`);
+            return true;
+          }
+        }
+      } catch {
+        // Fallback to duplicate rejection
+      }
+
+      console.warn(`[db] Pesan duplikat terdeteksi & diblokir secara atomik: platform=${platform}, msg_id=${msgId}`);
+      return false;
+    }
+
+    // Error DB non-duplikat: fail-closed agar tidak memproses tanpa jejak audit dan memicu retry platform
+    console.error(`[db] claimIncomingMessage DB failure (${error.code || 'unknown'}): ${error.message} - failing closed`);
+    return false;
   } catch (err: any) {
-    console.warn('[db] claimIncomingMessage exception:', err?.message || err);
-    return true;
+    console.error('[db] claimIncomingMessage exception:', err?.message || err);
+    return false;
   }
 }

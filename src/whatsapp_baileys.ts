@@ -12,7 +12,7 @@ import {
 import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
-import { saveMessage, isMessageProcessed, claimIncomingMessage } from './db.js';
+import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -228,6 +228,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
         const { reply, via, tokens } = await describeImage(base64, mime, text || undefined, context);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+        if (messageId) void markMessageProcessed('whatsapp', messageId);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -287,6 +288,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         );
 
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+        if (messageId) void markMessageProcessed('whatsapp', messageId);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -339,14 +341,19 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
           let web: string | null = null;
           if (needsSearch(transcription)) {
-            const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
-            const found = await searchWeb(transcription, prevContext);
-            if (found) web = found;
+            try {
+              const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+              const found = await searchWeb(transcription, prevContext);
+              if (found) web = found;
+            } catch (err) {
+              console.warn('[whatsapp] Gagal penelusuran web audio:', err);
+            }
           }
 
           const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
           const { reply, via, tokens } = await autoReply(prompt, context, web);
           await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+          if (messageId) void markMessageProcessed('whatsapp', messageId);
           await saveMessage({
             platform: 'whatsapp',
             chat_id: chatKey,
@@ -405,6 +412,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
         const { reply, via, tokens } = await processIncomingSticker(buffer, mime, undefined, context);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+        if (messageId) void markMessageProcessed('whatsapp', messageId);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -456,6 +464,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         const mime = m.message?.videoMessage?.mimetype || 'video/mp4';
         const { reply, via, tokens } = await processIncomingVideo(buffer, mime, 'video.mp4', caption);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+        if (messageId) void markMessageProcessed('whatsapp', messageId);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -474,6 +483,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
       const { reply, via, tokens } = await autoReply(prompt, context);
       await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+      if (messageId) void markMessageProcessed('whatsapp', messageId);
       await saveMessage({
         platform: 'whatsapp',
         chat_id: chatKey,
@@ -506,6 +516,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       const locTime = formatInZone(new Date(), tzInfo.zone);
       const reply = `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
       await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+      if (messageId) void markMessageProcessed('whatsapp', messageId);
       await saveMessage({
         platform: 'whatsapp',
         chat_id: chatKey,
@@ -524,6 +535,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   if (isResetCommand(text)) {
     const reply = await resetSession(chatKey, 'whatsapp');
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+    if (messageId) void markMessageProcessed('whatsapp', messageId);
     void saveMessage({
       platform: 'whatsapp',
       chat_id: chatKey,
@@ -539,10 +551,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const correction = text.replace(/^\/salah\s*/, '').trim();
     if (!correction) {
       await sendWhatsAppMessageSafe(sock, remoteJid, 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
+      if (messageId) void markMessageProcessed('whatsapp', messageId);
       return;
     }
     await saveCorrection(chatKey, correction);
     await sendWhatsAppMessageSafe(sock, remoteJid, `Siap kak, koreksinya sudah dicatat: "${correction}". Aku akan mengingat ini untuk obrolan berikutnya.`);
+    if (messageId) void markMessageProcessed('whatsapp', messageId);
     return;
   }
 
@@ -552,18 +566,21 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const mRemind = args.match(/^(\d+)\s+([\s\S]+)/);
     if (!mRemind) {
       await sendWhatsAppMessageSafe(sock, remoteJid, 'Format: /remind <menit> <pesan>\nContoh: /remind 10 matikan kompor');
+      if (messageId) void markMessageProcessed('whatsapp', messageId);
       return;
     }
     const minutes = Number(mRemind[1]);
     const message = mRemind[2].trim().slice(0, 500);
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440 || !message) {
       await sendWhatsAppMessageSafe(sock, remoteJid, 'Waktu pengingat harus antara 1 sampai 1440 menit (24 jam).');
+      if (messageId) void markMessageProcessed('whatsapp', messageId);
       return;
     }
     const dueAt = new Date(Date.now() + minutes * 60_000);
     const targetChat = remoteJid.replace(/@.*$/, '');
     await saveReminderToDb(targetChat, message, dueAt, 'whatsapp');
     await sendWhatsAppMessageSafe(sock, remoteJid, `Pengingat "${message}" berhasil dicatat dan akan dikirim ${minutes} menit lagi via WhatsApp.`);
+    if (messageId) void markMessageProcessed('whatsapp', messageId);
     return;
   }
 
@@ -597,6 +614,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
     // 5. Kirim balasan ke WhatsApp secepat mungkin
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+    if (messageId) void markMessageProcessed('whatsapp', messageId);
 
     // 6. Update cache memori & simpan balasan asisten ke database secara non-blocking
     updateContextCache(chatKey, 'assistant', reply);

@@ -10,6 +10,7 @@ export interface ReminderItem {
   due_at: string;
   status: 'pending' | 'processing' | 'sent' | 'failed';
   platform?: 'telegram' | 'whatsapp';
+  lease_until?: string | null;
 }
 
 /** Simpan reminder ke Supabase untuk persistensi Vercel Serverless & Cron. */
@@ -47,17 +48,27 @@ export async function checkDueReminders(
   try {
     const now = new Date().toISOString();
 
-    // 1. Reaper: Kembalikan reminder 'processing' yang lease-nya kadaluwarsa (macet > 5 menit) ke 'pending'
+    // 1. Reaper: Kembalikan reminder 'processing' yang lease-nya kadaluwarsa ke 'pending'
+    // Prioritas: cek kolom lease_until (B4)
     await c
       .from('reminders')
-      .update({ status: 'pending' })
+      .update({ status: 'pending', lease_until: null })
       .eq('status', 'processing')
-      .lte('due_at', now);
+      .lte('lease_until', now);
+
+    // Fallback reaper untuk DB sebelum migrasi lease_until atau bernilai null (batas aman 10 menit)
+    const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    await c
+      .from('reminders')
+      .update({ status: 'pending', lease_until: null })
+      .eq('status', 'processing')
+      .is('lease_until', null)
+      .lte('due_at', staleThreshold);
 
     // 2. Ambil pengingat yang jatuh tempo
     const { data, error } = await c
       .from('reminders')
-      .select('id, chat_id, message, due_at, status, platform')
+      .select('id, chat_id, message, due_at, status, platform, lease_until')
       .eq('status', 'pending')
       .lte('due_at', now)
       .order('due_at', { ascending: true })
@@ -67,45 +78,47 @@ export async function checkDueReminders(
 
     let processed = 0;
     for (const item of data as ReminderItem[]) {
-      // Atomic claim dengan lease-lock 5 menit: update status dan due_at secara bersamaan
-      const leaseExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      // Atomic claim dengan lease_until 10 menit tanpa memodifikasi due_at asli (B4)
+      const leaseExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      let claimSuccess = false;
+
+      // Klaim atomik menggunakan kolom lease_until
       const { data: claimed, error: claimErr } = await c
         .from('reminders')
-        .update({ status: 'processing', due_at: leaseExpiry })
+        .update({ status: 'processing', lease_until: leaseExpiry })
         .eq('id', item.id)
         .eq('status', 'pending')
         .select('id');
 
-      if (claimErr) {
-        // Fallback jika database belum update CHECK constraint 'processing' (error 23514):
-        // Kunci atomik dengan memundurkan due_at +5 menit (lease lock) TANPA menandai 'sent' sebelum kirim (C1 & P1-1)
-        console.warn(`[remind] status 'processing' ditolak DB (${claimErr.message}), gunakan lease-lock due_at.`);
+      if (!claimErr && claimed && claimed.length > 0) {
+        claimSuccess = true;
+      } else if (claimErr) {
+        // Fallback jika database belum memiliki kolom lease_until
         const { data: directClaim, error: directErr } = await c
           .from('reminders')
-          .update({ due_at: leaseExpiry })
+          .update({ status: 'processing' })
           .eq('id', item.id)
           .eq('status', 'pending')
           .select('id');
 
-        // Jika baris sudah diklaim worker lain atau error, lewati!
-        if (directErr || !directClaim || directClaim.length === 0) {
-          continue;
+        if (!directErr && directClaim && directClaim.length > 0) {
+          claimSuccess = true;
         }
-      } else {
-        // Jika 0 baris ter-update (artinya sudah diklaim worker/cron lain), lewati!
-        if (!claimed || claimed.length === 0) {
-          continue;
-        }
+      }
+
+      // Jika baris sudah diklaim worker/cron lain, lewati
+      if (!claimSuccess) {
+        continue;
       }
 
       try {
         await sendFn(item.chat_id, `Pengingat kak: ${item.message}`, item.platform);
         // Tandai selesai (sent) HANYA setelah pesan benar-benar sukses terkirim (C1)
-        await c.from('reminders').update({ status: 'sent' }).eq('id', item.id);
+        await c.from('reminders').update({ status: 'sent', lease_until: null }).eq('id', item.id);
         processed++;
       } catch (err) {
         console.error(`[remind] gagal kirim reminder id ${item.id}:`, err);
-        await c.from('reminders').update({ status: 'failed' }).eq('id', item.id);
+        await c.from('reminders').update({ status: 'failed', lease_until: null }).eq('id', item.id);
       }
     }
     return processed;

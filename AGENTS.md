@@ -60,7 +60,7 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
    - Sanitasi teks pengetahuan web (`sanitizeKnowledgeText`): Menetralisir potensi indirect prompt injection dari hasil pencarian sebelum disuntikkan ke prompt sistem.
 
 3. **HTTP Security Headers:**
-   - Content Security Policy (CSP) ketat tanpa `unsafe-eval` (mengizinkan inline script untuk dashboard bawaan, dengan `base-uri 'self'`, `object-src 'none'`, `frame-ancestors 'none'`).
+   - Content Security Policy (CSP) ketat tanpa `unsafe-eval` dan tanpa `unsafe-inline` pada `script-src` (seluruh skrip antarmuka dan dashboard diekstraksi ke berkas terisolasi `/js/*.js`, dengan `base-uri 'self'`, `object-src 'none'`, `frame-ancestors 'none'`).
    - HSTS seragam 2 tahun (`Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`) di `vercel.json` dan seluruh endpoint `api/`.
    - X-Frame-Options: `DENY`, X-Content-Type-Options: `nosniff`, Referrer-Policy: `strict-origin-when-cross-origin`.
 
@@ -71,12 +71,14 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
 1. **Atomic Message Claiming (`claimIncomingMessage`):**
    - Menggunakan pattern *insert-first* ke tabel `messages` dengan mengandalkan PostgreSQL unique index `idx_messages_platform_msg_id`.
    - Menghilangkan celah TOCTOU (Time-of-Check to Time-of-Use) ketika webhook simultan masuk dalam selang waktu sub-milidetik.
+   - Fail-closed pada database error untuk mencegah duplikasi pemrosesan pesan tak tercatat.
+   - Durabilitas anti-lockout crash recovery: jika worker mengalami crash mendadak di tengah proses, pesan yang belum selesai diproses (`processed_at IS NULL`) dan berumur > 45 detik dapat di-claim ulang secara aman saat platform mengirim retry.
    - Update metadata pesan lanjutan (caption media/transkripsi) menggunakan `upsert` pada `(platform, msg_id)` sehingga tidak memicu error duplicate key 23505.
 
 2. **Reminder Lease-Lock & Deadlock Auto-Reaper:**
-   - Klaim reminder jatuh tempo menggunakan perpanjangan sewa waktu atomik (`due_at = now() + 5 minutes`) pada status `'processing'`.
-   - Auto-reaper otomatis me-reset status `processing` yang kadaluwarsa (`due_at <= now()`) kembali menjadi `pending` tanpa mengganggu proses yang sedang aktif berjalan.
-   - Status `sent` hanya ditulis setelah konfirmasi keberhasilan pengiriman dari client API.
+   - Klaim reminder jatuh tempo menggunakan kolom sewa waktu atomik (`lease_until = now() + 10 minutes`) pada status `'processing'` tanpa memodifikasi `due_at` asli.
+   - Auto-reaper otomatis me-reset status `processing` yang sewanya kadaluwarsa (`lease_until <= now()`) kembali menjadi `pending` tanpa mengganggu proses pengiriman aktif yang memakan waktu lama.
+   - Status `sent` dan pelepasan sewa (`lease_until = null`) hanya ditulis setelah konfirmasi keberhasilan pengiriman dari client API.
 
 ---
 
@@ -84,7 +86,8 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
 
 1. **Stateful Conversation History:**
    - Riwayat percakapan tersimpan di Supabase dengan pagination dinamis.
-   - In-memory Hot Cache berkapasitas 300 entri dengan FIFO pruning 50-entri tertua saat batas tercapai untuk respon cepat 0-30ms.
+   - In-memory Conversation Context Cache di `src/memory.ts` dengan rolling TTL 25 detik dan 24 pesan terakhir untuk respons instan 0-5ms tanpa round-trip DB berulang.
+   - In-memory Knowledge Web Cache di `src/knowledge.ts` berkapasitas 300 entri dengan FIFO pruning 50 entri tertua saat batas tercapai.
 
 2. **Autonomous Dynamic Timezone Awareness:**
-   - Pengenalan konteks waktu dinamis berbasis deteksi domisili/kota pengguna (~400 wilayah) tanpa memaksa zona waktu statis tunggal.
+   - Pengenalan konteks waktu dinamis berbasis deteksi domisili/kota pengguna (~100 entri pemetaan kata kunci wilayah/kota terkurasi) tanpa memaksa zona waktu statis tunggal.

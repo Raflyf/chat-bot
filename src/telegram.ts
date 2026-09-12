@@ -2,7 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { config } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
-import { saveMessage, isMessageProcessed, claimIncomingMessage } from './db.js';
+import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
@@ -64,6 +64,7 @@ async function answerPhoto(
   chatKey: string,
   fileId: string,
   caption?: string,
+  msgId?: string,
 ): Promise<boolean> {
   const dl = await downloadTelegramBuffer(bot, fileId);
   if (!dl) return false;
@@ -71,6 +72,7 @@ async function answerPhoto(
   const ctx = await getContext(chatKey);
   const { reply, via, tokens } = await describeImage(dl.buffer.toString('base64'), mime, caption, ctx);
   await sendTelegramMessageSafe(bot, chatId, reply);
+  if (msgId) void markMessageProcessed('telegram', msgId);
   await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via, tokens });
   noteExchange(chatKey);
   return true;
@@ -100,6 +102,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         `- Mereset sesi percakapan dengan perintah: /reset\n\n` +
         `Ada yang bisa saya bantu sekarang?`;
       await sendTelegramMessageSafe(bot, chatId, welcomeText);
+      if (msgId) void markMessageProcessed('telegram', msgId);
       return;
     }
 
@@ -110,11 +113,13 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       if (!correction) {
         const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat dan ramah.', ctx);
         await sendTelegramMessageSafe(bot, chatId, reply);
+        if (msgId) void markMessageProcessed('telegram', msgId);
         return;
       }
       const saved = await saveCorrection(chatKey, correction);
       const { reply } = await autoReply(`User menyimpan koreksi: "${correction}". Konfirmasi singkat bahwa kamu mengingatnya.`, ctx);
       await sendTelegramMessageSafe(bot, chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
+      if (msgId) void markMessageProcessed('telegram', msgId);
       return;
     }
 
@@ -122,6 +127,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     if (text.startsWith('/remind')) {
       const args = text.replace(/^\/remind\s*/, '').trim();
       await handleRemind(bot, chatId, args);
+      if (msgId) void markMessageProcessed('telegram', msgId);
       return;
     }
 
@@ -129,6 +135,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     if (text && isResetCommand(text)) {
       const reply = await resetSession(chatKey, 'telegram');
       await sendTelegramMessageSafe(bot, chatId, reply);
+      if (msgId) void markMessageProcessed('telegram', msgId);
       void saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
@@ -151,7 +158,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan foto user:', err));
       try {
-        if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
+        if (await answerPhoto(bot, chatId, chatKey, fileId, caption, msgId)) return;
       } catch (err) {
         console.error(`[telegram] vision photo error: ${String((err as Error).message ?? err)}`);
       }
@@ -174,6 +181,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       if (dl) {
         const { reply, via, tokens } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', caption);
         await sendTelegramMessageSafe(bot, chatId, reply);
+        if (msgId) void markMessageProcessed('telegram', msgId);
         void saveMessage({
           platform: 'telegram',
           chat_id: chatKey,
@@ -203,7 +211,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           content: caption ? `[Gambar: ${filename}] ${caption}` : `[Gambar: ${filename}]`,
           msg_id: msgId || undefined,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan gambar doc user:', err));
-        if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
+        if (await answerPhoto(bot, chatId, chatKey, fileId, caption, msgId)) return;
       }
 
       // Berkas dokumen umum (PDF, DOCX, TXT, CSV, JSON, kode)
@@ -220,6 +228,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         const ctx = await getContext(chatKey);
         const { reply, via, tokens } = await processIncomingDocument(dl.buffer, mime, filename, caption, ctx);
         await sendTelegramMessageSafe(bot, chatId, reply);
+        if (msgId) void markMessageProcessed('telegram', msgId);
         void saveMessage({
           platform: 'telegram',
           chat_id: chatKey,
@@ -254,14 +263,19 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
           let web: string | null = null;
           if (needsSearch(transcription)) {
-            const prevContext = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
-            const found = await searchWeb(transcription, prevContext);
-            if (found) web = found;
+            try {
+              const prevContext = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+              const found = await searchWeb(transcription, prevContext);
+              if (found) web = found;
+            } catch (err) {
+              console.warn('[telegram] Gagal penelusuran web audio:', err);
+            }
           }
 
           const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
           const { reply, via, tokens } = await autoReply(prompt, ctx, web);
           await sendTelegramMessageSafe(bot, chatId, reply);
+          if (msgId) void markMessageProcessed('telegram', msgId);
           void saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
@@ -292,6 +306,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const locTime = formatInZone(new Date(), tzInfo.zone);
       const reply = `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
       await sendTelegramMessageSafe(bot, chatId, reply);
+      if (msgId) void markMessageProcessed('telegram', msgId);
       void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply })
         .catch((err) => console.warn('[telegram] Gagal simpan pesan lokasi assistant:', err));
       return;
@@ -307,6 +322,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         chat_id: chatKey,
         role: 'user',
         content: `[Stiker Telegram${emoji ? `: ${emoji}` : ''}]`,
+        msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker user:', err));
 
       // Jika stiker statis (WebP), kita kirim ke Vision
@@ -315,6 +331,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         if (dl) {
           const { reply, via, tokens } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx);
           await sendTelegramMessageSafe(bot, chatId, reply);
+          if (msgId) void markMessageProcessed('telegram', msgId);
           void saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
@@ -332,6 +349,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const prompt = `Pengguna mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya seorang sahabat mengobrol.`;
       const { reply, via, tokens } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
+      if (msgId) void markMessageProcessed('telegram', msgId);
       void saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
@@ -354,6 +372,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         chat_id: chatKey,
         role: 'user',
         content: caption ? `[Video] ${caption}` : '[Video]',
+        msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan video user:', err));
 
       const prompt = caption
@@ -362,6 +381,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
       const { reply, via, tokens } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
+      if (msgId) void markMessageProcessed('telegram', msgId);
       void saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
@@ -385,12 +405,17 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
     let web: string | null = null;
     if (needsSearch(text)) {
-      const prevContext = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
-      const found = await searchWeb(text, prevContext);
-      if (found) web = found;
+      try {
+        const prevContext = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+        const found = await searchWeb(text, prevContext);
+        if (found) web = found;
+      } catch (err) {
+        console.warn('[telegram] Gagal penelusuran web:', err);
+      }
     }
     const { reply, escalate, via, tokens } = await autoReply(text, ctx, web);
     await sendTelegramMessageSafe(bot, chatId, reply);
+    if (msgId) void markMessageProcessed('telegram', msgId);
 
     // Update cache memori & simpan balasan asisten ke database secara non-blocking
     updateContextCache(chatKey, 'assistant', reply);
@@ -426,6 +451,7 @@ export async function processTelegramUpdate(bot: TelegramBot, update: TelegramBo
   } else if (update.edited_message) {
     await handleIncomingMessage(bot, update.edited_message);
   }
+  if (updId) void markMessageProcessed('telegram', updId);
 }
 
 /** Memulai bot dalam mode Polling (hanya saat dijalankan lokal di terminal) */
