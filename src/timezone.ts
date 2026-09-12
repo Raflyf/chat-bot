@@ -129,6 +129,7 @@ export interface LocationMatch {
   keywords: string[];
   zone: string;
   label: string;
+  matchedKeyword?: string;
 }
 
 const LOCATION_MAP: LocationMatch[] = [
@@ -248,12 +249,13 @@ const LOCATION_MAP: LocationMatch[] = [
 
 export function detectLocation(text?: string): LocationMatch | null {
   if (!text || typeof text !== 'string') return null;
-  const q = text.toLowerCase();
+  // Bersihkan identifier zona waktu IANA (misal "Asia/Jakarta") agar substring "jakarta" tidak memicu false-positive DKI Jakarta
+  const q = text.toLowerCase().replace(/asia\/(?:jakarta|makassar|jayapura|tokyo|seoul|singapore|bangkok)/gi, '');
   for (const item of LOCATION_MAP) {
     for (const kw of item.keywords) {
       const reg = new RegExp(`\\b${kw.replace(/\s+/g, '\\s+')}\\b`, 'i');
       if (reg.test(q)) {
-        return item;
+        return { ...item, matchedKeyword: kw };
       }
     }
   }
@@ -394,15 +396,17 @@ export function buildUniversalTimePrompt(
   // KASUS 2: PENGGUNA BARU SAJA MENYATAKAN / MENGONFIRMASI LOKASINYA (misal: "saya di cianjur", "lagi di bali")
   if (userDeclaringLoc) {
     const locTime = formatInZone(now, userDeclaringLoc.zone);
+    const specificCity = userDeclaringLoc.matchedKeyword ? (userDeclaringLoc.matchedKeyword.charAt(0).toUpperCase() + userDeclaringLoc.matchedKeyword.slice(1)) : '';
+    const displayLocation = specificCity ? `${specificCity} (${userDeclaringLoc.label})` : userDeclaringLoc.label;
     parts.push(`[PENGGUNA MENGONFIRMASI LOKASI KEBERADAANNYA]:`);
-    parts.push(`- Lokasi Pengguna: ${userDeclaringLoc.label} (Zona Waktu: ${userDeclaringLoc.zone})`);
-    parts.push(`- Jam Saat Ini di ${userDeclaringLoc.label}: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.dayName}, ${locTime.dateStr})`);
+    parts.push(`- Lokasi Pengguna: ${displayLocation} (Zona Waktu: ${userDeclaringLoc.zone})`);
+    parts.push(`- Jam Saat Ini di ${displayLocation}: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.dayName}, ${locTime.dateStr})`);
     parts.push(`[DIREKTIF MENJAWAB KONFIRMASI LOKASI]:`);
-    parts.push(`- Temanmu memberitahukan bahwa dia berada di ${userDeclaringLoc.label}.`);
-    parts.push(`- Jawab santai dan hangat: akui lokasinya dan sebutkan waktu di lokasinya secara presisi (${locTime.time.slice(0, 5)} ${locTime.tzName}).`);
+    parts.push(`- Temanmu memberitahukan bahwa dia berada di ${displayLocation}.`);
+    parts.push(`- Jawab singkat, hangat, to-the-point mengakui lokasinya dan sebutkan waktu di kotanya secara presisi (contoh: "Iya bener, maaf ya aku malah nanya lagi. Sekarang jam ${locTime.time.slice(0, 5)} ${locTime.tzName} di ${specificCity || userDeclaringLoc.label}.").`);
     parts.push(`- DILARANG SALAH ZONA: Pastikan zona waktunya sesuai data resmi di atas (${userDeclaringLoc.label} adalah ${locTime.tzName})! DILARANG menyebut WITA jika lokasinya di Jawa/Sumatera (WIB), dan DILARANG menyebut WIB jika lokasinya di Bali/Sulawesi (WITA)!`);
-    parts.push(`- Lokasi ini sudah otomatis disimpan ke sistem memori, jadi DILARANG menanyakan kota/daerahnya lagi ke depannya!`);
-    parts.push(`- Lanjutkan obrolan dengan santai mengikuti konteksnya.`);
+    parts.push(`- DILARANG MENANYAKAN KOTA LAGI: Lokasi ini sudah otomatis tersimpan ke memori sistem, DILARANG menanyakan kembali kotanya ke depannya!`);
+    parts.push(`- DILARANG KERAS MENAMBAHKAN FILLER BASA-BASI SOK AKRAB: DILARANG KERAS menempelkan celetukan penutup klise seperti "santai aja terus bro", "santai aja bro", "santuy aja dulu", "semangat terus ya", dsb! Jawaban selesai di situ to-the-point tanpa embel-embel tidak perlu.`);
     return parts.join('\n');
   }
 
@@ -422,10 +426,13 @@ export function buildUniversalTimePrompt(
   // 3b. Pengguna bertanya "jam berapa sekarang?" dan lokasinya sudah tersimpan di profil/riwayat
   if (profileLoc) {
     const locTime = formatInZone(now, profileLoc.zone);
-    parts.push(`- LOKASI PENGGUNA TERSIMPAN DI MEMORI: ${profileLoc.label}`);
+    const specificCity = profileLoc.matchedKeyword ? (profileLoc.matchedKeyword.charAt(0).toUpperCase() + profileLoc.matchedKeyword.slice(1)) : '';
+    const displayCity = specificCity ? `${specificCity}` : profileLoc.label;
+    parts.push(`- LOKASI PENGGUNA TERSIMPAN DI MEMORI: ${profileLoc.label}${specificCity ? ` (Kota: ${specificCity})` : ''}`);
     parts.push(`  * Jam di Lokasi Pengguna: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.full})`);
-    parts.push(`  * DIREKTIF: Temanmu bertanya jam sekarang. Karena kamu sudah tahu dia di ${profileLoc.label}, jawab langsung: "Sekarang jam ${locTime.time.slice(0, 5)} ${locTime.tzName}."`);
+    parts.push(`  * DIREKTIF: Temanmu bertanya jam sekarang. Karena kamu sudah tahu dia di ${displayCity}, jawab langsung: "Sekarang jam ${locTime.time.slice(0, 5)} ${locTime.tzName} di ${displayCity}."`);
     parts.push(`  * DILARANG menanyakan kembali dia berada di kota mana karena kamu sudah tahu dan mengingat lokasinya!`);
+    parts.push(`  * DILARANG KERAS menambahkan celetukan penutup filler seperti "santai aja terus bro" atau semacamnya! Cukup sampaikan waktu to-the-point dan selesai.`);
     return parts.join('\n');
   }
 

@@ -287,6 +287,11 @@ export function cleanMathAndNoise(text: string): string {
   out = out.replace(/(?:Tapi\s+)?(?:kalau|kalo)\s+(?:itu\s+)?(?:cuma\s+)?typo[^.!\n]*[.!\n]?/gi, '');
   out = out.replace(/(?:Tapi\s+)?(?:kalau|kalo)\s+bagian\s+[^.!\n]*dianggep\s+gak\s+ada[^.!\n]*[.!\n]?/gi, '');
 
+  // 14e. Bersihkan celetukan penutup filler sok asik / sok akrab di akhir pesan
+  out = out.replace(/(?:,\s*)?(?:santai\s+aja\s+(?:terus|dulu)?|santuy\s+aja(?:\s+dulu)?)\s*(?:bro|bray|cuy|ya|ngab)?[.!]?\s*$/gi, '.');
+  out = out.replace(/(?:,\s*)?(?:tetap\s+)?semangat\s+(?:terus\s+)?(?:ya|bro|bray|cuy|ngab)?[.!]?\s*$/gi, '.');
+  out = out.replace(/\s+([.,!?])/g, '$1');
+
   // 15. Sederhanakan spasi ganda dan baris kosong berlebihan
   out = out.replace(/[ \t]{2,}/g, ' ');
   out = out.replace(/\n{3,}/g, '\n\n').trim();
@@ -375,6 +380,10 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '     * Hal biasa ditanggapi biasa, tidak perlu heboh palsu atau menjilat.',
     '   - SAAT DILEDEK ATAU BERCANDAAN:',
     '     * Tanggapi santai, tenang, dan tidak baper. Cukup tertawa atau lempar celetukan wajar tanpa defensif.',
+    '   - DILARANG MENAMBAHKAN KALIMAT PENUTUP / FILLER BASA-BASI SOK AKRAB (ANTI-FILLER SLOP):',
+    '     * DILARANG KERAS menempelkan celetukan penutup klise di akhir balasan seperti "santai aja terus bro", "santai aja bro", "santai aja dulu", "semangat terus ya", "tetap semangat bro", atau "santuy aja".',
+    '     * Kalimat penutup seperti itu sangat tidak perlu, garing, dan membuat bot terdengar sok asik atau tidak nyambung!',
+    '     * Jika jawaban atau tanggapan sudah selesai, AKHIRI DI SITU tanpa perlu embel-embel penutup kosong.',
     '',
     '3. HUMOR, JOKES, & TEBAK-TEBAKAN INTERAKTIF DUA ARAH (DILARANG LANGSUNG BOCORKAN PUNCHLINE):',
     '   - FORMAT JOKE / TEBAK-TEBAKAN DUA ARAH (INTERAKTIF):',
@@ -796,9 +805,11 @@ export async function autoReply(
   if (ctx?.chatId) {
     const locMatch = detectUserLocationDeclaration(clean);
     if (locMatch) {
-      const correctionEntry = `Lokasi/domisili pengguna: ${locMatch.label} (Zona Waktu: ${locMatch.zone})`;
+      const cityName = locMatch.matchedKeyword ? (locMatch.matchedKeyword.charAt(0).toUpperCase() + locMatch.matchedKeyword.slice(1)) : '';
+      const locationDesc = cityName ? `${cityName}, ${locMatch.label}` : locMatch.label;
+      const correctionEntry = `Lokasi/domisili pengguna: ${locationDesc} (Zona Waktu: ${locMatch.zone})`;
       if (!ctx.corrections) ctx.corrections = [];
-      const alreadySaved = ctx.corrections.some((c) => c.includes(locMatch.label));
+      const alreadySaved = ctx.corrections.some((c) => c.includes(locMatch.label) || (cityName && c.includes(cityName)));
       if (!alreadySaved) {
         ctx.corrections.push(correctionEntry);
         void saveCorrection(ctx.chatId, correctionEntry);
