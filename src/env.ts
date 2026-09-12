@@ -30,7 +30,7 @@ function num(name: string, fallback: number): number {
 export const config = {
   telegramToken: cleanStr('TELEGRAM_BOT_TOKEN'),
   ownerChatId: cleanStr('OWNER_CHAT_ID'),
-  ownerWaNumber: cleanStr('OWNER_WA_NUMBER') || '628991333323',
+  ownerWaNumber: cleanStr('OWNER_WA_NUMBER'),
   pools: {
     xkiro: csv('XKIRO_KEYS'),
     openrouter: csv('OPENROUTER_KEYS'),

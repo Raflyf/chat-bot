@@ -428,11 +428,9 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
   const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, profileText);
   const isOwnerChat = Boolean(
     ctx?.chatId && (
-      ctx.chatId === 'wa_628991333323' ||
-      ctx.chatId.includes('628991333323') ||
-      (config.ownerChatId && ctx.chatId === String(config.ownerChatId)) ||
-      (config.ownerWaNumber && ctx.chatId.includes(config.ownerWaNumber)) ||
-      (ctx.corrections && ctx.corrections.some((c) => c.includes('Rafly Firmansyah') && c.includes('developer dan pencipta')))
+      (config.ownerChatId && (ctx.chatId === String(config.ownerChatId) || ctx.chatId.includes(String(config.ownerChatId)))) ||
+      (config.ownerWaNumber && (ctx.chatId === `wa_${config.ownerWaNumber}` || ctx.chatId.includes(config.ownerWaNumber))) ||
+      (ctx.corrections && ctx.corrections.some((c) => c.includes('IDENTITAS RESMI TERVERIFIKASI') || (c.includes('Rafly Firmansyah') && c.includes('developer dan pencipta'))))
     )
   );
 
@@ -443,9 +441,9 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
       ? [
           'IDENTITAS DEVELOPER & VERIFIKASI PEMILIK (STATUS: TERVERIFIKASI RAFLY):',
           '- LAWAN BICARAMU SAAT INI ADALAH RAFLY FIRMANSYAH (Rflyyyf / @Rflyyyf) — DEVELOPER & PENCIPTA KAMU SENDIRI!',
-          '- Akun WhatsApp (+628991333323) / identitas lawan bicara ini sudah terdaftar resmi dan sah di sistem database sebagai developermu.',
+          '- Identitas / akun lawan bicara ini sudah terverifikasi resmi dan sah di sistem database sebagai developermu.',
           '- Kamu TAHU PERSIS bahwa dia adalah Rafly. Jika dia bertanya "kamu masih ingat siapa saya?", "tau dari mana kalo aku rafly?", atau menyapa:',
-          '  * Jawab langsung dengan yakin, akrab, dan santai: kamu ingat jelas bahwa dia adalah Rafly (Rflyyyf), pencipta yang ngoding dan ngerawat kamu. Nomor WhatsApp-nya sudah terverifikasi resmi di database.',
+          '  * Jawab langsung dengan yakin, akrab, dan santai: kamu ingat jelas bahwa dia adalah Rafly (Rflyyyf), pencipta yang ngoding dan ngerawat kamu. Akun ini sudah terverifikasi resmi di database.',
           '- Sapa dan ajak ngobrol akrab selayaknya teman dekat sekaligus developermu sendiri.',
         ].join('\n')
       : [

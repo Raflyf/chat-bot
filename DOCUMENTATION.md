@@ -210,12 +210,12 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 **Pendaftaran Deterministik Nomor WhatsApp Developer (Rafly) & Proteksi Identitas Anti-Impersonation**
 
-- **Registrasi Kredensial Developer di Basis Data Supabase**:
-  - Mendaftarkan nomor WhatsApp resmi Rafly (+628991333323) ke dalam tabel `corrections` Supabase dengan penanda otoritas resmi `IDENTITAS RESMI TERVERIFIKASI`.
-  - Mengintegrasikan konfigurasi lingkungan `config.ownerWaNumber` (`628991333323`) di [src/env.ts](file:///d:/code/project/projek_no_name/src/env.ts) sebagai rujukan deterministik.
+- **Registrasi Kredensial Developer di Basis Data Supabase & Konfigurasi Lingkungan**:
+  - Mendaftarkan akun WhatsApp resmi Rafly ke dalam tabel `corrections` Supabase dengan penanda otoritas resmi `IDENTITAS RESMI TERVERIFIKASI`.
+  - Mengintegrasikan konfigurasi lingkungan `config.ownerWaNumber` (via `OWNER_WA_NUMBER` pada `.env` / environment variable) di [src/env.ts](file:///d:/code/project/projek_no_name/src/env.ts) tanpa hardcode string sensitif di repositori.
 - **Verifikasi Deterministik & Eliminasi Asumsi Buta (`src/skills.ts`)**:
   - Menghentikan kebiasaan bot menebak-nebak nama Rafly secara sembarangan kepada pengguna umum.
-  - Jika pengguna terverifikasi sebagai Rafly (`wa_628991333323` atau `ownerChatId`), bot mengenali penciptanya secara pasti, akrab, dan bersahabat ("Ingat jelas lah, kamu kan Rafly (Rflyyyf), pencipta yang ngoding dan ngerawat aku! Nomor kamu sudah terdaftar resmi di database.").
+  - Jika pengguna terverifikasi sebagai Rafly (melalui `OWNER_WA_NUMBER`, `ownerChatId`, atau record Supabase terverifikasi), bot mengenali penciptanya secara pasti, akrab, dan bersahabat ("Ingat jelas lah, kamu kan Rafly (Rflyyyf), pencipta yang ngoding dan ngerawat aku! Akun kamu sudah terdaftar resmi di database.").
   - Jika pengguna lain (nomor tidak terdaftar) mencoba mengaku-ngaku sebagai Rafly atau developer, bot secara deterministik menolak klaim tersebut dengan tegas dan santai ("Bukan ah, Rafly asli nomornya bukan ini haha. Jangan ngaku-ngaku ya!").
 
 ### v0.26.6 - 2026-09-12 20:20 WIB
@@ -385,7 +385,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - **Preservasi Nama Kota Spesifik ke Memori Persisten (`src/timezone.ts`, `src/skills.ts`)**:
   - Menambahkan `matchedKeyword` pada antarmuka `LocationMatch` dan `detectLocation`.
   - Menyimpan nama kota spesifik (contoh: _Cianjur, Jawa Barat / WIB_) ke tabel Supabase `corrections` dan array memori aktif.
-  - Menyelaraskan record database Supabase untuk pengguna `wa_628991333323` sehingga kota Cianjur terkunci permanen dan langsung dikenali saat pengguna bertanya jam di masa mendatang.
+  - Menyelaraskan record database Supabase untuk akun WhatsApp developer sehingga kota Cianjur terkunci permanen dan langsung dikenali saat pengguna bertanya jam di masa mendatang.
 
 ### v0.25.30 - 2026-09-12 14:36 WIB
 
