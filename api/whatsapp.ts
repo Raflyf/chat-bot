@@ -4,6 +4,7 @@ import {
   verifyWhatsAppSignature,
   processWhatsAppCloudWebhook,
 } from '../src/whatsapp_cloud.js';
+import { logError, logInfo, logWarn } from '../src/logger.js';
 
 export const config = {
   api: {
@@ -38,12 +39,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     const result = verifyWhatsAppWebhook(mode, token, challenge);
     if (result.ok && result.challenge) {
-      console.log('[api/whatsapp] Webhook verification handshake berhasil.');
+      logInfo('[api/whatsapp] Webhook verification handshake berhasil.');
       res.status(200).send(result.challenge);
       return;
     }
 
-    console.warn('[api/whatsapp] Webhook verification handshake gagal: token mismatch.');
+    logWarn('[api/whatsapp] Webhook verification handshake gagal: token mismatch.');
     res.status(403).send('Forbidden');
     return;
   }
@@ -59,7 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const rawBuf = await readRawBody(req);
 
   if (!verifyWhatsAppSignature(signature, rawBuf)) {
-    console.warn('[api/whatsapp] Unauthorized request: signature mismatch.');
+    logWarn('[api/whatsapp] Unauthorized request: signature mismatch.');
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
@@ -86,7 +87,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Selalu kembalikan 200 OK ke Meta agar tidak terjadi Retry Storm
     res.status(200).json({ ok: true });
   } catch (err) {
-    console.error('[api/whatsapp] Error saat memproses pesan WhatsApp:', err);
+    logError('[api/whatsapp] Error saat memproses pesan WhatsApp', { error: String((err as Error)?.message ?? err) });
     res.status(200).json({ ok: false, error: 'Internal Error' });
   }
 }

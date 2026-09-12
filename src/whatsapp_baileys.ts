@@ -26,6 +26,9 @@ import {
 const logger = pino({ level: 'silent' });
 const sessionDir = path.resolve(process.cwd(), 'session_wa');
 
+// Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
+const PROMPT_VERSION = 'v0.26.5';
+
 /**
  * Mengirim pesan teks ke WhatsApp dengan pemecahan cerdas
  * jika panjang pesan melebihi limit 4000 karakter menggunakan splitMessageSmart.
@@ -610,7 +613,9 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     }
 
     // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
+    const tStart = Date.now();
     const { reply, via, tokens } = await autoReply(text, context, webResults);
+    const latencyMs = Date.now() - tStart;
 
     // 5. Kirim balasan ke WhatsApp secepat mungkin
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
@@ -625,6 +630,9 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       content: reply,
       via,
       tokens,
+      latency_ms: latencyMs,
+      needs_search: webResults !== null,
+      prompt_version: PROMPT_VERSION,
     }).catch((err) => console.warn('[whatsapp] Gagal simpan pesan assistant:', err));
 
     // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat

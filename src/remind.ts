@@ -56,8 +56,11 @@ export async function checkDueReminders(
       .eq('status', 'processing')
       .lte('lease_until', now);
 
-    // Fallback reaper untuk DB sebelum migrasi lease_until atau bernilai null (batas aman 10 menit)
-    const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    // Fallback reaper hanya untuk DB pra-migrasi lease_until (lease_until IS NULL).
+    // Ambang dinaikkan ke 30 menit (dari 10 menit): pengiriman yang masih in-flight
+    // tidak boleh di-reap lalu diklaim ulang worker/cron lain -> cegah dobel kirim.
+    // Tradeoff: baris yang benar-benar macet baru pulih setelah 30 menit, bukan 10.
+    const staleThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     await c
       .from('reminders')
       .update({ status: 'pending', lease_until: null })

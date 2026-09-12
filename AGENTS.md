@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (AGENTS.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.26.4.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.26.5.
 
 ---
 
@@ -60,16 +60,21 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
    - Sanitasi teks pengetahuan web (`sanitizeKnowledgeText`): Menetralisir potensi indirect prompt injection dari hasil pencarian sebelum disuntikkan ke prompt sistem.
 
 3. **HTTP Security Headers:**
-   - Content Security Policy (CSP) ketat tanpa `unsafe-eval` dan tanpa `unsafe-inline` pada `script-src` (seluruh skrip antarmuka dan dashboard diekstraksi ke berkas terisolasi `/js/*.js`, dengan `base-uri 'self'`, `object-src 'none'`, `frame-ancestors 'none'`).
+   - Content Security Policy (CSP) ketat tanpa `unsafe-eval` dan tanpa `unsafe-inline` pada `script-src` (seluruh skrip antarmuka dan dashboard diekstraksi ke berkas terisolasi `/js/*.js`, dengan `base-uri 'self'`, `object-src 'none'`, `frame-ancestors 'none'`). Seluruh event handler diikat via `addEventListener` di `/js/*.js`; berkas `public/**/*.html` tidak memuat event handler inline (`on*=`). Tidak ada domain CDN eksternal yang tidak terpakai di CSP.
    - HSTS seragam 2 tahun (`Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`) di `vercel.json` dan seluruh endpoint `api/`.
    - X-Frame-Options: `DENY`, X-Content-Type-Options: `nosniff`, Referrer-Policy: `strict-origin-when-cross-origin`.
+
+4. **Tata Kelola Data & RTBF (Right To Be Forgotten):**
+   - Ledger migrasi `public.schema_migrations` (RLS, akses `service_role` saja) mencatat versi migrasi yang sudah diterapkan secara idempotent.
+   - RPC `service_role`-only `rpc_purge_user_data(p_chat_id text)` menghapus pesan, summaries, corrections, dan reminders pengguna; `rpc_purge_expired_web_knowledge()` menghapus entri `web_knowledge` yang kadaluwarsa.
+   - Kedua RPC hanya dapat dipanggil melalui aksi terautentikasi di `api/admin-otp.ts` (`purge_user_data`, `purge_expired_knowledge`) setelah verifikasi session token; tidak ada jalur tanpa autentikasi.
 
 ---
 
 ## 4. Sistem Dedup Atomik & Concurrency Control
 
 1. **Atomic Message Claiming (`claimIncomingMessage`):**
-   - Menggunakan pattern *insert-first* ke tabel `messages` dengan mengandalkan PostgreSQL unique index `idx_messages_platform_msg_id`.
+   - Menggunakan pattern _insert-first_ ke tabel `messages` dengan mengandalkan PostgreSQL unique index `idx_messages_platform_msg_id`.
    - Menghilangkan celah TOCTOU (Time-of-Check to Time-of-Use) ketika webhook simultan masuk dalam selang waktu sub-milidetik.
    - Fail-closed pada database error untuk mencegah duplikasi pemrosesan pesan tak tercatat.
    - Durabilitas anti-lockout crash recovery: jika worker mengalami crash mendadak di tengah proses, pesan yang belum selesai diproses (`processed_at IS NULL`) dan berumur > 45 detik dapat di-claim ulang secara aman saat platform mengirim retry.
@@ -91,3 +96,7 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
 
 2. **Autonomous Dynamic Timezone Awareness:**
    - Pengenalan konteks waktu dinamis berbasis deteksi domisili/kota pengguna (~100 entri pemetaan kata kunci wilayah/kota terkurasi) tanpa memaksa zona waktu statis tunggal.
+
+3. **Observabilitas & Instrumentasi Dataset:**
+   - `src/logger.ts` menyediakan structured logging JSON satu-baris (tanpa dependensi eksternal, mode `LOG_PRETTY=1` opsional); saat ini dipasang di `src/index.ts`, `api/webhook.ts`, dan `api/whatsapp.ts`.
+   - Kolom instrumentasi opsional pada tabel `messages` (`latency_ms`, `needs_search`, `split_count`, `prompt_version`, `feedback`) diisi best-effort oleh `src/db.ts` dari ketiga channel untuk evaluasi fine-tuning.
