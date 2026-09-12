@@ -192,6 +192,19 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.24 - 2026-09-12 13:16 WIB
+**Perombakan Persona Universal: Eliminasi Template Hafalan & Penegakan Nada Santai Wajar (Anti Over-React)**
+- **Pembersihan Total Contoh Jawaban Verbatim (`src/skills.ts`)**:
+  - Menghapus seluruh daftar kutipan kalimat contoh di prompt yang sebelumnya memicu model menjiplak secara statis (*"Wkwkwk komuknya tolong"*, *"Buset ekspresinya dapet banget"*, *"Ngece bener mukanya"*, *"Puas banget kan lu ngakaknya"*, *"Buset komuk batu haha"*, *"Menyala abangku"*).
+  - Menggantinya dengan prinsip penalaran dinamis organik murni dari pemahaman AI terhadap konteks percakapan saat itu.
+- **Penegakan Nada Wajar, Membumi, & Anti-Over-React (`src/skills.ts`)**:
+  - Dilarang bersikap lebay, heboh palsu, atau sok asik (*anti-try-hard*).
+  - Menghilangkan obral kata slang berlebihan ("anjir", "bjir", "gokil", "buset", "komuk") di setiap kalimat agar tidak terdengar norak atau *cringe*.
+  - Menjaga reaksi tetap proporsional: hal biasa ditanggapi santai, candaan ditanggapi tawa wajar, dan stiker/foto ditanggapi mengalir layaknya gestur alami teman di chat.
+- **Respons Emoji Murni & Tawa Secara Dinamis (`src/skills.ts`)**:
+  - Membebaskan model merespons pesan emoji ekspresi secara spontan dan variatif (bisa emoji balik yang pas, reaksi singkat 1-2 kata, atau celetukan santai yang sesuai suasana obrolan).
+  - Respons tawa (wkwk, haha, 🤣😭) ditanggapi secara tenang dan wajar tanpa berteriak heboh.
+
 ### v0.25.23 - 2026-09-12 13:12 WIB
 **Penyelesaian Tuntas Masalah Interogasi Berulang & Penghapusan Pertanyaan Penutup Klise (`src/skills.ts`)**
 - **Eliminasi Mandat Pancingan & Pertanyaan Lanjutan**:
