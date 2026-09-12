@@ -236,6 +236,11 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - **Pemulihan Toleransi Webhook Meta WhatsApp Cloud API (`src/whatsapp_cloud.ts`, `src/env.ts`)**:
   - Memperbaiki regresi fail-closed signature Meta di mana webhook otomatis menolak seluruh pesan (HTTP 401) jika `WHATSAPP_APP_SECRET` belum terpasang di environment variable Vercel.
   - Menjadikan verifikasi HMAC SHA-256 aktif jika secret ada, dan beralih ke fallback terproteksi Verify Token handshake jika secret belum diset agar bot tidak mengalami pemadaman total.
+- **Preservasi Konten Teks Asli Pengguna di WhatsApp Cloud (`src/whatsapp_cloud.ts`)**:
+  - Memperbaiki bug pada klaim atomik webhook di mana isi pesan teks pengguna tersimpan sebagai placeholder statis `[text]` ke database, yang menyebabkan konteks percakapan di Supabase menjadi kosong dan AI kehilangan topik obrolan.
+  - Mengekstrak teks riil pengguna secara langsung pada `claimIncomingMessage` dan memastikan sinkronisasi teks pesan ke tabel `messages` Supabase.
+- **Restorasi Prioritas Failover Model xKiro (`src/env.ts`, `.env`)**:
+  - Menyelaraskan urutan model cadangan xKiro ke `deepseek/deepseek-v4-flash` sebagai prioritas pertama saat `qwen/qwen3.8-max:free` mengalami kendala upstream, menyingkirkan `mistralai/mistral-medium-3.5` yang rentan over-reacting dan menghasilkan lelucon repetitif di luar konteks.
 
 ### v0.26.4 - 2026-09-12 18:35 WIB
 
