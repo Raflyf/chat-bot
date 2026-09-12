@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.7 (Deterministic Developer Identity Verification & Anti-Impersonation Protection)  
+**Versi:** v0.26.12 (Infrastructure Latency Optimization, Model-Level Circuit Breaker, Non-Blocking Webhook Ingestion & 100% Skills Prompt Integrity)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 20:30 WIB
+**Terakhir Diperbarui:** 2026-09-12 21:35 WIB
 
 ---
 
@@ -205,6 +205,25 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.12 - 2026-09-12 21:35 WIB
+
+**Penyetelan Latensi Respons Lintas Provider Tanpa Modifikasi Aturan Prompt: Fast-Break Circuit Breaker (HTTP 404 & 413), In-Memory Model Cooldown, Non-Blocking Webhook Ingestion, dan Restorasi 100% Utuh Aturan Skills**
+
+- **Restorasi Penuh 100% Aturan Prompt (`src/skills.ts`)**:
+  - Menolak dan mengeliminasi seluruh pemangkasan aturan atau instruksi persona di `src/skills.ts`.
+  - Memulihkan berkas `src/skills.ts` secara 100% utuh tanpa selisih (`git diff src/skills.ts` bersih 0 baris) demi menjamin guardrail anti-sycophancy, pembatasan tebak-tebakan, kontrol tone, dan integritas grounding tetap kokoh.
+- **Fast-Break Circuit Breaker & Model-Level Cooldown (`src/providers.ts`)**:
+  - **Penanganan HTTP 404 (Model Not Found)**: Jika model tidak terdaftar di endpoint provider (seperti kasus varian free xKiro yang dinonaktifkan upstream), sistem seketika memutus perulangan kunci (`break`) dan menandai model tersebut dalam status cooldown 30 menit. Menghilangkan 12 panggilan jaringan sia-sia yang sebelumnya mencoba seluruh API key secara berulang untuk model yang tidak ada.
+  - **Penanganan HTTP 413 (Payload Too Large / ITPM Exceeded)**: Jika ukuran prompt melebihi kuota ITPM model (seperti limit 7.000 ITPM pada tier gratis Groq), sistem langsung melompat ke provider berikutnya (`break`) dan mencatat cooldown 15 menit, mencegah pemborosan 8 panggilan jaringan ke 4 API key Groq.
+  - **Fast-Pass 0ms untuk Model Bermasalah**: Pada giliran obrolan berikutnya, model-model yang sedang dalam masa cooldown otomatis dilewati dalam 0ms, mengarahkan inferensi langsung ke model yang sehat.
+  - **Koreksi Cooldown Kunci**: Memisahkan error model (404/413) dari error kredensial (401/403) sehingga kunci API tidak dihukum atau dibekukan secara keliru akibat kegagalan spesifik model.
+- **Non-Blocking Webhook Pre-Inference Ingestion (`src/whatsapp_cloud.ts`, `src/telegram.ts`)**:
+  - Mengubah penyimpanan pesan masuk pengguna (`saveMessage`) menjadi asynchronous background task non-blocking (`void saveMessage(...).catch(...)`).
+  - Mengeliminasi jeda blocking 300–600ms dari round-trip Supabase sebelum inferensi AI dimulai, karena pesan pengguna sudah tersimpan aman di cache memori instan (`updateContextCache`, 0ms).
+- **Penyetelan Ambang Batas Timeout Jaringan (`src/env.ts`)**:
+  - Mengoptimasi default `CONNECT_TIMEOUT_MS` dari 4.500ms menjadi 3.000ms untuk failover koneksi yang lebih agresif saat endpoint penyedia mengalami hang.
+  - Mengoptimasi default `REQUEST_TIMEOUT_MS` menjadi 35.000ms yang aman untuk siklus serverless Vercel.
 
 ### v0.26.11 - 2026-09-12 21:05 WIB
 
