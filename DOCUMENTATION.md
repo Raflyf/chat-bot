@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.26  
+**Versi:** v0.25.27  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 13:28 WIB  
+**Terakhir Diperbarui:** 2026-09-12 13:30 WIB  
 
 ---
 
@@ -191,6 +191,18 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.27 - 2026-09-12 13:30 WIB
+**Ekspansi Pool xKiro API Key Menjadi 3 Kunci (Kapasitas Kuota 15.000.000 Token/Hari) & Sinkronisasi Model Cadangan**
+- **Penambahan Kunci xKiro ke-3 (`.env`, `swarm_runner.cjs`)**:
+  - Mendaftarkan API key xKiro baru (`sk-xt-061a...8a6b`, akun `raflyfirmansyah625@gmail.com`) ke dalam variabel `XKIRO_KEYS` di `.env`.
+  - Mengintegrasikan kunci ke-3 ke dalam pool runner swarm lokal (`%USERPROFILE%\.claude-flow\swarm_runner.cjs`).
+  - Total kapasitas kuota token harian gabungan xKiro Gateway meningkat 50% dari 10.000.000 token/hari menjadi **15.000.000 token/hari** (5.000.000 token/hari per kunci) secara 100% gratis ($0 free-tier).
+  - Rotasi kunci otomatis dan endpoint sinkronisasi upstream `api/stats.ts` langsung memantau ketiga kunci secara real-time (`suffix: 6386, d077, 8a6b`).
+- **Penyelarasan Urutan Model Cadangan xKiro (`.env`, `src/env.ts`)**:
+  - Menyelaraskan urutan `XKIRO_MODEL_BACKUPS` di `.env` sesuai preferensi pengguna:
+    1. Primary: `qwen/qwen3.8-max:free`
+    2. Cadangan: `mistralai/mistral-medium-3.5`, `deepseek/deepseek-v4-flash`, `mistralai/mistral-large-2512`, `deepseek/deepseek-chat-v3.1`, `qwen/qwen3.7-max:free`, `deepseek/deepseek-v4-pro`, `qwen/qwen3.6-plus:free`, `mistralai/mistral-small-2603`.
 
 ### v0.25.26 - 2026-09-12 13:28 WIB
 **Penyelarasan Gaya Bahasa Dinamis (Dynamic Style Mirroring & Chameleon), Resonansi Emosional & Eliminasi Respon Statis Kaku**
