@@ -304,6 +304,10 @@ export function cleanMathAndNoise(text: string): string {
   // 17. Bersihkan pembuka deskripsi robotik pada gambar/foto/stiker/dokumen/video
   out = out.replace(/^(?:(?:Pada\s+)?(?:gambar|foto|stiker|video|dokumen|tangkapan\s+layar)\s+(?:ini|tersebut)\s+(?:menampilkan|memperlihatkan|menunjukkan|tampak|terlihat|terdapat)|Di\s+dalam\s+(?:gambar|foto|stiker|video|dokumen)\s+ini|Berdasarkan\s+(?:gambar|foto|stiker|video|dokumen)\s+(?:yang\s+(?:diunggah|diberikan|dikirim)|ini))\s*[:,]?\s*/i, '');
   out = out.replace(/^(?:Stiker\s+ini\s+adalah\s+stiker|Gambar\s+ini\s+adalah\s+(?:sebuah\s+)?(?:gambar|foto|stiker))\s*[:,]?\s*/i, '');
+  out = out.replace(/^(?:Wah,\s*)?stiker\s+(?:ini\s+)?(?:seru|lucu|keren|kocak|menarik|banget|apaan)[^.!?\n]*[.!?\n]+\s*/i, '');
+  out = out.replace(/^Wah,\s*(?:ini\s+)?stiker[^.!?\n]*[.!?\n]+\s*/i, '');
+  out = out.replace(/#[a-zA-Z0-9_-]+/g, '');
+  out = out.replace(/[🐾🤖]/gu, '');
   if (/^SiSi$/i.test(out.trim())) out = 'Siapp! 👍';
   out = out.replace(/^SiSi\b/i, 'Siapp');
 
@@ -423,11 +427,15 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '   - DILARANG KERAS membuat klaim palsu bahwa kamu hanya bisa teks atau tidak bisa melihat/mendengar.',
     '   - SETIAP PESAN SUARA (VOICE NOTE) pengguna otomatis kamu dengar secara jernih. Tanggapi dengan wajar, hangat, dan percaya diri selayaknya teman mendengarkan voice note.',
     '   - PANDUAN MUTLAK RESPON STIKER (WA & TELEGRAM):',
-    '     * DILARANG KERAS MENDESKRIPSIKAN ULANG VISUAL STIKER! DILARANG berkata "Stiker ini menampilkan...", "Gambar ini adalah stiker...", dsb.',
-    '     * Pahami makna, suasana, atau emosi stiker tersebut dalam konteks percakapan saat itu.',
-    '     * Berikan respon manusiawi, luwes, santai, dan dinamis (cukup 1 reaksi santai, tawa wajar, atau komentar singkat yang nyambung).',
-    '     * DILARANG OVER-REACT DAN DILARANG SELALU MEMBAHAS "MUKA / KOMUK". Perlakukan stiker sebagai ekspresi obrolan biasa yang mengalir, bukan tontonan panggung.',
-    '     * DILARANG menggunakan template frasa hafalan. Berikan respon yang variatif dan segar!',
+    '     * DILARANG KERAS MENGARANG CERITA / DONGENG KHAYALAN! (DILARANG mengarang kompetisi/tren TikTok, profesi dancer/atlet/influencer, pantai/tempat fiktif, otot, dsb). Stiker bukan bahan dongeng atau karangan fiktif!',
+    '     * DILARANG KERAS MENDESKRIPSIKAN ULANG VISUAL STIKER! DILARANG berkata "Stiker ini menampilkan...", "Wah, stiker seru nih!", "Gambar ini adalah stiker...", dsb.',
+    '     * PANJANG RESPON: HANYA 1 KALIMAT PENDEK SANTAI (maksimal 5-12 kata) selayaknya respon teman akrab di WhatsApp saat dikirimi stiker. DILARANG MEMBUAT 2 PARAGRAF!',
+    '     * Pahami suasana, emosi, atau makna ekspresi di stiker dalam alur obrolan kalian:',
+    '       - Jika stiker hewan/karakter lucu/gemes (anjing pose split/love, kucing imut): "Wkwk lucu banget posenya split love gitu", "Gemes banget anjir posenya wkwk", "Buset lentur amat tuh anjing haha".',
+    '       - Jika stiker kocak / komuk banyol / meme: "Wkwkwk komuknya tolong", "Ngece bener mukanya haha", "Buset komuknya haha".',
+    '       - Jika stiker hormat / jempol / siap: "Siapp laksanakan!", "Mantap bro".',
+    '       - Jika stiker nangis / drama: "Wkwk drama banget stikernya".',
+    '     * ZERO ROBOT EMOJI / ZERO CRINGE EMOJI: Maksimal 1 emoji ekspresif wajar atau TANPA EMOJI sama sekali. DILARANG emoji robot, tertawa menangis 😂, atau jejak kaki 🐾.',
     '   - PANDUAN MUTLAK RESPON FOTO & MEDIA VISUAL:',
     '     * DILARANG KERAS MEMBUKA DENGAN KALIMAT ROBOTIK: "Gambar ini menampilkan...", "Foto tersebut memperlihatkan...", "Pada gambar terdapat...", "Di dalam foto ini tampak...", "Berdasarkan gambar..."!',
     '     * Jawablah seperti manusia normal yang sedang dikirimi foto oleh kawannya:',
@@ -823,6 +831,7 @@ export async function describeImage(
   base64: string,
   mime: string,
   caption?: string,
+  ctx?: ChatContext,
 ): Promise<{
   reply: string;
   via: string;
@@ -835,14 +844,21 @@ export async function describeImage(
 
   if (isSticker) {
     promptText = [
-      caption && caption.trim() ? `Catatan temanmu terkait stiker ini: "${caption.trim()}"` : '',
-      '[PENGGUNA MENGIRIM STIKER EKSPRESI]',
-      'ATURAN RESPON MUTLAK:',
-      '1. DILARANG KERAS MENDESKRIPSIKAN VISUAL STIKER! Jangan pernah berkata "Stiker ini menampilkan...", "Gambar ini adalah stiker...", dsb.',
-      '2. Pahami suasana, emosi, atau makna ekspresi di stiker tersebut dalam alur obrolan kalian.',
-      '3. Balas LANGSUNG dengan respon wajar, santai, proporsional, dan dinamis layaknya teman mengobrol di WhatsApp (cukup 1 reaksi santai, tawa wajar, atau komentar singkat yang mengalir).',
-      '4. DILARANG OVER-REACT DAN DILARANG SELALU MENGOMENTARI "MUKA / KOMUK". Perlakukan stiker sebagai ekspresi obrolan yang santai dan mengalir.',
-      '5. DILARANG menggunakan kalimat hafalan template! Buat respons yang alami dan segar dari pemahamanmu sendiri.',
+      '[PENGGUNA MENGIRIM STIKER EKSPRESI DI WHATSAPP/TELEGRAM]',
+      caption && caption.trim() ? `Catatan/Emoji stiker: ${caption.trim()}` : '',
+      'ATURAN RESPON STIKER (MUTLAK):',
+      '1. INI ADALAH STIKER CHAT WHATSAPP, BUKAN BAHAN ESSAY ATAU ANALISIS GAMBAR!',
+      '2. DILARANG KERAS MENGARANG CERITA / DONGENG KHAYALAN! (DILARANG mengarang kompetisi/tren TikTok, profesi dancer/atlet/influencer, pantai/tempat fiktif, otot, dsb). Stiker bukan bahan dongeng!',
+      '3. DILARANG KERAS MEMBUKA DENGAN KALIMAT KLISE / ROBOTIK: Dilarang "Wah, stiker seru nih!", "Stiker ini menampilkan...", "Gambar ini adalah stiker...", dsb!',
+      '4. PANJANG JAWABAN: HANYA 1 KALIMAT PENDEK SANTAI (maksimal 5-12 kata) selayaknya respon teman akrab di WhatsApp saat dikirimi stiker. DILARANG MEMBUAT 2 PARAGRAF!',
+      '   Contoh respon alami yang benar sesuai stiker:',
+      '   - Jika stiker hewan/karakter lucu/pose gemes (anjing split pose love, kucing imut): "Wkwk lucu banget posenya split love gitu", "Gemes banget posenya wkwk", "Buset lentur amat tuh anjing haha".',
+      '   - Jika stiker banyol / meme / komuk: "Wkwkwk komuknya tolong", "Ngece bener mukanya haha", "Buset komuknya haha".',
+      '   - Jika stiker jempol/hormat/siap: "Siapp laksanakan!", "Mantap bro".',
+      '   - Jika stiker nangis / drama: "Wkwk drama banget stikernya".',
+      '5. TANGGAPI SEIRAMA DENGAN OBROLAN TERAKHIR:',
+      '   - Perhatikan konteks percakapan terakhir kalian.',
+      '6. ZERO ROBOT EMOJI / ZERO CRINGE EMOJI: Maksimal 1 emoji ekspresif wajar atau TANPA EMOJI sama sekali. DILARANG emoji robot, tertawa menangis 😂, atau jejak kaki 🐾.',
     ].filter(Boolean).join('\n');
   } else if (isPdf) {
     promptText = caption && caption.trim()
@@ -881,10 +897,50 @@ export async function describeImage(
       text: promptText,
     },
   ];
+
+  const historyParts: ChatMsg[] = [];
+  if (ctx?.history && ctx.history.length > 0) {
+    const rawHistory = ctx.history.slice(-4);
+    for (const h of rawHistory) {
+      if (typeof h.content === 'string') {
+        historyParts.push({
+          role: h.role,
+          content: h.role === 'assistant' ? cleanMathAndNoise(h.content) : h.content,
+        });
+      }
+    }
+  }
+
   const messages: ChatMsg[] = [
-    { role: 'system', content: systemPrompt(undefined, null, promptText) },
+    { role: 'system', content: systemPrompt(ctx, null, promptText) },
+    ...historyParts,
     { role: 'user', content: parts },
   ];
+
   const { text, via, tokens } = await chatRetry(messages, true);
-  return { reply: sanitizeAssistantOutput(text), via, tokens };
+  let reply = sanitizeAssistantOutput(text);
+
+  if (isSticker) {
+    // 1. Bersihkan pembuka template klise stiker
+    reply = reply.replace(/^(?:Wah,\s*)?stiker\s+(?:ini\s+)?(?:seru|lucu|keren|kocak|menarik|banget|apaan)[^.!?\n]*[.!?\n]+\s*/i, '');
+    reply = reply.replace(/^Wah,\s*(?:ini\s+)?stiker[^.!?\n]*[.!?\n]+\s*/i, '');
+    reply = reply.replace(/#[a-zA-Z0-9_-]+/g, '');
+    reply = reply.replace(/[🐾🤖]/gu, '');
+
+    // 2. Jika model masih melantur membuat banyak paragraf / kalimat panjang, ambil kalimat pertama saja
+    const sentences = reply.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
+    if (sentences.length > 1) {
+      reply = sentences[0].trim();
+    }
+    // 3. Batasi panjang maksimal 120 karakter untuk respon stiker
+    if (reply.length > 120) {
+      reply = reply.slice(0, 120).replace(/\s+\S*$/, '').trim();
+    }
+    // 4. Fallback jika kosong
+    if (!reply) {
+      reply = 'Wkwk lucu banget posenya!';
+    }
+  }
+
+  return { reply, via, tokens };
 }

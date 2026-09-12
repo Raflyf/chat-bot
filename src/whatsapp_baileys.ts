@@ -243,6 +243,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
         const mime = m.message?.imageMessage?.mimetype || 'image/jpeg';
         const base64 = buffer.toString('base64');
+        const context = await getContext(chatKey);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -250,7 +251,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           content: text ? `[Gambar] ${text}` : '[Gambar]',
         });
 
-        const { reply, via, tokens } = await describeImage(base64, mime, text || undefined);
+        const { reply, via, tokens } = await describeImage(base64, mime, text || undefined, context);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
         await saveMessage({
           platform: 'whatsapp',

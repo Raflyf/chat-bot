@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.28  
+**Versi:** v0.25.29  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 14:05 WIB  
+**Terakhir Diperbarui:** 2026-09-12 14:25 WIB  
 
 ---
 
@@ -191,6 +191,28 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.29 - 2026-09-12 14:25 WIB
+**Eliminasi Total Dongeng & Khayalan Stiker, Respons 1 Kalimat Pendek WhatsApp, dan Prioritas Vision Qwen 3.8 Max**
+- **Eliminasi Total Cerita / Dongeng Khayalan Stiker (`src/skills.ts`, `src/media.ts`)**:
+  - **Akar Masalah**: Saat pengguna mengirimkan stiker anjing berpose split dengan tangan membentuk cinta (love), model AI sebelumnya melantur mengarang cerita fiktif dua paragraf tentang tantangan TikTok (#DogDanceChallenge), anjing jadi dancer profesional, jalan-jalan di pantai, influencer hewan lokal, hingga memamerkan otot-otot kokoh dengan taburan emoji slop (😂🐾).
+  - **Larangan Mutlak Cerita Fiktif (Zero Fanfiction / Anti-Hallucination Directives)**:
+    - Melarang keras model mengarang cerita, dongeng fiktif, profesi khayalan (dancer/atlet/influencer), kompetisi/tren TikTok, tempat fiktif (pantai/panggung), atau narasi otot saat melihat stiker.
+    - Menegaskan bahwa stiker chat WhatsApp/Telegram adalah gestur emosional atau banyolan ekspresif dalam obrolan, BUKAN bahan analisis gambar atau materi penulisan essay/cerita pendek.
+- **Standarisasi Panjang Respons Stiker Menjadi 1 Kalimat Pendek (5-12 Kata)**:
+  - Mewajibkan respons stiker hanya terdiri dari 1 kalimat santai dan proporsional layaknya teman mengobrol di WhatsApp. DILARANG membuat dua paragraf atau esai panjang.
+  - Tanggapan langsung fokus pada keimutan/kelucuan/ekspresi pose stiker (contoh: *"Wkwk lucu banget posenya split love gitu"*, *"Gemes banget posenya wkwk"*, *"Buset lentur amat tuh anjing haha"*).
+- **Penyelarasan Prioritas Model Vision Flagship (`src/providers.ts`)**:
+  - Menggeser `qwen/qwen3.8-max:free` ke posisi **#1** pada daftar `visionModels` xKiro, menggantikan `mistralai/mistral-large-2512` yang terbukti rentan berhalusinasi mengarang cerita fiktif panjang.
+  - Pengujian empiris membuktikan Qwen 3.8 Max merespons penglihatan gambar dalam latensi sub-detik (766ms), taat pada batasan satu kalimat, dan bebas dari halusinasi cerita.
+- **Integrasi Riwayat Percakapan (Context Passing) ke Vision Engine (`src/media.ts`, `src/skills.ts`)**:
+  - Memperbaiki `processIncomingSticker` dan `describeImage` untuk menerima dan mengalirkan `ctx?: ChatContext`.
+  - Menyuntikkan 4 pesan riwayat terakhir ke dalam array pesan model vision, sehingga model memahami alur percakapan sebelumnya dan merespons stiker secara seirama dengan topik obrolan yang sedang berlangsung.
+  - Mengalirkan `context` pada seluruh saluran pesan gambar dan stiker di WhatsApp Cloud API, WhatsApp Baileys, dan Telegram Bot API.
+- **Pembersihan Multi-Layer Post-Sanitizer Respon Stiker (`cleanMathAndNoise`, `describeImage`)**:
+  - Otomatis memangkas kalimat template klise (*"Wah, stiker seru nih!"*, *"Wah stiker lucu..."*).
+  - Otomatis menghapus seluruh hashtag fiktif (`#...`) dan emoji slop (`😂`, `🐾`, `🤖`).
+  - Memotong keluaran model menjadi kalimat pertama saja dan membatasi panjang maksimal 120 karakter jika model masih melantur.
 
 ### v0.25.28 - 2026-09-12 14:05 WIB
 **Sinkronisasi Katalog 9 Model xKiro di Dashboard & Eliminasi Estimasi Token Palsu Menjadi Upstream Real Usage**

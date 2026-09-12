@@ -220,9 +220,9 @@ function steps(): Step[] {
       keys: config.pools.xkiro,
       models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
       visionModels: [
-        'mistralai/mistral-large-2512',
         'qwen/qwen3.8-max:free',
         'mistralai/mistral-medium-3.5',
+        'mistralai/mistral-large-2512',
         'qwen/qwen3.6-plus:free',
         'mistralai/mistral-small-2603',
       ],

@@ -409,11 +409,8 @@ export async function processIncomingSticker(
   buffer: Buffer,
   mime: string = 'image/webp',
   emoji?: string,
-  _ctx?: ChatContext,
+  ctx?: ChatContext,
 ): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
-  const prompt = emoji
-    ? `Pengguna mengirim stiker ekspresi (terkait dengan emoji: ${emoji}). Tolong pahami emosi atau konteks humor dari stiker ini dan tanggapi secara santai, akrab, dan bersahabat layaknya seorang teman mengobrol.`
-    : 'Pengguna mengirim stiker ini. Tolong pahami emosi atau konteks humor dari stiker ini dan tanggapi secara santai, akrab, dan bersahabat layaknya seorang teman mengobrol.';
-
-  return await describeImage(buffer.toString('base64'), mime, prompt);
+  const stickerCaption = emoji ? `(Emoji stiker: ${emoji})` : undefined;
+  return await describeImage(buffer.toString('base64'), mime, stickerCaption, ctx);
 }

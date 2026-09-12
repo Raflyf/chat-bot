@@ -228,6 +228,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           const media = await downloadWhatsAppCloudMedia(m.image.id);
 
           if (media) {
+            const context = await getContext(chatKey);
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
@@ -235,7 +236,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               content: caption ? `[Gambar] ${caption}` : '[Gambar]',
             });
 
-            const { reply, via, tokens } = await describeImage(media.base64, media.mime, caption);
+            const { reply, via, tokens } = await describeImage(media.base64, media.mime, caption, context);
             await sendWhatsAppCloudMessageSafe(from, reply);
             await saveMessage({
               platform: 'whatsapp',
