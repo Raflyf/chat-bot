@@ -3,7 +3,7 @@ import { config } from './env.js';
 import { autoReply, describeImage } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage } from './db.js';
-import { getContext, noteExchange, saveCorrection, updateContextCache } from './memory.js';
+import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 
@@ -435,6 +435,20 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         }
 
         if (!text) continue;
+
+        // Cek perintah reset sesi
+        if (isResetCommand(text)) {
+          const reply = await resetSession(chatKey, 'whatsapp');
+          await sendWhatsAppCloudMessageSafe(from, reply);
+          void saveMessage({
+            platform: 'whatsapp',
+            chat_id: chatKey,
+            role: 'assistant',
+            content: reply,
+            via: 'system/reset',
+          });
+          continue;
+        }
 
         // 1. Ambil riwayat percakapan (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
         const context = await getContext(chatKey);
