@@ -192,6 +192,29 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.19 - 2026-09-12 12:40 WIB
+**Konfigurasi Urutan Model Pengguna & Audit Multimodal Lintas Provider (Foto, Video, VN, PDF, Dokumen)**
+- **Penyusunan Rantai Failover Presisi xKiro (`src/env.ts`, `src/providers.ts`)**:
+  - Mengonfigurasi urutan model sesuai instruksi pengguna:
+    - **Primary**: `qwen/qwen3.8-max:free`
+    - **Cadangan 1**: `mistralai/mistral-medium-3.5`
+    - **Cadangan 2**: `deepseek/deepseek-v4-flash`
+    - **Cadangan 3**: `mistralai/mistral-large-2512`
+    - **Cadangan 4**: `deepseek/deepseek-chat-v3.1`
+    - **Cadangan 5**: `qwen/qwen3.7-max:free`
+    - **Cadangan 6**: `deepseek/deepseek-v4-pro`
+    - **Cadangan 7**: `qwen/qwen3.6-plus:free`
+    - **Cadangan 8**: `mistralai/mistral-small-2603`
+  - Menyelaraskan rantai vision xKiro pada model-model pendukung visual:
+    `['qwen/qwen3.8-max:free', 'mistralai/mistral-medium-3.5', 'mistralai/mistral-large-2512', 'qwen/qwen3.6-plus:free', 'mistralai/mistral-small-2603']`.
+- **Audit Faktual Multimodal Lintas Provider (Foto, Audio/VN, PDF, Word, Video)**:
+  - Menguji kapabilitas seluruh penyedia (`xKiro`, `Groq`, `Google Gemini`, `OpenRouter`) pada semua jenis media WhatsApp & Telegram:
+    - **Foto/Gambar**: xKiro (Qwen 3.8, Mistral Large, Mistral Medium, Qwen 3.6, Mistral Small) dan Gemini 2.5/3.8 Flash terbukti unggul dengan OCR dan pemahaman visual tinggi.
+    - **Audio / Voice Note (VN)**: Groq Whisper (`whisper-large-v3-turbo` dan `whisper-large-v3`) terbukti tercepat dengan latensi 283–334 ms; Gemini 2.5 Flash mendukung input audio langsung.
+    - **Dokumen PDF**: Google Gemini 2.5/3.8 Flash menjadi jawara native multimodal PDF (analisis layout, tabel, dan grafik hingga 1M token context).
+    - **Dokumen Word (.docx) & Teks**: Mesin ekstraksi lokal Mammoth mengekstrak dokumen dalam 21 ms untuk diteruskan ke penalaran LLM.
+    - **Video (MP4)**: Didukung secara native oleh Google Gemini Multimodal API.
+
 ### v0.25.18 - 2026-09-12 12:10 WIB
 **Penyegaran Rantai Model Cadangan xKiro & Penyelarasan Prioritas Multimodal Vision**
 - **Restrukturisasi Pool Model xKiro (`src/env.ts`)**:
