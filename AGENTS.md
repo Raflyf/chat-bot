@@ -13,9 +13,9 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - Model Prioritas:
      1. `qwen/qwen3.8-max:free` (Model teks utama)
      2. `deepseek/deepseek-v4-flash` (Failover kecepatan tinggi)
-     3. `qwen/qwen3.6-plus:free` (Model penalaran sekunder)
-     4. `mistralai/mistral-large-2512` (Model cadangan ketiga)
-     5. `deepseek/deepseek-v4-pro` (Model cadangan akhir)
+     3. `deepseek/deepseek-chat-v3.1` (Model penalaran percakapan alami)
+     4. `deepseek/deepseek-v4-pro` (Model penalaran mendalam)
+     5. `deepseek/deepseek-v3.2` & `qwen/qwen3.7-max:free` (Model cadangan lanjutan)
    - Multi-Key Rotation: Menggunakan pool API keys dengan rotasi otomatis saat limit tercapai.
 
 2. **Gateway Sekunder & Model Mandiri:**

@@ -44,9 +44,12 @@ export const config = {
         'deepseek/deepseek-v4-flash',
         'deepseek/deepseek-chat-v3.1',
         'deepseek/deepseek-v4-pro',
-        'qwen/qwen3.6-plus:free',
+        'deepseek/deepseek-v3.2',
         'qwen/qwen3.7-max:free',
-        'mistralai/mistral-large-2512',
+        'qwen/qwen3.7-plus:free',
+        'qwen/qwen3.6-plus:free',
+        'qwen/qwen3.5-omni-plus:free',
+        'qwen/qwen3.5-plus:free',
       ];
       const raw = csv('XKIRO_MODEL_BACKUPS');
       const list = raw.length > 0 ? raw : preferred;
@@ -57,8 +60,9 @@ export const config = {
         set.delete(m);
       }
       for (const m of set) {
-        // Jangan gunakan model yang menghasilkan halusinasi bahasa terjemahan rusak untuk chat teks
-        if (m !== 'mistralai/mistral-medium-3.5' && m !== 'mistralai/mistral-small-2603') {
+        // Hapus total seluruh varian model mistral (cenderung over-eager, banyak nanya, dan halusinasi)
+        const low = m.toLowerCase();
+        if (!low.includes('mistral') && !low.includes('codestral') && !low.includes('devstral') && !low.includes('ministral')) {
           result.push(m);
         }
       }
