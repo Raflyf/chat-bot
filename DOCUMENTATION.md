@@ -192,6 +192,23 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.16 - 2026-09-12 11:59 WIB
+**Penyempurnaan Dataset Evaluasi: Kolom Tanggal & Jam Lokal Terpisah serta Penanda Waktu pada Nama Berkas**
+- **Penambahan Kolom Tanggal, Jam, dan Waktu Lokal Terpisah (`api/dataset.ts`)**:
+  - Memecah timestamp mentah ISO UTC database Supabase (`createdAt`) menjadi komponen lokal yang presisi sesuai zona waktu pengguna (default: `Asia/Jakarta` / WIB):
+    - `Tanggal`: format `YYYY-MM-DD` (contoh: `2026-09-12`).
+    - `Jam`: format `HH:mm:ss` 24 jam (contoh: `01:20:01`).
+    - `Waktu_Lokal`: format lengkap berlabel zona waktu (contoh: `2026-09-12 01:20:01 WIB`).
+    - `Waktu_UTC`: mempertahankan timestamp ISO mentah asli database untuk kebutuhan audit teknis.
+  - Memastikan lembar kerja Excel, Google Sheets, atau aplikasi spreadsheet lainnya dapat langsung membaca, memfilter, dan mengurutkan data berdasarkan jam percakapan tanpa terpotong atau mengalami pergeseran selisih waktu UTC.
+- **Timestamp Jam pada Penamaan Berkas Unduhan (`api/dataset.ts`, `public/dashboard.html`)**:
+  - Menyematkan jam dan menit ekspor pada nama berkas unduhan dataset:
+    - Contoh: `evaluasi_chatbot_hari_ini_2026-09-12_jam_11-59.csv` atau `evaluasi_chatbot_semua_2026-09-12_jam_11-59.csv`.
+    - Format JSONL: `training_dataset_hari_ini_2026-09-12_jam_11-59.jsonl`.
+  - Mencegah penumpukan berkas dengan akhiran duplikasi browser seperti `(1)`, `(6)`, `(7)` sehingga pengguna dapat langsung mengetahui waktu pasti saat dataset diunduh.
+- **Integrasi Metadata Waktu Lokal pada Format JSONL (`api/dataset.ts`)**:
+  - Menyertakan field `timestamp_lokal`, `tanggal_lokal`, dan `jam_lokal` pada metadata tiap pasangan dialog JSONL untuk mempermudah pipeline training dan evaluasi.
+
 ### v0.25.15 - 2026-09-12 02:48 WIB
 **Evaluasi Tebakan Dinamis Anti-Template (Ketebak vs Tebakan Salah vs Nyerah)**
 - **Penanganan Tebakan Benar / Ketebak (`src/skills.ts`)**:
