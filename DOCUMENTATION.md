@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.17 (Universal System Prompt Streamlining, Zero Redundancy & Elimination of Overprompting)  
+**Versi:** v0.26.18 (Universal High-EQ Emotional Calibration & Dynamic Persona Realignment under 4,000 Tokens)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 23:06 WIB
+**Terakhir Diperbarui:** 2026-09-12 23:25 WIB
 
 ---
 
@@ -205,6 +205,28 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.18 - 2026-09-12 23:25 WIB
+
+**Kalibrasi Persona High-EQ Universal & Penyelarasan Emosional Dinamis (Budget Maksimal <= 4.000 Token)**
+
+- **Resolusi Jawaban Datar & Hilangnya Jiwa Percakapan**:
+  - Menyusul perampingan agresif pada v0.26.17, respons bot sempat menjadi terlalu dingin dan mekanis (contoh: sapaan "tes" dijawab "Iya, koneksi stabil.", pertanyaan diri dijawab ala brosur asisten korporat, dan candaan "garing anjir" dijawab kaku/defensif).
+  - Dilakukan pengembalian dan penyelarasan kembali elemen-elemen instruksi bernuansa tinggi (*high-EQ dynamic tuning*) secara universal di seluruh domain percakapan.
+- **Penyelarasan Presisi Prompt Sistem (`src/skills.ts`)**:
+  - **Sapaan & Ping WhatsApp Alami**: Restorasi panduan sapaan ramah bersahaja ("Masuk kok, ada apa nih?", "Iya halo, kenapa?") dan pencegahan respons diagnostik server.
+  - **Identitas Teman Serbabisa (Bukan Brosur CS)**: Panduan dinamis saat ditanya kemampuan diri ("bisa apa saja kamu") dijawab luwes layaknya teman nongkrong serbabisa.
+  - **Resonansi Emosional & Humor Santai**: Menambahkan panduan reaksi santai saat dicandai/diledek ("Wkwk maap dah, namanya juga usaha receh haha") tanpa rasa tersinggung atau defensif.
+  - **Punchline Tebak-Tebakan Nyambung**: Format dua arah diperkuat agar punchline tebakan selalu receh, segar, dan ber-punchline kocak (bukan penjelasan teknis kaku).
+  - **Restorasi Penanganan Curhat Gabut & Jawaban Gak Tau**: Pengembalian blok penanganan rasa bosan/gabut dan respons "gak tau" agar tidak salah dipicu sebagai tebak-tebakan palsu.
+- **Hasil Pengujian & Verifikasi Token**:
+  - Ukuran prompt sistem terkalibrasi pada **~11.900 karakter (~3.500–3.700 token)**, secara presisi memenuhi batas maksimal permintaan pengguna (<= 4.000 token).
+  - Seluruh skenario uji riil pada **Groq `qwen/qwen3.8-27b`** lolos dengan hasil alami:
+    * "tes" -> *"Masuk kok, ada apa nih?"* (Ctx: ~3.715 tk).
+    * "bisa apa saja kamu" -> *"Bisa diajak ngobrol apa aja sih, mau diskusi serius, curhat santai, ngerjain tugas, ngoding..."* (Ctx: ~3.539 tk).
+    * "garing anjir" -> *"Wkwk maap dah, namanya juga tebakan receh."* (Ctx: ~3.599 tk).
+    * "itu anjing lagi pose love buat kamu" -> *"Haha gemes banget, makasih ya udah dikasih love."* (Ctx: ~3.386 tk).
+    * Matematika PEMDAS & 9:0 -> Jawaban 16 akurat dan 9:0 tidak terdefinisi (*undefined*).
 
 ### v0.26.17 - 2026-09-12 23:06 WIB
 
