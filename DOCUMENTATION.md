@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.5 (Audit Verification Round 5 Full Resolution & Zero Unsafe-Inline CSP)  
+**Versi:** v0.26.6 (Dynamic Companion Tuning, DeepSeek Model Priority & Serverless Awaited Persistence)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 19:15 WIB
+**Terakhir Diperbarui:** 2026-09-12 20:20 WIB
 
 ---
 
@@ -205,6 +205,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.6 - 2026-09-12 20:20 WIB
+
+**Tuning Persona Dinamis High-EQ, Penggunaan Emoji Kontekstual Tepat Waktu, Prioritas Failover DeepSeek, dan Sinkronisasi Persistensi Awaited Serverless**
+
+- **Restorasi Tuning Interaksi Alami & Gradual Pacing Persona (Acuan v0.25.1)**:
+  - **Sapaan Awal & Ping Singkat Bersahaja**: Sapaan singkat atau ping awal ("oyyy", "p", "halo", "lagi apa") kini disambut dengan tenang, hangat, dan membumi (contoh: "Oy, ada apa nih?", "Iya halo, kenapa?"). Menghilangkan total pembuka tawa histeris "Hahaha" yang tidak dipicu kelucuan, eliminasi lelucon halusinasi aneh ("nyanyi Oyyy seperti lagu lama"), dan penghapusan interogasi klise opsi ganda di pesan pembuka.
+  - **Penggunaan Emoji Dinamis & Kontekstual**: Emoji diperbolehkan secara tepat waktu dan proporsional (maksimal 1 emoji per pesan) saat konteks percakapan memang hangat, banyol, menghibur, atau memberi semangat, dan dinonaktifkan pada sapaan awal/formal agar tidak terkesan over-react atau cringe.
+  - **Adaptasi Dinamis & Penyelarasan Alur Suasana**: Gaya bahasa bot 100% membaca situasi dan emosi percakapan pengguna (dynamic style mirroring). Respons santai jika santai, empati tulus jika pengguna curhat lelah/capek, dan playfully banter jika pengguna bercanda/meledek.
+- **Restrukturisasi Failover Model & Eliminasi Halusinasi Mistral Medium (`src/env.ts`)**:
+  - Model DeepSeek native (`deepseek/deepseek-v4-flash`, `deepseek/deepseek-chat-v3.1`, `deepseek/deepseek-v4-pro`) diposisikan pada prioritas teratas rantai failover xKiro mendahului model lain.
+  - Mengeluarkan `mistralai/mistral-medium-3.5` dan `mistralai/mistral-small-2603` dari inferensi chat teks untuk mencegah kemunculan terjemahan rusak ("ngoyy begini", "nge-venta lelah", unprompted emojis).
+- **Penegakan Awaited Persistence di Vercel Serverless (`src/telegram.ts`, `src/whatsapp_cloud.ts`)**:
+  - Seluruh pemanggilan `saveMessage` untuk balasan asisten kini di-`await` secara sinkron sebelum siklus request HTTP selesai. Hal ini mencegah Vercel Lambda membekukan atau mematikan proses penyimpanan sebelum data terkirim ke Supabase, menuntaskan masalah riwayat asisten kosong di Dashboard.
+  - Penyeragaman klaim pesan atomik Telegram (`claimIncomingMessage`) untuk berbagai jenis media (`[Gambar]`, `[Pesan Suara]`, `[Dokumen]`, dll).
 
 ### v0.26.5 - 2026-09-12 19:20 WIB
 

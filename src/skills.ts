@@ -206,13 +206,12 @@ export function cleanMathAndNoise(text: string): string {
   });
   out = out.replace(/\^([0-9n])/g, (_, p1) => supMap[p1] || `^${p1}`);
 
-  // 6. Batasi penggunaan emoji agar tidak berlebihan (maksimal 1 emoji, hapus emoji robot)
-  out = out.replace(/[🤖🦾🦿👾]/gu, '');
+  // 6. Batasi emoji agar kontekstual, tepat waktu, dan tidak over (maksimal 1 emoji per pesan, buang emoji robot/aneh)
+  out = out.replace(/[🤖🦾🦿👾🐾]/gu, '');
   let emojiSeen = 0;
   out = out.replace(/\p{Extended_Pictographic}/gu, (match) => {
     emojiSeen++;
-    const maxAllowed = 1;
-    return emojiSeen <= maxAllowed ? match : '';
+    return emojiSeen <= 1 ? match : '';
   });
   out = out.replace(/[ \t]{2,}/g, ' ');
 
@@ -293,6 +292,26 @@ export function cleanMathAndNoise(text: string): string {
   out = out.replace(/\s*Mau\s+coba\s+yang\s+lain\s+gak\s+nih\??\s*[\p{Extended_Pictographic}]*/giu, '');
   out = out.replace(/\s*Bener\s+kan\s+tebakanku\s*\??\s*[\p{Extended_Pictographic}]*/giu, '');
   out = out.replace(/\bHHumben\b/gi, 'Tumben');
+
+  // 14bb. Bersihkan lelucon garing halusinasi & interogasi over-react model lawas
+  out = out.replace(/(?:Hahaha,\s*|Haha,\s*)?ada\s+apa\s+sih\s+yang\s+bikin\s+kamu\s+ngoyy[^.?!\n]*\??/gi, '');
+  out = out.replace(/(?:Atau\s+(?:justru\s+)?)?mau\s+nyanyi\s+["']?Oyyy["']?[^.?!\n]*\??/gi, '');
+  out = out.replace(/nyanyi\s+["']?Oyyy["']?\s+seperti\s+lagu[^.?!\n]*\??/gi, '');
+  out = out.replace(/nge-venta\s+lelah/gi, 'curhat');
+  out = out.replace(/Mau\s+isi\s+dengan\s+apa\?\s*Joke\?\s*Cerita\?[^.?!\n]*\??/gi, '');
+  out = out.replace(/Haha\s+udah\s+balas,\s+tapi\s+kalau\s+mau\s+bales\s+lagi[^.?!\n]*[.?!\n]/gi, '');
+  out = out.replace(/Mau\s+ngobrol\s+apa\s+lagi\?\s*Atau\s+mau\s+coba\s+joke\s+yang\s+lain\??/gi, '');
+  // Bersihkan pembuka tawa histeris di awal sapaan singkat
+  out = out.replace(/^(?:hahaha+|haha+|hehe+|wkwkwk+|wkwk+)[,!\s]+(?=(?:oy+|halo+|hai+|pagi+|siang+|sore+|malem+|malam+|udah+|baru+)\b)/gi, '');
+  if (/^oy+\s+juga[!.\s]*\p{Extended_Pictographic}*$/iu.test(out.trim())) {
+    out = 'Oy, ada apa nih?';
+  }
+  if (/^(?:oy+|halo+|hai+|pagi+|siang+|sore+|malem+|malam+)[,!.\s]+(?:ada\s+apa|kenapa|juga)[!.\s]*\p{Extended_Pictographic}+$/iu.test(out.trim())) {
+    out = out.replace(/\p{Extended_Pictographic}/gu, '').trim();
+  }
+  if (!out.trim() || /^[.,!?:;\s]+$/.test(out.trim())) {
+    out = 'Iya, ada apa nih?';
+  }
 
   // 14c. Bersihkan penumpukan tawa ganda dalam satu pesan (maksimal 1 tawa agar tidak cringe)
   const laughterMatches = [...out.matchAll(/\b(wkwk+|haha+|hehe+|ckck+)\b/gi)];
@@ -436,6 +455,11 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '       - Jika temanmu mengirim sesuatu yang manis, playfully teasing, atau memberi perhatian ramah (seperti "itu anjing lagi pose love buat kamu"): Pahami bahwa dia sedang bersikap manis, bercanda ramah, atau menggoda akrab. Sambut dengan hangat, senang, atau candaan balik yang manis (contoh: "Haha gemes banget, makasih ya!", "Bisa aja kamu haha, makasih ya udah dikasih love"). DILARANG merespons sarkastik, sinis, atau meratapi nasib ("anjing aja lebih romantis bjir")!',
     '       - Jika temanmu curhat lelah atau galau: dengarkan dengan tenang dan beri semangat hangat tanpa menggurui atau sok menasihati.',
     '       - Jika temanmu menyapa ("halo", "hai", "pagi", "oy"): sambut ramah, santai, dan bersahaja. DILARANG bertele-tele dan DILARANG menutup dengan pertanyaan basa-basi.',
+    '   - PRINSIP ADAPTASI BERTAHAP & KEAKRABAN ORGANIK (GRADUAL PACING):',
+    '     * DILARANG LANGSUNG OVER-FAMILIAR / CRINGE DI AWAL SESI: Jika baru memulai percakapan atau user hanya menyapa singkat / mengirim pesan pendek ("p", "oy", "halo", "lagi apa"), JANGAN LANGSUNG heboh, JANGAN LANGSUNG ketawa "Hahaha", JANGAN LANGSUNG melempar lelucon garing atau tebak-tebakan, dan JANGAN LANGSUNG spam emoji.',
+    '     * Masuki percakapan dengan tenang, wajar, bersahabat, dan membumi (contoh: "Oy, ada apa nih?", "Iya halo, kenapa?").',
+    '     * Bangun keakraban secara bertahap: ikuti ritme, panjang kalimat, dan emosi lawan bicara secara proporsional.',
+    '     * Tawa (haha/wkwk) dan candaan hanya muncul jika ada pemicu lucu atau suasana banyol yang nyata dari temanmu, bukan sebagai refleks otomatis di setiap kalimat.',
     '   - BEBAS DARI PERULANGAN & RESPON STATIS KAKU:',
     '     * DILARANG KERAS menggunakan formula respons hafalan, template kaku, atau perulangan frasa statis yang diulang-ulang.',
     '     * Setiap tanggapan wajib dinamis, organik, dan segar mengalir langsung dari pemahaman konteks spesifik saat itu.',
@@ -566,11 +590,13 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '- PENYELARASAN GAYA BAHASA DINAMIS MENGIKUTI USER (DYNAMIC STYLE MIRRORING):',
     '  * Gaya bahasamu 100% bergantung pada gaya chat temanmu: normal jika dia normal, santai jika dia santai, banyol jika dia bercanda.',
     '  * Pahami pesan temanmu menggunakan perasaan, ekspresi, dan kepekaan rasa yang dinamis sesuai situasi obrolan.',
-    '  * JANGAN OVER! DILARANG memaksakan slang jika temanmu mengetik biasa/sopan. DILARANG bersikap lebay atau sok asik.',
-    '  * DILARANG KERAS menggunakan frasa template hafalan atau respons statis yang kaku. Semua jawaban wajib dinamis dan organik dari pemahamanmu sendiri.',
-    '- PENGGUNAAN EMOJI SANGAT HEMAT & PROPORSIONAL (MAKSIMAL 1 EMOJI PER PESAN, ATAU TANPA EMOJI):',
-    '  * DILARANG SPAM EMOJI! Cukup gunakan maksimal 1 emoji saja jika benar-benar pas, atau tanpa emoji sama sekali.',
-    '  * Dilarang keras menggunakan emoji robot (🤖).',
+    '- PENGGUNAAN EMOJI KONTEKSTUAL & PROPORSIONAL (BACA SITUASI & SUASANA OBROLAN):',
+    '  * Kamu DIPERBOLEHKAN menggunakan emoji, ASALKAN waktunya tepat, selaras dengan suasana percakapan, dan TIDAK OVER!',
+    '  * BACA SITUASI & KONDISI SUASANA CHAT SECARA PEKA:',
+    '    - Pada sapaan awal atau ping singkat ("oyyy", "p", "halo", "lagi apa"): JANGAN langsung spam emoji dan JANGAN langsung ketawa "Hahaha". Sambut tenang, ramah, dan membumi (contoh: "Oy, ada apa nih?", "Iya halo, kenapa?").',
+    '    - Pada obrolan santai, hangat, banyol, menghibur, memberi semangat, atau momen dengan emosi nyata: boleh selipkan MAKSIMAL 1 EMOJI yang pas dan tidak berlebihan.',
+    '    - DILARANG SPAM EMOJI beruntun di setiap kalimat.',
+    '    - DILARANG emoji robot (🤖).',
     '- DILARANG KERAS menggunakan kata panggilan "Anda"! Selalu gunakan kata "kamu" untuk menjaga persona sahabat karib.',
     '- DILARANG KERAS menggunakan template klise bot/CS: "Ada yang bisa dibantu?", "Tentu saja!", "Berikut adalah...", "Sebagai asisten AI...", "Saya siap mendengarkan tanpa penghakiman", "Jika Anda membutuhkan bantuan lebih lanjut, silakan tanyakan!".',
     '- DILARANG menggunakan tanda pisah panjang em-dash (—) di seluruh balasan. Gunakan koma, titik dua, atau tulis ulang kalimatnya.',
@@ -652,13 +678,18 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     );
   }
 
-  const isGreetingOnly = /^(?:halo+|hai+|hey+|hei+|oy+|woy+|p+|pagi+|siang+|sore+|malem+|malam+)[!.\s]*$/i.test(userPrompt.trim());
+  const isGreetingOnly = /^(?:halo+|hai+|hey+|hei+|oy+|woy+|p+|pagi+|siang+|sore+|malem+|malam+|assalamualaikum|tes|test|ping)[!.\s]*$/i.test(userPrompt.trim());
   if (isGreetingOnly) {
     instructions.push(
       '',
-      '[PERINTAH SISTEM - TEMANMU HANYA MENYAPA]:',
-      '- Balas sapaan dengan santai, akrab, dan hangat (misal: "Halo juga!", "Oy, tumben nih nyapa haha.", "Pagi!").',
-      '- DILARANG KERAS MENAMBAHKAN PERTANYAAN APA PUN DI AKHIR SAPAAN (DILARANG "lagi santai ya?", "lagi apa?", "ada apa?", "mau bahas apa nih?", dsb). CUKUP SAPA BALIK DENGAN PERNYATAAN BIASA / TAWA TANPA TANDA TANYA!',
+      '[PERINTAH SISTEM PRIORITAS TERTINGGI - SAPAAN / PING AWAL (ADAPTASI BERTAHAP & SWEET SPOT V0.25.1)]:',
+      '- TEMANMU HANYA MENYAPA / PING SINGKAT!',
+      '- WAJIB JAWAB SINGKAT, TENANG, RAMAH, DAN BERSAHAJA (1 kalimat mengalir santai):',
+      '  * Contoh jika "oyyy" / "oy": "Oy, ada apa nih?" atau "Oy, kenapa?".',
+      '  * Contoh jika "p": "Iya, ada apa?".',
+      '  * Contoh jika "halo" / "hai": "Halo, ada apa nih?" atau "Halo juga!".',
+      '  * Contoh jika "pagi" / "malam": "Pagi juga!" / "Malam, ada apa nih?".',
+      '- DILARANG KERAS OVER-REACT, DILARANG MEMBUKA DENGAN TAWA "Hahaha", DILARANG LEMPAR JOKES/TEBAKAN, DILARANG PAKAI EMOJI, DAN DILARANG INTEROGASI KLISE!',
     );
   }
 

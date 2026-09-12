@@ -455,13 +455,13 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           const reply = await resetSession(chatKey, 'whatsapp');
           await sendWhatsAppCloudMessageSafe(from, reply);
           void markMessageProcessed('whatsapp', messageId);
-          void saveMessage({
+          await saveMessage({
             platform: 'whatsapp',
             chat_id: chatKey,
             role: 'assistant',
             content: reply,
             via: 'system/reset',
-          });
+          }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan reset assistant:', err));
           continue;
         }
 
@@ -507,7 +507,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         // 2. Update cache in-memory & sinkronkan teks riil user ke database
         updateContextCache(chatKey, 'user', text);
-        void saveMessage({
+        await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'user',
@@ -535,9 +535,9 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         await sendWhatsAppCloudMessageSafe(from, reply);
         void markMessageProcessed('whatsapp', messageId);
 
-        // 6. Update cache memori & simpan balasan asisten ke database Supabase secara non-blocking
+        // 6. Update cache memori & simpan balasan asisten ke database Supabase
         updateContextCache(chatKey, 'assistant', reply);
-        void saveMessage({
+        await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',
