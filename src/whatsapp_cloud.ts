@@ -505,9 +505,9 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // 1. Ambil riwayat percakapan (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
         const context = await getContext(chatKey);
 
-        // 2. Update cache in-memory & sinkronkan teks riil user ke database
+        // 2. Update cache in-memory & sinkronkan teks riil user ke database (non-blocking agar tidak menunda autoReply)
         updateContextCache(chatKey, 'user', text);
-        await saveMessage({
+        void saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'user',

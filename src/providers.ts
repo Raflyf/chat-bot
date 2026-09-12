@@ -1,5 +1,85 @@
+import crypto from 'crypto';
 import { config } from './env.js';
 import { isKeyAllowed, keyUsed, ensureKeyQuotaHydrated } from './quota.js';
+
+// --- CIRCUIT BREAKER & ADAPTIVE KEY ROUTING (LATENCY OPTIMIZER) ---
+const keyCooldownMap = new Map<string, number>(); // `${kind}:${keyHash}` -> timestamp cooldown
+const lastSuccessfulKeyMap = new Map<ProviderKind, string>(); // kind -> key
+const modelCooldownMap = new Map<string, number>(); // `${kind}:${model}` -> timestamp cooldown
+
+function keyHash(key: string): string {
+  return crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
+}
+
+function recordKeySuccess(kind: ProviderKind, key: string, model: string): void {
+  lastSuccessfulKeyMap.set(kind, key);
+  keyCooldownMap.delete(`${kind}:${keyHash(key)}`);
+  modelCooldownMap.delete(`${kind}:${model}`);
+}
+
+function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
+  const kh = `${kind}:${keyHash(key)}`;
+  const msg = err instanceof Error ? err.message : String(err);
+
+  // Jika rate limited (429), cooldown 60s
+  if (msg === 'RATE_LIMITED' || (err as { code?: string })?.code === 'RATE_LIMITED' || msg.includes('429')) {
+    keyCooldownMap.set(kh, Date.now() + 60_000);
+    return;
+  }
+
+  // Jika 401/403 (kunci salah / izin ditolak), cooldown 5 menit
+  if (msg.includes('PROVIDER_401') || msg.includes('PROVIDER_403')) {
+    keyCooldownMap.set(kh, Date.now() + 300_000);
+    return;
+  }
+
+  // Jika 500, 502, 503, 504 atau connect timeout, cooldown 45s
+  if (
+    msg.includes('PROVIDER_50') ||
+    msg === 'CONNECT_TIMEOUT' ||
+    msg === 'THINKING_TIMEOUT'
+  ) {
+    keyCooldownMap.set(kh, Date.now() + 45_000);
+    return;
+  }
+}
+
+function isModelCoolingDown(kind: ProviderKind, model: string): boolean {
+  const cd = modelCooldownMap.get(`${kind}:${model}`) || 0;
+  return Date.now() < cd;
+}
+
+function recordModelFailure(kind: ProviderKind, model: string, durationMs: number = 45_000): void {
+  // Cooldown pada model agar request berikutnya langsung mencoba model cadangan tanpa lag berganda
+  modelCooldownMap.set(`${kind}:${model}`, Date.now() + durationMs);
+}
+
+function getOrderedKeys(kind: ProviderKind, keys: string[]): string[] {
+  if (keys.length <= 1) return keys;
+  const now = Date.now();
+  const lastSuccess = lastSuccessfulKeyMap.get(kind);
+
+  const healthy: string[] = [];
+  const cooling: string[] = [];
+
+  for (const k of keys) {
+    const kh = `${kind}:${keyHash(k)}`;
+    const cd = keyCooldownMap.get(kh) || 0;
+    if (now < cd) {
+      cooling.push(k);
+    } else {
+      healthy.push(k);
+    }
+  }
+
+  // Jika key sukses terakhir ada dan sehat, tempatkan di prioritas #1 (sticky key)
+  if (lastSuccess && healthy.includes(lastSuccess)) {
+    healthy.sort((a, b) => (a === lastSuccess ? -1 : b === lastSuccess ? 1 : 0));
+  }
+
+  // Utamakan key yang sehat. Jika seluruh key sedang cooling, gunakan cooling sebagai fallback darurat
+  return healthy.length > 0 ? healthy : cooling;
+}
 
 export interface TextPart {
   type: 'text';
@@ -125,11 +205,17 @@ export interface ProviderResult {
   };
 }
 
-async function openAiChat(baseUrl: string, key: string, model: string, messages: ChatMsg[]): Promise<ProviderResult> {
+async function openAiChat(
+  baseUrl: string,
+  key: string,
+  model: string,
+  messages: ChatMsg[],
+  maxTokensOverride?: number,
+): Promise<ProviderResult> {
   const data = (await postJson(`${baseUrl}/chat/completions`, key, {
     model,
     messages,
-    max_tokens: config.maxOutputTokens,
+    max_tokens: maxTokensOverride ?? config.maxOutputTokens,
     temperature: 0.7,
     presence_penalty: 0.5,
     frequency_penalty: 0.3,
@@ -253,7 +339,7 @@ function steps(): Step[] {
       models: [config.models.groqPrimary, config.models.groqBackup],
       visionModels: [],
       cap: config.dailyCap.groq,
-      run: (k, m, msgs) => openAiChat('https://api.groq.com/openai/v1', k, m, msgs),
+      run: (k, m, msgs) => openAiChat('https://api.groq.com/openai/v1', k, m, msgs, 800),
     },
     {
       kind: 'gemini',
@@ -304,20 +390,58 @@ export async function chat(
   for (const step of orderedSteps) {
     const models = needVision ? step.visionModels : step.models;
     for (const model of models) {
-      for (const key of step.keys) {
+      // Fast-pass: Lewati model yang sedang dalam cooldown server error (0ms overhead)
+      if (isModelCoolingDown(step.kind, model)) {
+        continue;
+      }
+
+      const candidateKeys = getOrderedKeys(step.kind, step.keys);
+      let anyKeyAttempted = false;
+      let allKeysFailedWithServerError = true;
+
+      for (const key of candidateKeys) {
         if (!(await isKeyAllowed(step.kind, key, step.cap))) continue;
+        anyKeyAttempted = true;
         try {
           const result = await step.run(key, model, messages);
+          recordKeySuccess(step.kind, key, model);
           keyUsed(step.kind, key);
           cacheSet(cacheKey, result.text);
           return { text: result.text, via: `${step.kind}/${model}`, tokens: result.tokens };
         } catch (e) {
           lastError = e instanceof Error ? e.message : 'UNKNOWN';
+          recordKeyFailure(step.kind, key, e);
+
+          // Jika model 404 (tidak ditemukan), jangan coba kunci lain untuk model yang sama
+          if (lastError.includes('PROVIDER_404')) {
+            recordModelFailure(step.kind, model, 30 * 60_000);
+            break;
+          }
+
+          // Jika model 413 (payload terlalu besar untuk kuota ITPM model ini), langsung lompat
+          if (lastError.includes('PROVIDER_413')) {
+            recordModelFailure(step.kind, model, 15 * 60_000);
+            break;
+          }
+
           // Catat pemakaian hanya jika rate limited (agar pool beralih), bukan pada error 500 atau kegagalan jaringan
           if (lastError === 'RATE_LIMITED' || (e as { code?: string })?.code === 'RATE_LIMITED') {
             keyUsed(step.kind, key);
+            allKeysFailedWithServerError = false;
+          } else if (
+            !lastError.includes('PROVIDER_50') &&
+            lastError !== 'CONNECT_TIMEOUT' &&
+            lastError !== 'THINKING_TIMEOUT'
+          ) {
+            allKeysFailedWithServerError = false;
           }
         }
+      }
+
+      // Jika seluruh key yang dicoba pada model ini gagal karena server outage / timeout,
+      // beri cooldown pada model tersebut agar request berikutnya langsung melompat tanpa delay
+      if (anyKeyAttempted && allKeysFailedWithServerError) {
+        recordModelFailure(step.kind, model);
       }
     }
   }

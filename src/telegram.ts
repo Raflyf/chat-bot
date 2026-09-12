@@ -416,9 +416,9 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     // Fast-path in-memory context (0ms saat aktif)
     const ctx = await getContext(chatKey);
 
-    // Update cache in-memory & pastikan pesan teks user tersimpan sinkron
+    // Update cache in-memory & pastikan pesan teks user tersimpan (non-blocking agar autoReply langsung jalan)
     updateContextCache(chatKey, 'user', text);
-    await saveMessage({
+    void saveMessage({
       platform: 'telegram',
       chat_id: chatKey,
       role: 'user',
