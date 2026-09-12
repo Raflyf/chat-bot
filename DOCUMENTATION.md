@@ -192,6 +192,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.23 - 2026-09-12 13:12 WIB
+**Penyelesaian Tuntas Masalah Interogasi Berulang & Penghapusan Pertanyaan Penutup Klise (`src/skills.ts`)**
+- **Eliminasi Mandat Pancingan & Pertanyaan Lanjutan**:
+  - Menghapus instruksi lama yang menyuruh bot menutup respons dengan "pancingan santai atau ajakan ngobrol" atau "1 pertanyaan lanjutan".
+  - Menetapkan Aturan 5 baru: **LARANGAN MUTLAK INTEROGASI & SELALU BERTANYA DI SETIAP AKHIR CHAT (STRICT NO FORCED CLOSING QUESTIONS)**.
+  - Melarang keras pertanyaan klise seperti: *"Mau coba yang lain gak nih?"*, *"Mau bahas apa nih biar gak bosen?"*, *"Lagi santai atau lagi gabut aja?"*, *"Mau digombalin lagi atau ganti topik?"*, *"Bener kan tebakanku?"*, *"Mau tebak-tebakan receh atau cerita random aja?"*.
+  - Mengembalikan esensi chatting normal: cukup menanggapi, berkomentar wajar, bercanda, atau memberikan jawaban tuntas selesai tanpa tanda tanya (?) di akhir.
+- **Penanganan Sapaan Singkat & Keluhan Gabut (`src/skills.ts`)**:
+  - `isGreetingOnly`: Sapaan murni ("Halo", "Hai", "P", "Pagi") dibalas hangat dan tuntas ("Halo juga!", "Oy, tumben nih nyapa haha.") tanpa pertanyaan bercabang.
+  - `isGabutOrBored`: Keluhan gabut/bosen ditanggapi secara empati/relate layaknya sahabat tanpa menyodorkan menu pilihan kaku.
+- **Penyelesaian Tebak-Tebakan & Teka-Teki (`src/skills.ts`)**:
+  - Saat user menyerah ("Ih gak tau", "kenapa?"), bot memberikan punchline/jawaban secara lucu dan tuntas, dilarang keras menambahkan ekor "Mau coba yang lain gak nih?".
+- **Filter Sanitizer Regex Tambahan (`src/skills.ts`)**:
+  - Menyaring pola-pola pertanyaan klise penutup, memangkas ekor pertanyaan validasi, dan menormalisasi typo pembuka seperti "HHumben" menjadi "Tumben".
+
 ### v0.25.22 - 2026-09-12 13:08 WIB
 **Tuning & Peningkatan Respon Alami Multimodal (Stiker, Foto, Emoji, Dokumen, Video)**
 - **Eliminasi Total Deskripsi Robotik Stiker (`src/skills.ts`, `src/media.ts`)**:
