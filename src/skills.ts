@@ -891,7 +891,7 @@ async function chatRetry(
 
 function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): ChatMsg[] {
   const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt(ctx, web, clean) }];
-  const rawHistory = [...(ctx?.history.slice(-24) ?? [])];
+  const rawHistory = [...(ctx?.history.slice(-15) ?? [])];
 
   // Sanitasi riwayat percakapan asisten sebelum disuntikkan ke konteks model
   // Mencegah penularan loop peran lama, skrip panggung kurung siku, atau menu kaku

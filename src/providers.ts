@@ -300,6 +300,43 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[]): Prom
   return { text, tokens };
 }
 
+/**
+ * Pangkas riwayat pesan secara adaptif jika estimasi total token melebihi batas budget.
+ * Mempertahankan pesan sistem (index 0) dan pesan user terkini (terakhir) 100% utuh.
+ */
+export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: number = 8000): ChatMsg[] {
+  if (messages.length <= 2) return messages;
+
+  const estimateTokens = (msgs: ChatMsg[]) => {
+    let chars = 0;
+    for (const m of msgs) {
+      if (typeof m.content === 'string') {
+        chars += m.content.length;
+      } else if (Array.isArray(m.content)) {
+        for (const part of m.content) {
+          if (part.type === 'text') chars += part.text.length;
+        }
+      }
+    }
+    return Math.ceil(chars / 3.8);
+  };
+
+  let totalTokens = estimateTokens(messages);
+  if (totalTokens <= maxBudgetTokens) return messages;
+
+  const systemMsg = messages[0];
+  const lastUserMsg = messages[messages.length - 1];
+  const history = messages.slice(1, -1);
+
+  // Buang riwayat tertua satu per satu hingga estimasi token muat di bawah budget
+  while (history.length > 0 && totalTokens > maxBudgetTokens) {
+    history.shift();
+    totalTokens = estimateTokens([systemMsg, ...history, lastUserMsg]);
+  }
+
+  return [systemMsg, ...history, lastUserMsg];
+}
+
 interface Step {
   kind: ProviderKind;
   keys: string[];
@@ -329,7 +366,11 @@ function steps(): Step[] {
       models: [config.models.groqPrimary, config.models.groqBackup],
       visionModels: [],
       cap: config.dailyCap.groq,
-      run: (k, m, msgs) => openAiChat('https://api.groq.com/openai/v1', k, m, msgs, 800),
+      run: (k, m, msgs) => {
+        // Pangkas pesan agar total (prompt + output 800) muat di bawah limit ketat Groq 8K TPM
+        const groqMsgs = trimMessagesToTokenBudget(msgs, 7200);
+        return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, 800);
+      },
     },
     {
       kind: 'gemini',
@@ -357,10 +398,12 @@ function steps(): Step[] {
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
 export async function chat(
-  messages: ChatMsg[],
+  rawMessages: ChatMsg[],
   opts?: { vision?: boolean },
 ): Promise<{ text: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const needVision = opts?.vision === true;
+  // Batasi total token maksimal sesuai batas config.maxTokensLimit (default 8000)
+  const messages = trimMessagesToTokenBudget(rawMessages, config.maxTokensLimit);
   const cacheKey = JSON.stringify({ v: needVision, messages });
   const hit = cacheGet(cacheKey);
   if (hit) return { text: hit, via: 'cache' };
