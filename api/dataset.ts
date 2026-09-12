@@ -235,14 +235,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const dateParam = typeof req.query.date === 'string' ? req.query.date.trim() : null;
   const tzParam = typeof req.query.tz === 'string' ? req.query.tz.trim() : 'Asia/Jakarta';
   const modelFilter = typeof req.query.model === 'string' ? req.query.model.toLowerCase().trim() : '';
-  const limit = Math.min(1000, Math.max(10, Number(req.query.limit) || 200));
+  const explicitLimit = req.query.limit !== undefined && req.query.limit !== ''
+    ? Math.min(5000, Math.max(1, Number(req.query.limit) || 200))
+    : null;
+  const limit = explicitLimit ?? 200;
 
   const { startDateIso, endDateIso, fileLabel } = calculateTimeBounds(range, dateParam, tzParam);
 
   try {
     // Optimasi performa: tarik hanya kolom penting secara descending dari pesan terbaru
     const isExport = format === 'jsonl' || format === 'csv';
-    const dbLimit = isExport ? 3000 : Math.min(600, limit * 2 + 60);
+    const dbLimit = explicitLimit
+      ? Math.min(5000, explicitLimit * 2 + 60)
+      : (isExport ? 3000 : Math.min(600, limit * 2 + 60));
 
     let query = c
       .from('messages')
@@ -369,7 +374,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // Urutkan dari yang terbaru untuk tampilan evaluasi
     pairs.reverse();
-    const finalPairs = isExport ? pairs : pairs.slice(0, limit);
+    const finalPairs = explicitLimit ? pairs.slice(0, explicitLimit) : (isExport ? pairs : pairs.slice(0, limit));
 
     // Susun nama file ekspor yang mencerminkan filter aktif
     let exportFileLabel = fileLabel;

@@ -244,9 +244,9 @@ export async function extractDocumentText(
   mime: string,
   filename: string,
 ): Promise<string | null> {
-  // Sniff magic bytes jika tersedia
+  // Sniff magic bytes jika tersedia (D4 & E4)
   const sniffed = sniffMimeType(buffer);
-  const effectiveMime = sniffed || mime;
+  const effectiveMime = (sniffed || mime || '').toLowerCase();
 
   // Batasi ukuran dokumen maks 15MB untuk mencegah Lambda OOM
   if (buffer.length > 15 * 1024 * 1024) {
@@ -269,9 +269,9 @@ export async function extractDocumentText(
 
   // 1. Dokumen Microsoft Word (.docx) via parser Mammoth lokal (21 ms)
   if (
-    lowerName.endsWith('.docx') ||
-    mime.includes('wordprocessingml') ||
-    mime.includes('msword')
+    effectiveMime.includes('wordprocessingml') ||
+    effectiveMime.includes('msword') ||
+    lowerName.endsWith('.docx')
   ) {
     try {
       const result = await mammoth.extractRawText({ buffer });
@@ -303,9 +303,9 @@ export async function extractDocumentText(
   ];
 
   if (
-    mime.startsWith('text/') ||
-    mime.includes('json') ||
-    mime.includes('javascript') ||
+    effectiveMime.startsWith('text/') ||
+    effectiveMime.includes('json') ||
+    effectiveMime.includes('javascript') ||
     textExtensions.some((ext) => lowerName.endsWith(ext))
   ) {
     try {
@@ -333,10 +333,12 @@ export async function processIncomingDocument(
   caption?: string,
   ctx?: ChatContext,
 ): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
+  const sniffed = sniffMimeType(buffer);
+  const effectiveMime = (sniffed || mime || '').toLowerCase();
   const lowerName = filename.toLowerCase();
 
   // Kasus A: Dokumen PDF
-  if (lowerName.endsWith('.pdf') || mime.includes('pdf')) {
+  if (effectiveMime.includes('pdf') || lowerName.endsWith('.pdf')) {
     const prompt = caption && caption.trim()
       ? `Pengguna mengirim dokumen PDF "${filename}". Pertanyaan / instruksi temanmu:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, jelas, dan manusiawi layaknya sahabat diskusi tanpa pembuka klise robotik.`
       : `Pengguna mengirim dokumen PDF "${filename}". Tolong baca dan rangkum inti terpentingnya secara ringkas, padat, dan ramah selayaknya teman ngobrol yang membantu meringkas isi dokumen (gunakan gaya: "Udah kubaca nih dokumennya. Intinya...").`;

@@ -39,6 +39,7 @@ function slot(kind: ProviderKind, key: string): Counter {
 }
 
 const hydratedKeys = new Set<string>();
+const pendingHydrations = new Map<string, Promise<void>>();
 
 /** Hydrate kuota pemakaian dari Supabase provider_quota saat instance baru aktif (C5 & P1-4) */
 export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<void> {
@@ -47,35 +48,60 @@ export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<
   const day = today();
   const cacheKey = `${id}:${day}`;
   if (hydratedKeys.has(cacheKey)) return;
-  hydratedKeys.add(cacheKey);
 
-  const c = db();
-  if (!c) return;
+  if (pendingHydrations.has(cacheKey)) {
+    return pendingHydrations.get(cacheKey)!;
+  }
 
-  try {
-    const { data } = await c
-      .from('provider_quota')
-      .select('used')
-      .eq('kind', kind)
-      .eq('key_suffix', suffix)
-      .eq('day', day)
-      .maybeSingle();
+  const fetchPromise = (async () => {
+    const c = db();
+    if (!c) return;
 
-    if (data && typeof data.used === 'number') {
-      const s = slot(kind, key);
-      s.count = Math.max(s.count, data.used);
+    try {
+      const { data, error } = await c
+        .from('provider_quota')
+        .select('used')
+        .eq('kind', kind)
+        .eq('key_suffix', suffix)
+        .eq('day', day)
+        .maybeSingle();
+
+      if (!error) {
+        if (data && typeof data.used === 'number') {
+          const s = slot(kind, key);
+          s.count = Math.max(s.count, data.used);
+        }
+        // HANYA tandai hydrated setelah database query sukses (C5 & E8)
+        hydratedKeys.add(cacheKey);
+      }
+    } catch {
+      // best-effort, jika error jangan tandai hydrated agar bisa retry berikutnya
+    } finally {
+      pendingHydrations.delete(cacheKey);
     }
-  } catch {
-    // best-effort
+  })();
+
+  pendingHydrations.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+/** Pastikan kuota key sudah terhidrasi sebelum dievaluasi (mencegah cold-start over-quota - C5 & E8). */
+export async function ensureKeyQuotaHydrated(kind: ProviderKind, key: string): Promise<void> {
+  const suffix = keyHash(key);
+  const day = today();
+  const cacheKey = `${kind}:${suffix}:${day}`;
+  if (!hydratedKeys.has(cacheKey)) {
+    await hydrateKeyQuota(kind, key);
   }
 }
 
 /** True jika key masih boleh dipakai hari ini. */
 export function keyAllowed(kind: ProviderKind, key: string, cap: number): boolean {
-  // Picu hidrasi asinkron jika belum pernah dibaca dari DB hari ini
+  // Picu hidrasi jika belum pernah dibaca dari DB hari ini
   const day = today();
   const suffix = keyHash(key);
-  if (!hydratedKeys.has(`${kind}:${suffix}:${day}`)) {
+  const cacheKey = `${kind}:${suffix}:${day}`;
+  if (!hydratedKeys.has(cacheKey)) {
     void hydrateKeyQuota(kind, key);
   }
   return slot(kind, key).count < cap;

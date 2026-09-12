@@ -12,7 +12,7 @@ import {
 import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
-import { saveMessage } from './db.js';
+import { saveMessage, isMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -155,6 +155,9 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
   const remoteJid = m.key.remoteJid;
   if (!remoteJid || remoteJid === 'status@broadcast') return;
+
+  const messageId = m.key.id;
+  if (messageId && (await isMessageProcessed('whatsapp', messageId))) return;
 
   const isGroup = remoteJid.endsWith('@g.us');
 
@@ -581,6 +584,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       chat_id: chatKey,
       role: 'user',
       content: text,
+      msg_id: messageId || undefined,
     }).catch((err) => console.warn('[whatsapp] Gagal simpan pesan user:', err));
 
     // 3. Periksa kebutuhan penelusuran web real-time 2026

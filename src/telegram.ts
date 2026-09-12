@@ -2,7 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { config } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
-import { saveMessage } from './db.js';
+import { saveMessage, isMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
@@ -82,6 +82,8 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     if (msg.from?.is_bot) return;
     const chatId = msg.chat.id;
     const chatKey = String(chatId);
+    const msgId = msg.message_id ? String(msg.message_id) : '';
+    if (msgId && (await isMessageProcessed('telegram', msgId))) return;
     const ownerId = config.ownerChatId;
     const text = msg.text?.trim() ?? '';
 
@@ -375,7 +377,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
     // Simpan pesan user ke database secara non-blocking & update cache in-memory
     updateContextCache(chatKey, 'user', text);
-    void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'user', content: text })
+    void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'user', content: text, msg_id: msgId })
       .catch((err) => console.warn('[telegram] Gagal simpan pesan user:', err));
 
     let web: string | null = null;
@@ -413,6 +415,9 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
 /** Eksekusi Telegram Webhook Update (dipanggil oleh /api/webhook) */
 export async function processTelegramUpdate(bot: TelegramBot, update: TelegramBot.Update): Promise<void> {
+  const updId = update.update_id ? `upd_${update.update_id}` : '';
+  if (updId && (await isMessageProcessed('telegram', updId))) return;
+
   if (update.message) {
     await handleIncomingMessage(bot, update.message);
   } else if (update.edited_message) {

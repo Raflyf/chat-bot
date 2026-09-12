@@ -59,21 +59,38 @@ export async function checkDueReminders(
     let processed = 0;
     for (const item of data as ReminderItem[]) {
       // Atomic claim: coba kunci status ke 'processing'
-      const { error: claimErr } = await c
+      const { data: claimed, error: claimErr } = await c
         .from('reminders')
         .update({ status: 'processing' })
         .eq('id', item.id)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .select('id');
 
       if (claimErr) {
         // Fallback jika database belum update CHECK constraint 'processing' (error 23514):
-        // Jangan hentikan (continue); coba langsung proses dengan update atomik ke 'sent'
+        // Coba langsung proses dengan update atomik ke 'sent'
         console.warn(`[remind] status 'processing' ditolak DB (${claimErr.message}), fallback CAS langsung.`);
+        const { data: directClaim, error: directErr } = await c
+          .from('reminders')
+          .update({ status: 'sent' })
+          .eq('id', item.id)
+          .eq('status', 'pending')
+          .select('id');
+
+        // Jika baris sudah diklaim worker lain atau error, lewati!
+        if (directErr || !directClaim || directClaim.length === 0) {
+          continue;
+        }
+      } else {
+        // Jika 0 baris ter-update (artinya sudah diklaim worker/cron lain), lewati!
+        if (!claimed || claimed.length === 0) {
+          continue;
+        }
       }
 
       try {
         await sendFn(item.chat_id, `Pengingat kak: ${item.message}`, item.platform);
-        // Tandai selesai (sent)
+        // Tandai selesai (sent) jika sebelumnya berstatus 'processing'
         await c.from('reminders').update({ status: 'sent' }).eq('id', item.id);
         processed++;
       } catch (err) {

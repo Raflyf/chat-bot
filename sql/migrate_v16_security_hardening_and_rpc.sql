@@ -89,9 +89,19 @@ WITH CHECK (true);
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS idx_web_knowledge_entity_key_trgm ON public.web_knowledge USING gin (entity_key gin_trgm_ops);
 
--- 8. Bersihkan Default Hash PIN 080402 dari Database (Temuan C1 & Catatan Keselamatan)
-DELETE FROM public.admin_auth_config 
-WHERE id = 'master_auth' 
-  AND (pin_hash = '5d41402abc4b2a76b9719d911017c592' 
-   OR pin_hash = 'bf4817a3a93c72957b44d3fa54e58849b294e094ed1be63a41b55979adcf705d'
-   OR pin_hash = 'db533e5fe9b399627eb386c19c967aa171dbc121a43fda2fa583c0a731aba78c');
+-- 8. Bersihkan Default Hash PIN 080402 dari Database (Temuan C1 & Catatan Keselamatan E7)
+-- JANGAN DELETE baris master_auth agar fungsi pemulihan/reset OTP dan provisioning tetap berfungsi!
+INSERT INTO public.admin_auth_config (id, pin_hash, lockout_attempts, locked_until, updated_at)
+VALUES ('master_auth', NULL, 0, NULL, now())
+ON CONFLICT (id) DO UPDATE
+SET pin_hash = CASE 
+        WHEN public.admin_auth_config.pin_hash IN (
+            '5d41402abc4b2a76b9719d911017c592',
+            'bf4817a3a93c72957b44d3fa54e58849b294e094ed1be63a41b55979adcf705d',
+            'db533e5fe9b399627eb386c19c967aa171dbc121a43fda2fa583c0a731aba78c'
+        ) THEN NULL 
+        ELSE public.admin_auth_config.pin_hash 
+    END,
+    lockout_attempts = 0,
+    locked_until = NULL,
+    updated_at = now();
