@@ -192,6 +192,31 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.21 - 2026-09-12 12:55 WIB
+**Implementasi Arsitektur Pipeline Multimodal Presisi (Vision, Audio VN, Dokumen PDF, Word, Video)**
+- **Rantai Failover Vision & Foto (`src/providers.ts`)**:
+  - Primary: `mistralai/mistral-large-2512`
+  - Cadangan 1: `qwen/qwen3.8-max:free`
+  - Cadangan 2: `mistralai/mistral-medium-3.5`
+  - Cadangan 3: `qwen/qwen3.6-plus:free`
+  - Cadangan 4: `gemini-3.8-flash`
+  - Cadangan 5: `gemini-2.5-flash`
+- **Rantai Failover Audio & Voice Note VN (`src/media.ts`)**:
+  - Primary: `whisper-large-v3` (Groq Dedicated STT)
+  - Cadangan 1: `gemini-3.8-flash` (Google Native Audio Transcription)
+  - Cadangan 2: `whisper-large-v3-turbo` (Groq Dedicated STT)
+  - Cadangan 3: `gemini-2.5-flash` (Google Native Audio Transcription)
+- **Rantai Failover Dokumen PDF (`src/media.ts`)**:
+  - Primary: `gemini-3.8-flash` (Native Multimodal Document)
+  - Cadangan 1: `gemini-2.5-flash` (Native Multimodal Document)
+  - Fallback: Parser Teks PDF Lokal (`extractPdfTextSimple`) diteruskan ke penalaran xKiro Qwen 3.8.
+- **Rantai Dokumen Word (.docx) & Teks (`src/media.ts`)**:
+  - Parser lokal Mammoth (21 ms) mengekstrak teks Word lalu menyuntikkan teks ke model xKiro primary (`qwen/qwen3.8-max:free`) dan cadangan (`mistralai/mistral-medium-3.5`).
+- **Penanganan Video (MP4/WebM) (`src/media.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`)**:
+  - Mengintegrasikan `processIncomingVideo` via Google Gemini Multimodal API di WhatsApp Baileys dan Telegram.
+- **Klarifikasi Peran OpenRouter**:
+  - OpenRouter gratis berstatus murni teks (*text-only*). Berperan sebagai jaring pengaman terakhir (*ultimate fallback*) saat xKiro, Groq, dan Gemini limit untuk chat teks biasa.
+
 ### v0.25.20 - 2026-09-12 12:46 WIB
 **Audit & Benchmark Komprehensif Gemini 3.8 Flash Lintas Seluruh Modalitas (Teks, Vision, PDF, Audio, Video)**
 - **Hasil Benchmark Faktual `gemini-3.8-flash`**:

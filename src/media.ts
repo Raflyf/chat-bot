@@ -2,16 +2,12 @@ import { config } from './env.js';
 import { autoReply, describeImage } from './skills.js';
 import type { ChatContext } from './memory.js';
 import mammoth from 'mammoth';
+import zlib from 'node:zlib';
 
-/**
- * Transkripsi audio / Voice Note (VN) menggunakan model Whisper dari Groq API.
- * Sangat cepat (~500ms), akurat dalam Bahasa Indonesia, dan efisien.
- */
-export async function transcribeAudio(buffer: Buffer, mime: string = 'audio/ogg'): Promise<string> {
+/** Helper transkripsi via Groq Whisper API */
+async function transcribeViaGroq(buffer: Buffer, mime: string, model: string): Promise<string | null> {
   const keys = config.pools.groq;
-  if (!keys || keys.length === 0) {
-    throw new Error('NO_GROQ_KEYS_FOR_WHISPER');
-  }
+  if (!keys || keys.length === 0) return null;
 
   let ext = 'ogg';
   if (mime.includes('mp4') || mime.includes('m4a')) ext = 'm4a';
@@ -24,7 +20,7 @@ export async function transcribeAudio(buffer: Buffer, mime: string = 'audio/ogg'
     try {
       const formData = new FormData();
       formData.append('file', new Blob([u8Array], { type: mime }), filename);
-      formData.append('model', 'whisper-large-v3-turbo');
+      formData.append('model', model);
       formData.append('response_format', 'json');
 
       const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -33,37 +29,156 @@ export async function transcribeAudio(buffer: Buffer, mime: string = 'audio/ogg'
         body: formData,
       });
 
-      if (!res.ok) {
-        // Coba model cadangan whisper-large-v3 jika turbo tidak tersedia
-        const retryForm = new FormData();
-        retryForm.append('file', new Blob([u8Array], { type: mime }), filename);
-        retryForm.append('model', 'whisper-large-v3');
-        retryForm.append('response_format', 'json');
-
-        const retryRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${key}` },
-          body: retryForm,
-        });
-
-        if (!retryRes.ok) continue;
-        const retryData = (await retryRes.json()) as { text?: string };
-        if (retryData.text && retryData.text.trim()) {
-          return retryData.text.trim();
-        }
-        continue;
-      }
-
+      if (!res.ok) continue;
       const data = (await res.json()) as { text?: string };
       if (data.text && data.text.trim()) {
         return data.text.trim();
       }
     } catch (err) {
-      console.warn('[media] Gagal transkripsi via Groq Whisper:', err);
+      console.warn(`[media] Groq transkripsi [${model}] gagal:`, err);
     }
   }
+  return null;
+}
+
+/** Helper transkripsi audio via Google Gemini Multimodal API */
+async function transcribeViaGemini(buffer: Buffer, mime: string, model: string): Promise<string | null> {
+  const keys = config.pools.gemini;
+  if (!keys || keys.length === 0) return null;
+
+  for (const key of keys) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType: mime, data: buffer.toString('base64') } },
+              { text: 'Transkripsikan isi rekaman suara ini persis kata demi kata dalam Bahasa Indonesia tanpa komentar tambahan. Tuliskan teks transkripsinya saja.' }
+            ]
+          }],
+          generationConfig: { temperature: 0.1 }
+        })
+      });
+
+      if (!res.ok) continue;
+      const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (text) return text;
+    } catch (err) {
+      console.warn(`[media] Gemini audio [${model}] gagal:`, err);
+    }
+  }
+  return null;
+}
+
+/**
+ * Transkripsi audio / Voice Note (VN) WhatsApp & Telegram:
+ * - Primary: whisper-large-v3 (Groq)
+ * - Cadangan 1: gemini-3.8-flash (Gemini native audio)
+ * - Cadangan 2: whisper-large-v3-turbo (Groq)
+ * - Cadangan 3: gemini-2.5-flash (Gemini native audio)
+ */
+export async function transcribeAudio(buffer: Buffer, mime: string = 'audio/ogg'): Promise<string> {
+  // 1. Primary: Groq whisper-large-v3
+  const t1 = await transcribeViaGroq(buffer, mime, 'whisper-large-v3');
+  if (t1) return t1;
+
+  // 2. Cadangan 1: Gemini gemini-3.8-flash
+  const geminiPrimary = config.models.geminiPrimary || 'gemini-3.8-flash';
+  const t2 = await transcribeViaGemini(buffer, mime, geminiPrimary);
+  if (t2) return t2;
+
+  // 3. Cadangan 2: Groq whisper-large-v3-turbo
+  const t3 = await transcribeViaGroq(buffer, mime, 'whisper-large-v3-turbo');
+  if (t3) return t3;
+
+  // 4. Cadangan 3: Gemini gemini-2.5-flash
+  const geminiBackup = config.models.geminiBackup || 'gemini-2.5-flash';
+  const t4 = await transcribeViaGemini(buffer, mime, geminiBackup);
+  if (t4) return t4;
 
   throw new Error('TRANSCRIPTION_ALL_KEYS_FAILED');
+}
+
+/**
+ * Ekstraksi teks dari PDF sederhana (uncompressed stream atau FlateDecode stream).
+ */
+export function extractPdfTextSimple(buffer: Buffer): string | null {
+  try {
+    let fullText = '';
+    const content = buffer.toString('binary');
+    const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+    let match: RegExpExecArray | null;
+    while ((match = streamRegex.exec(content)) !== null) {
+      const streamData = match[1];
+      let decompressed = streamData;
+      try {
+        decompressed = zlib.inflateSync(Buffer.from(streamData, 'binary')).toString('utf-8');
+      } catch {
+        // stream mungkin uncompressed teks polos
+      }
+      const textMatches = decompressed.matchAll(/\(([^)]+)\)\s*Tj/g);
+      for (const tm of textMatches) {
+        fullText += tm[1] + ' ';
+      }
+      const tjMatches = decompressed.matchAll(/\[(.*?)\]\s*TJ/g);
+      for (const tm of tjMatches) {
+        const inner = tm[1].matchAll(/\(([^)]+)\)/g);
+        for (const im of inner) {
+          fullText += im[1] + ' ';
+        }
+      }
+    }
+    const clean = fullText.replace(/\s+/g, ' ').trim();
+    return clean.length > 0 ? clean : null;
+  } catch (err) {
+    console.warn('[media] Gagal ekstraksi teks PDF lokal:', err);
+    return null;
+  }
+}
+
+/**
+ * Helper analisis native PDF via Google Gemini Multimodal API.
+ */
+async function processPdfViaGemini(
+  buffer: Buffer,
+  prompt: string,
+  model: string,
+): Promise<{ reply: string; via: string } | null> {
+  const keys = config.pools.gemini;
+  if (!keys || keys.length === 0) return null;
+
+  for (const key of keys) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType: 'application/pdf', data: buffer.toString('base64') } },
+              { text: prompt }
+            ]
+          }],
+          generationConfig: { temperature: 0.3 }
+        })
+      });
+
+      if (!res.ok) continue;
+      const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (text) {
+        return { reply: text, via: `gemini/${model}` };
+      }
+    } catch (err) {
+      console.warn(`[media] Gemini PDF [${model}] gagal:`, err);
+    }
+  }
+  return null;
 }
 
 /**
@@ -76,7 +191,7 @@ export async function extractDocumentText(
 ): Promise<string | null> {
   const lowerName = filename.toLowerCase();
 
-  // 1. Dokumen Microsoft Word (.docx)
+  // 1. Dokumen Microsoft Word (.docx) via parser Mammoth lokal (21 ms)
   if (
     lowerName.endsWith('.docx') ||
     mime.includes('wordprocessingml') ||
@@ -92,7 +207,7 @@ export async function extractDocumentText(
     }
   }
 
-  // 2. Berkas teks polos, kode sumber, data terstruktur
+  // 2. Berkas teks polos, kode sumber, data terstruktur (.txt, .md, .csv, .json, dsb)
   const textExtensions = [
     '.txt',
     '.md',
@@ -132,6 +247,10 @@ export async function extractDocumentText(
 
 /**
  * Memproses dan menganalisis berkas dokumen (PDF, Word, File Teks) secara cerdas.
+ * Dokumen PDF:
+ * - Primary: gemini-3.8-flash (native multimodal document)
+ * - Cadangan: gemini-2.5-flash (native multimodal document)
+ * - Parser Teks Lokal (Fallback): Ekstrak teks lokal lalu teruskan ke xKiro Qwen 3.8.
  */
 export async function processIncomingDocument(
   buffer: Buffer,
@@ -142,21 +261,41 @@ export async function processIncomingDocument(
 ): Promise<{ reply: string; via: string }> {
   const lowerName = filename.toLowerCase();
 
-  // Kasus A: PDF - Kirim langsung sebagai multimodal document ke model vision (Gemini / OpenRouter)
+  // Kasus A: Dokumen PDF
   if (lowerName.endsWith('.pdf') || mime.includes('pdf')) {
     const prompt = caption && caption.trim()
       ? `Pengguna mengirim berkas PDF "${filename}". Instruksi / pertanyaan:\n${caption.trim()}`
       : `Pengguna mengirim berkas PDF "${filename}". Tolong baca, analisis, dan rangkum poin-poin terpenting dalam dokumen ini secara jelas, terstruktur, dan mudah dipahami.`;
 
-    try {
-      return await describeImage(buffer.toString('base64'), 'application/pdf', prompt);
-    } catch (err) {
-      console.warn('[media] Gagal memproses PDF via multimodal vision:', err);
-      return {
-        reply: `Berkas PDF *${filename}* berhasil diterima, namun sistem AI sedang mengalami antrean pemrosesan dokumen visual. Silakan coba kirim ulang beberapa saat lagi atau tanyakan bagian tertentu via teks.`,
-        via: 'fallback-pdf-error',
-      };
+    // 1. Primary: gemini-3.8-flash
+    const p1 = await processPdfViaGemini(buffer, prompt, config.models.geminiPrimary || 'gemini-3.8-flash');
+    if (p1) return p1;
+
+    // 2. Cadangan: gemini-2.5-flash
+    const p2 = await processPdfViaGemini(buffer, prompt, config.models.geminiBackup || 'gemini-2.5-flash');
+    if (p2) return p2;
+
+    // 3. Parser Teks Lokal (Fallback): Ekstrak teks halaman PDF secara lokal lalu teruskan ke xKiro Qwen 3.8
+    const extractedText = extractPdfTextSimple(buffer);
+    if (extractedText && extractedText.length > 20) {
+      const localPrompt = [
+        `[BERKAS DOKUMEN PDF (EKSTRAKSI TEKS LOKAL): "${filename}"]`,
+        '--- ISI DOKUMEN ---',
+        extractedText.slice(0, 25000),
+        '--- AKHIR ISI DOKUMEN ---',
+        '',
+        caption && caption.trim()
+          ? `Pertanyaan / instruksi temanmu tentang dokumen ini: ${caption.trim()}`
+          : 'Tolong baca dan rangkum inti dokumen PDF ini secara jelas, padat, dan terstruktur.',
+      ].join('\n');
+      const autoRes = await autoReply(localPrompt, ctx);
+      return { reply: autoRes.reply, via: `local-parser/${autoRes.via}` };
     }
+
+    return {
+      reply: `Berkas PDF *${filename}* berhasil diterima, namun sistem AI sedang mengalami antrean pemrosesan dokumen visual. Silakan coba kirim ulang beberapa saat lagi atau tanyakan bagian tertentu via teks.`,
+      via: 'fallback-pdf-error',
+    };
   }
 
   // Kasus B: Dokumen Word (.docx) atau berkas teks/kode
@@ -180,6 +319,58 @@ export async function processIncomingDocument(
   return {
     reply: `Berkas *${filename}* berhasil diterima, namun formatnya tidak dapat dibaca secara langsung. Coba kirim dalam format PDF, Word (.docx), atau file teks (.txt, .md, .csv, kode).`,
     via: 'fallback-unsupported',
+  };
+}
+
+/**
+ * Memproses video (MP4 / WebM) via Google Gemini Multimodal API.
+ */
+export async function processIncomingVideo(
+  buffer: Buffer,
+  mime: string = 'video/mp4',
+  filename: string = 'video.mp4',
+  caption?: string,
+): Promise<{ reply: string; via: string }> {
+  const prompt = caption && caption.trim()
+    ? `Pengguna mengirim video "${filename}". Pertanyaan / instruksi:\n${caption.trim()}`
+    : `Pengguna mengirim video "${filename}". Tolong tonton dan jelaskan alur kejadian, isi utama, serta konteks video ini secara ringkas dan informatif.`;
+
+  const models = [config.models.geminiPrimary || 'gemini-3.8-flash', config.models.geminiBackup || 'gemini-2.5-flash'];
+  const keys = config.pools.gemini;
+
+  for (const model of models) {
+    for (const key of keys) {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              role: 'user',
+              parts: [
+                { inlineData: { mimeType: mime, data: buffer.toString('base64') } },
+                { text: prompt }
+              ]
+            }],
+            generationConfig: { temperature: 0.3 }
+          })
+        });
+
+        if (!res.ok) continue;
+        const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (text) {
+          return { reply: text, via: `gemini/${model}` };
+        }
+      } catch (err) {
+        console.warn(`[media] Video via Gemini [${model}] gagal:`, err);
+      }
+    }
+  }
+
+  return {
+    reply: `Video *${filename}* berhasil diterima, namun sistem AI video sedang sibuk. Silakan coba kirim ulang beberapa saat lagi.`,
+    via: 'fallback-video-error',
   };
 }
 

@@ -11,7 +11,7 @@ import {
 } from '@whiskeysockets/baileys';
 import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage } from './skills.js';
-import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
+import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage } from './db.js';
 import { getContext, noteExchange, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -448,33 +448,69 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     }
   }
 
-  // Kasus 5: Video
+  // Kasus 5: Video via Google Gemini Multimodal API
   if (hasVideo) {
-    const caption = m.message?.videoMessage?.caption?.trim() || text;
-    const context = await getContext(chatKey);
+    try {
+      await sock.sendPresenceUpdate('composing', remoteJid);
+      const caption = m.message?.videoMessage?.caption?.trim() || text;
+      const context = await getContext(chatKey);
 
-    await saveMessage({
-      platform: 'whatsapp',
-      chat_id: chatKey,
-      role: 'user',
-      content: caption ? `[Video] ${caption}` : '[Video]',
-    });
+      await saveMessage({
+        platform: 'whatsapp',
+        chat_id: chatKey,
+        role: 'user',
+        content: caption ? `[Video] ${caption}` : '[Video]',
+      });
 
-    const prompt = caption
-      ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
-      : 'User mengirim berkas video. Beritahukan dengan ramah bahwa videonya diterima, dan tanyakan apa yang ingin dibahas.';
+      const buffer = await downloadMediaMessage(
+        m,
+        'buffer',
+        {},
+        {
+          logger,
+          reuploadRequest: sock.updateMediaMessage,
+        },
+      );
 
-    const { reply, via } = await autoReply(prompt, context);
-    await sendWhatsAppMessageSafe(sock, remoteJid, reply);
-    await saveMessage({
-      platform: 'whatsapp',
-      chat_id: chatKey,
-      role: 'assistant',
-      content: reply.slice(0, 4000),
-      via,
-    });
-    noteExchange(chatKey);
-    return;
+      if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
+        const mime = m.message?.videoMessage?.mimetype || 'video/mp4';
+        const { reply, via } = await processIncomingVideo(buffer, mime, 'video.mp4', caption);
+        await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+        await saveMessage({
+          platform: 'whatsapp',
+          chat_id: chatKey,
+          role: 'assistant',
+          content: reply.slice(0, 4000),
+          via,
+        });
+        noteExchange(chatKey);
+        return;
+      }
+
+      const prompt = caption
+        ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
+        : 'User mengirim berkas video. Beritahukan dengan ramah bahwa videonya diterima, dan tanyakan apa yang ingin dibahas.';
+
+      const { reply, via } = await autoReply(prompt, context);
+      await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+      await saveMessage({
+        platform: 'whatsapp',
+        chat_id: chatKey,
+        role: 'assistant',
+        content: reply.slice(0, 4000),
+        via,
+      });
+      noteExchange(chatKey);
+      return;
+    } catch (err) {
+      console.error('[whatsapp] Gagal memproses video:', err);
+    } finally {
+      try {
+        await sock.sendPresenceUpdate('paused', remoteJid);
+      } catch {
+        // best-effort
+      }
+    }
   }
 
   // Kasus 6: Lokasi Pengguna (Share Location Pin / Live Location)

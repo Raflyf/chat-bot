@@ -1,7 +1,7 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { config } from './env.js';
 import { autoReply, describeImage } from './skills.js';
-import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
+import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage } from './db.js';
 import { getContext, noteExchange, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -161,6 +161,34 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
       } catch (err) {
         console.error(`[telegram] vision photo error: ${String((err as Error).message ?? err)}`);
+      }
+    }
+
+    // 4b. Video (MP4 / WebM) via Google Gemini Multimodal
+    if (msg.video) {
+      const fileId = msg.video.file_id;
+      const caption = msg.caption?.trim();
+      const mime = msg.video.mime_type || 'video/mp4';
+      void saveMessage({
+        platform: 'telegram',
+        chat_id: chatKey,
+        role: 'user',
+        content: caption ? `[Video] ${caption}` : '[Video]',
+      }).catch((err) => console.warn('[telegram] Gagal simpan pesan video user:', err));
+
+      const dl = await downloadTelegramBuffer(bot, fileId);
+      if (dl) {
+        const { reply, via } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', caption);
+        await sendTelegramMessageSafe(bot, chatId, reply);
+        void saveMessage({
+          platform: 'telegram',
+          chat_id: chatKey,
+          role: 'assistant',
+          content: reply.slice(0, 4000),
+          via,
+        }).catch((err) => console.warn('[telegram] Gagal simpan pesan video assistant:', err));
+        noteExchange(chatKey);
+        return;
       }
     }
 
