@@ -32,16 +32,6 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
     keyCooldownMap.set(kh, Date.now() + 300_000);
     return;
   }
-
-  // Jika 500, 502, 503, 504 atau connect timeout, cooldown 45s
-  if (
-    msg.includes('PROVIDER_50') ||
-    msg === 'CONNECT_TIMEOUT' ||
-    msg === 'THINKING_TIMEOUT'
-  ) {
-    keyCooldownMap.set(kh, Date.now() + 45_000);
-    return;
-  }
 }
 
 function isModelCoolingDown(kind: ProviderKind, model: string): boolean {
@@ -49,8 +39,9 @@ function isModelCoolingDown(kind: ProviderKind, model: string): boolean {
   return Date.now() < cd;
 }
 
-function recordModelFailure(kind: ProviderKind, model: string, durationMs: number = 45_000): void {
-  // Cooldown pada model agar request berikutnya langsung mencoba model cadangan tanpa lag berganda
+function recordModelFailure(kind: ProviderKind, model: string, durationMs: number = 20_000): void {
+  // Cooldown hanya pada model spesifik ini agar giliran berikutnya cepat failover,
+  // tanpa pernah mematikan kunci API atau provider secara menyeluruh
   modelCooldownMap.set(`${kind}:${model}`, Date.now() + durationMs);
 }
 
