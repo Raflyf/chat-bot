@@ -274,11 +274,17 @@ export function needsSearch(text: string): boolean {
     return true;
   }
 
-  // - Keyword berita, recency, harga, cuaca, skor, event, live status yang terarah (C2)
+  // - Event, status cuaca, pasar, kurs, atau bencana alam real-time
+  if (/\b(?:kurs|saham|cuaca|gempa|tsunami|banjir|skor\s+bola|klasemen|hasil\s+pertandingan|pemilu|pilkada)\b/i.test(qNorm)) {
+    return true;
+  }
+
+  // - Berita terarah, update produk, harga komoditas & recency terarah
   if (
-    /\b(?:berita|terkini|terbaru|rilis|release|launch|kurs|saham|cuaca|gempa|tsunami|banjir|skor|klasemen|pemilu)\b/i.test(qNorm) ||
-    /\b(?:harga\s+(?:emas|bbm|minyak|hp|beras|telur|kripto|bitcoin|saham)|berapa\s+harga)\b/i.test(qNorm) ||
+    /\b(?:berita\s+(?:terkini|terbaru|hari\s+ini|dunia|politik|panas|nasional)|ada\s+berita)\b/i.test(qNorm) ||
     /\b(?:kabar\s+(?:terkini|terbaru|berita|dunia|politik|pasar|terpanas)|ada\s+kabar\s+(?:apa|terbaru|tentang)|kabar\s+soal)\b/i.test(qNorm) ||
+    /\b(?:info\s+terbaru|informasi\s+terkini|kapan\s+(?:rilis|launch|tayang)|rilis\s+(?:terbaru|resmi|versi|baru))\b/i.test(qNorm) ||
+    /\b(?:harga\s+(?:emas|bbm|minyak|hp|beras|telur|kripto|bitcoin|saham)|berapa\s+harga)\b/i.test(qNorm) ||
     /\b(?:update\s+(?:terbaru|terkini|patch|versi|info|berita|sistem|fitur|harga)|ada\s+update)\b/i.test(qNorm) ||
     /\bjadwal\s+(?:rilis|tayang|pertandingan|tanding|bola|match|liga|konser|sholat|solat|imsakiyah|krl|kereta|pesawat|kuliah|bioskop)\b/i.test(qNorm) ||
     /\b(?:presiden|menteri)\s+(?:ri|indonesia|baru|as|amerika|prabowo|jokowi|trump|keuangan|esdm|pertahanan|terpilih)\b/i.test(qNorm) ||
@@ -312,11 +318,6 @@ export function needsSearch(text: string): boolean {
 
   // - Kata tanya fakta eksplisit: "kapan rilis", "siapa juara", "berapa harga", "ada apa di"
   if (/\b(?:kapan rilis|kapan tayang|siapa juara|berapa harga|ada apa di|kenapa sekarang|apa yang terjadi)\b/i.test(qNorm)) {
-    return true;
-  }
-
-  // Default untuk pertanyaan umum yang memuat kata tanya fakta dan objek panjang:
-  if (/\b(?:siapa|dimana|kapan|kenapa|mengapa)\b/i.test(qNorm) && qNorm.length > 25 && !/\b(?:kamu|aku|kita|nama|dia|mereka)\b/i.test(qNorm)) {
     return true;
   }
 

@@ -47,13 +47,12 @@ export async function checkDueReminders(
   try {
     const now = new Date().toISOString();
 
-    // 1. Reaper: Kembalikan reminder 'processing' yang macet > 5 menit ke 'pending' (C2 & P1-1)
-    const staleThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    // 1. Reaper: Kembalikan reminder 'processing' yang lease-nya kadaluwarsa (macet > 5 menit) ke 'pending'
     await c
       .from('reminders')
       .update({ status: 'pending' })
       .eq('status', 'processing')
-      .lte('due_at', staleThreshold);
+      .lte('due_at', now);
 
     // 2. Ambil pengingat yang jatuh tempo
     const { data, error } = await c
@@ -68,10 +67,11 @@ export async function checkDueReminders(
 
     let processed = 0;
     for (const item of data as ReminderItem[]) {
-      // Atomic claim: coba kunci status ke 'processing'
+      // Atomic claim dengan lease-lock 5 menit: update status dan due_at secara bersamaan
+      const leaseExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
       const { data: claimed, error: claimErr } = await c
         .from('reminders')
-        .update({ status: 'processing' })
+        .update({ status: 'processing', due_at: leaseExpiry })
         .eq('id', item.id)
         .eq('status', 'pending')
         .select('id');
@@ -80,10 +80,9 @@ export async function checkDueReminders(
         // Fallback jika database belum update CHECK constraint 'processing' (error 23514):
         // Kunci atomik dengan memundurkan due_at +5 menit (lease lock) TANPA menandai 'sent' sebelum kirim (C1 & P1-1)
         console.warn(`[remind] status 'processing' ditolak DB (${claimErr.message}), gunakan lease-lock due_at.`);
-        const leaseTime = new Date(Date.now() + 5 * 60 * 1000).toISOString();
         const { data: directClaim, error: directErr } = await c
           .from('reminders')
-          .update({ due_at: leaseTime })
+          .update({ due_at: leaseExpiry })
           .eq('id', item.id)
           .eq('status', 'pending')
           .select('id');

@@ -223,6 +223,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           chat_id: chatKey,
           role: 'user',
           content: text ? `[Gambar] ${text}` : '[Gambar]',
+          msg_id: messageId || undefined,
         });
 
         const { reply, via, tokens } = await describeImage(base64, mime, text || undefined, context);
@@ -274,6 +275,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           chat_id: chatKey,
           role: 'user',
           content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
+          msg_id: messageId || undefined,
         });
 
         const { reply, via, tokens } = await processIncomingDocument(
@@ -332,20 +334,18 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             chat_id: chatKey,
             role: 'user',
             content: `[Voice Note]: "${transcription}"`,
+            msg_id: messageId || undefined,
           });
 
-          let webResults: string | null = null;
+          let web: string | null = null;
           if (needsSearch(transcription)) {
-            try {
-              const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
-              webResults = await searchWeb(transcription, prevContext);
-            } catch (err) {
-              console.warn('[whatsapp] Gagal penelusuran web audio:', err);
-            }
+            const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+            const found = await searchWeb(transcription, prevContext);
+            if (found) web = found;
           }
 
           const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
-          const { reply, via, tokens } = await autoReply(prompt, context, webResults);
+          const { reply, via, tokens } = await autoReply(prompt, context, web);
           await sendWhatsAppMessageSafe(sock, remoteJid, reply);
           await saveMessage({
             platform: 'whatsapp',
@@ -356,7 +356,6 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             tokens,
           });
           noteExchange(chatKey);
-          return;
         } catch (err) {
           console.error('[whatsapp] Gagal transkripsi audio/VN:', err);
           await sendWhatsAppMessageSafe(
@@ -364,11 +363,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             remoteJid,
             'Suara dalam rekaman audio tidak terdengar jelas atau kosong. Boleh tolong kirim ulang atau sampaikan melalui teks?',
           );
-          return;
         }
+        return;
       }
     } catch (err) {
-      console.error('[whatsapp] Gagal memproses audio:', err);
+      console.error('[whatsapp] Gagal memproses voice note:', err);
     } finally {
       try {
         await sock.sendPresenceUpdate('paused', remoteJid);
@@ -401,6 +400,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           chat_id: chatKey,
           role: 'user',
           content: '[Stiker WhatsApp]',
+          msg_id: messageId || undefined,
         });
 
         const { reply, via, tokens } = await processIncomingSticker(buffer, mime, undefined, context);
@@ -439,6 +439,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         chat_id: chatKey,
         role: 'user',
         content: caption ? `[Video] ${caption}` : '[Video]',
+        msg_id: messageId || undefined,
       });
 
       const buffer = await downloadMediaMessage(
