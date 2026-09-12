@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.30  
+**Versi:** v0.25.31  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 14:36 WIB  
+**Terakhir Diperbarui:** 2026-09-12 14:44 WIB  
 
 ---
 
@@ -191,6 +191,20 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.31 - 2026-09-12 14:44 WIB
+**Eliminasi Total Filler Slop Penutup ("santai aja terus bro"), Ekstraksi Nama Kota Spesifik Memori, & Pencegahan False-Positive DKI Jakarta**
+- **Eliminasi Total Frasa Penutup Filler Sok Asik (`src/skills.ts`, `src/timezone.ts`)**:
+  - **Akar Masalah**: Saat mengonfirmasi lokasi pengguna, model AI menambahkan celetukan penutup klise yang tidak diminta (*"santai aja terus bro"*). Hal ini disebabkan instruksi lama *"Lanjutkan obrolan dengan santai mengikuti konteksnya"* yang memicu model mengisi kekosongan konteks dengan filler sok akrab (*try-hard slop*).
+  - **Penetapan Aturan Anti-Filler Slop di Prinsip 2**: Melarang keras menempelkan celetukan penutup klise di akhir balasan seperti *"santai aja terus bro"*, *"santai aja bro"*, *"santai aja dulu"*, *"semangat terus ya"*, *"tetap semangat bro"*, *"santuy aja"*. Jika jawaban sudah tuntas, balasan selesai di situ tanpa embel-embel tidak perlu.
+  - **Penyaring Otomatis Rule 14e (`cleanMathAndNoise`)**: Menambahkan pembersih regex otomatis yang memotong sisa-sisa celetukan penutup filler klise di akhir kalimat jika model secara tak sengaja memuntahkannya.
+- **Pencegahan False-Positive DKI Jakarta pada String Memori IANA (`src/timezone.ts`)**:
+  - **Akar Masalah**: Ketika profil memori memuat `"(Zona Waktu: Asia/Jakarta)"`, `detectLocation` mencocokkan substring `"jakarta"` pada identifier zona waktu IANA tersebut sebelum kata kota riil pengguna terbaca, sehingga bot keliru mengira pengguna berada di DKI Jakarta.
+  - **Solusi**: Membersihkan identifier zona waktu IANA (`asia/jakarta`, dll) dari teks input sebelum pencarian kata kunci lokasi, sehingga lokasi spesifik pengguna terbaca secara akurat.
+- **Preservasi Nama Kota Spesifik ke Memori Persisten (`src/timezone.ts`, `src/skills.ts`)**:
+  - Menambahkan `matchedKeyword` pada antarmuka `LocationMatch` dan `detectLocation`.
+  - Menyimpan nama kota spesifik (contoh: *Cianjur, Jawa Barat / WIB*) ke tabel Supabase `corrections` dan array memori aktif.
+  - Menyelaraskan record database Supabase untuk pengguna `wa_628991333323` sehingga kota Cianjur terkunci permanen dan langsung dikenali saat pengguna bertanya jam di masa mendatang.
 
 ### v0.25.30 - 2026-09-12 14:36 WIB
 **Penghapusan Refleks Pembuka "Wah", Pembatasan Slang "bjir", Batasan Tawa "wkwk", dan Peningkatan Kepekaan Maksud Tersembunyi (Read Between the Lines)**
