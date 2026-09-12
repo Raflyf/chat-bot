@@ -182,9 +182,9 @@ function steps(): Step[] {
       keys: config.pools.xkiro,
       models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
       visionModels: [
+        'mistralai/mistral-large-2512',
         'qwen/qwen3.8-max:free',
         'mistralai/mistral-medium-3.5',
-        'mistralai/mistral-large-2512',
         'qwen/qwen3.6-plus:free',
         'mistralai/mistral-small-2603',
       ],
@@ -195,7 +195,7 @@ function steps(): Step[] {
       kind: 'groq',
       keys: config.pools.groq,
       models: [config.models.groqPrimary, config.models.groqBackup],
-      visionModels: [config.models.groqPrimary, config.models.groqBackup],
+      visionModels: [],
       cap: config.dailyCap.groq,
       run: (k, m, msgs) => openAiChat('https://api.groq.com/openai/v1', k, m, msgs),
     },
@@ -211,7 +211,7 @@ function steps(): Step[] {
       kind: 'openrouter',
       keys: config.pools.openrouter,
       models: [config.models.orPrimary, config.models.orMini, config.models.orText],
-      visionModels: [config.models.orPrimary, config.models.orMini],
+      visionModels: [],
       cap: config.dailyCap.openrouter,
       run: (k, m, msgs) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs),
     },
@@ -220,8 +220,8 @@ function steps(): Step[] {
 
 /**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: xKiro (Qwen 3.8 / 3.6) > Groq > Gemini > OpenRouter.
- * - Vision / foto / gambar: xKiro (Qwen / Mistral) > Groq Qwen > Gemini > OpenRouter.
+ * - Teks umum / matematika / koding: xKiro (Qwen 3.8 / Mistral / DeepSeek) > Groq > Gemini > OpenRouter.
+ * - Vision / foto / gambar: xKiro (Mistral Large > Qwen 3.8 > Mistral Medium > Qwen 3.6) > Gemini (3.8 Flash > 2.5 Flash).
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
 export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Promise<{ text: string; via: string }> {
@@ -232,12 +232,12 @@ export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Pr
 
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
-  // Untuk vision: Urutan sesuai instruksi (xKiro -> Groq Qwen -> Gemini -> OpenRouter)
+  // Untuk vision: Urutan sesuai instruksi (xKiro -> Gemini)
   const orderedSteps = needVision
     ? allSteps
         .filter((s) => s.visionModels.length > 0)
         .sort((a, b) => {
-          const priority: Record<string, number> = { xkiro: 1, groq: 2, gemini: 3, openrouter: 4 };
+          const priority: Record<string, number> = { xkiro: 1, gemini: 2, groq: 3, openrouter: 4 };
           return (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
         })
     : allSteps;
