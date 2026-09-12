@@ -104,18 +104,6 @@ export async function isKeyAllowed(kind: ProviderKind, key: string, cap: number)
   return slot(kind, key).count < cap;
 }
 
-/** True jika key masih boleh dipakai hari ini (sinkron, kompatibilitas). */
-export function keyAllowed(kind: ProviderKind, key: string, cap: number): boolean {
-  // Picu hidrasi jika belum pernah dibaca dari DB hari ini
-  const day = today();
-  const suffix = keyHash(key);
-  const cacheKey = `${kind}:${suffix}:${day}`;
-  if (!hydratedKeys.has(cacheKey)) {
-    void hydrateKeyQuota(kind, key);
-  }
-  return slot(kind, key).count < cap;
-}
-
 /** Catat satu pemakaian sukses/gagal-terkirim (429 ikut dihitung agar pool berhenti). */
 export function keyUsed(kind: ProviderKind, key: string): void {
   const s = slot(kind, key);

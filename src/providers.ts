@@ -1,5 +1,5 @@
 import { config } from './env.js';
-import { keyAllowed, isKeyAllowed, keyUsed, ensureKeyQuotaHydrated } from './quota.js';
+import { isKeyAllowed, keyUsed, ensureKeyQuotaHydrated } from './quota.js';
 
 export interface TextPart {
   type: 'text';

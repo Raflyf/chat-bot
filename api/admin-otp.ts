@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from '../src/env.js';
+import { db } from '../src/db.js';
 import {
   getClientIp,
   verifyPin,
@@ -169,6 +170,83 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       res.status(200).json({
         success: true,
         message: 'Berhasil keluar dari sesi admin.',
+      });
+      return;
+    }
+
+    // 8. PURGE USER DATA (RTBF) - Authenticated (service_role RPC)
+    if (action === 'purge_user_data') {
+      if (req.method !== 'POST') {
+        res.status(405).json({ success: false, message: 'Method Not Allowed' });
+        return;
+      }
+
+      const token = extractSessionToken(req) || String(body.session_token || query.session_token || '').trim();
+      const isValid = token ? await verifySessionToken(token) : false;
+      if (!isValid) {
+        res.status(401).json({ success: false, message: 'Sesi admin tidak valid atau telah kedaluwarsa.' });
+        return;
+      }
+
+      const chatId = String(body.chat_id || query.chat_id || '').trim();
+      if (!chatId) {
+        res.status(400).json({ success: false, message: 'chat_id wajib disertakan.' });
+        return;
+      }
+
+      const c = db();
+      if (!c) {
+        res.status(503).json({ success: false, message: 'Koneksi database tidak tersedia.' });
+        return;
+      }
+
+      const { data, error } = await c.rpc('rpc_purge_user_data', { p_chat_id: chatId });
+      if (error) {
+        console.error('[api/admin-otp] purge_user_data error:', error.message);
+        res.status(500).json({ success: false, message: 'Gagal menghapus data pengguna.' });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        chat_id: chatId,
+        deleted: Number(data ?? 0),
+        message: 'Data pengguna berhasil dihapus.',
+      });
+      return;
+    }
+
+    // 9. PURGE EXPIRED WEB KNOWLEDGE - Authenticated (service_role RPC)
+    if (action === 'purge_expired_knowledge') {
+      if (req.method !== 'POST') {
+        res.status(405).json({ success: false, message: 'Method Not Allowed' });
+        return;
+      }
+
+      const token = extractSessionToken(req) || String(body.session_token || query.session_token || '').trim();
+      const isValid = token ? await verifySessionToken(token) : false;
+      if (!isValid) {
+        res.status(401).json({ success: false, message: 'Sesi admin tidak valid atau telah kedaluwarsa.' });
+        return;
+      }
+
+      const c = db();
+      if (!c) {
+        res.status(503).json({ success: false, message: 'Koneksi database tidak tersedia.' });
+        return;
+      }
+
+      const { data, error } = await c.rpc('rpc_purge_expired_web_knowledge');
+      if (error) {
+        console.error('[api/admin-otp] purge_expired_knowledge error:', error.message);
+        res.status(500).json({ success: false, message: 'Gagal menghapus pengetahuan web kedaluwarsa.' });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        deleted: Number(data ?? 0),
+        message: 'Pengetahuan web kedaluwarsa berhasil dihapus.',
       });
       return;
     }

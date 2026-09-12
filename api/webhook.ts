@@ -2,11 +2,12 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import { config } from '../src/env.js';
 import { getTelegramBot, processTelegramUpdate } from '../src/telegram.js';
+import { logError, logWarn } from '../src/logger.js';
 
 function verifySecretToken(tokenHeader: string | string[] | undefined, secret: string): boolean {
   if (!secret) {
     if (process.env.NODE_ENV === 'test') return true;
-    console.warn('[webhook] TELEGRAM_WEBHOOK_SECRET tidak diset, menolak request demi keamanan fail-closed.');
+    logWarn('[webhook] TELEGRAM_WEBHOOK_SECRET tidak diset, menolak request demi keamanan fail-closed.');
     return false;
   }
   if (!tokenHeader || typeof tokenHeader !== 'string') return false;
@@ -32,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   // Verifikasi Secret Token Telegram
   const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
   if (!verifySecretToken(secretHeader, config.telegramWebhookSecret)) {
-    console.warn('[webhook] Unauthorized request: secret token mismatch');
+    logWarn('[webhook] Unauthorized request: secret token mismatch');
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
@@ -48,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     await processTelegramUpdate(bot, update);
     res.status(200).json({ ok: true });
   } catch (err) {
-    console.error('[webhook] Error processing update:', err);
+    logError('[webhook] Error processing update', { error: String((err as Error)?.message ?? err) });
     // Selalu kembalikan 200 ke Telegram agar tidak terjadi Retry Storm
     res.status(200).json({ ok: false, error: 'Internal Error' });
   }

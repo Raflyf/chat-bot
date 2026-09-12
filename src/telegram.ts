@@ -8,6 +8,9 @@ import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 
+// Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
+const PROMPT_VERSION = 'v0.26.5';
+
 let sharedBot: TelegramBot | null = null;
 
 export function getTelegramBot(): TelegramBot {
@@ -413,14 +416,25 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         console.warn('[telegram] Gagal penelusuran web:', err);
       }
     }
+    const tStart = Date.now();
     const { reply, escalate, via, tokens } = await autoReply(text, ctx, web);
+    const latencyMs = Date.now() - tStart;
     await sendTelegramMessageSafe(bot, chatId, reply);
     if (msgId) void markMessageProcessed('telegram', msgId);
 
     // Update cache memori & simpan balasan asisten ke database secara non-blocking
     updateContextCache(chatKey, 'assistant', reply);
-    void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via, tokens })
-      .catch((err) => console.warn('[telegram] Gagal simpan pesan assistant:', err));
+    void saveMessage({
+      platform: 'telegram',
+      chat_id: chatKey,
+      role: 'assistant',
+      content: reply,
+      via,
+      tokens,
+      latency_ms: latencyMs,
+      needs_search: web !== null,
+      prompt_version: PROMPT_VERSION,
+    }).catch((err) => console.warn('[telegram] Gagal simpan pesan assistant:', err));
     noteExchange(chatKey);
 
     if (escalate && ownerId) {

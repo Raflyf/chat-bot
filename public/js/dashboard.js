@@ -1360,7 +1360,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             <div class="dataset-reply">${escapeHtml(p.botReply)}</div>
           </td>
           <td style="text-align: right;">
-            <button class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="copyPromptById(${p.id})">
+            <button class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" data-copy-id="${p.id}">
               Copy
             </button>
           </td>
@@ -1378,7 +1378,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         let paginationHtml = "";
 
         const prevDisabledAttr = currentDatasetPage <= 1 ? "disabled" : "";
-        const prevAction = currentDatasetPage <= 1 ? "" : `onclick="goToDatasetPage(${currentDatasetPage - 1})"`;
+        const prevAction = currentDatasetPage <= 1 ? "" : `data-page="${currentDatasetPage - 1}"`;
         paginationHtml += `<button class="pagination-btn" ${prevDisabledAttr} ${prevAction}>&laquo; Prev</button>`;
 
         let startPage = Math.max(1, currentDatasetPage - 2);
@@ -1388,7 +1388,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         }
 
         if (startPage > 1) {
-          paginationHtml += `<button class="pagination-btn" onclick="goToDatasetPage(1)">1</button>`;
+          paginationHtml += `<button class="pagination-btn" data-page="1">1</button>`;
           if (startPage > 2) {
             paginationHtml += `<span class="pagination-ellipsis">&hellip;</span>`;
           }
@@ -1396,18 +1396,18 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
         for (let i = startPage; i <= endPage; i++) {
           const activeClass = i === currentDatasetPage ? "active" : "";
-          paginationHtml += `<button class="pagination-btn ${activeClass}" onclick="goToDatasetPage(${i})">${i}</button>`;
+          paginationHtml += `<button class="pagination-btn ${activeClass}" data-page="${i}">${i}</button>`;
         }
 
         if (endPage < totalPages) {
           if (endPage < totalPages - 1) {
             paginationHtml += `<span class="pagination-ellipsis">&hellip;</span>`;
           }
-          paginationHtml += `<button class="pagination-btn" onclick="goToDatasetPage(${totalPages})">${totalPages}</button>`;
+          paginationHtml += `<button class="pagination-btn" data-page="${totalPages}">${totalPages}</button>`;
         }
 
         const nextDisabledAttr = currentDatasetPage >= totalPages ? "disabled" : "";
-        const nextAction = currentDatasetPage >= totalPages ? "" : `onclick="goToDatasetPage(${currentDatasetPage + 1})"`;
+        const nextAction = currentDatasetPage >= totalPages ? "" : `data-page="${currentDatasetPage + 1}"`;
         paginationHtml += `<button class="pagination-btn" ${nextDisabledAttr} ${nextAction}>Next &raquo;</button>`;
 
         controlsEl.innerHTML = paginationHtml;
@@ -1496,6 +1496,81 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     }
 
     // =========================================================================
+    // EVENT BINDING (CSP-SAFE: replaces every removed inline on* handler)
+    // =========================================================================
+    function bindDashboardEvents() {
+      const on = (id, event, handler) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener(event, handler);
+      };
+
+      // Auth gateway controls
+      on("link-home-auth", "click", (e) => leaveToHome(e));
+      on("link-home-header", "click", (e) => leaveToHome(e));
+      on("pin-form", "submit", (e) => handlePinSubmit(e));
+      on("btn-open-reset", "click", openResetModal);
+      on("btn-send-otp", "click", handleSendOtp);
+      on("btn-resend-otp", "click", handleSendOtp);
+      on("btn-submit-reset", "click", handleVerifyOtpAndReset);
+      on("btn-cancel-reset", "click", closeResetModal);
+      on("btn-back-reset", "click", closeResetModal);
+
+      // Header action controls
+      on("btn-auto", "click", toggleAutoRefresh);
+      on("btn-manual-refresh", "click", () => {
+        fetchData(true);
+        fetchDataset(true);
+      });
+      on("btn-logout", "click", handleLogout);
+
+      // Metric pill filters (literal argument carried via data-* attributes)
+      document.querySelectorAll("#time-filter-pills [data-range]").forEach((el) => {
+        el.addEventListener("click", () => setTimeRange(el.dataset.range));
+      });
+      document.querySelectorAll("#platform-filter-pills [data-platform]").forEach((el) => {
+        el.addEventListener("click", () => setPlatformFilter(el.dataset.platform));
+      });
+      document.querySelectorAll("#provider-filter-pills [data-provider]").forEach((el) => {
+        el.addEventListener("click", () => setProviderFilter(el.dataset.provider));
+      });
+      document.querySelectorAll("#matrix-time-filters [data-range]").forEach((el) => {
+        el.addEventListener("click", () => setMatrixRange(el.dataset.range));
+      });
+
+      // Key status dropdown
+      on("key-status-filter", "change", (e) => setKeyStatusFilter(e.target.value));
+
+      // Dataset filter controls
+      on("dataset-search", "input", debounceDatasetSearch);
+      on("dataset-range-filter", "change", () => fetchDataset());
+      on("dataset-platform-filter", "change", () => fetchDataset());
+      on("dataset-model-filter", "change", () => fetchDataset());
+      on("btn-download-csv", "click", () => downloadDataset("csv"));
+      on("btn-download-jsonl", "click", () => downloadDataset("jsonl"));
+
+      // Delegated dataset table actions: table rows and pagination markup are
+      // injected dynamically, so their inline handlers were replaced with
+      // data-* attributes handled here (CSP blocks inline handlers entirely).
+      const tbody = document.getElementById("dataset-tbody");
+      if (tbody) {
+        tbody.addEventListener("click", (e) => {
+          const btn = e.target.closest("[data-copy-id]");
+          if (!btn) return;
+          copyPromptById(Number(btn.dataset.copyId));
+        });
+      }
+
+      const paginationControls = document.getElementById("dataset-pagination-controls");
+      if (paginationControls) {
+        paginationControls.addEventListener("click", (e) => {
+          const btn = e.target.closest("[data-page]");
+          if (!btn || btn.disabled) return;
+          goToDatasetPage(Number(btn.dataset.page));
+        });
+      }
+    }
+
+    // =========================================================================
     // SMART STICKY HEADER SCROLL CONTROLLER (HIDE ON SCROLL DOWN, REVEAL ON SCROLL UP)
     // =========================================================================
     (() => {
@@ -1541,6 +1616,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     // INITIALIZATION
     // =========================================================================
     (async () => {
+      bindDashboardEvents();
       const isAuthed = await checkSession();
       if (isAuthed) {
         fetchData();

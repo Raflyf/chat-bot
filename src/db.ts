@@ -18,6 +18,11 @@ export async function saveMessage(row: {
   via?: string;
   tokens?: { prompt: number; completion: number; total: number };
   msg_id?: string;
+  latency_ms?: number;
+  needs_search?: boolean;
+  split_count?: number;
+  prompt_version?: string;
+  feedback?: string;
 }): Promise<void> {
   const c = db();
   if (!c) return;
@@ -41,6 +46,12 @@ export async function saveMessage(row: {
       if (typeof row.tokens.completion === 'number') insertPayload.completion_tokens = row.tokens.completion;
       if (typeof row.tokens.total === 'number') insertPayload.total_tokens = row.tokens.total;
     }
+    // Kolom instrumentasi dataset (opsional, hanya disertakan bila terisi)
+    if (row.latency_ms !== undefined) insertPayload.latency_ms = row.latency_ms;
+    if (row.needs_search !== undefined) insertPayload.needs_search = row.needs_search;
+    if (row.split_count !== undefined) insertPayload.split_count = row.split_count;
+    if (row.prompt_version !== undefined) insertPayload.prompt_version = row.prompt_version;
+    if (row.feedback !== undefined) insertPayload.feedback = row.feedback;
     if (row.msg_id) {
       await c.from('messages').upsert(insertPayload, { onConflict: 'platform,msg_id' });
     } else {

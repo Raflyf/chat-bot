@@ -1836,7 +1836,7 @@
   <div id="auth-modal" class="modal-overlay hidden">
     <div class="auth-card" id="pin-card">
       <div class="auth-top-nav">
-        <a href="/" class="auth-back-link" title="Kembali ke Landing Page" onclick="leaveToHome(event)">
+        <a href="/" class="auth-back-link" id="link-home-auth" title="Kembali ke Landing Page">
           <span>&larr; Beranda</span>
         </a>
       </div>
@@ -1851,7 +1851,7 @@
       <div id="auth-alert" class="auth-alert auth-alert-error"></div>
 
       <!-- Native PIN Form (Keyboard / Touch / Numpad Supported) -->
-      <form id="pin-form" class="auth-form" onsubmit="handlePinSubmit(event)">
+      <form id="pin-form" class="auth-form">
         <input
           type="password"
           id="pin-input"
@@ -1873,7 +1873,7 @@
       </div>
 
       <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; margin-top: 0.25rem;">
-        <button class="auth-link-btn" onclick="openResetModal()">Lupa PIN? Reset via Email</button>
+        <button class="auth-link-btn" id="btn-open-reset">Lupa PIN? Reset via Email</button>
         <span style="font-size: 0.75rem; color: var(--text-dim);">SHA-256 Protected</span>
       </div>
     </div>
@@ -1897,10 +1897,10 @@
         <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
           Sistem akan mengirimkan kode 6-digit ke email admin. Kode berlaku selama 10 menit.
         </p>
-        <button class="btn btn-primary" id="btn-send-otp" onclick="handleSendOtp()" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
+        <button class="btn btn-primary" id="btn-send-otp" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
           Kirim Kode OTP ke Email
         </button>
-        <button class="btn" onclick="closeResetModal()" style="justify-content: center;">
+        <button class="btn" id="btn-cancel-reset" style="justify-content: center;">
           Batal &amp; Kembali ke Login
         </button>
       </div>
@@ -1920,13 +1920,13 @@
           <input type="password" id="input-confirm-pin" class="form-input" placeholder="Ulangi angka PIN baru" maxlength="8">
         </div>
 
-        <button class="btn btn-primary" id="btn-submit-reset" onclick="handleVerifyOtpAndReset()" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
+        <button class="btn btn-primary" id="btn-submit-reset" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
           Verifikasi &amp; Simpan PIN Baru
         </button>
 
         <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
-          <button class="auth-link-btn" id="btn-resend-otp" onclick="handleSendOtp()" disabled>Kirim Ulang OTP (60s)</button>
-          <button class="auth-link-btn" onclick="closeResetModal()">Kembali</button>
+          <button class="auth-link-btn" id="btn-resend-otp" disabled>Kirim Ulang OTP (60s)</button>
+          <button class="auth-link-btn" id="btn-back-reset">Kembali</button>
         </div>
       </div>
     </div>
@@ -1939,7 +1939,7 @@
     <!-- Header -->
     <header>
       <div style="display: flex; align-items: center; gap: 1rem;">
-        <a href="/" class="btn" title="Kembali ke Landing Page Utama" style="padding: 0.4rem 0.8rem;" onclick="leaveToHome(event)">
+        <a href="/" class="btn" id="link-home-header" title="Kembali ke Landing Page Utama" style="padding: 0.4rem 0.8rem;">
           <span>&larr; Beranda</span>
         </a>
         <a href="/dashboard.html" class="brand">
@@ -1955,14 +1955,14 @@
           <span class="pulse-dot"></span>
           <span>Sistem Aktif</span>
         </div>
-        <button class="btn active" id="btn-auto" onclick="toggleAutoRefresh()">
+        <button class="btn active" id="btn-auto">
           <span>Auto: 15s</span>
         </button>
-        <button class="btn" id="btn-manual-refresh" onclick="fetchData(true); fetchDataset(true);">
+        <button class="btn" id="btn-manual-refresh">
           <span id="btn-refresh-icon">&#x21bb;</span>
           <span>Segarkan</span>
         </button>
-        <button class="btn btn-danger" onclick="handleLogout()" title="Kunci Dashboard">
+        <button class="btn btn-danger" id="btn-logout" title="Kunci Dashboard">
           <span>Kunci Keluar</span>
         </button>
       </div>
@@ -1973,20 +1973,20 @@
       <div class="filter-group-wrap">
         <span class="filter-title-label">Rentang Waktu:</span>
         <div class="pill-filter-group" id="time-filter-pills">
-          <button class="pill-filter-btn active" data-range="today" onclick="setTimeRange('today')">Hari Ini</button>
-          <button class="pill-filter-btn" data-range="7d" onclick="setTimeRange('7d')">7 Hari</button>
-          <button class="pill-filter-btn" data-range="14d" onclick="setTimeRange('14d')">14 Hari</button>
-          <button class="pill-filter-btn" data-range="30d" onclick="setTimeRange('30d')">30 Hari</button>
-          <button class="pill-filter-btn" data-range="all" onclick="setTimeRange('all')">Semua</button>
+          <button class="pill-filter-btn active" data-range="today">Hari Ini</button>
+          <button class="pill-filter-btn" data-range="7d">7 Hari</button>
+          <button class="pill-filter-btn" data-range="14d">14 Hari</button>
+          <button class="pill-filter-btn" data-range="30d">30 Hari</button>
+          <button class="pill-filter-btn" data-range="all">Semua</button>
         </div>
       </div>
 
       <div class="filter-group-wrap">
         <span class="filter-title-label">Platform:</span>
         <div class="pill-filter-group" id="platform-filter-pills">
-          <button class="pill-filter-btn active" data-platform="all" onclick="setPlatformFilter('all')">Semua</button>
-          <button class="pill-filter-btn" data-platform="whatsapp" onclick="setPlatformFilter('whatsapp')">WhatsApp</button>
-          <button class="pill-filter-btn" data-platform="telegram" onclick="setPlatformFilter('telegram')">Telegram</button>
+          <button class="pill-filter-btn active" data-platform="all">Semua</button>
+          <button class="pill-filter-btn" data-platform="whatsapp">WhatsApp</button>
+          <button class="pill-filter-btn" data-platform="telegram">Telegram</button>
         </div>
       </div>
     </section>
@@ -2030,13 +2030,13 @@
         </div>
         <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
           <div class="pill-filter-group" id="provider-filter-pills">
-            <button class="pill-filter-btn active" data-provider="all" onclick="setProviderFilter('all')">Semua Provider</button>
-            <button class="pill-filter-btn" data-provider="xkiro" onclick="setProviderFilter('xkiro')">xKiro</button>
-            <button class="pill-filter-btn" data-provider="groq" onclick="setProviderFilter('groq')">Groq</button>
-            <button class="pill-filter-btn" data-provider="gemini" onclick="setProviderFilter('gemini')">Gemini</button>
-            <button class="pill-filter-btn" data-provider="openrouter" onclick="setProviderFilter('openrouter')">OpenRouter</button>
+            <button class="pill-filter-btn active" data-provider="all">Semua Provider</button>
+            <button class="pill-filter-btn" data-provider="xkiro">xKiro</button>
+            <button class="pill-filter-btn" data-provider="groq">Groq</button>
+            <button class="pill-filter-btn" data-provider="gemini">Gemini</button>
+            <button class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
           </div>
-          <select id="key-status-filter" class="filter-select" onchange="setKeyStatusFilter(this.value)">
+          <select id="key-status-filter" class="filter-select">
             <option value="all">Semua Status Key</option>
             <option value="healthy">Sehat (&lt;80%)</option>
             <option value="warning">Waspada (&ge;80%)</option>
@@ -2177,10 +2177,10 @@
             Total Inferensi: <span id="matrix-total-inferensi">0x</span>
           </div>
           <div class="matrix-time-filters" id="matrix-time-filters">
-            <button class="matrix-filter-pill active" data-range="today" onclick="setMatrixRange('today')">Hari Ini</button>
-            <button class="matrix-filter-pill" data-range="7d" onclick="setMatrixRange('7d')">7 Hari</button>
-            <button class="matrix-filter-pill" data-range="30d" onclick="setMatrixRange('30d')">30 Hari</button>
-            <button class="matrix-filter-pill" data-range="all" onclick="setMatrixRange('all')">Semua</button>
+            <button class="matrix-filter-pill active" data-range="today">Hari Ini</button>
+            <button class="matrix-filter-pill" data-range="7d">7 Hari</button>
+            <button class="matrix-filter-pill" data-range="30d">30 Hari</button>
+            <button class="matrix-filter-pill" data-range="all">Semua</button>
           </div>
         </div>
       </div>
@@ -2259,20 +2259,20 @@
           </p>
         </div>
         <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
-          <input type="text" id="dataset-search" class="search-input" placeholder="Cari pertanyaan / jawaban..." oninput="debounceDatasetSearch()">
-          <select id="dataset-range-filter" class="filter-select" onchange="fetchDataset()">
+          <input type="text" id="dataset-search" class="search-input" placeholder="Cari pertanyaan / jawaban...">
+          <select id="dataset-range-filter" class="filter-select">
             <option value="today">Hari Ini Saja (WIB)</option>
             <option value="all" selected>Semua Waktu</option>
             <option value="7d">7 Hari Terakhir</option>
             <option value="14d">14 Hari Terakhir</option>
             <option value="30d">30 Hari Terakhir</option>
           </select>
-          <select id="dataset-platform-filter" class="filter-select" onchange="fetchDataset()">
+          <select id="dataset-platform-filter" class="filter-select">
             <option value="">Semua Platform</option>
             <option value="whatsapp">WhatsApp</option>
             <option value="telegram">Telegram</option>
           </select>
-          <select id="dataset-model-filter" class="filter-select" onchange="fetchDataset()">
+          <select id="dataset-model-filter" class="filter-select">
             <option value="">Semua Model</option>
             <option value="xkiro">xKiro</option>
             <option value="opencode">OpenCode Zen</option>
@@ -2280,11 +2280,11 @@
             <option value="gemini">Gemini</option>
             <option value="openrouter">OpenRouter</option>
           </select>
-          <button class="btn btn-today" onclick="downloadDataset('csv')" title="Unduh CSV data percakapan sesuai filter dropdown aktif (Waktu, Platform, Model, dan Pencarian)">
+          <button class="btn btn-today" id="btn-download-csv" title="Unduh CSV data percakapan sesuai filter dropdown aktif (Waktu, Platform, Model, dan Pencarian)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.35rem; vertical-align: -2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             <span>Unduh CSV</span>
           </button>
-          <button class="btn btn-primary" onclick="downloadDataset('jsonl')" title="Unduh format JSONL untuk Fine-Tuning LLM sesuai filter dropdown aktif">
+          <button class="btn btn-primary" id="btn-download-jsonl" title="Unduh format JSONL untuk Fine-Tuning LLM sesuai filter dropdown aktif">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.35rem; vertical-align: -2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             <span>Unduh JSONL</span>
           </button>

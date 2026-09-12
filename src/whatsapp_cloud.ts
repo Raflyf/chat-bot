@@ -8,6 +8,9 @@ import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
 
+// Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
+const PROMPT_VERSION = 'v0.26.5';
+
 // Cache deduplikasi pesan (mencegah Meta webhook retry memproses pesan 2 kali)
 const processedMessageIds = new Map<string, number>();
 
@@ -510,7 +513,9 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         }
 
         // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
+        const tStart = Date.now();
         const { reply, via, tokens } = await autoReply(text, context, webResults);
+        const latencyMs = Date.now() - tStart;
 
         // 5. Kirim balasan ke WhatsApp pengguna secepat mungkin
         await sendWhatsAppCloudMessageSafe(from, reply);
@@ -525,6 +530,9 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           content: reply,
           via,
           tokens,
+          latency_ms: latencyMs,
+          needs_search: webResults !== null,
+          prompt_version: PROMPT_VERSION,
         }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan assistant:', err));
 
         // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat
