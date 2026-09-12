@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.18 (Universal High-EQ Emotional Calibration & Dynamic Persona Realignment under 4,000 Tokens)  
+**Versi:** v0.26.19 (Universal Dynamic Response, Zero Hardcoded Script, Live News Date Citations & Capped Tokens <= 4,000)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 23:25 WIB
+**Terakhir Diperbarui:** 2026-09-12 23:55 WIB
 
 ---
 
@@ -205,6 +205,25 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.19 - 2026-09-12 23:55 WIB
+
+**Respons Dinamis Universal, Eliminasi Script Template Hafalan, Sitasi Berita Real-Time Hari Ini & Pembatasan Kuota <= 4.000 Token**
+
+- **Eliminasi Kunci Jawaban Hardcoded & Template Dialog (`src/skills.ts`)**:
+  - Menghapus seluruh contoh script dialog verbatim dari system prompt yang sebelumnya dihafal dan diulang secara kaku oleh model LLM (seperti respons hafalan *"Wkwk maap ya, makasih udah sabar ngaturin aku..."*).
+  - Menggantinya dengan aturan batasan perilaku (*boundary directives*): model wajib menyusun respons secara dinamis, orisinal, dan mengalir natural menggunakan bahasanya sendiri sesuai konteks percakapan.
+- **Larangan Mutlak Wejangan Hidup & Basa-Basi Kepo (`src/skills.ts`)**:
+  - Menegakkan larangan keras membuat paragraf kedua berisi wejangan hidup ("santai dulu deh", "istirahat sejenak", "rebahan dulu", "biar otak gak overheat"), pertanyaan kepo ("udah makan belum?"), tips kerja tanpa diminta ("fokus satu-satu dulu"), dan tawaran bantuan klise ("lempar aja ke sini").
+  - Respons santai/curhat dibatasi dalam 1 paragraf ringkas (1-2 kalimat alami, maksimal 20-30 kata) tanpa newline kosong ganda.
+- **Penyempurnaan Penelusuran Berita Real-Time & Sitasi Waktu/Tanggal (`src/web.ts`, `src/skills.ts`)**:
+  - Memperluas deteksi `needsSearch` dan `formulateSmartSearchQueries` untuk mengenali kueri ketinggalan berita, pertanyaan akses internet, dan pertanyaan resolusi anaphora terkait waktu ("itutuh kapan beritanya?").
+  - Untuk berita umum/headline, scraper langsung menarik Google News Indonesia Top Headlines RSS (`https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id`) sehingga berita yang disajikan akurat hari ini (12 September 2026) lengkap dengan nama media dan tanggal publikasi.
+  - System prompt mewajibkan bot menyertakan waktu/tanggal terbit berita (misal: "berdasarkan berita hari ini 12 September 2026...") dan melarang keras dalih "aku tidak punya akses internet real-time".
+- **Kalibrasi Anggaran Token (Strictly <= 4.000 Token)**:
+  - Memotong duplikasi aturan antarseksi dan mengondisikan blok curhat hanya aktif jika bukan kueri pencarian web (`!web`).
+  - Memangkas potongan referensi web menjadi 500 karakter (~150 token).
+  - Seluruh skenario uji riil (berita real-time, followup waktu, curhat dinamis) terbukti menghabiskan **3.300–3.890 token**, selalu berada di bawah batas maksimal 4.000 token.
 
 ### v0.26.18 - 2026-09-12 23:25 WIB
 

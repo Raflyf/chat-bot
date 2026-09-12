@@ -283,7 +283,10 @@ export function needsSearch(text: string): boolean {
   if (
     /\b(?:berita\s+(?:terkini|terbaru|hari\s+ini|dunia|politik|panas|nasional)|ada\s+berita)\b/i.test(qNorm) ||
     /\b(?:kabar\s+(?:terkini|terbaru|berita|dunia|politik|pasar|terpanas)|ada\s+kabar\s+(?:apa|terbaru|tentang)|kabar\s+soal)\b/i.test(qNorm) ||
-    /\b(?:info\s+terbaru|informasi\s+terkini|kapan\s+(?:rilis|launch|tayang)|rilis\s+(?:terbaru|resmi|versi|baru))\b/i.test(qNorm) ||
+    /\b(?:info(?:rmasi)?\s+(?:terbaru|terkini|terupdate|teranyar|update|hangat|viral)|kapan\s+(?:rilis|launch|tayang|berita|kejadian|terjadi)|rilis\s+(?:terbaru|resmi|versi|baru))\b/i.test(qNorm) ||
+    /\b(?:ketinggalan\s+(?:berita|informasi|kabar|info)|cari(?:kan)?\s+(?:informasi|berita|kabar|info))\b/i.test(qNorm) ||
+    /\b(?:mana\s+informasi\s+waktu|tanggal\s+berapa|kapan\s+(?:kejadiannya|peristiwanya|beritanya))\b/i.test(qNorm) ||
+    /\b(?:internet\s+realtime|akses\s+internet|browsing\s+internet|akses\s+real-?time)\b/i.test(qNorm) ||
     /\b(?:harga\s+(?:emas|bbm|minyak|hp|beras|telur|kripto|bitcoin|saham)|berapa\s+harga)\b/i.test(qNorm) ||
     /\b(?:update\s+(?:terbaru|terkini|patch|versi|info|berita|sistem|fitur|harga)|ada\s+update)\b/i.test(qNorm) ||
     /\bjadwal\s+(?:rilis|tayang|pertandingan|tanding|bola|match|liga|konser|sholat|solat|imsakiyah|krl|kereta|pesawat|kuliah|bioskop)\b/i.test(qNorm) ||
@@ -455,6 +458,20 @@ export function formulateSmartSearchQueries(query: string, previousContext?: str
   if (!query || typeof query !== 'string') return [];
 
   const cleanRawLower = query.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const isAskingTimeOrRecency = /\b(?:kapan|waktu(?:nya)?|tanggal\s+berapa|jam\s+berapa|tahun\s+berapa|mana\s+informasi\s+waktu)\b/i.test(cleanRawLower);
+  if (isAskingTimeOrRecency && previousContext) {
+    // Cari entitas atau topik dari percakapan sebelumnya
+    const contextTopics = previousContext.match(/\b(gempa(?:\s+[a-z]+)?|ntt|prabowo|jokowi|smelter|nikel|tsunami|banjir|pemilu|pilkada|kpk|dpr|mpr|presiden|menteri|[a-z]{4,})\b/gi);
+    if (contextTopics && contextTopics.length > 0) {
+      const topTopic = Array.from(new Set(contextTopics)).slice(-3).join(' ');
+      return [
+        `${topTopic} tanggal waktu kejadian`,
+        `${topTopic} kapan berita ${new Date().getFullYear()}`,
+        `${topTopic} berita terbaru`,
+      ];
+    }
+  }
+
   const isGeneralNewsQuery =
     /^(?:infokan|tampilkan|berikan|cari|carikan|apa|ada)?\s*(?:berita|kabar|news|headline|peristiwa)\s*(?:hari\s*ini|terkini|terbaru|pagi\s*ini|siang\s*ini|sore\s*ini|malam\s*ini|saat\s*ini|update)?$/i.test(
       cleanRawLower,
@@ -462,12 +479,14 @@ export function formulateSmartSearchQueries(query: string, previousContext?: str
     /^(?:berita|kabar|news|headline)\s*(?:hari\s*ini|terkini|terbaru)$/i.test(cleanRawLower) ||
     /\b(?:berita|kabar|peristiwa|headline)\s+(?:hari\s*ini|terkini|terbaru)\b/i.test(query) ||
     /\b(?:berita|kabar|news)\s+terkini\b/i.test(query) ||
+    /\b(?:ketinggalan\s+berita|informasi\s+terbaru|berita\s+terbaru|update\s+terbaru|kabar\s+terbaru)\b/i.test(cleanRawLower) ||
+    /\b(?:akses\s+internet\s+realtime|akses\s+internet)\b/i.test(cleanRawLower) ||
     /^(?:ada\s+berita\s+apa|apa\s+berita\s+hari\s+ini|berita\s+apa\s+hari\s+ini)/i.test(cleanRawLower);
 
   if (isGeneralNewsQuery) {
     return [
       'berita utama terkini hari ini indonesia',
-      'top breaking news headlines today',
+      'breaking news headlines today',
       'peristiwa penting hari ini indonesia',
     ];
   }
@@ -811,9 +830,18 @@ export async function searchWeb(query: string, previousContext?: string): Promis
       }
     }
 
-    // 2e. Google News Indonesia RSS
+    // 2e. Google News Indonesia RSS (Top Headlines langsung jika kueri berita umum agar update detik ini)
+    const isGeneralNews =
+      /\b(?:ketinggalan\s+berita|informasi\s+terbaru|berita\s+terbaru|update\s+terbaru|kabar\s+terbaru|berita\s+hari\s+ini|headline\s+hari\s+ini|berita\s+terkini|kabar\s+terkini|news\s+today)\b/i.test(cleanQuery) ||
+      /\b(?:akses\s+internet\s+realtime|akses\s+internet)\b/i.test(cleanQuery) ||
+      /^(?:berita|kabar|news|headline)\s*(?:hari\s*ini|terkini|terbaru)?$/i.test(cleanQuery.trim());
+
+    const gNewsUrl = isGeneralNews
+      ? 'https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id'
+      : `https://news.google.com/rss/search?q=${encodeURIComponent(primaryQ)}&hl=id&gl=ID&ceid=ID:id`;
+
     fetches.push(
-      fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(primaryQ)}&hl=id&gl=ID&ceid=ID:id`, {
+      fetch(gNewsUrl, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
         signal: controller.signal,
       })
@@ -821,13 +849,13 @@ export async function searchWeb(query: string, previousContext?: string): Promis
         .then((txt) => {
           if (!txt) return;
           const items = txt.match(/<item>[\s\S]*?<\/item>/gi) || [];
-          for (const item of items.slice(0, 6)) {
+          for (const item of items.slice(0, 8)) {
             const tm = item.match(/<title>([\s\S]*?)<\/title>/i);
             const dm = item.match(/<description>([\s\S]*?)<\/description>/i);
             const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
             const lm = item.match(/<link>([\s\S]*?)<\/link>/i);
             if (tm) {
-              addSnippet('Google Berita', tm[1], dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '', 50);
+              addSnippet('Google Berita', tm[1], dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '', isGeneralNews ? 85 : 50);
               if (lm && lm[1] && isSafePublicUrl(lm[1].trim())) {
                 discoveredUrls.add(lm[1].trim());
               }
