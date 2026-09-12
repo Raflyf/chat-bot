@@ -88,6 +88,8 @@ export const config = {
   timeoutMs: num('REQUEST_TIMEOUT_MS', 35000),
   // Kapasitas output token agar AI mampu menjelaskan detail & koding tanpa terpotong
   maxOutputTokens: num('MAX_OUTPUT_TOKENS', 2500),
+  // Batas maksimal total token konteks prompt (agar muat di kuota ketat Groq 8K TPM)
+  maxTokensLimit: num('MAX_TOKENS_LIMIT', 8000),
   // Timeout unduhan media terpisah dan pendek
   downloadTimeoutMs: num('DOWNLOAD_TIMEOUT_MS', 25000),
   cacheTtlMs: num('CACHE_TTL_MS', 3600000),

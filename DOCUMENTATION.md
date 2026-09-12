@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.14 (Server Outage Fast-Break Circuit Breaker for HTTP 503/502, Local .env Synchronization & Sub-Second Failover)  
+**Versi:** v0.26.15 (Max 8000 Token Budget Enforcement, 15-Message Short-Term Memory Pruning & Groq 8K TPM Adaptation)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 22:20 WIB
+**Terakhir Diperbarui:** 2026-09-12 22:35 WIB
 
 ---
 
@@ -205,6 +205,19 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.15 - 2026-09-12 22:35 WIB
+
+**Pembatasan Maksimal 8.000 Token Konteks Global, Pemangkasan Memori Lokal Percakapan Jangka Pendek Menjadi 15 Pesan, dan Adaptasi Kuota Groq 8K TPM**
+
+- **Penyesuaian Memori Lokal Jangka Pendek Menjadi 15 Pesan (`src/memory.ts`, `src/skills.ts`, `AGENTS.md`)**:
+  - Mengurangi batas cache riwayat pesan lokal in-memory dari 24 menjadi 15 pesan (`updateContextCache` dan `getContext`).
+  - Menyesuaikan batas pembacaan riwayat pada `buildMessages` di `src/skills.ts` dari 24 menjadi 15 pesan terakhir.
+  - Menghemat ~1.500 hingga 2.500 token konteks tanpa memotong integritas instruksi prompt dasar sistem.
+- **Budget Token Adaptif & Penegakan Batas 8.000 Token (`src/providers.ts`, `src/env.ts`)**:
+  - Mengimplementasikan helper `trimMessagesToTokenBudget(messages, maxBudget)` yang secara dinamis membuang pesan riwayat percakapan tertua jika akumulasi token melebihi batas, sambil tetap mempertahankan pesan sistem (*system prompt*) dan pesan pengguna terkini 100% utuh.
+  - Menetapkan batas global `maxTokensLimit: 8000` di `src/env.ts` (`MAX_TOKENS_LIMIT`).
+  - Menerapkan pemangkasan khusus pada langkah eksekusi Groq ke 7.200 token prompt (sehingga total prompt + 800 output token tidak pernah melampaui batas ketat 8.000 TPM pada model Qwen Groq), mengeliminasi error `HTTP 413 / 429 rate limit exceeded`.
 
 ### v0.26.14 - 2026-09-12 22:20 WIB
 

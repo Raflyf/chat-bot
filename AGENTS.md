@@ -91,7 +91,7 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
 
 1. **Stateful Conversation History:**
    - Riwayat percakapan tersimpan di Supabase dengan pagination dinamis.
-   - In-memory Conversation Context Cache di `src/memory.ts` dengan rolling TTL 25 detik dan 24 pesan terakhir untuk respons instan 0-5ms tanpa round-trip DB berulang.
+   - In-memory Conversation Context Cache di `src/memory.ts` dengan rolling TTL 25 detik dan 15 pesan terakhir untuk respons instan 0-5ms tanpa round-trip DB berulang.
    - In-memory Knowledge Web Cache di `src/knowledge.ts` berkapasitas 300 entri dengan FIFO pruning 50 entri tertua saat batas tercapai.
 
 2. **Autonomous Dynamic Timezone Awareness:**
