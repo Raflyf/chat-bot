@@ -1,9 +1,0 @@
-node_modules
-dist
-session_wa
-session_wa*
-.git
-scratch
-*.log
-.env
-.env.local
