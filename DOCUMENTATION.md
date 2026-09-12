@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.15  
+**Versi:** v0.25.25  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 02:48 WIB  
+**Terakhir Diperbarui:** 2026-09-12 13:25 WIB  
 
 ---
 
@@ -191,6 +191,22 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.25 - 2026-09-12 13:25 WIB
+**Presisi Grounding Matematika, Pembenahan Konteks Respons Ketidaktahuan ("Ih gak tau") & Eliminasi Penumpukan Tawa/Slang Cringe**
+- **Penanganan Ketidaktahuan Pengguna Tanpa Asumsi Lelucon (`isUserUnsure`, `src/skills.ts`)**:
+  - **Akar Masalah**: Saat pengguna merespons *"Ih gak tau"* setelah penjelasan matematika yang sebelumnya diakhiri kalimat bot *"Bener kan tebakanku?"*, regex pendeteksi tebak-tebakan lama keliru mencocokkan kata `tebak` di `tebakanku?`, sehingga sistem menganggap pengguna menyerah pada sesi tebak-tebakan humor dan mengeluarkan punchline lelucon ngawur (*"Karena mereka makannya dikit-dikit wkwk"* atau *"Anggap aja tebak-tebakan receh buat ngilangin gabut lu wkwk. Mau coba yang lain gak nih?"*).
+  - **Solusi**: Memperketat regex `isPendingRiddle` hanya pada pola lelucon/gombalan eksplisit (`coba tebak`, `tebak kenapa`, `bapak kamu tukang`) dan mengecualikan kata `tebakanku`.
+  - Menambahkan handler `isUserUnsure` untuk respons *"Ih gak tau"*, *"gatau"*, *"mana saya tau"*: melarang keras menganggap pesan tersebut sebagai lelucon, melarang menawarkan permainan lain, dan menanggapi kebingungan pengguna secara wajar, tenang, dan tuntas sesuai topik yang sedang dibahas.
+- **Strict Grounding Matematika & Eliminasi Spekulasi Halusinasi Typo (`src/skills.ts`)**:
+  - **Akar Masalah**: Pada soal `1+1x3x0+7+9:0`, model mengarang asumsi liar yang tidak pernah diminta: *"Tapi kalau itu cuma typo dan maksudnya 9:3, jawabannya jadi 8"*.
+  - **Solusi**: Menegakkan aturan urutan operasi matematika KABATAKU/PEMDAS: perkalian dan pembagian dikerjakan terlebih dahulu (`1x3x0 = 0`), dan pembagian dengan angka nol (`9:0`) menghasilkan nilai tidak terdefinisi (*undefined*). Melarang keras mengarang asumsi typo sendiri atau mengabaikan operasi matematika secara sepihak.
+  - Menambahkan pembersih sanitasi regex di `cleanMathAndNoise` untuk memotong spekulasi typo matematika jika model secara tak sengaja memuntahkannya.
+- **Eliminasi Penumpukan Tawa Ganda & Obral Slang Cringe (`src/skills.ts`)**:
+  - **Akar Masalah**: Model menumpuk tawa (membuka dengan *"wkwk"* dan menutup dengan *"haha"*) serta menjejalkan rentetan kata gaul sekaligus (*"Wkwk relate bjir, emang rawan banget nih jam segini buat mager dan gabut. Santuy aja dulu, rebahan sambil scroll HP juga lumayan lah ya haha"*), menimbulkan kesan norak, garing, dan cringe.
+  - **Solusi**: Menetapkan aturan ketat tawa maksimal 1 kali per pesan (atau tanpa tawa sama sekali saat berbicara normal).
+  - Mengintegrasikan pembersih regex pada Rule 14c di `cleanMathAndNoise` yang otomatis menghapus seluruh tawa tambahan di luar tawa pertama di seluruh badan pesan.
+  - Membersihkan contoh instruksi `isGabutOrBored` agar model menghasilkan balasan yang bersih, mengalir alami, dan membumi tanpa obral slang beruntun.
 
 ### v0.25.24 - 2026-09-12 13:16 WIB
 **Perombakan Persona Universal: Eliminasi Template Hafalan & Penegakan Nada Santai Wajar (Anti Over-React)**
