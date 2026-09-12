@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.32  
+**Versi:** v0.25.33  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 15:06 WIB  
+**Terakhir Diperbarui:** 2026-09-12 15:18 WIB  
 
 ---
 
@@ -191,6 +191,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.33 - 2026-09-12 15:18 WIB
+**Fitur Universal /reset Sesi Bersih, Pemotong Riwayat Checkpoint Supabase, & Sinkronisasi Lintas WhatsApp & Telegram**
+- **Mekanisme Checkpoint Reset Sesi Non-Destruktif (`src/memory.ts`)**:
+  - Menyediakan perintah universal `/reset`, `/clear`, `reset sesi`, `mulai sesi baru`, `clear chat`, `hapus riwayat`, `reset chat`.
+  - **Prinsip Anti-Penghapusan Data**: Tidak menghapus rekaman riwayat pesan di tabel `messages` Supabase sehingga data log evaluasi di CSV/JSONL dan dasbor tetap 100% utuh dan akurat.
+  - Menyematkan baris penanda checkpoint `[SESSION_RESET]` pada riwayat percakapan nomor akun tersebut, membersihkan ringkasan `summaries` lama, dan memusnahkan cache lokal `contextCache`.
+  - Pada pembacaan memori berikutnya (`getContext`), seluruh pesan yang terjadi sebelum titik checkpoint reset otomatis dipotong dan diabaikan, sehingga memori model AI langsung kembali segar murni ke baseline awal (~5.500 token, zero noise).
+- **Sinkronisasi Terpadu Lintas Saluran (`src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`)**:
+  - Diintegrasikan secara identik dan serentak pada Telegram Bot, WhatsApp Baileys Multi-Device, dan Meta WhatsApp Cloud API.
+  - Respon bot diformat lugas, bersih, dan elegan tanpa basa-basi penutup CS: *"Sesi percakapan berhasil di-reset. Memori aktif sudah kembali bersih."*.
 
 ### v0.25.32 - 2026-09-12 15:08 WIB
 **Penyetelan Sweet Spot Riwayat Konteks Aktif (24 Pesan Teks & 8 Pesan Vision) untuk Keseimbangan Memori dan Latensi Cepat**

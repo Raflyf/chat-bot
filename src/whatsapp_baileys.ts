@@ -13,7 +13,7 @@ import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage } from './db.js';
-import { getContext, noteExchange, saveCorrection, updateContextCache } from './memory.js';
+import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import {
@@ -544,6 +544,20 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
   // Kasus 2: Pesan Teks
   if (!text) return;
+
+  // Cek perintah reset sesi
+  if (isResetCommand(text)) {
+    const reply = await resetSession(chatKey, 'whatsapp');
+    await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+    void saveMessage({
+      platform: 'whatsapp',
+      chat_id: chatKey,
+      role: 'assistant',
+      content: reply,
+      via: 'system/reset',
+    });
+    return;
+  }
 
   // Berikan indikator sedang mengetik (composing)
   try {

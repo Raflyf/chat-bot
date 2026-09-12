@@ -3,7 +3,7 @@ import { config } from './env.js';
 import { autoReply, describeImage } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage } from './db.js';
-import { getContext, noteExchange, saveCorrection, updateContextCache } from './memory.js';
+import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -145,6 +145,20 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     if (text.startsWith('/remind')) {
       const args = text.replace(/^\/remind\s*/, '').trim();
       await handleRemind(bot, chatId, args);
+      return;
+    }
+
+    // 3b. Perintah /reset atau /clear atau reset sesi
+    if (text && isResetCommand(text)) {
+      const reply = await resetSession(chatKey, 'telegram');
+      await sendTelegramMessageSafe(bot, chatId, reply);
+      void saveMessage({
+        platform: 'telegram',
+        chat_id: chatKey,
+        role: 'assistant',
+        content: reply,
+        via: 'system/reset',
+      });
       return;
     }
 

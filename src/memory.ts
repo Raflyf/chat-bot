@@ -28,12 +28,52 @@ export function updateContextCache(chatKey: string, role: 'user' | 'assistant', 
   const cached = contextCache.get(chatKey);
   if (cached && Date.now() - cached.at < CONTEXT_TTL_MS) {
     cached.data.history.push({ role, content });
-    if (cached.data.history.length > 10) cached.data.history.shift();
+    if (cached.data.history.length > 24) cached.data.history.shift();
     cached.at = Date.now();
   }
 }
 
-/** Ambil konteks chat: 10 pesan terakhir + ringkasan + koreksi. Tanpa DB = kosong. */
+/** Periksa apakah pesan pengguna adalah perintah reset sesi. */
+export function isResetCommand(text: string): boolean {
+  const norm = text.trim().toLowerCase();
+  return (
+    norm === '/reset' ||
+    norm === '/clear' ||
+    norm === 'reset' ||
+    norm === 'clear' ||
+    norm === 'reset sesi' ||
+    norm === 'mulai sesi baru' ||
+    norm === 'clear chat' ||
+    norm === 'hapus riwayat' ||
+    norm === 'reset chat' ||
+    norm === '/reset_session'
+  );
+}
+
+/** Reset sesi percakapan aktif: menyematkan checkpoint pemotong riwayat, menghapus ringkasan lama & membersihkan cache. */
+export async function resetSession(chatKey: string, platform: string = 'whatsapp'): Promise<string> {
+  contextCache.delete(chatKey);
+  const c = db();
+  if (c) {
+    try {
+      await Promise.all([
+        c.from('messages').insert({
+          platform,
+          chat_id: chatKey,
+          role: 'user',
+          content: '[SESSION_RESET]',
+          via: 'system/reset',
+        }),
+        c.from('summaries').delete().eq('chat_id', chatKey),
+      ]);
+    } catch {
+      // best-effort
+    }
+  }
+  return 'Sesi percakapan berhasil di-reset. Memori aktif sudah kembali bersih.';
+}
+
+/** Ambil konteks chat: 24 pesan terakhir sejak checkpoint reset + ringkasan + koreksi. Tanpa DB = kosong. */
 export async function getContext(chatKey: string): Promise<ChatContext> {
   const empty: ChatContext = { history: [], summary: null, corrections: [], chatId: chatKey };
 
@@ -60,9 +100,16 @@ export async function getContext(chatKey: string): Promise<ChatContext> {
     if (s.error && s.error.code !== 'PGRST116') warnOnce('summaries', s.error.message);
     if (k.error) warnOnce('corrections', k.error.message);
 
+    const rawMessages = (h.data ?? []) as Array<{ role: string; content: string }>;
+    // Cari index checkpoint reset (karena diurutkan descending, index terkecil adalah reset terbaru)
+    const resetIdx = rawMessages.findIndex(
+      (m) => m.content === '[SESSION_RESET]' || m.content.startsWith('[SESSION_RESET]'),
+    );
+    const validMessages = resetIdx >= 0 ? rawMessages.slice(0, resetIdx) : rawMessages;
+
     const ctx: ChatContext = {
-      history: ((h.data ?? []) as Array<{ role: string; content: string }>)
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
+      history: validMessages
+        .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.content.includes('[SESSION_RESET]'))
         .reverse()
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
       summary: (s.data as { summary?: string } | null)?.summary ?? null,
