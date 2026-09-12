@@ -43,15 +43,12 @@ export const config = {
         ? csv('XKIRO_MODEL_BACKUPS')
         : [
             'mistralai/mistral-large-2512',
-            'mistralai/mistral-medium-3.5',
             'sensenova/sensenova-6.8-flash-lite',
+            'mistralai/mistral-medium-3.5',
             'qwen/qwen3.6-plus:free',
-            'deepseek/deepseek-v4-pro',
             'deepseek/deepseek-v4-flash',
-            'minimax/minimax-m2.7-highspeed:free',
-            'minimax/minimax-m3:free',
+            'deepseek/deepseek-v4-pro',
             'qwen/qwen3.7-plus:free',
-            'mistralai/codestral-2508',
           ],
     orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
     orMini: cleanStr('OR_MODEL_MINI') || 'nex-agi/nex-n2.5-mini:free',

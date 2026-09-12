@@ -183,9 +183,9 @@ function steps(): Step[] {
       models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
       visionModels: [
         'qwen/qwen3.8-max:free',
-        'qwen/qwen3.6-plus:free',
         'mistralai/mistral-large-2512',
         'mistralai/mistral-medium-3.5',
+        'qwen/qwen3.6-plus:free',
       ],
       cap: config.dailyCap.xkiro,
       run: (k, m, msgs) => openAiChat('https://api.xkiro.com/v1', k, m, msgs),

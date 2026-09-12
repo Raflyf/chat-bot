@@ -192,6 +192,24 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.18 - 2026-09-12 12:10 WIB
+**Penyegaran Rantai Model Cadangan xKiro & Penyelarasan Prioritas Multimodal Vision**
+- **Restrukturisasi Pool Model xKiro (`src/env.ts`)**:
+  - Menyederhanakan dan merapikan urutan failover xKiro:
+    1. Primary: `qwen/qwen3.8-max:free`
+    2. Backup 1: `mistralai/mistral-large-2512`
+    3. Backup 2: `sensenova/sensenova-6.8-flash-lite` (model penalaran/reasoning dari SenseTime)
+    4. Backup 3: `mistralai/mistral-medium-3.5`
+    5. Backup 4: `qwen/qwen3.6-plus:free`
+    6. Backup 5: `deepseek/deepseek-v4-flash`
+    7. Backup 6: `deepseek/deepseek-v4-pro`
+    8. Backup 7: `qwen/qwen3.7-plus:free`
+  - Mengeliminasi model yang tidak lagi digunakan (`minimax-m2.7-highspeed:free`, `minimax-m3:free`, `codestral-2508`).
+- **Penyelarasan Urutan Prioritas Multimodal Vision (`src/providers.ts`)**:
+  - Mengurutkan `visionModels` pada provider xKiro agar selaras dengan prioritas model terbaru:
+    `['qwen/qwen3.8-max:free', 'mistralai/mistral-large-2512', 'mistralai/mistral-medium-3.5', 'qwen/qwen3.6-plus:free']`.
+  - Memastikan jika input gambar dikirimkan pengguna, failover vision langsung beralih ke `mistral-large-2512` dan `mistral-medium-3.5` sebelum `qwen3.6-plus`.
+
 ### v0.25.17 - 2026-09-12 12:05 WIB
 **Penyatuan Tombol Unduh CSV Tunggal & Sinkronisasi Ekspor dengan Filter Dinamis (Waktu, Platform, Model, Pencarian)**
 - **Penyatuan Tombol Unduh CSV Tunggal (`public/dashboard.html`)**:
