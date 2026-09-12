@@ -234,7 +234,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   try {
     // Optimasi performa: tarik hanya kolom penting secara descending dari pesan terbaru
     const isExport = format === 'jsonl' || format === 'csv';
-    const dbLimit = isExport ? 1500 : Math.min(600, limit * 2 + 60);
+    const dbLimit = isExport ? 3000 : Math.min(600, limit * 2 + 60);
 
     let query = c
       .from('messages')
@@ -333,7 +333,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // Urutkan dari yang terbaru untuk tampilan evaluasi
     pairs.reverse();
-    const finalPairs = pairs.slice(0, limit);
+    const finalPairs = isExport ? pairs : pairs.slice(0, limit);
+
+    // Susun nama file ekspor yang mencerminkan filter aktif
+    let exportFileLabel = fileLabel;
+    if (platform && platform !== 'all') {
+      exportFileLabel += `_${platform}`;
+    }
+    if (modelFilter && modelFilter !== 'all') {
+      exportFileLabel += `_${modelFilter.replace(/[^a-z0-9_-]/gi, '')}`;
+    }
 
     // Format 1: JSONL (Standar Fine-Tuning Model AI / OpenAI / HuggingFace format)
     if (format === 'jsonl') {
@@ -365,7 +374,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       res.setHeader('Content-Type', 'application/x-jsonlines; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="training_dataset_${fileLabel}.jsonl"`,
+        `attachment; filename="training_dataset_${exportFileLabel}.jsonl"`,
       );
       res.status(200).send(lines.join('\n'));
       return;
@@ -397,7 +406,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="evaluasi_chatbot_${fileLabel}.csv"`,
+        `attachment; filename="evaluasi_chatbot_${exportFileLabel}.csv"`,
       );
       res.status(200).send('\uFEFF' + csvHeader + csvRows); // BOM untuk Excel UTF-8
       return;
