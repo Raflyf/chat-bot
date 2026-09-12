@@ -42,13 +42,13 @@ export const config = {
       csv('XKIRO_MODEL_BACKUPS').length > 0
         ? csv('XKIRO_MODEL_BACKUPS')
         : [
-            'mistralai/mistral-medium-3.5',
             'deepseek/deepseek-v4-flash',
+            'qwen/qwen3.6-plus:free',
             'mistralai/mistral-large-2512',
             'deepseek/deepseek-chat-v3.1',
-            'qwen/qwen3.7-max:free',
             'deepseek/deepseek-v4-pro',
-            'qwen/qwen3.6-plus:free',
+            'qwen/qwen3.7-max:free',
+            'mistralai/mistral-medium-3.5',
             'mistralai/mistral-small-2603',
           ],
     orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',

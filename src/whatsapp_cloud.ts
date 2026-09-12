@@ -209,8 +209,16 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         if (!messageId || !from || isDuplicate(messageId)) continue;
 
         const chatKey = 'wa_' + from;
+        let initialContent = `[${m.type || 'msg'}]`;
+        if (m.type === 'text' && m.text?.body) {
+          initialContent = m.text.body;
+        } else if (m.type === 'interactive') {
+          initialContent = m.interactive?.button_reply?.title || m.interactive?.list_reply?.title || '[interactive]';
+        } else if (m.type === 'image' && m.image?.caption) {
+          initialContent = `[Gambar] ${m.image.caption}`;
+        }
         // Klaim atomik (zero TOCTOU): jika sudah pernah ada, drop langsung!
-        if (!(await claimIncomingMessage('whatsapp', messageId, chatKey, `[${m.type || 'msg'}]`))) continue;
+        if (!(await claimIncomingMessage('whatsapp', messageId, chatKey, initialContent))) continue;
 
         // Tandai pesan telah dibaca (centang dua biru)
         void markWhatsAppCloudMessageRead(messageId);
@@ -497,8 +505,15 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // 1. Ambil riwayat percakapan (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
         const context = await getContext(chatKey);
 
-        // 2. Update cache in-memory langsung (pesan user sudah tercatat saat klaim atomik)
+        // 2. Update cache in-memory & sinkronkan teks riil user ke database
         updateContextCache(chatKey, 'user', text);
+        void saveMessage({
+          platform: 'whatsapp',
+          chat_id: chatKey,
+          role: 'user',
+          content: text,
+          msg_id: messageId,
+        }).catch((err) => console.warn('[wa-cloud] Gagal update pesan user:', err));
 
         // 3. Periksa kebutuhan pencarian web real-time 2026
         let webResults: string | null = null;
