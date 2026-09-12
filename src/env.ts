@@ -40,37 +40,16 @@ export const config = {
   models: {
     xkiroPrimary: cleanStr('XKIRO_MODEL_PRIMARY') || 'qwen/qwen3.8-max:free',
     xkiroBackup: (() => {
-      const preferred = [
-        'deepseek/deepseek-v4-flash',
-        'qwen/qwen3.7-max:free',
-        'deepseek/deepseek-chat-v3.1',
-        'qwen/qwen3.6-plus:free',
-        'deepseek/deepseek-v4-pro',
-      ];
-      const raw = csv('XKIRO_MODEL_BACKUPS');
-      const list = raw.length > 0 ? raw : preferred;
-      const set = new Set(list);
-      const result: string[] = [];
-      for (const m of preferred) {
-        result.push(m);
-        set.delete(m);
-      }
-      for (const m of set) {
-        // Hapus model yang dihapus pengguna dan seluruh varian mistral
-        const low = m.toLowerCase();
-        if (
-          !low.includes('mistral') &&
-          !low.includes('codestral') &&
-          !low.includes('devstral') &&
-          !low.includes('ministral') &&
-          m !== 'qwen/qwen3.5-plus:free' &&
-          m !== 'qwen/qwen3.5-omni-plus:free' &&
-          m !== 'qwen/qwen3.7-plus:free'
-        ) {
-          result.push(m);
-        }
-      }
-      return result;
+      const envList = csv('XKIRO_MODEL_BACKUPS');
+      return envList.length > 0
+        ? envList
+        : [
+            'deepseek/deepseek-v4-flash',
+            'qwen/qwen3.7-max:free',
+            'deepseek/deepseek-chat-v3.1',
+            'qwen/qwen3.6-plus:free',
+            'deepseek/deepseek-v4-pro',
+          ];
     })(),
     orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
     orMini: cleanStr('OR_MODEL_MINI') || 'nex-agi/nex-n2.5-mini:free',

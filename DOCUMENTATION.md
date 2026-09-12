@@ -206,6 +206,15 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.26.10 - 2026-09-12 20:58 WIB
+
+**Penyederhanaan Logika Konfigurasi Model xKiro (Refactoring Clean Code) & Otomasi Fallback Tanpa Dependensi Env Vercel**
+
+- **Refactoring Bersih `src/env.ts`**:
+  - Mengeliminasi kode perulangan `Set`, `for...of`, dan filter defensif berlapis yang redundan (*YAGNI*).
+  - Mengganti seluruh blok tersebut dengan idiom TypeScript sederhana: jika `XKIRO_MODEL_BACKUPS` tidak ada (misalnya telah dihapus dari Dashboard Vercel), sistem otomatis langsung menggunakan 5 model cadangan terurut (`deepseek-v4-flash`, `qwen3.7-max`, `deepseek-chat-v3.1`, `qwen3.6-plus`, `deepseek-v4-pro`).
+  - Memastikan deployment Vercel bebas perawatan manual (*zero-maintenance env*).
+
 ### v0.26.9 - 2026-09-12 20:55 WIB
 
 **Restrukturisasi Urutan Model xKiro, Penegasan Failover Antar-Provider (xKiro -> Groq -> Gemini -> OpenRouter), dan Purging Multimodal Vision**
