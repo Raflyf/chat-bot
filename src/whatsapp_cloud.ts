@@ -1,11 +1,12 @@
 import crypto from 'crypto';
 import { config } from './env.js';
-import { autoReply, describeImage } from './skills.js';
+import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
+import { saveReminderToDb } from './remind.js';
 
 // Cache deduplikasi pesan (mencegah Meta webhook retry memproses pesan 2 kali)
 const processedMessageIds = new Map<string, number>();
@@ -29,37 +30,49 @@ export function verifyWhatsAppWebhook(
   token: string | undefined,
   challenge: string | undefined,
 ): { ok: boolean; challenge?: string } {
-  if (mode === 'subscribe' && token === config.whatsappVerifyToken && challenge) {
+  if (!config.whatsappVerifyToken || !token || !challenge) return { ok: false };
+  const bufToken = Buffer.from(token, 'utf8');
+  const bufExpected = Buffer.from(config.whatsappVerifyToken, 'utf8');
+  const isMatch = bufToken.length === bufExpected.length && crypto.timingSafeEqual(bufToken, bufExpected);
+  if (mode === 'subscribe' && isMatch) {
     return { ok: true, challenge };
   }
   return { ok: false };
 }
 
 /**
- * Verifikasi signature HMAC-SHA256 dari header `x-hub-signature-256` Meta.
+ * Verifikasi signature webhook Meta X-Hub-Signature-256 secara timing-safe.
  */
-export function verifyWhatsAppSignature(
-  signature: string | undefined,
-  rawBody: string,
-): boolean {
-  if (!config.whatsappAppSecret) return true; // Opsional jika belum diset
-  if (!signature || !signature.startsWith('sha256=')) return false;
+export function verifyMetaSignature(rawBody: string, signatureHeader?: string): boolean {
+  if (!config.whatsappAppSecret) {
+    if (config.isServerless) return false;
+    return true;
+  }
+  if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
 
-  const expected =
-    'sha256=' +
-    crypto
-      .createHmac('sha256', config.whatsappAppSecret)
-      .update(rawBody)
-      .digest('hex');
+  const expectedSignature = crypto
+    .createHmac('sha256', config.whatsappAppSecret)
+    .update(rawBody, 'utf8')
+    .digest('hex');
 
-  const a = Buffer.from(signature);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  const incomingHash = signatureHeader.slice(7);
+  try {
+    const expectedBuf = Buffer.from(expectedSignature, 'utf8');
+    const incomingBuf = Buffer.from(incomingHash, 'utf8');
+    if (expectedBuf.length !== incomingBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, incomingBuf);
+  } catch {
+    return false;
+  }
 }
+
+export const verifyWhatsAppSignature = (signature: string | undefined, rawBody: string): boolean => {
+  return verifyMetaSignature(rawBody, signature);
+};
 
 /**
  * Mengirim balasan teks melalui Meta WhatsApp Cloud API dengan pemecahan aman.
+ * Menggunakan splitMessageSmart yang sadar code-fence markdown agar formatting tidak rusak.
  */
 export async function sendWhatsAppCloudMessageSafe(
   to: string,
@@ -70,32 +83,7 @@ export async function sendWhatsAppCloudMessageSafe(
     return;
   }
 
-  const maxLen = 4000;
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLen) {
-      chunks.push(remaining);
-      break;
-    }
-
-    let splitIndex = remaining.lastIndexOf('\n\n', maxLen);
-    if (splitIndex === -1 || splitIndex < 1000) {
-      splitIndex = remaining.lastIndexOf('\n', maxLen);
-    }
-    if (splitIndex === -1 || splitIndex < 500) {
-      splitIndex = remaining.lastIndexOf(' ', maxLen);
-    }
-    if (splitIndex === -1) {
-      splitIndex = maxLen;
-    }
-
-    const chunk = remaining.slice(0, splitIndex).trim();
-    if (chunk) chunks.push(chunk);
-    remaining = remaining.slice(splitIndex).trim();
-  }
-
+  const chunks = splitMessageSmart(text, 4000);
   const url = `https://graph.facebook.com/v21.0/${config.whatsappPhoneNumberId}/messages`;
 
   for (const chunk of chunks) {
@@ -242,7 +230,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               platform: 'whatsapp',
               chat_id: chatKey,
               role: 'assistant',
-              content: reply.slice(0, 4000),
+              content: reply,
               via,
               tokens,
             });
@@ -280,7 +268,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               platform: 'whatsapp',
               chat_id: chatKey,
               role: 'assistant',
-              content: reply.slice(0, 4000),
+              content: reply,
               via,
               tokens,
             });
@@ -323,7 +311,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 platform: 'whatsapp',
                 chat_id: chatKey,
                 role: 'assistant',
-                content: reply.slice(0, 4000),
+                content: reply,
                 via,
                 tokens,
               });
@@ -363,7 +351,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               platform: 'whatsapp',
               chat_id: chatKey,
               role: 'assistant',
-              content: reply.slice(0, 4000),
+              content: reply,
               via,
               tokens,
             });
@@ -394,7 +382,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             platform: 'whatsapp',
             chat_id: chatKey,
             role: 'assistant',
-            content: reply.slice(0, 4000),
+            content: reply,
             via,
             tokens,
           });
@@ -416,7 +404,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               platform: 'whatsapp',
               chat_id: chatKey,
               role: 'assistant',
-              content: reply.slice(0, 4000),
+              content: reply,
             });
             noteExchange(chatKey);
             continue;
@@ -447,6 +435,38 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             content: reply,
             via: 'system/reset',
           });
+          continue;
+        }
+
+        // Cek perintah koreksi fakta /salah
+        if (text.startsWith('/salah ') || text === '/salah') {
+          const correction = text.replace(/^\/salah\s*/, '').trim();
+          if (!correction) {
+            await sendWhatsAppCloudMessageSafe(from, 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
+            continue;
+          }
+          await saveCorrection(chatKey, correction);
+          await sendWhatsAppCloudMessageSafe(from, `Siap kak, koreksinya sudah dicatat: "${correction}". Aku akan mengingat ini untuk obrolan berikutnya.`);
+          continue;
+        }
+
+        // Cek perintah pengingat /remind
+        if (text.startsWith('/remind ') || text === '/remind') {
+          const args = text.replace(/^\/remind\s*/, '').trim();
+          const mRemind = args.match(/^(\d+)\s+([\s\S]+)/);
+          if (!mRemind) {
+            await sendWhatsAppCloudMessageSafe(from, 'Format: /remind <menit> <pesan>\nContoh: /remind 10 matikan kompor');
+            continue;
+          }
+          const minutes = Number(mRemind[1]);
+          const message = mRemind[2].trim().slice(0, 500);
+          if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440 || !message) {
+            await sendWhatsAppCloudMessageSafe(from, 'Waktu pengingat harus antara 1 sampai 1440 menit (24 jam).');
+            continue;
+          }
+          const dueAt = new Date(Date.now() + minutes * 60_000);
+          await saveReminderToDb(from, message, dueAt, 'whatsapp');
+          await sendWhatsAppCloudMessageSafe(from, `Pengingat "${message}" berhasil dicatat dan akan dikirim ${minutes} menit lagi via WhatsApp.`);
           continue;
         }
 
@@ -485,7 +505,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',
-          content: reply.slice(0, 4000),
+          content: reply,
           via,
           tokens,
         }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan assistant:', err));

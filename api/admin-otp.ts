@@ -17,6 +17,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();
@@ -174,6 +176,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     res.status(400).json({ success: false, message: `Aksi tidak dikenal: ${action}` });
   } catch (err: any) {
     console.error('[api/admin-otp] Gateway error:', err);
-    res.status(500).json({ success: false, message: String(err?.message || err), stack: String(err?.stack || '') });
+    res.status(500).json({ success: false, message: 'Terjadi kesalahan internal pada layanan autentikasi.' });
   }
 }

@@ -125,14 +125,20 @@ export function detectUserCountry(chatKey?: string): CountryTz | null {
   return null;
 }
 
-export interface LocationMatch {
+export interface LocationEntry {
   keywords: string[];
   zone: string;
   label: string;
-  matchedKeyword?: string;
 }
 
-const LOCATION_MAP: LocationMatch[] = [
+export interface LocationMatch {
+  zone: string;
+  label: string;
+  matchedKeyword?: string;
+  keywords?: string[];
+}
+
+const LOCATION_MAP: LocationEntry[] = [
   // Indonesian WITA (UTC+8)
   { keywords: ['bali', 'denpasar', 'kuta', 'ubud', 'gianyar', 'sanur', 'badung', 'tabanan', 'singaraja', 'buleleng', 'seminyak', 'canggu', 'jimbaran', 'nusa dua', 'klungkung', 'bangli', 'karangasem', 'jembrana', 'negara bali'], zone: 'Asia/Makassar', label: 'Bali / WITA' },
   { keywords: ['lombok', 'mataram', 'praya', 'selong', 'sumbawa', 'sumbawa besar', 'bima', 'dompu', 'ntb', 'nusa tenggara barat'], zone: 'Asia/Makassar', label: 'NTB / WITA' },
@@ -227,7 +233,7 @@ const LOCATION_MAP: LocationMatch[] = [
   { keywords: ['new york', 'nyc', 'washington', 'washington dc', 'boston', 'philadelphia', 'miami', 'atlanta', 'florida', 'est', 'edt', 'us eastern'], zone: 'America/New_York', label: 'AS Eastern (New York)' },
   { keywords: ['chicago', 'houston', 'dallas', 'austin', 'san antonio', 'cst', 'cdt', 'us central'], zone: 'America/Chicago', label: 'AS Central (Chicago)' },
   { keywords: ['denver', 'phoenix', 'arizona', 'salt lake city', 'colorado', 'mst', 'mdt', 'us mountain'], zone: 'America/Denver', label: 'AS Mountain (Denver)' },
-  { keywords: ['los angeles', 'la', 'san francisco', 'sf', 'seattle', 'san diego', 'las vegas', 'california', 'portland', 'pst', 'pdt', 'us pacific'], zone: 'America/Los_Angeles', label: 'AS Pacific (Los Angeles)' },
+  { keywords: ['los angeles', 'san francisco', 'seattle', 'san diego', 'las vegas', 'california', 'portland', 'pst', 'pdt', 'us pacific'], zone: 'America/Los_Angeles', label: 'AS Pacific (Los Angeles)' },
   { keywords: ['honolulu', 'hawaii', 'hst'], zone: 'Pacific/Honolulu', label: 'Hawaii (Honolulu)' },
   { keywords: ['anchorage', 'alaska', 'akst', 'akdt'], zone: 'America/Anchorage', label: 'Alaska (Anchorage)' },
   { keywords: ['toronto', 'ottawa', 'montreal', 'quebec', 'kanada', 'canada'], zone: 'America/Toronto', label: 'Kanada (Toronto)' },
@@ -247,15 +253,23 @@ const LOCATION_MAP: LocationMatch[] = [
   { keywords: ['casablanca', 'rabat', 'maroko', 'morocco'], zone: 'Africa/Casablanca', label: 'Maroko (Casablanca)' },
 ];
 
+// Precompile regex untuk menghindari kompilasi ~400 RegExp pada setiap pesan masuk
+const COMPILED_LOCATION_MAP = LOCATION_MAP.map((item) => ({
+  ...item,
+  compiled: item.keywords.map((kw) => ({
+    kw,
+    reg: new RegExp(`\\b${kw.replace(/\s+/g, '\\s+')}\\b`, 'i'),
+  })),
+}));
+
 export function detectLocation(text?: string): LocationMatch | null {
   if (!text || typeof text !== 'string') return null;
-  // Bersihkan identifier zona waktu IANA (misal "Asia/Jakarta") agar substring "jakarta" tidak memicu false-positive DKI Jakarta
+  // Bersihkan identifier zona waktu IANA agar substring tidak memicu false-positive
   const q = text.toLowerCase().replace(/asia\/(?:jakarta|makassar|jayapura|tokyo|seoul|singapore|bangkok)/gi, '');
-  for (const item of LOCATION_MAP) {
-    for (const kw of item.keywords) {
-      const reg = new RegExp(`\\b${kw.replace(/\s+/g, '\\s+')}\\b`, 'i');
+  for (const item of COMPILED_LOCATION_MAP) {
+    for (const { kw, reg } of item.compiled) {
       if (reg.test(q)) {
-        return { ...item, matchedKeyword: kw };
+        return { keywords: item.keywords, zone: item.zone, label: item.label, matchedKeyword: kw };
       }
     }
   }
@@ -264,14 +278,16 @@ export function detectLocation(text?: string): LocationMatch | null {
 
 /**
  * Periksa apakah user sedang bertanya tentang waktu/jam/kalender/jadwal
+ * Qualifier kata tanya diwajibkan agar tidak false trigger pada kalimat umum yang memuat kata 'jam' atau 'waktu'.
  */
 export function isAskingTime(text?: string): boolean {
   if (!text || typeof text !== 'string') return false;
   const q = text.toLowerCase().trim();
-  if (/\b(jam|pukul|waktu|hari|tanggal)\s*(berapa|apa|brp|skrg|sekarang|saat ini)?\b/i.test(q)) return true;
-  if (/\b(sekarang|saat ini|hari ini)\s*(jam|pukul|waktu|hari|tanggal)\b/i.test(q)) return true;
-  if (/\b(jam|pukul)\s*\?/i.test(q)) return true;
-  if (/\b(time|clock|date|today)\b/i.test(q)) return true;
+  if (/\b(jam|pukul|waktu)\s+(berapa|brp|skrg|sekarang|saat ini)\b/i.test(q)) return true;
+  if (/\b(hari|tanggal)\s+(apa|berapa|brp)\s*(sekarang|skrg|ini)?\b/i.test(q)) return true;
+  if (/\b(sekarang|saat ini|hari ini)\s+(jam|pukul|tanggal|hari apa)\b/i.test(q)) return true;
+  if (/\b(jam|pukul)\s+berapa\?/i.test(q) || /\bjam\s*\?/i.test(q)) return true;
+  if (/\b(what time is it|current time|what day is today|what date is today)\b/i.test(q)) return true;
   return false;
 }
 

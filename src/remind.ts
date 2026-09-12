@@ -8,11 +8,17 @@ export interface ReminderItem {
   chat_id: string;
   message: string;
   due_at: string;
-  status: 'pending' | 'sent' | 'failed';
+  status: 'pending' | 'processing' | 'sent' | 'failed';
+  platform?: 'telegram' | 'whatsapp';
 }
 
 /** Simpan reminder ke Supabase untuk persistensi Vercel Serverless & Cron. */
-async function saveReminderToDb(chatId: string, message: string, dueAt: Date): Promise<boolean> {
+export async function saveReminderToDb(
+  chatId: string,
+  message: string,
+  dueAt: Date,
+  platform: 'telegram' | 'whatsapp' = 'telegram',
+): Promise<boolean> {
   const c = db();
   if (!c) return false;
   try {
@@ -21,6 +27,7 @@ async function saveReminderToDb(chatId: string, message: string, dueAt: Date): P
       message,
       due_at: dueAt.toISOString(),
       status: 'pending',
+      platform,
     });
     return !error;
   } catch {
@@ -29,11 +36,11 @@ async function saveReminderToDb(chatId: string, message: string, dueAt: Date): P
 }
 
 /**
- * Cek dan kirim semua reminder yang jatuh tempo.
- * Dipanggil oleh Vercel Cron (/api/cron/reminders) atau local background interval.
+ * Cek dan kirim semua reminder yang jatuh tempo dengan atomic claim (CAS).
+ * Mencegah duplikasi pesan saat cron dan worker berjalan beriringan.
  */
 export async function checkDueReminders(
-  sendFn: (chatId: string, text: string) => Promise<unknown>,
+  sendFn: (chatId: string, text: string, platform?: 'telegram' | 'whatsapp') => Promise<unknown>,
 ): Promise<number> {
   const c = db();
   if (!c) return 0;
@@ -41,17 +48,27 @@ export async function checkDueReminders(
     const now = new Date().toISOString();
     const { data, error } = await c
       .from('reminders')
-      .select('id, chat_id, message, due_at, status')
+      .select('id, chat_id, message, due_at, status, platform')
       .eq('status', 'pending')
       .lte('due_at', now)
+      .order('due_at', { ascending: true })
       .limit(50);
 
     if (error || !data || data.length === 0) return 0;
 
     let processed = 0;
     for (const item of data as ReminderItem[]) {
+      // Atomic claim: kunci status ke 'processing' agar instance lain tidak memproses item yang sama
+      const { error: claimErr } = await c
+        .from('reminders')
+        .update({ status: 'processing' })
+        .eq('id', item.id)
+        .eq('status', 'pending');
+
+      if (claimErr) continue;
+
       try {
-        await sendFn(item.chat_id, `Pengingat kak: ${item.message}`);
+        await sendFn(item.chat_id, `Pengingat kak: ${item.message}`, item.platform);
         await c.from('reminders').update({ status: 'sent' }).eq('id', item.id);
         processed++;
       } catch (err) {
@@ -69,10 +86,15 @@ export async function checkDueReminders(
 /**
  * Reminder handler:
  * 1. Simpan ke database Supabase (tabel reminders) agar persisten di Vercel.
- * 2. Pasang in-memory timer jika running di local terminal (non-serverless).
+ * 2. Pasang in-memory timer HANYA jika database tidak tersedia saat running local.
  * 3. Balasan konfirmasi dinamis via AI.
  */
-export async function handleRemind(bot: TelegramBot, chatId: number, args: string): Promise<void> {
+export async function handleRemind(
+  bot: TelegramBot,
+  chatId: number,
+  args: string,
+  platform: 'telegram' | 'whatsapp' = 'telegram',
+): Promise<void> {
   const m = args.trim().match(/^(\d+)\s+([\s\S]+)/);
   if (!m) {
     const { reply } = await autoReply(
@@ -93,10 +115,10 @@ export async function handleRemind(bot: TelegramBot, chatId: number, args: strin
   }
 
   const dueAt = new Date(Date.now() + minutes * 60_000);
-  const dbSaved = await saveReminderToDb(String(chatId), message, dueAt);
+  const dbSaved = await saveReminderToDb(String(chatId), message, dueAt, platform);
 
-  // In-memory fallback untuk local mode
-  if (!config.isServerless) {
+  // In-memory fallback HANYA jika DB tidak tersedia untuk mencegah pesan dobel
+  if (!config.isServerless && !dbSaved) {
     setTimeout(() => {
       bot.sendMessage(chatId, `Pengingat kak: ${message}`).catch(() => undefined);
     }, minutes * 60_000);
@@ -110,12 +132,14 @@ export async function handleRemind(bot: TelegramBot, chatId: number, args: strin
   await bot.sendMessage(chatId, `${reply}${note}`);
 }
 
+let workerInterval: NodeJS.Timeout | null = null;
+
 /** Worker lokal untuk memproses reminder tiap 30 detik saat bot dijalankan di terminal. */
 export function startReminderWorker(bot: TelegramBot): void {
-  if (config.isServerless) return;
-  setInterval(() => {
+  if (config.isServerless || workerInterval) return;
+  workerInterval = setInterval(() => {
     void checkDueReminders(async (chatId, text) => {
-      await bot.sendMessage(chatId, text);
+      await bot.sendMessage(Number(chatId), text);
     });
   }, 30_000);
 }

@@ -24,6 +24,7 @@ export interface DatasetPair {
   completionTokens: number;
   contextTokens: number;
   totalTokens: number;
+  isRealUsage?: boolean;
 }
 
 export function formatLocalComponents(
@@ -180,6 +181,13 @@ function calculateTimeBounds(
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  // Security headers
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method Not Allowed' });
     return;
@@ -441,7 +449,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     // Default: JSON API Response
-    res.setHeader('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=30');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.status(200).json({
       ok: true,
       totalCount: pairs.length,

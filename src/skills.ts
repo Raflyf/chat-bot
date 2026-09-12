@@ -78,6 +78,26 @@ export function cleanMathAndNoise(text: string): string {
   }
   out = out.replace(/^\s*---\s*\n/g, '');
 
+  // D4: Hapus echo system-prompt, nama spec sheet, dan tag perintah sistem internal yang bocor
+  out = out.replace(/^\[(?:PERINTAH SISTEM|PEDOMAN|ATURAN|MEMORI|DATA INTERNET)[^\]]*\]\s*[:\n]?/gim, '');
+  out = out.replace(/^###?\s*\d+\.\s*(?:IDENTITAS|PRINSIP|ATURAN|PEDOMAN|GAYA BAHASA|KEMAMPUAN)[^\n]*/gim, '');
+  out = out.replace(/^(?:IDENTITAS DEVELOPER & PENCIPTA|PRINSIP UTAMA INTERAKSI ALAMI|PEDOMAN WAJIB)[:\n]?/gim, '');
+
+  // D1: Isolasi blok kode fenced (```...```) dan inline code (`...`) agar tidak terkorupsi oleh replace matematika & markdown
+  const codeBlocks: string[] = [];
+  out = out.replace(/```[\s\S]*?```/g, (match) => {
+    const placeholder = `__FENCED_CODE_BLOCK_${codeBlocks.length}__`;
+    codeBlocks.push(match);
+    return placeholder;
+  });
+
+  const inlineCodes: string[] = [];
+  out = out.replace(/`[^`\n]+`/g, (match) => {
+    const placeholder = `__INLINE_CODE_BLOCK_${inlineCodes.length}__`;
+    inlineCodes.push(match);
+    return placeholder;
+  });
+
   // 3. Konversi LaTeX Block Math: \[ ... \] atau $$ ... $$
   out = out.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (_, eq) => `\n${eq.trim()}\n`);
   out = out.replace(/\$\$\s*([\s\S]*?)\s*\$\$/g, (_, eq) => `\n${eq.trim()}\n`);
@@ -310,8 +330,7 @@ export function cleanMathAndNoise(text: string): string {
   out = out.replace(/^(?:(?:Pada\s+)?(?:gambar|foto|stiker|video|dokumen|tangkapan\s+layar)\s+(?:ini|tersebut)\s+(?:menampilkan|memperlihatkan|menunjukkan|tampak|terlihat|terdapat)|Di\s+dalam\s+(?:gambar|foto|stiker|video|dokumen)\s+ini|Berdasarkan\s+(?:gambar|foto|stiker|video|dokumen)\s+(?:yang\s+(?:diunggah|diberikan|dikirim)|ini))\s*[:,]?\s*/i, '');
   out = out.replace(/^(?:Stiker\s+ini\s+adalah\s+stiker|Gambar\s+ini\s+adalah\s+(?:sebuah\s+)?(?:gambar|foto|stiker))\s*[:,]?\s*/i, '');
   out = out.replace(/^(?:Wah,\s*)?stiker\s+(?:ini\s+)?(?:seru|lucu|keren|kocak|menarik|banget|apaan)[^.!?\n]*[.!?\n]+\s*/i, '');
-  out = out.replace(/^Wah,\s*(?:ini\s+)?stiker[^.!?\n]*[.!?\n]+\s*/i, '');
-  out = out.replace(/#[a-zA-Z0-9_-]+/g, '');
+  out = out.replace(/(?:^|\s)#[a-zA-Z][a-zA-Z0-9_-]+/g, ' ');
   out = out.replace(/[🐾🤖]/gu, '');
   if (/^SiSi$/i.test(out.trim())) out = 'Siapp! 👍';
   out = out.replace(/^SiSi\b/i, 'Siapp');
@@ -319,12 +338,64 @@ export function cleanMathAndNoise(text: string): string {
   // 18. Bersihkan tanda kutip pembungkus tunggal di awal dan akhir balasan
   out = out.replace(/^["']\s*([\s\S]*?)\s*["']$/, '$1').trim();
 
+  // D1: Pulihkan kode yang diisolasi
+  out = out.replace(/__INLINE_CODE_BLOCK_(\d+)__/g, (_, idx) => inlineCodes[Number(idx)] ?? '');
+  out = out.replace(/__FENCED_CODE_BLOCK_(\d+)__/g, (_, idx) => codeBlocks[Number(idx)] ?? '');
+
   return out;
 }
 
 export function sanitizeAssistantOutput(text: string): string {
   const cleaned = cleanMathAndNoise(text);
   return redactOutput(cleaned);
+}
+
+/**
+ * Pemecah pesan cerdas sadar code-fence dan struktur paragraf (E1 & E2).
+ * Jika pemotongan jatuh di tengah blok kode ```...```, maka blok kode ditutup di chunk 1 dan dibuka kembali di chunk 2.
+ */
+export function splitMessageSmart(text: string, maxLen = 4000): string[] {
+  if (!text || typeof text !== 'string') return [];
+  if (text.length <= maxLen) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLen) {
+      chunks.push(remaining);
+      break;
+    }
+
+    let splitIndex = remaining.lastIndexOf('\n\n', maxLen);
+    if (splitIndex === -1 || splitIndex < 1000) {
+      splitIndex = remaining.lastIndexOf('\n', maxLen);
+    }
+    if (splitIndex === -1 || splitIndex < 500) {
+      splitIndex = remaining.lastIndexOf(' ', maxLen);
+    }
+    if (splitIndex === -1) {
+      splitIndex = maxLen;
+    }
+
+    let chunk = remaining.slice(0, splitIndex).trim();
+    remaining = remaining.slice(splitIndex).trim();
+
+    // Cek apakah code block terpotong di tengah
+    const codeBlocks = (chunk.match(/```/g) || []).length;
+    if (codeBlocks % 2 !== 0) {
+      const lastFence = chunk.lastIndexOf('```');
+      const langMatch = chunk.slice(lastFence + 3).match(/^([a-zA-Z0-9_-]*)/);
+      const lang = langMatch ? langMatch[1] : '';
+
+      chunk += '\n```';
+      remaining = '```' + lang + '\n' + remaining;
+    }
+
+    if (chunk) chunks.push(chunk);
+  }
+
+  return chunks;
 }
 
 function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string = ''): string {
@@ -466,7 +537,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '     * DILARANG membuka dengan "Video ini memperlihatkan klip berdurasi...".',
     '     * Tanggapi kejadian, adegan menarik, atau suasana dalam video secara wajar dan santai layaknya kawan yang menonton video bersama.',
     '',
-    '9. PRINSIP UNIVERSAL: RINGKAS, PADAT, & ANTI-BERTELE-TELE (ANTI-WALL-OF-TEXT):',
+    '10. PRINSIP UNIVERSAL: RINGKAS, PADAT, & ANTI-BERTELE-TELE (ANTI-WALL-OF-TEXT):',
     '   - DILARANG KERAS memuntahkan karangan panjang, esai berparagraf-paragraf, atau daftar poin bertingkat yang membuat orang pusing dan malas membaca di layar HP.',
     '   - Pahami bahwa ini adalah WhatsApp/Telegram. Balasan wajib nyaman dibaca cepat, to-the-point, dan proporsional layaknya teman chattingan, bukan artikel buku diktat.',
     '   - PANDUAN STRUKTUR JAWABAN UMUM & KONSULTASI / REKOMENDASI:',
@@ -480,7 +551,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '     * Koding & tugas teknis: Langsung kode solusi fungsional + 2-3 baris penjelasan esensial, tanpa pengantar/penutup teoritis bertele-tele.',
     '   - TETAP SAHABAT KARIB YANG HANGAT: Ringkas bukan berarti kaku atau dingin. Pertahankan kepribadian akrab, asik, manusiawi, dan peka rasa layaknya teman dekat yang seru diajak ngobrol.',
     '',
-    '10. PRINSIP VALIDASI DATA INTERNET & INFORMASI MUTAKHIR (ANTI-OUTDATED REFUSAL):',
+    '11. PRINSIP VALIDASI DATA INTERNET & INFORMASI MUTAKHIR (ANTI-OUTDATED REFUSAL):',
     '   - DILARANG KERAS menyangkal klaim user hanya karena pencarian pertama belum lengkap.',
     '   - Ketika user menyebut atau menanyakan nama produk/model/versi baru, baca data internet yang disertakan secara saksama.',
     '   - DILARANG menggunakan alasan template "sering ketinggalan zaman", "nggak mau ngarang", atau "batas pengetahuan training" secara berulang-ulang.',

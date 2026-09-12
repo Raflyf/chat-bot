@@ -6,6 +6,11 @@ import {
 } from '../src/whatsapp_cloud.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  // Security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+
   // 1. Tangani GET: Verifikasi Webhook Handshake dari Meta
   if (req.method === 'GET') {
     const mode = req.query['hub.mode'] as string | undefined;

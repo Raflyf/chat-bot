@@ -14,6 +14,28 @@ export interface CachedKnowledge {
 const hotKnowledgeCache = new Map<string, CachedKnowledge>();
 const MAX_HOT_CACHE_SIZE = 300;
 
+/** Netralkan potensi stored prompt injection dari teks web sebelum dipersist atau disuntikkan ke model */
+export function sanitizeKnowledgeText(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\[\s*(?:system|system\s+prompt|perintah\s+sistem|instruksi|system\s*:\s*)\s*\]/gi, '[info]')
+    .replace(/\b(?:ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions?|forget\s+all\s+(?:previous|prior)\s+instructions?)\b/gi, '[neutralized]')
+    .replace(/\b(?:you\s+must\s+now|kamu\s+harus\s+mengabaikan|abaikan\s+semua\s+perintah|system\s+override)\b/gi, '[neutralized]')
+    .trim();
+}
+
+// Pruning LRU: buang 50 entri pertama/tertua jika cache melebihi batas (mencegah thundering herd)
+function pruneHotCache(): void {
+  if (hotKnowledgeCache.size >= MAX_HOT_CACHE_SIZE) {
+    let evicted = 0;
+    for (const key of hotKnowledgeCache.keys()) {
+      hotKnowledgeCache.delete(key);
+      evicted++;
+      if (evicted >= 50) break;
+    }
+  }
+}
+
 // Daftar stopwords dan filler percakapan bahasa Indonesia & Inggris
 const STOPWORDS = new Set([
   'tolong', 'bantu', 'jelaskan', 'bagaimana', 'gimana', 'apa', 'apakah', 'kenapa',
@@ -97,14 +119,14 @@ export async function getKnowledge(query: string): Promise<{ knowledge: string; 
   // 1. Periksa hot in-memory cache lokal (0ms)
   const hot = hotKnowledgeCache.get(entityKey);
   if (hot && hot.expiresAt > now) {
-    return { knowledge: hot.knowledge, sourceUrls: hot.sourceUrls };
+    return { knowledge: sanitizeKnowledgeText(hot.knowledge), sourceUrls: hot.sourceUrls };
   }
 
   // 1b. Cek token prefix/overlap di hot cache
   for (const [k, entry] of hotKnowledgeCache.entries()) {
     if (entry.expiresAt > now) {
       if (k === entityKey || k.startsWith(entityKey) || entityKey.startsWith(k)) {
-        return { knowledge: entry.knowledge, sourceUrls: entry.sourceUrls };
+        return { knowledge: sanitizeKnowledgeText(entry.knowledge), sourceUrls: entry.sourceUrls };
       }
     }
   }
@@ -116,7 +138,7 @@ export async function getKnowledge(query: string): Promise<{ knowledge: string; 
   try {
     const { data, error } = await c
       .from('web_knowledge')
-      .select('knowledge, expires_at, source_urls')
+      .select('knowledge, expires_at, source_urls, category')
       .or(`entity_key.eq.${entityKey},entity_key.ilike.${entityKey}%`)
       .gt('expires_at', new Date(now).toISOString())
       .limit(1)
@@ -133,12 +155,15 @@ export async function getKnowledge(query: string): Promise<{ knowledge: string; 
 
     if (data && data.knowledge) {
       const expMs = new Date(data.expires_at).getTime();
+      const sanitized = sanitizeKnowledgeText(data.knowledge);
+      const cat: KnowledgeCategory = (data.category as KnowledgeCategory) || 'tech_release';
+
       // Simpan ke in-memory hot cache untuk kueri berikutnya
-      if (hotKnowledgeCache.size >= MAX_HOT_CACHE_SIZE) hotKnowledgeCache.clear();
+      pruneHotCache();
       hotKnowledgeCache.set(entityKey, {
         entityKey,
-        category: 'tech_release',
-        knowledge: data.knowledge,
+        category: cat,
+        knowledge: sanitized,
         expiresAt: expMs,
         sourceUrls: data.source_urls ?? [],
       });
@@ -147,13 +172,13 @@ export async function getKnowledge(query: string): Promise<{ knowledge: string; 
       void Promise.resolve(c.rpc('increment_knowledge_hit', { p_entity_key: entityKey })).catch(() => {});
 
       return {
-        knowledge: data.knowledge,
+        knowledge: sanitized,
         sourceUrls: data.source_urls ?? [],
       };
     }
 
     return null;
-  } catch (err) {
+  } catch {
     return null;
   }
 }
@@ -167,7 +192,7 @@ export async function saveKnowledge(
   knowledge: string,
   sourceUrls?: string[],
 ): Promise<void> {
-  const cleanKnowledge = knowledge.trim();
+  const cleanKnowledge = sanitizeKnowledgeText(knowledge);
   if (!cleanKnowledge || cleanKnowledge.length < 50) return;
 
   const entityKey = normalizeEntityKey(query);
@@ -178,12 +203,23 @@ export async function saveKnowledge(
   const expiresAtMs = nowMs + ttlSeconds * 1000;
   const expiresAtIso = new Date(expiresAtMs).toISOString();
 
+  // Potong pada batas kalimat/paragraf agar tidak terpotong di tengah kata/fakta (B3)
+  let boundedKnowledge = cleanKnowledge;
+  if (boundedKnowledge.length > 5000) {
+    const lastPeriod = boundedKnowledge.lastIndexOf('.', 4900);
+    if (lastPeriod > 2000) {
+      boundedKnowledge = boundedKnowledge.slice(0, lastPeriod + 1);
+    } else {
+      boundedKnowledge = boundedKnowledge.slice(0, 5000);
+    }
+  }
+
   // 1. Simpan langsung ke in-memory hot cache
-  if (hotKnowledgeCache.size >= MAX_HOT_CACHE_SIZE) hotKnowledgeCache.clear();
+  pruneHotCache();
   hotKnowledgeCache.set(entityKey, {
     entityKey,
     category,
-    knowledge: cleanKnowledge,
+    knowledge: boundedKnowledge,
     expiresAt: expiresAtMs,
     sourceUrls: sourceUrls ?? [],
   });
@@ -198,7 +234,7 @@ export async function saveKnowledge(
         entity_key: entityKey,
         category,
         query_sample: query.slice(0, 250),
-        knowledge: cleanKnowledge.slice(0, 5000),
+        knowledge: boundedKnowledge,
         source_urls: sourceUrls?.slice(0, 5) ?? [],
         expires_at: expiresAtIso,
         updated_at: new Date(nowMs).toISOString(),

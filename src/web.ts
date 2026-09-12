@@ -269,22 +269,44 @@ export function needsSearch(text: string): boolean {
   }
 
   // 10. TRIGGER EKSPLISIT SEARCH LIVE:
-  // - Keyword berita, recency, harga, cuaca, skor, event, live status
+  // - Keyword recency informal & viralitas (C4)
+  if (/\b(?:lagi\s+rame|yang\s+lagi\s+viral|berita\s+heboh|ada\s+apa\s+(?:sih\s+)?sekarang|yang\s+baru\s+keluar)\b/i.test(qNorm)) {
+    return true;
+  }
+
+  // - Keyword berita, recency, harga, cuaca, skor, event, live status yang terarah (C2)
   if (
-    /\b(?:berita|kabar|terkini|terbaru|update|rilis|release|launch|harga|kurs|saham|cuaca|gempa|banjir|skor|klasemen|jadwal|pemilu|presiden|menteri|viral)\b/i.test(qNorm)
+    /\b(?:berita|terkini|terbaru|rilis|release|launch|kurs|saham|cuaca|gempa|tsunami|banjir|skor|klasemen|pemilu)\b/i.test(qNorm) ||
+    /\b(?:harga\s+(?:emas|bbm|minyak|hp|beras|telur|kripto|bitcoin|saham)|berapa\s+harga)\b/i.test(qNorm) ||
+    /\b(?:kabar\s+(?:terkini|terbaru|berita|dunia|politik|pasar|terpanas)|ada\s+kabar\s+(?:apa|terbaru|tentang)|kabar\s+soal)\b/i.test(qNorm) ||
+    /\b(?:update\s+(?:terbaru|terkini|patch|versi|info|berita|sistem|fitur|harga)|ada\s+update)\b/i.test(qNorm) ||
+    /\bjadwal\s+(?:rilis|tayang|pertandingan|tanding|bola|match|liga|konser|sholat|solat|imsakiyah|krl|kereta|pesawat|kuliah|bioskop)\b/i.test(qNorm) ||
+    /\b(?:presiden|menteri)\s+(?:ri|indonesia|baru|as|amerika|prabowo|jokowi|trump|keuangan|esdm|pertahanan|terpilih)\b/i.test(qNorm) ||
+    /\b(?:siapa|ganti)\s+(?:presiden|menteri)\b/i.test(qNorm)
   ) {
     return true;
   }
 
-  // - Kata kunci brand teknologi & model AI (Xiaomi, Claude, DeepSeek, ChatGPT, Gemini, Qwen, iPhone, Samsung, dll)
+  // - Kata kunci brand teknologi & model AI spesifik (C1)
+  // Brand unik / model AI tanpa homograf umum
   if (
-    /\b(?:xiaomi|samsung|iphone|apple|redmi|poco|vivo|oppo|asus|lenovo|deepseek|claude|openai|chatgpt|gpt|gemini|qwen|mistral|llama|grok|nvidia|intel|amd|snapdragon|rtx)\b/i.test(qNorm)
+    /\b(?:xiaomi|samsung|iphone|redmi|poco|vivo|oppo|deepseek|claude|openai|chatgpt|gpt-4|gpt-5|gpt-6|gemini|qwen|mistral|llama|grok|nvidia|snapdragon|rtx\s*\d+)\b/i.test(qNorm)
   ) {
     return true;
   }
 
-  // - Anchor tahun terkini (2024, 2025, 2026, tahun ini, bulan ini)
-  if (/\b(?:2024|2025|2026|tahun ini|bulan ini|minggu ini|hari ini|kemarin)\b/i.test(qNorm)) {
+  // Brand dengan potensi homograf kata biasa (apple, intel, amd, asus, lenovo): wajib ada konteks teknologi/produk
+  if (
+    /\b(?:apple\s*(?:inc|watch|iphone|mac|vision|car|tv|silicon|m\d|a\d+)|intel\s*(?:core|chip|prosesor|cpu|arc|evo|gen\s*\d+)|amd\s*(?:ryzen|radeon|gpu|prosesor|cpu)|laptop\s*(?:asus|lenovo)|rog|thinkpad)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
+  // - Anchor tahun & waktu terkini: HANYA jika disertai konteks berita, produk, atau peristiwa (C3)
+  if (
+    /\b(?:2024|2025|2026|tahun ini|bulan ini|minggu ini|hari ini|kemarin)\b/i.test(qNorm) &&
+    /\b(?:kejadian|peristiwa|skor|pemenang|juara|rilis|konser|spek|versi|presiden|kebijakan|isu|kasus|tragedi|viral|angka|data)\b/i.test(qNorm)
+  ) {
     return true;
   }
 
@@ -293,8 +315,8 @@ export function needsSearch(text: string): boolean {
     return true;
   }
 
-  // Default untuk pertanyaan umum yang memuat kata tanya fakta:
-  if (/\b(?:siapa|dimana|kapan|kenapa|mengapa)\b/i.test(qNorm) && qNorm.length > 20) {
+  // Default untuk pertanyaan umum yang memuat kata tanya fakta dan objek panjang:
+  if (/\b(?:siapa|dimana|kapan|kenapa|mengapa)\b/i.test(qNorm) && qNorm.length > 25 && !/\b(?:kamu|aku|kita|nama|dia|mereka)\b/i.test(qNorm)) {
     return true;
   }
 

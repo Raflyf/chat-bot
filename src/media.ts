@@ -27,6 +27,7 @@ async function transcribeViaGroq(buffer: Buffer, mime: string, model: string): P
         method: 'POST',
         headers: { Authorization: `Bearer ${key}` },
         body: formData,
+        signal: AbortSignal.timeout(config.downloadTimeoutMs || 20000),
       });
 
       if (!res.ok) continue;
@@ -51,6 +52,7 @@ async function transcribeViaGemini(buffer: Buffer, mime: string, model: string):
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(config.downloadTimeoutMs || 20000),
         body: JSON.stringify({
           contents: [{
             role: 'user',
@@ -116,14 +118,16 @@ export function extractPdfTextSimple(buffer: Buffer): string | null {
       const streamData = match[1];
       let decompressed = streamData;
       try {
-        decompressed = zlib.inflateSync(Buffer.from(streamData, 'binary')).toString('utf-8');
+        decompressed = zlib.inflateSync(Buffer.from(streamData, 'binary'), { maxOutputLength: 5 * 1024 * 1024 }).toString('utf-8');
       } catch {
         // stream mungkin uncompressed teks polos
       }
       const textMatches = decompressed.matchAll(/\(([^)]+)\)\s*Tj/g);
       for (const tm of textMatches) {
         fullText += tm[1] + ' ';
+        if (fullText.length > 300000) break;
       }
+      if (fullText.length > 300000) break;
       const tjMatches = decompressed.matchAll(/\[(.*?)\]\s*TJ/g);
       for (const tm of tjMatches) {
         const inner = tm[1].matchAll(/\(([^)]+)\)/g);
@@ -156,6 +160,7 @@ async function processPdfViaGemini(
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(config.downloadTimeoutMs || 25000),
         body: JSON.stringify({
           contents: [{
             role: 'user',
@@ -203,7 +208,24 @@ export async function extractDocumentText(
   mime: string,
   filename: string,
 ): Promise<string | null> {
+  // Batasi ukuran dokumen maks 15MB untuk mencegah Lambda OOM
+  if (buffer.length > 15 * 1024 * 1024) {
+    console.warn(`[media] Dokumen ${filename} melebihi batas 15MB (${buffer.length} bytes). Ditolak.`);
+    return null;
+  }
+
   const lowerName = filename.toLowerCase();
+
+  // Blokir berkas rahasia/sensitif agar tidak terekspos ke LLM
+  if (
+    lowerName.includes('.env') ||
+    lowerName.endsWith('.key') ||
+    lowerName.endsWith('.pem') ||
+    lowerName.endsWith('.log')
+  ) {
+    console.warn(`[media] Percobaan membaca berkas sensitif diblokir: ${filename}`);
+    return null;
+  }
 
   // 1. Dokumen Microsoft Word (.docx) via parser Mammoth lokal (21 ms)
   if (
@@ -238,8 +260,6 @@ export async function extractDocumentText(
     '.yaml',
     '.yml',
     '.xml',
-    '.env',
-    '.log',
   ];
 
   if (

@@ -12,11 +12,11 @@ export interface AdminAuthConfig {
   sessionTokens: Array<{ token: string; exp: number }>;
 }
 
-const DEFAULT_PIN = '080402';
-const PIN_SALT = config.pinSalt || 'rafly_telemetry_salt';
-const TARGET_EMAIL = config.adminEmail || 'raflyfirmansyah02@gmail.com';
+const ENV_PIN = config.adminPin || '';
+const PIN_SALT = config.pinSalt || (config.supabaseKey ? crypto.createHash('sha256').update(config.supabaseKey).digest('hex').slice(0, 32) : 'agentkit_runtime_internal_salt');
+const TARGET_EMAIL = config.adminEmail || '';
 
-const DEFAULT_PIN_HASH = hashValue(DEFAULT_PIN);
+const DEFAULT_PIN_HASH = ENV_PIN ? hashValue(ENV_PIN) : '';
 
 // In-memory fallback if database is temporarily unavailable
 let inMemoryAuthConfig: AdminAuthConfig = {
@@ -317,6 +317,19 @@ export async function verifyPin(
   const current = await getAuthConfig();
   const now = Date.now();
 
+  // Check if unconfigured
+  if (!current.pinHash) {
+    return {
+      success: false,
+      verified: false,
+      isLocked: false,
+      lockedUntil: null,
+      lockoutAttempts: 0,
+      remainingAttempts: 0,
+      message: 'Master PIN belum dikonfigurasi di server. Silakan isi ADMIN_PIN di environment variable.',
+    };
+  }
+
   // Check if locked
   if (current.lockedUntil && new Date(current.lockedUntil).getTime() > now) {
     return {
@@ -367,7 +380,8 @@ export async function verifyPin(
   // Gagal: tambah hitungan percobaan
   const newAttempts = current.lockoutAttempts + 1;
   const willLock = newAttempts >= 5;
-  const lockedUntil = willLock ? new Date(now + 1 * 60 * 1000).toISOString() : null;
+  // Kunci selama 15 menit jika gagal 5x berturut-turut
+  const lockedUntil = willLock ? new Date(now + 15 * 60 * 1000).toISOString() : null;
 
   await saveAuthConfig({
     lockoutAttempts: newAttempts,
@@ -454,6 +468,12 @@ export async function sendOtp(clientIp: string): Promise<{
   retryAfterSeconds?: number;
   targetEmailMasked?: string;
 }> {
+  if (!TARGET_EMAIL) {
+    return {
+      success: false,
+      message: 'Email admin belum dikonfigurasi di environment variable ADMIN_EMAIL.',
+    };
+  }
   const now = Date.now();
   const rec = otpSendCache.get(clientIp);
 
