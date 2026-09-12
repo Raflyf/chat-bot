@@ -2,7 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { config } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
-import { saveMessage, isMessageProcessed } from './db.js';
+import { saveMessage, isMessageProcessed, claimIncomingMessage } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
@@ -83,9 +83,9 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     const chatId = msg.chat.id;
     const chatKey = String(chatId);
     const msgId = msg.message_id ? String(msg.message_id) : '';
-    if (msgId && (await isMessageProcessed('telegram', msgId))) return;
     const ownerId = config.ownerChatId;
     const text = msg.text?.trim() ?? '';
+    if (msgId && !(await claimIncomingMessage('telegram', msgId, chatKey, text || '[telegram-msg]'))) return;
 
     // 1. Perintah /start (Respons statis instan tanpa memanggil LLM demi kecepatan & efisiensi)
     if (text === '/start') {
@@ -375,10 +375,8 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     // Fast-path in-memory context (0ms saat aktif)
     const ctx = await getContext(chatKey);
 
-    // Simpan pesan user ke database secara non-blocking & update cache in-memory
+    // Update cache in-memory (pesan user sudah tersimpan saat claim atomik)
     updateContextCache(chatKey, 'user', text);
-    void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'user', content: text, msg_id: msgId })
-      .catch((err) => console.warn('[telegram] Gagal simpan pesan user:', err));
 
     let web: string | null = null;
     if (needsSearch(text)) {

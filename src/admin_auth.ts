@@ -696,6 +696,36 @@ export async function updatePin(
   currentPinOrHash: string,
   newPin: string,
 ): Promise<{ success: boolean; message: string }> {
+  const cleanNewPin = String(newPin || '').trim();
+  if (cleanNewPin.length < 4 || cleanNewPin.length > 8 || !/^\d+$/.test(cleanNewPin)) {
+    return { success: false, message: 'PIN baru harus berupa 4 hingga 8 digit angka.' };
+  }
+
+  const currentHash = hashValue(currentPinOrHash);
+  const newPinHash = hashValue(cleanNewPin);
+
+  const c = db();
+  // Prioritaskan eksekusi atomik RPC PostgreSQL (C6 & F4)
+  if (c) {
+    try {
+      const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_change_pin', {
+        p_old_pin_hash: currentHash,
+        p_new_pin_hash: newPinHash,
+      });
+
+      if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
+        const res = rpcRes as { success?: boolean; message?: string };
+        return {
+          success: !!res.success,
+          message: res.message || (res.success ? 'Master PIN berhasil diubah di seluruh sesi.' : 'Gagal mengubah PIN.'),
+        };
+      }
+    } catch (e) {
+      console.warn('[admin-auth] rpc_admin_change_pin fallback to JS:', e);
+    }
+  }
+
+  // Fallback ke JS Engine
   const current = await getAuthConfig();
   const now = Date.now();
 
@@ -706,8 +736,6 @@ export async function updatePin(
       message: 'Akses terkunci sementara karena melebihi batas percobaan PIN. Gunakan pemulihan OTP.',
     };
   }
-
-  const currentHash = hashValue(currentPinOrHash);
 
   if (!timingSafeMatch(currentHash, current.pinHash)) {
     const newAttempts = current.lockoutAttempts + 1;
@@ -727,12 +755,6 @@ export async function updatePin(
     };
   }
 
-  const cleanNewPin = String(newPin || '').trim();
-  if (cleanNewPin.length < 4 || cleanNewPin.length > 8 || !/^\d+$/.test(cleanNewPin)) {
-    return { success: false, message: 'PIN baru harus berupa 4 hingga 8 digit angka.' };
-  }
-
-  const newPinHash = hashValue(cleanNewPin);
   await saveAuthConfig({
     pinHash: newPinHash,
     lockoutAttempts: 0,

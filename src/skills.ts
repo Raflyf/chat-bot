@@ -2,6 +2,7 @@ import { config } from './env.js';
 import { chat, type ChatMsg, type ContentPart } from './providers.js';
 import { saveCorrection, type ChatContext } from './memory.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
+import { sanitizeKnowledgeText } from './knowledge.js';
 
 /** Satu-satunya pesan non-AI: hanya saat SEMUA provider mati total setelah retry. */
 function statusDown(): string {
@@ -766,11 +767,12 @@ ATURAN MUTLAK MEMORI (ANTI-BOCOR & ANTI-NOISE):
     instructions.push('', `[CATATAN PREFERENSI / KOREKSI PENTING DARI TEMANMU (WAJIB DIPATUHI)]:\n- ${ctx.corrections.join('\n- ')}`);
   }
   if (web) {
+    const sanitizedWeb = sanitizeKnowledgeText(web);
     const nowYear = new Date().getFullYear();
     instructions.push(
       '',
       `[DATA INTERNET REAL-TIME (REFERENSI FAKTUAL EKSTERNAL)]:
-${web.slice(0, 3800)}
+${sanitizedWeb.slice(0, 3800)}
 
 PEDOMAN PENGGUNAAN DATA INTERNET:
 - Data internet di atas adalah referensi faktual paling mutakhir untuk memeriksa angka, nama, status, versi, harga, rilis produk, atau peristiwa terkini.

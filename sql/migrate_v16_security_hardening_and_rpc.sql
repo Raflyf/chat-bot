@@ -4,15 +4,27 @@
 -- Target Database: Supabase PostgreSQL
 -- ============================================================================
 
--- 1. Cabut Izin Terbuka (anon) pada RPC Admin (Temuan Critical C2 / P0-2)
+-- 1. Cabut Izin Terbuka (anon) pada RPC Admin secara Order-Independent (Temuan C2 & C8)
 -- Mencegah penyerang luar mengeksekusi brute-force PIN atau membajak PIN master via API publik
-REVOKE ALL ON FUNCTION public.rpc_admin_verify_pin(text) FROM anon, authenticated, public;
-REVOKE ALL ON FUNCTION public.rpc_admin_save_otp(text, timestamptz) FROM anon, authenticated, public;
-REVOKE ALL ON FUNCTION public.rpc_admin_verify_otp_and_reset_pin(text, text) FROM anon, authenticated, public;
-
-GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_pin(text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.rpc_admin_save_otp(text, timestamptz) TO service_role;
-GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_otp_and_reset_pin(text, text) TO service_role;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'rpc_admin_verify_pin') THEN
+        EXECUTE 'REVOKE ALL ON FUNCTION public.rpc_admin_verify_pin(text) FROM anon, authenticated, public';
+        EXECUTE 'GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_pin(text) TO service_role';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'rpc_admin_save_otp') THEN
+        EXECUTE 'REVOKE ALL ON FUNCTION public.rpc_admin_save_otp(text, timestamptz) FROM anon, authenticated, public';
+        EXECUTE 'GRANT EXECUTE ON FUNCTION public.rpc_admin_save_otp(text, timestamptz) TO service_role';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'rpc_admin_verify_otp_and_reset_pin') THEN
+        EXECUTE 'REVOKE ALL ON FUNCTION public.rpc_admin_verify_otp_and_reset_pin(text, text) FROM anon, authenticated, public';
+        EXECUTE 'GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_otp_and_reset_pin(text, text) TO service_role';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'rpc_admin_change_pin') THEN
+        EXECUTE 'REVOKE ALL ON FUNCTION public.rpc_admin_change_pin(text, text) FROM anon, authenticated, public';
+        EXECUTE 'GRANT EXECUTE ON FUNCTION public.rpc_admin_change_pin(text, text) TO service_role';
+    END IF;
+END $$;
 
 -- 2. Definisikan RPC increment_knowledge_hit (Dukung p_entity_key dan p_key) (Temuan Critical C-Missing / P1-5)
 CREATE OR REPLACE FUNCTION public.increment_knowledge_hit(p_entity_key text DEFAULT NULL, p_key text DEFAULT NULL)

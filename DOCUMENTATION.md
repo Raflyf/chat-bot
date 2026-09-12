@@ -192,6 +192,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.26.3 - 2026-09-12 18:05 WIB
+**Eliminasi Sisa Regresi Konkurensi & Hardening Penuh: Auto-Reaper Pengingat & Lease Lock 5 Menit, Deduplikasi Atomik Anti-TOCTOU 3 Channel, Row-Level Locking FOR UPDATE Admin Auth, Sanitasi Prompt Injection Hasil Web Live, dan Header Keamanan Global**
+- **Reminder Deadlock Auto-Reaper & Lease-Lock Atomik (`src/remind.ts`)**:
+  - Menambahkan mekanisme auto-reaper di awal `checkDueReminders()` untuk memulihkan entri status `processing` yang macet lebih dari 5 menit kembali menjadi `pending`.
+  - Mengganti fallback penandaan dini `sent` dengan perpanjangan sewa waktu atomik (`due_at = now() + 5 minutes`) jika database tidak mendukung status `processing`. Penandaan status `sent` dijamin HANYA dieksekusi setelah pesan terbukti berhasil terkirim via client API.
+- **Deduplikasi Pesan Atomik Tanpa Celah TOCTOU (`src/db.ts`, `src/telegram.ts`, `src/whatsapp_cloud.ts`, `src/whatsapp_baileys.ts`)**:
+  - Mengimplementasikan `claimIncomingMessage(platform, msgId, chatId, content)` dengan strategi *insert-as-first-claim* langsung ke tabel `messages`.
+  - Mengandalkan Postgres unique constraint `idx_messages_platform_msg_id` (PostgreSQL Error 23505) untuk menolak webhook retry konkuren dalam skala sub-milidetik secara 100% konsisten.
+- **Lockout Atomicity & Row Locking `FOR UPDATE` (`sql/migrate_v12_admin_auth.sql`, `sql/migrate_v16_security_hardening_and_rpc.sql`, `src/admin_auth.ts`)**:
+  - Menambahkan baris `FOR UPDATE` pada `SELECT ... FROM public.admin_auth_config WHERE id = 'master_auth' FOR UPDATE;` di seluruh stored procedure verifikasi PIN dan reset OTP untuk mencegah bypass lockout melalui brute-force paralel.
+  - Membuat stored procedure baru `rpc_admin_change_pin(p_old_pin_hash, p_new_pin_hash)` dengan row lock atomik dan mengintegrasikannya ke `src/admin_auth.ts:updatePin`.
+  - Membungkus `sql/migrate_v16` dalam blok `DO $$ BEGIN IF EXISTS ... END $$;` agar migrasi bersifat order-independent (tidak gagal bila urutan eksekusi dibalik).
+- **Sanitasi Prompt Injection Hasil Web Live (`src/skills.ts`)**:
+  - Menyaring teks data pencarian web real-time menggunakan `sanitizeKnowledgeText` sebelum digabungkan ke instruksi model, memblokir upaya indirect prompt injection dari artikel eksternal.
+- **Security Headers Global & Pembersihan Template Kredensial (`vercel.json`, `.env.example`)**:
+  - Menerapkan Content Security Policy (CSP) dan HTTP Strict Transport Security (HSTS) berdurasi 2 tahun secara global di `vercel.json` pada route `/(.*)`.
+  - Mengosongkan contoh nilai `PIN_SALT=` dan `ADMIN_PIN=` di `.env.example` untuk memastikan konfigurasi aman secara default.
+- **Dokumentasi Arsitektur Agen (`AGENTS.md`)**:
+  - Menuliskan dokumen arsitektur komprehensif `AGENTS.md` di root repositori mencakup gateway failover, webhook pipeline, concurrency control, dan guardrails keamanan.
+
 ### v0.26.2 - 2026-09-12 17:45 WIB
 **Penyelesaian Seluruh Sisa Audit Putaran 2 (v0.26.1): Klaim Atomik Pengingat, Deduplikasi Persisten msg_id 3 Channel, Raw Body HMAC Meta, Quota Hydration Race, MIME Sniffing, Lockout 15 Menit & Proteksi Master Auth**
 - **R1 & E1: Eliminasi Race Condition Kirim Pengingat Ganda (`src/remind.ts`)**:
