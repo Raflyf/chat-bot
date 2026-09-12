@@ -26,7 +26,7 @@ function redactOutput(text: string): string {
  * 2. Mengonversi ekspresi LaTeX mentah (\[...\], \(...\), $$, $) menjadi notasi aljabar bersih dan simbol Unicode.
  * 3. Menghapus kebocoran kredensial dan bot token (redaction).
  */
-export function cleanMathAndNoise(text: string): string {
+export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   if (!text || typeof text !== 'string') return '';
 
   let out = text;
@@ -206,6 +206,29 @@ export function cleanMathAndNoise(text: string): string {
   });
   out = out.replace(/\^([0-9n])/g, (_, p1) => supMap[p1] || `^${p1}`);
 
+  // 5b. Bersihkan artefak kebocoran kata/karakter Mandarin CJK dari model Qwen (seperti 毕竟, 其实, 但是, 而且)
+  const isChineseRequested = Boolean(
+    userPrompt && /\b(?:mandarin|chinese|tionghoa|hanzi|kanji|jepang|japan|nihongo)\b/i.test(userPrompt)
+  );
+  if (!isChineseRequested) {
+    const cjkReplacements: Record<string, string> = {
+      '毕竟': 'lagian',
+      '其实': 'sebenarnya',
+      '但是': 'tapi',
+      '而且': 'lagipula',
+      '不过': 'tapi',
+      '所以': 'jadi',
+      '因为': 'karena',
+      '当然': 'tentu saja',
+    };
+    for (const [cjk, idWord] of Object.entries(cjkReplacements)) {
+      out = out.split(cjk).join(` ${idWord} `);
+    }
+    out = out.replace(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g, '');
+    out = out.replace(/[ \t]{2,}/g, ' ');
+    out = out.replace(/\s+([.,!?])/g, '$1');
+  }
+
   // 6. Batasi emoji agar kontekstual, tepat waktu, dan tidak over (maksimal 1 emoji per pesan, buang emoji robot/aneh)
   out = out.replace(/[🤖🦾🦿👾🐾]/gu, '');
   let emojiSeen = 0;
@@ -384,8 +407,8 @@ export function cleanMathAndNoise(text: string): string {
   return out;
 }
 
-export function sanitizeAssistantOutput(text: string): string {
-  const cleaned = cleanMathAndNoise(text);
+export function sanitizeAssistantOutput(text: string, userPrompt?: string): string {
+  const cleaned = cleanMathAndNoise(text, userPrompt);
   return redactOutput(cleaned);
 }
 
@@ -499,6 +522,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '   - Variasikan reaksi pembuka selain "haha"/"wkwk" ("Tuh kan bener", "Bisa pas gitu ya tebakannya", "Nah itu dia maksudnya"). Tawa bukan tanda titik wajib, gunakan seperlunya jika lucu.',
     '   - SAAT DILEDEK, DIBERITAHU GARING, ATAU BERCANDAAN: Tanggapi santai tanpa baper ("Wkwk maap dah, namanya juga usaha haha", "Yaelah namanya juga tebakan receh wkwk", "Wkwkwk gagal lucu ya"). DILARANG defensif atau kaku!',
     '   - DILARANG filler basa-basi di akhir ("santai aja terus bro", "semangat terus ya"). Akhiri langsung jika selesai.',
+    '   - DILARANG KERAS KEBOCORAN KARAKTER MANDARIN / CHINA: Dilarang keras menyelipkan kata atau karakter China (seperti 毕竟, 其实, 但是, 而且, dll) ke dalam obrolan! Seluruh percakapan wajib murni dalam bahasa Indonesia yang mengalir luwes.',
     '',
     '3. HUMOR, JOKES, & TEBAK-TEBAKAN DUA ARAH:',
     '   - FORMAT JOKE DUA ARAH: Ketika temanmu meminta joke atau tebakan, DILARANG KERAS LANGSUNG MEMBERIKAN JAWABAN DI PESAN YANG SAMA! HANYA lemparkan pertanyaan setup tebakannya saja dan ajak menebak (contoh: "Kenapa komputer kalau lagi capek nggak pernah tidur? Coba tebak!"). Tunggu respon temanmu, BARU berikan jawabannya di pesan berikutnya!',
@@ -543,7 +567,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '   - RESPON FOTO / MEDIA VISUAL: Dilarang pembuka robotik ("Gambar ini menampilkan..."). Langsung to-the-point jika pertanyaan teknis/koding, atau komentar hangat 1-2 kalimat jika foto santai. Dilarang membahas hardware fisik di luar layar (merek laptop/meja) kecuali ditanyakan.',
     '   - RESPON DOKUMEN & VIDEO: Persona teman diskusi cerdas ("Udah kubaca nih dokumennya. Intinya ngebahas [topik]..."). Ringkas, nyaman dibaca di HP.',
     '   - STRUKTUR WHATSAPP: Nyaman dibaca cepat di HP. Obrolan santai/curhat/banyolan HANYA 1-2 kalimat dalam 1 paragraf alami TANPA newline kosong (\\n\\n). DILARANG MEMBUAT PARAGRAF KEDUA untuk basa-basi atau wejangan! Format: *teks tebal*, kode di ```code```, tanda hubung - untuk poin. DILARANG heading pagar (#).',
-    '   - EMOJI & EFISIENSI: Maksimal 1 emoji wajar jika tepat, dilarang spam emoji, dilarang emoji robot (🤖). Sampaikan esensi jawaban secara padat dan bernas.',
+    '   - PENGGUNAAN EMOJI (MINIMAL & SESUAI KONTEKS): Emoji TIDAK 100% dilarang, namun gunakan seminimal mungkin (maksimal 1 emoji yang pas) HANYA jika situasi dan konteks chat memang tepat untuk menghidupkan ekspresi/emosi (misal candaan, apresiasi, senyum santai, atau empati kawan). Jangan diobral di setiap pesan, dan dilarang emoji robot (🤖). Sampaikan esensi jawaban secara padat dan bernas.',
   ];
 
   const isSwitchToGombal = /\b(?:ganti\s+(?:ke\s+)?gombal(?:an)?|gombalin|mau\s+gombal(?:an)?|coba\s+gombal(?:an)?|minta\s+gombal(?:an)?)\b/i.test(userPrompt);
@@ -782,7 +806,7 @@ export async function autoReply(
 
   try {
     const { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web), false);
-    let reply = sanitizeAssistantOutput(text);
+    let reply = sanitizeAssistantOutput(text, clean);
 
     // Proteksi program: jika user meminta joke atau gombalan dan model membocorkan punchline langsung di pesan yang sama
     const isJokeOrGombalReq = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu|gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu)\b/i.test(clean);
@@ -912,7 +936,7 @@ export async function describeImage(
   ];
 
   const { text, via, tokens } = await chatRetry(messages, true);
-  let reply = sanitizeAssistantOutput(text);
+  let reply = sanitizeAssistantOutput(text, promptText);
 
   if (isSticker) {
     // 1. Bersihkan pembuka template klise stiker

@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.20 (Universal Conversational Architecture, Cross-Domain High-EQ Resonance, Groq Zero-Reasoning Optimization & Strict Token Budget <= 4,000)  
+**Versi:** v0.26.21 (Anti-Mandarin CJK Leakage Defense, Contextual Minimal Emoji Balancing & Multi-Modal Sanitization Integration)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 00:15 WIB
+**Terakhir Diperbarui:** 2026-09-13 00:30 WIB
 
 ---
 
@@ -205,6 +205,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.21 - 2026-09-13 00:30 WIB
+
+**Proteksi Kebocoran Karakter Mandarin (CJK Leakage Defense), Penyetelan Penggunaan Emoji Kontekstual Minimal & Integrasi Sanitasi Multi-Kanal**
+
+- **Pertahanan Kebocoran Token Mandarin / China (`sanitizeAssistantOutput`, `src/skills.ts`)**:
+  - **Akar Masalah**: Model keluarga Qwen (`qwen/qwen3.8-27b`, `qwen/qwen3.8-max`, dll) yang dilatih dengan korpus multibahasa intensif terkadang mengalami anomali *token bleeding* (kebocoran token partikel Mandarin seperti `毕竟` [bìjìng] di tengah kalimat bahasa Indonesia saat menjelaskan alasan/keahlian lawan bicara).
+  - **Solusi Dua Lapis (Dual-Layer Defense)**:
+    1. **Lapisan Prompt Sistem**: Menambahkan aturan tegas di Bagian 2 System Prompt yang melarang keras penyelipan karakter atau kata Mandarin/China (`毕竟`, `其实`, `但是`, `而且`, dll) ke dalam obrolan kasual.
+    2. **Lapisan Deterministic Sanitizer (`sanitizeAssistantOutput`)**: Mengintegrasikan kamus pemetaan otomatis partikel CJK ke bahasa Indonesia yang luwes (misal `毕竟` -> `lagian`, `其实` -> `sebenarnya`, `但是` -> `tapi`, `而且` -> `lagipula`), serta pembersihan bersih karakter CJK asing yang tersisa jika pengguna tidak secara eksplisit meminta bahasa Mandarin/China/Jepang.
+- **Penyelarasan Penggunaan Emoji Kontekstual Minimal (Contextual Balanced Emojis)**:
+  - Mengklarifikasi aturan emoji: emoji TIDAK 100% dilarang, melainkan digunakan secara minimal (maksimal 1 emoji yang pas) HANYA jika konteks percakapan memang tepat untuk menghidupkan ekspresi/emosi (seperti tawa santai, kehangatan apresiasi, atau empati kawan).
+  - Sanitizer secara deterministik membatasi akumulasi emoji maksimal 1 buah per balasan teks dan membersihkan emoji robot (`🤖`).
+- **Integrasi Sanitasi Terpusat Lintas Seluruh Kanal**:
+  - `sanitizeAssistantOutput` kini aktif di seluruh saluran balasan teks utama dan multimodal vision (`describeImage`), menjamin tidak ada kebocoran karakter CJK atau emoji berlebihan di WhatsApp Baileys, WhatsApp Cloud, maupun Telegram.
 
 ### v0.26.20 - 2026-09-13 00:15 WIB
 
