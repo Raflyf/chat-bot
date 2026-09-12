@@ -98,13 +98,19 @@ export async function getAuthConfig(): Promise<AdminAuthConfig> {
         }
       }
 
-      if (!tableData.pin_hash && DEFAULT_PIN_HASH) {
-        // Auto-provisioning first-run: persist hash default ke database
+      let activePinHash = tableData.pin_hash || DEFAULT_PIN_HASH;
+      if (!activePinHash) {
+        // Auto-provisioning first-run: jika ADMIN_PIN belum di-set, buat PIN 6-digit acak aman via CSPRNG
+        const autoPin = String(crypto.randomInt(100000, 999999));
+        activePinHash = hashValue(autoPin);
+        console.log(`[admin-auth] First-run provisioning: Master PIN acak dibuat: ${autoPin} (Simpan angka ini atau atur ADMIN_PIN di env)`);
+        saveAuthConfig({ pinHash: activePinHash }).catch(() => {});
+      } else if (!tableData.pin_hash && DEFAULT_PIN_HASH) {
         saveAuthConfig({ pinHash: DEFAULT_PIN_HASH }).catch(() => {});
       }
 
       return {
-        pinHash: tableData.pin_hash || DEFAULT_PIN_HASH,
+        pinHash: activePinHash,
         lockoutAttempts: tableData.lockout_attempts || 0,
         lockedUntil: tableData.locked_until || null,
         otpCodeHash: tableData.otp_code_hash || null,
@@ -643,6 +649,45 @@ export async function verifyOtpAndResetPin(
     return { success: false, message: 'Master PIN baru harus berupa 4 hingga 8 digit angka.' };
   }
 
+  const inputOtpHash = hashValue(enteredOtp);
+  const newPinHash = hashValue(cleanNewPin);
+
+  const c = db();
+  // Prioritaskan eksekusi atomik RPC PostgreSQL (FOR UPDATE)
+  if (c) {
+    try {
+      const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_verify_otp_and_reset_pin', {
+        p_otp_hash: inputOtpHash,
+        p_new_pin_hash: newPinHash,
+      });
+
+      if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
+        const res = rpcRes as { success?: boolean; message?: string };
+        if (res.success) {
+          otpAttemptCache.delete(clientIp);
+          return {
+            success: true,
+            message: res.message || 'Master PIN keamanan berhasil diperbarui dan status penguncian dinolkan.',
+          };
+        } else {
+          const rec = otpAttemptCache.get(clientIp);
+          if (!rec || now - rec.start > OTP_ATTEMPT_WINDOW_MS) {
+            otpAttemptCache.set(clientIp, { count: 1, start: now });
+          } else {
+            rec.count += 1;
+          }
+          return {
+            success: false,
+            message: res.message || 'Kode OTP tidak cocok atau telah kadaluwarsa.',
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[admin-auth] rpc_admin_verify_otp_and_reset_pin fallback to JS:', e);
+    }
+  }
+
+  // Fallback ke JS Engine
   const current = await getAuthConfig();
 
   if (!current.otpCodeHash || !current.otpExpiresAt) {
@@ -652,8 +697,6 @@ export async function verifyOtpAndResetPin(
   if (new Date(current.otpExpiresAt).getTime() < now) {
     return { success: false, message: 'Kode OTP telah kadaluwarsa. Silakan minta kode OTP baru.' };
   }
-
-  const inputOtpHash = hashValue(enteredOtp);
 
   if (!timingSafeMatch(inputOtpHash, current.otpCodeHash)) {
     // Record failure
@@ -669,7 +712,6 @@ export async function verifyOtpAndResetPin(
   // OTP Valid: reset PIN, bersihkan lockout, hapus semua token sesi lama
   otpAttemptCache.delete(clientIp);
 
-  const newPinHash = hashValue(cleanNewPin);
   const updated = await saveAuthConfig({
     pinHash: newPinHash,
     lockoutAttempts: 0,

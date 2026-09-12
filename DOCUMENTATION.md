@@ -192,6 +192,29 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.26.4 - 2026-09-12 18:35 WIB
+**Penyelesaian Menyeluruh Seluruh Sisa Audit Putaran 4: Auto-Provisioning Random PIN First-Run, Eliminasi Race Reaper Reminders, Dedup Upsert Platform & msg_id 3 Channel, Verifikasi OTP RPC Atomik, Pembersihan False-Positive Zona Waktu, dan Penyelarasan Penuh Dokumen AGENTS.md**
+- **Auto-Provisioning Master PIN Acak First-Run (`src/admin_auth.ts`)**:
+  - Jika database belum memiliki konfigurasi PIN dan variabel `ADMIN_PIN` kosong di environment, sistem secara otomatis membangkitkan PIN 6-digit acak aman via CSPRNG (`crypto.randomInt`), menyimpan hash-nya ke database, dan menampilkan instruksi di console satu kali.
+- **Eliminasi Race Condition Reaper vs In-Flight Reminders (`src/remind.ts`)**:
+  - Saat reminder diklaim ke status `'processing'`, `due_at` dimundurkan ke masa depan (`now + 5 minutes`) sebagai batas sewa (lease-lock).
+  - Background reaper diubah untuk hanya me-reset baris jika `status = 'processing' AND due_at <= now`, mencegah pengiriman pengingat dobel saat proses kirim sedang berlangsung.
+- **Deduplikasi Pesan Handal & Eliminasi Unique Violation 23505 (`src/db.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`)**:
+  - Fungsi `saveMessage` menggunakan mekanisme `upsert` pada `(platform, msg_id)` saat `msg_id` disertakan, sehingga pembaruan caption media atau transkripsi suara tidak memicu duplicate key error 23505.
+  - Menghapus pengecekan rapuh `data.length > 0` di `claimIncomingMessage` dan memastikan klaim berhasil dievaluasi berdasarkan `!error`.
+  - Menyertakan `msg_id` pada seluruh alur pesan media user di Telegram dan WhatsApp Baileys.
+- **Eksekusi Atomik Reset PIN via OTP (`src/admin_auth.ts`)**:
+  - Mengintegrasikan pemanggilan stored procedure atomik `rpc_admin_verify_otp_and_reset_pin` yang dilindungi baris `FOR UPDATE` di tingkat database dengan fallback ke mesin JS.
+- **Pembersihan False-Positive Singkatan Zona Waktu (`src/timezone.ts`)**:
+  - Menghapus singkatan kata pendek ambigu (`brt`, `art`, `sast`, `eat`) dari peta lokasi agar percakapan biasa ("seni art", "eat dulu") tidak memicu pergeseran zona waktu palsu ke Argentina atau Kenya.
+- **Optimasi Akurasi `needsSearch` & Query Statistik (`src/web.ts`, `api/stats.ts`)**:
+  - Memperketat regex kata kunci recency agar tidak memicu penelusuran web live untuk kata tunggal "terbaru" atau "rilis" tanpa konteks berita/produk, dan menghapus fallback panjang string > 25 karakter.
+  - Memperluas limit query agregasi statistik pesan asisten hingga 2.000 baris untuk mencegah pemotongan data representatif.
+- **Standardisasi Header Keamanan Global & Penyelarasan `AGENTS.md` (`vercel.json`, `api/*.ts`, `AGENTS.md`)**:
+  - Menyatukan header `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` dan `Referrer-Policy: strict-origin-when-cross-origin` di seluruh endpoint API dan konfigurasi Vercel.
+  - Memperkuat CSP dengan direktif `base-uri 'self'; object-src 'none'; frame-ancestors 'none';`.
+  - Menyelaraskan seluruh 8 poin dokumentasi `AGENTS.md` agar 100% akurat dengan implementasi kode aktual.
+
 ### v0.26.3 - 2026-09-12 18:05 WIB
 **Eliminasi Sisa Regresi Konkurensi & Hardening Penuh: Auto-Reaper Pengingat & Lease Lock 5 Menit, Deduplikasi Atomik Anti-TOCTOU 3 Channel, Row-Level Locking FOR UPDATE Admin Auth, Sanitasi Prompt Injection Hasil Web Live, dan Header Keamanan Global**
 - **Reminder Deadlock Auto-Reaper & Lease-Lock Atomik (`src/remind.ts`)**:

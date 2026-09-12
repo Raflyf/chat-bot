@@ -148,6 +148,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         chat_id: chatKey,
         role: 'user',
         content: caption ? `[Gambar] ${caption}` : '[Gambar]',
+        msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan foto user:', err));
       try {
         if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
@@ -166,6 +167,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         chat_id: chatKey,
         role: 'user',
         content: caption ? `[Video] ${caption}` : '[Video]',
+        msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan video user:', err));
 
       const dl = await downloadTelegramBuffer(bot, fileId);
@@ -199,6 +201,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           chat_id: chatKey,
           role: 'user',
           content: caption ? `[Gambar: ${filename}] ${caption}` : `[Gambar: ${filename}]`,
+          msg_id: msgId || undefined,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan gambar doc user:', err));
         if (await answerPhoto(bot, chatId, chatKey, fileId, caption)) return;
       }
@@ -209,6 +212,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         chat_id: chatKey,
         role: 'user',
         content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
+        msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc user:', err));
 
       const dl = await downloadTelegramBuffer(bot, fileId);
@@ -245,6 +249,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
             chat_id: chatKey,
             role: 'user',
             content: `[Voice Note]: "${transcription}"`,
+            msg_id: msgId || undefined,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN user:', err));
 
           let web: string | null = null;

@@ -20,7 +20,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   // Security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
 
   // Hanya terima POST dari Telegram
   if (req.method !== 'POST') {

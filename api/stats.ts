@@ -17,8 +17,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
 
   // Hanya menerima GET
   if (req.method !== 'GET') {
@@ -191,7 +191,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         .select('via')
         .eq('role', 'assistant')
         .order('id', { ascending: false })
-        .limit(400);
+        .limit(2000);
 
       if (startDateIso) {
         assistantQuery = assistantQuery.gte('created_at', startDateIso);
@@ -205,7 +205,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         .select('content')
         .eq('role', 'user')
         .order('id', { ascending: false })
-        .limit(300);
+        .limit(1000);
 
       if (startDateIso) {
         userMsgsQuery = userMsgsQuery.gte('created_at', startDateIso);
@@ -221,7 +221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         .eq('platform', 'whatsapp')
         .gte('created_at', startOfMonthIso)
         .order('created_at', { ascending: true })
-        .limit(2000);
+        .limit(5000);
 
       const [
         dbQuotaRes,

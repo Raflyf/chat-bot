@@ -41,9 +41,15 @@ export async function saveMessage(row: {
       if (typeof row.tokens.completion === 'number') insertPayload.completion_tokens = row.tokens.completion;
       if (typeof row.tokens.total === 'number') insertPayload.total_tokens = row.tokens.total;
     }
-    await c.from('messages').insert(insertPayload);
-  } catch {
-    // best-effort, abaikan
+    if (row.msg_id) {
+      await c.from('messages').upsert(insertPayload, { onConflict: 'platform,msg_id' });
+    } else {
+      await c.from('messages').insert(insertPayload);
+    }
+  } catch (err: any) {
+    if (err?.code !== '23505') {
+      console.warn('[db] saveMessage error:', err?.message || err);
+    }
   }
 }
 
@@ -85,7 +91,7 @@ export async function claimIncomingMessage(
   if (!c) return true;
 
   try {
-    const { data, error } = await c
+    const { error } = await c
       .from('messages')
       .insert({
         platform,
@@ -93,8 +99,7 @@ export async function claimIncomingMessage(
         role: 'user',
         content: content.slice(0, 32000),
         msg_id: msgId,
-      })
-      .select('id');
+      });
 
     if (error) {
       if (
@@ -105,11 +110,13 @@ export async function claimIncomingMessage(
         console.warn(`[db] Pesan duplikat terdeteksi & diblokir secara atomik: platform=${platform}, msg_id=${msgId}`);
         return false;
       }
+      console.warn(`[db] claimIncomingMessage warning (${error.code || 'unknown'}): ${error.message}`);
       return true;
     }
 
-    return Boolean(data && data.length > 0);
-  } catch {
+    return true;
+  } catch (err: any) {
+    console.warn('[db] claimIncomingMessage exception:', err?.message || err);
     return true;
   }
 }

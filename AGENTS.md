@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (AGENTS.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.26.3.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.26.4.
 
 ---
 
@@ -34,11 +34,11 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
    - Polling engine via `node-telegram-bot-api` dengan auto-reconnect backoff.
    - Endpoint webhook didukung untuk deployment serverless Vercel.
    - Penanganan media suara/audio otomatis via Groq Whisper API.
-   - Dedup pesan atomik berbasis ID pesan Telegram.
+   - Dedup pesan atomik berbasis ID pesan Telegram dan upsert state media.
 
 2. **WhatsApp Cloud API (Meta Official):**
    - Handler webhook HTTP standar industri via endpoint `/api/webhook/whatsapp`.
-   - Validasi signature payload SHA-256 (`x-hub-signature-256`) dengan timing-safe comparison.
+   - Validasi signature payload SHA-256 (`x-hub-signature-256`) dengan timing-safe comparison dan raw-body stream buffer.
    - Deduplikasi pesan atomik seketika memanfaatkan unique constraint database.
 
 3. **WhatsApp Web (Baileys Engine):**
@@ -50,8 +50,8 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
 ## 3. Sistem Keamanan & Pertahanan Data (Security & Guardrails)
 
 1. **Perlindungan Otentikasi Admin:**
-   - Master PIN dan OTP verifikasi diproteksi hashing PBKDF2 / SHA-256 dengan salt unik per instance.
-   - Row-Level Locking (`FOR UPDATE`) pada operasi verifikasi dan penggantian PIN untuk mencegah race condition.
+   - Master PIN diproteksi hashing SHA-256 dengan per-instance cryptographically strong salt (`PIN_SALT`) dan automatic first-run random PIN provisioning jika belum dikonfigurasi.
+   - Row-Level Locking (`FOR UPDATE`) pada operasi verifikasi (`rpc_admin_verify_pin`), reset OTP (`rpc_admin_verify_otp_and_reset_pin`), dan penggantian PIN (`rpc_admin_change_pin`) untuk mencegah race condition.
    - Rate limiting bertingkat dan lockout progresif pada kegagalan otentikasi.
    - Strict Origin & Referer checking pada seluruh mutasi kredensial.
 
@@ -59,11 +59,10 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
    - `isSafePublicUrl`: Validasi ketat memblokir IP internal (`127.0.0.1`, `10.0.0.0/8`, `192.168.0.0/16`, `169.254.169.254`), metadata cloud, dan DNS localhost.
    - Sanitasi teks pengetahuan web (`sanitizeKnowledgeText`): Menetralisir potensi indirect prompt injection dari hasil pencarian sebelum disuntikkan ke prompt sistem.
 
-3. **HTTP Security Headers & CORS:**
-   - Content Security Policy (CSP) ketat tanpa `unsafe-eval`.
-   - HSTS (`Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`).
+3. **HTTP Security Headers:**
+   - Content Security Policy (CSP) ketat tanpa `unsafe-eval` (mengizinkan inline script untuk dashboard bawaan, dengan `base-uri 'self'`, `object-src 'none'`, `frame-ancestors 'none'`).
+   - HSTS seragam 2 tahun (`Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`) di `vercel.json` dan seluruh endpoint `api/`.
    - X-Frame-Options: `DENY`, X-Content-Type-Options: `nosniff`, Referrer-Policy: `strict-origin-when-cross-origin`.
-   - Dynamic CORS validation dengan domain allowlist eksplisit.
 
 ---
 
@@ -72,10 +71,11 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
 1. **Atomic Message Claiming (`claimIncomingMessage`):**
    - Menggunakan pattern *insert-first* ke tabel `messages` dengan mengandalkan PostgreSQL unique index `idx_messages_platform_msg_id`.
    - Menghilangkan celah TOCTOU (Time-of-Check to Time-of-Use) ketika webhook simultan masuk dalam selang waktu sub-milidetik.
+   - Update metadata pesan lanjutan (caption media/transkripsi) menggunakan `upsert` pada `(platform, msg_id)` sehingga tidak memicu error duplicate key 23505.
 
 2. **Reminder Lease-Lock & Deadlock Auto-Reaper:**
-   - Klaim reminder jatuh tempo menggunakan update atomik dan lease timeout (`due_at = now() + 5 minutes`).
-   - Auto-reaper otomatis me-reset status `processing` yang macet > 5 menit kembali menjadi `pending`.
+   - Klaim reminder jatuh tempo menggunakan perpanjangan sewa waktu atomik (`due_at = now() + 5 minutes`) pada status `'processing'`.
+   - Auto-reaper otomatis me-reset status `processing` yang kadaluwarsa (`due_at <= now()`) kembali menjadi `pending` tanpa mengganggu proses yang sedang aktif berjalan.
    - Status `sent` hanya ditulis setelah konfirmasi keberhasilan pengiriman dari client API.
 
 ---
@@ -84,7 +84,7 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
 
 1. **Stateful Conversation History:**
    - Riwayat percakapan tersimpan di Supabase dengan pagination dinamis.
-   - In-memory LRU Hot Cache (300 entri) untuk respon cepat 0-30ms.
+   - In-memory Hot Cache berkapasitas 300 entri dengan FIFO pruning 50-entri tertua saat batas tercapai untuk respon cepat 0-30ms.
 
 2. **Autonomous Dynamic Timezone Awareness:**
-   - Pengenalan konteks waktu berbasis geolokasi/kota domisili pengguna (WIB, WITA, WIT) tanpa hardcode statis.
+   - Pengenalan konteks waktu dinamis berbasis deteksi domisili/kota pengguna (~400 wilayah) tanpa memaksa zona waktu statis tunggal.

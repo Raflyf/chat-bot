@@ -239,17 +239,17 @@ const LOCATION_MAP: LocationEntry[] = [
   { keywords: ['toronto', 'ottawa', 'montreal', 'quebec', 'kanada', 'canada'], zone: 'America/Toronto', label: 'Kanada (Toronto)' },
   { keywords: ['vancouver', 'calgary'], zone: 'America/Vancouver', label: 'Kanada (Vancouver)' },
   { keywords: ['mexico city', 'guadalajara', 'monterrey', 'meksiko', 'mexico'], zone: 'America/Mexico_City', label: 'Meksiko (Mexico City)' },
-  { keywords: ['sao paulo', 'rio de janeiro', 'brasilia', 'brasil', 'brazil', 'brt'], zone: 'America/Sao_Paulo', label: 'Brasil (Sao Paulo)' },
-  { keywords: ['buenos aires', 'argentina', 'art'], zone: 'America/Argentina/Buenos_Aires', label: 'Argentina (Buenos Aires)' },
+  { keywords: ['sao paulo', 'rio de janeiro', 'brasilia', 'brasil', 'brazil'], zone: 'America/Sao_Paulo', label: 'Brasil (Sao Paulo)' },
+  { keywords: ['buenos aires', 'argentina'], zone: 'America/Argentina/Buenos_Aires', label: 'Argentina (Buenos Aires)' },
   { keywords: ['bogota', 'kolombia', 'colombia'], zone: 'America/Bogota', label: 'Kolombia (Bogota)' },
   { keywords: ['santiago', 'chili', 'chile'], zone: 'America/Santiago', label: 'Chili (Santiago)' },
   { keywords: ['lima', 'peru'], zone: 'America/Lima', label: 'Peru (Lima)' },
 
   // Africa
   { keywords: ['kairo', 'cairo', 'mesir', 'egypt'], zone: 'Africa/Cairo', label: 'Mesir (Kairo)' },
-  { keywords: ['johannesburg', 'cape town', 'pretoria', 'afrika selatan', 'south africa', 'sast'], zone: 'Africa/Johannesburg', label: 'Afrika Selatan (Johannesburg)' },
+  { keywords: ['johannesburg', 'cape town', 'pretoria', 'afrika selatan', 'south africa'], zone: 'Africa/Johannesburg', label: 'Afrika Selatan (Johannesburg)' },
   { keywords: ['lagos', 'abuja', 'nigeria'], zone: 'Africa/Lagos', label: 'Nigeria (Lagos)' },
-  { keywords: ['nairobi', 'kenya', 'eat'], zone: 'Africa/Nairobi', label: 'Kenya (Nairobi)' },
+  { keywords: ['nairobi', 'kenya'], zone: 'Africa/Nairobi', label: 'Kenya (Nairobi)' },
   { keywords: ['casablanca', 'rabat', 'maroko', 'morocco'], zone: 'Africa/Casablanca', label: 'Maroko (Casablanca)' },
 ];
 
