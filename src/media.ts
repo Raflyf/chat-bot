@@ -201,6 +201,42 @@ async function processPdfViaGemini(
 }
 
 /**
+ * Deteksi tipe MIME aktual dari magic bytes buffer untuk mencegah MIME spoofing (P1-10).
+ */
+export function sniffMimeType(buffer: Buffer): string | null {
+  if (!buffer || buffer.length < 4) return null;
+  // PDF: %PDF (0x25 0x50 0x44 0x46)
+  if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+    return 'application/pdf';
+  }
+  // PNG: \x89PNG (0x89 0x50 0x4E 0x47)
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+    return 'image/png';
+  }
+  // JPEG: \xFF\xD8\xFF
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  // WebP: RIFF....WEBP
+  if (
+    buffer.length >= 12 &&
+    buffer.toString('ascii', 0, 4) === 'RIFF' &&
+    buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  // ZIP / Word .docx: PK\x03\x04
+  if (buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  // Ogg audio: OggS
+  if (buffer.length >= 4 && buffer.toString('ascii', 0, 4) === 'OggS') {
+    return 'audio/ogg';
+  }
+  return null;
+}
+
+/**
  * Ekstraksi teks dari berbagai format dokumen teks & Word (.docx).
  */
 export async function extractDocumentText(
@@ -208,6 +244,10 @@ export async function extractDocumentText(
   mime: string,
   filename: string,
 ): Promise<string | null> {
+  // Sniff magic bytes jika tersedia
+  const sniffed = sniffMimeType(buffer);
+  const effectiveMime = sniffed || mime;
+
   // Batasi ukuran dokumen maks 15MB untuk mencegah Lambda OOM
   if (buffer.length > 15 * 1024 * 1024) {
     console.warn(`[media] Dokumen ${filename} melebihi batas 15MB (${buffer.length} bytes). Ditolak.`);
@@ -378,6 +418,7 @@ export async function processIncomingVideo(
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(35000),
           body: JSON.stringify({
             contents: [{
               role: 'user',

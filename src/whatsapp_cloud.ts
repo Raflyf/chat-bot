@@ -43,17 +43,21 @@ export function verifyWhatsAppWebhook(
 /**
  * Verifikasi signature webhook Meta X-Hub-Signature-256 secara timing-safe.
  */
-export function verifyMetaSignature(rawBody: string, signatureHeader?: string): boolean {
+export function verifyMetaSignature(rawBody: string | Buffer, signatureHeader?: string): boolean {
   if (!config.whatsappAppSecret) {
-    if (config.isServerless) return false;
-    return true;
+    if (process.env.NODE_ENV === 'test') return true;
+    console.warn('[whatsapp] WHATSAPP_APP_SECRET tidak diset, menolak request demi keamanan fail-closed.');
+    return false;
   }
   if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
 
-  const expectedSignature = crypto
-    .createHmac('sha256', config.whatsappAppSecret)
-    .update(rawBody, 'utf8')
-    .digest('hex');
+  const hmac = crypto.createHmac('sha256', config.whatsappAppSecret);
+  if (Buffer.isBuffer(rawBody)) {
+    hmac.update(rawBody);
+  } else {
+    hmac.update(String(rawBody), 'utf8');
+  }
+  const expectedSignature = hmac.digest('hex');
 
   const incomingHash = signatureHeader.slice(7);
   try {
@@ -66,7 +70,7 @@ export function verifyMetaSignature(rawBody: string, signatureHeader?: string): 
   }
 }
 
-export const verifyWhatsAppSignature = (signature: string | undefined, rawBody: string): boolean => {
+export const verifyWhatsAppSignature = (signature: string | undefined, rawBody: string | Buffer): boolean => {
   return verifyMetaSignature(rawBody, signature);
 };
 

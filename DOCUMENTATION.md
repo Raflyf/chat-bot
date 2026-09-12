@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.26.0  
+**Versi:** v0.26.1 (Audit Verification Hotfix & Full Regression Resolution)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 16:45 WIB  
+**Terakhir Diperbarui:** 2026-09-12 17:15 WIB  
 
 ---
 
@@ -692,6 +692,44 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - Menyesuaikan batas waktu tunggu header koneksi `CONNECT_TIMEOUT_MS` menjadi 4.500ms agar mekanisme auto-failover antar key/model berjalan 2x lebih responsif jika salah satu gateway mengalami kendala.
 - **Integritas Urutan Rolling Model (Zero Alteration)**:
   - Urutan hierarki rolling penggunaan model (`xkiro` -> `groq` -> `gemini` -> `openrouter`) dipertahankan 100% utuh tanpa modifikasi apa pun sesuai syarat mutlak pengguna.
+
+### v0.26.1 — 2026-09-12 17:15 WIB
+**Audit Verification Hotfix & Full Regression Resolution (AUDIT_VERIFICATION_v0.26.0)**
+- **Hotfix Kritis Reminders & CHECK Constraint (`sql/migrate_v16_security_hardening_and_rpc.sql`, `src/remind.ts`)**:
+  - Memperbarui CHECK constraint tabel `reminders` menjadi `CHECK (status IN ('pending', 'processing', 'sent', 'failed'))` untuk mengakomodasi atomic claim status `'processing'`.
+  - Menambahkan mekanisme fallback CAS tangguh di `src/remind.ts` sehingga proses pengiriman pengingat tidak pernah macet meskipun constraint basis data belum diperbarui.
+- **Eliminasi Penimpaan Cache-Control pada Endpoint Statistik (`api/stats.ts`)**:
+  - Menghapus baris `res.setHeader('Cache-Control', 'public, s-maxage=10, ...')` yang menimpa `no-store`, menjamin data analitik admin tidak pernah tersimpan di cache publik/CDN.
+- **Penyelarasan Tanda Tangan Parameter RPC `increment_knowledge_hit` (`sql/migrate_v16_security_hardening_and_rpc.sql`, `src/knowledge.ts`)**:
+  - Mendefinisikan parameter ganda `(p_entity_key text DEFAULT NULL, p_key text DEFAULT NULL)` pada fungsi RPC PostgreSQL dan mengirimkan kedua kunci dari `src/knowledge.ts` untuk kompatibilitas penuh.
+- **Isolasi Code-Fence Anti-Korupsi & Penutupan Fence Unclosed (`src/skills.ts`)**:
+  - Menambahkan deteksi dan penutupan otomatis pada blok code fence yang belum tertutup (`out += '\n```'`) sebelum ekstraksi blok kode. Menghilangkan bug di mana baris komentar `#` di dalam kode terkonversi menjadi format heading/bold WhatsApp.
+  - Memperbaiki batas emoji menjadi mutlak maksimal 1 emoji (`maxAllowed = 1`) di seluruh panjang teks keluaran.
+  - Menghapus residu Chain-of-Thought (CoT) `<think>` di posisi mana pun di dalam pesan, bukan hanya di awal baris.
+  - Menetralisir instruksi prompt web data agar dibingkai sebagai referensi eksternal yang tidak dipercaya untuk mencegah stored prompt injection.
+- **Resolusi Zona Waktu GPS IANA & Pencegahan Unhandled Rejection Provider (`src/timezone.ts`, `src/providers.ts`)**:
+  - Fallback koordinat GPS pada `resolveTimezoneFromCoords` kini mengembalikan zona waktu IANA standar yang valid (`Etc/GMT-8` untuk UTC+8, `Etc/GMT+5` untuk UTC-5, atau `UTC` untuk offset 0).
+  - Menghapus token lokasi 2-huruf ambigu (`hk`) untuk mencegah tabrakan pencocokan lokasi.
+  - Memasang handler `.catch(() => {})` pada `bodyPromise` di `fetchJsonWithLifecycle` untuk mencegah unhandled promise rejection saat timeout membatalkan pembacaan stream di Node.js 22.
+- **Keamanan Master PIN Klien-Server & Lockout Akun (`src/admin_auth.ts`, `public/dashboard.html`, `sql/migrate_v12_admin_auth.sql`)**:
+  - Menghapus salt publik client-side `PIN_SALT = "rafly_telemetry_salt"` dan fungsi hashing client-side pada dashboard. Klien mengirim PIN langsung melalui koneksi terenkripsi HTTPS POST ke `/api/admin-otp?action=verify_pin` dan server melakukan hashing menggunakan secret salt internal.
+  - Memperbaiki pesan penguncian akun menjadi "15 menit" sesuai durasi lockout aktual.
+  - Menambahkan verifikasi status penguncian dan pencatatan gagal atomik pada fungsi `updatePin`.
+  - Menghapus nilai hash seed default `080402` dari migrasi v12 dan membatasi `GRANT EXECUTE` RPC admin hanya ke `service_role`.
+- **Penegakan Fail-Closed di Seluruh Lingkungan Runtime (`api/webhook.ts`, `src/whatsapp_cloud.ts`, `api/cron/reminders.ts`, `src/env.ts`)**:
+  - Seluruh endpoint webhook Telegram, webhook WhatsApp Meta, dan endpoint cron pengingat kini menolak permintaan secara fail-closed di SEMUA mode (bukan hanya serverless) jika secret belum dikonfigurasi.
+  - Memperketat validasi `assertRuntime` untuk kelengkapan secret dan kredensial Meta WhatsApp Cloud.
+- **Hidrasi Kuota Basis Data saat Cold Start (`src/quota.ts`)**:
+  - Menambahkan fungsi `hydrateKeyQuota` yang membaca data riil penggunaan kuota harian dari Supabase `provider_quota` saat instance cold start, menjamin batas harian ditegakkan secara akurat lintas restart container.
+- **Pengetatan Perintah Reset Sesi & Keamanan Media (`src/memory.ts`, `src/media.ts`, `src/telegram.ts`)**:
+  - Membatasi fungsi `isResetCommand` secara strictly prefix-only (`/reset`, `/clear`, `/reset_session`, `/resetsesi`, `/clearchat`) untuk mencegah reset sesi tidak sengaja dari obrolan kasual.
+  - Menambahkan `AbortSignal.timeout(35000)` pada analisis video Gemini dan fungsi `sniffMimeType` untuk memvalidasi magic bytes berkas dokumen/gambar.
+  - Mengubah respons `/start` Telegram menjadi respons statis instan tanpa memanggil model LLM untuk menghemat kuota dan memangkas latensi.
+- **Penjaminan Mutu & Cakupan Typecheck 100% (`package.json`, `tsconfig.typecheck.json`, `Dockerfile`, `public/index.html`)**:
+  - Membuat konfigurasi `tsconfig.typecheck.json` dan memperbarui script `npm run typecheck` sehingga mencakup 100% kode sumber di `src/` dan seluruh 6 serverless API functions di `api/`.
+  - Memperbarui `Dockerfile` menggunakan `npm ci` untuk build kontainer yang deterministik.
+  - Menyelaraskan teks versi pada footer `public/index.html` menjadi `v0.26.0`.
+  - Meng-untrack seluruh 7 file CSV evaluasi lokal dari cache Git tanpa menghapus berkas fisik pengguna.
 
 ### v0.26.0 — 2026-09-12 16:45 WIB
 **Hardening Masif Menyeluruh & Eksekusi Penuh Hasil Audit Komprehensif (Zero Unfixed Findings)**

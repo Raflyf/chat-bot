@@ -119,8 +119,21 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
     throw new Error('TELEGRAM_BOT_TOKEN kosong. Salin .env.example ke .env lalu isi.');
   }
   if (target === 'whatsapp' || target === 'all') {
-    if (config.whatsappToken && (!config.whatsappPhoneNumberId || !config.whatsappVerifyToken)) {
-      console.warn('[env] WhatsApp Cloud aktif sebagian: pastikan WHATSAPP_PHONE_NUMBER_ID dan WHATSAPP_VERIFY_TOKEN terisi.');
+    if (config.whatsappToken) {
+      if (!config.whatsappPhoneNumberId || !config.whatsappVerifyToken) {
+        throw new Error('WHATSAPP_TOKEN terisi namun WHATSAPP_PHONE_NUMBER_ID atau WHATSAPP_VERIFY_TOKEN belum lengkap.');
+      }
+      if (!config.whatsappAppSecret && config.isServerless) {
+        throw new Error('WHATSAPP_APP_SECRET wajib diisi pada serverless untuk verifikasi HMAC Meta.');
+      }
+    }
+  }
+  if (config.isServerless) {
+    if (!config.cronSecret) {
+      console.warn('[env] CRON_SECRET belum diset di serverless: endpoint /api/cron/reminders akan fail-closed.');
+    }
+    if (!config.telegramWebhookSecret && config.telegramToken) {
+      console.warn('[env] TELEGRAM_WEBHOOK_SECRET belum diset di serverless: webhook Telegram akan fail-closed.');
     }
   }
   if (config.supabaseUrl && !config.supabaseKey) {

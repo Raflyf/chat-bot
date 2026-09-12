@@ -38,8 +38,46 @@ function slot(kind: ProviderKind, key: string): Counter {
   return fresh;
 }
 
+const hydratedKeys = new Set<string>();
+
+/** Hydrate kuota pemakaian dari Supabase provider_quota saat instance baru aktif (C5 & P1-4) */
+export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<void> {
+  const suffix = keyHash(key);
+  const id = `${kind}:${suffix}`;
+  const day = today();
+  const cacheKey = `${id}:${day}`;
+  if (hydratedKeys.has(cacheKey)) return;
+  hydratedKeys.add(cacheKey);
+
+  const c = db();
+  if (!c) return;
+
+  try {
+    const { data } = await c
+      .from('provider_quota')
+      .select('used')
+      .eq('kind', kind)
+      .eq('key_suffix', suffix)
+      .eq('day', day)
+      .maybeSingle();
+
+    if (data && typeof data.used === 'number') {
+      const s = slot(kind, key);
+      s.count = Math.max(s.count, data.used);
+    }
+  } catch {
+    // best-effort
+  }
+}
+
 /** True jika key masih boleh dipakai hari ini. */
 export function keyAllowed(kind: ProviderKind, key: string, cap: number): boolean {
+  // Picu hidrasi asinkron jika belum pernah dibaca dari DB hari ini
+  const day = today();
+  const suffix = keyHash(key);
+  if (!hydratedKeys.has(`${kind}:${suffix}:${day}`)) {
+    void hydrateKeyQuota(kind, key);
+  }
   return slot(kind, key).count < cap;
 }
 

@@ -17,12 +17,9 @@ CREATE TABLE IF NOT EXISTS public.admin_auth_config (
     updated_at timestamptz DEFAULT now()
 );
 
--- 2. Seed Master PIN Default (080402 dengan garam rafly_telemetry_salt)
--- SHA-256('080402rafly_telemetry_salt') = db533e5fe9b399627eb386c19c967aa171dbc121a43fda2fa583c0a731aba78c
--- DO NOTHING: Jangan timpa PIN yang sudah ada jika tabel sudah memiliki record
-INSERT INTO public.admin_auth_config (id, pin_hash, lockout_attempts, locked_until)
-VALUES ('master_auth', 'db533e5fe9b399627eb386c19c967aa171dbc121a43fda2fa583c0a731aba78c', 0, NULL)
-ON CONFLICT (id) DO NOTHING;
+-- 2. Master PIN Default Configuration
+-- CATATAN KEAMANAN: Jangan menanam hardcoded hash PIN di migrasi publik.
+-- PIN harus dikonfigurasi melalui environment variable ADMIN_PIN atau diatur via first-run provisioning.
 
 -- 3. Row Level Security (RLS)
 ALTER TABLE public.admin_auth_config ENABLE ROW LEVEL SECURITY;
@@ -181,7 +178,7 @@ BEGIN
 END;
 $$;
 
--- Hak akses eksekusi RPC
-GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_pin(text) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.rpc_admin_save_otp(text, timestamptz) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_otp_and_reset_pin(text, text) TO anon, authenticated, service_role;
+-- Hak akses eksekusi RPC: HANYA untuk backend service_role (C2 & P0-2)
+GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_pin(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.rpc_admin_save_otp(text, timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_otp_and_reset_pin(text, text) TO service_role;

@@ -85,14 +85,19 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     const ownerId = config.ownerChatId;
     const text = msg.text?.trim() ?? '';
 
-    // 1. Perintah /start
+    // 1. Perintah /start (Respons statis instan tanpa memanggil LLM demi kecepatan & efisiensi)
     if (text === '/start') {
-      const ctx = await getContext(chatKey);
-      const { reply } = await autoReply(
-        `Sapa user dengan hangat dan cerdas sebagai ${config.botName}. Perkenalkan kemampuanmu: asisten AI umum yang mengingat percakapan, mencari info internet terkini, menerima koreksi via /salah, pengingat via /remind, serta memahami dokumen (PDF, Word, teks), foto, pesan suara (VN), stiker, dan video. Tawarkan bantuan.`,
-        ctx,
-      );
-      await sendTelegramMessageSafe(bot, chatId, reply);
+      const welcomeText =
+        `Halo! Saya *${config.botName}*, asisten AI pribadi kamu.\n\n` +
+        `Kemampuan yang dapat kamu gunakan:\n` +
+        `- Diskusi, tanya jawab, atau analisis berbagai topik secara mendalam\n` +
+        `- Menelusuri informasi internet terkini secara real-time\n` +
+        `- Membaca & menganalisis dokumen (PDF, Word, TXT, CSV), gambar, pesan suara (VN), stiker, dan video\n` +
+        `- Mengatur pengingat otomatis dengan perintah: /remind <menit> <pesan>\n` +
+        `- Menyimpan preferensi/koreksi khusus dengan perintah: /salah <catatan>\n` +
+        `- Mereset sesi percakapan dengan perintah: /reset\n\n` +
+        `Ada yang bisa saya bantu sekarang?`;
+      await sendTelegramMessageSafe(bot, chatId, welcomeText);
       return;
     }
 
