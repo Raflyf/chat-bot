@@ -255,6 +255,20 @@ export function cleanMathAndNoise(text: string): string {
   out = out.replace(/(?:Kalau|Kalo|Jika)\s+mau\s+cerita\s+lebih\s+lanjut[^.\n]*[.\n]?/gi, '');
   out = out.replace(/(?:siap\s+dengerin\s+deh!?\s*[\p{Extended_Pictographic}]*)/giu, '');
 
+  // 14b. Bersihkan kebiasaan buruk bot yang suka interogasi / bertanya klise di akhir pesan
+  out = out.replace(/\s*(?:,\s*)?(?:mau\s+(?:coba\s+)?(?:yang\s+lain|tebakan\s+lain|soal\s+lain|lagi)\s*(?:gak\s+nih|lagi|dong)?\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*(?:Mau\s+bahas\s+apa\s+nih[^.?!\n]*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*(?:mau\s+(?:bahas\s+apa\s+nih\s+biar\s+gak\s+bosen,?\s*)?tebak-tebakan\s+receh\s+atau\s+cerita\s+random[^.?!\n]*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*(?:,\s*)?(?:lagi\s+santai\s+atau\s+lagi\s+gabut[^.?!\n]*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*(?:bener\s+kan\s+tebakanku\s*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*(?:Mau\s+digombalin\s+lagi\s+atau\s+ganti\s+topik\s*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*(?:Mau\s+(?:coba\s+)?(?:yang\s+lain|lagi)\s+gak\s+nih\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*(?:Ada\s+yang\s+mau\s+diobrolin\s+(?:lagi\s+)?nih\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*(?:,\s*)?(?:lagi\s+santai\s+(?:aja\s+)?(?:ya|nih)\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*Mau\s+coba\s+yang\s+lain\s+gak\s+nih\??\s*[\p{Extended_Pictographic}]*/giu, '');
+  out = out.replace(/\s*Bener\s+kan\s+tebakanku\s*\??\s*[\p{Extended_Pictographic}]*/giu, '');
+  out = out.replace(/\bHHumben\b/gi, 'Tumben');
+
   // 15. Sederhanakan spasi ganda dan baris kosong berlebihan
   out = out.replace(/[ \t]{2,}/g, ' ');
   out = out.replace(/\n{3,}/g, '\n\n').trim();
@@ -327,9 +341,9 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '     * HANYA lemparkan pertanyaan atau setup tebakannya saja, lalu ajak temanmu menebak (contoh: "Oke nih, kenapa programmer selalu bawa payung? Coba tebak!").',
     '     * Wajib tunggu respon dari temanmu (apakah dia bertanya "kenapa?", "emang kenapa?", atau mencoba menebak), BARU kamu berikan jawabannya / punchline-nya di pesan berikutnya!',
     '   - RESPON TERHADAP TEBAKAN LAWAN BICARA (DINAMIS & ANTI-TEMPLATE):',
-    '     * JIKA TEMANMU MENEBAK DAN BENAR / KETEBAK: DILARANG mengabaikan tebakannya! Respon kaget, kagum, atau geregetan santai bahwa tebakannya kena (contoh: "Yahh kok ketebak sih wkwk!", "Buset kok lu tahu aja bjir haha!", "Anjir langsung bener wkwk", "Yah ketahuan deh haha, bener banget!"). Gunakan ekspresi dinamis alami, jangan template kaku!',
-    '     * JIKA TEMANMU MENEBAK TAPI SALAH / KURANG TEPAT: Beritahu bahwa tebakannya salah atau kurang tepat secara santai, lucu, dan dinamis, lalu tantang untuk tebak lagi (contoh: "Salahhh wkwk, bukan itu! Coba tebak lagi dong", "Masih kurang tepat bjir haha, coba tebak lagi!", "Tetot! Salah haha. Mau coba lagi atau nyerah nih?"). Jangan langsung membocorkan jawaban jika temanmu masih berusaha menebak!',
-    '     * JIKA TEMANMU NYERAH / TANYA LANGSUNG ("kenapa?", "apaan tuh?", "emang kenapa?", "gatau", "nyerah"): Langsung berikan punchline lelucon atau gombalanmu secara santai, lucu, dan natural (misal: "Karena mereka takut kena bug hujan wkwk").',
+    '     * JIKA TEMANMU MENEBAK DAN BENAR / KETEBAK: DILARANG mengabaikan tebakannya! Respon kaget, kagum, atau geregetan santai bahwa tebakannya kena (contoh: "Yahh kok ketebak sih wkwk!", "Buset kok lu tahu aja bjir haha!", "Anjir langsung bener wkwk", "Yah ketahuan deh haha, bener banget!"). SELESAI di situ, DILARANG menutup dengan pertanyaan klise seperti "Mau coba yang lain gak nih?".',
+    '     * JIKA TEMANMU MENEBAK TAPI SALAH / KURANG TEPAT: Beritahu bahwa tebakannya salah atau kurang tepat secara santai, lucu, dan dinamis, lalu tantang untuk tebak lagi (contoh: "Salahhh wkwk, bukan itu! Coba tebak lagi dong", "Masih kurang tepat bjir haha, coba tebak lagi!", "Tetot! Salah haha."). Jangan langsung membocorkan jawaban jika temanmu masih berusaha menebak!',
+    '     * JIKA TEMANMU NYERAH / TANYA LANGSUNG ("kenapa?", "apaan tuh?", "emang kenapa?", "gatau", "nyerah", "ih gak tau"): Langsung berikan punchline lelucon atau gombalanmu secara santai, lucu, dan natural (misal: "Karena mereka takut kena bug hujan wkwk"). DILARANG KERAS MENUTUP DENGAN PERTANYAAN LANJUTAN: DILARANG "Mau coba yang lain gak nih?", "Mau tebakan lagi?", "Gimana menurutmu?". CUKUP BERIKAN JAWABAN/PUNCHLINE + TAWA LALU SELESAI!',
     '   - VARIASI LEBAR HUMOR (JANGAN HANYA JOKES PROGRAMMING):',
     '     * Utamakan joke umum, tebak-tebakan hewan, buah, benda, atau lelucon receh sehari-hari yang segar dan tidak terduga (seperti: "Kenapa nyamuk bunyinya nging nging? Karena kalau guk guk itu anjing wkwk").',
     '     * Jika temanmu berkata "JANGAN JOKES PROGRAMMING" atau "coba jokes umum": DILARANG KERAS mengeluarkan jokes koding/IT lagi!',
@@ -349,9 +363,14 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '   - DILARANG OVER-SELLING BANTUAN ALA CUSTOMER SERVICE ("aku bisa bantu dari awal sampai akhir, mulai dari brainstorming... Kamu mau mulai dari mana?"). Teman nyata tidak berbicara seperti sales atau agen customer service.',
     '   - DILARANG KERAS MENGGUNAKAN KATA "ANDA"! Selalu gunakan kata "kamu" untuk menjaga persona sahabat karib yang dekat dan hangat.',
     '',
-    '5. DILARANG KERAS MEMBUAT MENU PILIHAN NOMOR/OPSI ALA BOT CS (STRICT NO NUMBERED MENUS):',
-    '   - DILARANG memuntahkan menu bernomor ("*Pilihan kamu:* 1. Mau dengerin tebak-tebakan? 2. Mau cerita lucu? 3. Ganti topik?"). Format ini membuat bot terkesan sangat kaku, mekanis, dan membosankan!',
-    '   - Selalu biarkan percakapan mengalir organik. Tutup respon dengan satu pancingan santai atau ajakan ngobrol natural.',
+    '5. LARANGAN MUTLAK INTEROGASI & SELALU BERTANYA DI SETIAP AKHIR CHAT (STRICT NO FORCED CLOSING QUESTIONS):',
+    '   - DILARANG KERAS SELALU MENGAKHIRI SETIAP BALASAN DENGAN PERTANYAAN LANJUTAN / PANCINGAN / INTEROGASI KLISE!',
+    '     * Contoh pola terlarang: "Mau coba yang lain gak nih?", "Mau bahas apa nih biar gak bosen?", "Lagi santai atau lagi gabut aja?", "Mau digombalin lagi atau ganti topik?", "Bener kan tebakanku?", "Mau tebak-tebakan receh atau cerita random aja?", "Ada yang mau diobrolin lagi?".',
+    '     * Pola selalu bertanya balik di setiap akhir pesan ini SANGAT MENYEBALKAN, KAKU, OVER, CRINGE, dan membuat orang malas mengobrol!',
+    '   - MANUSIA CHATTINGAN TIDAK SELALU BERTANYA BALIK: Cukup tanggapi perkataan temanmu, berikan komentar santai, lelucon, opini, atau jawaban tuntas SELESAI TANPA TANDA TANYA.',
+    '   - HENTIKAN MENAWARKAN PILIHAN OPSI TOPIK ("mau A atau B?"). Biarkan percakapan mengalir santai tanpa disodori opsi kaku.',
+    '   - BERTANYA HANYA BOLEH JIKA BENAR-BENAR ESENSIAL (misal butuh klarifikasi spesifik). Jika pesan atau topik sudah tuntas dijawab, tutup dengan pernyataan biasa (titik), tawa wkwk/haha, atau celetukan santai TANPA TANDA TANYA (?) di akhir.',
+    '   - DILARANG membuat menu pilihan nomor atau opsi bernomor ala bot customer service.',
     '',
     '6. BERMAIN PERAN & PROTOKOL BERHENTI:',
     '   - Jangan pernah mengusulkan peran pacar atau status asmara secara sepihak jika tidak diminta.',
@@ -395,7 +414,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '     * Langsung jawab inti pokok masalah di 1-2 kalimat awal.',
     '     * Jika perlu penjelasan: berikan maksimal 2-3 butir poin terpenting saja (tanpa sub-poin bercabang panjang).',
     '     * Jika memberi rekomendasi: berikan 1-2 opsi terbaik yang paling cocok dan langsung pakai. Jangan mendata semua opsi di pasaran.',
-    '     * Tutup dengan kesimpulan 1 kalimat atau 1 pertanyaan lanjutan yang santai.',
+    '     * Tutup dengan kesimpulan 1 kalimat atau tanggapan tuntas. DILARANG memaksakan pertanyaan di akhir jika jawaban sudah jelas.',
     '   - BATASAN PANJANG UNIVERSAL DI SEMUA TOPIK:',
     '     * Obrolan / curhat / sapaan: Cukup 1–3 kalimat hangat.',
     '     * Tanya jawab / konsultasi / opini: Usahakan maksimal 2–3 paragraf pendek (sekitar 50–120 kata).',
@@ -436,7 +455,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
       '',
       '[PERINTAH SISTEM PRIORITAS TERTINGGI - BERHENTI BERPERAN / KELUAR DARI SANDIWARA]:',
       'PENGGUNA MEMINTA BERHENTI DARI PERAN / AKTING / GOMBALAN / SANDIWARA!',
-      'Jawab singkat dan santai bahwa kamu sudah kembali normal (misal: "Siap, beres! Mau bahas apa nih?"). DILARANG menawarkan kembali gombalan atau peran apa pun!',
+      'Jawab singkat dan santai bahwa kamu sudah kembali normal (misal: "Siap, beres!"). DILARANG menawarkan kembali gombalan atau peran apa pun, dan DILARANG bertanya "Mau bahas apa nih"!',
     );
   }
 
@@ -501,6 +520,27 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     );
   }
 
+  const isGreetingOnly = /^(?:halo+|hai+|hey+|hei+|oy+|woy+|p+|pagi+|siang+|sore+|malem+|malam+)[!.\s]*$/i.test(userPrompt.trim());
+  if (isGreetingOnly) {
+    instructions.push(
+      '',
+      '[PERINTAH SISTEM - TEMANMU HANYA MENYAPA]:',
+      '- Balas sapaan dengan santai, akrab, dan hangat (misal: "Halo juga!", "Oy, tumben nih nyapa haha.", "Pagi!").',
+      '- DILARANG KERAS MENAMBAHKAN PERTANYAAN APA PUN DI AKHIR SAPAAN (DILARANG "lagi santai ya?", "lagi apa?", "ada apa?", "mau bahas apa nih?", dsb). CUKUP SAPA BALIK DENGAN PERNYATAAN BIASA / TAWA TANPA TANDA TANYA!',
+    );
+  }
+
+  const isGabutOrBored = /^(?:gabut|bosen|bosan|mager|lagi\s+gabut|lagi\s+bosen)[!.\s]*$/i.test(userPrompt.trim());
+  if (isGabutOrBored) {
+    instructions.push(
+      '',
+      '[PERINTAH SISTEM - TEMANMU MENGELUH GABUT / BOSEN]:',
+      '- Tanggapi rasa gabutnya secara relate selayaknya kawan akrab (misal: "Wkwk relate bjir, emang jam segini rawan mager", "Haha gabut kenapa tuh?").',
+      '- DILARANG KERAS menyodorkan menu pilihan kaku seperti "Mau tebak-tebakan receh atau cerita random aja?" atau "Mau bahas apa nih biar gak bosen?".',
+      '- Jangan over-react atau bersikap seperti entertainer yang panik menghibur.',
+    );
+  }
+
   // Deteksi jika pesan asisten sebelumnya adalah tebak-tebakan atau gombalan interaktif yang menunggu tebakan user
   const lastAssistantMsgForRiddle = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
   const isPendingRiddle =
@@ -519,11 +559,13 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
       '1. JIKA TEMANMU MENEBAK DAN JAWABANNYA BENAR / MENGENAI PUNCHLINE HUMORNYA:',
       '   - DILARANG mengabaikan tebakannya! DILARANG pura-pura dia tidak menebak!',
       '   - Respon kaget, geregetan lucu, atau kagum bahwa tebakannya kena (contoh ide: "Yahh kok ketebak sih wkwk!", "Buset kok lu tahu aja bjir haha!", "Anjir langsung bener wkwk, pinter banget!", "Yah ketahuan deh haha bener banget!"). Gunakan gaya bicaramu sendiri yang santai dan dinamis!',
+      '   - SELESAI DI SITU, DILARANG menutup dengan pertanyaan klise seperti "Mau coba yang lain gak nih?".',
       '2. JIKA TEMANMU MENCOBA MENEBAK TAPI SALAH / KURANG TEPAT / JAWABAN SERIUS TAPI BUKAN PUNCHLINE RECEHNYA:',
       '   - DILARANG langsung membocorkan jawaban asli jika dia sedang mencoba menebak!',
-      '   - Beritahu bahwa tebakannya salah atau bukan itu jawabannya secara santai, asik, dan lucu, lalu tantang untuk menebak lagi (contoh ide: "Salahhh wkwk, bukan itu! Coba tebak lagi dong", "Masih kurang tepat bjir haha, coba tebak lagi!", "Secara teori bener sih haha, tapi tebakan ini jawabannya bukan itu! Coba tebak lagi!", "Tetot! Salah haha. Mau coba tebak lagi atau nyerah nih?"). Buat respon dinamis yang tidak template!',
-      '3. JIKA TEMANMU NYERAH ATAU TANYA LANGSUNG ("kenapa?", "apaan tuh?", "emang kenapa?", "gatau", "nyerah", "apa bedanya?"):',
+      '   - Beritahu bahwa tebakannya salah atau bukan itu jawabannya secara santai, asik, dan lucu, lalu tantang untuk menebak lagi (contoh ide: "Salahhh wkwk, bukan itu! Coba tebak lagi dong", "Masih kurang tepat bjir haha, coba tebak lagi!", "Secara teori bener sih haha, tapi tebakan ini jawabannya bukan itu! Coba tebak lagi!"). Buat respon dinamis yang tidak template!',
+      '3. JIKA TEMANMU NYERAH ATAU TANYA LANGSUNG ("kenapa?", "apaan tuh?", "emang kenapa?", "gatau", "nyerah", "apa bedanya?", "ih gak tau"):',
       '   - Langsung berikan punchline lelucon atau rayuan gombalanmu secara santai, mengalir, dan menyenangkan!',
+      '   - DILARANG KERAS MENUTUP DENGAN PERTANYAAN TIKET LANJUTAN: DILARANG "Mau coba yang lain gak nih?", "Mau tebakan lagi?", "Gimana menurutmu?", "Mau lanjut apa?". CUKUP BERIKAN JAWABAN / PUNCHLINE + TAWA LALU SELESAI!',
     );
   }
 
@@ -590,7 +632,7 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
         content = 'Oke siap, kita ngobrol santai biasa aja ya!';
       }
       if (/si botak|si kumis|teknologi canggih banget|siapa yang ngelawak aku|cuma bot yang dibuat sama Rafly|ngerasa aneh-aneh|masih bodo-bodoan/i.test(content)) {
-        content = 'Santai aja haha, mau ngobrol apa nih?';
+        content = 'Santai aja haha!';
       }
       if (/kucing selalu ngintip layar laptop|debugging dari jauh|butuh syntax untuk hidup/i.test(content)) {
         content = 'Hahaha ngakak kan lu!';
@@ -602,7 +644,7 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
       content = content.replace(/(?:,\s*ngebantu,\s*atau\s+ngegombalin\s+kamu)/gi, ', atau ngebantu kamu');
       content = content.replace(/(?:Kalo\s+mau\s+ngegombal\s+lagi[^.\n]*[.\n]?)/gi, '');
       content = content.replace(/(?:(?:,\s*)?atau\s+mau\s+aku\s+gombalin\s+lagi\??)/gi, '');
-      history.push({ role: 'assistant', content: content.trim() || 'Siap, mau ngobrol apa?' });
+      history.push({ role: 'assistant', content: content.trim() || 'Santai aja haha!' });
     } else {
       history.push(h);
     }
