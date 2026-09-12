@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.16 (Gemini & Groq API Key Quota Sync Resolution on Observability Dashboard)  
+**Versi:** v0.26.17 (Universal System Prompt Streamlining, Zero Redundancy & Elimination of Overprompting)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 22:42 WIB
+**Terakhir Diperbarui:** 2026-09-12 23:06 WIB
 
 ---
 
@@ -205,6 +205,31 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.17 - 2026-09-12 23:06 WIB
+
+**Perampingan Universal System Prompt, Eliminasi Duplikasi & Penuntasan Overprompting (Penurunan Ukuran Prompt dari ~8.500 Token Menjadi ~2.100 Token)**
+
+- **Audit & Penemuan Akar Masalah Token Menumpuk (`src/skills.ts`)**:
+  - Investigasi riil membuktikan bahwa penggunaan token >8.000 (Ctx: ~8.912) bukan disebabkan oleh riwayat obrolan (chat history hanya menyumbang ~350 token), melainkan oleh *System Prompt* inti bot yang berukuran ~43.600 karakter (~8.500–9.500 token).
+  - Hal ini menyebabkan inferensi ke model Groq `qwen/qwen3.8-27b` selalu ditolak oleh upstream dengan error `HTTP 413: Request too large ... Limit 7000 ITPM, Requested 8518`.
+- **Eliminasi Total Duplikasi Instruksi Prompt Sistem (`src/skills.ts`)**:
+  - Menghapus redundansi *triple duplication* pada aturan penyelarasan gaya bahasa (*style mirroring*), larangan kata formal "Anda", penanganan tawa/slang, dan instruksi penutup CS yang sebelumnya berulang kali ditulis pada 3–5 sub-seksi berbeda dan blok kondisional.
+  - Memadatkan aturan lelucon dan tebak-tebakan interaktif dua arah menjadi instruksi tegas satu tempat yang diperkuat dengan satu contoh konkret (`"Kenapa programmer selalu bawa payung? Coba tebak!"`), mempertahankan kepatuhan model tanpa membocorkan punchline.
+  - Menyingkirkan redundansi instruksi multimodal stiker dan foto yang sebelumnya mencapai 40 baris pada prompt teks biasa, karena `describeImage` di `src/skills.ts` telah memiliki prompt penglihatan terisolasi tersendiri.
+- **Pembersihan Overprompting dengan Preservasi Penuh Kualitas & Persona**:
+  - Memadatkan instruksi tanpa mengubah karakter alami bot sebagai sahabat karib sejati (polymath companion).
+  - Mempertahankan 100% seluruh guardrail krusial:
+    1. Verifikasi kepemilikan dan identitas developer Rafly Firmansyah (@Rflyyyf) serta proteksi anti-impersonasi akun lain.
+    2. Integritas objektif dan anti-sycophancy (sains, fakta, matematika PEMDAS/KABATAKU, pembagian nol *undefined*, kunci jawaban baku tebak-tebakan).
+    3. Penyelarasan gaya bahasa dinamis (formal vs santai bersih vs slang gaul proporsional) dan kepekaan rasa tinggi (*read between the lines* pada godaan akrab/manis).
+    4. Anti-latah kata seru "Wah", kontrol slang "bjir/anjir", dan pencegahan filler penutup klise.
+    5. Aturan format WhatsApp (*bold*, blok kode, daftar strip, bebas em-dash).
+    6. Penanganan memori pasif dan referensi data internet terkini.
+- **Hasil Pengujian & Verifikasi Faktual**:
+  - Ukuran prompt sistem terpangkas dari **~43.600 karakter (~8.500 token)** menjadi **~6.500 karakter (~1.600 token)**.
+  - Total token per giliran obrolan (prompt sistem + riwayat + pesan pengguna) turun drastis dari **~8.912 token** menjadi **~2.100 token** (penghematan ~76% token).
+  - Pengujian langsung `autoReply` membuktikan bahwa seluruh request kini berhasil dieksekusi oleh **Groq `qwen/qwen3.8-27b`** dengan latensi sub-detik (500–680ms) dan bebas dari error 413/429.
 
 ### v0.26.16 - 2026-09-12 22:42 WIB
 
