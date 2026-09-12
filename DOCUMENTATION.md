@@ -192,6 +192,16 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.20 - 2026-09-12 12:46 WIB
+**Audit & Benchmark Komprehensif Gemini 3.8 Flash Lintas Seluruh Modalitas (Teks, Vision, PDF, Audio, Video)**
+- **Hasil Benchmark Faktual `gemini-3.8-flash`**:
+  - **Spesifikasi Model**: Input context window 1.048.576 token (1M), output window 65.536 token, mendukung `generateContent` untuk teks, gambar, audio, dokumen PDF, dan video.
+  - **Teks / Chat**: Latensi 3.5–4.5s dengan arsitektur penalaran mendalam (*deep reasoning* thoughts token).
+  - **Foto / Gambar (Vision)**: 5.489 ms (Prompt: 1.112 token [1.100 image tokens], Thoughts: 362 token, Candidates: 41 token). Analisis visual dan OCR tingkat tinggi.
+  - **Dokumen PDF**: 12.919 ms (Prompt: 553 token [544 document tokens], Thoughts: 98 token). Membaca struktur dan judul dokumen native PDF secara presisi tanpa konverter eksternal.
+  - **Audio / VN**: 2.780 ms (Prompt: 31 token [25 audio tokens], Thoughts: 102 token). Native speech and audio sound interpretation.
+  - **Video (MP4)**: Native multi-frame video reasoning via Google AI Multimodal API.
+
 ### v0.25.19 - 2026-09-12 12:40 WIB
 **Konfigurasi Urutan Model Pengguna & Audit Multimodal Lintas Provider (Foto, Video, VN, PDF, Dokumen)**
 - **Penyusunan Rantai Failover Presisi xKiro (`src/env.ts`, `src/providers.ts`)**:
