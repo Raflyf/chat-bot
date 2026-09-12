@@ -52,7 +52,7 @@ export async function getContext(chatKey: string): Promise<ChatContext> {
   if (!c) return empty;
   try {
     const [h, s, k] = await Promise.all([
-      c.from('messages').select('role,content').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(10),
+      c.from('messages').select('role,content').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(30),
       c.from('summaries').select('summary').eq('chat_id', chatKey).limit(1).maybeSingle(),
       c.from('corrections').select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(5),
     ]);

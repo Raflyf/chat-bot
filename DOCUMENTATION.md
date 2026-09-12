@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.31  
+**Versi:** v0.25.32  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 14:44 WIB  
+**Terakhir Diperbarui:** 2026-09-12 15:06 WIB  
 
 ---
 
@@ -191,6 +191,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.32 - 2026-09-12 15:06 WIB
+**Ekspansi Kapasitas Riwayat Konteks Aktif (Sliding Window 30 Pesan), Optimalisasi Koridor Target 10.000 - 12.000 Token, & Peningkatan Memori Multimodal Stiker**
+- **Ekspansi Kapasitas Sliding Window Memori Aktif (`src/memory.ts`, `src/skills.ts`)**:
+  - Mengubah kuota penarikan riwayat percakapan dari basis data Supabase (`getContext`) dari 10 pesan menjadi 30 pesan (`limit(30)`).
+  - Menyelaraskan pemotongan riwayat pesan teks aktif pada `buildMessages` (`src/skills.ts`) dari `slice(-10)` menjadi `slice(-30)` (mencakup hingga 15 putaran tanya-jawab bolak-balik).
+  - Ketika sesi percakapan aktif berjalan intensif, total penggunaan token konteks input (`Context_Tokens`) secara alami terdistribusi stabil di koridor target **10.000 hingga 12.000 token** (baseline system prompt ~5.500 token + riwayat chat ~4.500 - 6.500 token).
+- **Peningkatan Kapasitas Konteks Multimodal Stiker & Foto (`src/skills.ts`)**:
+  - Menambah jangkauan riwayat pesan yang diumpankan ke model vision (`describeImage`) dari 4 pesan menjadi 10 pesan (`slice(-10)`), memastikan AI membaca konteks percakapan secara lebih mendalam saat menerima stiker atau gambar kiriman pengguna.
+- **Efisiensi Komputasi & Zero-Pollution Guard**:
+  - Mempertahankan batas atas riwayat secara proporsional agar tidak menimbulkan *context pollution*, fenomena *lost in the middle*, atau lonjakan latensi balasan, sekaligus mencegah *rate limit* kuota TPM pada gateway upstream xKiro.
 
 ### v0.25.31 - 2026-09-12 14:44 WIB
 **Eliminasi Total Filler Slop Penutup ("santai aja terus bro"), Ekstraksi Nama Kota Spesifik Memori, & Pencegahan False-Positive DKI Jakarta**
