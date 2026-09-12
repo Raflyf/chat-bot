@@ -11,16 +11,14 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
 1. **Gateway Primer (xKiro API):**
    - Endpoint: `https://api.xkiro.com/v1/chat/completions`
    - Model Prioritas:
-     1. `qwen/qwen3.8-max:free` (Model teks utama)
-     2. `deepseek/deepseek-v4-flash` (Cadangan 1 / failover kecepatan tinggi)
-     3. `qwen/qwen3.7-max:free` (Cadangan 2 / penalaran presisi)
-     4. `deepseek/deepseek-chat-v3.1` (Cadangan 3 / penalaran percakapan alami)
-     5. `qwen/qwen3.6-plus:free` (Cadangan 4)
-     6. `deepseek/deepseek-v4-pro` (Cadangan 5 / penalaran mendalam)
+     1. `deepseek/deepseek-v4-flash` (Model teks utama / failover kecepatan tinggi)
+     2. `deepseek/deepseek-chat-v3.1` (Cadangan 1 / penalaran percakapan alami)
+     3. `deepseek/deepseek-v4-pro` (Cadangan 2 / penalaran mendalam)
+     4. `deepseek/deepseek-v3.2` (Cadangan 3)
    - Multi-Key Rotation: Menggunakan pool API keys dengan rotasi otomatis saat limit tercapai.
 
 2. **Rantai Failover Lintas Provider (Sequential Provider Failover):**
-   - **Tingkat 1 (Gateway Utama):** xKiro (`qwen/qwen3.8-max:free` + 5 model cadangan di atas).
+   - **Tingkat 1 (Gateway Utama):** xKiro (`deepseek/deepseek-v4-flash` + 3 model cadangan di atas).
    - **Tingkat 2 (Groq):** Primary: `qwen/qwen3.8-27b`, Cadangan: `qwen/qwen3.6-27b`.
    - **Tingkat 3 (Gemini API):** Primary: `gemini-3.8-flash`, Cadangan: `gemini-2.5-flash` (termasuk native vision engine).
    - **Tingkat 4 (OpenRouter):** Failover akhir jika seluruh provider sebelumnya mengalami gangguan.

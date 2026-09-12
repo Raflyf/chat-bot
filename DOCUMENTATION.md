@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.12 (Infrastructure Latency Optimization, Model-Level Circuit Breaker, Non-Blocking Webhook Ingestion & 100% Skills Prompt Integrity)  
+**Versi:** v0.26.13 (Purging Paid Qwen from xKiro, Pure DeepSeek Gateway Alignment & Direct Gemini Vision Routing)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 21:35 WIB
+**Terakhir Diperbarui:** 2026-09-12 21:58 WIB
 
 ---
 
@@ -205,6 +205,22 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.13 - 2026-09-12 21:58 WIB
+
+**Pembersihan Total Varian Qwen Berbayar dari xKiro, Sentralisasi Kluster Murni DeepSeek di xKiro Gateway, dan Pengalihan Vision Langsung ke Native Gemini**
+
+- **Eliminasi Model Qwen dari Gateway xKiro (`src/env.ts`, `AGENTS.md`, `api/stats.ts`)**:
+  - Menghapus seluruh varian Qwen (`qwen3.8-max:free`, `qwen3.7-max:free`, `qwen3.6-plus:free`) dari daftar model xKiro karena pihak hulu xKiro telah mengubah seluruh model Qwen menjadi berbayar uang asli (`HTTP 403: requires real deposited balance`) atau `HTTP 404`.
+  - Mengeliminasi jeda panggilan jaringan sia-sia (memangkas ~300–500ms kegagalan berulang) saat bot mencoba menghubungi model Qwen yang tidak bisa diakses di tier gratis.
+- **Sentralisasi Kluster Murni DeepSeek pada Gateway xKiro**:
+  - Mengonfigurasi xKiro murni terfokus pada model DeepSeek gratis:
+    * **Primary xKiro**: `deepseek/deepseek-v4-flash`
+    * **Cadangan Terurut**: `deepseek/deepseek-chat-v3.1`, `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v3.2`
+- **Pengelolaan Vision Multimodal dengan Circuit Breaker Siaga (`src/providers.ts`)**:
+  - Menghapus total seluruh varian Mistral dari `visionModels` karena respons terjemahan rusak / tidak stabil.
+  - Mempertahankan varian Qwen gratis (`qwen/qwen3.8-max:free`, `qwen/qwen3.6-plus:free`) dalam daftar `visionModels` xKiro sebagai model siaga (*standby*).
+  - Berkat mekanisme *fast-break circuit breaker* 30 menit pada error 404/403, model yang tidak aktif dilewati instan dalam 50ms tanpa membuang kuota kunci, dan vision langsung dialihkan ke Google Gemini (`gemini-3.8-flash` -> `gemini-2.5-flash`), dengan OpenRouter (`nex-agi/nex-n2.5-pro:free`) aktif sebagai jaring pengaman visual otonom. Jika xKiro mengaktifkan kembali Qwen gratis di kemudian hari, sistem akan mendeteksinya secara otomatis tanpa perlu modifikasi kode ulang.
 
 ### v0.26.12 - 2026-09-12 21:35 WIB
 

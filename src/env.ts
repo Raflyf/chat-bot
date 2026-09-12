@@ -38,17 +38,15 @@ export const config = {
     gemini: csv('GEMINI_KEYS'),
   },
   models: {
-    xkiroPrimary: cleanStr('XKIRO_MODEL_PRIMARY') || 'qwen/qwen3.8-max:free',
+    xkiroPrimary: cleanStr('XKIRO_MODEL_PRIMARY') || 'deepseek/deepseek-v4-flash',
     xkiroBackup: (() => {
       const envList = csv('XKIRO_MODEL_BACKUPS');
       return envList.length > 0
         ? envList
         : [
-            'deepseek/deepseek-v4-flash',
-            'qwen/qwen3.7-max:free',
             'deepseek/deepseek-chat-v3.1',
-            'qwen/qwen3.6-plus:free',
             'deepseek/deepseek-v4-pro',
+            'deepseek/deepseek-v3.2',
           ];
     })(),
     orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
