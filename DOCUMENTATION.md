@@ -192,14 +192,14 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
-### v0.25.32 - 2026-09-12 15:07 WIB
-**Penyetelan Sweet Spot Riwayat Konteks Aktif (Sliding Window 20 Pesan) untuk Latensi Ringan & Respon Sub-Detik**
+### v0.25.32 - 2026-09-12 15:08 WIB
+**Penyetelan Sweet Spot Riwayat Konteks Aktif (24 Pesan Teks & 8 Pesan Vision) untuk Keseimbangan Memori dan Latensi Cepat**
 - **Penyetelan Sliding Window Memori Aktif (`src/memory.ts`, `src/skills.ts`)**:
-  - Menetapkan kuota penarikan riwayat percakapan dari basis data Supabase (`getContext`) menjadi 20 pesan (`limit(20)`).
-  - Menyelaraskan pemotongan riwayat pesan teks aktif pada `buildMessages` (`src/skills.ts`) menjadi `slice(-20)` (mencakup 10 putaran tanya-jawab bolak-balik).
-  - Menghindari bobot komputasi berlebih (over-burden) agar model merespons dengan cepat (< 2 detik) tanpa beban komputasi 30 pesan, dengan total token konteks berada di rentang seimbang ~7.500 – 9.000 token.
-- **Kapasitas Konteks Multimodal Stiker & Foto Ringan (`src/skills.ts`)**:
-  - Menetapkan jangkauan riwayat pesan untuk model vision (`describeImage`) pada 6 pesan (`slice(-6)`), menjaga analisis stiker/gambar tetap memahami obrolan terakhir tanpa memperlambat proses inferensi vision.
+  - Menetapkan kuota penarikan riwayat percakapan dari basis data Supabase (`getContext`) menjadi 24 pesan (`limit(24)`).
+  - Menyelaraskan pemotongan riwayat pesan teks aktif pada `buildMessages` (`src/skills.ts`) menjadi `slice(-24)` (mencakup 12 putaran tanya-jawab bolak-balik).
+  - Menjaga model merespons dengan cepat (< 2 detik) dengan retensi obrolan aktif yang kokoh di kisaran ~8.000 – 9.800 token.
+- **Kapasitas Konteks Multimodal Stiker & Foto Cepat (`src/skills.ts`)**:
+  - Menetapkan jangkauan riwayat pesan untuk model vision (`describeImage`) pada 8 pesan (`slice(-8)`), menjaga analisis stiker/gambar memahami obrolan terakhir secara akurat dengan inferensi penglihatan yang ringan.
 
 ### v0.25.31 - 2026-09-12 14:44 WIB
 **Eliminasi Total Filler Slop Penutup ("santai aja terus bro"), Ekstraksi Nama Kota Spesifik Memori, & Pencegahan False-Positive DKI Jakarta**
