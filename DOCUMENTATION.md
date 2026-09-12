@@ -206,6 +206,20 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.26.8 - 2026-09-12 20:45 WIB
+
+**Pembersihan Total Seluruh Varian Model Mistral, Eliminasi Refleks Tawa Monoton di Pembuka Pesan, dan Penangkalan Pertanyaan Basa-Basi Penutup (Anti-Eager Assistant)**
+
+- **Pembersihan Total Seluruh Varian Mistral (`src/env.ts`, `AGENTS.md`, `.env`)**:
+  - **Akar Masalah**: Model keluarga Mistral (`mistral-large`, `mistral-medium`, `mistral-small`) memiliki bias pelatihan bawaan (*RLHF eager assistant*) yang selalu menyodorkan tawaran pertanyaan basa-basi di akhir respon ("Jadi mau yang lagi? Aku siap kasih joke lagi atau mau cerita apa nih?") serta pembawaan gaya yang melantur dan over-acting.
+  - **Tindakan**: Menghapus seluruh varian Mistral dari rantai failover gateway xKiro. Rantai failover kini 100% dialihkan dan dikawal murni oleh duet model elit **DeepSeek** (`deepseek-v4-flash`, `deepseek-chat-v3.1`, `deepseek-v4-pro`, `deepseek-v3.2`) dan **Qwen** (`qwen3.8-max`, `qwen3.7-max`, `qwen3.7-plus`, `qwen3.6-plus`, `qwen3.5-plus`).
+- **Eliminasi Refleks Tawa Monoton di Awal Pesan (`src/skills.ts`)**:
+  - Menghentikan pola kaku bot yang selalu mengawali respon lelucon/banyol dengan kata tawa ("Haha iya...", "Haha tepat...", "Wkwk iya aja...").
+  - Mengarahkan bot untuk langsung masuk ke reaksi substansial yang natural seperti manusia asli mengobrol ("Tuh kan bener", "Hoki bener emang", "Nah itu dia jawabannya"), dengan tawa diletakkan secara wajar di tengah/akhir kalimat atau tanpa tawa jika respon sudah santai.
+- **Pencegahan Tawaran Konten & Interogasi Lanjutan (`cleanMathAndNoise`, `src/skills.ts`)**:
+  - Melarang keras bot menanyakan pertanyaan penutup yang memaksakan sesi obrolan berlanjut layaknya customer service (seperti "Mau yang lagi?", "Mau cerita apa nih?", "Ada yang mau diceritain lagi?").
+  - Menambahkan filter regex otomatis untuk membersihkan sisa-sisa pola penawaran konten lanjutan.
+
 ### v0.26.7 - 2026-09-12 20:30 WIB
 
 **Pendaftaran Deterministik Nomor WhatsApp Developer (Rafly) & Proteksi Identitas Anti-Impersonation**
