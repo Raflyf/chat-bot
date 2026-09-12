@@ -49,7 +49,6 @@ export async function saveMessage(row: {
 
 /**
  * Cek apakah pesan dengan platform dan msg_id sudah pernah diproses di database.
- * Mencegah webhook retry / race condition memproses pesan yang sama lebih dari sekali (D3).
  */
 export async function isMessageProcessed(platform: string, msgId: string): Promise<boolean> {
   if (!msgId) return false;
@@ -67,5 +66,50 @@ export async function isMessageProcessed(platform: string, msgId: string): Promi
     return !error && !!data;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Klaim pesan masuk secara atomik via INSERT ke tabel messages (C3 & F2).
+ * Jika platform + msg_id sudah ada, unique index idx_messages_platform_msg_id
+ * menolak insert (code 23505), mengembalikan false seketika (Zero TOCTOU).
+ */
+export async function claimIncomingMessage(
+  platform: string,
+  msgId: string,
+  chatId: string,
+  content: string = '[incoming]'
+): Promise<boolean> {
+  if (!msgId) return true;
+  const c = db();
+  if (!c) return true;
+
+  try {
+    const { data, error } = await c
+      .from('messages')
+      .insert({
+        platform,
+        chat_id: chatId,
+        role: 'user',
+        content: content.slice(0, 32000),
+        msg_id: msgId,
+      })
+      .select('id');
+
+    if (error) {
+      if (
+        error.code === '23505' ||
+        error.message?.includes('duplicate key') ||
+        error.message?.includes('idx_messages_platform_msg_id')
+      ) {
+        console.warn(`[db] Pesan duplikat terdeteksi & diblokir secara atomik: platform=${platform}, msg_id=${msgId}`);
+        return false;
+      }
+      return true;
+    }
+
+    return Boolean(data && data.length > 0);
+  } catch {
+    return true;
   }
 }

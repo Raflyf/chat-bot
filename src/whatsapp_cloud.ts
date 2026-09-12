@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { config } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
-import { saveMessage, isMessageProcessed } from './db.js';
+import { saveMessage, isMessageProcessed, claimIncomingMessage } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -203,15 +203,16 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
       for (const m of messages) {
         const messageId = m.id;
-        if (!messageId || isDuplicate(messageId) || (await isMessageProcessed('whatsapp', messageId))) continue;
-
         const from = m.from; // Nomor telepon pengirim (misal: 628123456789)
-        if (!from) continue;
+        if (!messageId || !from || isDuplicate(messageId)) continue;
+
+        const chatKey = 'wa_' + from;
+        // Klaim atomik (zero TOCTOU): jika sudah pernah ada, drop langsung!
+        if (!(await claimIncomingMessage('whatsapp', messageId, chatKey, `[${m.type || 'msg'}]`))) continue;
 
         // Tandai pesan telah dibaca (centang dua biru)
         void markWhatsAppCloudMessageRead(messageId);
 
-        const chatKey = 'wa_' + from;
         const msgType = m.type;
 
         // Kasus 1: Pesan Gambar / Foto
@@ -478,15 +479,8 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // 1. Ambil riwayat percakapan (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
         const context = await getContext(chatKey);
 
-        // 2. Simpan pesan pengguna secara non-blocking & update cache in-memory langsung
+        // 2. Update cache in-memory langsung (pesan user sudah tercatat saat klaim atomik)
         updateContextCache(chatKey, 'user', text);
-        void saveMessage({
-          platform: 'whatsapp',
-          chat_id: chatKey,
-          role: 'user',
-          content: text,
-          msg_id: messageId,
-        }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan user:', err));
 
         // 3. Periksa kebutuhan pencarian web real-time 2026
         let webResults: string | null = null;

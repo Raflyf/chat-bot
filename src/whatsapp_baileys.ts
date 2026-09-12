@@ -12,7 +12,7 @@ import {
 import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
-import { saveMessage, isMessageProcessed } from './db.js';
+import { saveMessage, isMessageProcessed, claimIncomingMessage } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -156,9 +156,6 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   const remoteJid = m.key.remoteJid;
   if (!remoteJid || remoteJid === 'status@broadcast') return;
 
-  const messageId = m.key.id;
-  if (messageId && (await isMessageProcessed('whatsapp', messageId))) return;
-
   const isGroup = remoteJid.endsWith('@g.us');
 
   // Ekstrak teks atau caption dari berbagai tipe pesan
@@ -170,6 +167,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     m.message?.videoMessage?.caption ||
     '';
   text = text.trim();
+
+  const chatKey = 'wa_' + remoteJid;
+  const messageId = m.key.id;
+  // Klaim atomik anti-TOCTOU
+  if (messageId && !(await claimIncomingMessage('whatsapp', messageId, chatKey, text || '[baileys-msg]'))) return;
 
   const hasImage = !!m.message?.imageMessage;
   const hasDoc = !!m.message?.documentMessage;
@@ -197,8 +199,6 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   } catch {
     // best-effort
   }
-
-  const chatKey = 'wa_' + remoteJid;
 
   // Kasus 1: Pesan berupa Gambar / Foto
   if (hasImage) {
@@ -577,15 +577,8 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     // 1. Ambil konteks percakapan sebelumnya (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
     const context = await getContext(chatKey);
 
-    // 2. Simpan pesan user ke basis data secara non-blocking & update cache memori
+    // 2. Update cache memori (pesan user sudah tercatat saat klaim atomik)
     updateContextCache(chatKey, 'user', text);
-    void saveMessage({
-      platform: 'whatsapp',
-      chat_id: chatKey,
-      role: 'user',
-      content: text,
-      msg_id: messageId || undefined,
-    }).catch((err) => console.warn('[whatsapp] Gagal simpan pesan user:', err));
 
     // 3. Periksa kebutuhan penelusuran web real-time 2026
     let webResults: string | null = null;

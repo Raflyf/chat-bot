@@ -46,6 +46,16 @@ export async function checkDueReminders(
   if (!c) return 0;
   try {
     const now = new Date().toISOString();
+
+    // 1. Reaper: Kembalikan reminder 'processing' yang macet > 5 menit ke 'pending' (C2 & P1-1)
+    const staleThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    await c
+      .from('reminders')
+      .update({ status: 'pending' })
+      .eq('status', 'processing')
+      .lte('due_at', staleThreshold);
+
+    // 2. Ambil pengingat yang jatuh tempo
     const { data, error } = await c
       .from('reminders')
       .select('id, chat_id, message, due_at, status, platform')
@@ -68,11 +78,12 @@ export async function checkDueReminders(
 
       if (claimErr) {
         // Fallback jika database belum update CHECK constraint 'processing' (error 23514):
-        // Coba langsung proses dengan update atomik ke 'sent'
-        console.warn(`[remind] status 'processing' ditolak DB (${claimErr.message}), fallback CAS langsung.`);
+        // Kunci atomik dengan memundurkan due_at +5 menit (lease lock) TANPA menandai 'sent' sebelum kirim (C1 & P1-1)
+        console.warn(`[remind] status 'processing' ditolak DB (${claimErr.message}), gunakan lease-lock due_at.`);
+        const leaseTime = new Date(Date.now() + 5 * 60 * 1000).toISOString();
         const { data: directClaim, error: directErr } = await c
           .from('reminders')
-          .update({ status: 'sent' })
+          .update({ due_at: leaseTime })
           .eq('id', item.id)
           .eq('status', 'pending')
           .select('id');
@@ -90,7 +101,7 @@ export async function checkDueReminders(
 
       try {
         await sendFn(item.chat_id, `Pengingat kak: ${item.message}`, item.platform);
-        // Tandai selesai (sent) jika sebelumnya berstatus 'processing'
+        // Tandai selesai (sent) HANYA setelah pesan benar-benar sukses terkirim (C1)
         await c.from('reminders').update({ status: 'sent' }).eq('id', item.id);
         processed++;
       } catch (err) {
