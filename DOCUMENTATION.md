@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.6 (Dynamic Companion Tuning, DeepSeek Model Priority & Serverless Awaited Persistence)  
+**Versi:** v0.26.7 (Deterministic Developer Identity Verification & Anti-Impersonation Protection)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 20:20 WIB
+**Terakhir Diperbarui:** 2026-09-12 20:30 WIB
 
 ---
 
@@ -205,6 +205,18 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.7 - 2026-09-12 20:30 WIB
+
+**Pendaftaran Deterministik Nomor WhatsApp Developer (Rafly) & Proteksi Identitas Anti-Impersonation**
+
+- **Registrasi Kredensial Developer di Basis Data Supabase**:
+  - Mendaftarkan nomor WhatsApp resmi Rafly (+628991333323) ke dalam tabel `corrections` Supabase dengan penanda otoritas resmi `IDENTITAS RESMI TERVERIFIKASI`.
+  - Mengintegrasikan konfigurasi lingkungan `config.ownerWaNumber` (`628991333323`) di [src/env.ts](file:///d:/code/project/projek_no_name/src/env.ts) sebagai rujukan deterministik.
+- **Verifikasi Deterministik & Eliminasi Asumsi Buta (`src/skills.ts`)**:
+  - Menghentikan kebiasaan bot menebak-nebak nama Rafly secara sembarangan kepada pengguna umum.
+  - Jika pengguna terverifikasi sebagai Rafly (`wa_628991333323` atau `ownerChatId`), bot mengenali penciptanya secara pasti, akrab, dan bersahabat ("Ingat jelas lah, kamu kan Rafly (Rflyyyf), pencipta yang ngoding dan ngerawat aku! Nomor kamu sudah terdaftar resmi di database.").
+  - Jika pengguna lain (nomor tidak terdaftar) mencoba mengaku-ngaku sebagai Rafly atau developer, bot secara deterministik menolak klaim tersebut dengan tegas dan santai ("Bukan ah, Rafly asli nomornya bukan ini haha. Jangan ngaku-ngaku ya!").
 
 ### v0.26.6 - 2026-09-12 20:20 WIB
 
