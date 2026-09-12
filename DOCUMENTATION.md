@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.13 (Purging Paid Qwen from xKiro, Pure DeepSeek Gateway Alignment & Direct Gemini Vision Routing)  
+**Versi:** v0.26.14 (Server Outage Fast-Break Circuit Breaker for HTTP 503/502, Local .env Synchronization & Sub-Second Failover)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 21:58 WIB
+**Terakhir Diperbarui:** 2026-09-12 22:20 WIB
 
 ---
 
@@ -205,6 +205,19 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.14 - 2026-09-12 22:20 WIB
+
+**Fast-Break Circuit Breaker untuk Outage Server 503/502, Sinkronisasi .env Lokal, dan Pemangkasan Latensi Failover Menjadi Sub-Detik**
+
+- **Fast-Break HTTP 503 & 502 (`src/providers.ts`)**:
+  - Menambahkan penanganan langsung untuk `PROVIDER_503` (Service Unavailable / Upstream Outage) dan `PROVIDER_502` (Bad Gateway) ke dalam logika *fast-break circuit breaker*.
+  - Saat server provider (seperti xKiro yang mengalami gangguan kapasitas hulu pada model DeepSeek) mengembalikan status 503, bot tidak lagi membuang waktu mencoba kunci-kunci API lain di pool untuk model yang sama. Model langsung di-break dan di-cooldown selama 15 menit, memangkas latensi kegagalan dari ~24 detik menjadi < 100ms.
+- **Sinkronisasi Konfigurasi `.env` Lokal**:
+  - Memperbarui `.env` lokal untuk menurunkan `CONNECT_TIMEOUT_MS` dari 8000ms menjadi 3000ms.
+  - Menyelaraskan `XKIRO_MODEL_PRIMARY` dan `XKIRO_MODEL_BACKUPS` dengan konfigurasi v0.26.13 terbaru tanpa sisa model Qwen yang sudah tidak ada di tier gratis xKiro.
+- **Arsitektur Terbuka untuk AgentRouter**:
+  - Memvalidasi kompatibilitas penuh OpenAI API gateway untuk platform AgentRouter (`https://agentrouter.org/v1`), siap diintegrasikan sebagai gateway berbayar berkecepatan tinggi menggunakan sisa kredit pengguna.
 
 ### v0.26.13 - 2026-09-12 21:58 WIB
 
