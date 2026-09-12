@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.15 (Max 8000 Token Budget Enforcement, 15-Message Short-Term Memory Pruning & Groq 8K TPM Adaptation)  
+**Versi:** v0.26.16 (Gemini & Groq API Key Quota Sync Resolution on Observability Dashboard)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 22:35 WIB
+**Terakhir Diperbarui:** 2026-09-12 22:42 WIB
 
 ---
 
@@ -205,6 +205,15 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.16 - 2026-09-12 22:42 WIB
+
+**Sinkronisasi Pelacakan Kuota Kunci API Gemini & Groq pada Dashboard Observabilitas (Resolusi Hash Suffix Mismatch)**
+
+- **Sinkronisasi Agregasi Kunci API (`api/stats.ts`)**:
+  - Memperbaiki ketidaksinkronan data pemanggilan kunci API pada tabel dashboard observabilitas, di mana model Gemini tercatat berjalan beberapa kali namun kolom panggilan kunci menampilkan 0.
+  - Akar masalah: `src/quota.ts` mencatat entri `provider_quota` menggunakan hash SHA-256 12-karakter (`keyHash`), sementara `api/stats.ts` sebelumnya hanya mencocokkan potongan 4-karakter terakhir (`k.slice(-4)`).
+  - Mengupdate fungsi agregasi kuota di `api/stats.ts` untuk secara adaptif menjumlahkan kedua format (`hash12` dan `slice(-4)`), sehingga statistik pemanggilan riil kunci Google Gemini dan Groq kini 100% sinkron dan akurat.
 
 ### v0.26.15 - 2026-09-12 22:35 WIB
 

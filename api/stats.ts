@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import crypto from 'crypto';
 import { config } from '../src/env.js';
 import { db } from '../src/db.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
@@ -412,7 +413,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
       const keysDetail = p.keys.map((k) => {
         const suffix = k.slice(-4);
-        const used = quotaMap.get(`${p.kind}:${suffix}`) || 0;
+        const hash12 = crypto.createHash('sha256').update(k).digest('hex').slice(0, 12);
+        // Mendukung pencocokan hash12 (standar src/quota.ts) dan suffix 4-karakter (riwayat legacy)
+        const used = (quotaMap.get(`${p.kind}:${hash12}`) || 0) + (quotaMap.get(`${p.kind}:${suffix}`) || 0);
         poolUsed += used;
         totalCallsPeriod += used;
 
