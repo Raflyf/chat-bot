@@ -59,7 +59,15 @@ export const config = {
     geminiPrimary: cleanStr('GEMINI_MODEL_PRIMARY') || 'gemini-3.8-flash',
     geminiBackup: cleanStr('GEMINI_MODEL_BACKUP') || 'gemini-2.5-flash',
   },
-  supabaseUrl: firstEnv('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'POSTGRES_URL'),
+  supabaseUrl: (() => {
+    const raw = firstEnv('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
+    if (!raw) return '';
+    if (raw.startsWith('postgres://') || raw.startsWith('postgresql://')) {
+      console.warn('[env] SUPABASE_URL menggunakan skema postgres:// yang tidak valid untuk REST client. Abaikan.');
+      return '';
+    }
+    return raw;
+  })(),
   // Service-role diutamakan (server-side only); mendukung format integrasi Supabase Vercel
   supabaseKey: firstEnv(
     'SUPABASE_SERVICE_KEY',
@@ -94,20 +102,29 @@ export const config = {
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
-  whatsappPhoneNumber: process.env.WHATSAPP_PHONE_NUMBER ?? '',
-  whatsappToken: process.env.WHATSAPP_TOKEN ?? '',
-  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
-  whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN ?? '',
-  whatsappAppSecret: process.env.WHATSAPP_APP_SECRET ?? '',
-  resendApiKey: process.env.RESEND_API_KEY ?? '',
-  resendFrom: process.env.RESEND_FROM ?? 'ChatBot Security <onboarding@resend.dev>',
-  adminEmail: process.env.ADMIN_EMAIL ?? 'raflyfirmansyah02@gmail.com',
-  pinSalt: process.env.PIN_SALT ?? 'rafly_telemetry_salt',
+  whatsappPhoneNumber: cleanStr('WHATSAPP_PHONE_NUMBER'),
+  whatsappToken: cleanStr('WHATSAPP_TOKEN'),
+  whatsappPhoneNumberId: cleanStr('WHATSAPP_PHONE_NUMBER_ID'),
+  whatsappVerifyToken: cleanStr('WHATSAPP_VERIFY_TOKEN'),
+  whatsappAppSecret: cleanStr('WHATSAPP_APP_SECRET'),
+  resendApiKey: cleanStr('RESEND_API_KEY'),
+  resendFrom: cleanStr('RESEND_FROM') || 'ChatBot Security <notifications@resend.dev>',
+  adminEmail: cleanStr('ADMIN_EMAIL'),
+  pinSalt: cleanStr('PIN_SALT'),
+  adminPin: cleanStr('ADMIN_PIN'),
 };
 
 export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegram'): void {
   if ((target === 'telegram' || target === 'all') && !config.telegramToken) {
     throw new Error('TELEGRAM_BOT_TOKEN kosong. Salin .env.example ke .env lalu isi.');
+  }
+  if (target === 'whatsapp' || target === 'all') {
+    if (config.whatsappToken && (!config.whatsappPhoneNumberId || !config.whatsappVerifyToken)) {
+      console.warn('[env] WhatsApp Cloud aktif sebagian: pastikan WHATSAPP_PHONE_NUMBER_ID dan WHATSAPP_VERIFY_TOKEN terisi.');
+    }
+  }
+  if (config.supabaseUrl && !config.supabaseKey) {
+    throw new Error('SUPABASE_URL terisi tetapi SUPABASE_KEY / SUPABASE_SERVICE_ROLE_KEY kosong.');
   }
   const totalKeys =
     config.pools.xkiro.length +

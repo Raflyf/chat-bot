@@ -9,3 +9,6 @@ scratch/
 session_wa/
 session_wa*/
 *.jsonl
+dataset/*.csv
+*.csv
+.claude-mem/

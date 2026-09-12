@@ -4,15 +4,26 @@ import { config } from '../src/env.js';
 import { getTelegramBot, processTelegramUpdate } from '../src/telegram.js';
 
 function verifySecretToken(tokenHeader: string | string[] | undefined, secret: string): boolean {
-  if (!secret) return true; // Jika belum diset di env, lewati
+  if (!secret) {
+    if (config.isServerless) {
+      console.warn('[webhook] TELEGRAM_WEBHOOK_SECRET tidak diset di serverless, menolak update demi keamanan fail-closed.');
+      return false;
+    }
+    return true; // Local development bypass
+  }
   if (!tokenHeader || typeof tokenHeader !== 'string') return false;
-  const a = Buffer.from(tokenHeader);
-  const b = Buffer.from(secret);
+  const a = Buffer.from(tokenHeader, 'utf8');
+  const b = Buffer.from(secret, 'utf8');
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  // Security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+
   // Hanya terima POST dari Telegram
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method Not Allowed' });

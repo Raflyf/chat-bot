@@ -27,13 +27,19 @@ export async function saveMessage(row: {
         viaStr = `${viaStr}#t=${row.tokens.prompt},${row.tokens.completion},${row.tokens.total}`;
       }
     }
-    await c.from('messages').insert({
+    const insertPayload: Record<string, any> = {
       platform: row.platform,
       chat_id: row.chat_id,
       role: row.role,
-      content: row.content.slice(0, 4000),
+      content: row.content.slice(0, 32000),
       via: viaStr,
-    });
+    };
+    if (row.tokens) {
+      if (typeof row.tokens.prompt === 'number') insertPayload.prompt_tokens = row.tokens.prompt;
+      if (typeof row.tokens.completion === 'number') insertPayload.completion_tokens = row.tokens.completion;
+      if (typeof row.tokens.total === 'number') insertPayload.total_tokens = row.tokens.total;
+    }
+    await c.from('messages').insert(insertPayload);
   } catch {
     // best-effort, abaikan
   }

@@ -33,8 +33,18 @@ export async function restoreSessionFromSupabase(sessionDir: string): Promise<bo
     }
 
     let restoredCount = 0;
+    const baseDirResolved = path.resolve(sessionDir);
     for (const row of data as Array<{ filename: string; content: string }>) {
-      const filePath = path.join(sessionDir, row.filename);
+      if (!row.filename || typeof row.filename !== 'string') continue;
+      // Tolak traversal atau berkas internal config
+      const safeFilename = path.basename(row.filename.replace(/\\/g, '/'));
+      if (!safeFilename || safeFilename === '.' || safeFilename === '..' || safeFilename.startsWith('__')) {
+        continue;
+      }
+      const filePath = path.resolve(sessionDir, safeFilename);
+      if (!filePath.startsWith(baseDirResolved + path.sep) && filePath !== baseDirResolved) {
+        continue;
+      }
       fs.writeFileSync(filePath, row.content, 'utf8');
       restoredCount++;
     }

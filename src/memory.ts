@@ -39,20 +39,19 @@ export function isResetCommand(text: string): boolean {
   return (
     norm === '/reset' ||
     norm === '/clear' ||
-    norm === 'reset' ||
-    norm === 'clear' ||
+    norm === '/reset_session' ||
     norm === 'reset sesi' ||
     norm === 'mulai sesi baru' ||
     norm === 'clear chat' ||
     norm === 'hapus riwayat' ||
-    norm === 'reset chat' ||
-    norm === '/reset_session'
+    norm === 'reset chat'
   );
 }
 
 /** Reset sesi percakapan aktif: menyematkan checkpoint pemotong riwayat, menghapus ringkasan lama & membersihkan cache. */
 export async function resetSession(chatKey: string, platform: string = 'whatsapp'): Promise<string> {
   contextCache.delete(chatKey);
+  counters.delete(chatKey);
   const c = db();
   if (c) {
     try {
@@ -142,7 +141,17 @@ export function noteExchange(chatKey: string): void {
         .order('created_at', { ascending: false })
         .limit(25);
       if (h.error || !h.data?.length) return;
-      const text = (h.data as Array<{ role: string; content: string }>)
+      const rawMessages = h.data as Array<{ role: string; content: string }>;
+      // Hormati checkpoint reset: potong pesan sebelum [SESSION_RESET]
+      const resetIdx = rawMessages.findIndex(
+        (m) => m.content === '[SESSION_RESET]' || m.content.startsWith('[SESSION_RESET]'),
+      );
+      const validMessages = resetIdx >= 0 ? rawMessages.slice(0, resetIdx) : rawMessages;
+      // Jangan membuat ringkasan jika data baru pasca-reset masih di bawah 4 pesan
+      if (validMessages.length < 4) return;
+
+      const text = validMessages
+        .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.content.includes('[SESSION_RESET]'))
         .reverse()
         .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
         .join('\n');

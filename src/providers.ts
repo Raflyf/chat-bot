@@ -38,24 +38,38 @@ function cacheGet(key: string): string | null {
 }
 
 function cacheSet(key: string, text: string): void {
-  if (cache.size > 500) cache.clear();
+  if (cache.size > 500) {
+    const oldestKeys = Array.from(cache.keys()).slice(0, 50);
+    for (const k of oldestKeys) cache.delete(k);
+  }
   cache.set(key, { at: Date.now(), text });
 }
 
-async function postJson(url: string, key: string, body: unknown): Promise<unknown> {
-  // Tier 1: Cek respon koneksi/header API key (connectTimeoutMs)
-  // Jika 429 (rate limit) atau provider down, failover cepat ke key/provider berikutnya
-  const connectController = new AbortController();
-  const connectTimer = setTimeout(() => connectController.abort(), config.connectTimeoutMs);
+async function fetchJsonWithLifecycle(
+  url: string,
+  options: RequestInit,
+  connectTimeoutMs: number,
+  totalTimeoutMs: number,
+): Promise<unknown> {
+  const controller = new AbortController();
+  let connectTimeoutHit = false;
+  let totalTimeoutHit = false;
+
+  // Tier 1: Cek respon koneksi/header API key
+  const connectTimer = setTimeout(() => {
+    connectTimeoutHit = true;
+    controller.abort();
+  }, connectTimeoutMs);
 
   let res: Response;
   try {
     res = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: connectController.signal,
+      ...options,
+      signal: controller.signal,
     });
+  } catch (err: any) {
+    if (connectTimeoutHit) throw new Error('CONNECT_TIMEOUT');
+    throw err;
   } finally {
     clearTimeout(connectTimer);
   }
@@ -68,13 +82,37 @@ async function postJson(url: string, key: string, body: unknown): Promise<unknow
   if (!res.ok) throw new Error(`PROVIDER_${res.status}`);
 
   // Tier 2: Model aktif dan sedang berpikir / menghasilkan konten
-  // Berikan waktu berpikir yang leluasa (timeoutMs)
-  const thinkPromise = res.json();
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('THINKING_TIMEOUT')), config.timeoutMs),
-  );
+  let totalTimer: NodeJS.Timeout | undefined;
+  try {
+    const bodyPromise = res.json();
+    const timeoutPromise = new Promise((_, reject) => {
+      totalTimer = setTimeout(() => {
+        totalTimeoutHit = true;
+        controller.abort();
+        reject(new Error('THINKING_TIMEOUT'));
+      }, totalTimeoutMs);
+    });
 
-  return (await Promise.race([thinkPromise, timeoutPromise])) as unknown;
+    return await Promise.race([bodyPromise, timeoutPromise]);
+  } catch (err: any) {
+    if (totalTimeoutHit) throw new Error('THINKING_TIMEOUT');
+    throw err;
+  } finally {
+    if (totalTimer) clearTimeout(totalTimer);
+  }
+}
+
+async function postJson(url: string, key: string, body: unknown): Promise<unknown> {
+  return await fetchJsonWithLifecycle(
+    url,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    config.connectTimeoutMs,
+    config.timeoutMs,
+  );
 }
 
 export interface ProviderResult {
@@ -145,45 +183,25 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[]): Prom
     contents,
     generationConfig: { maxOutputTokens: config.maxOutputTokens, temperature: 0.7 },
   };
-  if (system) body.systemInstruction = { parts: [{ text: system.content }] };
-
-  const connectController = new AbortController();
-  const connectTimer = setTimeout(() => connectController.abort(), config.connectTimeoutMs);
-
-  let res: Response;
-  try {
-    res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: connectController.signal,
-      },
-    );
-  } finally {
-    clearTimeout(connectTimer);
+  if (system) {
+    const sysText = typeof system.content === 'string'
+      ? system.content
+      : Array.isArray(system.content)
+        ? system.content.map(p => typeof p === 'string' ? p : (p as any).text || '').join('\n')
+        : String(system.content || '');
+    body.systemInstruction = { parts: [{ text: sysText }] };
   }
 
-  if (res.status === 429) {
-    const err = new Error('RATE_LIMITED') as Error & { code?: string };
-    err.code = 'RATE_LIMITED';
-    throw err;
-  }
-  if (!res.ok) throw new Error(`PROVIDER_${res.status}`);
-
-  const thinkPromise = res.json() as Promise<{
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    usageMetadata?: {
-      promptTokenCount?: number;
-      candidatesTokenCount?: number;
-      totalTokenCount?: number;
-    };
-  }>;
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('THINKING_TIMEOUT')), config.timeoutMs),
-  );
-  const data = (await Promise.race([thinkPromise, timeoutPromise])) as {
+  const data = (await fetchJsonWithLifecycle(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    config.connectTimeoutMs,
+    config.timeoutMs,
+  )) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     usageMetadata?: {
       promptTokenCount?: number;
@@ -191,6 +209,7 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[]): Prom
       totalTokenCount?: number;
     };
   };
+
   const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('').trim() ?? '';
   if (!text) throw new Error('EMPTY_RESPONSE');
   const tokens = data.usageMetadata

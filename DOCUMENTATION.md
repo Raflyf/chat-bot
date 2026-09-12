@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.33  
+**Versi:** v0.26.0  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 15:18 WIB  
+**Terakhir Diperbarui:** 2026-09-12 16:45 WIB  
 
 ---
 
@@ -692,6 +692,52 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - Menyesuaikan batas waktu tunggu header koneksi `CONNECT_TIMEOUT_MS` menjadi 4.500ms agar mekanisme auto-failover antar key/model berjalan 2x lebih responsif jika salah satu gateway mengalami kendala.
 - **Integritas Urutan Rolling Model (Zero Alteration)**:
   - Urutan hierarki rolling penggunaan model (`xkiro` -> `groq` -> `gemini` -> `openrouter`) dipertahankan 100% utuh tanpa modifikasi apa pun sesuai syarat mutlak pengguna.
+
+### v0.26.0 — 2026-09-12 16:45 WIB
+**Hardening Masif Menyeluruh & Eksekusi Penuh Hasil Audit Komprehensif (Zero Unfixed Findings)**
+- **P0 Keamanan Inti & Database Hardening (`sql/migrate_v16_security_hardening_and_rpc.sql`)**:
+  - `REVOKE EXECUTE ON FUNCTION rpc_admin_* FROM anon, public` dan pembatasan hak eksekusi hanya ke `service_role` untuk menutup celah oracle brute-force PIN dan bypass OTP.
+  - Implementasi fungsi RPC atomik `atomic_increment_provider_quota` untuk mengeliminasi Read-Modify-Write (RMW) race condition pada kuota provider.
+  - Pembuatan fungsi RPC `increment_knowledge_hit` yang hilang untuk memulihkan pelacakan hit knowledge.
+  - Pengaktifan Row Level Security (RLS) dan pembuatan pg_trgm indeks pada `web_knowledge`.
+  - Penambahan kolom `platform` pada tabel `reminders` untuk paritas multi-kanal.
+- **P0 Otentikasi Admin & Proteksi Lingkungan (`src/env.ts`, `src/admin_auth.ts`)**:
+  - Penghapusan seluruh fallback PIN hardcoded (`080402`), salt publik statis (`rafly_telemetry_salt`), dan email default.
+  - Penegakan derivasi salt dinamis runtime, penguncian akun 15 menit (dari 1 menit) saat 5 kali percobaan gagal berturut-turut, dan validasi fail-closed.
+  - Pemblokiran URI DSN `postgres://` pada `supabaseUrl` untuk mencegah salah konfigurasi koneksi langsung.
+  - Penutupan celah Path Traversal pada `src/whatsapp_session.ts` via sanitasi nama file `path.basename` dan verifikasi direktori.
+- **P0/P1 Keandalan Provider LLM & Socket Management (`src/providers.ts`, `src/quota.ts`)**:
+  - Integrasi `fetchJsonWithLifecycle` dengan `AbortController` terpadu dan pembersihan timer `Promise.race` pada blok `finally` (menghilangkan socket leak dan potensi timeout container Lambda).
+  - Eliminasi tabrakan ID kuota via hashing SHA-256 (12-char) dan penegakan pencatatan atomik ke basis data.
+  - Type safety `systemInstruction` pada payload Gemini untuk mencegah transmisi `"[object Object]"`.
+  - Migrasi pembersihan cache dari full-wipe menjadi LRU eviction (pembuangan 50 entri tertua) untuk mencegah thundering herd.
+- **P1 Manajemen Memori, Checkpoint & Siklus Hidup Sesi (`src/memory.ts`)**:
+  - Penegakan cutoff checkpoint pada `noteExchange` sehingga peringkasan memori hanya memproses riwayat pasca-reset marker (`[SESSION_RESET]`), mencegah penularan ulang memori lama.
+  - Pengetatan deteksi perintah reset sesi (`isResetCommand`) hanya untuk perintah berbasis prefix/eksplisit guna mencegah reset tidak sengaja.
+- **P1 Pengingat Terjadwal & Paritas Saluran (`src/remind.ts`, `api/cron/reminders.ts`, `src/whatsapp_cloud.ts`, `src/whatsapp_baileys.ts`)**:
+  - Penyimpanan eksplisit kolom `platform` saat reservasi pengingat dan routing akurat saat pengiriman cron.
+  - Mekanisme atomic claim (CAS update `status = 'processing'`) untuk mencegah pengiriman dobel saat cron overlap.
+  - Porting handler perintah `/salah` dan `/remind` ke Meta WhatsApp Cloud dan WhatsApp Baileys untuk mencapai paritas fitur 100% dengan Telegram.
+- **P1 Keamanan Media & Mitigasi Decompression Bomb (`src/media.ts`)**:
+  - Penambahan `AbortSignal.timeout` (20 detik) pada seluruh pipeline fetch unduhan media.
+  - Pembatasan ukuran berkas dokumen maksimal 15MB, batas output dekompresi zlib PDF maksimal 5MB, serta pembatasan teks maksimal 300k karakter untuk mitigasi decompression bomb.
+  - Pemblokiran berkas konfigurasi sensitif (`.env`, `.log`, `.key`, `.pem`).
+- **P1 Optimasi Waktu & Geolocation (`src/timezone.ts`)**:
+  - Pra-kompilasi ~400 regex ke `COMPILED_LOCATION_MAP` saat modul dimuat untuk memangkas latency turn.
+  - Penghapusan keyword pendek berisiko tinggi (`la`, `sf`) untuk mencegah false positive partikel percakapan bahasa Indonesia.
+  - Pengetatan `isAskingTime` dengan mewajibkan qualifier kata tanya waktu.
+- **P2 Pembersihan Kebisingan, Isolasi Kode & Anti-Echo (`src/skills.ts`)**:
+  - Isolasi blok kode fenced (```...```) dan inline code (`) sebelum pembersihan matematika/markdown agar sintaks pemrograman tidak terkorupsi.
+  - Pembersihan menyeluruh spec-sheet echo internal (`### 1. IDENTITAS...`, tag `[PERINTAH SISTEM]`, dan residu CoT).
+  - Implementasi fungsi bersama `splitMessageSmart` yang sadar blok kode markdown (menutup dan membuka ulang blok kode jika terpotong pada batas 4000 karakter).
+- **P2 Stored Prompt Injection & Search Hardening (`src/knowledge.ts`, `src/web.ts`)**:
+  - Netralisasi teks instruksi imperatif web (`sanitizeKnowledgeText`) dan chunking pada batas kalimat rapi.
+  - Eliminasi false positive `needsSearch` pada kata umum/brand homograf dan anchor tahun 2026.
+- **P3 Keamanan Webhook & Header Keamanan Edge (`api/*.ts`, `src/db.ts`)**:
+  - Pemasangan security headers lengkap (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS) di seluruh endpoint.
+  - Verifikasi timing-safe (`crypto.timingSafeEqual`) dan penegakan fail-closed di lingkungan serverless.
+  - Pencegahan kebocoran edge cache pada `api/dataset.ts` via `Cache-Control: no-store, no-cache`.
+  - Penulisan metrik token lengkap (`prompt_tokens`, `completion_tokens`, `total_tokens`) dan peningkatan batas `content` hingga 32.000 karakter pada `saveMessage`.
 
 ### v0.25.1 - 2026-09-11 23:15 WIB
 **Perbaikan Kritis: Cryptographic Stateless HMAC Session Tokens, Cross-Lambda Sync & Anti-Clock-Skew Guard**

@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { config } from './env.js';
-import { autoReply, describeImage } from './skills.js';
+import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
@@ -19,8 +19,8 @@ export function getTelegramBot(): TelegramBot {
 }
 
 /**
- * Kirim pesan ke Telegram dengan pemecahan otomatis jika teks melebihi limit 4000 karakter.
- * Memotong di batas paragraf (\n\n) atau baris baru (\n) agar struktur pesan tetap rapi.
+ * Kirim pesan ke Telegram dengan pemecahan cerdas jika teks melebihi limit 4000 karakter.
+ * Menggunakan splitMessageSmart yang sadar code-fence markdown agar formatting tidak rusak.
  */
 export async function sendTelegramMessageSafe(
   bot: TelegramBot,
@@ -28,37 +28,7 @@ export async function sendTelegramMessageSafe(
   text: string,
 ): Promise<void> {
   if (!text) return;
-  const maxLen = 4000;
-  if (text.length <= maxLen) {
-    await bot.sendMessage(chatId, text);
-    return;
-  }
-
-  // Pecah teks secara cerdas berdasarkan paragraf
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLen) {
-      chunks.push(remaining);
-      break;
-    }
-
-    let splitIndex = remaining.lastIndexOf('\n\n', maxLen);
-    if (splitIndex === -1 || splitIndex < 1000) {
-      splitIndex = remaining.lastIndexOf('\n', maxLen);
-    }
-    if (splitIndex === -1 || splitIndex < 500) {
-      splitIndex = remaining.lastIndexOf(' ', maxLen);
-    }
-    if (splitIndex === -1) {
-      splitIndex = maxLen;
-    }
-
-    const chunk = remaining.slice(0, splitIndex).trim();
-    if (chunk) chunks.push(chunk);
-    remaining = remaining.slice(splitIndex).trim();
-  }
+  const chunks = splitMessageSmart(text, 4000);
 
   for (const chunk of chunks) {
     await bot.sendMessage(chatId, chunk);
@@ -101,7 +71,7 @@ async function answerPhoto(
   const ctx = await getContext(chatKey);
   const { reply, via, tokens } = await describeImage(dl.buffer.toString('base64'), mime, caption, ctx);
   await sendTelegramMessageSafe(bot, chatId, reply);
-  await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via, tokens });
+  await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via, tokens });
   noteExchange(chatKey);
   return true;
 }
@@ -199,7 +169,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           platform: 'telegram',
           chat_id: chatKey,
           role: 'assistant',
-          content: reply.slice(0, 4000),
+          content: reply,
           via,
           tokens,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan video assistant:', err));
@@ -243,7 +213,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           platform: 'telegram',
           chat_id: chatKey,
           role: 'assistant',
-          content: reply.slice(0, 4000),
+          content: reply,
           via,
           tokens,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc assistant:', err));
@@ -284,7 +254,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
             platform: 'telegram',
             chat_id: chatKey,
             role: 'assistant',
-            content: reply.slice(0, 4000),
+            content: reply,
             via,
             tokens,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN assistant:', err));
@@ -337,7 +307,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
             platform: 'telegram',
             chat_id: chatKey,
             role: 'assistant',
-            content: reply.slice(0, 4000),
+            content: reply,
             via,
             tokens,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker assistant:', err));
@@ -354,7 +324,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         platform: 'telegram',
         chat_id: chatKey,
         role: 'assistant',
-        content: reply.slice(0, 4000),
+        content: reply,
         via,
         tokens,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker fallback assistant:', err));
@@ -384,7 +354,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         platform: 'telegram',
         chat_id: chatKey,
         role: 'assistant',
-        content: reply.slice(0, 4000),
+        content: reply,
         via,
         tokens,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan video assistant:', err));

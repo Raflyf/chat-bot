@@ -10,12 +10,13 @@ import {
   type WAMessage,
 } from '@whiskeysockets/baileys';
 import { config, assertRuntime } from './env.js';
-import { autoReply, describeImage } from './skills.js';
+import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
+import { saveReminderToDb } from './remind.js';
 import {
   restoreSessionFromSupabase,
   syncSessionDirToSupabase,
@@ -26,8 +27,8 @@ const logger = pino({ level: 'silent' });
 const sessionDir = path.resolve(process.cwd(), 'session_wa');
 
 /**
- * Mengirim pesan teks ke WhatsApp dengan pemecahan otomatis di batas paragraf
- * jika panjang pesan melebihi limit 4000 karakter.
+ * Mengirim pesan teks ke WhatsApp dengan pemecahan cerdas
+ * jika panjang pesan melebihi limit 4000 karakter menggunakan splitMessageSmart.
  */
 export async function sendWhatsAppMessageSafe(
   sock: WASocket,
@@ -35,37 +36,7 @@ export async function sendWhatsAppMessageSafe(
   text: string,
 ): Promise<void> {
   if (!text) return;
-  const maxLen = 4000;
-
-  if (text.length <= maxLen) {
-    await sock.sendMessage(jid, { text });
-    return;
-  }
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLen) {
-      chunks.push(remaining);
-      break;
-    }
-
-    let splitIndex = remaining.lastIndexOf('\n\n', maxLen);
-    if (splitIndex === -1 || splitIndex < 1000) {
-      splitIndex = remaining.lastIndexOf('\n', maxLen);
-    }
-    if (splitIndex === -1 || splitIndex < 500) {
-      splitIndex = remaining.lastIndexOf(' ', maxLen);
-    }
-    if (splitIndex === -1) {
-      splitIndex = maxLen;
-    }
-
-    const chunk = remaining.slice(0, splitIndex).trim();
-    if (chunk) chunks.push(chunk);
-    remaining = remaining.slice(splitIndex).trim();
-  }
+  const chunks = splitMessageSmart(text, 4000);
 
   for (const chunk of chunks) {
     await sock.sendMessage(jid, { text: chunk });
@@ -257,7 +228,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',
-          content: reply.slice(0, 4000),
+          content: reply,
           via,
           tokens,
         });
@@ -315,7 +286,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',
-          content: reply.slice(0, 4000),
+          content: reply,
           via,
           tokens,
         });
@@ -377,7 +348,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             platform: 'whatsapp',
             chat_id: chatKey,
             role: 'assistant',
-            content: reply.slice(0, 4000),
+            content: reply,
             via,
             tokens,
           });
@@ -435,7 +406,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',
-          content: reply.slice(0, 4000),
+          content: reply,
           via,
           tokens,
         });
@@ -485,7 +456,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',
-          content: reply.slice(0, 4000),
+          content: reply,
           via,
           tokens,
         });
@@ -503,7 +474,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         platform: 'whatsapp',
         chat_id: chatKey,
         role: 'assistant',
-        content: reply.slice(0, 4000),
+        content: reply,
         via,
         tokens,
       });
@@ -535,7 +506,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         platform: 'whatsapp',
         chat_id: chatKey,
         role: 'assistant',
-        content: reply.slice(0, 4000),
+        content: reply,
       });
       noteExchange(chatKey);
       return;
@@ -556,6 +527,39 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       content: reply,
       via: 'system/reset',
     });
+    return;
+  }
+
+  // Cek perintah koreksi fakta /salah
+  if (text.startsWith('/salah ') || text === '/salah') {
+    const correction = text.replace(/^\/salah\s*/, '').trim();
+    if (!correction) {
+      await sendWhatsAppMessageSafe(sock, remoteJid, 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
+      return;
+    }
+    await saveCorrection(chatKey, correction);
+    await sendWhatsAppMessageSafe(sock, remoteJid, `Siap kak, koreksinya sudah dicatat: "${correction}". Aku akan mengingat ini untuk obrolan berikutnya.`);
+    return;
+  }
+
+  // Cek perintah pengingat /remind
+  if (text.startsWith('/remind ') || text === '/remind') {
+    const args = text.replace(/^\/remind\s*/, '').trim();
+    const mRemind = args.match(/^(\d+)\s+([\s\S]+)/);
+    if (!mRemind) {
+      await sendWhatsAppMessageSafe(sock, remoteJid, 'Format: /remind <menit> <pesan>\nContoh: /remind 10 matikan kompor');
+      return;
+    }
+    const minutes = Number(mRemind[1]);
+    const message = mRemind[2].trim().slice(0, 500);
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440 || !message) {
+      await sendWhatsAppMessageSafe(sock, remoteJid, 'Waktu pengingat harus antara 1 sampai 1440 menit (24 jam).');
+      return;
+    }
+    const dueAt = new Date(Date.now() + minutes * 60_000);
+    const targetChat = remoteJid.replace(/@.*$/, '');
+    await saveReminderToDb(targetChat, message, dueAt, 'whatsapp');
+    await sendWhatsAppMessageSafe(sock, remoteJid, `Pengingat "${message}" berhasil dicatat dan akan dikirim ${minutes} menit lagi via WhatsApp.`);
     return;
   }
 
@@ -602,7 +606,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       platform: 'whatsapp',
       chat_id: chatKey,
       role: 'assistant',
-      content: reply.slice(0, 4000),
+      content: reply,
       via,
       tokens,
     }).catch((err) => console.warn('[whatsapp] Gagal simpan pesan assistant:', err));
