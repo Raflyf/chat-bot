@@ -2300,17 +2300,17 @@
           <select id="dataset-model-filter" class="filter-select" onchange="fetchDataset()">
             <option value="">Semua Model</option>
             <option value="xkiro">xKiro</option>
+            <option value="opencode">OpenCode Zen</option>
             <option value="groq">Groq</option>
             <option value="gemini">Gemini</option>
             <option value="openrouter">OpenRouter</option>
           </select>
-          <button class="btn btn-today" onclick="downloadDataset('csv', 'today')" title="Unduh CSV data percakapan hari ini saja (ringkas, cepat &amp; hemat data)">
-            <span>Unduh CSV (Hari Ini)</span>
+          <button class="btn btn-today" onclick="downloadDataset('csv')" title="Unduh CSV data percakapan sesuai filter dropdown aktif (Waktu, Platform, Model, dan Pencarian)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.35rem; vertical-align: -2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>Unduh CSV</span>
           </button>
-          <button class="btn" onclick="downloadDataset('csv')" title="Unduh format CSV sesuai filter tabel saat ini atau seluruh riwayat">
-            <span>Unduh CSV (Semua)</span>
-          </button>
-          <button class="btn btn-primary" onclick="downloadDataset('jsonl')" title="Unduh format JSONL untuk Fine-Tuning LLM">
+          <button class="btn btn-primary" onclick="downloadDataset('jsonl')" title="Unduh format JSONL untuk Fine-Tuning LLM sesuai filter dropdown aktif">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.35rem; vertical-align: -2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             <span>Unduh JSONL</span>
           </button>
         </div>
@@ -3797,18 +3797,18 @@
       }
     }
 
-    function downloadDataset(format, overrideRange) {
+    function downloadDataset(format) {
       const token = getStoredToken();
       if (!token) return;
 
-      const q = document.getElementById("dataset-search").value.trim();
+      const q = document.getElementById("dataset-search")?.value.trim() || "";
       const rangeSelect = document.getElementById("dataset-range-filter");
-      const range = overrideRange || (rangeSelect ? rangeSelect.value : "all");
-      const platform = document.getElementById("dataset-platform-filter").value;
+      const range = rangeSelect ? rangeSelect.value : "all";
+      const platform = document.getElementById("dataset-platform-filter")?.value || "";
       const model = document.getElementById("dataset-model-filter")?.value || "";
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
 
-      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=1000&token=${encodeURIComponent(token)}`;
+      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=3000&token=${encodeURIComponent(token)}`;
 
       const a = document.createElement("a");
       a.href = url;
@@ -3818,7 +3818,12 @@
       const pad = (n) => String(n).padStart(2, "0");
       const dateTag = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
       const timeTag = `${pad(now.getHours())}-${pad(now.getMinutes())}`;
-      a.download = `${filePrefix}_${rangeLabel}_${dateTag}_jam_${timeTag}.${format}`;
+
+      let filterSuffix = "";
+      if (platform) filterSuffix += `_${platform}`;
+      if (model) filterSuffix += `_${model.replace(/[^a-z0-9_-]/gi, "")}`;
+
+      a.download = `${filePrefix}_${rangeLabel}_${dateTag}_jam_${timeTag}${filterSuffix}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

@@ -192,6 +192,19 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.17 - 2026-09-12 12:05 WIB
+**Penyatuan Tombol Unduh CSV Tunggal & Sinkronisasi Ekspor dengan Filter Dinamis (Waktu, Platform, Model, Pencarian)**
+- **Penyatuan Tombol Unduh CSV Tunggal (`public/dashboard.html`)**:
+  - Menghapus tombol ganda "Unduh CSV (Hari Ini)" dan "Unduh CSV (Semua)", menggantikannya dengan satu tombol terpadu **"Unduh CSV"**.
+  - Mengarahkan aksi unduh agar 100% patuh pada status aktif kontrol filter dropdown:
+    - **Filter Waktu (`#dataset-range-filter`)**: Hari Ini Saja (WIB), Semua Waktu, 7 Hari, 14 Hari, atau 30 Hari.
+    - **Filter Platform (`#dataset-platform-filter`)**: Semua Platform, WhatsApp, atau Telegram.
+    - **Filter Model (`#dataset-model-filter`)**: Semua Model, xKiro, OpenCode Zen, Groq, Gemini, atau OpenRouter.
+    - **Filter Pencarian (`#dataset-search`)**: Menyaring percakapan berdasarkan kata kunci teks pertanyaan pengguna atau balasan bot.
+- **Ekspor Menyeluruh & Penamaan Berkas Dinamis (`api/dataset.ts`, `public/dashboard.html`)**:
+  - Mengangkat batas kuota ekspor (`dbLimit = 3000` dan mengembalikan seluruh `pairs` yang lolos filter) agar data tidak terpotong saat diunduh.
+  - Menyematkan label filter aktif pada nama berkas yang diunduh (contoh: `evaluasi_chatbot_hari_ini_2026-09-12_jam_12-05_whatsapp_xkiro.csv`).
+
 ### v0.25.16 - 2026-09-12 11:59 WIB
 **Penyempurnaan Dataset Evaluasi: Kolom Tanggal & Jam Lokal Terpisah serta Penanda Waktu pada Nama Berkas**
 - **Penambahan Kolom Tanggal, Jam, dan Waktu Lokal Terpisah (`api/dataset.ts`)**:
