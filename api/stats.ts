@@ -353,7 +353,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         resetCycle: 'Harian (00:00 UTC)',
         contextWindow: '1.000.000 Token (1M)',
         primaryModel: config.models.xkiroPrimary,
-        backupModel: config.models.xkiroBackup[0] || 'mistralai/mistral-medium-3.5',
+        backupModel: config.models.xkiroBackup[0] || 'deepseek/deepseek-chat-v3.1',
         allModels: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
       },
       {

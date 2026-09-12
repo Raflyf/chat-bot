@@ -319,7 +319,6 @@ function steps(): Step[] {
       visionModels: [
         'qwen/qwen3.8-max:free',
         'qwen/qwen3.6-plus:free',
-        'mistralai/mistral-large-2512',
       ],
       cap: config.dailyCap.xkiro,
       run: (k, m, msgs) => openAiChat('https://api.xkiro.com/v1', k, m, msgs),
@@ -344,7 +343,7 @@ function steps(): Step[] {
       kind: 'openrouter',
       keys: config.pools.openrouter,
       models: [config.models.orPrimary, config.models.orMini, config.models.orText],
-      visionModels: [],
+      visionModels: [config.models.orPrimary, config.models.orMini],
       cap: config.dailyCap.openrouter,
       run: (k, m, msgs) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs),
     },
@@ -353,8 +352,8 @@ function steps(): Step[] {
 
 /**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: xKiro (Qwen 3.8 / Mistral / DeepSeek) > Groq > Gemini > OpenRouter.
- * - Vision / foto / gambar: xKiro (Mistral Large > Qwen 3.8 > Mistral Medium > Qwen 3.6) > Gemini (3.8 Flash > 2.5 Flash).
+ * - Teks umum / matematika / koding: xKiro (DeepSeek) > Groq > Gemini > OpenRouter.
+ * - Vision / foto / gambar: xKiro (Standby Qwen Free) > Gemini (3.8 Flash > 2.5 Flash) > OpenRouter (Nex Pro > Mini).
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
 export async function chat(
@@ -368,12 +367,12 @@ export async function chat(
 
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
-  // Untuk vision: Urutan sesuai instruksi (xKiro -> Gemini)
+  // Untuk vision: Urutan sesuai instruksi (xKiro -> Gemini -> OpenRouter)
   const orderedSteps = needVision
     ? allSteps
         .filter((s) => s.visionModels.length > 0)
         .sort((a, b) => {
-          const priority: Record<string, number> = { xkiro: 1, gemini: 2, groq: 3, openrouter: 4 };
+          const priority: Record<string, number> = { xkiro: 1, gemini: 2, openrouter: 3, groq: 4 };
           return (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
         })
     : allSteps;
@@ -403,8 +402,8 @@ export async function chat(
           lastError = e instanceof Error ? e.message : 'UNKNOWN';
           recordKeyFailure(step.kind, key, e);
 
-          // Jika model 404 (tidak ditemukan), jangan coba kunci lain untuk model yang sama
-          if (lastError.includes('PROVIDER_404')) {
+          // Jika model 404 (tidak ditemukan) atau 403 (model berbayar uang asli), jangan coba kunci lain untuk model yang sama
+          if (lastError.includes('PROVIDER_404') || lastError.includes('PROVIDER_403')) {
             recordModelFailure(step.kind, model, 30 * 60_000);
             break;
           }
