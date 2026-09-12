@@ -216,7 +216,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - Menghapus domain `cdn.jsdelivr.net` yang sudah tidak terpakai dari CSP.
 - **Lease-Lock Pengingat `lease_until` & Fallback Reaper Aman (`src/remind.ts`)**:
   - Klaim pengingat jatuh tempo menggunakan kolom sewa atomik `lease_until = now() + 10 minutes` pada status `'processing'` tanpa memodifikasi `due_at` asli.
-  - Reaper utama hanya me-reset baris dengan `lease_until <= now()`; fallback reaper terpisah hanya menyasar baris `lease_until IS NULL` (database pra-migrasi) agar tidak mengganggu pengiriman aktif yang lama.
+  - Reaper utama hanya me-reset baris dengan `lease_until <= now()`; fallback reaper terpisah hanya menyasar baris `lease_until IS NULL` (database pra-migrasi) dengan ambang aman 30 menit agar tidak mengganggu pengiriman aktif yang lama.
   - Status `sent`/`failed` dan pelepasan sewa (`lease_until = null`) hanya ditulis setelah konfirmasi keberhasilan/kegagalan dari client API.
 - **Migrasi Operasional v17 (`sql/migrate_v17_ops.sql`)**:
   - Ledger migrasi `public.schema_migrations` (RLS + akses `service_role` saja) dengan pencatatan idempotent v08..v17.
@@ -891,7 +891,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - **B4 Isolasi Lease Reminder Tanpa Modifikasi due_at (`src/remind.ts`, `sql/schema.sql`, `sql/migrate_v16_security_hardening_and_rpc.sql`)**:
   - Memisahkan sewa waktu pemrosesan worker ke kolom `lease_until timestamptz NULL` dengan indeks `idx_reminders_lease_until`.
   - Saat klaim reminder, sistem mengunci baris dengan `status = 'processing', lease_until = now + 10 minutes` tanpa pernah mengubah nilai `due_at` asli, menjaga waktu jatuh tempo riil tetap utuh.
-  - Auto-reaper kini hanya me-reset baris jika `status = 'processing' AND lease_until <= now` (atau batas aman 10 menit jika lease_until null), mengeliminasi regresi pengiriman ganda ketika proses kirim memakan waktu lama.
+  - Auto-reaper kini hanya me-reset baris jika `status = 'processing' AND lease_until <= now` (atau batas aman 30 menit jika lease_until null), mengeliminasi regresi pengiriman ganda ketika proses kirim memakan waktu lama.
 - **B8 Paritas Penyertaan msg_id pada Media WhatsApp Cloud & Telegram (`src/whatsapp_cloud.ts`, `src/telegram.ts`)**:
   - Menyertakan `msg_id: messageId` pada seluruh kasus penyimpanan pesan pengguna untuk Dokumen, Voice Note, Stiker, dan Video di Meta WhatsApp Cloud API.
   - Menyertakan `msg_id: msgId || undefined` pada penyimpanan pesan pengguna untuk Stiker dan Video di Telegram Bot API.
