@@ -729,7 +729,7 @@ async function chatRetry(
 
 function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): ChatMsg[] {
   const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt(ctx, web, clean) }];
-  const rawHistory = [...(ctx?.history.slice(-30) ?? [])];
+  const rawHistory = [...(ctx?.history.slice(-20) ?? [])];
 
   // Sanitasi riwayat percakapan asisten sebelum disuntikkan ke konteks model
   // Mencegah penularan loop peran lama, skrip panggung kurung siku, atau menu kaku
@@ -931,7 +931,7 @@ export async function describeImage(
 
   const historyParts: ChatMsg[] = [];
   if (ctx?.history && ctx.history.length > 0) {
-    const rawHistory = ctx.history.slice(-10);
+    const rawHistory = ctx.history.slice(-6);
     for (const h of rawHistory) {
       if (typeof h.content === 'string') {
         historyParts.push({
