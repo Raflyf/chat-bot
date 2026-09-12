@@ -42,14 +42,10 @@ export const config = {
     xkiroBackup: (() => {
       const preferred = [
         'deepseek/deepseek-v4-flash',
-        'deepseek/deepseek-chat-v3.1',
-        'deepseek/deepseek-v4-pro',
-        'deepseek/deepseek-v3.2',
         'qwen/qwen3.7-max:free',
-        'qwen/qwen3.7-plus:free',
+        'deepseek/deepseek-chat-v3.1',
         'qwen/qwen3.6-plus:free',
-        'qwen/qwen3.5-omni-plus:free',
-        'qwen/qwen3.5-plus:free',
+        'deepseek/deepseek-v4-pro',
       ];
       const raw = csv('XKIRO_MODEL_BACKUPS');
       const list = raw.length > 0 ? raw : preferred;
@@ -60,9 +56,17 @@ export const config = {
         set.delete(m);
       }
       for (const m of set) {
-        // Hapus total seluruh varian model mistral (cenderung over-eager, banyak nanya, dan halusinasi)
+        // Hapus model yang dihapus pengguna dan seluruh varian mistral
         const low = m.toLowerCase();
-        if (!low.includes('mistral') && !low.includes('codestral') && !low.includes('devstral') && !low.includes('ministral')) {
+        if (
+          !low.includes('mistral') &&
+          !low.includes('codestral') &&
+          !low.includes('devstral') &&
+          !low.includes('ministral') &&
+          m !== 'qwen/qwen3.5-plus:free' &&
+          m !== 'qwen/qwen3.5-omni-plus:free' &&
+          m !== 'qwen/qwen3.7-plus:free'
+        ) {
           result.push(m);
         }
       }

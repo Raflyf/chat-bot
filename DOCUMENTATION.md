@@ -206,6 +206,28 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.26.9 - 2026-09-12 20:55 WIB
+
+**Restrukturisasi Urutan Model xKiro, Penegasan Failover Antar-Provider (xKiro -> Groq -> Gemini -> OpenRouter), dan Purging Multimodal Vision**
+
+- **Restrukturisasi Urutan Prioritas Model Teks xKiro (`src/env.ts`, `.env`, `AGENTS.md`)**:
+  - **Primer**: `qwen/qwen3.8-max:free` (Model teks utama dengan pemahaman konteks terbaik).
+  - **Cadangan Terurut**:
+    1. `deepseek/deepseek-v4-flash` (Cadangan 1 / failover kecepatan tinggi)
+    2. `qwen/qwen3.7-max:free` (Cadangan 2 / penalaran presisi tinggi)
+    3. `deepseek/deepseek-chat-v3.1` (Cadangan 3 / percakapan santai alami)
+    4. `qwen/qwen3.6-plus:free` (Cadangan 4)
+    5. `deepseek/deepseek-v4-pro` (Cadangan 5 / penalaran mendalam)
+  - **Model yang Dieliminasi**: Menghapus total `qwen/qwen3.5-plus:free`, `qwen/qwen3.5-omni-plus:free`, `qwen/qwen3.7-plus:free` agar alur request tidak terdistraksi model lawas/bermasalah.
+- **Urutan Bertingkat Lintas Provider (`src/providers.ts`)**:
+  - **Tingkat 1**: xKiro (Primary: `qwen/qwen3.8-max:free` + 5 model cadangan di atas).
+  - **Tingkat 2 (Jika xKiro gagal)**: Groq (Primary: `qwen/qwen3.8-27b`, Cadangan: `qwen/qwen3.6-27b`).
+  - **Tingkat 3 (Jika Groq gagal)**: Gemini (Primary: `gemini-3.8-flash`, Cadangan: `gemini-2.5-flash`).
+  - **Tingkat 4 (Failover Akhir)**: OpenRouter.
+- **Pembersihan Model Multimodal Vision (`src/providers.ts`)**:
+  - Menghapus model vision Mistral bermasalah (`mistral-medium-3.5` dan `mistral-small-2603`).
+  - Menyisakan hanya 1 model vision Mistral paling waras dan tercepat (`mistralai/mistral-large-2512`, latensi 2.3s) di belakang model vision native Qwen: `qwen/qwen3.8-max:free` -> `qwen/qwen3.6-plus:free` -> `mistralai/mistral-large-2512`, disusul engine Gemini (`gemini-3.8-flash` -> `gemini-2.5-flash`).
+
 ### v0.26.8 - 2026-09-12 20:45 WIB
 
 **Pembersihan Total Seluruh Varian Model Mistral, Eliminasi Refleks Tawa Monoton di Pembuka Pesan, dan Penangkalan Pertanyaan Basa-Basi Penutup (Anti-Eager Assistant)**
