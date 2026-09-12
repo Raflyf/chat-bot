@@ -17,6 +17,7 @@ export async function saveMessage(row: {
   content: string;
   via?: string;
   tokens?: { prompt: number; completion: number; total: number };
+  msg_id?: string;
 }): Promise<void> {
   const c = db();
   if (!c) return;
@@ -33,6 +34,7 @@ export async function saveMessage(row: {
       role: row.role,
       content: row.content.slice(0, 32000),
       via: viaStr,
+      msg_id: row.msg_id || null,
     };
     if (row.tokens) {
       if (typeof row.tokens.prompt === 'number') insertPayload.prompt_tokens = row.tokens.prompt;
@@ -42,5 +44,28 @@ export async function saveMessage(row: {
     await c.from('messages').insert(insertPayload);
   } catch {
     // best-effort, abaikan
+  }
+}
+
+/**
+ * Cek apakah pesan dengan platform dan msg_id sudah pernah diproses di database.
+ * Mencegah webhook retry / race condition memproses pesan yang sama lebih dari sekali (D3).
+ */
+export async function isMessageProcessed(platform: string, msgId: string): Promise<boolean> {
+  if (!msgId) return false;
+  const c = db();
+  if (!c) return false;
+  try {
+    const { data, error } = await c
+      .from('messages')
+      .select('id')
+      .eq('platform', platform)
+      .eq('msg_id', msgId)
+      .limit(1)
+      .maybeSingle();
+
+    return !error && !!data;
+  } catch {
+    return false;
   }
 }

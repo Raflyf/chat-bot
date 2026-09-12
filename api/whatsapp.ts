@@ -5,6 +5,24 @@ import {
   processWhatsAppCloudWebhook,
 } from '../src/whatsapp_cloud.js';
 
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+async function readRawBody(req: VercelRequest): Promise<Buffer> {
+  if (Buffer.isBuffer(req.body)) return req.body;
+  if (typeof req.body === 'string') return Buffer.from(req.body, 'utf8');
+  if ((req as any).rawBody && Buffer.isBuffer((req as any).rawBody)) return (req as any).rawBody;
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   // Security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -35,19 +53,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  // 3. Verifikasi Keamanan Signature (HMAC-SHA256) jika WHATSAPP_APP_SECRET diset
+  // 3. Verifikasi Keamanan Signature (HMAC-SHA256) atas byte mentah (D2 & E3)
   const signature = req.headers['x-hub-signature-256'] as string | undefined;
-  const rawBody: string | Buffer =
-    (req as any).rawBody ||
-    (Buffer.isBuffer(req.body) ? req.body : (typeof req.body === 'string' ? req.body : JSON.stringify(req.body)));
+  const rawBuf = await readRawBody(req);
 
-  if (!verifyWhatsAppSignature(signature, rawBody)) {
+  if (!verifyWhatsAppSignature(signature, rawBuf)) {
     console.warn('[api/whatsapp] Unauthorized request: signature mismatch.');
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
 
-  const payload = req.body;
+  let payload: any = null;
+  if (rawBuf.length > 0) {
+    try {
+      payload = JSON.parse(rawBuf.toString('utf8'));
+    } catch {
+      res.status(400).json({ error: 'Invalid JSON payload' });
+      return;
+    }
+  } else if (req.body && typeof req.body === 'object') {
+    payload = req.body;
+  }
+
   if (!payload || typeof payload !== 'object') {
     res.status(400).json({ error: 'Invalid payload' });
     return;

@@ -1,5 +1,5 @@
 import { config } from './env.js';
-import { keyAllowed, keyUsed } from './quota.js';
+import { keyAllowed, keyUsed, ensureKeyQuotaHydrated } from './quota.js';
 
 export interface TextPart {
   type: 'text';
@@ -307,6 +307,7 @@ export async function chat(
     const models = needVision ? step.visionModels : step.models;
     for (const model of models) {
       for (const key of step.keys) {
+        await ensureKeyQuotaHydrated(step.kind, key);
         if (!keyAllowed(step.kind, key, step.cap)) continue;
         try {
           const result = await step.run(key, model, messages);

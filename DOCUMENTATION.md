@@ -192,6 +192,35 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.26.2 - 2026-09-12 17:45 WIB
+**Penyelesaian Seluruh Sisa Audit Putaran 2 (v0.26.1): Klaim Atomik Pengingat, Deduplikasi Persisten msg_id 3 Channel, Raw Body HMAC Meta, Quota Hydration Race, MIME Sniffing, Lockout 15 Menit & Proteksi Master Auth**
+- **R1 & E1: Eliminasi Race Condition Kirim Pengingat Ganda (`src/remind.ts`)**:
+  - Menambahkan `.select('id')` pada pembaruan klaim status `'processing'` dan fallback direct CAS ke `'sent'`.
+  - Memeriksa jumlah baris terdampak secara ketat: jika 0 baris ter-update (berarti pengingat sudah diklaim worker atau cron lain), eksekusi langsung `continue` melewati proses pengiriman.
+- **C1, C3, E2, E7: Hardening Admin Auth, Pencegahan Lockout Permanen & Atomik RPC (`src/admin_auth.ts`, `sql/migrate_v12_admin_auth.sql`, `sql/migrate_v16_security_hardening_and_rpc.sql`, `.env.example`)**:
+  - Menghapus toleransi input 64-char langsung dari client; server sekarang mewajibkan kalkulasi `hashValue(input)` secara server-side.
+  - Mengintegrasikan pemanggilan RPC `rpc_admin_verify_pin` atomik di tingkat PostgreSQL dengan fallback aman ke mesin JS.
+  - Memperbaiki `sql/migrate_v16`: mengubah DELETE `master_auth` menjadi UPSERT netralisasi `pin_hash = NULL`, `lockout_attempts = 0`, `locked_until = NULL` agar baris `master_auth` tetap ada dan fitur OTP reset tidak menyebabkan lockout permanen.
+  - Menyediakan first-run auto provisioning `pin_hash` ke database jika belum terkonfigurasi tetapi `ADMIN_PIN` ada di environment.
+  - Mengubah durasi lockout SQL `migrate_v12` dari `'1 minute'` menjadi `'15 minutes'` dan menambahkan `REVOKE ALL ... FROM PUBLIC, anon, authenticated` sebelum `GRANT ... TO service_role`.
+  - Membersihkan salt statis dari `.env.example` dan menyertakan panduan salt unik minimal 16 karakter beserta `ADMIN_PIN`.
+- **D2 & E3: Raw Body Streaming Webhook Meta WhatsApp HMAC (`api/whatsapp.ts`)**:
+  - Mengaktifkan `export const config = { api: { bodyParser: false } };`.
+  - Membaca stream Buffer mentah (`readRawBody`) sebelum payload di-parse untuk validasi tanda tangan `x-hub-signature-256` secara kriptografis akurat.
+- **C5 & E8: Resolusi Quota Hydration Race (`src/quota.ts`, `src/providers.ts`)**:
+  - Memindahkan penandaan `hydratedKeys.add` hanya jika pembacaan tabel `provider_quota` berhasil mengembalikan data (mencegah sticky failure sepanjang hari akibat error transien).
+  - Menyediakan fungsi `ensureKeyQuotaHydrated(kind, key)` dan melakukan `await` sebelum evaluasi `keyAllowed` di `src/providers.ts` untuk mencegah cold-start over-quota.
+- **D4 & E4: Aktivasi Efektif MIME Magic-Byte Sniffing (`src/media.ts`)**:
+  - Menerapkan `effectiveMime` hasil sniffing buffer secara konsisten pada seluruh percabangan dokumen Word (.docx), berkas teks/kode sumber, dan dokumen PDF untuk menangkal MIME spoofing secara nyata.
+- **D3: Deduplikasi Persisten Menggunakan Kolom msg_id di 3 Channel (`src/db.ts`, `src/whatsapp_cloud.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`)**:
+  - Menambahkan kolom `msg_id` pada pemanggilan `saveMessage` dan mengekspor fungsi `isMessageProcessed(platform, msgId)`.
+  - Mencegah pemrosesan pesan duplikat pada Telegram (pesan & webhook update_id), Meta WhatsApp Cloud, dan WhatsApp Baileys secara lintas container serverless.
+- **E5: Eliminasi Regex Collision Keyword Lokasi GPS (`src/timezone.ts`)**:
+  - Meng-escape karakter regex khusus (`+`, `.`, dll.) saat kompilasi keyword lokasi dan memisahkan keyword WITA/WIT/WIB dari label generic `UTC+8`.
+- **E9 & D5: Parameter Limit Ekspor & Header Keamanan Publik (`api/dataset.ts`, `vercel.json`)**:
+  - Menghormati parameter `req.query.limit` pada ekspor JSONL/CSV (`api/dataset.ts`).
+  - Menambahkan security headers (CSP, nosniff, DENY, strict-origin) untuk seluruh rute file statis di `vercel.json`.
+
 ### v0.25.33 - 2026-09-12 15:18 WIB
 **Fitur Universal /reset Sesi Bersih, Pemotong Riwayat Checkpoint Supabase, & Sinkronisasi Lintas WhatsApp & Telegram**
 - **Mekanisme Checkpoint Reset Sesi Non-Destruktif (`src/memory.ts`)**:

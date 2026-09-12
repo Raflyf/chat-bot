@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { config } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
-import { saveMessage } from './db.js';
+import { saveMessage, isMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -203,7 +203,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
       for (const m of messages) {
         const messageId = m.id;
-        if (!messageId || isDuplicate(messageId)) continue;
+        if (!messageId || isDuplicate(messageId) || (await isMessageProcessed('whatsapp', messageId))) continue;
 
         const from = m.from; // Nomor telepon pengirim (misal: 628123456789)
         if (!from) continue;
@@ -226,6 +226,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               chat_id: chatKey,
               role: 'user',
               content: caption ? `[Gambar] ${caption}` : '[Gambar]',
+              msg_id: messageId,
             });
 
             const { reply, via, tokens } = await describeImage(media.base64, media.mime, caption, context);
@@ -484,6 +485,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           chat_id: chatKey,
           role: 'user',
           content: text,
+          msg_id: messageId,
         }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan user:', err));
 
         // 3. Periksa kebutuhan pencarian web real-time 2026

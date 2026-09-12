@@ -98,6 +98,11 @@ export async function getAuthConfig(): Promise<AdminAuthConfig> {
         }
       }
 
+      if (!tableData.pin_hash && DEFAULT_PIN_HASH) {
+        // Auto-provisioning first-run: persist hash default ke database
+        saveAuthConfig({ pinHash: DEFAULT_PIN_HASH }).catch(() => {});
+      }
+
       return {
         pinHash: tableData.pin_hash || DEFAULT_PIN_HASH,
         lockoutAttempts: tableData.lockout_attempts || 0,
@@ -314,8 +319,76 @@ export async function verifyPin(
   remainingAttempts?: number;
   message: string;
 }> {
-  const current = await getAuthConfig();
+  // Selalu hash PIN input dengan PIN_SALT server (tidak mempercayai hash mentah dari client - C1)
+  const inputHash = hashValue(inputPinOrHash);
   const now = Date.now();
+
+  const c = db();
+  // Coba verifikasi atomik via RPC PostgreSQL terlebih dahulu (C3 & P0-2)
+  if (c) {
+    try {
+      const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_verify_pin', {
+        p_pin_hash: inputHash,
+      });
+
+      if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
+        const res = rpcRes as {
+          success?: boolean;
+          verified?: boolean;
+          is_locked?: boolean;
+          locked_until?: string | null;
+          lockout_attempts?: number;
+          remaining_attempts?: number;
+          message?: string;
+        };
+
+        if (res.verified) {
+          const { token: sessionToken, exp: expiresAt } = createSessionToken(inputHash, 15 * 60 * 1000);
+          const current = await getAuthConfig();
+          const updatedTokens = [
+            ...current.sessionTokens.filter(s => Number(s.exp) > now),
+            { token: sessionToken, exp: expiresAt }
+          ].slice(-10);
+
+          saveAuthConfig({
+            lockoutAttempts: 0,
+            lockedUntil: null,
+            sessionTokens: updatedTokens,
+          }).catch(e => console.warn('[admin-auth] saveAuthConfig async error:', e));
+
+          return {
+            success: true,
+            verified: true,
+            sessionToken,
+            expiresAt,
+            isLocked: false,
+            lockedUntil: null,
+            lockoutAttempts: 0,
+            remainingAttempts: 5,
+            message: 'Autentikasi Master PIN berhasil.',
+          };
+        }
+
+        // Jika rpcRes bukan verified tapi ada response valid dari DB
+        if (res.message && !res.message.includes('belum dikonfigurasi')) {
+          return {
+            success: false,
+            verified: false,
+            isLocked: !!res.is_locked,
+            lockedUntil: res.locked_until || null,
+            lockoutAttempts: res.lockout_attempts || 0,
+            remainingAttempts: typeof res.remaining_attempts === 'number' ? res.remaining_attempts : 0,
+            message: res.message || 'Master PIN salah.',
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[admin-auth] rpc_admin_verify_pin fallback to JS engine:', e);
+    }
+  }
+
+  // Fallback JS Engine (Dual-Store / In-Memory)
+  const current = await getAuthConfig();
 
   // Check if unconfigured
   if (!current.pinHash) {
@@ -342,11 +415,6 @@ export async function verifyPin(
       message: 'Akses terkunci sementara karena melebihi batas percobaan PIN. Gunakan pemulihan OTP.',
     };
   }
-
-  // Calculate target hash
-  const inputHash = inputPinOrHash.length === 64
-    ? inputPinOrHash
-    : hashValue(inputPinOrHash);
 
   // Match comparison
   if (timingSafeMatch(inputHash, current.pinHash)) {
@@ -639,9 +707,7 @@ export async function updatePin(
     };
   }
 
-  const currentHash = currentPinOrHash.length === 64
-    ? currentPinOrHash
-    : hashValue(currentPinOrHash);
+  const currentHash = hashValue(currentPinOrHash);
 
   if (!timingSafeMatch(currentHash, current.pinHash)) {
     const newAttempts = current.lockoutAttempts + 1;

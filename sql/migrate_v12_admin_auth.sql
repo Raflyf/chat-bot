@@ -83,7 +83,7 @@ BEGIN
     -- JIKA PIN SALAH DAN BELUM TERKUNCI: Hitung percobaan
     v_new_attempts := COALESCE(v_row.lockout_attempts, 0) + 1;
     IF v_new_attempts >= 5 THEN
-        v_locked_until := now() + interval '1 minute';
+        v_locked_until := now() + interval '15 minutes';
     ELSE
         v_locked_until := NULL;
     END IF;
@@ -100,7 +100,7 @@ BEGIN
         'remaining_attempts', GREATEST(0, 5 - v_new_attempts),
         'locked_until', v_locked_until,
         'message', CASE 
-            WHEN v_locked_until IS NOT NULL THEN 'Batas 5 kali percobaan PIN terlampaui. Sistem dikunci 1 menit. Silakan tunggu atau gunakan pemulihan OTP.'
+            WHEN v_locked_until IS NOT NULL THEN 'Batas 5 kali percobaan PIN terlampaui. Sistem dikunci 15 menit. Silakan tunggu atau gunakan pemulihan OTP.'
             ELSE 'Master PIN salah. Sisa percobaan: ' || (5 - v_new_attempts) || ' kali.'
         END
     );
@@ -178,7 +178,11 @@ BEGIN
 END;
 $$;
 
--- Hak akses eksekusi RPC: HANYA untuk backend service_role (C2 & P0-2)
+-- Hak akses eksekusi RPC: Cabut dari PUBLIC/anon/authenticated, HANYA untuk backend service_role (C2 & P0-2)
+REVOKE ALL ON FUNCTION public.rpc_admin_verify_pin(text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.rpc_admin_save_otp(text, timestamptz) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.rpc_admin_verify_otp_and_reset_pin(text, text) FROM PUBLIC, anon, authenticated;
+
 GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_pin(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.rpc_admin_save_otp(text, timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_otp_and_reset_pin(text, text) TO service_role;

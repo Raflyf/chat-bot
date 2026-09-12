@@ -152,13 +152,13 @@ const LOCATION_MAP: LocationEntry[] = [
   { keywords: ['kendari', 'bau-bau', 'baubau', 'kolaka', 'konawe', 'unaaha', 'muna', 'raha', 'wakatobi', 'wangi-wangi', 'bombana', 'sultra', 'sulawesi tenggara'], zone: 'Asia/Makassar', label: 'Sulawesi Tenggara / WITA' },
   { keywords: ['manado', 'bitung', 'tomohon', 'kotamobagu', 'minahasa', 'tondano', 'amurang', 'airmadidi', 'sangihe', 'tahuna', 'talaud', 'bolmong', 'sulut', 'sulawesi utara'], zone: 'Asia/Makassar', label: 'Sulawesi Utara / WITA' },
   { keywords: ['gorontalo', 'bone bolango', 'boalemo', 'pohuwato', 'kwandang'], zone: 'Asia/Makassar', label: 'Gorontalo / WITA' },
-  { keywords: ['wita', 'utc+8', 'gmt+8'], zone: 'Asia/Makassar', label: 'WITA (Waktu Indonesia Tengah)' },
+  { keywords: ['wita', 'waktu indonesia tengah'], zone: 'Asia/Makassar', label: 'WITA (Waktu Indonesia Tengah)' },
 
   // Indonesian WIT (UTC+9)
   { keywords: ['ambon', 'tual', 'banda', 'banda neira', 'masohi', 'seram', 'buru', 'namlea', 'saumlaki', 'tanimbar', 'aru', 'dobo', 'maluku'], zone: 'Asia/Jayapura', label: 'Maluku / WIT' },
   { keywords: ['ternate', 'tidore', 'sofifi', 'halmahera', 'tobelo', 'jailolo', 'weda', 'labuha', 'morotai', 'sula', 'sanana', 'maluku utara', 'malut'], zone: 'Asia/Jayapura', label: 'Maluku Utara / WIT' },
   { keywords: ['jayapura', 'merauke', 'timika', 'mimika', 'wamena', 'nabire', 'biak', 'serui', 'sarmi', 'sorong', 'manokwari', 'fakfak', 'kaimana', 'raja ampat', 'boven digoel', 'asmat', 'paniai', 'puncak jaya', 'mulia', 'pegunungan bintang', 'oksibil', 'yahukimo', 'tolikara', 'lanny jaya', 'papua', 'papua barat', 'papua barat daya', 'papua tengah', 'papua pegunungan', 'papua selatan'], zone: 'Asia/Jayapura', label: 'Papua / WIT' },
-  { keywords: ['wit', 'utc+9', 'gmt+9'], zone: 'Asia/Jayapura', label: 'WIT (Waktu Indonesia Timur)' },
+  { keywords: ['wit', 'waktu indonesia timur'], zone: 'Asia/Jayapura', label: 'WIT (Waktu Indonesia Timur)' },
 
   // Indonesian WIB (UTC+7)
   { keywords: ['jakarta', 'jaksel', 'jakbar', 'jaktim', 'jakpus', 'jakut', 'jabodetabek', 'kepulauan seribu'], zone: 'Asia/Jakarta', label: 'DKI Jakarta / WIB' },
@@ -253,13 +253,22 @@ const LOCATION_MAP: LocationEntry[] = [
   { keywords: ['casablanca', 'rabat', 'maroko', 'morocco'], zone: 'Africa/Casablanca', label: 'Maroko (Casablanca)' },
 ];
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Precompile regex untuk menghindari kompilasi ~400 RegExp pada setiap pesan masuk
 const COMPILED_LOCATION_MAP = LOCATION_MAP.map((item) => ({
   ...item,
-  compiled: item.keywords.map((kw) => ({
-    kw,
-    reg: new RegExp(`\\b${kw.replace(/\s+/g, '\\s+')}\\b`, 'i'),
-  })),
+  compiled: item.keywords.map((kw) => {
+    const escaped = escapeRegex(kw).replace(/\s+/g, '\\s+');
+    const leftBoundary = /^\w/.test(kw) ? '\\b' : '(?:^|\\s|[.,!?;:])';
+    const rightBoundary = /\w$/.test(kw) ? '\\b' : '(?:$|\\s|[.,!?;:])';
+    return {
+      kw,
+      reg: new RegExp(`${leftBoundary}${escaped}${rightBoundary}`, 'i'),
+    };
+  }),
 }));
 
 export function detectLocation(text?: string): LocationMatch | null {
