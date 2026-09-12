@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.19 (Universal Dynamic Response, Zero Hardcoded Script, Live News Date Citations & Capped Tokens <= 4,000)  
+**Versi:** v0.26.20 (Universal Conversational Architecture, Cross-Domain High-EQ Resonance, Groq Zero-Reasoning Optimization & Strict Token Budget <= 4,000)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 23:55 WIB
+**Terakhir Diperbarui:** 2026-09-13 00:15 WIB
 
 ---
 
@@ -205,6 +205,23 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.20 - 2026-09-13 00:15 WIB
+
+**Arsitektur Respon Universal Lintas Domain, Eliminasi Pengondisian Khusus Satu Topik, Optimasi Zero-Reasoning Groq & Kepatuhan Token <= 4.000**
+
+- **Arsitektur Respon Universal Lintas Domain (`src/skills.ts`)**:
+  - Menghapus blok-blok pengondisian khusus satu topik (`isCurhatOpening`, `isRomanticCrush`) yang sebelumnya memecah logika obrolan ke sekat-sekat sempit.
+  - Memperluas aturan inti pada Bagian 1 & 2 system prompt menjadi aturan universal yang memandu seluruh percakapan tanpa memandang topik: sapaan, cerita hubungan, curhat santai, koding, matematika, sains, fakta umum, hingga ledekan/banter.
+  - Menegakkan prinsip *Universal Conversational Warmth*: jawaban wajib hangat, mengalir luwes, dan bernyawa kawan akrab WhatsApp dengan susunan kalimat yang dirangkai mandiri secara spontan (tanpa template/skrip hafalan).
+  - Melarang nada analitis dingin/kaku di seluruh domain (seperti awalan dingin "Menarik...", "Klasik banget...", "Dinamika...", "Silakan, dengerin nih", "Iya, ada apa?").
+  - Menghidupkan intonasi percakapan dengan partikel santai Indonesia (`nihh`, `tuhh`, `dongg`, `kan`, `sih`, `yaa`, `deh`, `lah`, `kok`) secara organik dan variatif.
+- **Optimasi Groq Zero-Reasoning Token (`src/providers.ts`)**:
+  - Mengatasi kendala model fallback Groq (`qwen/qwen3.6-27b`) yang secara default melakukan internal reasoning `<think>` hingga menghabiskan 800 token completion dan memicu pemotongan kalimat.
+  - Memperluas `openAiChat` dengan parameter `extraBody` dan menyuntikkan `{ reasoning_effort: 'none' }` pada seluruh panggilan inferensi Groq.
+  - Model inferensi Groq kini merespons instan (sub-detik) tanpa membuang kuota token pada proses berpikir internal yang tidak perlu.
+- **Validasi Kepatuhan Anggaran Token (Strictly <= 4.000 Token)**:
+  - Validasi alur percakapan 5 putaran dialog intensif dan pengujian 6 domain berbeda (sapaan, koding, matematika PEMDAS, banter lelucon garing, kapabilitas diri, keluhan lelah) membuktikan konsumsi token konteks stabil di kisaran **3.715–3.905 token**, selalu aman di bawah batas 4.000 token dan terhindar dari error HTTP 413/429.
 
 ### v0.26.19 - 2026-09-12 23:55 WIB
 

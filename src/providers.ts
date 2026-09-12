@@ -202,6 +202,7 @@ async function openAiChat(
   model: string,
   messages: ChatMsg[],
   maxTokensOverride?: number,
+  extraBody?: Record<string, unknown>,
 ): Promise<ProviderResult> {
   const data = (await postJson(`${baseUrl}/chat/completions`, key, {
     model,
@@ -210,6 +211,7 @@ async function openAiChat(
     temperature: 0.7,
     presence_penalty: 0.5,
     frequency_penalty: 0.3,
+    ...extraBody,
   })) as {
     choices?: Array<{ message?: { content?: string } }>;
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
@@ -369,7 +371,9 @@ function steps(): Step[] {
       run: (k, m, msgs) => {
         // Pangkas pesan agar total (prompt + output 800) muat di bawah limit ketat Groq 8K TPM
         const groqMsgs = trimMessagesToTokenBudget(msgs, 7200);
-        return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, 800);
+        return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, 800, {
+          reasoning_effort: 'none',
+        });
       },
     },
     {
