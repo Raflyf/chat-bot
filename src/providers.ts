@@ -402,9 +402,15 @@ export async function chat(
           lastError = e instanceof Error ? e.message : 'UNKNOWN';
           recordKeyFailure(step.kind, key, e);
 
-          // Jika model 404 (tidak ditemukan) atau 403 (model berbayar uang asli), jangan coba kunci lain untuk model yang sama
-          if (lastError.includes('PROVIDER_404') || lastError.includes('PROVIDER_403')) {
-            recordModelFailure(step.kind, model, 30 * 60_000);
+          // Jika model 404 (tidak ditemukan), 403 (model berbayar uang asli), atau 503/502 (upstream server outage/kapasitas habis),
+          // jangan buang waktu mencoba kunci lain untuk model yang sama karena server upstream pasti mengembalikan error yang sama
+          if (
+            lastError.includes('PROVIDER_404') ||
+            lastError.includes('PROVIDER_403') ||
+            lastError.includes('PROVIDER_503') ||
+            lastError.includes('PROVIDER_502')
+          ) {
+            recordModelFailure(step.kind, model, 15 * 60_000);
             break;
           }
 
