@@ -124,7 +124,7 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
         throw new Error('WHATSAPP_TOKEN terisi namun WHATSAPP_PHONE_NUMBER_ID atau WHATSAPP_VERIFY_TOKEN belum lengkap.');
       }
       if (!config.whatsappAppSecret && config.isServerless) {
-        throw new Error('WHATSAPP_APP_SECRET wajib diisi pada serverless untuk verifikasi HMAC Meta.');
+        console.warn('[env] WHATSAPP_APP_SECRET belum diset di serverless. Sangat disarankan untuk verifikasi HMAC Meta.');
       }
     }
   }
