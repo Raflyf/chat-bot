@@ -95,7 +95,16 @@ export async function ensureKeyQuotaHydrated(kind: ProviderKind, key: string): P
   }
 }
 
-/** True jika key masih boleh dipakai hari ini. */
+/**
+ * Evaluasi izin pemakaian key secara async dengan jaminan hidrasi DB (C4).
+ * Menghilangkan celah cold-start over-quota dan fire-and-forget race.
+ */
+export async function isKeyAllowed(kind: ProviderKind, key: string, cap: number): Promise<boolean> {
+  await ensureKeyQuotaHydrated(kind, key);
+  return slot(kind, key).count < cap;
+}
+
+/** True jika key masih boleh dipakai hari ini (sinkron, kompatibilitas). */
 export function keyAllowed(kind: ProviderKind, key: string, cap: number): boolean {
   // Picu hidrasi jika belum pernah dibaca dari DB hari ini
   const day = today();

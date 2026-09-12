@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.26.1 (Audit Verification Hotfix & Full Regression Resolution)  
+**Versi:** v0.26.5 (Audit Verification Round 5 Full Resolution & Zero Unsafe-Inline CSP)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 17:15 WIB  
+**Terakhir Diperbarui:** 2026-09-12 19:15 WIB  
 
 ---
 
@@ -764,6 +764,37 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - Menyesuaikan batas waktu tunggu header koneksi `CONNECT_TIMEOUT_MS` menjadi 4.500ms agar mekanisme auto-failover antar key/model berjalan 2x lebih responsif jika salah satu gateway mengalami kendala.
 - **Integritas Urutan Rolling Model (Zero Alteration)**:
   - Urutan hierarki rolling penggunaan model (`xkiro` -> `groq` -> `gemini` -> `openrouter`) dipertahankan 100% utuh tanpa modifikasi apa pun sesuai syarat mutlak pengguna.
+
+### v0.26.5 — 2026-09-12 19:15 WIB
+**Audit Verification Resolution Putaran 5: Fail-Closed Deduplication, Lease Isolation, Zero Unsafe-Inline CSP, Keyset Range Pagination & Baileys Robustness**
+- **B1 Fail-Closed Ingestion & Anti-Lockout Durability (`src/db.ts`)**:
+  - `claimIncomingMessage` kini fail-closed: jika terjadi galat basis data transien non-23505, sistem mengembalikan `false` sehingga webhook platform melakukan retry secara tertib tanpa memproses pesan ganda tanpa jejak.
+  - Menambahkan mekanisme anti-lockout crash recovery: jika query mengembalikan duplicate key 23505, sistem memeriksa apakah pesan tersebut belum selesai diproses (`processed_at IS NULL`) dan telah berumur lebih dari 45 detik (menandakan worker sebelumnya crash sebelum selesai). Jika ya, sistem mengizinkan klaim ulang agar pesan pengguna tidak terkunci permanen.
+  - Implementasi fungsi `markMessageProcessed(platform, msgId)` untuk menandai pesan selesai diproses (`processed_at = now()`) saat balasan asisten berhasil dikirim.
+- **B3 Durabilitas Skema Basis Data (`sql/schema.sql`, `sql/migrate_v16_security_hardening_and_rpc.sql`)**:
+  - Menambahkan kolom `msg_id text NULL` dan `processed_at timestamptz NULL` serta indeks unik parsial `idx_messages_platform_msg_id` pada tabel `messages`.
+  - Mengintegrasikan pemanggilan `markMessageProcessed` di seluruh alur pengiriman balasan asisten sukses pada Telegram Bot API (`src/telegram.ts`), WhatsApp Meta Cloud (`src/whatsapp_cloud.ts`), dan WhatsApp Baileys (`src/whatsapp_baileys.ts`).
+- **B4 Isolasi Lease Reminder Tanpa Modifikasi due_at (`src/remind.ts`, `sql/schema.sql`, `sql/migrate_v16_security_hardening_and_rpc.sql`)**:
+  - Memisahkan sewa waktu pemrosesan worker ke kolom `lease_until timestamptz NULL` dengan indeks `idx_reminders_lease_until`.
+  - Saat klaim reminder, sistem mengunci baris dengan `status = 'processing', lease_until = now + 10 minutes` tanpa pernah mengubah nilai `due_at` asli, menjaga waktu jatuh tempo riil tetap utuh.
+  - Auto-reaper kini hanya me-reset baris jika `status = 'processing' AND lease_until <= now` (atau batas aman 10 menit jika lease_until null), mengeliminasi regresi pengiriman ganda ketika proses kirim memakan waktu lama.
+- **B8 Paritas Penyertaan msg_id pada Media WhatsApp Cloud & Telegram (`src/whatsapp_cloud.ts`, `src/telegram.ts`)**:
+  - Menyertakan `msg_id: messageId` pada seluruh kasus penyimpanan pesan pengguna untuk Dokumen, Voice Note, Stiker, dan Video di Meta WhatsApp Cloud API.
+  - Menyertakan `msg_id: msgId || undefined` pada penyimpanan pesan pengguna untuk Stiker dan Video di Telegram Bot API.
+- **B9 Paginasi Keyset/Range Tanpa Pemotongan Senyap (`api/stats.ts`)**:
+  - Mengganti pembatasan sepihak `.limit(2000)`, `.limit(1000)`, dan `.limit(5000)` dengan helper paginasi dinamis bertahap `fetchPagedRange` menggunakan `.range(from, to)`.
+  - Mengeliminasi undercount statistik dan distribusi model/media pada rentang waktu `30d` dan `all` tanpa risiko kehabisan memori (*out-of-memory*) di container Vercel.
+- **C2 Content Security Policy (CSP) Zero Unsafe-Inline (`vercel.json`, `public/dashboard.html`, `public/index.html`)**:
+  - Mengekstraksi seluruh JavaScript inline di `public/dashboard.html` ke berkas terisolasi `public/js/dashboard-pre.js` (anti-flicker fast-path) dan `public/js/dashboard.js` (logika analitik dan evaluasi).
+  - Mengekstraksi skrip pembersih sesi di `public/index.html` ke berkas `public/js/home.js`.
+  - Menghapus `'unsafe-inline'` dari direktif `script-src` pada CSP di `vercel.json` (`script-src 'self' https://cdn.jsdelivr.net`).
+- **C4 Hidrasi Kuota Berbasis Await (`src/quota.ts`, `src/providers.ts`)**:
+  - Mengekspor fungsi `isKeyAllowed(kind, key, cap)` yang secara deterministik meng-await `ensureKeyQuotaHydrated` sebelum memeriksa sisa kuota, mengeliminasi potensi balapan fire-and-forget cold-start.
+- **C5 Perlindungan Try/Catch Penelusuran Web Voice Note Baileys (`src/whatsapp_baileys.ts`)**:
+  - Membungkus pemanggilan `searchWeb` di dalam alur transkripsi audio Baileys dengan `try/catch`, sehingga kegagalan sementara pencarian web tidak lagi melempar eksekusi ke penanganan error audio yang menampilkan pesan audio tidak jelas ke pengguna.
+- **B10 / C8 / C9 Penyelarasan Ground Truth Dokumen Arsitektur (`AGENTS.md`)**:
+  - Menjelaskan secara akurat perbedaan antara Conversation Context Cache (in-memory rolling TTL 25s, 24 pesan di `src/memory.ts`) dan Knowledge Web Cache (300 entri, FIFO-50 di `src/knowledge.ts`).
+  - Mengoreksi jumlah pemetaan wilayah/kota pada pengenalan zona waktu dinamis menjadi ~100 entri terkurasi di `src/timezone.ts` sesuai fakta kode terkini.
 
 ### v0.26.1 — 2026-09-12 17:15 WIB
 **Audit Verification Hotfix & Full Regression Resolution (AUDIT_VERIFICATION_v0.26.0)**
