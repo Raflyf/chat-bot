@@ -5,11 +5,9 @@ import { getTelegramBot, processTelegramUpdate } from '../src/telegram.js';
 
 function verifySecretToken(tokenHeader: string | string[] | undefined, secret: string): boolean {
   if (!secret) {
-    if (config.isServerless) {
-      console.warn('[webhook] TELEGRAM_WEBHOOK_SECRET tidak diset di serverless, menolak update demi keamanan fail-closed.');
-      return false;
-    }
-    return true; // Local development bypass
+    if (process.env.NODE_ENV === 'test') return true;
+    console.warn('[webhook] TELEGRAM_WEBHOOK_SECRET tidak diset, menolak request demi keamanan fail-closed.');
+    return false;
   }
   if (!tokenHeader || typeof tokenHeader !== 'string') return false;
   const a = Buffer.from(tokenHeader, 'utf8');

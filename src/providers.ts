@@ -85,6 +85,7 @@ async function fetchJsonWithLifecycle(
   let totalTimer: NodeJS.Timeout | undefined;
   try {
     const bodyPromise = res.json();
+    bodyPromise.catch(() => {}); // Tangkal unhandled rejection di Node.js saat abort timeout terjadi
     const timeoutPromise = new Promise((_, reject) => {
       totalTimer = setTimeout(() => {
         totalTimeoutHit = true;

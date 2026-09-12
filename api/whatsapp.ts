@@ -37,7 +37,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   // 3. Verifikasi Keamanan Signature (HMAC-SHA256) jika WHATSAPP_APP_SECRET diset
   const signature = req.headers['x-hub-signature-256'] as string | undefined;
-  const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+  const rawBody: string | Buffer =
+    (req as any).rawBody ||
+    (Buffer.isBuffer(req.body) ? req.body : (typeof req.body === 'string' ? req.body : JSON.stringify(req.body)));
+
   if (!verifyWhatsAppSignature(signature, rawBody)) {
     console.warn('[api/whatsapp] Unauthorized request: signature mismatch.');
     res.status(401).json({ error: 'Unauthorized' });

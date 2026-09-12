@@ -51,7 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
       const inputPin = String(body.pin || query.pin || '').trim();
       const inputHash = String(body.pin_hash || query.pin_hash || '').trim();
-      const credential = inputHash || inputPin;
+      const credential = inputPin || inputHash;
 
       if (!credential) {
         res.status(400).json({ success: false, message: 'PIN atau PIN hash wajib disertakan.' });

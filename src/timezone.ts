@@ -186,7 +186,7 @@ const LOCATION_MAP: LocationEntry[] = [
   { keywords: ['seoul', 'busan', 'incheon', 'korea', 'korea selatan', 'south korea', 'kst'], zone: 'Asia/Seoul', label: 'Korea Selatan (Seoul)' },
   { keywords: ['beijing', 'shanghai', 'guangzhou', 'shenzhen', 'china', 'tiongkok'], zone: 'Asia/Shanghai', label: 'China (Beijing/Shanghai)' },
   { keywords: ['taipei', 'taiwan'], zone: 'Asia/Taipei', label: 'Taiwan (Taipei)' },
-  { keywords: ['hong kong', 'hongkong', 'hk', 'hkt'], zone: 'Asia/Hong_Kong', label: 'Hong Kong' },
+  { keywords: ['hong kong', 'hongkong', 'hkt'], zone: 'Asia/Hong_Kong', label: 'Hong Kong' },
   { keywords: ['singapore', 'singapura', 'sgt'], zone: 'Asia/Singapore', label: 'Singapura' },
   { keywords: ['kuala lumpur', 'penang', 'johor', 'malaysia', 'myt'], zone: 'Asia/Kuala_Lumpur', label: 'Malaysia (Kuala Lumpur)' },
   { keywords: ['bangkok', 'phuket', 'chiang mai', 'thailand'], zone: 'Asia/Bangkok', label: 'Thailand (Bangkok)' },
@@ -365,7 +365,14 @@ export function resolveTimezoneFromCoords(lat: number, lon: number): { zone: str
   }
 
   const offsetHours = Math.round(lon / 15);
-  return { zone: 'UTC', label: `UTC${offsetHours >= 0 ? '+' : ''}${offsetHours}` };
+  if (offsetHours === 0) {
+    return { zone: 'UTC', label: 'UTC' };
+  }
+  const clampedOffset = Math.max(-12, Math.min(14, offsetHours));
+  // Standar IANA POSIX Etc/GMT: tanda terbalik (Etc/GMT-8 = UTC+8, Etc/GMT+5 = UTC-5)
+  const gmtSign = clampedOffset > 0 ? `-${clampedOffset}` : `+${Math.abs(clampedOffset)}`;
+  const labelSign = clampedOffset > 0 ? `+${clampedOffset}` : `${clampedOffset}`;
+  return { zone: `Etc/GMT${gmtSign}`, label: `UTC${labelSign}` };
 }
 
 /**

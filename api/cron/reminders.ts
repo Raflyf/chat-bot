@@ -18,17 +18,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
 
-  // Verifikasi Cron Secret jika diset di environment Vercel
-  if (config.cronSecret) {
+  // Verifikasi Cron Secret: wajib fail-closed di semua mode runtime
+  if (!config.cronSecret) {
+    if (process.env.NODE_ENV !== 'test') {
+      res.status(403).json({ error: 'CRON_SECRET wajib dikonfigurasi untuk menjalankan endpoint cron.' });
+      return;
+    }
+  } else {
     const authHeader = req.headers['authorization'] || '';
     const expected = `Bearer ${config.cronSecret}`;
     if (!timingSafeMatch(authHeader, expected)) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
-  } else if (config.isServerless) {
-    res.status(403).json({ error: 'CRON_SECRET wajib dikonfigurasi di lingkungan serverless.' });
-    return;
   }
 
   try {

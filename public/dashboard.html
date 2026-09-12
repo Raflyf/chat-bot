@@ -2356,21 +2356,12 @@
   <script>
     const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     const SESSION_EXP_KEY = "freeaibot_admin_session_exp";
-    const PIN_SALT = "rafly_telemetry_salt";
 
     let autoRefresh = true;
     let refreshTimer = null;
     let sessionExpiryTimer = null;
     let resendCountdownTimer = null;
     let datasetSearchTimeout = null;
-
-    // Cryptographic SHA-256 client-side hashing
-    async function sha256(message) {
-      const msgBuffer = new TextEncoder().encode(message);
-      const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-    }
 
     function getStoredToken() {
       const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
@@ -2497,11 +2488,10 @@
       submitBtn.disabled = true;
 
       try {
-        const pinHash = await sha256(pinValue + PIN_SALT);
         const res = await fetch("/api/admin-otp?action=verify_pin", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "verify_pin", pin_hash: pinHash }),
+          body: JSON.stringify({ action: "verify_pin", pin: pinValue }),
         });
 
         const data = await res.json();

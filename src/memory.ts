@@ -33,18 +33,15 @@ export function updateContextCache(chatKey: string, role: 'user' | 'assistant', 
   }
 }
 
-/** Periksa apakah pesan pengguna adalah perintah reset sesi. */
+/** Periksa apakah pesan pengguna adalah perintah reset sesi (wajib awalan slash untuk menghindari false positive). */
 export function isResetCommand(text: string): boolean {
   const norm = text.trim().toLowerCase();
   return (
     norm === '/reset' ||
     norm === '/clear' ||
     norm === '/reset_session' ||
-    norm === 'reset sesi' ||
-    norm === 'mulai sesi baru' ||
-    norm === 'clear chat' ||
-    norm === 'hapus riwayat' ||
-    norm === 'reset chat'
+    norm === '/resetsesi' ||
+    norm === '/clearchat'
   );
 }
 

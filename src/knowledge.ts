@@ -18,9 +18,13 @@ const MAX_HOT_CACHE_SIZE = 300;
 export function sanitizeKnowledgeText(text: string): string {
   if (!text) return '';
   return text
+    .replace(/<\/?(?:system|instruction|prompt|context|assistant|human|user)>/gi, '')
+    .replace(/\[\/?(?:INST|SYS|SYSTEM|INSTRUCTION|PROMPT)[^\]]*\]/gi, '')
+    .replace(/<\|(?:im_start|im_end|system|user|assistant)\|>/gi, '')
     .replace(/\[\s*(?:system|system\s+prompt|perintah\s+sistem|instruksi|system\s*:\s*)\s*\]/gi, '[info]')
     .replace(/\b(?:ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions?|forget\s+all\s+(?:previous|prior)\s+instructions?)\b/gi, '[neutralized]')
-    .replace(/\b(?:you\s+must\s+now|kamu\s+harus\s+mengabaikan|abaikan\s+semua\s+perintah|system\s+override)\b/gi, '[neutralized]')
+    .replace(/\b(?:you\s+must\s+now|kamu\s+harus\s+mengabaikan|abaikan\s+semua\s+perintah|system\s+override|jailbreak)\b/gi, '[neutralized]')
+    .replace(/\b(?:bypass\s+(?:all\s+)?(?:rules|limits)|tulis\s+ulang\s+instruksi)\b/gi, '[neutralized]')
     .trim();
 }
 
@@ -169,7 +173,7 @@ export async function getKnowledge(query: string): Promise<{ knowledge: string; 
       });
 
       // Update hit_count di database secara asinkron non-blocking
-      void Promise.resolve(c.rpc('increment_knowledge_hit', { p_entity_key: entityKey })).catch(() => {});
+      void Promise.resolve(c.rpc('increment_knowledge_hit', { p_entity_key: entityKey, p_key: entityKey })).catch(() => {});
 
       return {
         knowledge: sanitized,

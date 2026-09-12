@@ -5,8 +5,8 @@ WORKDIR /app
 # Salin file dependensi
 COPY package*.json tsconfig.json ./
 
-# Pasang seluruh dependensi termasuk dev untuk build
-RUN npm install
+# Pasang seluruh dependensi termasuk dev untuk build (deterministik via npm ci)
+RUN npm ci
 
 # Salin kode sumber
 COPY src ./src
