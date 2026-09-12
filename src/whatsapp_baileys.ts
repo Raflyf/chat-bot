@@ -250,7 +250,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           content: text ? `[Gambar] ${text}` : '[Gambar]',
         });
 
-        const { reply, via } = await describeImage(base64, mime, text || undefined);
+        const { reply, via, tokens } = await describeImage(base64, mime, text || undefined);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
         await saveMessage({
           platform: 'whatsapp',
@@ -258,6 +258,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           role: 'assistant',
           content: reply.slice(0, 4000),
           via,
+          tokens,
         });
         noteExchange(chatKey);
         return;
@@ -300,7 +301,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
         });
 
-        const { reply, via } = await processIncomingDocument(
+        const { reply, via, tokens } = await processIncomingDocument(
           buffer,
           mime,
           filename,
@@ -315,6 +316,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           role: 'assistant',
           content: reply.slice(0, 4000),
           via,
+          tokens,
         });
         noteExchange(chatKey);
         return;
@@ -368,7 +370,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           }
 
           const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
-          const { reply, via } = await autoReply(prompt, context, webResults);
+          const { reply, via, tokens } = await autoReply(prompt, context, webResults);
           await sendWhatsAppMessageSafe(sock, remoteJid, reply);
           await saveMessage({
             platform: 'whatsapp',
@@ -376,6 +378,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             role: 'assistant',
             content: reply.slice(0, 4000),
             via,
+            tokens,
           });
           noteExchange(chatKey);
           return;
@@ -425,7 +428,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           content: '[Stiker WhatsApp]',
         });
 
-        const { reply, via } = await processIncomingSticker(buffer, mime, undefined, context);
+        const { reply, via, tokens } = await processIncomingSticker(buffer, mime, undefined, context);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
         await saveMessage({
           platform: 'whatsapp',
@@ -433,6 +436,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           role: 'assistant',
           content: reply.slice(0, 4000),
           via,
+          tokens,
         });
         noteExchange(chatKey);
         return;
@@ -474,7 +478,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
         const mime = m.message?.videoMessage?.mimetype || 'video/mp4';
-        const { reply, via } = await processIncomingVideo(buffer, mime, 'video.mp4', caption);
+        const { reply, via, tokens } = await processIncomingVideo(buffer, mime, 'video.mp4', caption);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
         await saveMessage({
           platform: 'whatsapp',
@@ -482,6 +486,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           role: 'assistant',
           content: reply.slice(0, 4000),
           via,
+          tokens,
         });
         noteExchange(chatKey);
         return;
@@ -491,7 +496,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
         : 'User mengirim berkas video. Beritahukan dengan ramah bahwa videonya diterima, dan tanyakan apa yang ingin dibahas.';
 
-      const { reply, via } = await autoReply(prompt, context);
+      const { reply, via, tokens } = await autoReply(prompt, context);
       await sendWhatsAppMessageSafe(sock, remoteJid, reply);
       await saveMessage({
         platform: 'whatsapp',
@@ -499,6 +504,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         role: 'assistant',
         content: reply.slice(0, 4000),
         via,
+        tokens,
       });
       noteExchange(chatKey);
       return;
@@ -570,7 +576,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     }
 
     // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
-    const { reply, via } = await autoReply(text, context, webResults);
+    const { reply, via, tokens } = await autoReply(text, context, webResults);
 
     // 5. Kirim balasan ke WhatsApp secepat mungkin
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
@@ -583,6 +589,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       role: 'assistant',
       content: reply.slice(0, 4000),
       via,
+      tokens,
     }).catch((err) => console.warn('[whatsapp] Gagal simpan pesan assistant:', err));
 
     // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat

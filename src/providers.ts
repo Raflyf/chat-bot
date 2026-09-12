@@ -77,7 +77,16 @@ async function postJson(url: string, key: string, body: unknown): Promise<unknow
   return (await Promise.race([thinkPromise, timeoutPromise])) as unknown;
 }
 
-async function openAiChat(baseUrl: string, key: string, model: string, messages: ChatMsg[]): Promise<string> {
+export interface ProviderResult {
+  text: string;
+  tokens?: {
+    prompt: number;
+    completion: number;
+    total: number;
+  };
+}
+
+async function openAiChat(baseUrl: string, key: string, model: string, messages: ChatMsg[]): Promise<ProviderResult> {
   const data = (await postJson(`${baseUrl}/chat/completions`, key, {
     model,
     messages,
@@ -85,13 +94,23 @@ async function openAiChat(baseUrl: string, key: string, model: string, messages:
     temperature: 0.7,
     presence_penalty: 0.5,
     frequency_penalty: 0.3,
-  })) as { choices?: Array<{ message?: { content?: string } }> };
+  })) as {
+    choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  };
   const text = data.choices?.[0]?.message?.content?.trim() ?? '';
   if (!text) throw new Error('EMPTY_RESPONSE');
-  return text;
+  const tokens = data.usage
+    ? {
+        prompt: Number(data.usage.prompt_tokens) || 0,
+        completion: Number(data.usage.completion_tokens) || 0,
+        total: Number(data.usage.total_tokens) || 0,
+      }
+    : undefined;
+  return { text, tokens };
 }
 
-async function geminiChat(key: string, model: string, messages: ChatMsg[]): Promise<string> {
+async function geminiChat(key: string, model: string, messages: ChatMsg[]): Promise<ProviderResult> {
   const contents: Array<{ role: 'user' | 'model'; parts: unknown[] }> = [];
   for (const m of messages) {
     if (m.role === 'system') continue;
@@ -153,16 +172,35 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[]): Prom
   }
   if (!res.ok) throw new Error(`PROVIDER_${res.status}`);
 
-  const thinkPromise = res.json() as Promise<{ candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }>;
+  const thinkPromise = res.json() as Promise<{
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+    };
+  }>;
   const timeoutPromise = new Promise((_, reject) =>
     setTimeout(() => reject(new Error('THINKING_TIMEOUT')), config.timeoutMs),
   );
   const data = (await Promise.race([thinkPromise, timeoutPromise])) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+    };
   };
   const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('').trim() ?? '';
   if (!text) throw new Error('EMPTY_RESPONSE');
-  return text;
+  const tokens = data.usageMetadata
+    ? {
+        prompt: Number(data.usageMetadata.promptTokenCount) || 0,
+        completion: Number(data.usageMetadata.candidatesTokenCount) || 0,
+        total: Number(data.usageMetadata.totalTokenCount) || 0,
+      }
+    : undefined;
+  return { text, tokens };
 }
 
 interface Step {
@@ -172,7 +210,7 @@ interface Step {
   /** Subset models yang terbukti vision-capable. Kosong = step dilewati saat butuh vision. */
   visionModels: string[];
   cap: number;
-  run: (key: string, model: string, messages: ChatMsg[]) => Promise<string>;
+  run: (key: string, model: string, messages: ChatMsg[]) => Promise<ProviderResult>;
 }
 
 function steps(): Step[] {
@@ -224,7 +262,10 @@ function steps(): Step[] {
  * - Vision / foto / gambar: xKiro (Mistral Large > Qwen 3.8 > Mistral Medium > Qwen 3.6) > Gemini (3.8 Flash > 2.5 Flash).
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
-export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Promise<{ text: string; via: string }> {
+export async function chat(
+  messages: ChatMsg[],
+  opts?: { vision?: boolean },
+): Promise<{ text: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const needVision = opts?.vision === true;
   const cacheKey = JSON.stringify({ v: needVision, messages });
   const hit = cacheGet(cacheKey);
@@ -248,10 +289,10 @@ export async function chat(messages: ChatMsg[], opts?: { vision?: boolean }): Pr
       for (const key of step.keys) {
         if (!keyAllowed(step.kind, key, step.cap)) continue;
         try {
-          const text = await step.run(key, model, messages);
+          const result = await step.run(key, model, messages);
           keyUsed(step.kind, key);
-          cacheSet(cacheKey, text);
-          return { text, via: `${step.kind}/${model}` };
+          cacheSet(cacheKey, result.text);
+          return { text: result.text, via: `${step.kind}/${model}`, tokens: result.tokens };
         } catch (e) {
           lastError = e instanceof Error ? e.message : 'UNKNOWN';
           // Catat pemakaian hanya jika rate limited (agar pool beralih), bukan pada error 500 atau kegagalan jaringan

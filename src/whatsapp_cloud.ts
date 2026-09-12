@@ -235,7 +235,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               content: caption ? `[Gambar] ${caption}` : '[Gambar]',
             });
 
-            const { reply, via } = await describeImage(media.base64, media.mime, caption);
+            const { reply, via, tokens } = await describeImage(media.base64, media.mime, caption);
             await sendWhatsAppCloudMessageSafe(from, reply);
             await saveMessage({
               platform: 'whatsapp',
@@ -243,6 +243,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               role: 'assistant',
               content: reply.slice(0, 4000),
               via,
+              tokens,
             });
             noteExchange(chatKey);
             continue;
@@ -265,7 +266,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
             });
 
-            const { reply, via } = await processIncomingDocument(
+            const { reply, via, tokens } = await processIncomingDocument(
               media.buffer,
               mime,
               filename,
@@ -280,6 +281,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               role: 'assistant',
               content: reply.slice(0, 4000),
               via,
+              tokens,
             });
             noteExchange(chatKey);
             continue;
@@ -314,7 +316,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               }
 
               const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
-              const { reply, via } = await autoReply(prompt, context, webResults);
+              const { reply, via, tokens } = await autoReply(prompt, context, webResults);
               await sendWhatsAppCloudMessageSafe(from, reply);
               await saveMessage({
                 platform: 'whatsapp',
@@ -322,6 +324,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 role: 'assistant',
                 content: reply.slice(0, 4000),
                 via,
+                tokens,
               });
               noteExchange(chatKey);
             } catch (err) {
@@ -347,7 +350,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               content: '[Stiker WhatsApp]',
             });
 
-            const { reply, via } = await processIncomingSticker(
+            const { reply, via, tokens } = await processIncomingSticker(
               media.buffer,
               media.mime || 'image/webp',
               undefined,
@@ -361,6 +364,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               role: 'assistant',
               content: reply.slice(0, 4000),
               via,
+              tokens,
             });
             noteExchange(chatKey);
             continue;
@@ -383,7 +387,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, jelas, dan bersahabat.`
             : 'User mengirim video. Beritahukan dengan ramah bahwa videonya diterima, dan tanyakan apa yang ingin didiskusikan.';
 
-          const { reply, via } = await autoReply(prompt, context);
+          const { reply, via, tokens } = await autoReply(prompt, context);
           await sendWhatsAppCloudMessageSafe(from, reply);
           await saveMessage({
             platform: 'whatsapp',
@@ -391,6 +395,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             role: 'assistant',
             content: reply.slice(0, 4000),
             via,
+            tokens,
           });
           noteExchange(chatKey);
           continue;
@@ -454,7 +459,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         }
 
         // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
-        const { reply, via } = await autoReply(text, context, webResults);
+        const { reply, via, tokens } = await autoReply(text, context, webResults);
 
         // 5. Kirim balasan ke WhatsApp pengguna secepat mungkin
         await sendWhatsAppCloudMessageSafe(from, reply);
@@ -467,6 +472,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           role: 'assistant',
           content: reply.slice(0, 4000),
           via,
+          tokens,
         }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan assistant:', err));
 
         // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat

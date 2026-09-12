@@ -98,9 +98,9 @@ async function answerPhoto(
   const dl = await downloadTelegramBuffer(bot, fileId);
   if (!dl) return false;
   const mime = dl.filePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
-  const { reply, via } = await describeImage(dl.buffer.toString('base64'), mime, caption);
+  const { reply, via, tokens } = await describeImage(dl.buffer.toString('base64'), mime, caption);
   await sendTelegramMessageSafe(bot, chatId, reply);
-  await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via });
+  await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via, tokens });
   noteExchange(chatKey);
   return true;
 }
@@ -178,7 +178,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
-        const { reply, via } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', caption);
+        const { reply, via, tokens } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', caption);
         await sendTelegramMessageSafe(bot, chatId, reply);
         void saveMessage({
           platform: 'telegram',
@@ -186,6 +186,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           role: 'assistant',
           content: reply.slice(0, 4000),
           via,
+          tokens,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan video assistant:', err));
         noteExchange(chatKey);
         return;
@@ -221,7 +222,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
         const ctx = await getContext(chatKey);
-        const { reply, via } = await processIncomingDocument(dl.buffer, mime, filename, caption, ctx);
+        const { reply, via, tokens } = await processIncomingDocument(dl.buffer, mime, filename, caption, ctx);
         await sendTelegramMessageSafe(bot, chatId, reply);
         void saveMessage({
           platform: 'telegram',
@@ -229,6 +230,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           role: 'assistant',
           content: reply.slice(0, 4000),
           via,
+          tokens,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc assistant:', err));
         noteExchange(chatKey);
         return;
@@ -261,7 +263,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           }
 
           const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
-          const { reply, via } = await autoReply(prompt, ctx, web);
+          const { reply, via, tokens } = await autoReply(prompt, ctx, web);
           await sendTelegramMessageSafe(bot, chatId, reply);
           void saveMessage({
             platform: 'telegram',
@@ -269,6 +271,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
             role: 'assistant',
             content: reply.slice(0, 4000),
             via,
+            tokens,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN assistant:', err));
           noteExchange(chatKey);
         } catch (err) {
@@ -313,7 +316,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       if (!msg.sticker.is_animated && !msg.sticker.is_video) {
         const dl = await downloadTelegramBuffer(bot, msg.sticker.file_id);
         if (dl) {
-          const { reply, via } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx);
+          const { reply, via, tokens } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx);
           await sendTelegramMessageSafe(bot, chatId, reply);
           void saveMessage({
             platform: 'telegram',
@@ -321,6 +324,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
             role: 'assistant',
             content: reply.slice(0, 4000),
             via,
+            tokens,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker assistant:', err));
           noteExchange(chatKey);
           return;
@@ -329,7 +333,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
       // Fallback untuk stiker animasi / video stiker atau jika download gagal
       const prompt = `Pengguna mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya seorang sahabat mengobrol.`;
-      const { reply, via } = await autoReply(prompt, ctx);
+      const { reply, via, tokens } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
       void saveMessage({
         platform: 'telegram',
@@ -337,6 +341,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         role: 'assistant',
         content: reply.slice(0, 4000),
         via,
+        tokens,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker fallback assistant:', err));
       noteExchange(chatKey);
       return;
@@ -358,7 +363,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
         : 'User mengirim pesan video. Sampaikan secara ramah bahwa videonya diterima, dan tanyakan apa yang ingin didiskusikan.';
 
-      const { reply, via } = await autoReply(prompt, ctx);
+      const { reply, via, tokens } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
       void saveMessage({
         platform: 'telegram',
@@ -366,6 +371,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         role: 'assistant',
         content: reply.slice(0, 4000),
         via,
+        tokens,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan video assistant:', err));
       noteExchange(chatKey);
       return;
@@ -388,12 +394,12 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const found = await searchWeb(text, prevContext);
       if (found) web = found;
     }
-    const { reply, escalate, via } = await autoReply(text, ctx, web);
+    const { reply, escalate, via, tokens } = await autoReply(text, ctx, web);
     await sendTelegramMessageSafe(bot, chatId, reply);
 
     // Update cache memori & simpan balasan asisten ke database secara non-blocking
     updateContextCache(chatKey, 'assistant', reply);
-    void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via })
+    void saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via, tokens })
       .catch((err) => console.warn('[telegram] Gagal simpan pesan assistant:', err));
     noteExchange(chatKey);
 

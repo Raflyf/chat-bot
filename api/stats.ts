@@ -290,17 +290,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     const modelCounts: Record<string, number> = {};
     let totalModelCalls = 0;
-    const latestActiveModel = assistantMsgs?.[0]?.via || null;
+    const rawLatest = assistantMsgs?.[0]?.via || null;
+    const latestActiveModel = rawLatest ? rawLatest.split('#')[0].trim() : null;
     const recentModelOrder: string[] = [];
     const seenRecent = new Set<string>();
 
     for (const m of assistantMsgs ?? []) {
-      const model = m.via || 'unknown';
+      const rawModel = m.via || 'unknown';
+      const model = rawModel.split('#')[0].trim();
       modelCounts[model] = (modelCounts[model] || 0) + 1;
       totalModelCalls++;
-      if (m.via && !seenRecent.has(m.via)) {
-        seenRecent.add(m.via);
-        recentModelOrder.push(m.via);
+      if (model && model !== 'unknown' && !seenRecent.has(model)) {
+        seenRecent.add(model);
+        recentModelOrder.push(model);
       }
     }
 
@@ -338,7 +340,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         resetCycle: 'Harian (00:00 UTC)',
         contextWindow: '1.000.000 Token (1M)',
         primaryModel: config.models.xkiroPrimary,
-        backupModel: config.models.xkiroBackup[0] || 'qwen/qwen3.6-plus:free',
+        backupModel: config.models.xkiroBackup[0] || 'mistralai/mistral-medium-3.5',
         allModels: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
       },
       {

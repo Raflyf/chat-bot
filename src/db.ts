@@ -16,16 +16,23 @@ export async function saveMessage(row: {
   role: string;
   content: string;
   via?: string;
+  tokens?: { prompt: number; completion: number; total: number };
 }): Promise<void> {
   const c = db();
   if (!c) return;
   try {
+    let viaStr = row.via ?? null;
+    if (viaStr && row.tokens && (row.tokens.prompt > 0 || row.tokens.total > 0)) {
+      if (!viaStr.includes('#t=')) {
+        viaStr = `${viaStr}#t=${row.tokens.prompt},${row.tokens.completion},${row.tokens.total}`;
+      }
+    }
     await c.from('messages').insert({
       platform: row.platform,
       chat_id: row.chat_id,
       role: row.role,
       content: row.content.slice(0, 4000),
-      via: row.via ?? null,
+      via: viaStr,
     });
   } catch {
     // best-effort, abaikan

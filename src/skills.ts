@@ -678,7 +678,10 @@ function wait(ms: number): Promise<void> {
 }
 
 /** Coba chat dengan failover chain; retry singkat 1.5 dtk jika seluruh chain pertama gagal. */
-async function chatRetry(messages: ChatMsg[], vision: boolean): Promise<{ text: string; via: string }> {
+async function chatRetry(
+  messages: ChatMsg[],
+  vision: boolean,
+): Promise<{ text: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   try {
     return await chat(messages, { vision });
   } catch {
@@ -752,7 +755,12 @@ export async function autoReply(
   userText: string,
   ctx?: ChatContext,
   web?: string | null,
-): Promise<{ reply: string; escalate: boolean; via: string }> {
+): Promise<{
+  reply: string;
+  escalate: boolean;
+  via: string;
+  tokens?: { prompt: number; completion: number; total: number };
+}> {
   const clean = userText.trim().slice(0, 32000);
   if (!clean) return { reply: statusDown(), escalate: true, via: 'empty' };
 
@@ -771,7 +779,7 @@ export async function autoReply(
   }
 
   try {
-    const { text, via } = await chatRetry(buildMessages(clean, ctx, web), false);
+    const { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web), false);
     let reply = sanitizeAssistantOutput(text);
 
     // Proteksi program: jika user meminta joke atau gombalan dan model membocorkan punchline langsung di pesan yang sama
@@ -804,7 +812,7 @@ export async function autoReply(
       }
     }
 
-    return { reply, escalate: false, via };
+    return { reply, escalate: false, via, tokens };
   } catch {
     return { reply: statusDown(), escalate: true, via: 'failed' };
   }
@@ -815,7 +823,11 @@ export async function describeImage(
   base64: string,
   mime: string,
   caption?: string,
-): Promise<{ reply: string; via: string }> {
+): Promise<{
+  reply: string;
+  via: string;
+  tokens?: { prompt: number; completion: number; total: number };
+}> {
   const isSticker = mime.includes('webp');
   const isPdf = mime === 'application/pdf';
 
@@ -873,6 +885,6 @@ export async function describeImage(
     { role: 'system', content: systemPrompt(undefined, null, promptText) },
     { role: 'user', content: parts },
   ];
-  const { text, via } = await chatRetry(messages, true);
-  return { reply: sanitizeAssistantOutput(text), via };
+  const { text, via, tokens } = await chatRetry(messages, true);
+  return { reply: sanitizeAssistantOutput(text), via, tokens };
 }
