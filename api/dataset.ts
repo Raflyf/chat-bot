@@ -17,10 +17,69 @@ export interface DatasetPair {
   botReply: string;
   via: string;
   createdAt: string;
+  dateStr?: string;
+  timeStr?: string;
+  fullLocalStr?: string;
   promptTokens: number;
   completionTokens: number;
   contextTokens: number;
   totalTokens: number;
+}
+
+export function formatLocalComponents(
+  isoDateStr: string,
+  tz: string = 'Asia/Jakarta',
+): {
+  dateStr: string;
+  timeStr: string;
+  fullLocalStr: string;
+} {
+  const d = new Date(isoDateStr);
+  if (isNaN(d.getTime())) {
+    return {
+      dateStr: '-',
+      timeStr: '-',
+      fullLocalStr: '-',
+    };
+  }
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+
+    const year = parts.find((p) => p.type === 'year')?.value || '1970';
+    const month = parts.find((p) => p.type === 'month')?.value || '01';
+    const day = parts.find((p) => p.type === 'day')?.value || '01';
+    const hour = parts.find((p) => p.type === 'hour')?.value || '00';
+    const minute = parts.find((p) => p.type === 'minute')?.value || '00';
+    const second = parts.find((p) => p.type === 'second')?.value || '00';
+
+    const dateStr = `${year}-${month}-${day}`;
+    const timeStr = `${hour}:${minute}:${second}`;
+    const tzLabel =
+      tz === 'Asia/Jakarta'
+        ? 'WIB'
+        : tz === 'Asia/Makassar'
+        ? 'WITA'
+        : tz === 'Asia/Jayapura'
+        ? 'WIT'
+        : tz;
+    const fullLocalStr = `${dateStr} ${timeStr} ${tzLabel}`;
+
+    return { dateStr, timeStr, fullLocalStr };
+  } catch {
+    const dateStr = d.toISOString().slice(0, 10);
+    const timeStr = d.toISOString().slice(11, 19);
+    return { dateStr, timeStr, fullLocalStr: `${dateStr} ${timeStr} UTC` };
+  }
 }
 
 function calculateTimeBounds(
@@ -31,6 +90,7 @@ function calculateTimeBounds(
   startDateIso: string | null;
   endDateIso: string | null;
   localTodayStr: string;
+  localTimeStr: string;
   fileLabel: string;
 } {
   const now = new Date();
@@ -38,16 +98,28 @@ function calculateTimeBounds(
   let endDateIso: string | null = null;
 
   let localTodayStr = 'today';
+  let localTimeStr = '00-00';
   try {
-    const fmt = new Intl.DateTimeFormat('en-CA', {
+    const dateParts = new Intl.DateTimeFormat('en-CA', {
       timeZone: tz,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-    });
-    localTodayStr = fmt.format(now);
+    }).format(now);
+    localTodayStr = dateParts;
+
+    const timeParts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(now);
+    const h = timeParts.find((p) => p.type === 'hour')?.value || '00';
+    const m = timeParts.find((p) => p.type === 'minute')?.value || '00';
+    localTimeStr = `${h}-${m}`;
   } catch {
     localTodayStr = now.toISOString().slice(0, 10);
+    localTimeStr = `${String(now.getUTCHours()).padStart(2, '0')}-${String(now.getUTCMinutes()).padStart(2, '0')}`;
   }
 
   function getTzOffset(date: Date, timeZone: string): string {
@@ -81,29 +153,30 @@ function calculateTimeBounds(
         startDateIso,
         endDateIso,
         localTodayStr,
-        fileLabel: targetDate === localTodayStr ? `hari_ini_${targetDate}` : `tgl_${targetDate}`,
+        localTimeStr,
+        fileLabel: (targetDate === localTodayStr ? `hari_ini_${targetDate}` : `tgl_${targetDate}`) + `_jam_${localTimeStr}`,
       };
     }
   }
 
-  let fileLabel = `${range}_${localTodayStr}`;
+  let fileLabel = `${range}_${localTodayStr}_jam_${localTimeStr}`;
   if (range === 'today') {
     startDateIso = new Date(`${localTodayStr}T00:00:00${offset}`).toISOString();
-    fileLabel = `hari_ini_${localTodayStr}`;
+    fileLabel = `hari_ini_${localTodayStr}_jam_${localTimeStr}`;
   } else if (range === '7d') {
     startDateIso = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    fileLabel = `7_hari_${localTodayStr}`;
+    fileLabel = `7_hari_${localTodayStr}_jam_${localTimeStr}`;
   } else if (range === '14d') {
     startDateIso = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-    fileLabel = `14_hari_${localTodayStr}`;
+    fileLabel = `14_hari_${localTodayStr}_jam_${localTimeStr}`;
   } else if (range === '30d') {
     startDateIso = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    fileLabel = `30_hari_${localTodayStr}`;
+    fileLabel = `30_hari_${localTodayStr}_jam_${localTimeStr}`;
   } else {
-    fileLabel = `semua_${localTodayStr}`;
+    fileLabel = `semua_${localTodayStr}_jam_${localTimeStr}`;
   }
 
-  return { startDateIso, endDateIso, localTodayStr, fileLabel };
+  return { startDateIso, endDateIso, localTodayStr, localTimeStr, fileLabel };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
@@ -129,7 +202,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     if (format === 'csv') {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="freeaibot_dataset_empty.csv"');
-      res.status(200).send('ID,Platform,Chat_ID,Created_At,Context_Tokens,Output_Tokens,Total_Tokens,User_Prompt,Bot_Reply\n');
+      res.status(200).send('ID,Tanggal,Jam,Waktu_Lokal,Platform,User_Chat,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n');
       return;
     }
     if (format === 'jsonl') {
@@ -169,32 +242,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       .order('id', { ascending: false })
       .limit(dbLimit);
 
+    // Filter tanggal dinamis
     if (startDateIso) {
       query = query.gte('created_at', startDateIso);
     }
     if (endDateIso) {
       query = query.lte('created_at', endDateIso);
     }
-    if (platform && platform !== 'all') {
-      query = query.eq('platform', platform);
+
+    const { data: messages, error } = await query;
+
+    if (error) {
+      console.error('[api/dataset] Database query error:', error);
+      res.status(500).json({ ok: false, error: 'Gagal mengambil riwayat pesan dari database.' });
+      return;
     }
 
-    const { data: rawMsgs, error } = await query;
-    if (error) throw error;
-
-    // Balik urutan ke kronologis (ascending) agar algoritma pairing user -> bot bekerja sempurna
-    const msgs = (rawMsgs || []).reverse();
+    // Rekonstruksi pasangan prompt user dan jawaban bot
+    const rawList = (messages || []).slice().reverse();
     const pairs: DatasetPair[] = [];
 
-    for (let i = 0; i < msgs.length; i++) {
-      if (msgs[i].role === 'user') {
-        const userMsg = msgs[i];
-        let botMsg = null;
-
-        // Cari jawaban bot terdekat berikutnya pada chat_id yang sama
-        if (i + 1 < msgs.length && msgs[i + 1].chat_id === userMsg.chat_id && msgs[i + 1].role === 'assistant') {
-          botMsg = msgs[i + 1];
-          i++; // Lewati pesan balasan agar tidak dipasangkan ganda
+    for (let i = 0; i < rawList.length; i++) {
+      const userMsg = rawList[i];
+      if (userMsg.role === 'user') {
+        let botMsg: any = null;
+        for (let j = i + 1; j < rawList.length; j++) {
+          if (
+            rawList[j].chat_id === userMsg.chat_id &&
+            rawList[j].platform === userMsg.platform &&
+            rawList[j].role === 'assistant'
+          ) {
+            botMsg = rawList[j];
+            break;
+          }
+          if (
+            rawList[j].chat_id === userMsg.chat_id &&
+            rawList[j].platform === userMsg.platform &&
+            rawList[j].role === 'user'
+          ) {
+            break;
+          }
         }
 
         const prompt = userMsg.content || '';
@@ -222,6 +309,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const contextTokens = 650 + promptTokens;
         const totalTokens = contextTokens + completionTokens;
 
+        const tsRaw = botMsg?.created_at || userMsg.created_at;
+        const timeInfo = formatLocalComponents(tsRaw, tzParam);
+
         pairs.push({
           id: userMsg.id,
           platform: pForm,
@@ -229,7 +319,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           userPrompt: prompt,
           botReply: reply,
           via,
-          createdAt: botMsg?.created_at || userMsg.created_at,
+          createdAt: tsRaw,
+          dateStr: timeInfo.dateStr,
+          timeStr: timeInfo.timeStr,
+          fullLocalStr: timeInfo.fullLocalStr,
           promptTokens,
           completionTokens,
           contextTokens,
@@ -258,7 +351,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
               id: p.id,
               platform: p.platform,
               model_via: p.via,
-              timestamp: p.createdAt,
+              timestamp_lokal: p.fullLocalStr,
+              tanggal_lokal: p.dateStr,
+              jam_lokal: p.timeStr,
+              timestamp_utc: p.createdAt,
               context_tokens: p.contextTokens,
               output_tokens: p.completionTokens,
               total_tokens: p.totalTokens,
@@ -275,15 +371,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
 
-    // Format 2: CSV (Format Evaluasi Spreadsheet / Excel)
+    // Format 2: CSV (Format Evaluasi Spreadsheet / Excel dengan Tanggal & Jam Terpisah)
     if (format === 'csv') {
-      const escapeCsv = (str: string) => `"${(str || '').replace(/"/g, '""')}"`;
-      const csvHeader = 'ID,Waktu,Platform,User_Chat,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens\n';
+      const escapeCsv = (str: string | number | undefined | null) => `"${String(str ?? '').replace(/"/g, '""')}"`;
+      const csvHeader = 'ID,Tanggal,Jam,Waktu_Lokal,Platform,User_Chat,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n';
       const csvRows = finalPairs
         .map((p) =>
           [
             p.id,
-            escapeCsv(p.createdAt),
+            escapeCsv(p.dateStr),
+            escapeCsv(p.timeStr),
+            escapeCsv(p.fullLocalStr),
             escapeCsv(p.platform),
             escapeCsv(p.userPrompt),
             escapeCsv(p.botReply),
@@ -291,6 +389,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
             p.contextTokens,
             p.completionTokens,
             p.totalTokens,
+            escapeCsv(p.createdAt),
           ].join(','),
         )
         .join('\n');
