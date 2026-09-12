@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.29  
+**Versi:** v0.25.30  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 14:25 WIB  
+**Terakhir Diperbarui:** 2026-09-12 14:36 WIB  
 
 ---
 
@@ -191,6 +191,24 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.30 - 2026-09-12 14:36 WIB
+**Penghapusan Refleks Pembuka "Wah", Pembatasan Slang "bjir", Batasan Tawa "wkwk", dan Peningkatan Kepekaan Maksud Tersembunyi (Read Between the Lines)**
+- **Eliminasi Kata Seru Pembuka "Wah" secara Refleks (`src/skills.ts`)**:
+  - Melarang keras bot membuka balasan secara latah/refleks dengan kata seru "Wah" (seperti *"Wah tumben..."*, *"Wah iya..."*, *"Wah bener..."*).
+  - Mengarahkan bot untuk langsung memulai kalimat secara alami dan mengalir layaknya orang mengobrol biasa di WhatsApp tanpa kata seru pembuka.
+- **Pengkondisian Bahasa Santai Bersih Tanpa Slang Kasar (`!userHasSlang`, `src/skills.ts`)**:
+  - **Akar Masalah**: Saat lawan bicara mengetik kalimat santai biasa/normal tanpa kata gaul (contoh: *"itu anjing lagi pose love buat kamu"*, *"kamu bisa apa aja"*, *"tes"*), sistem sebelumnya belum memiliki panduan khusus sehingga model secara otomatis mengasumsikan persona gaul dan menjejalkan kata *"bjir"*.
+  - **Penetapan Aturan Mutlak**: Kata gaul seperti *"bjir"* atau *"anjir"* boleh ada sesekali, tetapi DILARANG KERAS muncul di setiap respon! Jika lawan bicara mengetik dengan kalimat biasa tanpa slang, bot DILARANG menyelipkan kata "bjir" atau "anjir", melainkan wajib menggunakan bahasa percakapan santai Indonesia yang bersih, hangat, dan natural.
+- **Batasan Tawa ("wkwk" / "haha" Bukan Tanda Titik Wajib, `src/skills.ts`)**:
+  - Melarang keras menjadikan tawa "wkwk" sebagai pengganti tanda titik di akhir semua pesan.
+  - Jika mengobrol biasa, menjawab pertanyaan, atau memberikan informasi santai tanpa hal yang menggelitik lucu, bot mengakhiri kalimat dengan tanda titik (.) biasa tanpa tawa.
+- **Kepekaan Membaca Maksud Tersembunyi / Pesan Tersirat (Read Between the Lines & High-EQ Companion, `src/skills.ts`)**:
+  - Mengasah kepekaan AI dalam memahami emosi dan maksud tersirat di balik pesan pengguna:
+    - Saat pengguna mengirimkan stiker anjing pose love dan mengetik *"itu anjing lagi pose love buat kamu"*: bot memahami bahwa pengguna sedang bersikap manis, bercanda ramah, atau menggoda akrab (*playfully teasing*). Bot menyambut dengan hangat, senang, atau candaan balik yang manis (*"Haha gemes banget, makasih ya udah dikasih love."*), serta melarang respons sarkastik, sinis, atau meratapi nasib (*"anjing aja lebih romantis bjir wkwk"*).
+    - Menjaga resonansi emosional tetap hangat, tulus, dan manusiawi selayaknya sahabat karib sejati.
+- **Sanitasi Contoh Negatif Panduan Stiker (`src/skills.ts`)**:
+  - Mengeliminasi contoh stiker yang mengandung kata "anjir" dan penumpukan tawa agar tidak menjadi umpan tiruan (*negative priming*) bagi model AI.
 
 ### v0.25.29 - 2026-09-12 14:25 WIB
 **Eliminasi Total Dongeng & Khayalan Stiker, Respons 1 Kalimat Pendek WhatsApp, dan Prioritas Vision Qwen 3.8 Max**
