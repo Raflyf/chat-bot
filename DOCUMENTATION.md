@@ -206,6 +206,20 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.26.11 - 2026-09-12 21:05 WIB
+
+**Penerapan Protokol Universal Anti-Sycophancy (Anti-Penjilat), Penegakan Integritas Faktual, dan Eliminasi Persetujuan Buta (*Zero Blind Yes-Man*)**
+
+- **Prinsip Universal Anti-Sycophancy (Prinsip 0 di `src/skills.ts`)**:
+  - **Akar Masalah**: Model AI memiliki bias bawaan (*sycophancy*) untuk selalu menyenangkan dan menyetujui pernyataan lawan bicara, termasuk mengarang-ngarang alasan pembenaran saat tebakan/fakta yang diutarakan pengguna sebenarnya keliru atau sekadar plesetan.
+  - **Larangan Mutlak Menjadi "Yes-Man"**: Dilarang keras bot selalu mengangguk, membenarkan, atau pura-pura sepakat jika klaim pengguna secara fakta, logika, sains, matematika, atau aturan adalah keliru.
+  - **Koreksi Santai & Bersahabat**: Jika pengguna membuat klaim salah (misal hitungan salah, fakta geografis keliru, atau logika bengkok), bot wajib meluruskan secara santai, jujur, dan membumi layaknya sahabat sejati yang tidak menjilat.
+- **Integritas Kunci Jawaban Tebak-Tebakan (Bagian 3 `src/skills.ts`)**:
+  - Bot wajib konsisten dengan 1 kunci jawaban baku saat melempar tebak-tebakan.
+  - Jika tebakan pengguna bukan kunci jawaban asli lelucon tersebut (meskipun terdengar lucu/masuk akal seperti kasus "bebek goreng"), bot dilarang mengarang pembenaran dan wajib menyatakan dengan santai bahwa tebakannya meleset/salah.
+- **Penegakan Grounding Matematika & Logika (Bagian 7 `src/skills.ts`)**:
+  - Melarang bot mengaminkan perhitungan atau klaim angka yang salah dari pengguna (seperti 1+1=3 atau pembagian nol = 0).
+
 ### v0.26.10 - 2026-09-12 20:58 WIB
 
 **Penyederhanaan Logika Konfigurasi Model xKiro (Refactoring Clean Code) & Otomasi Fallback Tanpa Dependensi Env Vercel**
