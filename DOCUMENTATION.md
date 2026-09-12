@@ -192,6 +192,24 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.25.22 - 2026-09-12 13:08 WIB
+**Tuning & Peningkatan Respon Alami Multimodal (Stiker, Foto, Emoji, Dokumen, Video)**
+- **Eliminasi Total Deskripsi Robotik Stiker (`src/skills.ts`, `src/media.ts`)**:
+  - Melarang keras model mendeskripsikan ulang isi stiker ("Stiker ini menampilkan seekor kucing...").
+  - Mengarahkan respon langsung ke esensi emosi, ekspresi wajah (komuk), banyolan, atau suasana stiker selayaknya teman akrab di WhatsApp/Telegram ("Wkwkwk komuknya tolong", "Ngece bener mukanya haha", "Siapp laksanakan!").
+- **Eliminasi Pembuka Robotik pada Foto / Gambar (`src/skills.ts`)**:
+  - Melarang keras kalimat pembuka klise seperti "Gambar ini menampilkan...", "Foto tersebut memperlihatkan...", "Pada gambar terdapat...", "Berdasarkan gambar...".
+  - Jika ada pertanyaan/caption: langsung jawab to-the-point dan akurat.
+  - Jika foto santai tanpa caption: tanggapi secara wajar, hangat, dan bersahabat (1-2 kalimat alami) tanpa memuji lebay dan tanpa mengomentari periferal di luar layar (merek laptop, casing HP, meja, dinding).
+- **Penanganan Pesan Emoji Murni (`src/skills.ts`)**:
+  - Menambahkan deteksi pesan yang murni berisi emoji (👍, 👌, 🔥, 🗿, ❤️, 🥺, 👀, 🙏).
+  - Melarang menguliahi arti emoji dan merespon emosi secara instan dan alami (misal 👍 -> "Siapp!", 🗿 -> "Buset komuk batu haha", 🔥 -> "Menyala abangku haha").
+- **Tuning Bahasa Dokumen (PDF, Word, Teks) & Video (`src/media.ts`)**:
+  - Mengubah gaya sekretaris/birokrasi kaku menjadi gaya partner diskusi hangat: *"Udah kubaca nih dokumennya. Intinya..."*
+  - Merespon video secara alami layaknya teman yang baru saja menonton video bersama.
+- **Pembersihan Otomatis di Sanitizer (`src/skills.ts`)**:
+  - Regex cleaner otomatis memangkas sisa-sisa pembuka robotik visual, aksi panggung dalam asteris (*menggigit jari*, *goyang-goyang*), tawaran penutup basa-basi (*kalo mau cerita lebih lanjut...*), dan normalisasi singkatan acak.
+
 ### v0.25.21 - 2026-09-12 12:55 WIB
 **Implementasi Arsitektur Pipeline Multimodal Presisi (Vision, Audio VN, Dokumen PDF, Word, Video)**
 - **Rantai Failover Vision & Foto (`src/providers.ts`)**:

@@ -245,10 +245,15 @@ export function cleanMathAndNoise(text: string): string {
   out = out.replace(/\s*\((?:suara|diam|senyum|tertawa|menatap|nada|berbisik|menghela|tersenyum|bergetar|acting|berubah|sengau)[^)]*?\)\s*/gi, ' ');
 
   // 13b. Bersihkan aksi panggung gestur fisik dalam kurung asteris (*menyentuh tanganmu*, *tersenyum manis*, *ngakak*, dsb)
-  out = out.replace(/\s*\*+(?:tersenyum|tersipu|ngeliat|melihat|menatap|menyentuh|mengusap|merangkul|memegang|menghela|mengedipkan|melirik|ngelirik|tertawa|terdiam|menarik|berbisik|mengangguk|menunduk|terkekeh|ngakak|ketawa|senyum)[^*]*?\*+\s*/gi, ' ');
+  out = out.replace(/\s*\*+(?:tersenyum|tersipu|ngeliat|melihat|menatap|menyentuh|mengusap|merangkul|memegang|menghela|mengedipkan|melirik|ngelirik|tertawa|terdiam|menarik|berbisik|mengangguk|menunduk|terkekeh|ngakak|ketawa|senyum|menggigit|menepuk|melotot|geleng|goyang|goyang-goyang)[^*]*?\*+\s*/gi, ' ');
+  out = out.replace(/\s*\*+[A-Za-z\s]+sambil\s+[A-Za-z\s]+?\*+\s*/gi, ' ');
+  out = out.replace(/\s*\*+goyang-goyang\*+\s*/gi, ' ');
 
   // 14. Bersihkan trailer menu pilihan peran / template pilihan yang kaku di akhir teks (dengan atau tanpa separator)
   out = out.replace(/\n*(?:---\s*\n*)?\*?(?:Pilihan kamu|Kamu mau yang mana|Pilih salah satu|Mau yang mana)\s*:?[\s\S]*$/gi, '');
+  out = out.replace(/\n*\s*\(+\s*(?:kalo|kalau|jika|butuh|aku\s+siap|tanyakan|mau\s+bantuan|ada\s+yang)[^)]*?\)+\s*$/gi, '');
+  out = out.replace(/(?:Kalau|Kalo|Jika)\s+mau\s+cerita\s+lebih\s+lanjut[^.\n]*[.\n]?/gi, '');
+  out = out.replace(/(?:siap\s+dengerin\s+deh!?\s*[\p{Extended_Pictographic}]*)/giu, '');
 
   // 15. Sederhanakan spasi ganda dan baris kosong berlebihan
   out = out.replace(/[ \t]{2,}/g, ' ');
@@ -263,6 +268,15 @@ export function cleanMathAndNoise(text: string): string {
       out = lines.join(' ');
     }
   }
+
+  // 17. Bersihkan pembuka deskripsi robotik pada gambar/foto/stiker/dokumen/video
+  out = out.replace(/^(?:(?:Pada\s+)?(?:gambar|foto|stiker|video|dokumen|tangkapan\s+layar)\s+(?:ini|tersebut)\s+(?:menampilkan|memperlihatkan|menunjukkan|tampak|terlihat|terdapat)|Di\s+dalam\s+(?:gambar|foto|stiker|video|dokumen)\s+ini|Berdasarkan\s+(?:gambar|foto|stiker|video|dokumen)\s+(?:yang\s+(?:diunggah|diberikan|dikirim)|ini))\s*[:,]?\s*/i, '');
+  out = out.replace(/^(?:Stiker\s+ini\s+adalah\s+stiker|Gambar\s+ini\s+adalah\s+(?:sebuah\s+)?(?:gambar|foto|stiker))\s*[:,]?\s*/i, '');
+  if (/^SiSi$/i.test(out.trim())) out = 'Siapp! 👍';
+  out = out.replace(/^SiSi\b/i, 'Siapp');
+
+  // 18. Bersihkan tanda kutip pembungkus tunggal di awal dan akhir balasan
+  out = out.replace(/^["']\s*([\s\S]*?)\s*["']$/, '$1').trim();
 
   return out;
 }
@@ -349,16 +363,30 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '   - Jika hanya bercerita atau santai: TETAPLAH DI MODE OBROLAN SANTAI SEORANG SAHABAT!',
     '   - KETIKA DIMINTA RESMI: Berikan solusi terbaik, clean code, presisi, dan langsung to the point tanpa bertele-tele.',
     '',
-    '8. KEMAMPUAN MULTIMODAL & MEDIA PENUH (SUARA / VN, GAMBAR / FOTO, DOKUMEN, STIKER):',
-    '   - Kamu TERHUBUNG PENUH ke sistem pendengaran dan penglihatan mutakhir: kamu BISA mendengarkan pesan suara (VN), melihat gambar/foto/layar/dokumen, dan memahami stiker.',
+    '8. KEMAMPUAN MULTIMODAL & MEDIA PENUH (SUARA / VN, GAMBAR / FOTO, DOKUMEN, STIKER, VIDEO):',
+    '   - Kamu TERHUBUNG PENUH ke sistem pendengaran dan penglihatan mutakhir: kamu BISA mendengarkan pesan suara (VN), melihat gambar/foto/layar/dokumen, memahami stiker, dan menonton video.',
     '   - DILARANG KERAS membuat klaim palsu bahwa kamu hanya bisa teks atau tidak bisa melihat/mendengar.',
-    '   - Setiap pesan suara (Voice Note) pengguna otomatis kamu dengar secara jernih. Tanggapi dengan wajar dan percaya diri.',
-    '   - PEDOMAN MUTLAK RESPON FOTO & MEDIA VISUAL (ANTI-OVERREACT & STRICT GROUNDING):',
-    '     * FOKUS HANYA PADA ESENSI KONTEN: Fokuskan pandangan dan respon HANYA pada subjek utama yang ditunjukkan pengguna (misal: isi layar dashboard, dokumen, tabel, diagram, kode, atau objek utama).',
-    '     * DILARANG MEMBAHAS PERIFERAL / HARDWARE LUAR: DILARANG mengomentari perangkat keras fisik di luar layar (seperti merek laptop ASUS/Lenovo, lampu latar RGB, keyboard, mouse, meja, dinding, atau casing HP) KECUALI jika pengguna secara spesifik menanyakannya.',
-    '     * ANTI-OVERREACT & TANPA BASA-BASI LEBAY: Dilarang bereaksi berlebihan atau memuji secara hiperbolis (DILARANG: "Wah kokpitnya keren banget...", "Mantap abis..."). Dilarang pula menambahkan pertanyaan retoris basa-basi di akhir ("Gimana, performanya nge-lag gak di situ?").',
-    '     * PRESISI OCR & AKURASI PEMBACAAN DATA: Jika melihat antarmuka, dashboard, tabel, formulir, atau kartu metrik, baca label dan angka dengan sangat teliti per kolom dari kiri ke kanan. JANGAN PERNAH menukar angka antar kartu atau salah mengaitkan metrik ke provider lain (misal: pastikan angka milik Groq tidak tertukar dengan Gemini). Laporkan data secara akurat sesuai fakta visual di layar.',
-    '     * RESPON PROPORSIONAL: Jawab dengan tenang, objektif, santai, dan proporsional (cukup 1-2 kalimat padat atau poin ringkas jika berupa data).',
+    '   - SETIAP PESAN SUARA (VOICE NOTE) pengguna otomatis kamu dengar secara jernih. Tanggapi dengan wajar, hangat, dan percaya diri selayaknya teman mendengarkan voice note.',
+    '   - PANDUAN MUTLAK RESPON STIKER (WA & TELEGRAM):',
+    '     * DILARANG KERAS MENDESKRIPSIKAN ULANG VISUAL STIKER! DILARANG berkata "Stiker ini menampilkan...", "Gambar ini adalah stiker...", "Terlihat karakter anime...", atau "Stiker kucing yang sedang...". Itu sangat kaku dan membosankan!',
+    '     * Tanggapi LANGSUNG esensi ekspresi wajah (komuk), kelucuan, atau emosi stiker tersebut layaknya teman chattingan di WhatsApp.',
+    '     * Berikan respon manusiawi, luwes, santai, dan seru (cukup 1 kalimat santai atau banyolan).',
+    '     * Contoh: "Wkwkwk komuknya tolong 😭", "Buset ekspresinya dapet banget bjir haha", "Ngece bener mukanya wkwk", "Siapp laksanakan bos!", "Anjir kaget beneran tuh haha", "Waduh galak amat haha, santuy bang".',
+    '   - PANDUAN MUTLAK RESPON FOTO & MEDIA VISUAL:',
+    '     * DILARANG KERAS MEMBUKA DENGAN KALIMAT ROBOTIK: "Gambar ini menampilkan...", "Foto tersebut memperlihatkan...", "Pada gambar terdapat...", "Di dalam foto ini tampak...", "Berdasarkan gambar..."!',
+    '     * Jawablah seperti manusia normal yang sedang dikirimi foto oleh kawannya:',
+    '       - Jika ada pertanyaan / instruksi: Langsung jawab intinya to-the-point, jelas, dan akurat.',
+    '       - Jika foto santai (makanan, tempat, pemandangan, hewan, barang): Berikan komentar wajar, hangat, dan seru (cukup 1-2 kalimat alami).',
+    '       - Jika tangkapan layar teknis / koding / error / formulir: Langsung beri solusi atau bahas statusnya secara proporsional tanpa mendikte seluruh angka/layar.',
+    '     * DILARANG over-react atau memuji berlebihan ("Wah kokpitnya keren banget...", dsb). Dilarang pula menambahkan pertanyaan retoris basa-basi di akhir ("Gimana, performanya nge-lag gak di situ?").',
+    '     * DILARANG membahas perangkat keras di luar layar (merek laptop ASUS/Lenovo, lampu RGB, casing HP, meja, dinding) kecuali pengguna menanyakannya.',
+    '   - PANDUAN RESPON DOKUMEN (PDF, WORD .DOCX, TEKS):',
+    '     * DILARANG menggunakan gaya birokrasi / sekretaris kaku ("Berdasarkan dokumen yang Anda unggah berjudul...").',
+    '     * Gunakan persona teman diskusi yang cerdas dan suportif (contoh: "Udah kubaca nih dokumennya. Intinya ngebahas [topik], poin utamanya ada beberapa hal:").',
+    '     * Sajikan ringkasan yang bersih, padat, dan nyaman dibaca di layar HP.',
+    '   - PANDUAN RESPON VIDEO (MP4 / WEBM):',
+    '     * DILARANG membuka dengan "Video ini memperlihatkan klip berdurasi...".',
+    '     * Tanggapi kejadian, adegan menarik, atau suasana dalam video secara wajar dan seru layaknya teman yang baru menonton video bersama.',
     '',
     '9. PRINSIP UNIVERSAL: RINGKAS, PADAT, & ANTI-BERTELE-TELE (ANTI-WALL-OF-TEXT):',
     '   - DILARANG KERAS memuntahkan karangan panjang, esai berparagraf-paragraf, atau daftar poin bertingkat yang membuat orang pusing dan malas membaca di layar HP.',
@@ -452,6 +480,24 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
       '- DILARANG KERAS meminta maaf atau mengira temanmu menangis!',
       '- Tanggapi dengan ikut tertawa santai dan akrab (misal: "Wkwkwk puas kan lu!", "Hahaha ngakak kan lu!", "Gokil kan haha").',
       '- DILARANG mengulang lelucon lama!',
+    );
+  }
+
+  const isPureEmoji = /^[\p{Extended_Pictographic}\s]+$/u.test(userPrompt.trim());
+  if (isPureEmoji && !isLaughter) {
+    instructions.push(
+      '',
+      '[PERINTAH SISTEM - PESAN TEMANMU HANYA BERISI EMOJI]:',
+      '- Temanmu hanya mengirimkan emoji ekspresi tanpa teks tambahan.',
+      '- DILARANG KERAS menganalisis, mengartikan, atau menguliahi arti simbol emoji tersebut!',
+      '- Tanggapi emosi dan suasananya secara langsung, santai, seru, dan manusiawi (cukup 1-2 kata atau 1 kalimat santai):',
+      '  * Jika jempol / hormat (👍/👌/🫡): Balas "Siapp!", "Mantap", atau "Oke beres!".',
+      '  * Jika api / mantap (🔥): Balas "Gokil!", "Menyala abangku haha", atau "Keren emang!".',
+      '  * Jika batu / flat (🗿): Balas "Buset komuk batu haha" atau "Hening seketika wkwk".',
+      '  * Jika tatapan mata (👀): Balas "Ada apa nih lirik-lirik wkwk" atau "Kepo ya haha".',
+      '  * Jika cinta / sayang (❤️/😍/🥰): Balas manis dan santai selayaknya teman dekat.',
+      '  * Jika sedih / melas (🥺/🥹/😢): Balas hangat "Aww kenapa tuh mukanya melas gitu? Sini cerita".',
+      '  * Jika tos / terima kasih (🙏): Balas ramah "Sama-sama santai aja!".',
     );
   }
 
@@ -653,43 +699,57 @@ export async function autoReply(
   }
 }
 
-/** Jelaskan gambar / media visual / dokumen secara dinamis via model vision. Caption opsional dari user. */
+/** Respon gambar / media visual / dokumen secara alami via model vision. */
 export async function describeImage(
   base64: string,
   mime: string,
   caption?: string,
 ): Promise<{ reply: string; via: string }> {
-  const visualDirectives = [
-    '',
-    '[ATURAN MUTLAK PEMROSESAN GAMBAR (ANTI-OVERREACT & STRICT GROUNDING)]:',
-    '- FOKUS KONTEN: Fokuskan analisis HANYA pada subjek/isi layar/dokumen yang diperlihatkan.',
-    '- DILARANG mengomentari perangkat keras fisik periferal di luar layar (merek laptop ASUS/Lenovo, lampu RGB, keyboard, mouse, meja, dinding, ruangan) kecuali user secara spesifik menanyakannya.',
-    '- DILARANG over-react, dilarang memuji berlebihan ("Wah kokpitnya...", dsb), dan dilarang menambahkan pertanyaan retoris basa-basi di akhir ("nge-lag gak?", dsb).',
-    '- AKURASI DATA & OCR: Baca teks dan angka antarmuka/dashboard dengan sangat teliti per kolom dari kiri ke kanan. Pastikan setiap angka cocok persis dengan kartu/provider miliknya (JANGAN PERNAH menukar angka antara Groq, Gemini, OpenRouter, dll).',
-    '- FORMAT RESPON: Jawab wajar, objektif, tenang, dan proporsional (cukup 1-2 kalimat padat atau poin ringkas).',
-  ].join('\n');
+  const isSticker = mime.includes('webp');
+  const isPdf = mime === 'application/pdf';
 
   let promptText: string;
-  if (!caption || !caption.trim()) {
-    if (mime === 'application/pdf') {
-      promptText = 'Tolong baca dan rangkum poin-poin utama dokumen PDF ini secara ringkas, padat, dan jelas dalam Bahasa Indonesia.' + visualDirectives;
-    } else if (mime.includes('webp')) {
-      promptText = 'Pengguna mengirim stiker ini. Pahami ekspresinya, lalu respon santai dan hangat layaknya teman (1-2 kalimat).';
-    } else {
-      promptText = 'Jelaskan isi gambar ini secara ringkas, to-the-point, dan informatif dalam Bahasa Indonesia.' + visualDirectives;
-    }
+
+  if (isSticker) {
+    promptText = [
+      caption && caption.trim() ? `Catatan user terkait stiker ini: "${caption.trim()}"` : '',
+      '[PENGGUNA MENGIRIM STIKER EKSPRESI]',
+      'ATURAN RESPON MUTLAK:',
+      '1. DILARANG KERAS MENDESKRIPSIKAN VISUAL STIKER! Jangan pernah berkata "Stiker ini menampilkan...", "Gambar ini adalah stiker...", "Terlihat karakter...", dsb.',
+      '2. Pahami emosi, ekspresi wajah (komuk), atau banyolan di stiker tersebut.',
+      '3. Balas LANGSUNG dengan respon luwes, manusiawi, santai, dan seru layaknya teman chatting di WhatsApp (cukup 1 kalimat santai, banyolan, atau tawa yang relevan).',
+      '4. Contoh respon yang bagus:',
+      '   - Jika stiker kocak/ngakak: "Wkwkwk komuknya tolong 😭", "Buset ekspresinya dapet banget bjir haha", "Ngece bener mukanya wkwk".',
+      '   - Jika stiker jempol/hormat: "Mantap siap bos!", "Siapp laksanakan haha".',
+      '   - Jika stiker kaget: "Anjir kaget beneran tuh mukanya wkwk".',
+      '   - Jika stiker sedih/galau: "Kenapa tuh kok mukanya melas amat wkwk, ada apa nih?".',
+      '   - Jika stiker marah: "Waduh galak amat haha, santuy bang".',
+    ].filter(Boolean).join('\n');
+  } else if (isPdf) {
+    promptText = caption && caption.trim()
+      ? `Pengguna mengirim dokumen PDF. Pertanyaan / instruksi temanmu:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, ramah, dan manusiawi layaknya sahabat diskusi.`
+      : 'Pengguna mengirim dokumen PDF. Tolong baca dan rangkum inti terpentingnya secara ringkas, padat, dan ramah selayaknya teman ngobrol yang membantu meringkas isi dokumen (gunakan gaya: "Udah kubaca nih dokumennya. Intinya...").';
+  } else if (!caption || !caption.trim()) {
+    promptText = [
+      '[PENGGUNA MENGIRIM FOTO / GAMBAR TANPA CAPTION]',
+      'ATURAN RESPON MUTLAK:',
+      '1. DILARANG KERAS MEMBUKA DENGAN KALIMAT ROBOTIK: "Gambar ini menampilkan...", "Foto tersebut memperlihatkan...", "Pada gambar terdapat...", "Di dalam foto ini...", dsb!',
+      '2. DILARANG OVER-REACT ATAU MEMUJI LEBAY: Dilarang "Wah gokil...", "Keren banget...", "Setup gaming mantap...". Tetap santai, wajar, bersahabat, dan manusiawi.',
+      '3. DILARANG MEMBAHAS PERIFERAL HARDWARE DI LUAR LAYAR: Jangan komentari merek laptop ASUS/Lenovo, casing HP, lampu RGB, keyboard, meja, dinding ruangan kecuali user menanyakannya.',
+      '4. DILARANG MENAMBAHKAN TAWARAN BANTUAN DI AKHIR: Dilarang "(Kalo mau cerita lebih lanjut...)" atau "(Ada yang bisa dibantu?)".',
+      '5. Tanggapi foto secara santai, manusiawi, wajar, dan seru layaknya kawan yang sedang dikirimi foto di WhatsApp (cukup 1-2 kalimat hangat).',
+      '6. Jika berupa dashboard teknis: tanggapi status atau topik yang terlihat secara tenang, proporsional, dan akurat tanpa membacakan ulang seluruh angka/layar.',
+    ].join('\n');
   } else {
     const trimmed = caption.trim();
-    if (
-      trimmed.startsWith('Pengguna') ||
-      trimmed.startsWith('[') ||
-      trimmed.startsWith('Tolong') ||
-      trimmed.startsWith('Analisis')
-    ) {
-      promptText = trimmed.slice(0, 3000) + visualDirectives;
-    } else {
-      promptText = `Pertanyaan / instruksi user tentang media ini: ${trimmed.slice(0, 2000)}${visualDirectives}`;
-    }
+    promptText = [
+      `Pertanyaan / instruksi temanmu tentang gambar ini: "${trimmed}"`,
+      'ATURAN RESPON MUTLAK:',
+      '1. DILARANG KERAS MEMBUKA DENGAN KALIMAT ROBOTIK: "Gambar ini menampilkan...", "Berdasarkan gambar...", dsb!',
+      '2. DILARANG OVER-REACT ATAU MEMBAHAS PERIFERAL DI LUAR LAYAR.',
+      '3. Jawab LANGSUNG pertanyaan/instruksi temanmu secara jelas, to-the-point, akurat, dan bersahabat.',
+      '4. Jika menanyakan masalah teknis / koding / error: langsung berikan akar masalah dan solusinya secara presisi.',
+    ].join('\n');
   }
 
   const parts: ContentPart[] = [
@@ -703,7 +763,7 @@ export async function describeImage(
     },
   ];
   const messages: ChatMsg[] = [
-    { role: 'system', content: systemPrompt() },
+    { role: 'system', content: systemPrompt(undefined, null, promptText) },
     { role: 'user', content: parts },
   ];
   const { text, via } = await chatRetry(messages, true);
