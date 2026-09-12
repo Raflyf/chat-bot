@@ -1,7 +1,7 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
-**Versi:** v0.25.25  
+**Versi:** v0.25.26  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-12 13:25 WIB  
+**Terakhir Diperbarui:** 2026-09-12 13:28 WIB  
 
 ---
 
@@ -191,6 +191,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.25.26 - 2026-09-12 13:28 WIB
+**Penyelarasan Gaya Bahasa Dinamis (Dynamic Style Mirroring & Chameleon), Resonansi Emosional & Eliminasi Respon Statis Kaku**
+- **Arsitektur Penyelarasan Gaya Bahasa Dinamis (Dynamic Tone Chameleon, `src/skills.ts`)**:
+  - Menetapkan prinsip mutlak bahwa gaya bahasa bot 100% bergantung pada gaya chat pengguna saat ini:
+    - **Chat Normal, Formal, Rapi, atau Serius**: Bot merespons secara normal, sopan, bersih, tenang, dan proporsional. Dilarang keras memaksakan slang gaul (dilarang tiba-tiba bjir, santuy, mager, wkwk) jika pengguna tidak menggunakannya.
+    - **Chat Santai, Kasual, atau Akrab**: Bot mengikuti alur santai secara luwes, bersahabat, hangat, dan membumi selayaknya teman akrab.
+    - **Chat Banyol, Humoris, atau Memakai Slang**: Bot ikut seirama dengan gaya gaul yang pas, tetap wajar dan tidak over-react.
+  - Mengintegrasikan deteksi register percakapan berbasis prompt pengguna (`userHasSlang` dan `userIsPoliteOrFormal`) yang secara otomatis menyuntikkan pedoman adaptasi tone kontekstual per giliran chat.
+- **Kecerdasan Emosional & Peka Rasa (Emotional Resonance & High-EQ Companion, `src/skills.ts`)**:
+  - Menginstruksikan model untuk memahami pesan pengguna menggunakan perasaan, ekspresi, dan kepekaan rasa yang dinamis (membaca suasana / read the room).
+  - Merespons kondisi emosional (lelah, stres, curhat, santai, banyol) dengan empati tulus dan kehangatan manusiawi tanpa menggurui atau memberikan solusi yang tidak diminta.
+- **Pembersihan Total Respon Statis Kaku & Anti-Perulangan (`src/skills.ts`)**:
+  - Melarang keras seluruh bentuk formula respons hafalan atau frasa template statis yang diulang-ulang.
+  - Menjamin seluruh jawaban dihasilkan secara organik dan dinamis dari pemahaman menyeluruh terhadap pesan pengguna pada saat itu.
 
 ### v0.25.25 - 2026-09-12 13:25 WIB
 **Presisi Grounding Matematika, Pembenahan Konteks Respons Ketidaktahuan ("Ih gak tau") & Eliminasi Penumpukan Tawa/Slang Cringe**
