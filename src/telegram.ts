@@ -98,7 +98,8 @@ async function answerPhoto(
   const dl = await downloadTelegramBuffer(bot, fileId);
   if (!dl) return false;
   const mime = dl.filePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
-  const { reply, via, tokens } = await describeImage(dl.buffer.toString('base64'), mime, caption);
+  const ctx = await getContext(chatKey);
+  const { reply, via, tokens } = await describeImage(dl.buffer.toString('base64'), mime, caption, ctx);
   await sendTelegramMessageSafe(bot, chatId, reply);
   await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply.slice(0, 4000), via, tokens });
   noteExchange(chatKey);
