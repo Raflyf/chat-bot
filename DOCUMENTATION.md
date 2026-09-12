@@ -233,6 +233,9 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - `saveMessage` mengirim kolom opsional `latency_ms`, `needs_search`, dan `prompt_version` (`v0.26.5`) secara best-effort untuk evaluasi fine-tuning.
 - **Pembersihan Kode Mati (`src/quota.ts`, `src/providers.ts`)**:
   - Menghapus helper `keyAllowed` yang tidak lagi dipakai setelah hidrasi kuota eksplisit.
+- **Pemulihan Toleransi Webhook Meta WhatsApp Cloud API (`src/whatsapp_cloud.ts`, `src/env.ts`)**:
+  - Memperbaiki regresi fail-closed signature Meta di mana webhook otomatis menolak seluruh pesan (HTTP 401) jika `WHATSAPP_APP_SECRET` belum terpasang di environment variable Vercel.
+  - Menjadikan verifikasi HMAC SHA-256 aktif jika secret ada, dan beralih ke fallback terproteksi Verify Token handshake jika secret belum diset agar bot tidak mengalami pemadaman total.
 
 ### v0.26.4 - 2026-09-12 18:35 WIB
 

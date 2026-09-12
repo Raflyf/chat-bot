@@ -37,8 +37,8 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
    - Dedup pesan atomik berbasis ID pesan Telegram dan upsert state media.
 
 2. **WhatsApp Cloud API (Meta Official):**
-   - Handler webhook HTTP standar industri via endpoint `/api/webhook/whatsapp`.
-   - Validasi signature payload SHA-256 (`x-hub-signature-256`) dengan timing-safe comparison dan raw-body stream buffer.
+   - Handler webhook HTTP standar industri via endpoint `/api/whatsapp`.
+   - Validasi signature payload SHA-256 (`x-hub-signature-256`) dengan timing-safe comparison dan raw-body stream buffer jika `WHATSAPP_APP_SECRET` dikonfigurasi, dengan fallback graceful (didukung Meta verify token handshake) untuk mencegah pemadaman layanan jika secret belum diset di Vercel.
    - Deduplikasi pesan atomik seketika memanfaatkan unique constraint database.
 
 3. **WhatsApp Web (Baileys Engine):**
