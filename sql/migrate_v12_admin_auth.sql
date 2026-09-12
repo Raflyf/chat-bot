@@ -7,7 +7,7 @@
 -- 1. Tabel Konfigurasi Autentikasi Admin
 CREATE TABLE IF NOT EXISTS public.admin_auth_config (
     id text PRIMARY KEY DEFAULT 'master_auth',
-    pin_hash text NOT NULL,
+    pin_hash text NULL,
     lockout_attempts int DEFAULT 0,
     locked_until timestamptz NULL,
     otp_code_hash text NULL,
@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS public.admin_auth_config (
     session_expires_at timestamptz NULL,
     updated_at timestamptz DEFAULT now()
 );
+
+-- Pastikan kolom pin_hash mengizinkan NULL jika tabel dibuat oleh migrasi sebelumnya
+ALTER TABLE public.admin_auth_config ALTER COLUMN pin_hash DROP NOT NULL;
 
 -- 2. Master PIN Default Configuration
 -- CATATAN KEAMANAN: Jangan menanam hardcoded hash PIN di migrasi publik.
