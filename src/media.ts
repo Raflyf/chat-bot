@@ -1,5 +1,5 @@
 import { config } from './env.js';
-import { autoReply, describeImage } from './skills.js';
+import { autoReply, describeImage, sanitizeAssistantOutput } from './skills.js';
 import type { ChatContext } from './memory.js';
 import mammoth from 'mammoth';
 import zlib from 'node:zlib';
@@ -172,7 +172,7 @@ async function processPdfViaGemini(
       const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
       if (text) {
-        return { reply: text, via: `gemini/${model}` };
+        return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}` };
       }
     } catch (err) {
       console.warn(`[media] Gemini PDF [${model}] gagal:`, err);
@@ -264,8 +264,8 @@ export async function processIncomingDocument(
   // Kasus A: Dokumen PDF
   if (lowerName.endsWith('.pdf') || mime.includes('pdf')) {
     const prompt = caption && caption.trim()
-      ? `Pengguna mengirim berkas PDF "${filename}". Instruksi / pertanyaan:\n${caption.trim()}`
-      : `Pengguna mengirim berkas PDF "${filename}". Tolong baca, analisis, dan rangkum poin-poin terpenting dalam dokumen ini secara jelas, terstruktur, dan mudah dipahami.`;
+      ? `Pengguna mengirim dokumen PDF "${filename}". Pertanyaan / instruksi temanmu:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, jelas, dan manusiawi layaknya sahabat diskusi tanpa pembuka klise robotik.`
+      : `Pengguna mengirim dokumen PDF "${filename}". Tolong baca dan rangkum inti terpentingnya secara ringkas, padat, dan ramah selayaknya teman ngobrol yang membantu meringkas isi dokumen (gunakan gaya: "Udah kubaca nih dokumennya. Intinya...").`;
 
     // 1. Primary: gemini-3.8-flash
     const p1 = await processPdfViaGemini(buffer, prompt, config.models.geminiPrimary || 'gemini-3.8-flash');
@@ -332,8 +332,8 @@ export async function processIncomingVideo(
   caption?: string,
 ): Promise<{ reply: string; via: string }> {
   const prompt = caption && caption.trim()
-    ? `Pengguna mengirim video "${filename}". Pertanyaan / instruksi:\n${caption.trim()}`
-    : `Pengguna mengirim video "${filename}". Tolong tonton dan jelaskan alur kejadian, isi utama, serta konteks video ini secara ringkas dan informatif.`;
+    ? `Pengguna mengirim video "${filename}". Pertanyaan / instruksi:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, santai, dan alami tanpa kalimat pembuka robotik seperti "Video ini menampilkan...".`
+    : `Pengguna mengirim video "${filename}". Tonton dan tanggapi kejadian atau suasana dalam video ini secara wajar, santai, dan seru layaknya teman yang baru saja menonton bersama. DILARANG membuka dengan "Video ini memperlihatkan...".`;
 
   const models = [config.models.geminiPrimary || 'gemini-3.8-flash', config.models.geminiBackup || 'gemini-2.5-flash'];
   const keys = config.pools.gemini;
@@ -360,7 +360,7 @@ export async function processIncomingVideo(
         const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if (text) {
-          return { reply: text, via: `gemini/${model}` };
+          return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}` };
         }
       } catch (err) {
         console.warn(`[media] Video via Gemini [${model}] gagal:`, err);
