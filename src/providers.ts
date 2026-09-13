@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { config } from './env.js';
-import { isKeyAllowed, keyUsed, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
+import { isKeyAllowed, keyUsed, keyTokensUsed, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
 
 // --- CIRCUIT BREAKER & ADAPTIVE KEY ROUTING (LATENCY OPTIMIZER) ---
 const keyCooldownMap = new Map<string, number>(); // `${kind}:${keyHash}` -> timestamp cooldown
@@ -692,12 +692,18 @@ export async function chat(
       let allKeysFailedWithServerError = true;
 
       for (const key of candidateKeys) {
-        if (!(await isKeyAllowed(step.kind, key, step.cap))) continue;
+        // Guard RPD + TPD (token/hari): hentikan pool sebelum menabrak 429 upstream.
+        // Groq Free Tier: 1.000 RPD DAN 200K TPD — TPD biasanya tercapai lebih dulu.
+        if (!(await isKeyAllowed(step.kind, key, step.cap, config.dailyTokenCap[step.kind] || 0))) continue;
         anyKeyAttempted = true;
         try {
           const result = await step.run(key, model, messages);
           recordKeySuccess(step.kind, key, model);
           keyUsed(step.kind, key);
+          // Catat token harian (TPD) agar limit token upstream terpantau presisi
+          if (result.tokens?.total) {
+            keyTokensUsed(step.kind, key, result.tokens.total);
+          }
           cacheSet(cacheKey, result.text);
           return { text: result.text, via: `${step.kind}/${model}`, tokens: result.tokens };
         } catch (e) {

@@ -1,6 +1,7 @@
 import { config } from './env.js';
 import { autoReply, describeImage, sanitizeAssistantOutput } from './skills.js';
 import type { ChatContext } from './memory.js';
+import { keyUsed, isKeyAllowed, keyTokensUsed } from './quota.js';
 import mammoth from 'mammoth';
 import zlib from 'node:zlib';
 
@@ -17,6 +18,7 @@ async function transcribeViaGroq(buffer: Buffer, mime: string, model: string): P
   const u8Array = new Uint8Array(buffer);
 
   for (const key of keys) {
+    if (!(await isKeyAllowed('groq', key, config.dailyCap.groq))) continue;
     try {
       const formData = new FormData();
       formData.append('file', new Blob([u8Array], { type: mime }), filename);
@@ -33,6 +35,9 @@ async function transcribeViaGroq(buffer: Buffer, mime: string, model: string): P
       if (!res.ok) continue;
       const data = (await res.json()) as { text?: string };
       if (data.text && data.text.trim()) {
+        // Catat pemakaian kuota Groq (Whisper memakai kuota provider yang sama).
+        // Whisper dibatasi ASH/ASD (audio seconds), bukan TPD token, jadi hanya call count.
+        keyUsed('groq', key);
         return data.text.trim();
       }
     } catch (err) {
@@ -48,6 +53,7 @@ async function transcribeViaGemini(buffer: Buffer, mime: string, model: string):
   if (!keys || keys.length === 0) return null;
 
   for (const key of keys) {
+    if (!(await isKeyAllowed('gemini', key, config.dailyCap.gemini))) continue;
     try {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
         method: 'POST',
@@ -66,9 +72,19 @@ async function transcribeViaGemini(buffer: Buffer, mime: string, model: string):
       });
 
       if (!res.ok) continue;
-      const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const data = (await res.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        usageMetadata?: { totalTokenCount?: number };
+      };
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (text) return text;
+      if (text) {
+        // Catat pemakaian kuota Gemini (transkripsi audio memakai kuota provider yang sama)
+        keyUsed('gemini', key);
+        if (data.usageMetadata?.totalTokenCount) {
+          keyTokensUsed('gemini', key, Number(data.usageMetadata.totalTokenCount) || 0);
+        }
+        return text;
+      }
     } catch (err) {
       console.warn(`[media] Gemini audio [${model}] gagal:`, err);
     }
@@ -156,6 +172,7 @@ async function processPdfViaGemini(
   if (!keys || keys.length === 0) return null;
 
   for (const key of keys) {
+    if (!(await isKeyAllowed('gemini', key, config.dailyCap.gemini))) continue;
     try {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
         method: 'POST',
@@ -184,6 +201,8 @@ async function processPdfViaGemini(
       };
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
       if (text) {
+        // Catat pemakaian kuota Gemini (analisis PDF native memakai kuota provider yang sama)
+        keyUsed('gemini', key);
         const tokens = data.usageMetadata
           ? {
               prompt: Number(data.usageMetadata.promptTokenCount) || 0,
@@ -191,6 +210,7 @@ async function processPdfViaGemini(
               total: Number(data.usageMetadata.totalTokenCount) || 0,
             }
           : undefined;
+        if (tokens?.total) keyTokensUsed('gemini', key, tokens.total);
         return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}`, tokens };
       }
     } catch (err) {
@@ -436,6 +456,7 @@ export async function processIncomingVideo(
 
   for (const model of models) {
     for (const key of keys) {
+      if (!(await isKeyAllowed('gemini', key, config.dailyCap.gemini))) continue;
       try {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
           method: 'POST',
@@ -464,6 +485,8 @@ export async function processIncomingVideo(
         };
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if (text) {
+          // Catat pemakaian kuota Gemini (analisis video native memakai kuota provider yang sama)
+          keyUsed('gemini', key);
           const tokens = data.usageMetadata
             ? {
                 prompt: Number(data.usageMetadata.promptTokenCount) || 0,
@@ -471,6 +494,7 @@ export async function processIncomingVideo(
                 total: Number(data.usageMetadata.totalTokenCount) || 0,
               }
             : undefined;
+          if (tokens?.total) keyTokensUsed('gemini', key, tokens.total);
           return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}`, tokens };
         }
       } catch (err) {

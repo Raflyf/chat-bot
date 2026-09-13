@@ -2423,7 +2423,7 @@
           <div class="brand-info">
             <div class="brand-title-wrap">
               <h1 id="bot-name">FreeAIBot Console</h1>
-              <span class="brand-badge-version">v0.26</span>
+              <span class="brand-badge-version">v0.27</span>
             </div>
             <div class="brand-sub-wrap">
               <span class="pulse-dot-mini"></span>
@@ -2519,12 +2519,12 @@
         <div class="pool-filter-controls">
           <div class="pill-filter-group" id="provider-filter-pills">
             <button class="pill-filter-btn active" data-provider="all">Semua Provider</button>
-            <button class="pill-filter-btn" data-provider="dahl">Dahl</button>
-            <button class="pill-filter-btn" data-provider="groq">Groq</button>
             <button class="pill-filter-btn" data-provider="opencode">OpenCode</button>
+            <button class="pill-filter-btn" data-provider="groq">Groq</button>
             <button class="pill-filter-btn" data-provider="gemini">Gemini</button>
             <button class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
             <button class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
+            <button class="pill-filter-btn" data-provider="dahl">Dahl</button>
             <button class="pill-filter-btn" data-provider="xkiro">xKiro</button>
           </div>
           <select id="key-status-filter" class="filter-select">
@@ -2569,7 +2569,7 @@
         <div class="live-stat-box">
           <span class="live-stat-label">Total Token Terpakai Hari Ini</span>
           <span class="live-stat-val" id="upstream-total-used" style="color: #fbbf24;">0</span>
-          <span class="live-stat-sub">Akumulasi Global (Bot + IDE)</span>
+          <span class="live-stat-sub" id="upstream-total-used-sub">Akumulasi Global (Bot + IDE)</span>
         </div>
         <div class="live-stat-box">
           <span class="live-stat-label">Total Sisa Kuota Bersih (Universal)</span>
@@ -2579,7 +2579,7 @@
         <div class="live-stat-box">
           <span class="live-stat-label">Total Kunci &amp; Pool Terhubung</span>
           <span class="live-stat-val" id="upstream-openrouter-status" style="color: #a855f7;">0 Kunci</span>
-          <span class="live-stat-sub" id="upstream-openrouter-sub">5 Provider AI Aktif</span>
+          <span class="live-stat-sub" id="upstream-openrouter-sub">7 Provider AI Aktif</span>
         </div>
         <div class="live-stat-box" style="border-color: rgba(37, 211, 102, 0.25);" title="Meta WhatsApp Business API: 1.000 Sesi Percakapan Gratis per Bulan. 1 sesi = jendela 24 jam per user (chat tanpa batas selama 24 jam dihitung 1 sesi).">
           <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -2764,12 +2764,12 @@
           </select>
           <select id="dataset-model-filter" class="filter-select">
             <option value="">Semua Model</option>
-            <option value="dahl">Dahl Global</option>
-            <option value="groq">Groq</option>
             <option value="opencode">OpenCode Zen</option>
+            <option value="groq">Groq</option>
             <option value="gemini">Gemini</option>
             <option value="cloudflare">Cloudflare</option>
             <option value="openrouter">OpenRouter</option>
+            <option value="dahl">Dahl Global</option>
             <option value="xkiro">xKiro</option>
           </select>
           <button class="btn btn-today" id="btn-download-csv" title="Unduh CSV data percakapan sesuai filter dropdown aktif (Waktu, Platform, Model, dan Pencarian)">

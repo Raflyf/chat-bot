@@ -110,12 +110,26 @@ export const config = {
   isServerless: process.env.VERCEL === '1' || !!process.env.AWS_LAMBDA_FUNCTION_NAME,
   dailyCap: {
     dahl: num('DAILY_CAP_DAHL', 5000),
-    groq: num('DAILY_CAP_GROQ', 800),
+    // Selaras limit resmi platform: Groq Free Tier 1.000 RPD/key
+    groq: num('DAILY_CAP_GROQ', 1000),
     opencode: num('DAILY_CAP_OPENCODE', 1000),
-    gemini: num('DAILY_CAP_GEMINI', 1400),
+    // Selaras limit resmi platform: Gemini Free Tier 1.500 RPD/key
+    gemini: num('DAILY_CAP_GEMINI', 1500),
     cloudflare: num('DAILY_CAP_CLOUDFLARE', 300),
     openrouter: num('DAILY_CAP_OPENROUTER', 180),
     xkiro: num('DAILY_CAP_XKIRO', 500),
+  },
+  // Batas TOKEN per hari (TPD) per key. 0 = tidak dibatasi.
+  // Groq Free Tier resmi: 200K TPD untuk qwen3.8-27b & qwen3.6-27b
+  // (tercapai jauh lebih cepat daripada RPD 1.000 pada ~2.5K token/call).
+  dailyTokenCap: {
+    dahl: num('DAILY_TOKEN_CAP_DAHL', 0),
+    groq: num('DAILY_TOKEN_CAP_GROQ', 200000),
+    opencode: num('DAILY_TOKEN_CAP_OPENCODE', 0),
+    gemini: num('DAILY_TOKEN_CAP_GEMINI', 0),
+    cloudflare: num('DAILY_TOKEN_CAP_CLOUDFLARE', 0),
+    openrouter: num('DAILY_TOKEN_CAP_OPENROUTER', 0),
+    xkiro: num('DAILY_TOKEN_CAP_XKIRO', 0),
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',

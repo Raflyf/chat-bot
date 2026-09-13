@@ -208,6 +208,49 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.27.13 - 2026-09-14 (Koreksi Limit Groq Resmi + Pelacakan TPD Runtime)
+
+**Verifikasi langsung ke dokumentasi resmi Groq (console.groq.com/docs/rate-limits) membatalkan klaim lama "Groq tidak punya batas token harian": Free Tier qwen3.8-27b & qwen3.6-27b = 30 RPM / 1.000 RPD / 8K TPM / 200K TPD. TPD 200K tercapai jauh lebih dulu daripada RPD (±66-80 panggilan pada ±3K token/call), sehingga runtime wajib melacaknya agar tidak menabrak 429.**
+
+- **Koreksi label dashboard**: Groq bukan "Bebas Kuota Token Harian" — label resmi kini "1.000 RPD • 30 RPM • 8K TPM • 200K TPD"; baris Groq menampilkan progres RPD dan TPD sekaligus dengan status binding (`LIMIT TPD` / `LIMIT RPD` / `WASPADAI` / `OPTIMAL`); sisa token harian (TPD) ditampilkan per key.
+- **Pelacakan TPD runtime (`src/quota.ts`)**: counter token harian per key + hidrasi DB + persist best-effort via RPC baru `atomic_increment_provider_tokens` (migrasi `sql/migrate_v18_daily_token_tracking.sql`, graceful bila RPC/kolom belum ada). `isKeyAllowed()` kini menerima `tokenCapPerDay` opsional (backward compatible).
+- **Penegakan di `src/providers.ts`**: setiap panggilan sukses mencatat `keyTokensUsed()` dari token riil respons API; guard key memakai RPD + TPD (`DAILY_TOKEN_CAP_GROQ=200.000`). Token media (PDF/video/audio Gemini) ikut dicatat dari `usageMetadata` riil.
+- **Konfigurasi**: `DAILY_TOKEN_CAP_GROQ=200000` di `.env` + `.env.example` (provider lain 0 = tak dibatasi). `.env` disinkronkan (`DAILY_CAP_GROQ=1000`, `DAILY_CAP_GEMINI=1500`).
+- **Koreksi historis**: klaim v0.26.53 "Groq tidak memiliki batas 200.000 TPD" sudah kedaluwarsa — yang berlaku adalah tabel Free Tier resmi di atas. Whisper (2K RPD, ASH 7.2K) tetap hanya dihitung call count (tanpa TPD token) karena limitnya berbasis detik audio, bukan token.
+- **Verifikasi:** `npm run typecheck` & `npm run build` exit 0. **Tindakan wajib manual:** jalankan `sql/migrate_v18_daily_token_tracking.sql` di Supabase SQL Editor (tanpa ini, pelacakan TPD hanya in-memory per instance).
+
+### v0.27.12 - 2026-09-14 (Audit Validitas Kuota: Pencatatan Media, Limit Platform, Atribusi Provider)
+
+**Audit perhitungan penggunaan/token/limit menemukan 6 celah validitas; seluruhnya diperbaiki agar angka dashboard mencerminkan platform masing-masing endpoint**
+
+- **Celah terbesar — media bypass kuota (`src/media.ts`)**: Groq Whisper (transkripsi VN), Gemini native audio, Gemini PDF, dan Gemini video memanggil API provider langsung TANPA `keyUsed()`/`isKeyAllowed()`. Akibatnya seluruh pemakaian VN/dokumen/video tidak terhitung di dashboard dan tidak ikut membatasi pool. Kini setiap panggilan sukses dicatat (`keyUsed('groq'|'gemini', key)`) dan setiap key dievaluasi terhadap cap harian sebelum dipakai.
+- **Cap tidak sesuai limit platform (`src/env.ts`)**: Groq 800 → 1.000 RPD/key (sesuai Free Tier resmi) dan Gemini 1.400 → 1.500 RPD/key (sesuai Free Tier resmi). Nilai ini dipakai runtime (pembatas) sekaligus dashboard (tampilan), jadi keduanya kini sinkron.
+- **Atribusi provider salah untuk via berlapis (`api/stats.ts`)**: `provKind` lama hanya mengambil segmen pertama, sehingga `local-parser/groq/...`, `dynamic-pdf-error/opencode/...`, `fallback-video-error/...` tidak terhitung ke pool mana pun (token hilang dari statistik provider). Kini segmen path dicari terhadap daftar provider resmi.
+- **Saldo Dahl dikali hari (`api/stats.ts`)**: pool 1B token Dahl adalah saldo (bukan kuota harian), tapi `tokenCapPerKey` dikali `daysCount` saat memilih rentang 7/14/30 hari sehingga sisa saldo tampak berlipat. Kini Dahl dikecualikan dari perkalian periode.
+- **Badge Groq overstate (`public/js/dashboard.js`)**: label "Upstream Real Usage" pada key Groq menyiratkan data live dari server Groq, padahal angkanya pencatatan internal bot. Diubah menjadi "Bot Monitored" konsisten dengan provider lain.
+- **Klarifikasi label**: angka "Bot Monitored" pada Groq/OpenCode/Cloudflare/Gemini berarti pencatatan internal bot (bukan sinkronisasi API upstream); hanya xKiro (usage API) dan OpenRouter (auth/key API) yang benar-benar live-synced dari server penyedia.
+- **Verifikasi:** `npm run typecheck` & `npm run build` exit 0; `node --check` dashboard.js lolos.
+
+### v0.27.11 - 2026-09-14 (Audit Frontend Dashboard: Sinkronisasi Penuh dengan Runtime v0.27)
+
+**Audit menyeluruh halaman dashboard menemukan 10 ketidakvalidan data/urutan; seluruhnya diselaraskan dengan runtime aktual**
+
+- **Katalog Model Router (`public/js/dashboard.js`)**:
+  - Urutan tier ditulis ulang sesuai rantai runtime: Tier 1 OpenCode (Muse Spark 1.3 > 1.2) -> Tier 2 Groq (teks) -> Tier 3 Gemini (Vision #1) -> Tier 4 Cloudflare (Vision #2) -> Tier 5 OpenRouter (Vision #3) -> Tier 6 Dahl -> Tier 7 xKiro.
+  - Klaim Groq "Vision/Multimodal" dihapus (runtime Groq = teks murni, `visionModels: []`).
+- **Backend `api/stats.ts`**:
+  - Urutan `providerDefs` kini identik runtime (opencode, groq, gemini, cloudflare, openrouter, dahl, xkiro) sehingga kartu pool & matriks token tidak lagi Dahl-first.
+  - Urutan komentar `activeSystemModels` diselaraskan (tanpa mengubah isi daftar).
+  - Bug deteksi media: `startsWith('[Voice Note]')` tidak menangkap VN grup (`[Voice Note dari X]: ...`) -> kini `startsWith('[Voice Note')`.
+- **`public/index.html`**: rantai failover diperbaiki menjadi "OpenCode -> Groq -> Gemini -> Cloudflare -> OpenRouter -> Dahl -> xKiro"; daftar provider di subtitle diselaraskan; versi footer v0.26.25 -> v0.27.
+- **`public/dashboard.html`**: badge versi v0.26 -> v0.27; pill filter provider & dropdown dataset diurutkan ulang sesuai tier runtime; teks statis "5 Provider AI Aktif" -> subtext dinamis.
+- **`public/js/dashboard.js` (validitas angka)**:
+  - Domain Dahl "api.dahlglobal.com" -> "inference.dahl.global" (sesuai endpoint runtime).
+  - Ribbon "Total Token Terpakai": sebelumnya mencampur token pool berbatas (Dahl+xKiro) dengan token bebas kuota (Groq/OpenCode) sehingga persentase sisa tidak sinkron; kini nilai utama = pool berbatas, token bebas dilaporkan terpisah di subtext.
+  - Subtext "N Provider AI Aktif" dihitung dinamis dari pool yang memiliki key.
+  - Label reset harian diselaraskan urutannya.
+- **Verifikasi:** `npm run typecheck` & `npm run build` exit 0; `node --check` untuk dashboard.js & dashboard-pre.js lolos.
+
 ### v0.27.10 - 2026-09-14 (Anti Over-React & Anti Over-Sharing pada Info Netral)
 
 **Respons kini sebanding dengan pesannya: kabar ringan dijawab wajar dan tenang, tanpa sorakan/doa berlebihan, tanpa menu bantuan, tanpa mengalihkan topik ke diri bot**
