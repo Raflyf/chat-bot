@@ -42,36 +42,29 @@ export const config = {
   },
   cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
   models: {
-    // Tier 1: Dahl Global
-    dahlPrimary: cleanStr('DAHL_MODEL_PRIMARY') || 'deepseek-ai/DeepSeek-V4-Flash-0731',
-    dahlBackup: cleanStr('DAHL_MODEL_BACKUP') || 'MiniMaxAI/MiniMax-M2.7',
-    // Tier 2: Groq
-    groqPrimary: cleanStr('GROQ_MODEL_PRIMARY') || 'qwen/qwen3.8-27b',
-    groqBackup: cleanStr('GROQ_MODEL_BACKUP') || 'qwen/qwen3.6-27b',
-    // Tier 3: OpenCode Zen Direct
-    openCodePrimary: cleanStr('OPENCODE_MODEL_PRIMARY') || 'muse-spark-1.3-contributor-free',
-    openCodeBackup: cleanStr('OPENCODE_MODEL_BACKUP') || 'muse-spark-1.2-contributor-free',
-    // Tier 4: Gemini
-    geminiPrimary: cleanStr('GEMINI_MODEL_PRIMARY') || 'gemini-3.8-flash',
-    geminiBackup: cleanStr('GEMINI_MODEL_BACKUP') || 'gemini-2.5-flash',
-    // Tier 5: Cloudflare Workers AI
-    cfPrimary: cleanStr('CLOUDFLARE_MODEL_PRIMARY') || '@cf/meta/llama-3.1-70b-instruct',
-    cfBackup: cleanStr('CLOUDFLARE_MODEL_BACKUP') || '@cf/qwen/qwen2.5-coder-32b-instruct',
-    cfVision: cleanStr('CLOUDFLARE_MODEL_VISION') || '@cf/meta/llama-3.2-11b-vision-instruct',
-    // Tier 6: OpenRouter
-    orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
-    orMini: cleanStr('OR_MODEL_MINI') || 'nex-agi/nex-n2.5-mini:free',
-    orText: cleanStr('OR_MODEL_TEXT') || 'nvidia/nemotron-3.5-lightning:free',
-    // Tier 7: xKiro
-    xkiroPrimary: cleanStr('XKIRO_MODEL_PRIMARY') || 'mistralai/mistral-small-2603',
-    xkiroBackup: (() => {
-      const envList = csv('XKIRO_MODEL_BACKUPS');
-      return envList.length > 0
-        ? envList
-        : [
-            'mistralai/codestral-2508',
-          ];
-    })(),
+    // Tier 1: Dahl Global API (1B Token Pool - latensi ~0,22s)
+    dahlPrimary: 'deepseek-ai/DeepSeek-V4-Flash-0731',
+    dahlBackup: 'MiniMaxAI/MiniMax-M2.7',
+    // Tier 2: Groq Cloud API (LPU Ultra-Fast Inference)
+    groqPrimary: 'qwen/qwen3.8-27b',
+    groqBackup: 'qwen/qwen3.6-27b',
+    // Tier 3: OpenCode Zen Direct API (1.048.576 Konteks Teks & Penalaran Empatik)
+    openCodePrimary: 'muse-spark-1.3-contributor-free',
+    openCodeBackup: 'muse-spark-1.2-contributor-free',
+    // Tier 4: Google Gemini API (1M Konteks & Vision Prioritas 1)
+    geminiPrimary: 'gemini-3.8-flash',
+    geminiBackup: 'gemini-2.5-flash',
+    // Tier 5: Cloudflare Workers AI (Llama 3.1 70B & Vision Prioritas 2)
+    cfPrimary: '@cf/meta/llama-3.1-70b-instruct',
+    cfBackup: '@cf/qwen/qwen2.5-coder-32b-instruct',
+    cfVision: '@cf/meta/llama-3.2-11b-vision-instruct',
+    // Tier 6: OpenRouter AI (Koleksi Bebas Kuota & Vision Prioritas 3)
+    orPrimary: 'nex-agi/nex-n2.5-pro:free',
+    orMini: 'nex-agi/nex-n2.5-mini:free',
+    orText: 'nvidia/nemotron-3.5-lightning:free',
+    // Tier 7: xKiro Gateway (Mistral Small & Codestral)
+    xkiroPrimary: 'mistralai/mistral-small-2603',
+    xkiroBackup: ['mistralai/codestral-2508'],
   },
   supabaseUrl: (() => {
     const raw = firstEnv('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
