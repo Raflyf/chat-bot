@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.29 (Resolusi Horizontal Overflow Mobile: Presisi Bar Filter Pool API Key & Eliminasi Kebutuhan Zoom-Out)  
+**Versi:** v0.26.30 (Pemisahan Unit Metrik: Eliminasi Unit Mismatch Kuota Token vs Request RPD Cloudflare pada KPI Ribbon)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:25 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:30 WIB
 
 ---
 
@@ -207,6 +207,27 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.30 - 2026-09-13 11:30 WIB
+
+**Pemisahan Unit Metrik: Eliminasi Unit Mismatch Kuota Token vs Request RPD Cloudflare pada Mini KPI Ribbon**
+
+- **Audit & Penemuan Asal Angka 360 Token (`public/js/dashboard.js`)**:
+  - **Akar Masalah**: Pada fungsi `renderLiveUpstreamTable(data)`, variabel agregat `grandTotalCap` mengakumulasikan kuota harian dari seluruh upstream pool.
+    - xKiro (3 keys x 5.000.000 = 15.000.000 Token).
+    - Groq (5 keys x 200.000 = 1.000.000 Token).
+    - Cloudflare Workers AI (3 akun, masing-masing dengan limit 120 Requests Per Day / RPD, total = 360 Panggilan).
+  - **Unit Mismatch Fatal**: Kode sebelumnya secara keliru menjumlahkan `keyCap` Cloudflare (120 RPD) langsung ke dalam `grandTotalCap`, sehingga totalnya menjadi `15.000.000 + 1.000.000 + 360 = 16.000.360 Token`.
+  - Hal ini menyebabkan angka 360 (yang merupakan request/panggilan Cloudflare) terlabeli secara rancu sebagai satuan Token.
+- **Implementasi Perbaikan Presisi Bedah**:
+  - **Pemisahan Variabel Akumulasi**: Memisahkan variabel menjadi `grandTotalTokenCap`, `grandTotalTokenUsed`, dan `grandTotalTokenRemaining` untuk provider berbasis Token (xKiro & Groq), serta `grandTotalCloudflareRpd` dan `grandTotalCloudflareUsed` untuk provider berbasis Request (Cloudflare).
+  - **Penyajian Data Murni & Transparan pada Mini KPI Ribbon**:
+    - Kartu **TOTAL LIMIT KUOTA HARIAN (UNIVERSAL)** kini menampilkan angka murni: `16.000.000 Token`.
+    - Kartu **PENGGUNAAN TOKEN HARI INI** dan **SISA KUOTA TOKEN BERSIH** hanya menghitung token riil xKiro dan Groq tanpa tercampur request Cloudflare.
+    - Elemen subteks (`#upstream-total-cap-sub`) menyajikan rincian transparan: `xKiro & Groq (+360 RPD Cloudflare)`.
+- **Hasil Verifikasi**:
+  - Eliminasi total unit mismatch pada antarmuka dashboard.
+  - Sisa kuota dan persentase keterpakain token universal dihitung 100% akurat dari kuota token murni.
 
 ### v0.26.29 - 2026-09-13 11:25 WIB
 

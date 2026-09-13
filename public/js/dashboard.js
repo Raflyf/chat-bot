@@ -967,9 +967,11 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       tbody.innerHTML = "";
 
       const pools = data.pools || data.providers || [];
-      let grandTotalCap = 0;
-      let grandTotalUsed = 0;
-      let grandTotalRemaining = 0;
+      let grandTotalTokenCap = 0;
+      let grandTotalTokenUsed = 0;
+      let grandTotalTokenRemaining = 0;
+      let grandTotalCloudflareRpd = 0;
+      let grandTotalCloudflareUsed = 0;
       let totalAllKeys = 0;
       let totalOrUsageUsd = 0;
 
@@ -988,9 +990,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);
             const pct = k.tokenPercent || 0;
 
-            grandTotalCap += keyCap;
-            grandTotalUsed += keyUsed;
-            grandTotalRemaining += keyRemaining;
+            grandTotalTokenCap += keyCap;
+            grandTotalTokenUsed += keyUsed;
+            grandTotalTokenRemaining += keyRemaining;
 
             rows.push(`
               <tr>
@@ -1057,9 +1059,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             const keyRemaining = Math.max(0, keyCap - keyUsed);
             const pct = k.tokenPercent || 0;
 
-            grandTotalCap += keyCap;
-            grandTotalUsed += keyUsed;
-            grandTotalRemaining += keyRemaining;
+            grandTotalTokenCap += keyCap;
+            grandTotalTokenUsed += keyUsed;
+            grandTotalTokenRemaining += keyRemaining;
 
             const callCountText = k.used > 0 ? ` (${k.used.toLocaleString()} calls)` : "";
 
@@ -1099,9 +1101,8 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             const keyRemaining = Math.max(0, keyCap - keyUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((keyUsed / keyCap) * 100)) : 0;
 
-            grandTotalCap += keyCap;
-            grandTotalUsed += keyUsed;
-            grandTotalRemaining += keyRemaining;
+            grandTotalCloudflareRpd += keyCap;
+            grandTotalCloudflareUsed += keyUsed;
 
             rows.push(`
               <tr>
@@ -1175,11 +1176,18 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const pctEl = document.getElementById("upstream-remaining-pct");
       const orEl = document.getElementById("upstream-openrouter-status");
 
-      if (capEl) capEl.textContent = grandTotalCap.toLocaleString("id-ID") + " Token";
-      if (usedEl) usedEl.textContent = grandTotalUsed.toLocaleString("id-ID") + " Token";
-      if (remEl) remEl.textContent = grandTotalRemaining.toLocaleString("id-ID") + " Token";
-      if (pctEl && grandTotalCap > 0) {
-        const remainingPct = Math.round((grandTotalRemaining / grandTotalCap) * 100);
+      const capSubEl = document.getElementById("upstream-total-cap-sub");
+
+      if (capEl) capEl.textContent = grandTotalTokenCap.toLocaleString("id-ID") + " Token";
+      if (capSubEl) {
+        capSubEl.textContent = grandTotalCloudflareRpd > 0 
+          ? `xKiro & Groq (+${grandTotalCloudflareRpd} RPD Cloudflare)` 
+          : "Seluruh Provider Terdaftar";
+      }
+      if (usedEl) usedEl.textContent = grandTotalTokenUsed.toLocaleString("id-ID") + " Token";
+      if (remEl) remEl.textContent = grandTotalTokenRemaining.toLocaleString("id-ID") + " Token";
+      if (pctEl && grandTotalTokenCap > 0) {
+        const remainingPct = Math.round((grandTotalTokenRemaining / grandTotalTokenCap) * 100);
         pctEl.textContent = `${remainingPct}% Kuota Bersih Tersedia`;
       }
       if (orEl) {
