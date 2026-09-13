@@ -180,6 +180,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   const nowSec = Math.floor(Date.now() / 1000);
   const rawTs = m.messageTimestamp;
   const msgTs = typeof rawTs === 'number' ? rawTs : (rawTs as any)?.low ? Number((rawTs as any).low) : 0;
+  const msgSentAt = msgTs > 0 ? new Date(msgTs * 1000) : undefined;
   if (msgTs > 0 && (nowSec - msgTs) > 180) {
     console.warn(`[whatsapp] Mengabaikan pesan basi/history sync (umur: ${nowSec - msgTs} detik, id: ${messageId}). Tandai selesai tanpa memanggil AI.`);
     if (messageId) void markMessageProcessed('whatsapp', messageId);
@@ -230,7 +231,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
         const mime = m.message?.imageMessage?.mimetype || 'image/jpeg';
         const base64 = buffer.toString('base64');
-        const context = await getContext(chatKey);
+        const context = await getContext(chatKey, msgSentAt);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -282,7 +283,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         const filename = m.message?.documentMessage?.fileName || 'dokumen';
         const mime = m.message?.documentMessage?.mimetype || 'application/octet-stream';
         const caption = m.message?.documentMessage?.caption?.trim() || text || undefined;
-        const context = await getContext(chatKey);
+        const context = await getContext(chatKey, msgSentAt);
 
         await saveMessage({
           platform: 'whatsapp',
@@ -342,7 +343,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         const mime = m.message?.audioMessage?.mimetype || 'audio/ogg';
         try {
           const transcription = await transcribeAudio(buffer, mime);
-          const context = await getContext(chatKey);
+          const context = await getContext(chatKey, msgSentAt);
 
           await saveMessage({
             platform: 'whatsapp',
@@ -413,7 +414,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
         const mime = m.message?.stickerMessage?.mimetype || 'image/webp';
-        const context = await getContext(chatKey);
+        const context = await getContext(chatKey, msgSentAt);
 
         await saveMessage({
           platform: 'whatsapp',
@@ -453,7 +454,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     try {
       await sock.sendPresenceUpdate('composing', remoteJid);
       const caption = m.message?.videoMessage?.caption?.trim() || text;
-      const context = await getContext(chatKey);
+      const context = await getContext(chatKey, msgSentAt);
 
       await saveMessage({
         platform: 'whatsapp',
@@ -562,7 +563,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // Cek perintah koreksi fakta /salah
   if (text.startsWith('/salah ') || text === '/salah') {
     const rawCorrection = text.replace(/^\/salah\s*/, '').trim();
-    const ctx = await getContext(chatKey);
+    const ctx = await getContext(chatKey, msgSentAt);
     if (!rawCorrection) {
       const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
       await sendWhatsAppMessageSafe(sock, remoteJid, reply || 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
@@ -622,7 +623,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
   try {
     // 1. Ambil konteks percakapan sebelumnya (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
-    const context = await getContext(chatKey);
+    const context = await getContext(chatKey, msgSentAt);
 
     // 2. Update cache memori (pesan user sudah tercatat saat klaim atomik)
     updateContextCache(chatKey, 'user', text);

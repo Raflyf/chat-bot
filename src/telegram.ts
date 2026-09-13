@@ -68,11 +68,12 @@ async function answerPhoto(
   fileId: string,
   caption?: string,
   msgId?: string,
+  msgSentAt?: Date,
 ): Promise<boolean> {
   const dl = await downloadTelegramBuffer(bot, fileId);
   if (!dl) return false;
   const mime = dl.filePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
-  const ctx = await getContext(chatKey);
+  const ctx = await getContext(chatKey, msgSentAt);
   const { reply, via, tokens } = await describeImage(dl.buffer.toString('base64'), mime, caption, ctx);
   await sendTelegramMessageSafe(bot, chatId, reply);
   if (msgId) void markMessageProcessed('telegram', msgId);
@@ -90,6 +91,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     const msgId = msg.message_id ? String(msg.message_id) : '';
     const ownerId = config.ownerChatId;
     const text = msg.text?.trim() ?? '';
+    const msgSentAt = msg.date ? new Date(msg.date * 1000) : undefined;
 
     // Tentukan konten awal pesan untuk klaim atomik agar teks asli dan jenis media langsung tercatat
     let initialContent = text;
@@ -134,7 +136,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     // 2. Perintah /salah <koreksi>
     if (text.startsWith('/salah')) {
       const rawCorrection = text.replace(/^\/salah\s*/, '').trim();
-      const ctx = await getContext(chatKey);
+      const ctx = await getContext(chatKey, msgSentAt);
       if (!rawCorrection) {
         const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
         await sendTelegramMessageSafe(bot, chatId, reply || 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
@@ -196,7 +198,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan foto user:', err));
       try {
-        if (await answerPhoto(bot, chatId, chatKey, fileId, caption, msgId)) return;
+        if (await answerPhoto(bot, chatId, chatKey, fileId, caption, msgId, msgSentAt)) return;
       } catch (err) {
         console.error(`[telegram] vision photo error: ${String((err as Error).message ?? err)}`);
       }
@@ -249,7 +251,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           content: caption ? `[Gambar: ${filename}] ${caption}` : `[Gambar: ${filename}]`,
           msg_id: msgId || undefined,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan gambar doc user:', err));
-        if (await answerPhoto(bot, chatId, chatKey, fileId, caption, msgId)) return;
+        if (await answerPhoto(bot, chatId, chatKey, fileId, caption, msgId, msgSentAt)) return;
       }
 
       // Berkas dokumen umum (PDF, DOCX, TXT, CSV, JSON, kode)
@@ -263,7 +265,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
-        const ctx = await getContext(chatKey);
+        const ctx = await getContext(chatKey, msgSentAt);
         const { reply, via, tokens } = await processIncomingDocument(dl.buffer, mime, filename, caption, ctx);
         await sendTelegramMessageSafe(bot, chatId, reply);
         if (msgId) void markMessageProcessed('telegram', msgId);
@@ -289,7 +291,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       if (dl) {
         try {
           const transcription = await transcribeAudio(dl.buffer, mime);
-          const ctx = await getContext(chatKey);
+          const ctx = await getContext(chatKey, msgSentAt);
 
           await saveMessage({
             platform: 'telegram',
@@ -353,7 +355,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     // 7. Stiker Telegram
     if (msg.sticker) {
       const emoji = msg.sticker.emoji;
-      const ctx = await getContext(chatKey);
+      const ctx = await getContext(chatKey, msgSentAt);
 
       await saveMessage({
         platform: 'telegram',
@@ -403,7 +405,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     // 8. Video atau Video Note (Lingkaran)
     if (msg.video || msg.video_note) {
       const caption = msg.caption?.trim();
-      const ctx = await getContext(chatKey);
+      const ctx = await getContext(chatKey, msgSentAt);
 
       await saveMessage({
         platform: 'telegram',
@@ -436,7 +438,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     if (!text || text.startsWith('/')) return;
 
     // Fast-path in-memory context (0ms saat aktif)
-    const ctx = await getContext(chatKey);
+    const ctx = await getContext(chatKey, msgSentAt);
 
     // Update cache in-memory & pastikan pesan teks user tersimpan (non-blocking agar autoReply langsung jalan)
     updateContextCache(chatKey, 'user', text);

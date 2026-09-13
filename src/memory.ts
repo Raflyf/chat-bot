@@ -6,6 +6,7 @@ export interface ChatContext {
   summary: string | null;
   corrections: string[];
   chatId?: string;
+  msgSentAt?: Date;
 }
 
 const warned = new Set<string>();
@@ -70,8 +71,8 @@ export async function resetSession(chatKey: string, platform: string = 'whatsapp
 }
 
 /** Ambil konteks chat: 24 pesan terakhir sejak checkpoint reset + ringkasan + koreksi. Tanpa DB = kosong. */
-export async function getContext(chatKey: string): Promise<ChatContext> {
-  const empty: ChatContext = { history: [], summary: null, corrections: [], chatId: chatKey };
+export async function getContext(chatKey: string, msgSentAt?: Date): Promise<ChatContext> {
+  const empty: ChatContext = { history: [], summary: null, corrections: [], chatId: chatKey, msgSentAt };
 
   // Fast-path in-memory cache: respon instan 0ms saat user sedang aktif chatting
   const cached = contextCache.get(chatKey);
@@ -81,6 +82,7 @@ export async function getContext(chatKey: string): Promise<ChatContext> {
       summary: cached.data.summary,
       corrections: [...cached.data.corrections],
       chatId: chatKey,
+      msgSentAt,
     };
   }
 
@@ -111,6 +113,7 @@ export async function getContext(chatKey: string): Promise<ChatContext> {
       summary: (s.data as { summary?: string } | null)?.summary ?? null,
       corrections: ((k.data ?? []) as Array<{ correction: string }>).map((r) => r.correction),
       chatId: chatKey,
+      msgSentAt,
     };
 
     contextCache.set(chatKey, { at: Date.now(), data: ctx });

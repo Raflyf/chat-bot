@@ -471,7 +471,7 @@ export function splitMessageSmart(text: string, maxLen = 4000): string[] {
 export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string = ''): string {
   const historyText = ctx?.history?.slice(-3)?.map((h) => h.content)?.join(' ') || '';
   const profileText = [historyText, ctx?.summary || '', ...(ctx?.corrections || [])].join(' ');
-  const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, profileText);
+  const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, profileText, ctx?.msgSentAt);
   const isOwnerChat = Boolean(
     ctx?.chatId && (
       (config.ownerChatId && (ctx.chatId === String(config.ownerChatId) || ctx.chatId.includes(String(config.ownerChatId)))) ||

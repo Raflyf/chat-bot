@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.51 (Konsolidasi Zero-Duplikasi Aturan, Penegakan Meta Anti-Parrot & Respon Bot 100% Dinamis)  
+**Versi:** v0.26.52 (Message Sent Timestamp Ground Truth, Mitigasi Over-Fixation & Kesadaran Waktu Nyata Pesan Pengguna)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 14:50 WIB
+**Terakhir Diperbarui:** 2026-09-13 15:30 WIB
 
 ---
 
@@ -207,6 +207,32 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.52 - 2026-09-13 15:30 WIB
+
+**Message Sent Timestamp Ground Truth, Mitigasi Over-Fixation & Kesadaran Waktu Nyata Pesan Pengguna**
+
+- **Ekstraksi Timestamp Asli Pengiriman Pesan Lintas Saluran (`src/whatsapp_cloud.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`)**:
+  - Mengekstrak stempel waktu riil saat pengguna menekan tombol kirim di perangkat mereka:
+    1. *Meta WhatsApp Cloud API*: Mengekstrak `m.timestamp` (Unix epoch detik) menjadi objek `Date`.
+    2. *Telegram Bot*: Mengekstrak `msg.date` (Unix epoch detik) menjadi objek `Date`.
+    3. *WhatsApp Baileys Multi-Device*: Mengekstrak `m.messageTimestamp` (number / Long Unix epoch detik) menjadi objek `Date`.
+  - Meneruskan stempel waktu pengiriman `msgSentAt` ke seluruh alur `getContext(chatKey, msgSentAt)` pada seluruh jenis media (teks, gambar, dokumen, audio/VN, stiker, video, dan perintah `/salah`).
+- **Penyimpanan Transparan & Transmisi Konteks Waktu (`src/memory.ts`, `src/skills.ts`)**:
+  - Menambahkan properti opsional `msgSentAt?: Date;` pada interface `ChatContext`.
+  - Menyematkan `msgSentAt` secara otomatis pada pemanggilan `getContext`, sehingga seluruh lapisan downstream (`autoReply`, `systemPrompt`, `describeImage`, `processIncomingDocument`, `processIncomingSticker`) otomatis memiliki kesadaran waktu pengiriman pesan pengguna.
+- **Mitigasi Tuntas Over-Fixation, Anti-Latah & Anti-Minta Maaf (`src/timezone.ts`)**:
+  - Mengatasi potensi kelemahan (minus) pembacaan jam kirim:
+    1. *Anti-Latah*: Dilarang keras membuka jawaban dengan mengomentari jam kirim pengguna (seperti "tumben kirim jam sekian") saat obrolan biasa.
+    2. *Anti-Minta Maaf Delay*: Dilarang keras basa-basi meminta maaf soal delay jaringan atau antrean server meski terjadi jeda antara waktu kirim pengguna dengan waktu eksekusi server.
+    3. *Passive Background Context*: Pada obrolan umum, waktu pengiriman pesan pengguna disuntikkan murni sebagai konteks latar belakang pasif.
+- **Dukungan Kueri Khusus Waktu Pengiriman Pesan (`src/timezone.ts`)**:
+  - Memperluas deteksi kueri waktu `isAskingTime` untuk menangani pertanyaan spesifik jam kirim pesan pengguna (`aku kirim pesan ini jam berapa?`, `pesan ini tadi terkirim jam berapa?`, `chat ini masuk jam berapa?`, dll).
+  - Ketika kueri tersebut terdeteksi, sistem beralih ke format khusus (Kasus 3) yang mengarahkan model untuk menjawab langsung to-the-point jam pengiriman asli pengguna secara santai, akurat, dan ramah tanpa kalimat template hafalan.
+- **Hasil Verifikasi & Pengujian Faktual**:
+  - Chat santai biasa (*"hayu mabar"*) dijawab langsung secara seru dan antusias tanpa mengomentari jam kirim atau meminta maaf atas jeda waktu pemrosesan server.
+  - Pertanyaan jam kirim (*"aku kirim pesan ini jam berapa?"*) dijawab secara akurat (*"Pesanmu masuk jam 15:20 WIB."*).
+  - Lolos uji build TypeScript (`npm run build`) dengan exit code 0.
 
 ### v0.26.51 - 2026-09-13 14:50 WIB
 
