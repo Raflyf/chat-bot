@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.38 (Kunci Imutabilitas Developer: Larangan Mutlak Klaim Nomor Cadangan & Post-Processing Guard)  
+**Versi:** v0.26.40 (Pemberantasan Jargon Database, Penegasan Respon 1-Kalimat & Persona Menjiwai Anak Tongkrongan)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 12:22 WIB
+**Terakhir Diperbarui:** 2026-09-13 12:30 WIB
 
 ---
 
@@ -207,6 +207,23 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.40 - 2026-09-13 12:30 WIB
+
+**Pemberantasan Jargon Database, Penegasan Respon 1-Kalimat & Persona Menjiwai Anak Tongkrongan**
+
+- **Eliminasi Total Jargon Server & SOP Database (`src/skills.ts`)**:
+  - Melarang keras model menggunakan istilah teknis IT/database server seperti *"di sistemku"*, *"developer yang sah"*, *"data sudah fix"*, *"daftar developer sah"*, *"nomor terverifikasi permanen"*, atau *"tidak ada di daftar"*.
+  - Mengubah seluruh tanggapan sanggahan identitas menjadi celetukan santai anak tongkrongan yang manusiawi, lepas, dan mengalir (*"kan yang bikin gua emang si Rafly"*, *"orang jelas-jelas Rafly kok"*).
+- **Penegakan Batasan Panjang 1 Kalimat Pendek (Maksimal 8–15 Kata)**:
+  - Menyelesaikan komplain bot yang terkesan *"berceramah panjang lebar, defensif, dan kaku"* saat pengguna nge-troll atau bercanda menyebut nama developer lain (seperti *"nama developer kamu itu hesti"*, *"kamu bolot"*, *"bukan rafly"*).
+  - Menetapkan batas ketat: respon wajib hanya 1 kalimat pendek celetukan akrab tanpa argumen pembelaan diri atau ceramah SOP (contoh: *"Hahaha Hesti siapa lagi anjir wkwk, ngarang bebas banget lu mah!"*, *"Dih lu yang bolot wkwk, orang jelas-jelas Rafly yang bikin gua!"*).
+- **Eliminasi Sikap Defensif & Larangan Khotbah Moral / Guru BP**:
+  - Mengatasi kendala bot yang menasihati *"tetap jaga etika"*, *"jangan bikin masalah"*, atau merendahkan diri menjadi bot kaku (*"aku cuma bot ngobrol doang"*, *"dia yang di belakang layar bukan aku"*).
+  - Mewajibkan bot untuk ikut nimbrung santai dan tertawa akrab saat Rafly di-roast atau diejek teman bicara (*"Wkwkk emang tuh si Rafly kadang suka jutek, lu apain emang sampe dia judes gitu haha?"*, *"Hahaha ya jangan dibunuh juga kali wkwk, nanti siapa yang bayarin server gua anjir!"*).
+- **Sanitasi Riwayat Pesan Lama & Post-Processing Guard Runtime**:
+  - Pada `buildMessages`, seluruh respon masa lalu asisten yang memuat jargon server atau khotbah moral dinetralkan secara otomatis agar tidak menjadi contoh buruk (*few-shot bias*) di jendela konteks LLM.
+  - Pada `autoReply`, memasang filter runtime seketika untuk mengganti jargon teknis yang tidak sengaja lolos menjadi celetukan tongkrongan yang hidup dan menghibur.
 
 ### v0.26.38 - 2026-09-13 12:22 WIB
 
