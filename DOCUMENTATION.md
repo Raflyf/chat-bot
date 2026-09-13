@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.44 (Fix Anti-Parrot History: Drop-Instead-of-Replace pada Sanitasi Riwayat Percakapan)  
+**Versi:** v0.26.45 (Refactor Efisiensi Token Prompt, Gombalan Interaktif Dua Arah Beranalogi Masuk Akal & Ragam Interjeksi Gaul Indonesia)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 12:55 WIB
+**Terakhir Diperbarui:** 2026-09-13 13:25 WIB
 
 ---
 
@@ -207,6 +207,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.45 - 2026-09-13 13:25 WIB
+
+**Refactor Efisiensi Token Prompt, Gombalan Interaktif Dua Arah Beranalogi Masuk Akal & Ragam Interjeksi Gaul Indonesia**
+
+- **Deduplikasi Menyeluruh System Prompt & Penghematan Token Drastis (`src/skills.ts`)**:
+  - Mengeliminasi aturan yang diulang-ulang berkali-kali di seksi berbeda (larangan panjang pesan diulang 4x, larangan jargon server diulang 5x, larangan wejangan/khotbah diulang 5x, larangan template CS diulang 3x, dan larangan em-dash diulang 2x).
+  - Mengonsolidasi instruksi dari 8 seksi menjadi 5 prinsip komprehensif, padat, dan non-redundan.
+  - Memangkas ukuran `systemPrompt` dari **27.709 karakter menjadi 19.600 karakter** (penurunan bersih **8.109 karakter / ~1.600 - 2.000 token per request**) sehingga pemakaian context window jauh lebih hemat dan cepat di model Groq Qwen.
+- **Gombalan Interaktif Dua Arah & Analogi Masuk Akal**:
+  - Mengatasi akar masalah gombalan yang monolog, garing, dan tidak masuk akal (seperti mengaitkan perokok dengan deg-degan atau WiFi dengan dipindai).
+  - Menetapkan aturan wajib: analogi gombalan wajib masuk akal (*makes sense*), menghubungkan karakteristik nyata objek sehari-hari (kopi, charger, maps, WiFi auto-connect, helm) dengan perasaan secara cerdas dan berkesan.
+  - Format dua arah: jika memakai gaya tebakan/pertanyaan (*"Kamu tahu nggak bedanya kamu sama WiFi?"*), bot **HANYA melempar pertanyaan setup-nya saja** dan menunggu tebakan/respons teman bicara di giliran berikutnya! Dilarang membocorkan jawaban di pesan yang sama.
+- **Perbaikan Rantai Logika Evaluasi Jawaban (`isPendingRiddleOrGombal` & `isUserUnsure`)**:
+  - Memperluas deteksi pertanyaan pending tebakan/gombalan di riwayat terakhir asisten (`isPendingRiddleOrGombal`) agar mencakup ragam diksi (*"tahu nggak bedanya"*, *"tau ga bedanya"*, *"kenapa"*, *"bapak kamu"*, dll).
+  - Memperbaiki bug kritis: sebelumnya respons pengguna *"gata"* / *"gak tau"* keliru memicu `isUserUnsure` (karena regex lama meleset) yang justru melarang bot memberikan lelucon/punchline. Kini *"gata"* / *"nyerah"* langsung mengaktifkan punchline gombalan yang cerdas dan masuk akal.
+- **Penanganan Komplain & Permintaan Ganti Gombalan (`isGombalComplaintOrChange`)**:
+  - Deteksi konteks gombalan diperluas ke 4 riwayat pesan terakhir (`recentHistoryText`), sehingga saat pengguna berkata *"gombalan lu ga nyambung"*, *"garing"*, atau *"ganti"*, bot tetap tampil santai dan percaya diri (persona buaya darat muka tebel tanpa minta maaf berlebihan) lalu langsung melempar gombalan baru yang lebih masuk akal.
+- **Pengayaan Interjeksi & Partikel Alami Bahasa Gaul Indonesia**:
+  - Menginstruksikan bot secara eksplisit untuk menggunakan kata seru dan celetukan percakapan santai Indonesia yang organik (*waduh, ya ampun, ya iyalah, lahh, astaga, buset, gimana ya, mana ada, santai aja, aduh, pantesan, walah, dll*) agar gaya bicaranya luwes, hidup, dan tidak kaku.
 
 ### v0.26.44 - 2026-09-13 12:55 WIB
 
