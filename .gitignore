@@ -12,3 +12,7 @@ session_wa*/
 dataset/*.csv
 *.csv
 .claude-mem/
+
+.vercel
+.env*
+!.env.example
