@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.27.0 (Restrukturisasi Arsitektur LLM 7-Tier Teks & 3-Tier Vision, Integrasi Dahl Global 1 Miliar Token Pool, Direct OpenCode Zen Muse Spark 1.3 & 1.2, Cloudflare Native Vision Array Bytes, Eliminasi Wajib Konfigurasi Model di Vercel/Env)  
+**Versi:** v0.27.3 (Kesiapan & Keamanan Grup Telegram: Anti-Spam Tag/Reply Guard, Sender Identity Context, Isolasi Perintah Multi-Bot & Pengingat Anggota Grup)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 19:30 WIB
+**Terakhir Diperbarui:** 2026-09-13 19:42 WIB
 
 ---
 
@@ -207,6 +207,36 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.27.3 - 2026-09-13 19:42 WIB
+
+**Kesiapan & Keamanan Grup Telegram: Anti-Spam Tag/Reply Guard, Sender Identity Context, Isolasi Perintah Multi-Bot & Pengingat Anggota Grup**
+
+- **Filter Keamanan & Anti-Spam Obrolan Grup Telegram (`src/telegram.ts`)**:
+  - **Deteksi Konteks Grup**: Mendeteksi `chatType === 'group' || chatType === 'supergroup'` dan mengabaikan saluran pengumuman satu arah (`channel`).
+  - **Tag & Reply Guard (Hanya Merespons Saat Dipanggil)**:
+    - Di dalam grup, bot tidak akan merespons obrolan santai antar-anggota grup, media foto/dokumen acak, atau stiker tanpa pemicu eksplisit. Pesan santai diabaikan secara senyap tanpa klaim database atau pemborosan kuota API LLM.
+    - Bot hanya merespons jika:
+      1. Disebut/dimention langsung menggunakan tag username (`@chatkita_bot` atau entitas mention).
+      2. Pesan merupakan balasan (*reply*) ke pesan bot sebelumnya.
+      3. Dipicu via perintah spesifik bot: `/start`, `/reset`, `/remind`, `/salah`, `/tanya`, atau `/ai`.
+  - **Isolasi Perintah Multi-Bot (`/cmd@otherbot`)**:
+    - Jika grup memiliki bot lain dan anggota mengeksekusi perintah untuk bot tersebut (misal `/ban@grouphelpbot`), bot secara cerdas mengabaikan pesan tersebut agar tidak terjadi tabrakan eksekusi perintah antar-bot.
+- **Kesadaran Identitas Pengirim (*Sender Identity Awareness*)**:
+  - Mengekstrak nama pengirim anggota grup (`msg.from?.first_name` + `msg.from?.last_name` atau `msg.from?.username`).
+  - Membersihkan prefix tag/mention bot dari isi teks dan menyuntikkan prefix kontekstual `[Pesan di Grup dari ${senderName}]: ...` ke dalam memori riwayat dan prompt sistem.
+  - Model LLM kini dapat membedakan siapa yang sedang berbicara di dalam grup tanpa mencampuradukkan persona satu anggota dengan anggota lainnya.
+- **Konfigurasi Username Bot Dinamis (`src/env.ts`)**:
+  - Menambahkan konfigurasi `TELEGRAM_BOT_USERNAME` di `src/env.ts` (default: `'chatkita_bot'`) yang otomatis dibersihkan dari simbol `@`.
+- **Adaptasi Pengingat untuk Anggota Grup (`src/remind.ts`)**:
+  - Fungsi `handleRemind` kini menerima parameter opsional `senderName`.
+  - Pada konteks grup, alarm atau pesan pengingat yang tersimpan diformat dengan atribusi pengirim: `[Pengingat untuk ${senderName}]: ...` sehingga saat pengingat jatuh tempo, bot menandai anggota yang memintanya secara jelas.
+- **Respons Perintah Khusus Grup (`/start` & `/reset`)**:
+  - Perintah `/start` di grup memberikan panduan ringkas cara memanggil bot (tag `@username` atau reply pesan).
+  - Perintah `/reset` di grup mengonfirmasi bahwa riwayat percakapan telah dibersihkan atas permintaan anggota terkait.
+- **Verifikasi Faktual**:
+  - Divalidasi melalui rangkaian 10 skenario uji otomatis di `scratch/test_telegram_group.mts` (chat pribadi, obrolan santai grup yang diabaikan, tag eksplisit, reply bot, perintah khusus, penolakan perintah bot asing, media bertag, media tanpa tag, dan stiker). Seluruh 10 pengujian berhasil 100% (exit code 0).
+  - Lolos uji build TypeScript (`npm run build`, exit code 0).
 
 ### v0.27.2 - 2026-09-13 19:30 WIB
 

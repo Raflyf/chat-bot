@@ -86,6 +86,7 @@ export const config = {
     'NEXT_PUBLIC_SUPABASE_KEY',
   ),
   telegramWebhookSecret: cleanStr('TELEGRAM_WEBHOOK_SECRET'),
+  telegramBotUsername: cleanStr('TELEGRAM_BOT_USERNAME') || 'chatkita_bot',
   cronSecret: cleanStr('CRON_SECRET'),
   botName: cleanStr('BOT_NAME') || 'FreeAIBot',
   botProfile:
