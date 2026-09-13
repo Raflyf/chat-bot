@@ -142,6 +142,7 @@ export async function handleRemind(
   chatId: number,
   args: string,
   platform: 'telegram' | 'whatsapp' = 'telegram',
+  senderName?: string,
 ): Promise<void> {
   const m = args.trim().match(/^(\d+)\s+([\s\S]+)/);
   if (!m) {
@@ -153,8 +154,8 @@ export async function handleRemind(
   }
 
   const minutes = Number(m[1]);
-  const message = m[2].trim().slice(0, 500);
-  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440 || !message) {
+  const rawMessage = m[2].trim().slice(0, 500);
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440 || !rawMessage) {
     const { reply } = await autoReply(
       `User salah format perintah pengingat (menit="${m[1]}"). Jelaskan syaratnya (angka 1-1440 + pesan) dengan satu contoh singkat dan ramah.`,
     );
@@ -162,6 +163,7 @@ export async function handleRemind(
     return;
   }
 
+  const message = senderName ? `[Pengingat untuk ${senderName}]: ${rawMessage}` : rawMessage;
   const dueAt = new Date(Date.now() + minutes * 60_000);
   const dbSaved = await saveReminderToDb(String(chatId), message, dueAt, platform);
 
@@ -172,9 +174,11 @@ export async function handleRemind(
     }, minutes * 60_000);
   }
 
-  const { reply } = await autoReply(
-    `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.`,
-  );
+  const promptConfirm = senderName
+    ? `Konfirmasi singkat dan hangat: pengingat "${rawMessage}" untuk ${senderName} telah dicatat dan akan dikirim ${minutes} menit lagi di grup.`
+    : `Konfirmasi singkat dan hangat: pengingat "${rawMessage}" telah dicatat dan akan dikirim ${minutes} menit lagi.`;
+
+  const { reply } = await autoReply(promptConfirm);
 
   const note = !dbSaved && config.isServerless ? '\n(Catatan: pastikan tabel reminders sudah dimigrasi di Supabase.)' : '';
   await bot.sendMessage(chatId, `${reply}${note}`);

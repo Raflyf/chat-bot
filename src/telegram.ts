@@ -87,22 +87,106 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
   try {
     if (msg.from?.is_bot) return;
     const chatId = msg.chat.id;
+    const chatType = msg.chat?.type;
+    // Abaikan saluran siaran satu arah (channel)
+    if (chatType === 'channel') return;
+
+    const isGroup = chatType === 'group' || chatType === 'supergroup';
     const chatKey = String(chatId);
     const msgId = msg.message_id ? String(msg.message_id) : '';
     const ownerId = config.ownerChatId;
-    const text = msg.text?.trim() ?? '';
+    const rawText = msg.text?.trim() ?? '';
+    const rawCaption = msg.caption?.trim() ?? '';
     const msgSentAt = msg.date ? new Date(msg.date * 1000) : undefined;
+    const botUsername = (config.telegramBotUsername || 'chatkita_bot').toLowerCase();
+    const mentionRegex = new RegExp(`@${botUsername}\\b`, 'i');
+
+    const senderName =
+      [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') ||
+      msg.from?.username ||
+      'Anggota Grup';
+
+    // Cek apakah pesan di-reply ke pesan bot
+    const isReplyToBot = Boolean(
+      msg.reply_to_message?.from?.is_bot &&
+      (msg.reply_to_message?.from?.username?.toLowerCase() === botUsername || !msg.reply_to_message?.from?.username)
+    );
+
+    // Cek mention bot pada teks atau caption
+    const hasMentionInText = mentionRegex.test(rawText);
+    const hasMentionInCaption = mentionRegex.test(rawCaption);
+    const hasMention = hasMentionInText || hasMentionInCaption;
+    const hasEntityMention = (msg.entities || msg.caption_entities || []).some((e) => {
+      if (e.type !== 'mention') return false;
+      const str = (rawText || rawCaption).slice(e.offset, e.offset + e.length).toLowerCase();
+      return str === `@${botUsername}`;
+    });
+
+    // Cek perintah / command
+    const cmdMatch = rawText.match(/^\/([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9_]+))?/);
+    let isTargetedCommand = false;
+    if (cmdMatch) {
+      const targetBot = cmdMatch[2]?.toLowerCase();
+      if (targetBot) {
+        if (targetBot !== botUsername) return; // Command spesifik untuk bot lain di grup -> abaikan
+        isTargetedCommand = true;
+      } else {
+        const knownCommands = ['start', 'reset', 'clear', 'remind', 'salah', 'tanya', 'ai', 'help', 'bantuan'];
+        if (!isGroup || knownCommands.includes(cmdMatch[1].toLowerCase())) {
+          isTargetedCommand = true;
+        }
+      }
+    }
+
+    const hasPhoto = Boolean(msg.photo?.length);
+    const hasVideo = Boolean(msg.video || msg.video_note);
+    const hasDoc = Boolean(msg.document);
+    const hasAudio = Boolean(msg.voice || msg.audio);
+    const hasSticker = Boolean(msg.sticker);
+    const hasMedia = hasPhoto || hasVideo || hasDoc || hasAudio || hasSticker;
+
+    let isDirectedToBot = !isGroup;
+    if (isGroup) {
+      if (isTargetedCommand || hasMention || hasEntityMention || isReplyToBot) {
+        isDirectedToBot = true;
+      } else if (hasMedia) {
+        // Untuk stiker di grup: wajib reply ke pesan bot
+        if (hasSticker && isReplyToBot) {
+          isDirectedToBot = true;
+        } else if ((hasPhoto || hasVideo || hasDoc || hasAudio) && (hasMentionInCaption || isReplyToBot)) {
+          isDirectedToBot = true;
+        }
+      }
+    }
+
+    // Jika di grup dan pesan BUKAN untuk bot: abaikan seketika (zero overhead, no DB claim)
+    if (isGroup && !isDirectedToBot) {
+      return;
+    }
+
+    // Bersihkan mention dan prefix command
+    let text = rawText
+      .replace(new RegExp(`@${botUsername}\\b`, 'gi'), '')
+      .replace(/^\/(?:tanya|ai)(?:@\w+)?\s*/i, '')
+      .replace(/^\/([a-zA-Z0-9_]+)@\w+/i, '/$1')
+      .trim();
+
+    let caption = rawCaption
+      .replace(new RegExp(`@${botUsername}\\b`, 'gi'), '')
+      .trim();
 
     // Tentukan konten awal pesan untuk klaim atomik agar teks asli dan jenis media langsung tercatat
     let initialContent = text;
     if (!initialContent) {
-      if (msg.photo?.length) initialContent = msg.caption?.trim() ? `[Gambar] ${msg.caption.trim()}` : '[Gambar]';
-      else if (msg.video) initialContent = msg.caption?.trim() ? `[Video] ${msg.caption.trim()}` : '[Video]';
-      else if (msg.document) initialContent = `[Dokumen: ${msg.document.file_name || 'berkas'}]`;
-      else if (msg.voice || msg.audio) initialContent = '[Pesan Suara]';
-      else if (msg.sticker) initialContent = `[Stiker Telegram${msg.sticker.emoji ? `: ${msg.sticker.emoji}` : ''}]`;
-      else if (msg.location) initialContent = '[Lokasi]';
-      else initialContent = '[telegram-msg]';
+      if (hasPhoto) initialContent = caption ? (isGroup ? `[Gambar dari ${senderName}] ${caption}` : `[Gambar] ${caption}`) : (isGroup ? `[Gambar dari ${senderName}]` : '[Gambar]');
+      else if (hasVideo) initialContent = caption ? (isGroup ? `[Video dari ${senderName}] ${caption}` : `[Video] ${caption}`) : (isGroup ? `[Video dari ${senderName}]` : '[Video]');
+      else if (hasDoc) initialContent = `[Dokumen: ${msg.document?.file_name || 'berkas'}${isGroup ? ` dari ${senderName}` : ''}]`;
+      else if (hasAudio) initialContent = `[Pesan Suara${isGroup ? ` dari ${senderName}` : ''}]`;
+      else if (hasSticker) initialContent = `[Stiker Telegram${msg.sticker?.emoji ? `: ${msg.sticker.emoji}` : ''}${isGroup ? ` dari ${senderName}` : ''}]`;
+      else if (msg.location) initialContent = `[Lokasi${isGroup ? ` dari ${senderName}` : ''}]`;
+      else initialContent = isGroup ? `[Pesan dari ${senderName}]` : '[telegram-msg]';
+    } else if (isGroup) {
+      initialContent = `[${senderName}]: ${text}`;
     }
 
     if (msgId && !(await claimIncomingMessage('telegram', msgId, chatKey, initialContent))) return;
@@ -118,16 +202,23 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
     // 1. Perintah /start (Respons statis instan tanpa memanggil LLM demi kecepatan & efisiensi)
     if (text === '/start') {
-      const welcomeText =
-        `Halo! Saya *${config.botName}*, asisten AI pribadi kamu.\n\n` +
-        `Kemampuan yang dapat kamu gunakan:\n` +
-        `- Diskusi, tanya jawab, atau analisis berbagai topik secara mendalam\n` +
-        `- Menelusuri informasi internet terkini secara real-time\n` +
-        `- Membaca & menganalisis dokumen (PDF, Word, TXT, CSV), gambar, pesan suara (VN), stiker, dan video\n` +
-        `- Mengatur pengingat otomatis dengan perintah: /remind <menit> <pesan>\n` +
-        `- Menyimpan preferensi/koreksi khusus dengan perintah: /salah <catatan>\n` +
-        `- Mereset sesi percakapan dengan perintah: /reset\n\n` +
-        `Ada yang bisa saya bantu sekarang?`;
+      const welcomeText = isGroup
+        ? `Halo semua! Saya *${config.botName}*, asisten AI siap bantu di grup ini.\n\n` +
+          `Cara pakai di grup:\n` +
+          `- Tag/mention *@${botUsername}* diikuti pertanyaan kamu\n` +
+          `- Atau balas (reply) pesan saya langsung\n` +
+          `- Tanya cepat: \`/tanya <pertanyaan>\` atau \`/ai <pertanyaan>\`\n` +
+          `- Pasang pengingat grup: \`/remind <menit> <pesan>\`\n` +
+          `- Reset memori grup: \`/reset\``
+        : `Halo! Saya *${config.botName}*, asisten AI pribadi kamu.\n\n` +
+          `Kemampuan yang dapat kamu gunakan:\n` +
+          `- Diskusi, tanya jawab, atau analisis berbagai topik secara mendalam\n` +
+          `- Menelusuri informasi internet terkini secara real-time\n` +
+          `- Membaca & menganalisis dokumen (PDF, Word, TXT, CSV), gambar, pesan suara (VN), stiker, dan video\n` +
+          `- Mengatur pengingat otomatis dengan perintah: /remind <menit> <pesan>\n` +
+          `- Menyimpan preferensi/koreksi khusus dengan perintah: /salah <catatan>\n` +
+          `- Mereset sesi percakapan dengan perintah: /reset\n\n` +
+          `Ada yang bisa saya bantu sekarang?`;
       await sendTelegramMessageSafe(bot, chatId, welcomeText);
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
@@ -146,16 +237,16 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const check = validateCorrection(rawCorrection);
       if (!check.valid) {
         const { reply } = await autoReply(
-          `User mencoba menggunakan perintah /salah dengan input: "${rawCorrection}". Tanggapi secara spontan, santai, dan bersahabat dengan gayamu sendiri bahwa perintah /salah hanya untuk preferensi personal dia (seperti nama panggilan atau domisili), bukan untuk mengubah identitas developer atau aturan/fakta objektif. DILARANG kaku dan jangan gunakan kalimat template!`,
+          `User ${senderName} mencoba menggunakan perintah /salah dengan input: "${rawCorrection}". Tanggapi secara spontan, santai, dan bersahabat dengan gayamu sendiri bahwa perintah /salah hanya untuk preferensi personal dia (seperti nama panggilan atau domisili), bukan untuk mengubah identitas developer atau aturan/fakta objektif. DILARANG kaku dan jangan gunakan kalimat template!`,
           ctx,
         );
         await sendTelegramMessageSafe(bot, chatId, reply || check.reason || 'Perintah /salah hanya untuk preferensi personal (seperti nama panggilan atau domisili).');
         if (msgId) void markMessageProcessed('telegram', msgId);
         return;
       }
-      const saved = await saveCorrection(chatKey, check.cleaned);
+      const saved = await saveCorrection(chatKey, isGroup ? `[${senderName}]: ${check.cleaned}` : check.cleaned);
       const { reply } = await autoReply(
-        `User menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!`,
+        `User ${senderName} ${isGroup ? 'di grup ' : ''}menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!`,
         ctx,
       );
       await sendTelegramMessageSafe(bot, chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
@@ -166,7 +257,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     // 3. Perintah /remind <menit> <pesan>
     if (text.startsWith('/remind')) {
       const args = text.replace(/^\/remind\s*/, '').trim();
-      await handleRemind(bot, chatId, args);
+      await handleRemind(bot, chatId, args, 'telegram', isGroup ? senderName : undefined);
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
     }
@@ -174,13 +265,16 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     // 3b. Perintah /reset atau /clear atau reset sesi
     if (text && isResetCommand(text)) {
       const reply = await resetSession(chatKey, 'telegram');
-      await sendTelegramMessageSafe(bot, chatId, reply);
+      const resetReply = isGroup
+        ? `Sesi percakapan grup berhasil di-reset oleh *${senderName}*. Memori aktif grup sudah kembali bersih.`
+        : reply;
+      await sendTelegramMessageSafe(bot, chatId, resetReply);
       if (msgId) void markMessageProcessed('telegram', msgId);
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'assistant',
-        content: reply,
+        content: resetReply,
         via: 'system/reset',
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan reset assistant:', err));
       return;
@@ -189,16 +283,16 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     // 4. Foto / Gambar
     if (msg.photo?.length) {
       const fileId = msg.photo[msg.photo.length - 1].file_id;
-      const caption = msg.caption?.trim();
+      const promptCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
-        content: caption ? `[Gambar] ${caption}` : '[Gambar]',
+        content: promptCaption ? `[Gambar] ${promptCaption}` : '[Gambar]',
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan foto user:', err));
       try {
-        if (await answerPhoto(bot, chatId, chatKey, fileId, caption, msgId, msgSentAt)) return;
+        if (await answerPhoto(bot, chatId, chatKey, fileId, promptCaption, msgId, msgSentAt)) return;
       } catch (err) {
         console.error(`[telegram] vision photo error: ${String((err as Error).message ?? err)}`);
       }
@@ -207,19 +301,19 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     // 4b. Video (MP4 / WebM) via Google Gemini Multimodal
     if (msg.video) {
       const fileId = msg.video.file_id;
-      const caption = msg.caption?.trim();
       const mime = msg.video.mime_type || 'video/mp4';
+      const promptCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
-        content: caption ? `[Video] ${caption}` : '[Video]',
+        content: promptCaption ? `[Video] ${promptCaption}` : '[Video]',
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan video user:', err));
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
-        const { reply, via, tokens } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', caption);
+        const { reply, via, tokens } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', promptCaption);
         await sendTelegramMessageSafe(bot, chatId, reply);
         if (msgId) void markMessageProcessed('telegram', msgId);
         await saveMessage({
@@ -240,7 +334,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const fileId = msg.document.file_id;
       const filename = msg.document.file_name || 'dokumen';
       const mime = msg.document.mime_type || 'application/octet-stream';
-      const caption = msg.caption?.trim();
+      const promptCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
 
       // Jika berkas berupa gambar tanpa kompresi
       if (mime.startsWith('image/')) {
@@ -248,10 +342,10 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           platform: 'telegram',
           chat_id: chatKey,
           role: 'user',
-          content: caption ? `[Gambar: ${filename}] ${caption}` : `[Gambar: ${filename}]`,
+          content: promptCaption ? `[Gambar: ${filename}] ${promptCaption}` : `[Gambar: ${filename}]`,
           msg_id: msgId || undefined,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan gambar doc user:', err));
-        if (await answerPhoto(bot, chatId, chatKey, fileId, caption, msgId, msgSentAt)) return;
+        if (await answerPhoto(bot, chatId, chatKey, fileId, promptCaption, msgId, msgSentAt)) return;
       }
 
       // Berkas dokumen umum (PDF, DOCX, TXT, CSV, JSON, kode)
@@ -259,14 +353,14 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
-        content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
+        content: `[Dokumen: ${filename}] ${promptCaption || ''}`.trim(),
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc user:', err));
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
         const ctx = await getContext(chatKey, msgSentAt);
-        const { reply, via, tokens } = await processIncomingDocument(dl.buffer, mime, filename, caption, ctx);
+        const { reply, via, tokens } = await processIncomingDocument(dl.buffer, mime, filename, promptCaption, ctx);
         await sendTelegramMessageSafe(bot, chatId, reply);
         if (msgId) void markMessageProcessed('telegram', msgId);
         await saveMessage({
@@ -293,11 +387,12 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           const transcription = await transcribeAudio(dl.buffer, mime);
           const ctx = await getContext(chatKey, msgSentAt);
 
+          const savedContent = isGroup ? `[Voice Note dari ${senderName}]: "${transcription}"` : `[Voice Note]: "${transcription}"`;
           await saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
             role: 'user',
-            content: `[Voice Note]: "${transcription}"`,
+            content: savedContent,
             msg_id: msgId || undefined,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN user:', err));
 
@@ -312,7 +407,9 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
             }
           }
 
-          const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
+          const prompt = isGroup
+            ? `[Pesan Suara / Voice Note di Grup dari ${senderName}]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih di grup. Tanggapi langsung apa yang dibicarakan ${senderName} secara wajar, hangat, dan bersahabat).`
+            : `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
           const { reply, via, tokens } = await autoReply(prompt, ctx, web);
           await sendTelegramMessageSafe(bot, chatId, reply);
           if (msgId) void markMessageProcessed('telegram', msgId);
@@ -342,9 +439,12 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const lat = msg.location.latitude;
       const lon = msg.location.longitude;
       const tzInfo = resolveTimezoneFromCoords(lat, lon);
-      await saveCorrection(chatKey, `Lokasi pengguna berada di koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`);
+      const locPrefix = isGroup ? `[Lokasi dari ${senderName}]: ` : 'Lokasi pengguna berada di ';
+      await saveCorrection(chatKey, `${locPrefix}koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`);
       const locTime = formatInZone(new Date(), tzInfo.zone);
-      const reply = `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
+      const reply = isGroup
+        ? `Lokasi ${senderName} berhasil dicatat di ${tzInfo.label}. Waktu setempat saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}).`
+        : `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
       await sendTelegramMessageSafe(bot, chatId, reply);
       if (msgId) void markMessageProcessed('telegram', msgId);
       await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply })
@@ -357,11 +457,15 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const emoji = msg.sticker.emoji;
       const ctx = await getContext(chatKey, msgSentAt);
 
+      const savedStickerContent = isGroup
+        ? `[Stiker Telegram dari ${senderName}${emoji ? `: ${emoji}` : ''}]`
+        : `[Stiker Telegram${emoji ? `: ${emoji}` : ''}]`;
+
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
-        content: `[Stiker Telegram${emoji ? `: ${emoji}` : ''}]`,
+        content: savedStickerContent,
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker user:', err));
 
@@ -386,7 +490,9 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       }
 
       // Fallback untuk stiker animasi / video stiker atau jika download gagal
-      const prompt = `Pengguna mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya seorang sahabat mengobrol.`;
+      const prompt = isGroup
+        ? `Pengguna ${senderName} di grup mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya sahabat.`
+        : `Pengguna mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya seorang sahabat mengobrol.`;
       const { reply, via, tokens } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
       if (msgId) void markMessageProcessed('telegram', msgId);
@@ -404,20 +510,20 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
     // 8. Video atau Video Note (Lingkaran)
     if (msg.video || msg.video_note) {
-      const caption = msg.caption?.trim();
+      const promptCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
       const ctx = await getContext(chatKey, msgSentAt);
 
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
-        content: caption ? `[Video] ${caption}` : '[Video]',
+        content: promptCaption ? `[Video] ${promptCaption}` : '[Video]',
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan video user:', err));
 
-      const prompt = caption
-        ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
-        : 'User mengirim pesan video. Sampaikan secara ramah bahwa videonya diterima, dan tanyakan apa yang ingin didiskusikan.';
+      const prompt = promptCaption
+        ? (isGroup ? `Pengguna ${senderName} di grup mengirim video dengan catatan: "${promptCaption}". Tolong tanggapi secara relevan, hangat, dan bersahabat.` : `User mengirim video dengan catatan: "${promptCaption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`)
+        : (isGroup ? `Pengguna ${senderName} di grup mengirim pesan video. Sampaikan secara ramah bahwa videonya diterima, dan tanyakan apa yang ingin dibahas.` : 'User mengirim pesan video. Sampaikan secara ramah bahwa videonya diterima, dan tanyakan apa yang ingin didiskusikan.');
 
       const { reply, via, tokens } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
@@ -435,18 +541,42 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
     }
 
     // 9. Pesan teks umum
-    if (!text || text.startsWith('/')) return;
+    if (!text) {
+      if (isGroup) {
+        // Pengguna men-tag bot di grup tanpa ada teks lanjutan
+        const prompt = `Pengguna ${senderName} memanggil atau men-tag kamu di grup Telegram. Sapa dia secara hangat, santai, dan tanyakan apa yang bisa kamu bantu di grup ini.`;
+        const ctx = await getContext(chatKey, msgSentAt);
+        const { reply, via, tokens } = await autoReply(prompt, ctx);
+        await sendTelegramMessageSafe(bot, chatId, reply);
+        if (msgId) void markMessageProcessed('telegram', msgId);
+        await saveMessage({
+          platform: 'telegram',
+          chat_id: chatKey,
+          role: 'assistant',
+          content: reply,
+          via,
+          tokens,
+        }).catch((e) => console.warn('[telegram] Gagal simpan sapaan tag grup:', e));
+        return;
+      }
+      return;
+    }
+
+    if (text.startsWith('/')) return;
 
     // Fast-path in-memory context (0ms saat aktif)
     const ctx = await getContext(chatKey, msgSentAt);
 
+    const promptText = isGroup ? `[Pesan di Grup dari ${senderName}]: ${text}` : text;
+    const savedUserContent = isGroup ? `[${senderName}]: ${text}` : text;
+
     // Update cache in-memory & pastikan pesan teks user tersimpan (non-blocking agar autoReply langsung jalan)
-    updateContextCache(chatKey, 'user', text);
+    updateContextCache(chatKey, 'user', savedUserContent);
     void saveMessage({
       platform: 'telegram',
       chat_id: chatKey,
       role: 'user',
-      content: text,
+      content: savedUserContent,
       msg_id: msgId || undefined,
     }).catch((err) => console.warn('[telegram] Gagal sinkronisasi pesan user:', err));
 
@@ -461,7 +591,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       }
     }
     const tStart = Date.now();
-    const { reply, escalate, via, tokens } = await autoReply(text, ctx, web);
+    const { reply, escalate, via, tokens } = await autoReply(promptText, ctx, web);
     const latencyMs = Date.now() - tStart;
     await sendTelegramMessageSafe(bot, chatId, reply);
     if (msgId) void markMessageProcessed('telegram', msgId);
