@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { config } from './env.js';
-import { isKeyAllowed, keyUsed, ensureKeyQuotaHydrated } from './quota.js';
+import { isKeyAllowed, keyUsed, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
 
 // --- CIRCUIT BREAKER & ADAPTIVE KEY ROUTING (LATENCY OPTIMIZER) ---
 const keyCooldownMap = new Map<string, number>(); // `${kind}:${keyHash}` -> timestamp cooldown
@@ -89,7 +89,7 @@ export interface ChatMsg {
   content: string | ContentPart[];
 }
 
-type ProviderKind = 'xkiro' | 'groq' | 'cloudflare' | 'gemini' | 'openrouter';
+// ProviderKind diimpor dari ./quota.js
 
 interface CacheEntry {
   at: number;
@@ -216,7 +216,8 @@ async function openAiChat(
     choices?: Array<{ message?: { content?: string } }>;
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
   };
-  const text = data.choices?.[0]?.message?.content?.trim() ?? '';
+  const rawText = data.choices?.[0]?.message?.content?.trim() ?? '';
+  const text = cleanModelOutput(rawText);
   if (!text) throw new Error('EMPTY_RESPONSE');
   const tokens = data.usage
     ? {
@@ -226,6 +227,11 @@ async function openAiChat(
       }
     : undefined;
   return { text, tokens };
+}
+
+function cleanModelOutput(text: string): string {
+  if (!text) return '';
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
 
 interface CloudflareKeyInfo {
@@ -274,6 +280,74 @@ async function resolveCloudflareKey(rawKey: string): Promise<CloudflareKeyInfo> 
   return { accountId: '', token };
 }
 
+async function cloudflareVisionChat(
+  accountId: string,
+  token: string,
+  model: string,
+  messages: ChatMsg[],
+): Promise<ProviderResult> {
+  let prompt = '';
+  let imageBytes: number[] = [];
+
+  for (const m of messages) {
+    if (typeof m.content === 'string') {
+      prompt += (prompt ? '\n' : '') + m.content;
+    } else if (Array.isArray(m.content)) {
+      for (const p of m.content) {
+        if (p.type === 'text') {
+          prompt += (prompt ? '\n' : '') + p.text;
+        } else if (p.type === 'image_url') {
+          const match = p.image_url.url.match(/^data:(.+);base64,(.+)$/);
+          if (match && match[2]) {
+            imageBytes = Array.from(Buffer.from(match[2], 'base64'));
+          }
+        }
+      }
+    }
+  }
+
+  if (imageBytes.length === 0) {
+    throw new Error('NO_IMAGE_DATA_FOR_VISION');
+  }
+
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
+  const data = (await fetchJsonWithLifecycle(
+    endpoint,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt: prompt || 'Jelaskan gambar ini.',
+        image: imageBytes,
+      }),
+    },
+    config.connectTimeoutMs,
+    config.timeoutMs,
+  )) as {
+    result?: {
+      response?: string;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
+  };
+
+  const rawText = data.result?.response?.trim() ?? '';
+  const text = cleanModelOutput(rawText);
+  if (!text) throw new Error('EMPTY_RESPONSE');
+
+  const tokens = data.result?.usage
+    ? {
+        prompt: Number(data.result.usage.prompt_tokens) || 0,
+        completion: Number(data.result.usage.completion_tokens) || 0,
+        total: Number(data.result.usage.total_tokens) || 0,
+      }
+    : undefined;
+
+  return { text, tokens };
+}
+
 async function cloudflareChat(
   rawKey: string,
   model: string,
@@ -283,8 +357,76 @@ async function cloudflareChat(
   if (!accountId) {
     throw new Error('CLOUDFLARE_ACCOUNT_ID_MISSING');
   }
+  if (model === config.models.cfVision || model.includes('vision')) {
+    return await cloudflareVisionChat(accountId, token, model, messages);
+  }
   const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`;
   return await openAiChat(baseUrl, token, model, messages);
+}
+
+async function openCodeChat(
+  key: string,
+  model: string,
+  messages: ChatMsg[],
+): Promise<ProviderResult> {
+  const lines: string[] = [];
+  for (const m of messages) {
+    const content =
+      typeof m.content === 'string'
+        ? m.content
+        : m.content
+            .map((p) => (p.type === 'text' ? p.text : ''))
+            .filter(Boolean)
+            .join(' ');
+    if (!content.trim()) continue;
+    if (m.role === 'system') {
+      lines.push(`[Instruksi Sistem]\n${content}`);
+    } else if (m.role === 'user') {
+      lines.push(`User: ${content}`);
+    } else if (m.role === 'assistant') {
+      lines.push(`Assistant: ${content}`);
+    }
+  }
+  const input = lines.join('\n\n');
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${key}`,
+    'Content-Type': 'application/json',
+    'User-Agent': 'opencode',
+    'x-opencode-client': 'desktop',
+    'x-opencode-project': 'global',
+    'x-opencode-session': crypto.randomUUID(),
+    'x-opencode-request': crypto.randomUUID(),
+  };
+
+  const data = (await fetchJsonWithLifecycle(
+    'https://opencode.ai/zen/v1/responses',
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model, input }),
+    },
+    Math.max(config.connectTimeoutMs, 10000),
+    config.timeoutMs,
+  )) as {
+    output?: Array<{ type?: string; content?: Array<{ text?: string }> }>;
+    usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
+  };
+
+  const msg = data.output?.find((o) => o.type === 'message');
+  const rawText = msg?.content?.[0]?.text?.trim() ?? '';
+  const text = cleanModelOutput(rawText);
+  if (!text) throw new Error('EMPTY_RESPONSE');
+
+  const tokens = data.usage
+    ? {
+        prompt: Number(data.usage.input_tokens) || 0,
+        completion: Number(data.usage.output_tokens) || 0,
+        total: Number(data.usage.total_tokens) || 0,
+      }
+    : undefined;
+
+  return { text, tokens };
 }
 
 async function geminiChat(key: string, model: string, messages: ChatMsg[]): Promise<ProviderResult> {
@@ -349,7 +491,8 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[]): Prom
     };
   };
 
-  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('').trim() ?? '';
+  const rawText = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('').trim() ?? '';
+  const text = cleanModelOutput(rawText);
   if (!text) throw new Error('EMPTY_RESPONSE');
   const tokens = data.usageMetadata
     ? {
@@ -411,12 +554,12 @@ interface Step {
 function steps(): Step[] {
   return [
     {
-      kind: 'xkiro',
-      keys: config.pools.xkiro,
-      models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
+      kind: 'dahl',
+      keys: config.pools.dahl,
+      models: [config.models.dahlPrimary, config.models.dahlBackup],
       visionModels: [],
-      cap: config.dailyCap.xkiro,
-      run: (k, m, msgs) => openAiChat('https://api.xkiro.com/v1', k, m, msgs),
+      cap: config.dailyCap.dahl,
+      run: (k, m, msgs) => openAiChat('https://inference.dahl.global/v1', k, m, msgs),
     },
     {
       kind: 'groq',
@@ -433,12 +576,12 @@ function steps(): Step[] {
       },
     },
     {
-      kind: 'cloudflare',
-      keys: config.pools.cloudflare,
-      models: [config.models.cfPrimary, config.models.cfBackup],
+      kind: 'opencode',
+      keys: config.pools.opencode,
+      models: [config.models.openCodePrimary, config.models.openCodeBackup],
       visionModels: [],
-      cap: config.dailyCap.cloudflare,
-      run: (k, m, msgs) => cloudflareChat(k, m, msgs),
+      cap: config.dailyCap.opencode,
+      run: (k, m, msgs) => openCodeChat(k, m, msgs),
     },
     {
       kind: 'gemini',
@@ -449,12 +592,33 @@ function steps(): Step[] {
       run: (k, m, msgs) => geminiChat(k, m, msgs),
     },
     {
+      kind: 'cloudflare',
+      keys: config.pools.cloudflare,
+      models: [config.models.cfPrimary, config.models.cfBackup],
+      visionModels: [config.models.cfVision],
+      cap: config.dailyCap.cloudflare,
+      run: (k, m, msgs) => cloudflareChat(k, m, msgs),
+    },
+    {
       kind: 'openrouter',
       keys: config.pools.openrouter,
-      models: [config.models.orPrimary, config.models.orMini, config.models.orText],
+      models: [config.models.orPrimary, config.models.orText, config.models.orMini],
       visionModels: [config.models.orPrimary, config.models.orMini],
       cap: config.dailyCap.openrouter,
       run: (k, m, msgs) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs),
+    },
+    {
+      kind: 'xkiro',
+      keys: config.pools.xkiro,
+      models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
+      visionModels: [],
+      cap: config.dailyCap.xkiro,
+      run: (k, m, msgs) =>
+        openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
+          temperature: 0.35,
+          presence_penalty: 0.0,
+          frequency_penalty: 0.0,
+        }),
     },
   ];
 }
@@ -483,7 +647,7 @@ export async function chat(
     ? allSteps
         .filter((s) => s.visionModels.length > 0)
         .sort((a, b) => {
-          const priority: Record<string, number> = { xkiro: 1, gemini: 2, openrouter: 3, groq: 4, cloudflare: 5 };
+          const priority: Record<string, number> = { gemini: 1, cloudflare: 2, openrouter: 3 };
           return (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
         })
     : allSteps;
@@ -518,8 +682,11 @@ export async function chat(
           if (
             lastError.includes('PROVIDER_404') ||
             lastError.includes('PROVIDER_403') ||
+            lastError.includes('PROVIDER_401') ||
             lastError.includes('PROVIDER_503') ||
-            lastError.includes('PROVIDER_502')
+            lastError.includes('PROVIDER_502') ||
+            lastError.includes('CreditsError') ||
+            lastError.includes('ModelError')
           ) {
             recordModelFailure(step.kind, model, 15 * 60_000);
             break;

@@ -4,7 +4,7 @@
 import crypto from 'crypto';
 import { db } from './db.js';
 
-type ProviderKind = 'xkiro' | 'groq' | 'cloudflare' | 'gemini' | 'openrouter';
+export type ProviderKind = 'dahl' | 'groq' | 'opencode' | 'gemini' | 'cloudflare' | 'openrouter' | 'xkiro';
 
 interface Counter {
   date: string;
