@@ -988,10 +988,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           ? `<span class="badge" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8; font-size: 0.68rem; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.25); padding: 2px 7px; border-radius: 9999px; margin-left: 6px;">● Live Remote Sync</span>`
           : "";
 
-        const modelCountInfo = Array.isArray(p.allModels) && p.allModels.length > 1
-          ? ` <span style="color: var(--text-dim); font-size: 0.72rem; font-family: var(--font-mono);">(+${p.allModels.length - 1} Cadangan)</span>`
-          : "";
-
         card.innerHTML = `
           <div class="provider-header">
             <div>
@@ -999,7 +995,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 <span>${escapeHtml(p.displayName)}</span>
                 ${providerLiveBadge}
               </div>
-              <div class="provider-models">${escapeHtml(p.primaryModel)}${modelCountInfo}</div>
             </div>
             <div class="provider-summary-stat">
               <div class="provider-usage-text">${usedValue.toLocaleString()} Calls</div>
@@ -1409,7 +1404,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         tr.innerHTML = `
           <td>
             <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-            <div style="font-size: 0.74rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">${escapeHtml(p.primaryModel)}</div>
           </td>
           <td>
             <span style="color: #cbd5e1; font-weight: 500;">${escapeHtml(mechanismText)}</span>
