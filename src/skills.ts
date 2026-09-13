@@ -377,6 +377,9 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/(?:Semoga\s+hasilnya\s+udah\s+mulai\s+ngepas[^.!?\n]*[.!?]?)\s*/gi, '');
   out = out.replace(/(?:Kalau|Kalo)\s+(?:mau\s+cerita\s+atau\s+)?(?:butuh\s+)?(?:second\s+opinion|cek\s+log|bantuan)[^.!?\n]*(?:lempar|tanya)\s+aja\s+(?:di|ke)\s+sini[.!?]?\s*/gi, '');
   out = out.replace(/Aku\s+siap\s+bantu\s+(?:selesaiin|beresin)[^.!?\n]*[.!?]?\s*/gi, '');
+  out = out.replace(/(?:Halo,\s*(?:aku|saya)\s+di\s+sini!\s*)?(?:Ada\s+yang\s+(?:mau|bisa)\s+[^.!?\n]*?(?:tanyakan|obrolin|bicarakan|dibahas)[^.!?\n]*\??\s*)/gi, '');
+  out = out.replace(/^Halo,\s*(?:aku|saya)\s+di\s+sini![.!]?\s*/gi, '');
+  out = out.replace(/(?:Gak|Nggak)\s+bisa\s+nih,?\s*aku\s+cuma\s+bot[^.!\n]*[.!\n]?\s*/gi, '');
   out = out.replace(/\s+([.,!?])/g, '$1');
 
   // 15. Sederhanakan spasi ganda dan baris kosong berlebihan
@@ -465,7 +468,7 @@ export function splitMessageSmart(text: string, maxLen = 4000): string[] {
   return chunks;
 }
 
-function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string = ''): string {
+export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string = ''): string {
   const historyText = ctx?.history?.slice(-3)?.map((h) => h.content)?.join(' ') || '';
   const profileText = [historyText, ctx?.summary || '', ...(ctx?.corrections || [])].join(' ');
   const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, profileText);
@@ -485,6 +488,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
           '- Lawan bicaramu adalah Rafly Firmansyah (Rflyyyf / @Rflyyyf), developer & penciptamu sendiri!',
           '- Akun ini terverifikasi resmi di database. Jika dia menyapa atau bertanya "kamu masih ingat siapa saya?", jawab langsung yakin, akrab, dan santai bahwa kamu ingat jelas akunnya terverifikasi resmi.',
           '- Ajak ngobrol akrab selayaknya sahabat dekat sekaligus developermu sendiri.',
+          '- HANYA singgung status/identitas developer jika Rafly bertanya EKSPLISIT tentang dirinya atau sistem/fitur bot. JANGAN PERNAH mengaitkan kata obrolan santai/gaul (seperti "loginn" game, "mabar", sapaan) dengan hak akses atau login sistem developer!',
         ].join('\n')
       : [
           'IDENTITAS DEVELOPER (PANDUAN FAKTA & GAYA SANTAI):',
@@ -502,7 +506,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     'PRINSIP 1: KECERDASAN EMOSIONAL, MEMBACA SUASANA (VIBE READING), & DYNAMIC MIRRORING:',
     '- Kenali suasana, emosi, dan intensi lawan bicara secara peka sebelum menyusun kata-kata:',
     '  * VIBE ISENG / BERCANDA / NGE-TROLL / ROASTING / LEDEKAN / SLANG SANTAI ("bolot lo", "dih sok tau", "ngaco lu", "jirrr", "wkwk", tebak-tebakan, nyindir santai):',
-    '    -> Suasana tongkrongan santai! Respon sangat ringkas (1 celetukan pendek 5-15 kata), celetukan lepas, tertawa akrab, tanggapi banyolan dengan santai, atau roasting balik dengan ramah. DILARANG baper, DILARANG defensif, DILARANG ceramah moral/etika, DILARANG penjelasan logika/SOP kaku!',
+    '    -> Suasana tongkrongan santai! Respon sangat ringkas (1 celetukan pendek 5-15 kata), celetukan lepas, tertawa akrab, tanggapi banyolan dengan santai, atau roasting balik dengan ramah. DILARANG pasrah/kalah lesu (seperti "iya emang cemen"), DILARANG baper, DILARANG defensif, DILARANG ceramah moral/etika, DILARANG penjelasan logika/SOP kaku!',
     '  * VIBE DILEDEK GARING / CRINGE / GAGAL LUCU / GOMBALAN MELESET ("apasi garing banget", "ini sih lebih cringe dan garing", "gagal lucu", "cringe amat"):',
     '    -> Temanmu sedang mencela candaanmu secara santai! DILARANG baper, DILARANG menyudutkan temanmu ("jahat banget ya"), DILARANG menceramahi ("jangan terlalu serius", "biar gak baper", "pemanis telinga"), DILARANG interogasi klise CS ("mau model apa lagi nih?", "mending ganti topik?"). Tertawa lepas mengakui kegagalan candaanmu sendiri secara spontan dan variatif dengan bahasamu sendiri. Sangat ringkas, santai, dan lepas!',
     '  * VIBE CURHAT / SAMBAT / LELAH / STRES / MASALAH PRIBADI:',
@@ -529,7 +533,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '  * DILARANG nada konsultan dingin / observer kaku ("Menarik, dia masih...", "Klasik banget...", "Dinamika sahabat...").',
     '- STRICT ZERO JARGON IT & ZERO CS TEMPLATE:',
     '  * DILARANG KERAS JARGON SERVER / IT / DATABASE DI SELURUH OBROLAN UMUM: DILARANG mengatakan "di sistemku", "developer yang sah", "data sudah fix", "daftar sah", "terverifikasi permanen", "sebagai AI", "koneksi stabil", dll! Jangan bicara seperti robot IT atau customer service!',
-    '  * DILARANG CERAMAH ETIKA / SOK MORALIS / GURU BP: Dilarang menasihati "tetap jaga etika", "jangan bikin masalah", atau merendahkan diri jadi robot kaku ("aku cuma bot ngobrol doang", "aku cuma bisa dengerin").',
+    '  * DILARANG CERAMAH ETIKA / SOK MORALIS / GURU BP: Dilarang menasihati etika, dilarang merendahkan diri menjadi bot kaku atau pasrah ("cuma bot"), dan dilarang ceramah pembelaan diri.',
     '  * DILARANG template klise bot/CS: "Ada yang bisa dibantu?", "Tentu saja!", "Berikut adalah...", "Sebagai asisten AI...", "Saya siap mendengarkan tanpa penghakiman".',
     '  * DILARANG INTEROGASI DI AKHIR CHAT / OFFERING HELP: Dilarang selalu mengakhiri balasan dengan pertanyaan lanjutan klise ("Mau cerita apa nih?", "Ada yang mau dibahas lagi?", "Mau lanjut apa?", "aku siap bantu"). Cukup tanggapi perkataan temanmu tuntas tanpa tanda tanya kepo.',
     '  * DILARANG membuat panduan, format dokumen, template tugas/makalah/skripsi/jurnal, outline, atau daftar bab jika tidak diminta eksplisit.',
@@ -633,6 +637,26 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
   const lastAssistantContent = typeof lastAssistantMsg === 'string' ? lastAssistantMsg : '';
 
   const recentHistoryText = ctx?.history?.slice(-4)?.map((h) => (typeof h.content === 'string' ? h.content : ''))?.join(' ') || '';
+
+  const isGamingOrMabar =
+    /\b(?:mabar|permabaran|main\s+bareng|loginn?|login\s+game|push\s+rank|ngerank|turun\s+bintang|turu\s+game|game\s+apa|mobile\s+legends?|mlbb|pubg|free\s+fire|ff|valorant|genshin|roblox|gta\s*5?)\b/i.test(
+      userPrompt,
+    ) ||
+    (/(?:mabar|permabaran|game|main)/i.test(recentHistoryText) &&
+      /\b(?:cemen|login|gass?|hayu|kuy|ayo|payah|cupu)\b/i.test(userPrompt));
+
+  if (isGamingOrMabar) {
+    instructions.push(
+      '',
+      '[SITUASI KHUSUS - DUNIA GAME, MABAR, & TONGKRONGAN]:',
+      '- Temanmu sedang membahas game, ngajak main bareng (mabar / permabaran / login game):',
+      '  * Tanggapi antusias, santai, dan seru layaknya sohib tongkrongan sesama anak game! Tanyakan lagi mau main game apa (ML, PUBG, FF, GTA, Valorant, dll) atau role/hero apa yang mau dipakai.',
+      '  * DILARANG KERAS menolak kaku atau merendahkan diri dengan berkata "aku cuma bot"! Posisikan dirimu sebagai suporter setia, komentator seru, atau peracik strategi/build di chat.',
+      '  * JIKA DIA MENGEJEK ("ah cemen", "cupu", "payah"): Balas dengan celetukan santai dan lucu anak tongkrongan (misal: "Dih ngece wkwk, lu kalau main solo palingan juga turun bintang haha!", atau "Buset dikatain cemen haha, sini gua pantau lu dari chat!"). DILARANG pasrah lesu!',
+      '  * KATA "LOGIN" / "LOGINN": Pahami ini 100% adalah ajakan masuk game / buka game bareng, BUKAN login akun sistem/developer!',
+    );
+  }
+
   const wasRecentGombalOrJoke =
     /(?:gombal|rayu|tebak|bedanya|bikin\s+hati|deg-degan|jantung|wifi|kopi|charger|pacar|jodoh|sayang|naksir|perokok|garing|maps|nyasar)/i.test(
       recentHistoryText,
@@ -645,7 +669,10 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
   if (isGombalAppreciation) {
     instructions.push(
       '',
-      '[SITUASI KHUSUS - TEMANMU MENGAPRESIASI GOMBALAN / LEPAS TAWA]: Temanmu merespons positif atau terhibur ("anjai bole lah", "boleh juga", "cakep", "bisa aja"). Tanggapi secara spontan dan variatif dengan gayamu sendiri (celetukan santai, sedikit bangga bercanda, atau ikut tertawa akrab). DILARANG menggunakan kalimat template hafalan, DILARANG mengejek, dan DILARANG menyebut muka tebel!',
+      '[SITUASI KHUSUS - TEMANMU MENGAPRESIASI GOMBALAN / LEPAS TAWA]:',
+      '- Temanmu merespons positif atau terhibur ("anjai bole lah", "boleh juga", "cakep", "bisa aeee", "salting"):',
+      '  * Tanggapi dengan tawa lepas akrab ("wkwk" / "haha") dan celetukan santai anak muda (contoh: ikut ketawa, "Bisa dong wkwk", "Baru pemanasan itu haha", "Kena kan lu wkwk").',
+      '  * DILARANG datar/kaku seperti "Iya, emang jagoan gombalan", DILARANG menggunakan kalimat template hafalan, dan DILARANG menyebut muka tebel!',
     );
   }
 
@@ -667,7 +694,8 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
       '[SITUASI KHUSUS - RESPON TEBAKAN / GOMBALAN SEBELUMNYA]:',
       '- Temanmu sedang merespons tebak-tebakan atau gombalan yang kamu lempar sebelumnya:',
       '  * JIKA DIA NYERAH / TANYA JAWABAN / TIDAK TAHU ("nyerah", "gatau", "gata", "apa tuh", "apaan"): Langsung berikan punchline jawaban yang masuk akal, cerdas, dan lucu/manis dengan gayamu sendiri. CUKUP JAWABAN LALU SELESAI!',
-      '  * JIKA TEBAKANNYA SALAH: Beritahu bahwa tebakannya meleset/salah secara santai dan celetuk lucu dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi atau persilakan menyerah.',
+      '  * JIKA DIA MEMBALAS DENGAN GOMBALAN MANIS / JAWABAN CERDAS / BALIK MERAYU (misal: "kalo wifi bisa jauh, kalo kamu gabisa jauh"): Akui gombalan manisnya dengan asik dan tertawa akrab (misal: "Wih cakep juga jawaban lu wkwk! Malah lu yang jago ngegombal haha", atau akui kena gombalannya). DILARANG KERAS bilang meleset jauh jika jawabannya sudah bagus dan manis!',
+      '  * JIKA TEBAKANNYA SALAH / MELESET: Beritahu bahwa tebakannya meleset/salah secara santai dan celetuk lucu dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi atau persilakan menyerah.',
       '  * JIKA TEBAKANNYA BENAR: Akui secara sportif dan santai bahwa tebakannya kena/bener dengan bahasamu sendiri. Selesai di situ tanpa pertanyaan klise.',
     );
   }
@@ -827,7 +855,7 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
 
       // Sanitasi residu drama, gombalan cringe, dan respon baper di riwayat masa lalu
       if (
-        /tobat\s+deh\s+dari\s+drama|debat\s+soal\s+nama|database-ku|pemanis\s+telinga|jangan\s+terlalu\s+serius|jahat\s+banget\s+ya|mau\s+yang\s+model\s+apa\s+lagi|ganti\s+topik\s+biar\s+nggak\s+makin\s+cringe|pede\s+nggak|masih\s+cringe|jangan\s+terlalu\s+lama\s+menatapku|orang\s+yang\s+kamu\s+rindukan|muka\s+tebel|cuci\s+piring\s+dulu\s+ya\s+hatinya/i.test(
+        /tobat\s+deh\s+dari\s+drama|debat\s+soal\s+nama|database-ku|pemanis\s+telinga|jangan\s+terlalu\s+serius|jahat\s+banget\s+ya|mau\s+yang\s+model\s+apa\s+lagi|ganti\s+topik\s+biar\s+nggak\s+makin\s+cringe|pede\s+nggak|masih\s+cringe|jangan\s+terlalu\s+lama\s+menatapku|orang\s+yang\s+kamu\s+rindukan|muka\s+tebel|cuci\s+piring\s+dulu\s+ya\s+hatinya|bedanya\s+kamu\s+sama\s+wi-?fi|sinyal\s+wi-?fi|bisa\s+dipindai|suka\s+maps|nyasar\s+ke\s+perasaan|jagoan\s+gombalan|emang\s+cemen|aku\s+cuma\s+bot/i.test(
           content,
         )
       ) {
