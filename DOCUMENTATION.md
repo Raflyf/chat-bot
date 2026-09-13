@@ -221,11 +221,13 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
     2. **Proteksi Prompt Injection & Jailbreak**: Menolak perintah berbahaya seperti `ignore previous instructions`, `system prompt`, atau pembatalan aturan sistem.
     3. **Proteksi Fakta Baku & Anti-Pembodohan**: Menolak upaya peracunan formula matematika dasar (misal `1+1=3`) dan fakta sains baku agar memori bot tidak dimanipulasi menjadi bodoh.
 - **Integrasi Penuh Seluruh Kanal Komunikasi (`whatsapp_cloud.ts`, `whatsapp_baileys.ts`, `telegram.ts`)**:
-  - Ketiga kanal pesan kini memvalidasi input perintah `/salah` secara ketat dan memberikan pesan penolakan yang ramah serta edukatif jika pengguna mencoba memasukkan data manipulatif.
+  - Ketiga kanal pesan kini memvalidasi input perintah `/salah` secara ketat.
+  - **Eliminasi Respons Hardcode (100% Dinamis via `autoReply`)**: Seluruh balasan format panduan, penolakan edukatif, dan konfirmasi simpan tidak lagi menggunakan template teks kaku. Sistem mendelegasikan penyusunan kalimat langsung ke mesin LLM (`autoReply`) agar bot merespons secara spontan, hangat, santai, dan alami sesuai kepribadian kawan akrab WhatsApp/Telegram tanpa kalimat hafalan yang kaku.
 - **Pertahanan Berlapis pada System Prompt LLM (`src/skills.ts`)**:
   - Menyaring array koreksi (`safeCorrections`) sebelum disuntikkan ke prompt guna mencegah data berbahaya lama ikut terbaca.
   - Memperbarui label instruksi menjadi `[PREFERENSI PERSONAL PENGGUNA (PROFIL & GAYA OBROLAN)]` dengan klausul *Strict Truth Guard*: bot dilarang menjadi bodoh dan wajib mengabaikan catatan pengguna jika bertentangan dengan sains, matematika, logika, atau identitas sistem.
   - Memperkuat Rule 0 (*Integritas Objektif, Anti-Sycophancy, & Anti-Poisoning*) agar bot tidak bersikap penjilat terhadap klaim salah pengguna.
+  - Menegaskan bahwa anti-klaim palsu dan jawaban identitas pembuat wajib dirangkai secara mengalir dan dinamis dengan gaya bahasa bot sendiri (anti-template).
 
 ### v0.26.35 - 2026-09-13 11:55 WIB
 

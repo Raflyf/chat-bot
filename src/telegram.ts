@@ -136,19 +136,26 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const rawCorrection = text.replace(/^\/salah\s*/, '').trim();
       const ctx = await getContext(chatKey);
       if (!rawCorrection) {
-        const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat dan ramah.', ctx);
-        await sendTelegramMessageSafe(bot, chatId, reply);
+        const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
+        await sendTelegramMessageSafe(bot, chatId, reply || 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
         if (msgId) void markMessageProcessed('telegram', msgId);
         return;
       }
       const check = validateCorrection(rawCorrection);
       if (!check.valid) {
-        await sendTelegramMessageSafe(bot, chatId, check.reason || 'Perintah /salah hanya untuk preferensi personal (seperti nama panggilan atau domisili), bukan untuk mengubah fakta atau aturan bot.');
+        const { reply } = await autoReply(
+          `User mencoba menggunakan perintah /salah dengan input: "${rawCorrection}". Tanggapi secara spontan, santai, dan bersahabat dengan gayamu sendiri bahwa perintah /salah hanya untuk preferensi personal dia (seperti nama panggilan atau domisili), bukan untuk mengubah identitas developer atau aturan/fakta objektif. DILARANG kaku dan jangan gunakan kalimat template!`,
+          ctx,
+        );
+        await sendTelegramMessageSafe(bot, chatId, reply || check.reason || 'Perintah /salah hanya untuk preferensi personal (seperti nama panggilan atau domisili).');
         if (msgId) void markMessageProcessed('telegram', msgId);
         return;
       }
       const saved = await saveCorrection(chatKey, check.cleaned);
-      const { reply } = await autoReply(`User menyimpan koreksi: "${check.cleaned}". Konfirmasi singkat bahwa kamu mengingatnya.`, ctx);
+      const { reply } = await autoReply(
+        `User menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!`,
+        ctx,
+      );
       await sendTelegramMessageSafe(bot, chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
