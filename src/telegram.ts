@@ -105,6 +105,15 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
     if (msgId && !(await claimIncomingMessage('telegram', msgId, chatKey, initialContent))) return;
 
+    // Anti-Stale Message Guard: abaikan pesan basi hasil retry Telegram webhook atau saat bot offline (> 180 detik)
+    const nowSec = Math.floor(Date.now() / 1000);
+    const msgDateSec = msg.date || 0;
+    if (msgDateSec > 0 && (nowSec - msgDateSec) > 180) {
+      console.warn(`[telegram] Mengabaikan pesan basi/retry (umur: ${nowSec - msgDateSec} detik, id: ${msgId}). Tandai selesai tanpa memanggil AI.`);
+      if (msgId) void markMessageProcessed('telegram', msgId);
+      return;
+    }
+
     // 1. Perintah /start (Respons statis instan tanpa memanggil LLM demi kecepatan & efisiensi)
     if (text === '/start') {
       const welcomeText =

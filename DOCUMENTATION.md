@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.30 (Pemisahan Unit Metrik: Eliminasi Unit Mismatch Kuota Token vs Request RPD Cloudflare pada KPI Ribbon)  
+**Versi:** v0.26.31 (Anti-Stale Message Guard: Eliminasi Respon Tertunda atas Pesan Basi & Webhook Retry Storm pada WhatsApp & Telegram)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:30 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:35 WIB
 
 ---
 
@@ -207,6 +207,24 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.31 - 2026-09-13 11:35 WIB
+
+**Anti-Stale Message Guard: Eliminasi Respon Tertunda atas Pesan Basi & Webhook Retry Storm pada WhatsApp & Telegram**
+
+- **Audit & Penemuan Investigasi Root Cause**:
+  - **Fenomena**: Bot tiba-tiba merespons chat lama (seperti `"oyyy"` yang dijawab lelucon zombie atau `"p"` yang dijawab sapaan) tanpa adanya ketikan baru dari pengguna pada jam tersebut.
+  - **Akar Masalah (Meta Webhook Exponential Backoff & Baileys Offline Backlog)**:
+    1. Ketika pengguna mengirim beberapa chat saat bot sedang *offline*, redeploy, atau mengalami timeout (misal rentang kemarin sore jam 16:49–18:00 WIB), server webhook Vercel belum mengirimkan status `HTTP 200 OK` ke Meta.
+    2. Meta WhatsApp Cloud API memiliki kebijakan *Webhook Retry with Exponential Backoff* hingga rentang **24–36 jam**. Meta secara otomatis mencoba mengirim ulang (*retry*) pesan-pesan yang tertunda tersebut saat bot sudah aktif kembali (contohnya terkirim ulang pada jam 10:43 dan 11:12 WIB).
+    3. Handler webhook (`src/whatsapp_cloud.ts`, `src/whatsapp_baileys.ts`, `src/telegram.ts`) sebelumnya tidak memvalidasi usia pesan (`timestamp`). Setiap pesan yang baru diterima oleh webhook langsung di-claim dan diproses oleh model LLM, sehingga bot membalas chat yang sebenarnya dikirim berjam-jam lalu.
+- **Implementasi Proteksi Anti-Stale Message Guard**:
+  - **WhatsApp Cloud API (`src/whatsapp_cloud.ts`)**: Mengevaluasi `Number(m.timestamp)`. Jika usia pesan lebih dari 180 detik (> 3 menit), pesan ditandai selesai (`markMessageProcessed`) dan di-ACK ke Meta tanpa memanggil inferensi AI (`continue`). Meta menghentikan retry storm dan token tidak terbuang.
+  - **WhatsApp Baileys Multi-Device (`src/whatsapp_baileys.ts`)**: Mengevaluasi `m.messageTimestamp`. Jika pesan berasal dari riwayat lampau atau sinkronisasi offline (> 180 detik), proses langsung dihentikan tanpa memanggil AI.
+  - **Telegram Bot Webhook (`src/telegram.ts`)**: Mengevaluasi `msg.date`. Jika selisih waktu penerimaan dengan waktu pembuatan pesan melebihi 180 detik, pesan diabaikan secara aman.
+- **Hasil Verifikasi**:
+  - Tidak ada lagi respon hantu (*phantom response*) atas pesan basi hasil retry webhook.
+  - Percakapan aktif pengguna tetap bersih, sinkron, dan hanya merespons pesan real-time.
 
 ### v0.26.30 - 2026-09-13 11:30 WIB
 

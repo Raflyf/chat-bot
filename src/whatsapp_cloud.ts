@@ -223,6 +223,15 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // Tandai pesan telah dibaca (centang dua biru)
         void markWhatsAppCloudMessageRead(messageId);
 
+        // Anti-Stale Message Guard: abaikan pesan basi hasil retry webhook Meta (> 180 detik)
+        const nowSec = Math.floor(Date.now() / 1000);
+        const msgTimeSec = Number(m.timestamp) || 0;
+        if (msgTimeSec > 0 && (nowSec - msgTimeSec) > 180) {
+          console.warn(`[wa-cloud] Mengabaikan pesan basi/stale retry (umur: ${nowSec - msgTimeSec} detik, id: ${messageId}). Tandai selesai tanpa memanggil AI.`);
+          void markMessageProcessed('whatsapp', messageId);
+          continue;
+        }
+
         const msgType = m.type;
 
         // Kasus 1: Pesan Gambar / Foto
