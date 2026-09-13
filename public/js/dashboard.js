@@ -56,16 +56,16 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const exp = Number(expTimestamp) || (Date.now() + 15 * 60 * 1000);
       const remainingMs = exp - Date.now();
       if (remainingMs <= 0 && (Date.now() - exp > 30000)) {
-        triggerSessionExpired();
+        triggerSessionExpired("expired");
         return;
       }
       const safeDuration = Math.max(10000, Math.min(15 * 60 * 1000, remainingMs > 0 ? remainingMs : 15 * 60 * 1000));
       sessionExpiryTimer = setTimeout(() => {
-        triggerSessionExpired();
+        triggerSessionExpired("expired");
       }, safeDuration);
     }
 
-    function triggerSessionExpired() {
+    function triggerSessionExpired(reason = "expired") {
       clearStoredToken();
       if (refreshTimer) {
         clearInterval(refreshTimer);
@@ -77,7 +77,11 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const alertEl = document.getElementById("auth-alert");
       if (alertEl) {
         alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Sesi admin 15 menit telah berakhir untuk keamanan. Masukkan Master PIN kembali.";
+        if (reason === "auth_lost" || reason === "unauthorized") {
+          alertEl.textContent = "Sesi autentikasi terputus atau tidak valid (pembaruan server). Masukkan Master PIN kembali.";
+        } else {
+          alertEl.textContent = "Sesi admin 15 menit telah berakhir untuk keamanan. Masukkan Master PIN kembali.";
+        }
       }
       const pinField = document.getElementById("pin-input");
       if (pinField) {
@@ -378,18 +382,18 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         });
         const data = await res.json();
         if (res.ok && data.valid) {
-          let exp = Number(sessionStorage.getItem(SESSION_EXP_KEY) || 0);
+          let exp = Number(data.expires_at) || Number(sessionStorage.getItem(SESSION_EXP_KEY) || 0);
           if (!exp || exp <= Date.now()) {
             exp = Date.now() + 15 * 60 * 1000;
-            sessionStorage.setItem(SESSION_EXP_KEY, String(exp));
           }
+          sessionStorage.setItem(SESSION_EXP_KEY, String(exp));
           startSessionExpiryCountdown(exp);
           document.documentElement.classList.remove("not-authenticated");
           document.documentElement.classList.add("authenticated");
           document.getElementById("auth-modal").classList.add("hidden");
           return true;
         } else {
-          triggerSessionExpired();
+          triggerSessionExpired("unauthorized");
           return false;
         }
       } catch {
@@ -500,7 +504,20 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         });
 
         if (res.status === 401) {
-          triggerSessionExpired();
+          // Lakukan recheck verifikasi sesi sebelum memutuskan sesi hilang
+          const recheck = await fetch("/api/admin-otp?action=verify_session", {
+            headers: { "x-admin-token": token },
+          }).catch(() => null);
+
+          if (recheck && recheck.ok) {
+            const recheckData = await recheck.json().catch(() => ({}));
+            if (recheckData.valid) {
+              console.warn("Transient 401 pada /api/stats terdeteksi, sesi tetap valid.");
+              return;
+            }
+          }
+
+          triggerSessionExpired("auth_lost");
           return;
         }
 
@@ -1323,7 +1340,20 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         });
 
         if (res.status === 401) {
-          triggerSessionExpired();
+          // Lakukan recheck verifikasi sesi sebelum memutuskan sesi hilang
+          const recheck = await fetch("/api/admin-otp?action=verify_session", {
+            headers: { "x-admin-token": token },
+          }).catch(() => null);
+
+          if (recheck && recheck.ok) {
+            const recheckData = await recheck.json().catch(() => ({}));
+            if (recheckData.valid) {
+              console.warn("Transient 401 pada /api/dataset terdeteksi, sesi tetap valid.");
+              return;
+            }
+          }
+
+          triggerSessionExpired("auth_lost");
           return;
         }
 

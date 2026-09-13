@@ -269,6 +269,13 @@ export function needsSearch(text: string): boolean {
   }
 
   // 10. TRIGGER EKSPLISIT SEARCH LIVE:
+  // - Permintaan gombalan, tebak-tebakan, atau humor segar
+  if (/\b(?:gombal(?:an)?|gombalin|rayuan|tebak(?:an|\s*-?\s*tebakan)?|pantun)\b/i.test(qNorm)) {
+    if (!/^(?:nyerah|gatau|gak tau|ga tau|apa tuh|apaan|apa|bukan)\b/i.test(qNorm)) {
+      return true;
+    }
+  }
+
   // - Keyword recency informal & viralitas (C4)
   if (/\b(?:lagi\s+rame|yang\s+lagi\s+viral|berita\s+heboh|ada\s+apa\s+(?:sih\s+)?sekarang|yang\s+baru\s+keluar)\b/i.test(qNorm)) {
     return true;
@@ -488,6 +495,15 @@ export function formulateSmartSearchQueries(query: string, previousContext?: str
       'berita utama terkini hari ini indonesia',
       'breaking news headlines today',
       'peristiwa penting hari ini indonesia',
+    ];
+  }
+
+  const isGombalOrJokeQuery = /\b(?:gombal(?:an)?|gombalin|rayuan|tebak(?:an|\s*-?\s*tebakan)?|pantun)\b/i.test(cleanRawLower);
+  if (isGombalOrJokeQuery) {
+    return [
+      'tebak tebakan gombal romantis lucu masuk akal',
+      'kata kata tebak tebakan gombalan bikin baper',
+      'tebak tebakan lucu receh bikin ngakak',
     ];
   }
 

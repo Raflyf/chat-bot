@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.45 (Refactor Efisiensi Token Prompt, Gombalan Interaktif Dua Arah Beranalogi Masuk Akal & Ragam Interjeksi Gaul Indonesia)  
+**Versi:** v0.26.47 (Live Web Search Humor & Gombalan, Few-Shot Penegakan Setup Dua Arah, dan Eliminasi Kebocoran 'Muka Tebel')  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 13:25 WIB
+**Terakhir Diperbarui:** 2026-09-13 13:45 WIB
 
 ---
 
@@ -207,6 +207,37 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.47 - 2026-09-13 13:45 WIB
+
+**Live Web Search Humor & Gombalan, Few-Shot Penegakan Setup Dua Arah, dan Eliminasi Kebocoran 'Muka Tebel'**
+
+- **Live Web Search untuk Gombalan & Tebak-tebakan (`src/web.ts`)**:
+  - Menghubungkan permintaan gombalan, rayuan, dan tebak-tebakan ke mesin pencarian web langsung (`needsSearch`).
+  - Merumuskan kueri cerdas (`formulateSmartSearchQueries`) untuk mengambil referensi humor dan gombalan populer, masuk akal, dan relate dari internet (`tebak tebakan gombal romantis lucu masuk akal`), sehingga model tidak lagi berhalusinasi mengarang analogi aneh atau ngawur.
+- **Few-Shot Penegakan Giliran Pertama (Setup Only Dua Arah) (`src/skills.ts`)**:
+  - Mengatasi masalah di mana model membocorkan punchline langsung dalam 1 pesan monolog saat diminta gombalan.
+  - Menambahkan contoh kontras eksplisit (*CONTOH BENAR* vs *CONTOH SALAH*) di prompt sistem: model diwajibkan HANYA melempar 1 kalimat pertanyaan setup dan ajakan tebak (*"Kamu tahu nggak kenapa aku suka maps? Coba tebak!"*), dilarang menuliskan kata *"soalnya..."* / *"karena..."*, dan WAJIB berhenti di situ menunggu tebakan lawan bicara.
+- **Eliminasi Total Kebocoran Frasa 'Muka Tebel' & Penanganan Apresiasi (`src/skills.ts`)**:
+  - Membersihkan frasa *"muka tebel"* dari seluruh prompt sistem yang sebelumnya bocor ke pesan balasan bot (*"Pantesan muka tebel..."*).
+  - Menghapus kata seru *"anjaii"* dari regex `isVentingOrTired` (curhat lelah).
+  - Menambahkan handler khusus apresiasi gombalan (`isGombalAppreciation`): saat lawan bicara merespons positif (*"anjaiii bole lahh"*, *"boleh juga"*, *"cakep"*, *"bisa aja"*), bot membalas ramah, santai, dan percaya diri (*"Haha kena kan!", "Hehe bisa aja kan, baru pemanasan itu mah wkwk"*).
+- **Perbaikan Deteksi Pending Riddle/Gombal (`isPendingRiddleOrGombal`)**:
+  - Jika pesan asisten sebelumnya sudah memuat punchline (*"soalnya..."*, *"karena..."*), statusnya tidak lagi dianggap sebagai tebakan menggantung, sehingga pujian/apresiasi lawan bicara tidak disalahartikan sebagai tebakan yang meleset.
+
+### v0.26.46 - 2026-09-13 13:40 WIB
+
+**Ketahanan Sesi Dashboard Terhadap Redeploy Vercel, Rolling Auth Config Cache & Verifikasi Transient 401**
+
+- **Rolling In-Memory Cache pada `getAuthConfig` (`src/admin_auth.ts`)**:
+  - Menambahkan cache in-memory 25 detik (`AUTH_CONFIG_CACHE_TTL_MS`) untuk meredam badai kueri REST Supabase dari auto-refresh interval dashboard tiap 15 detik.
+  - Menyinkronkan `inMemoryAuthConfig` secara dinamis saat fetch Supabase berhasil, sehingga saat terjadi transient network lag pada instance baru, `pinHash` tidak kosong.
+- **Cryptographic Session Inspection & Timestamp Parity (`src/admin_auth.ts` & `api/admin-otp.ts`)**:
+  - Mengekspos fungsi `inspectSessionToken` untuk memverifikasi HMAC signature dan mengekstrak `exp` kriptografis asli dari token.
+  - Memperkaya endpoint `/api/admin-otp?action=verify_session` dengan `expires_at` dan `remaining_ms`.
+- **Toleransi Transient 401 & Pembedaan Pesan Peringatan (`public/js/dashboard.js`)**:
+  - Background polling pada `fetchMetrics()` dan `fetchDataset()` kini melakukan recheck sesi sebelum membuang token.
+  - Membedakan pesan peringatan: menampilkan *"Sesi autentikasi terputus atau tidak valid (pembaruan server)"* saat terjadi diskoneksi tak terduga, dan hanya menampilkan *"Sesi admin 15 menit telah berakhir"* jika batas 15 menit lokal memang telah tercapai.
 
 ### v0.26.45 - 2026-09-13 13:25 WIB
 

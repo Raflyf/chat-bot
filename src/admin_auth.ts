@@ -28,6 +28,11 @@ let inMemoryAuthConfig: AdminAuthConfig = {
   sessionTokens: [],
 };
 
+// Rolling in-memory cache untuk meredam cold-start & load spike dari polling interval
+let cachedAuthConfig: AdminAuthConfig | null = null;
+let cachedAuthConfigTime = 0;
+const AUTH_CONFIG_CACHE_TTL_MS = 25 * 1000; // 25 detik cache
+
 // Throttle caches (in-memory fast path)
 const otpSendCache = new Map<string, { count: number; start: number; lastSendAt: number }>();
 const otpAttemptCache = new Map<string, { count: number; start: number }>();
@@ -63,13 +68,22 @@ export function getClientIp(req: VercelRequest): string {
 
 /**
  * Load auth configuration from Supabase.
- * Dual-Store strategy:
- * 1. Tries `admin_auth_config` table
- * 2. If table doesn't exist, reads from `whatsapp_sessions` (filename: '__admin_auth_config.json')
+ * Dual-Store strategy with rolling cache:
+ * 1. Checks in-memory cache (TTL 25s)
+ * 2. Tries `admin_auth_config` table
+ * 3. If table doesn't exist, reads from `whatsapp_sessions` (filename: '__admin_auth_config.json')
+ * 4. Fallback to memory / cached configuration on transient network error
  */
-export async function getAuthConfig(): Promise<AdminAuthConfig> {
+export async function getAuthConfig(forceRefresh = false): Promise<AdminAuthConfig> {
+  const now = Date.now();
+  if (!forceRefresh && cachedAuthConfig && (now - cachedAuthConfigTime < AUTH_CONFIG_CACHE_TTL_MS)) {
+    return cachedAuthConfig;
+  }
+
   const c = db();
-  if (!c) return inMemoryAuthConfig;
+  if (!c) {
+    return cachedAuthConfig || inMemoryAuthConfig;
+  }
 
   try {
     // 1. Try admin_auth_config table
@@ -109,7 +123,7 @@ export async function getAuthConfig(): Promise<AdminAuthConfig> {
         saveAuthConfig({ pinHash: DEFAULT_PIN_HASH }).catch(() => {});
       }
 
-      return {
+      const res: AdminAuthConfig = {
         pinHash: activePinHash,
         lockoutAttempts: tableData.lockout_attempts || 0,
         lockedUntil: tableData.locked_until || null,
@@ -117,6 +131,10 @@ export async function getAuthConfig(): Promise<AdminAuthConfig> {
         otpExpiresAt: tableData.otp_expires_at || null,
         sessionTokens,
       };
+      cachedAuthConfig = res;
+      cachedAuthConfigTime = Date.now();
+      inMemoryAuthConfig = res;
+      return res;
     }
 
     // 2. Fallback to whatsapp_sessions (__admin_auth_config.json)
@@ -129,7 +147,7 @@ export async function getAuthConfig(): Promise<AdminAuthConfig> {
     if (!waErr && waData && waData.content) {
       try {
         const parsed = JSON.parse(waData.content);
-        return {
+        const res: AdminAuthConfig = {
           pinHash: parsed.pinHash || DEFAULT_PIN_HASH,
           lockoutAttempts: parsed.lockoutAttempts || 0,
           lockedUntil: parsed.lockedUntil || null,
@@ -139,15 +157,21 @@ export async function getAuthConfig(): Promise<AdminAuthConfig> {
             ? parsed.sessionTokens.filter((s: { token: string; exp: number }) => s && s.token && Number(s.exp) > Date.now())
             : [],
         };
+        cachedAuthConfig = res;
+        cachedAuthConfigTime = Date.now();
+        inMemoryAuthConfig = res;
+        return res;
       } catch {
         // malformed json, fallback below
       }
     }
 
-    // 3. If missing in both, fallback to memory
+    // 3. If missing in both, fallback to cached or memory
+    if (cachedAuthConfig) return cachedAuthConfig;
     return inMemoryAuthConfig;
   } catch (e) {
     console.warn('[admin-auth] getAuthConfig error, fallback to memory:', e);
+    if (cachedAuthConfig) return cachedAuthConfig;
     return inMemoryAuthConfig;
   }
 }
@@ -157,12 +181,14 @@ export async function getAuthConfig(): Promise<AdminAuthConfig> {
  */
 export async function saveAuthConfig(updates: Partial<AdminAuthConfig>): Promise<boolean> {
   // Fetch latest state from Supabase to prevent overwriting concurrent updates
-  const latest = await getAuthConfig();
+  const latest = await getAuthConfig(true);
   const current: AdminAuthConfig = {
     ...latest,
     ...updates,
   };
   inMemoryAuthConfig = current;
+  cachedAuthConfig = current;
+  cachedAuthConfigTime = Date.now();
 
   const c = db();
   if (!c) return true;
@@ -228,11 +254,11 @@ export function createSessionToken(
 }
 
 /**
- * Validasi token sesi admin (digunakan oleh middleware endpoint /api/stats, /api/dataset, /api/admin-otp).
+ * Periksa dan validasi token sesi admin, mengembalikan detail masa berlaku kriptografis.
  */
-export async function verifySessionToken(token: string): Promise<boolean> {
+export async function inspectSessionToken(token: string): Promise<{ valid: boolean; exp?: number; iat?: number }> {
   if (!token || typeof token !== 'string' || !token.startsWith('adm_')) {
-    return false;
+    return { valid: false };
   }
 
   const config = await getAuthConfig();
@@ -246,41 +272,61 @@ export async function verifySessionToken(token: string): Promise<boolean> {
     const signature = raw.slice(dotIdx + 1);
 
     try {
-      const hmacKey = crypto.createHash('sha256').update(PIN_SALT + ':' + config.pinHash).digest();
-      const expectedSig = crypto.createHmac('sha256', hmacKey).update(payloadStr).digest('hex');
+      let hmacKey = crypto.createHash('sha256').update(PIN_SALT + ':' + config.pinHash).digest();
+      let expectedSig = crypto.createHmac('sha256', hmacKey).update(payloadStr).digest('hex');
 
-      if (!timingSafeMatch(signature, expectedSig)) {
-        return false;
+      let signatureValid = timingSafeMatch(signature, expectedSig);
+
+      // Fallback jika config.pinHash dari DB berbeda dengan DEFAULT_PIN_HASH (misal saat inisialisasi cold-start)
+      if (!signatureValid && DEFAULT_PIN_HASH && DEFAULT_PIN_HASH !== config.pinHash) {
+        const fallbackHmacKey = crypto.createHash('sha256').update(PIN_SALT + ':' + DEFAULT_PIN_HASH).digest();
+        const fallbackSig = crypto.createHmac('sha256', fallbackHmacKey).update(payloadStr).digest('hex');
+        signatureValid = timingSafeMatch(signature, fallbackSig);
+      }
+
+      if (!signatureValid) {
+        return { valid: false };
       }
 
       const payloadJson = Buffer.from(payloadStr, 'base64url').toString('utf8');
       const payload = JSON.parse(payloadJson);
 
       if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number') {
-        return false;
+        return { valid: false };
       }
 
       // Pastikan token belum kedaluwarsa
       if (now > payload.exp) {
-        return false;
+        return { valid: false, exp: payload.exp, iat: payload.iat };
       }
 
       // Pastikan rentang waktu wajar (maksimal 16 menit dari penerbitan untuk mencegah manipulasi waktu)
       if (payload.exp - payload.iat > 16 * 60 * 1000 || payload.iat > now + 60 * 1000) {
-        return false;
+        return { valid: false };
       }
 
-      return true;
+      return { valid: true, exp: payload.exp, iat: payload.iat };
     } catch {
-      return false;
+      return { valid: false };
     }
   }
 
   // 2. Fallback untuk token legasi (adm_<hex64>) yang tersimpan di memori/database
-  const valid = config.sessionTokens.some(
+  const matchingToken = config.sessionTokens.find(
     s => s && timingSafeMatch(s.token, token) && Number(s.exp) > now
   );
-  return valid;
+  if (matchingToken) {
+    return { valid: true, exp: matchingToken.exp };
+  }
+  return { valid: false };
+}
+
+/**
+ * Validasi token sesi admin (digunakan oleh middleware endpoint /api/stats, /api/dataset, /api/admin-otp).
+ */
+export async function verifySessionToken(token: string): Promise<boolean> {
+  const info = await inspectSessionToken(token);
+  return info.valid;
 }
 
 /**
