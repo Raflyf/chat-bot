@@ -27,9 +27,15 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
     return;
   }
 
-  // Jika 401/403 (kunci salah / izin ditolak), cooldown 5 menit
-  if (msg.includes('PROVIDER_401') || msg.includes('PROVIDER_403')) {
+  // Jika 401/403 atau CreditsError (kunci salah / izin ditolak / kredit akun habis), cooldown 5 menit
+  if (msg.includes('PROVIDER_401') || msg.includes('PROVIDER_403') || msg.includes('CreditsError')) {
     keyCooldownMap.set(kh, Date.now() + 300_000);
+    return;
+  }
+
+  // Jika timeout koneksi atau hang, cooldown 2 menit agar request berikutnya langsung ke kunci sehat
+  if (msg === 'CONNECT_TIMEOUT' || msg === 'THINKING_TIMEOUT') {
+    keyCooldownMap.set(kh, Date.now() + 120_000);
     return;
   }
 }
@@ -680,24 +686,18 @@ export async function chat(
         } catch (e) {
           lastError = e instanceof Error ? e.message : 'UNKNOWN';
           recordKeyFailure(step.kind, key, e);
+          console.warn(`[providers] Kegagalan key pada ${step.kind}/${model} (key: ${key.slice(0, 10)}...): ${lastError}. Mencoba key berikutnya...`);
 
-          // Jika model 404 (tidak ditemukan), 403 (model berbayar uang asli), atau 503/502 (upstream server outage/kapasitas habis),
-          // jangan buang waktu mencoba kunci lain untuk model yang sama karena server upstream pasti mengembalikan error yang sama
+          // HANYA break perulangan kunci jika error murni kegagalan model global (bukan error kunci/kuota/jaringan):
+          // - PROVIDER_404: Model tidak terdaftar di endpoint upstream
+          // - ModelError: Upstream menyatakan nama model tidak didukung
+          // - PROVIDER_413: Ukuran payload prompt melampaui kapasitas model
           if (
             lastError.includes('PROVIDER_404') ||
-            lastError.includes('PROVIDER_403') ||
-            lastError.includes('PROVIDER_401') ||
-            lastError.includes('PROVIDER_503') ||
-            lastError.includes('PROVIDER_502') ||
-            lastError.includes('CreditsError') ||
-            lastError.includes('ModelError')
+            lastError.includes('ModelError') ||
+            lastError.includes('PROVIDER_413')
           ) {
-            recordModelFailure(step.kind, model, 15 * 60_000);
-            break;
-          }
-
-          // Jika model 413 (payload terlalu besar untuk kuota ITPM model ini), langsung lompat
-          if (lastError.includes('PROVIDER_413')) {
+            console.warn(`[providers] Model ${step.kind}/${model} tidak valid atau payload melampaui batas (${lastError}). Beralih ke model cadangan.`);
             recordModelFailure(step.kind, model, 15 * 60_000);
             break;
           }

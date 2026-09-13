@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.27.3 (Kesiapan & Keamanan Grup Telegram: Anti-Spam Tag/Reply Guard, Sender Identity Context, Isolasi Perintah Multi-Bot & Pengingat Anggota Grup)  
+**Versi:** v0.27.4 (Perbaikan Kritis Sirkuit Failover & Rotasi Kunci Cadangan: Eliminasi False Break pada Error Kunci 401/403/502/Timeout, Penegakan 3 Lapis Ketahanan Key Rotation -> Model Fallback -> Provider Tier Failover, dan Cooldown Presisi pada Kunci Hanging)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 19:42 WIB
+**Terakhir Diperbarui:** 2026-09-13 20:05 WIB
 
 ---
 
@@ -207,6 +207,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.27.4 - 2026-09-13 20:05 WIB
+
+**Perbaikan Kritis Sirkuit Failover & Rotasi Kunci Cadangan: Eliminasi False Break pada Error Kunci (401/403/502/Timeout), Penegakan 3 Lapis Ketahanan (Key Rotation -> Model Fallback -> Provider Tier Failover), dan Cooldown Presisi pada Kunci Hanging**
+
+- **Eliminasi Fatal False Break pada Perulangan Kunci Pool (`src/providers.ts`)**:
+  - Menghapus `PROVIDER_401`, `PROVIDER_403`, `PROVIDER_502`, `PROVIDER_503`, dan `CreditsError` dari kondisi `break;` perulangan kunci.
+  - Sebelumnya, jika Kunci #1 mengembalikan error otorisasi (401), kehabisan kredit, atau transient network error (502), sistem keliru menganggap modelnya mati total lalu memutus loop (`break`) dan memicu hukuman cooldown 15 menit. Akibatnya, seluruh kunci cadangan (#2 s.d. #10) terabaikan secara sia-sia dan request langsung panik melompat ke Groq.
+  - Sekarang, status `break` HANYA diizinkan jika terjadi error model permanen: `PROVIDER_404` (model tidak ada), `ModelError` (nama model ditolak), atau `PROVIDER_413` (payload melampaui limit model). Untuk seluruh error kunci lainnya, sistem mendisiplinkan kunci tersebut dan **wajib melanjutkan ke kunci cadangan berikutnya**.
+- **Cooldown Presisi untuk Kunci Hanging & Timeout (`recordKeyFailure`)**:
+  - Menambahkan penanganan `CONNECT_TIMEOUT` dan `THINKING_TIMEOUT` pada `recordKeyFailure` dengan masa pendinginan 2 menit (`120_000 ms`).
+  - Mencegah kunci yang sedang macet/menggantung di server vLLM dipilih kembali secara berulang pada request berikutnya sebelum server upstream pulih.
+  - Kunci yang sukses langsung dipromosikan menjadi sticky key prioritas #1 via `lastSuccessfulKeyMap`.
+- **Penyesuaian Toleransi Koneksi vLLM (`src/env.ts`)**:
+  - Menaikkan batas default `CONNECT_TIMEOUT_MS` dari 3.000 ms menjadi 5.000 ms agar toleran terhadap latensi kluster vLLM tanpa memicu pembatalan prematur.
+- **Hasil Verifikasi & Pengujian Faktual**:
+  - Teruji langsung melalui simulasi di `scratch/test_failover_simulation.mts` dan `scratch/test_sticky_key.mts`:
+    - Saat Kunci #1 mengalami timeout, sistem mencetak log `Mencoba key berikutnya...` dan langsung memanggil Kunci #2.
+    - Kunci cadangan berhasil menghasilkan jawaban tanpa melompat ke Groq (`via: dahl/deepseek-ai/DeepSeek-V4-Flash-0731`).
+  - Lolos uji tipe dan kompilasi TypeScript (`npm run typecheck` & `npm run build`, exit code 0).
 
 ### v0.27.3 - 2026-09-13 19:42 WIB
 
