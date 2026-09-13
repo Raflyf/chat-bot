@@ -302,7 +302,7 @@ export function isAskingTime(text?: string): boolean {
 
 /**
  * Periksa apakah user sedang menyatakan lokasi tempat tinggal / keberadaan dirinya
- * Contoh: "saya di cianjur", "aku di bali", "lagi di surabaya", "tinggal di jepang", "cianjur", dll.
+ * Pola: saya di cianjur, aku di bali, lagi di surabaya, tinggal di jepang, cianjur, dll.
  */
 export function detectUserLocationDeclaration(text?: string): LocationMatch | null {
   if (!text || typeof text !== 'string') return null;
@@ -435,7 +435,7 @@ export function buildUniversalTimePrompt(
     parts.push(`- Jam Saat Ini di ${displayLocation}: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.dayName}, ${locTime.dateStr})`);
     parts.push(`[DIREKTIF MENJAWAB KONFIRMASI LOKASI]:`);
     parts.push(`- Temanmu memberitahukan bahwa dia berada di ${displayLocation}.`);
-    parts.push(`- Jawab singkat, hangat, to-the-point mengakui lokasinya dan sebutkan waktu di kotanya secara presisi (contoh: "Iya bener, maaf ya aku malah nanya lagi. Sekarang jam ${locTime.time.slice(0, 5)} ${locTime.tzName} di ${specificCity || userDeclaringLoc.label}.").`);
+    parts.push(`- Jawab singkat, hangat, to-the-point mengakui lokasinya dan sebutkan waktu di kotanya secara presisi (${locTime.time.slice(0, 5)} ${locTime.tzName} di ${specificCity || userDeclaringLoc.label}). Gunakan gayamu sendiri secara variatif tanpa kalimat template hafalan.`);
     parts.push(`- DILARANG SALAH ZONA: Pastikan zona waktunya sesuai data resmi di atas (${userDeclaringLoc.label} adalah ${locTime.tzName})! DILARANG menyebut WITA jika lokasinya di Jawa/Sumatera (WIB), dan DILARANG menyebut WIB jika lokasinya di Bali/Sulawesi (WITA)!`);
     parts.push(`- DILARANG MENANYAKAN KOTA LAGI: Lokasi ini sudah otomatis tersimpan ke memori sistem, DILARANG menanyakan kembali kotanya ke depannya!`);
     parts.push(`- DILARANG KERAS MENAMBAHKAN FILLER BASA-BASI SOK AKRAB: DILARANG KERAS menempelkan celetukan penutup klise seperti "santai aja terus bro", "santai aja bro", "santuy aja dulu", "semangat terus ya", dsb! Jawaban selesai di situ to-the-point tanpa embel-embel tidak perlu.`);
@@ -462,7 +462,7 @@ export function buildUniversalTimePrompt(
     const displayCity = specificCity ? `${specificCity}` : profileLoc.label;
     parts.push(`- LOKASI PENGGUNA TERSIMPAN DI MEMORI: ${profileLoc.label}${specificCity ? ` (Kota: ${specificCity})` : ''}`);
     parts.push(`  * Jam di Lokasi Pengguna: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.full})`);
-    parts.push(`  * DIREKTIF: Temanmu bertanya jam sekarang. Karena kamu sudah tahu dia di ${displayCity}, jawab langsung: "Sekarang jam ${locTime.time.slice(0, 5)} ${locTime.tzName} di ${displayCity}."`);
+    parts.push(`  * DIREKTIF: Temanmu bertanya jam sekarang. Karena kamu sudah tahu dia di ${displayCity}, sampaikan langsung waktu saat ini (${locTime.time.slice(0, 5)} ${locTime.tzName} di ${displayCity}) secara to-the-point dan santai tanpa kalimat hafalan.`);
     parts.push(`  * DILARANG menanyakan kembali dia berada di kota mana karena kamu sudah tahu dan mengingat lokasinya!`);
     parts.push(`  * DILARANG KERAS menambahkan celetukan penutup filler seperti "santai aja terus bro" atau semacamnya! Cukup sampaikan waktu to-the-point dan selesai.`);
     return parts.join('\n');
@@ -483,9 +483,8 @@ export function buildUniversalTimePrompt(
   parts.push(`  * WITA: ${wita.time.slice(0, 5)} WITA`);
   parts.push(`  * WIT: ${wit.time.slice(0, 5)} WIT`);
   parts.push(`[DIREKTIF MENJAWAB KARENA LOKASI BELUM DIKETAHUI]:`);
-  parts.push(`- Sampaikan waktu santai dan ringkas (1-2 kalimat saja), contoh:`);
-  parts.push(`  "Sekarang jam ${wib.time.slice(0, 5)} WIB (atau ${wita.time.slice(0, 5)} WITA / ${wit.time.slice(0, 5)} WIT). Kamu lagi di kota mana nih?"`);
-  parts.push(`- DILARANG menjabarkan daftar pulau/provinsi panjang seperti buku pelajaran.`);
+  parts.push(`- Sampaikan waktu santai dan ringkas (1-2 kalimat saja) menyebutkan jam saat ini (${wib.time.slice(0, 5)} WIB, ${wita.time.slice(0, 5)} WITA, atau ${wit.time.slice(0, 5)} WIT), lalu tanyakan secara wajar dia sedang berada di daerah/kota mana.`);
+  parts.push(`- DILARANG kalimat template hafalan dan DILARANG menjabarkan daftar pulau/provinsi panjang seperti buku pelajaran.`);
 
   return parts.join('\n');
 }
