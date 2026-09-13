@@ -681,21 +681,21 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["whisper-large-v3-turbo", "whisper-large-v3", "whisper", "groq/whisper"],
         },
 
-        // --- Tier 3: OpenCode Zen Direct API (1.048.576 Context Text & Reasoning Engine) ---
+        // --- Tier 3: OpenCode Zen Direct API (Text & Reasoning Engine) ---
         {
           name: "Muse Spark 1.3",
           provider: "OPENCODE",
           tagClass: "tag-opencode",
-          capabilities: ["Text", "1M Context", "Fast Latency", "Reasoning"],
-          desc: "Prioritas #1 Tier 3 - Frontier 1M Konteks Teks & Penalaran Empatik latensi 1,8s (Endpoint API Teks)",
+          capabilities: ["Text", "Empathetic Chat", "Fast Latency", "Reasoning"],
+          desc: "Prioritas #1 Tier 3 - Frontier Teks & Penalaran Empatik latensi 1,8s (Endpoint API Teks)",
           matchKeys: ["opencode/muse-spark-1.3-contributor-free", "muse-spark-1.3-contributor-free", "muse-spark-1.3", "muse-1.3"],
         },
         {
           name: "Muse Spark 1.2",
           provider: "OPENCODE",
           tagClass: "tag-opencode",
-          capabilities: ["Text", "1M Context", "Fast Latency", "Reasoning"],
-          desc: "Prioritas #2 Tier 3 - Cadangan 1M Konteks Teks OpenCode Zen jika Muse 1.3 sibuk/timeout",
+          capabilities: ["Text", "Empathetic Chat", "Fast Latency", "Reasoning"],
+          desc: "Prioritas #2 Tier 3 - Cadangan Teks OpenCode Zen jika Muse 1.3 sibuk/timeout",
           matchKeys: ["opencode/muse-spark-1.2-contributor-free", "muse-spark-1.2-contributor-free", "muse-spark-1.2", "muse-1.2"],
         },
 
@@ -704,7 +704,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           name: "Gemini 3.8 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
-          capabilities: ["Multimodal Vision", "PDF & Video", "1M Context"],
+          capabilities: ["Multimodal Vision", "PDF & Video", "Audio VN"],
           desc: "Prioritas #1 Tier 4 - Frontier multimodal native foto, dokumen PDF & video",
           matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
         },
@@ -712,8 +712,8 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           name: "Gemini 2.5 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
-          capabilities: ["Multimodal Vision", "1M Context"],
-          desc: "Prioritas #2 Tier 4 - Cadangan multimodal vision stabil 1M konteks",
+          capabilities: ["Multimodal Vision", "Document Analysis"],
+          desc: "Prioritas #2 Tier 4 - Cadangan multimodal vision stabil",
           matchKeys: ["gemini/gemini-2.5-flash", "gemini-2.5-flash"],
         },
 
@@ -1407,9 +1407,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           </td>
           <td>
             <span style="color: #cbd5e1; font-weight: 500;">${escapeHtml(mechanismText)}</span>
-          </td>
-          <td>
-            <span class="tp-badge-context">${escapeHtml(p.contextWindow || "-")}</span>
           </td>
           <td>
             <span style="font-weight: 600; color: #38bdf8;">${escapeHtml(limitOfficial)}</span>
