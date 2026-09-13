@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.42 (Pelepasan Format Kaku Gombalan, Eliminasi Sikap Baper & Anti-Quotes Cringe)  
+**Versi:** v0.26.43 (Eliminasi Respon Template Tebakan & Penerapan 100% Dynamic Phrasing Tanpa Kalimat Hafalan)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 12:40 WIB
+**Terakhir Diperbarui:** 2026-09-13 12:45 WIB
 
 ---
 
@@ -207,6 +207,22 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.43 - 2026-09-13 12:45 WIB
+
+**Eliminasi Respon Template Tebakan & Penerapan 100% Dynamic Phrasing Tanpa Kalimat Hafalan**
+
+- **Pembersihan Contoh String Template pada Prompt (`src/skills.ts`)**:
+  - Mengeliminasi seluruh string contoh kalimat dalam tanda kutip/kurung pada aturan tebak-tebakan, humor, koreksi fakta, dan respon ledekan (seperti *"Bukan wkwk, kejauhan itu mah!"*, *"Tuh kan bener wkwk"*, *"Karena kalau tidur takut kepencet restart wkwk"*, *"Bukan gitu wkwk, aslinya..."*, *"Wkwk maap dah haha"*).
+  - Contoh kalimat literal yang sebelumnya dicantumkan sebagai ilustrasi berisiko tinggi dihafal dan di-parrot secara repetitif oleh model (terutama model 27B seperti Groq Qwen 3.8-27b).
+- **Penegakan 100% Dynamic Phrasing (*Strict Zero Canned Response*)**:
+  - Mengubah seluruh pedoman respon menjadi direktif perilaku murni (*behavioral intent directives*):
+    - *Jika tebakan benar*: Akui secara sportif dan santai dengan variasi kalimat sendiri yang mengalir sesuai gaya teman bicara tanpa menawarkan tebakan baru.
+    - *Jika tebakan salah*: Tolak dan nyatakan meleset secara santai, spontan, dan dinamis menggunakan kalimat orisinal sendiri (dilarang meniru kalimat hafalan/template), lalu persilakan mencoba lagi atau menyerah. Dilarang membocorkan jawaban.
+    - *Jika menyerah / tanya jawaban*: Langsung berikan punchline dari setup tebakan secara segar dan wajar tanpa pertanyaan lanjutan atau interogasi klise.
+    - *Koreksi & Integritas*: Tolak klaim salah dan tebakan salah secara objektif tanpa menjadi penjilat, tetapi gunakan kosakata yang dinamis dan bervariasi.
+- **Pemberantasan Repetisi Antarmuka Chat**:
+  - Menjamin setiap balasan tebak-tebakan memiliki rasa (*flavor*) dan diksi berbeda setiap kali terjadi interaksi, mengikuti ritme dan bahasa lawan bicara secara alami.
 
 ### v0.26.42 - 2026-09-13 12:40 WIB
 
