@@ -414,10 +414,7 @@ function steps(): Step[] {
       kind: 'xkiro',
       keys: config.pools.xkiro,
       models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
-      visionModels: [
-        'qwen/qwen3.8-max:free',
-        'qwen/qwen3.6-plus:free',
-      ],
+      visionModels: [],
       cap: config.dailyCap.xkiro,
       run: (k, m, msgs) => openAiChat('https://api.xkiro.com/v1', k, m, msgs),
     },
