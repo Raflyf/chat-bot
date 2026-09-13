@@ -141,6 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let waPeriod: number = 0;
     let telePeriod: number = 0;
     let assistantMsgs: Array<{ via: string | null }> = [];
+    let allTimeAssistantMsgs: Array<{ via: string | null }> = [];
     let userMsgs: Array<{ content: string }> = [];
     let waMonthlyMsgs: Array<{ chat_id: string; created_at: string }> = [];
 
@@ -238,6 +239,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         assistantMsgsRes,
         userMsgsRes,
         waMonthlyMsgsRes,
+        allTimeAssistantRes,
         liveResults,
       ] = await Promise.all([
         quotaQuery,
@@ -247,6 +249,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         fetchPagedRange<{ via: string | null }>(buildAssistantQuery, 1000, 10000),
         fetchPagedRange<{ content: string | null }>(buildUserMsgsQuery, 1000, 10000),
         fetchPagedRange<{ chat_id: string | null; created_at: string }>(buildWaMonthlyQuery, 1000, 15000),
+        c.from('messages').select('via').eq('role', 'assistant').order('id', { ascending: false }).limit(300),
         liveFetchPromise,
       ]);
 
@@ -255,6 +258,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       waPeriod = dbWaRes.count || 0;
       telePeriod = dbTeleRes.count || 0;
       assistantMsgs = assistantMsgsRes as any;
+      allTimeAssistantMsgs = ((allTimeAssistantRes?.data as any) || []) as Array<{ via: string | null }>;
       userMsgs = userMsgsRes as any;
       waMonthlyMsgs = waMonthlyMsgsRes as any;
 
@@ -304,21 +308,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     const modelCounts: Record<string, number> = {};
     let totalModelCalls = 0;
-    const rawLatest = assistantMsgs?.[0]?.via || null;
-    const latestActiveModel = rawLatest ? rawLatest.split('#')[0].trim() : null;
-    const recentModelOrder: string[] = [];
-    const seenRecent = new Set<string>();
 
     for (const m of assistantMsgs ?? []) {
       const rawModel = m.via || 'unknown';
       const model = rawModel.split('#')[0].trim();
       modelCounts[model] = (modelCounts[model] || 0) + 1;
       totalModelCalls++;
-      if (model && model !== 'unknown' && !seenRecent.has(model)) {
+    }
+
+    // Urutan MRU (Most Recently Used) All-Time:
+    // Urutan kronologis model diambil dari riwayat all-time agar tumpukan MRU tidak terputus/reset saat berganti filter tanggal
+    const recentModelOrder: string[] = [];
+    const seenRecent = new Set<string>();
+
+    const candidateRecentMsgs = allTimeAssistantMsgs.length > 0 ? allTimeAssistantMsgs : (assistantMsgs ?? []);
+    for (const m of candidateRecentMsgs) {
+      const rawModel = m?.via || 'unknown';
+      const model = rawModel.split('#')[0].trim();
+      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && !seenRecent.has(model)) {
         seenRecent.add(model);
         recentModelOrder.push(model);
       }
     }
+
+    // Edge case: jika ada model pada periode aktif yang belum masuk ke tumpukan candidate
+    for (const m of assistantMsgs ?? []) {
+      const rawModel = m?.via || 'unknown';
+      const model = rawModel.split('#')[0].trim();
+      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && !seenRecent.has(model)) {
+        seenRecent.add(model);
+        recentModelOrder.push(model);
+      }
+    }
+
+    const latestActiveModel = recentModelOrder[0] || (assistantMsgs?.[0]?.via ? assistantMsgs[0].via.split('#')[0].trim() : null);
 
     const modelsBreakdown = Object.entries(modelCounts)
       .map(([name, count]) => ({

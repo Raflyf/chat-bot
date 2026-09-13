@@ -618,95 +618,58 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         return 0;
       }
 
-      // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover sistem)
+      // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover runtime sistem v0.26)
       const catalog = [
-        {
-          name: "Qwen 3.8 Max Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Text", "Vision"],
-          desc: "Prioritas #1 - Flagship 1M konteks inferensi instan & Vision",
-          matchKeys: ["qwen/qwen3.8-max:free", "qwen3.8-max", "xkiro/qwen/qwen3.8-max:free"],
-        },
-        {
-          name: "Mistral Medium 3.5",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Reasoning"],
-          desc: "Prioritas #2 - Dense instruction reasoning 128K & Multimodal Vision",
-          matchKeys: ["mistralai/mistral-medium-3.5", "mistral-medium-3.5", "mistral-medium", "xkiro/mistralai/mistral-medium-3.5"],
-        },
+        // --- Tier 1: xKiro Gateway (DeepSeek Engine) ---
         {
           name: "DeepSeek V4 Flash",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
-          capabilities: ["Fast Reasoning"],
-          desc: "Prioritas #3 - Model penalaran super cepat latensi rendah",
+          capabilities: ["Fast Reasoning", "Text"],
+          desc: "Prioritas #1 Tier 1 - Model penalaran super cepat latensi rendah",
           matchKeys: ["deepseek/deepseek-v4-flash", "deepseek-v4-flash", "xkiro/deepseek/deepseek-v4-flash"],
-        },
-        {
-          name: "Mistral Large 2512",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Reasoning"],
-          desc: "Prioritas #4 - Frontier reasoning 128K & Multimodal Vision",
-          matchKeys: ["mistralai/mistral-large-2512", "mistral-large-2512", "mistral-large", "xkiro/mistralai/mistral-large-2512"],
         },
         {
           name: "DeepSeek Chat V3.1",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Conversation", "Reasoning"],
-          desc: "Prioritas #5 - Percakapan natural adaptif & penalaran umum",
+          desc: "Prioritas #2 Tier 1 - Percakapan natural adaptif & penalaran umum",
           matchKeys: ["deepseek/deepseek-chat-v3.1", "deepseek-chat-v3.1", "deepseek-chat", "xkiro/deepseek/deepseek-chat-v3.1"],
-        },
-        {
-          name: "Qwen 3.7 Max Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Efficient Text"],
-          desc: "Prioritas #6 - Qwen 3.7 Max inferensi efisien 1M konteks",
-          matchKeys: ["qwen/qwen3.7-max:free", "qwen3.7-max", "xkiro/qwen/qwen3.7-max:free"],
         },
         {
           name: "DeepSeek V4 Pro",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
-          capabilities: ["Code", "Reasoning"],
-          desc: "Prioritas #7 - Frontier reasoning & logika koding mendalam",
+          capabilities: ["Code", "Deep Reasoning"],
+          desc: "Prioritas #3 Tier 1 - Frontier reasoning & logika koding mendalam",
           matchKeys: ["deepseek/deepseek-v4-pro", "deepseek-v4-pro", "xkiro/deepseek/deepseek-v4-pro"],
         },
         {
-          name: "Qwen 3.6 Plus Free",
+          name: "DeepSeek V3.2",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
-          capabilities: ["Text", "Vision"],
-          desc: "Prioritas #8 - Cadangan flagship Qwen 3.6 respons kilat 1M & Vision",
-          matchKeys: ["qwen/qwen3.6-plus:free", "qwen3.6-plus", "xkiro/qwen/qwen3.6-plus:free"],
+          capabilities: ["Text", "Reasoning"],
+          desc: "Prioritas #4 Tier 1 - Cadangan penalaran stabil xKiro Gateway",
+          matchKeys: ["deepseek/deepseek-v3.2", "deepseek-v3.2", "xkiro/deepseek/deepseek-v3.2"],
         },
-        {
-          name: "Mistral Small 2603",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Efficient Text", "Vision"],
-          desc: "Prioritas #9 - Model efisien ringan latensi sub-detik & Vision",
-          matchKeys: ["mistralai/mistral-small-2603", "mistral-small-2603", "mistral-small", "xkiro/mistralai/mistral-small-2603"],
-        },
+
+        // --- Tier 2: Groq Cloud API (LPU Inference Engine) ---
         {
           name: "Qwen 3.8 27B",
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Vision", "LPU Speed"],
-          desc: "Prioritas Failover Tier 2 - Respons kilat ~500 tok/s LPU & Multimodal",
-          matchKeys: ["groq/qwen/qwen3.8-27b", "groq/qwen3.8", "qwen3.8-27b"],
+          desc: "Prioritas #1 Tier 2 - Respons kilat ~500 tok/s LPU & Multimodal",
+          matchKeys: ["groq/qwen/qwen3.8-27b", "groq/qwen3.8", "qwen/qwen3.8-27b", "qwen3.8-27b"],
         },
         {
           name: "Qwen 3.6 27B",
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Vision", "LPU Speed"],
-          desc: "Cadangan Groq LPU kecepatan tinggi & Multimodal",
-          matchKeys: ["groq/qwen/qwen3.6-27b", "groq/qwen3.6", "qwen3.6-27b"],
+          desc: "Prioritas #2 Tier 2 - Cadangan Groq LPU kecepatan tinggi & Multimodal",
+          matchKeys: ["groq/qwen/qwen3.6-27b", "groq/qwen3.6", "qwen/qwen3.6-27b", "qwen3.6-27b"],
         },
         {
           name: "Groq Whisper Turbo",
@@ -714,14 +677,16 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           tagClass: "tag-groq",
           capabilities: ["Voice Note (VN)"],
           desc: "Transkripsi Voice Note audio sub-detik ~500ms",
-          matchKeys: ["whisper-large-v3-turbo", "whisper", "groq/whisper"],
+          matchKeys: ["whisper-large-v3-turbo", "whisper-large-v3", "whisper", "groq/whisper"],
         },
+
+        // --- Tier 3: Cloudflare Workers AI ---
         {
           name: "Llama 3.1 70B Instruct",
           provider: "CLOUDFLARE",
           tagClass: "tag-cloudflare",
           capabilities: ["High-Reasoning", "Text", "Code"],
-          desc: "Model reasoning andalan Cloudflare Workers AI tier gratis",
+          desc: "Prioritas #1 Tier 3 - Model reasoning andalan Cloudflare Workers AI",
           matchKeys: ["cloudflare/@cf/meta/llama-3.1-70b-instruct", "@cf/meta/llama-3.1-70b-instruct", "llama-3.1-70b"],
         },
         {
@@ -729,15 +694,17 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "CLOUDFLARE",
           tagClass: "tag-cloudflare",
           capabilities: ["Code", "Math", "Text"],
-          desc: "Cadangan presisi tinggi koding dan penalaran Cloudflare AI",
+          desc: "Prioritas #2 Tier 3 - Cadangan presisi tinggi koding Cloudflare AI",
           matchKeys: ["cloudflare/@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/qwen/qwen2.5-coder-32b-instruct", "qwen2.5-coder-32b"],
         },
+
+        // --- Tier 4: Google Gemini API ---
         {
           name: "Gemini 3.8 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
           capabilities: ["Multimodal Vision"],
-          desc: "Frontier multimodal native foto, PDF & dokumen",
+          desc: "Prioritas #1 Tier 4 - Frontier multimodal native foto, PDF & dokumen",
           matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
         },
         {
@@ -745,15 +712,17 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "GEMINI",
           tagClass: "tag-gemini",
           capabilities: ["Multimodal Vision"],
-          desc: "Cadangan multimodal vision stabil 1M konteks",
+          desc: "Prioritas #2 Tier 4 - Cadangan multimodal vision stabil 1M konteks",
           matchKeys: ["gemini/gemini-2.5-flash", "gemini-2.5-flash"],
         },
+
+        // --- Tier 5: OpenRouter AI ---
         {
           name: "Nex N2.5 Pro Free",
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Text", "Vision"],
-          desc: "Dynamic SOTA Free router otomatis OpenRouter & Multimodal",
+          desc: "Prioritas #1 Tier 5 - Dynamic SOTA Free router & Multimodal",
           matchKeys: ["openrouter/nex-agi/nex-n2.5-pro:free", "nex-n2.5-pro", "nex-agi/nex-n2.5-pro:free"],
         },
         {
@@ -761,7 +730,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Text", "Vision"],
-          desc: "Cadangan efisien router otomatis OpenRouter & Multimodal",
+          desc: "Prioritas #2 Tier 5 - Cadangan efisien router OpenRouter",
           matchKeys: ["openrouter/nex-agi/nex-n2.5-mini:free", "nex-n2.5-mini", "nex-agi/nex-n2.5-mini:free"],
         },
         {
@@ -769,24 +738,30 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Fast Text"],
-          desc: "Model berkecepatan tinggi OpenRouter Cloud",
+          desc: "Prioritas #3 Tier 5 - Model berkecepatan tinggi OpenRouter Cloud",
           matchKeys: ["openrouter/nvidia/nemotron-3.5-lightning:free", "nemotron-3.5-lightning", "nvidia/nemotron-3.5-lightning:free"],
         },
       ];
 
       // Urutan Model Berbasis MRU (Most Recently Used):
       // Jika ada model baru terpakai jadi #1, maka model #1 sebelumnya bergeser jadi #2, #3, dst.
-      // Tidak kembali ke posisi statis/fix di bawah.
+      // Model-model yang sudah pernah terpakai tidak akan kembali ke posisi statis/bawah.
 
-      // 1. Ambil urutan model terbaru dari backend (recentModels)
+      // 1. Ambil urutan model all-time terbaru dari backend (recentModels)
       const serverRecent = Array.isArray(data.recentModels) ? data.recentModels : [];
 
-      // 2. Pertahankan juga MRU stack di client session agar perpindahan kartu mulus
-      if (!window.__mruModelHistory) {
-        window.__mruModelHistory = [];
+      // 2. Pertahankan juga MRU stack di client session + localStorage agar urutan tidak reset saat reload
+      const MRU_STORAGE_KEY = "freeaibot_mru_models_stack";
+      if (!window.__mruModelHistory || !Array.isArray(window.__mruModelHistory) || window.__mruModelHistory.length === 0) {
+        try {
+          const stored = localStorage.getItem(MRU_STORAGE_KEY);
+          window.__mruModelHistory = stored ? JSON.parse(stored) : [];
+        } catch {
+          window.__mruModelHistory = [];
+        }
       }
 
-      // Sinkronkan data recent dari server ke history client (dari terlama ke terbaru agar unshift terurut benar)
+      // Sinkronkan data recent dari server ke history client (dari terlama ke terbaru agar unshift menempatkan yang terbaru di #1)
       for (let idx = serverRecent.length - 1; idx >= 0; idx--) {
         const sm = serverRecent[idx];
         if (sm) {
@@ -798,7 +773,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         }
       }
 
-      // Jika ada activeModel saat ini, pastikan ia berada di posisi paling puncak (#1)
+      // Jika ada activeModel saat ini, pastikan ia berada mutlak di posisi paling puncak (#1)
       const currentActive = data.activeModel || (modelsBreakdown[0]?.name);
       if (currentActive) {
         const existingIdx = window.__mruModelHistory.findIndex(k => k.toLowerCase() === currentActive.toLowerCase());
@@ -808,7 +783,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         window.__mruModelHistory.unshift(currentActive);
       }
 
-      // 3. Masukkan juga model-model dari breakdown yang memiliki eksekusi (count > 0) ke dalam MRU jika belum ada
+      // Masukkan juga model-model dari breakdown yang memiliki eksekusi (count > 0) ke dalam MRU jika belum ada
       modelsBreakdown.forEach(m => {
         if (m.name && (m.count || 0) > 0) {
           const already = window.__mruModelHistory.some(k => k.toLowerCase() === m.name.toLowerCase());
@@ -818,7 +793,12 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         }
       });
 
-      // 4. Susun orderedCatalog:
+      // Simpan state MRU terkini ke localStorage
+      try {
+        localStorage.setItem(MRU_STORAGE_KEY, JSON.stringify(window.__mruModelHistory));
+      } catch {}
+
+      // 3. Susun orderedCatalog:
       // Petakan model dari window.__mruModelHistory ke item katalog statis
       const orderedCatalog = [];
       const usedCatalogIndices = new Set();
@@ -827,7 +807,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const keyLower = mruKey.toLowerCase();
         const catIdx = catalog.findIndex((item, i) => {
           if (usedCatalogIndices.has(i)) return false;
-          return item.matchKeys.some(k => keyLower.includes(k.toLowerCase()) || k.toLowerCase().includes(keyLower));
+          return item.matchKeys.some(k => {
+            const kl = k.toLowerCase();
+            return keyLower === kl || keyLower.endsWith('/' + kl) || kl.endsWith('/' + keyLower) || keyLower.includes(kl) || kl.includes(keyLower);
+          });
         });
 
         if (catIdx !== -1) {
@@ -841,7 +824,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           else if (keyLower.includes("cloudflare") || keyLower.includes("@cf")) { prov = "CLOUDFLARE"; tagCls = "tag-cloudflare"; }
           else if (keyLower.includes("gemini")) { prov = "GEMINI"; tagCls = "tag-gemini"; }
           else if (keyLower.includes("openrouter")) { prov = "OPENROUTER"; tagCls = "tag-openrouter"; }
-          else if (keyLower.includes("xkiro")) { prov = "XKIRO"; tagCls = "tag-xkiro"; }
+          else if (keyLower.includes("xkiro") || keyLower.includes("deepseek")) { prov = "XKIRO"; tagCls = "tag-xkiro"; }
 
           orderedCatalog.push({
             name: mruKey,
@@ -853,7 +836,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         }
       }
 
-      // 5. Tambahkan sisa model katalog statis yang belum pernah dipakai di bawahnya
+      // 4. Tambahkan sisa model katalog statis yang BELUM PERNAH dipakai di bawahnya
       catalog.forEach((item, i) => {
         if (!usedCatalogIndices.has(i)) {
           orderedCatalog.push(item);
