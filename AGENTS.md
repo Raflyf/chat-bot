@@ -12,13 +12,12 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - Endpoint: `https://api.xkiro.com/v1/chat/completions`
    - Model Prioritas:
      1. `deepseek/deepseek-v4-flash` (Model teks utama / failover kecepatan tinggi)
-     2. `deepseek/deepseek-chat-v3.1` (Cadangan 1 / penalaran percakapan alami)
-     3. `deepseek/deepseek-v4-pro` (Cadangan 2 / penalaran mendalam)
-     4. `deepseek/deepseek-v3.2` (Cadangan 3)
+     2. `deepseek/deepseek-v4-pro` (Cadangan 1 / penalaran mendalam & koding)
+     3. `deepseek/deepseek-v3.2` (Cadangan 2)
    - Multi-Key Rotation: Menggunakan pool API keys dengan rotasi otomatis saat limit tercapai.
 
 2. **Rantai Failover Lintas Provider (Sequential Provider Failover):**
-   - **Tingkat 1 (Gateway Utama):** xKiro (`deepseek/deepseek-v4-flash` + 3 model cadangan di atas).
+   - **Tingkat 1 (Gateway Utama):** xKiro (`deepseek/deepseek-v4-flash` + 2 model cadangan di atas).
    - **Tingkat 2 (Groq):** Primary: `qwen/qwen3.8-27b`, Cadangan: `qwen/qwen3.6-27b`.
    - **Tingkat 3 (Cloudflare Workers AI):** Primary: `@cf/meta/llama-3.1-70b-instruct` (Llama 3.1 70B), Cadangan: `@cf/qwen/qwen2.5-coder-32b-instruct` (Qwen 2.5 Coder 32B). Multi-account pool rotation dengan auto-resolution account ID.
    - **Tingkat 4 (Gemini API):** Primary: `gemini-3.8-flash`, Cadangan: `gemini-2.5-flash` (termasuk native vision engine).

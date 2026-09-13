@@ -630,19 +630,11 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["deepseek/deepseek-v4-flash", "deepseek-v4-flash", "xkiro/deepseek/deepseek-v4-flash"],
         },
         {
-          name: "DeepSeek Chat V3.1",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Conversation", "Reasoning"],
-          desc: "Prioritas #2 Tier 1 - Percakapan natural adaptif & penalaran umum",
-          matchKeys: ["deepseek/deepseek-chat-v3.1", "deepseek-chat-v3.1", "deepseek-chat", "xkiro/deepseek/deepseek-chat-v3.1"],
-        },
-        {
           name: "DeepSeek V4 Pro",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Code", "Deep Reasoning"],
-          desc: "Prioritas #3 Tier 1 - Frontier reasoning & logika koding mendalam",
+          desc: "Prioritas #2 Tier 1 - Frontier reasoning & logika koding mendalam",
           matchKeys: ["deepseek/deepseek-v4-pro", "deepseek-v4-pro", "xkiro/deepseek/deepseek-v4-pro"],
         },
         {
@@ -650,7 +642,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Text", "Reasoning"],
-          desc: "Prioritas #4 Tier 1 - Cadangan penalaran stabil xKiro Gateway",
+          desc: "Prioritas #3 Tier 1 - Cadangan penalaran stabil xKiro Gateway",
           matchKeys: ["deepseek/deepseek-v3.2", "deepseek-v3.2", "xkiro/deepseek/deepseek-v3.2"],
         },
 
