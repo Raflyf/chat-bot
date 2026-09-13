@@ -544,9 +544,18 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '  * DISKUSI TEKNIS / KODING / SAINS / TUGAS: presisi analitis dan terstruktur, tanpa basa-basi kosong.',
     '  * FORMAL / RESMI: bahasa Indonesia bersih dan santun, tetap hangat dan manusiawi.',
     '- Ikuti ritme pesannya: pesan pendek dibalas pendek dan seirama (lihat PANJANG RESPONS di atas); satu kalimat yang cukup tidak perlu ditambah.',
+    '- UKURAN RESPON SEBANDING PESANNYA (ANTI OVER-REACT & ANTI OVER-SHARING):',
+    '  * Info biasa tanpa emosi kuat (makan, nonton, beli barang, kabar ringan): cukup 1 komentar wajar yang nyambung, tanpa sorakan berlebihan, tanpa doa/pujian berlebihan, tanpa tanya balik basa-basi.',
+    '  * Jangan menyimpulkan perasaan atau kualitas yang belum dia sebutkan (misal "semoga filmnya seru" saat dia cuma bilang baru nonton).',
+    '  * Dia hanya bilang fakta? tanggapi sebagai teman yang mendengar, bukan MC panggung atau penyemangat pura-pura.',
+    '  * Jangan pernah membuka daftar kemampuan/pencapaian diri, menjelaskan sistem, atau menyodorkan menu bantuan kecuali dia minta. Cukup jawab yang ditanya.',
+    '  * Kamu bukan pusat cerita: jangan mengalihkan topik ke dirimu sendiri tanpa diminta.',
     '',
     'PRINSIP 2: BAHASA SEPERTI MANUSIA ASLI DI WHATSAPP:',
     '- Hidupkan intonasi dengan kata seru dan partikel gaul yang kontekstual (waduh, lahh, astaga, buset, kan, dong, sih, wkwk) plus jeda "...". Variasikan pembuka tiap pesan.',
+    '- EKSPRESI TULISAN (mengikuti suasana chat): bentangkan huruf saat nada memang memanggil, misal "siapp", "okehh", "gasss", "laksanakann", "makasihh", lalu boleh ditutup 1 emoji ekspresif yang pas (misal hormat saat menyanggupi tugas, api saat semangat, tangan saat tos).',
+    '- ANTI-FLAT: jawaban pendek wajib tetap bernyawa — minimal bentangkan 1 kata akhiran jadi dua huruf (ohh, okee, sipp, mantapp, amann, iyaa) supaya tidak terkesan cuek/dingin. Kata pendek polos seperti "Oke," "sip," "iya." tanpa ekspresi apa pun dilarang.',
+    '- Pengecualian: saat suasana serius, sedih, atau rapuh, tulis dengan tempo normal tanpa bentangan dan tanpa emoji.',
     '- Bicara setara sahabat: tanpa jargon server/IT/database ("di sistemku", "terverifikasi permanen", "koneksi stabil"), tanpa gelar diri ("sebagai AI", "cuma bot"), tanpa ceramah moral, tanpa template CS ("Ada yang bisa dibantu?", "Mau cerita apa nih?"), tanpa pertanyaan pancingan di akhir.',
     '- Tanpa menu bernomor, panduan, outline, atau definisi ensiklopedia kecuali diminta eksplisit.',
     '- Panggil "kamu" (bukan "Anda"); tanpa em-dash (—); murni bahasa Indonesia.',
@@ -557,7 +566,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '  * DILARANG KERAS memaksakan menghubungkan benda mati acak yang tidak nyambung (seperti helm, kalender, kasur, rokok) yang membuat lelucon terdengar aneh, absurd, atau tidak masuk akal!',
     '  * Utamakan humor atau gombalan yang mengalir alami, manis, dan cerdas dengan twist yang wajar di dunia nyata.',
     '- FORMAT INTERAKSI DUA ARAH (SETUP DULU, TUNGGU LAWAN BICARA, BARU PUNCHLINE):',
-    '  * Untuk tebak-tebakan atau gombalan format tanya-jawab ("Kamu tahu nggak bedanya...", "Tahu nggak kenapa...", dll):',
+    '  * Untuk tebak-tebakan atau gombalan format tanya-jawab:',
     '    -> ATURAN MUTLAK: HANYA LEMPARKAN SETUP / PERTANYAANNYA DULU dan ajak menebak secara segar! Setup WAJIB kalimat tanya lengkap yang berdiri sendiri (mengandung kata tanya dan diakhiri tanda tanya). DILARANG klausa gantung tanpa kata tanya yang tidak bisa dijawab! Variasikan kata pembuka setup dari pesan ke pesan agar tidak selalu diawali kata yang sama.',
     '    -> DILARANG KERAS langsung membocorkan jawaban atau punchline di pesan yang sama!',
     '    -> Tunggu respon temanmu di pesan berikutnya:',
@@ -570,7 +579,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '  * Jika diminta ganti ("ganti", "yang lain dong", "coba lagi"): Berikan gombalan atau rayuan baru yang BERBEDA dan JAUH LEBIH MASUK AKAL tanpa memaksakan benda aneh! HANYA lemparkan pertanyaan setup-nya saja dulu.',
     '  * DILARANG format quotes buku / tanda kutip ("..."). DILARANG pertanyaan evaluasi klise di akhir ("Gimana, pede gak?", "Masih cringe gak?", "Udah baper belum?").',
     '  * DILARANG membawa drama/topik lama saat masuk ke topik gombalan atau topik baru.',
-    '  * VARIATIF & LEPAS: Utamakan humor umum yang relate, cerdas, dan masuk akal. Patuhi larangan jokes programming jika diminta.',
+    '  * VARIATIF & LEPAS: Utamakan humor umum yang relate, cerdas, dan masuk akal.',
     '',
     'PRINSIP 4: JUJUR PADA FAKTA, HANGAT PADA SELERA:',
     '- Fakta/sains/koding/matematika yang salah tetap dikoreksi santai dan bersahabat dengan bahasamu sendiri — tidak ikut-ikutan salah demi menyenangkan.',
@@ -578,21 +587,26 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '- Selera subjektif (musik, hobi, makanan) dihargai hangat apa adanya.',
     '',
     'PRINSIP 5: KEMAMPUAN MULTIMODAL & FORMAT TAMPILAN:',
-    '- Terhubung penuh ke internet real-time dan kemampuan multimodal: mendengarkan VN, melihat gambar/dokumen/stiker/video. DILARANG berdalih "tidak bisa browsing" atau "tidak punya akses internet real-time"!',
+    '- Kamu terhubung ke internet real-time dan bisa membaca VN, gambar, dokumen, stiker, dan video. Jangan berdalih "tidak bisa browsing" atau "tidak punya akses internet" secara umum.',
+    '- Jika data real-time untuk topik tertentu memang belum ketemu, bilang jujur belum ketemu apa adanya (tanpa mengarang) — itu tetap jawaban yang baik.',
     '- VOICE NOTE (VN): Otomatis kamu dengar jernih. Tanggapi wajar dan percaya diri.',
     '- RESPON STIKER: HANYA 1 kalimat pendek santai (maksimal 5-12 kata) sesuai emosi/makna stiker di WhatsApp. DILARANG dongeng fiktif, dilarang deskripsi visual ("Stiker ini menampilkan...").',
     '- RESPON FOTO / MEDIA VISUAL: Dilarang pembuka robotik ("Gambar ini menampilkan..."). Langsung to-the-point jika pertanyaan teknis/koding, atau komentar hangat 1-2 kalimat jika foto santai. Dilarang membahas hardware fisik di luar layar kecuali ditanyakan.',
-    '- RESPON DOKUMEN & VIDEO: Persona teman diskusi cerdas ("Udah kubaca nih dokumennya. Intinya ngebahas [topik]..."). Ringkas, nyaman dibaca di HP.',
+    '- RESPON DOKUMEN & VIDEO: Persona teman diskusi cerdas yang sudah membaca/menonton isinya, lalu sampaikan intinya secara ringkas dan nyaman dibaca di HP (tanpa kalimat template hafalan).',
     '- FORMAT TAMPILAN PESAN: Nyaman dibaca cepat di HP. Gunakan format teks standar (*teks tebal*, kode di ```code```, tanda hubung - untuk poin). DILARANG heading markdown pagar (#).',
     '- PENGGUNAAN EMOJI (MINIMAL & SESUAI KONTEKS): Emoji TIDAK 100% dilarang, namun gunakan seminimal mungkin (maksimal 1 emoji wajar yang pas) HANYA jika situasi dan konteks chat memang tepat untuk menghidupkan ekspresi/emosi. Jangan diobral di setiap pesan, dan dilarang emoji robot (🤖). Sampaikan esensi jawaban secara padat dan bernas.',
   ];
 
   const isSwitchToGombal = /\b(?:ganti\s+(?:ke\s+)?gombal(?:an)?|gombalin|mau\s+gombal(?:an)?|coba\s+gombal(?:an)?|minta\s+gombal(?:an)?)\b/i.test(userPrompt);
+  // Perintah berhenti peran/sandiwara: frasa kuat, ATAU kata pendek yang jelas imperatif.
+  // Kata umum seperti "selesai"/"cukup" hanya dianggap stop bila pesannya singkat
+  // (mencegah "tugasnya belum selesai" disalahartikan minta berhenti peran).
+  const promptTrimmed = userPrompt.trim();
+  const promptIsShort = promptTrimmed.split(/\s+/).filter(Boolean).length <= 4;
   const stopRoleplayMatch =
     !isSwitchToGombal &&
-    /\b(?:stop|berhenti|selesai|udahan|cukup|kembali\s+normal|stop\s+berperan|stop\s+peran|stop\s+jadi\s+pacar|putus|jangan\s+berakting|gausah\s+berperan|batalin\s+peran|stop\s+sandiwara|jangan\s+peran)\b/i.test(
-      userPrompt,
-    );
+    (/\b(?:stop\s+(?:berperan|peran|sandiwara|jadi\s+pacar)|berhenti\s+(?:berperan|peran|sandiwara)|kembali\s+normal|gausah\s+berperan|batalin\s+peran|jangan\s+berakting|jangan\s+peran|udahan\s+deh)\b/i.test(promptTrimmed) ||
+      (promptIsShort && /\b(?:stop|berhenti|udahan|selesai|cukup)\b/i.test(promptTrimmed)));
   if (stopRoleplayMatch) {
     instructions.push(
       '',
@@ -600,7 +614,10 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     );
   }
 
-  const isGombalRequest = /\b(?:gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu|buaya\s+darat)\b/i.test(userPrompt);
+  // Permintaan gombalan: kecualikan permintaan BERHENTI gombal ("jangan gombal", "stop gombal")
+  // agar bot tidak justru melempar gombalan baru saat diminta berhenti.
+  const stopGombal = /\b(?:jangan|gausah|ga\s*usah|gak\s*usah|nggak\s*usah|stop|berhenti|udahan|skip)\s+(?:nge?)?gombal/i.test(userPrompt);
+  const isGombalRequest = !stopGombal && /\b(?:gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu|buaya\s+darat)\b/i.test(userPrompt);
   if (isGombalRequest) {
     instructions.push(
       '',
@@ -653,11 +670,16 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     .map((h) => (typeof h.content === 'string' ? h.content : ''));
   const annoyRe = /\b(?:bolot|dongo|dongok|gaje|goblok|bego|tolol|idiot|garing|cringe|gajelas|ga\s*jelas|ngaco|ngawur|apasi|apasih|bacot|bodoh|nyebelin|ga\s*nyambung)\b/i;
   const warmRe = /(wkwk+|haha+|hehe+|🤣|😭|❤|🧡|makasih|terima kasih|mantap|cakep|salting|seru|asik|ngakak)/i;
-  const sadRe = /\b(?:sedih|nangis|menangis|curhat|capek|lelah|galau|putus|ditinggal|kecewa|sakit\s*hati|terluka|pengen\s*nangis|down\s*banget)\b/i;
-  const annoyCount = recentUserMsgs.filter((m) => annoyRe.test(m)).length;
+  const sadRe = /\b(?:sedih|nangis|menangis|curhat|capek|lelah|lemas|lesu|galau|putus|ditinggal|kecewa|sakit\s*hati|terluka|pengen\s*nangis|down\s*banget)\b/i;
+  // Hitung sinyal kesal dari riwayat + pesan saat ini (pesan hangat tidak dihitung kesal)
+  const annoyCount =
+    recentUserMsgs.filter((m) => annoyRe.test(m) && !warmRe.test(m)).length +
+    (annoyRe.test(userPrompt) && !warmRe.test(userPrompt) ? 1 : 0);
   const warmCount = recentUserMsgs.filter((m) => warmRe.test(m)).length;
-  const sadRecent = recentUserMsgs.slice(-2).some((m) => sadRe.test(m));
-  if (annoyCount >= 2) {
+  const sadRecent = recentUserMsgs.slice(-2).some((m) => sadRe.test(m)) || sadRe.test(userPrompt);
+  // annoyActive = trajektori kesal beruntun (2+ pesan); dipakai juga oleh guard komplain gombalan
+  const annoyActive = annoyCount >= 2;
+  if (annoyActive) {
     instructions.push(
       '',
       '[SUASANA: temanmu sudah kesal beberapa pesan beruntun. Akui singkat TANPA defensif dan TANPA bercanda dulu, pendekkan balasan, ikuti maunya sampai suasana cair.]',
@@ -674,13 +696,25 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     );
   }
 
+  // Info netral tanpa emosi kuat: cegah over-react/over-sharing (sorakan, doa berlebihan, menu bantuan).
+  // Hanya aktif bila pesannya memang datar dan suasana tidak sedang kesal/rapuh.
+  const neutralInfoRe =
+    /\b(?:(?:aku|gue|gw)\s+(?:baru|barusan|abis|habis|udah|sudah)|baru(?:an)?\s+(?:saja\s+)?(?:aku\s+)?(?:beli|selesai|kelar|nonton|makan)|abis\s+(?:aku\s+)?(?:makan|mandi|nonton|main)|habis\s+(?:aku\s+)?(?:makan|mandi|nonton|main)|udah\s+(?:aku\s+)?(?:makan|mandi|selesai|kelar)|barusan\s+(?:aku\s+)?)\b/i;
+  const hasStrongEmotion = /[!]|\p{Extended_Pictographic}|wkwk+|haha+|anjir|bjir|banget|parah|gila/iu.test(userPrompt);
+  if (neutralInfoRe.test(userPrompt) && !hasStrongEmotion && !sadRecent && !annoyActive) {
+    instructions.push(
+      '',
+      '[INFO NETRAL: dia cuma berbagi kabar ringan tanpa emosi kuat. Balas 1 komentar wajar 4-10 kata yang nyambung. Cukup kata pengakuan pembuka yang dibentangkan ringan (okee, sipp, ohh, iyaa) supaya tidak dingin — kata isi/kesimpulan ditulis normal. DILARANG membuka dengan "Wah/Wih mantap" atau sorakan, dilarang menyimpulkan rasa/kualitas yang tidak dia sebut (jangan bilang "enak", "seru", "keren" kalau dia tidak mengatakannya), dilarang doa/pujian berlebihan, tanpa pertanyaan balik basa-basi, tanpa menawarkan bantuan.]',
+    );
+  }
+
   // Intensitas pesan saat ini: sambut energi tinggi sebentar, beri ruang saat energi rendah.
   const lettersOnly = (userPrompt.match(/[A-Za-z]/g) || []).length;
   const capsCount = (userPrompt.match(/[A-Z]/g) || []).length;
   const emojiCountNow = (userPrompt.match(/\p{Extended_Pictographic}/gu) || []).length;
   const highIntensity =
     (lettersOnly > 6 && capsCount / Math.max(1, lettersOnly) > 0.6) ||
-    /(.)\1{3,}/.test(userPrompt) ||
+    /([A-Za-z])\1{3,}/.test(userPrompt) ||
     emojiCountNow >= 3;
   const userWordCount = userPrompt.trim().split(/\s+/).filter(Boolean).length;
   const prevUserMsg = [...(ctx?.history || [])]
@@ -709,19 +743,30 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
       '',
       '[BAHASA: dia memakai sentuhan Sunda. Selipkan aksen Sunda alami sepertinya, jangan full Sunda kaku.]',
     );
-  } else if (/\b(?:mohon|dengan hormat|bapak|ibu\/bapak|saudara|dimohon)\b/i.test(userPrompt) && !/(wkwk|jir|anjir|\bdong\b|\bnih\b)/i.test(userPrompt)) {
+  } else if (
+    /\b(?:mohon|dengan\s+hormat|dimohon|saudara|yang\s+terhormat)\b/i.test(userPrompt) &&
+    !/(wkwk|jir|anjir|\bdong\b|\bnih\b)/i.test(userPrompt)
+  ) {
     instructions.push('', '[BAHASA: dia bicara formal. Rapikan bahasamu dan kurangi slang.]');
+  }
+
+  // Mode serius: user minta nada serius secara eksplisit -> turunkan candaan, jawab dengan tempo normal.
+  if (/\b(?:serius\s*(?:dikit|dulu|dong|aja|nih|deh)|jangan\s+bercanda|gak\s+usaha?\s+becanda|no\s+joke|stop\s+becanda)\b/i.test(userPrompt)) {
+    instructions.push(
+      '',
+      '[MODE SERIUS: dia minta nada serius. Tanggapi dengan tempo normal tanpa bentangan huruf, tanpa candaan, tanpa emoji — tetap hangat dan manusiawi.]',
+    );
   }
 
   const lastAssistantMsg = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
   const recentHistoryText = ctx?.history?.slice(-4)?.map((h) => (typeof h.content === 'string' ? h.content : ''))?.join(' ') || '';
 
   const isGamingOrMabar =
-    /\b(?:mabar|permabaran|main\s+bareng|loginn?|login\s+game|push\s+rank|ngerank|turun\s+bintang|turu\s+game|game\s+apa|mobile\s+legends?|mlbb|pubg|free\s+fire|ff|valorant|genshin|roblox|gta\s*5?)\b/i.test(
+    /\b(?:mabar|permabaran|main\s+bareng|login\s+game|push\s+rank|ngerank|turun\s+bintang|turu\s+game|game\s+apa|mobile\s+legends?|mlbb|pubg|free\s+fire|ff|valorant|genshin|roblox|gta\s*5?)\b/i.test(
       userPrompt,
     ) ||
     (/(?:mabar|permabaran|game|main)/i.test(recentHistoryText) &&
-      /\b(?:cemen|login|gass?|hayu|kuy|ayo|payah|cupu)\b/i.test(userPrompt));
+      /\b(?:cemen|loginn?|gass?|hayu|kuy|ayo|payah|cupu)\b/i.test(userPrompt));
 
   if (isGamingOrMabar) {
     instructions.push(
@@ -753,15 +798,15 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     );
   }
 
-  // Deteksi pertanyaan tebak-tebakan atau gombalan yang masih menggantung / menunggu jawaban user
-  // Setup tanpa tanda tanya (misal "Tahu nggak kenapa pinguin") tetap pending agar alur dua arah tidak mati
+  // Deteksi pertanyaan tebak-tebakan atau gombalan yang masih menggantung / menunggu jawaban user.
+  // Setup tanpa tanda tanya (misal "Tahu nggak kenapa pinguin selalu pakai jas hitam") tetap pending:
+  // regex pertama sudah spesifik pola setup, jadi tidak perlu syarat "?" yang justru mematikan alur.
   const isPendingRiddleOrGombal =
     !isGombalAppreciation &&
     typeof lastAssistantMsg === 'string' &&
     /\b(?:(?:tahu|tau)\s*(?:nggak|gak|ga|kaga)?\s*(?:apa\s+)?(?:bedanya|persamaan|kenapa)|coba\s+tebak|tebak\s*(?:dong|deh|kenapa|apa)|bapak\s+kamu\s+tukang|ada\s+yang\s+tahu)\b/i.test(
       lastAssistantMsg,
     ) &&
-    (/\?/.test(lastAssistantMsg) || /(?:kenapa|apa|bedanya|persamaan|tebak)\s*[.!…]*$/i.test(lastAssistantMsg)) &&
     !/\b(?:tebakanku|bener\s+kan\s+tebakanku)\b/i.test(lastAssistantMsg) &&
     // Jika asisten pada pesan sebelumnya sudah membocorkan punchline (ada "soalnya", "karena"), maka ini BUKAN pending lagi
     !/\b(?:soalnya|karena\s+kamu|karena\s+kalo|karena\s+kalau|malah\s+sering|langsung\s+full|bikin\s+hati)\b/i.test(lastAssistantMsg);
@@ -777,12 +822,15 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     );
   }
 
-  // Deteksi komplain gombalan atau permintaan ganti gombalan
+  // Deteksi komplain gombalan atau permintaan ganti gombalan.
+  // WAJIB ada konteks gombalan/lelucon di riwayat — kata "apasi/ngaco/garing" saja tidak cukup
+  // (mencegah instruksi "berikan rayuan baru" muncul di tengah obrolan marah/curhat).
   const isGombalComplaintOrChange =
-    (wasRecentGombalOrJoke && /^(?:ganti|coba\s+lagi|yang\s+lain|kurang|lagi\s+dong|ganti\s+dong|minta\s+lagi)[!.\s]*$/i.test(userPrompt.trim())) ||
-    /\b(?:ga\s+nyambung|gak\s+nyambung|ngaco|garing|cringe|apasi|aneh\s+banget|🤢|🤮|ih+|geli)\b/i.test(userPrompt);
+    wasRecentGombalOrJoke &&
+    (/^(?:ganti|coba\s+lagi|yang\s+lain|yg\s+lain|coba\s+yg\s+lain|kurang|lagi\s+dong|ganti\s+dong|minta\s+lagi)[!.\s]*$/i.test(userPrompt.trim()) ||
+      /\b(?:ga\s+nyambung|gak\s+nyambung|ngaco|garing|cringe|apasi|apasih|aneh\s+banget|🤢|🤮|geli)\b/i.test(userPrompt));
 
-  if (isGombalComplaintOrChange && !isPendingRiddleOrGombal && !isGombalAppreciation) {
+  if (isGombalComplaintOrChange && !isPendingRiddleOrGombal && !isGombalAppreciation && !annoyActive) {
     instructions.push(
       '',
       '[SITUASI KHUSUS - GOMBALAN DIKOMPLAIN / MINTA GANTI]: Temanmu menganggap gombalanmu meleset atau minta ganti. Tetap percaya diri dan santai, lalu berikan rayuan/tebakan baru yang relate dan masuk akal sesuai PRINSIP 3.',
@@ -1111,10 +1159,20 @@ export async function autoReply(
       }
     }
 
-    // Jaring akhir anti-pesan-kosong: refleksi berisi teks user (dinamis), bukan template statis
+    // Jaring akhir anti-pesan-kosong: coba regen dinamis dulu; refleksi ringkas berisi teks user
+    // sebagai benteng terakhir (bukan kalimat template hafalan).
     if (!reply.trim()) {
-      const snippet = clean.length > 80 ? `${clean.slice(0, 80)}…` : clean;
-      reply = `Hmm, "${snippet}" — maksudnya gimana tuh?`;
+      try {
+        const regen = await chatRetry(buildMessages(clean, ctx, web), false);
+        const regenReply = sanitizeAssistantOutput(regen.text, clean);
+        if (regenReply.trim()) reply = regenReply;
+      } catch {
+        // lanjut ke refleksi
+      }
+    }
+    if (!reply.trim()) {
+      const snippet = clean.length > 60 ? `${clean.slice(0, 60)}…` : clean;
+      reply = `${snippet} — coba ulang bentar ya, aku tadi kepotong.`;
     }
 
     return { reply, escalate: false, via, tokens };
@@ -1245,9 +1303,10 @@ export async function describeImage(
     if (reply.length > 120) {
       reply = reply.slice(0, 120).replace(/\s+\S*$/, '').trim();
     }
-    // 4. Fallback terakhir jika masih kosong: gema emoji model (dinamis), bukan kalimat template
+    // 4. Fallback terakhir jika masih kosong: pakai emoji asli dari stiker user (dinamis), bukan template
     if (!reply) {
-      reply = caption?.trim() ? caption.trim().split(/\s+/)[0] : 'Wkwk!';
+      const emojiMatch = caption?.match(/\p{Extended_Pictographic}/u);
+      reply = emojiMatch ? emojiMatch[0] : 'Wkwk!';
     }
   }
 

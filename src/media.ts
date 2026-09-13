@@ -341,7 +341,7 @@ export async function processIncomingDocument(
   if (effectiveMime.includes('pdf') || lowerName.endsWith('.pdf')) {
     const prompt = caption && caption.trim()
       ? `Pengguna mengirim dokumen PDF "${filename}". Pertanyaan / instruksi temanmu:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, jelas, dan manusiawi layaknya sahabat diskusi tanpa pembuka klise robotik.`
-      : `Pengguna mengirim dokumen PDF "${filename}". Tolong baca dan rangkum inti terpentingnya secara ringkas, padat, dan ramah selayaknya teman ngobrol yang membantu meringkas isi dokumen (gunakan gaya: "Udah kubaca nih dokumennya. Intinya...").`;
+      : `Pengguna mengirim dokumen PDF "${filename}". Tolong baca dan rangkum inti terpentingnya secara ringkas, padat, dan ramah selayaknya teman ngobrol yang membantu meringkas isi dokumen dengan susunan kalimatmu sendiri (tanpa kalimat template hafalan).`;
 
     // 1. Primary: gemini-3.8-flash
     const p1 = await processPdfViaGemini(buffer, prompt, config.models.geminiPrimary || 'gemini-3.8-flash');
@@ -368,6 +368,16 @@ export async function processIncomingDocument(
       return { reply: autoRes.reply, via: `local-parser/${autoRes.via}`, tokens: autoRes.tokens };
     }
 
+    // Fallback terakhir: bangkitkan jawaban dinamis; teks teknis statis hanya jika AI juga mati
+    try {
+      const gen = await autoReply(
+        `Berkas PDF "${filename}" gagal diproses otomatis oleh modul visual. Beri tahu user dengan gayamu sendiri, singkat dan hangat, bahwa berkasnya diterima tapi sedang gagal dibaca, lalu tawarkan minta dia tanyakan bagian tertentu via teks.`,
+        ctx,
+      );
+      if (gen.reply.trim()) return { reply: gen.reply, via: `dynamic-pdf-error/${gen.via}` };
+    } catch {
+      // lanjut ke fallback statis
+    }
     return {
       reply: `Berkas PDF *${filename}* berhasil diterima, namun sistem AI sedang mengalami antrean pemrosesan dokumen visual. Silakan coba kirim ulang beberapa saat lagi atau tanyakan bagian tertentu via teks.`,
       via: 'fallback-pdf-error',
@@ -392,6 +402,15 @@ export async function processIncomingDocument(
   }
 
   // Kasus C: Dokumen tidak didukung (misal biner terenkripsi)
+  try {
+    const gen = await autoReply(
+      `Berkas "${filename}" diterima tapi formatnya tidak bisa dibaca langsung. Beri tahu user dengan gayamu sendiri, singkat dan hangat, lalu sebutkan format yang didukung: PDF, Word (.docx), atau teks (.txt, .md, .csv, kode).`,
+      ctx,
+    );
+    if (gen.reply.trim()) return { reply: gen.reply, via: `dynamic-unsupported/${gen.via}` };
+  } catch {
+    // lanjut ke fallback statis
+  }
   return {
     reply: `Berkas *${filename}* berhasil diterima, namun formatnya tidak dapat dibaca secara langsung. Coba kirim dalam format PDF, Word (.docx), atau file teks (.txt, .md, .csv, kode).`,
     via: 'fallback-unsupported',
@@ -406,6 +425,7 @@ export async function processIncomingVideo(
   mime: string = 'video/mp4',
   filename: string = 'video.mp4',
   caption?: string,
+  ctx?: ChatContext,
 ): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const prompt = caption && caption.trim()
     ? `Pengguna mengirim video "${filename}". Pertanyaan / instruksi:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, santai, dan alami tanpa kalimat pembuka robotik seperti "Video ini menampilkan...".`
@@ -459,6 +479,16 @@ export async function processIncomingVideo(
     }
   }
 
+  // Fallback terakhir: jawaban dinamis; teks teknis statis hanya jika AI juga mati
+  try {
+    const gen = await autoReply(
+      `Video "${filename}" gagal dianalisis otomatis. Beri tahu user dengan gayamu sendiri, singkat dan hangat, bahwa videonya diterima tapi sedang gagal diproses, lalu minta dia kirim ulang sebentar lagi.`,
+      ctx,
+    );
+    if (gen.reply.trim()) return { reply: gen.reply, via: `dynamic-video-error/${gen.via}` };
+  } catch {
+    // lanjut ke fallback statis
+  }
   return {
     reply: `Video *${filename}* berhasil diterima, namun sistem AI video sedang sibuk. Silakan coba kirim ulang beberapa saat lagi.`,
     via: 'fallback-video-error',

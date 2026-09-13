@@ -115,7 +115,17 @@ export async function checkDueReminders(
       }
 
       try {
-        await sendFn(item.chat_id, `Pengingat kak: ${item.message}`, item.platform);
+        // Teks pengingat dibuat dinamis mengikuti gaya bot; fallback fungsional hanya jika AI mati.
+        let deliveryText = `Pengingat: ${item.message}`;
+        try {
+          const gen = await autoReply(
+            `Sampaikan pengingat ini ke user dengan gayamu sendiri, singkat dan hangat, tanpa pertanyaan tambahan: "${item.message}"`,
+          );
+          if (gen.reply.trim()) deliveryText = gen.reply;
+        } catch {
+          // pertahankan fallback fungsional
+        }
+        await sendFn(item.chat_id, deliveryText, item.platform);
         // Tandai selesai (sent) HANYA setelah pesan benar-benar sukses terkirim (C1)
         await c.from('reminders').update({ status: 'sent', lease_until: null }).eq('id', item.id);
         processed++;
@@ -170,7 +180,16 @@ export async function handleRemind(
   // In-memory fallback HANYA jika DB tidak tersedia untuk mencegah pesan dobel
   if (!config.isServerless && !dbSaved) {
     setTimeout(() => {
-      bot.sendMessage(chatId, `Pengingat kak: ${message}`).catch(() => undefined);
+      void (async () => {
+        try {
+          const gen = await autoReply(
+            `Sampaikan pengingat ini ke user dengan gayamu sendiri, singkat dan hangat, tanpa pertanyaan tambahan: "${rawMessage}"`,
+          );
+          await bot.sendMessage(chatId, gen.reply.trim() || `Pengingat: ${message}`);
+        } catch {
+          await bot.sendMessage(chatId, `Pengingat: ${message}`).catch(() => undefined);
+        }
+      })();
     }, minutes * 60_000);
   }
 
