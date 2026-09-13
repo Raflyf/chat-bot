@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.32 (Resolusi Tata Letak Navbar Mobile: Rekonstruksi CSS Grid 2-Baris Presisi & Eliminasi Kesenjangan Brand-Action)  
+**Versi:** v0.26.33 (Resolusi Peringatan Linter CSS: Kepatuhan Standar background-clip pada dashboard.html)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:40 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:45 WIB
 
 ---
 
@@ -207,6 +207,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.33 - 2026-09-13 11:45 WIB
+
+**Resolusi Peringatan Linter CSS: Kepatuhan Standar background-clip pada dashboard.html**
+
+- **Audit & Penemuan Warning Kuning IDE**:
+  - Pada berkas `public/dashboard.html` di aturan `.brand-info h1`, properti `-webkit-background-clip: text;` memicu peringatan validator CSS IDE (*"Also define the standard property 'background-clip' for compatibility"*).
+  - Tanda peringatan ini menyebabkan berkas `dashboard.html` memiliki indikator angka kuning "1" di sidebar IDE explorer.
+- **Implementasi Perbaikan**:
+  - Menambahkan properti standar `background-clip: text;` berdampingan dengan `-webkit-background-clip: text;` untuk kompatibilitas lintas mesin peramban (WebKit dan standar W3C).
+  - Indikator peringatan kuning 100% bersih (zero warnings).
 
 ### v0.26.32 - 2026-09-13 11:40 WIB
 
