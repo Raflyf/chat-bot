@@ -1216,6 +1216,8 @@
       align-items: center;
       gap: 0.75rem;
       flex-wrap: wrap;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .filter-title-label {
@@ -1234,6 +1236,17 @@
       padding: 3px;
       gap: 2px;
       flex-wrap: wrap;
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .pool-filter-controls {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .pill-filter-btn {
@@ -1939,9 +1952,40 @@
       }
       .filter-group-wrap {
         width: 100%;
+        min-width: 0;
+      }
+      .pool-section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.85rem;
+      }
+      .pool-filter-controls {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.6rem;
+      }
+      .pool-filter-controls .pill-filter-group {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .pool-filter-controls .filter-select {
+        width: 100%;
+        max-width: 100%;
+        flex: none;
       }
       .pill-filter-group {
         width: 100%;
+        max-width: 100%;
+        min-width: 0;
         overflow-x: auto;
         flex-wrap: nowrap;
         -webkit-overflow-scrolling: touch;
@@ -2094,6 +2138,25 @@
       #dataset-section .btn {
         flex: 1 1 calc(50% - 0.35rem);
         justify-content: center;
+      }
+      .provider-card {
+        padding: 1rem 0.9rem;
+        gap: 0.85rem;
+      }
+      .provider-name {
+        font-size: 0.95rem;
+      }
+      .provider-usage-text {
+        font-size: 1rem;
+      }
+      .provider-cap-text {
+        font-size: 0.68rem;
+      }
+      .key-row {
+        padding: 0.65rem 0.75rem;
+      }
+      .key-stats {
+        font-size: 0.73rem;
       }
       .pagination-bar {
         flex-direction: column;
@@ -2326,12 +2389,12 @@
 
     <!-- Pool API Key Matrix -->
     <section>
-      <div class="section-header" style="flex-wrap: wrap; gap: 0.75rem;">
+      <div class="section-header pool-section-header">
         <div>
           <h2 class="section-title" id="pool-section-title">Matriks Penggunaan Pool API Key</h2>
           <span style="font-size: 0.8rem; color: var(--text-muted);" id="pool-reset-label">Reset Harian 00:00 UTC</span>
         </div>
-        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <div class="pool-filter-controls">
           <div class="pill-filter-group" id="provider-filter-pills">
             <button class="pill-filter-btn active" data-provider="all">Semua Provider</button>
             <button class="pill-filter-btn" data-provider="xkiro">xKiro</button>
