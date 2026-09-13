@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.52 (Message Sent Timestamp Ground Truth, Mitigasi Over-Fixation & Kesadaran Waktu Nyata Pesan Pengguna)  
+**Versi:** v0.26.53 (Koreksi Faktual Kuota Groq: Eliminasi Limit Semu 200.000 TPD, Penyelarasan 1.000 RPD & 8K TPM Tier Bebas Token Harian)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 15:30 WIB
+**Terakhir Diperbarui:** 2026-09-13 15:45 WIB
 
 ---
 
@@ -207,6 +207,36 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.53 - 2026-09-13 15:45 WIB
+
+**Koreksi Faktual Kuota Groq: Eliminasi Limit Semu 200.000 TPD, Penyelarasan 1.000 RPD & 8K TPM Tier Bebas Token Harian**
+
+- **Investigasi Mendalam & Root Cause Limit Semu Groq**:
+  - **Temuan Faktual Respon Upstream**: Uji live terhadap server resmi Groq Cloud (`https://api.groq.com/openai/v1/chat/completions`) melalui pembacaan header respons membuktikan:
+    `x-ratelimit-limit-requests: 1000` (1.000 RPD)
+    `x-ratelimit-limit-tokens: 8000` (8.000 TPM rolling token-bucket dengan waktu reset ratusan milidetik)
+  - **Akar Masalah**: Groq Cloud API sama sekali TIDAK MEMILIKI BATAS 200.000 TPD (Tokens Per Day). Angka 200.000 TPD sebelumnya adalah asumsi lama yang salah dan di-hardcode pada `api/stats.ts` dan `public/js/dashboard.js`.
+  - Akibatnya, ketika bot menggunakan 226.728 token (hanya dari 47 panggilan), antarmuka dashboard secara keliru menampilkan bar merah 100% dan sisa token 0, padahal 47 panggilan tersebut baru menyerap **4,7%** dari kuota 1.000 RPD resmi Groq, dan masih tersisa **953 panggilan (95,3%)**. Itulah sebabnya bot tidak pernah mengalami pemadaman atau rate limit di sisi Groq.
+- **Penyelarasan Backend & Skema API Stats (`api/stats.ts`)**:
+  - Mengubah `tokenCapPerKey: 0` pada definisi provider Groq untuk menegaskan status *Bebas Kuota Token Harian* (Uncapped Daily Tokens).
+  - Mengubah `tokenLimitType` menjadi `'requests_tpm'` dan `tokenLimitLabel` menjadi `'1.000 RPD/key • 8K TPM Tier (Bebas Kuota Token Harian)'`.
+  - Menghilangkan penghitungan persentase limit token semu yang membatasi kapasitas key Groq.
+- **Pembaruan Antarmuka Observabilitas (`public/js/dashboard.js`)**:
+  - **Tabel Upstream Monitoring (`renderLiveUpstreamTable`)**:
+    - Kolom Penggunaan kini menampilkan token riil yang dikonsumsi beserta jumlah panggilan: `${tokensUsed.toLocaleString()} Token (${calls} calls)`.
+    - Progress bar dihitung secara akurat berbasis persentase keterpakaian panggilan harian terhadap limit 1.000 RPD (`pct = Math.min(100, Math.round((calls / 1000) * 100))`). Untuk 47 panggilan, progress bar bernilai 5% (hijau emerald).
+    - Subtext penggunaan diperbarui: `Limit: 1.000 RPD • 8K TPM Tier (Bebas Token Harian)`.
+    - Kolom Sisa Kuota menampilkan sisa panggilan harian yang valid: `${(1000 - calls).toLocaleString()} Panggilan` dengan label `● Sisa Kuota Harian (RPD)`.
+    - **Status Badge Dinamis**: Menghapus hardcode `status-healthy OPTIMAL` dan menggantinya dengan evaluasi dinamis (`LIMIT RPD` saat pct >= 100, `WASPADAI` saat pct >= 80, dan `OPTIMAL` saat di bawah 80%). Hal yang sama diterapkan pada Cloudflare dan Gemini.
+  - **Mini KPI Ribbon Universal**:
+    - Memisahkan total token cap murni (15.000.000 Token xKiro Gateway) dari kapasitas berbasis RPD.
+    - Subtext ribbon merinci secara transparan: `xKiro Gateway (+5.000 RPD Groq, +360 RPD Cloudflare)`.
+    - Konsumsi token riil bot tetap diakumulasikan secara universal (xKiro + Groq) agar pengembang dapat memantau total token riil yang diserap sistem.
+- **Hasil Verifikasi Faktual**:
+  - Dashboard tidak lagi menampilkan bar merah 100% semu pada kunci Groq.
+  - Keterpakaian kunci Groq kini mencerminkan realitas operasional yang valid (5% keterpakaian untuk 47 calls) dan status badge berfungsi dinamis.
+  - Lolos uji build TypeScript (`npm run build`, exit code 0).
 
 ### v0.26.52 - 2026-09-13 15:30 WIB
 
