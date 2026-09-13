@@ -33,10 +33,12 @@ export const config = {
   ownerWaNumber: cleanStr('OWNER_WA_NUMBER'),
   pools: {
     xkiro: csv('XKIRO_KEYS'),
+    cloudflare: csv('CLOUDFLARE_KEYS'),
     openrouter: csv('OPENROUTER_KEYS'),
     groq: csv('GROQ_KEYS'),
     gemini: csv('GEMINI_KEYS'),
   },
+  cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
   models: {
     xkiroPrimary: cleanStr('XKIRO_MODEL_PRIMARY') || 'deepseek/deepseek-v4-flash',
     xkiroBackup: (() => {
@@ -49,6 +51,8 @@ export const config = {
             'deepseek/deepseek-v3.2',
           ];
     })(),
+    cfPrimary: cleanStr('CLOUDFLARE_MODEL_PRIMARY') || '@cf/meta/llama-3.1-70b-instruct',
+    cfBackup: cleanStr('CLOUDFLARE_MODEL_BACKUP') || '@cf/qwen/qwen2.5-coder-32b-instruct',
     orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
     orMini: cleanStr('OR_MODEL_MINI') || 'nex-agi/nex-n2.5-mini:free',
     orText: cleanStr('OR_MODEL_TEXT') || 'nvidia/nemotron-3.5-lightning:free',
@@ -96,6 +100,7 @@ export const config = {
   isServerless: process.env.VERCEL === '1' || !!process.env.AWS_LAMBDA_FUNCTION_NAME,
   dailyCap: {
     xkiro: num('DAILY_CAP_XKIRO', 50000),
+    cloudflare: num('DAILY_CAP_CLOUDFLARE', 10000),
     openrouter: num('DAILY_CAP_OPENROUTER', 50),
     groq: num('DAILY_CAP_GROQ', 1000),
     gemini: num('DAILY_CAP_GEMINI', 1500),
@@ -141,6 +146,7 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
   }
   const totalKeys =
     config.pools.xkiro.length +
+    config.pools.cloudflare.length +
     config.pools.openrouter.length +
     config.pools.groq.length +
     config.pools.gemini.length;

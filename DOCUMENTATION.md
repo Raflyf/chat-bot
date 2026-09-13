@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.21 (Anti-Mandarin CJK Leakage Defense, Contextual Minimal Emoji Balancing & Multi-Modal Sanitization Integration)  
+**Versi:** v0.26.22 (Cloudflare Workers AI Provider Integration, Llama 3.1 70B & Qwen 2.5 Coder 32B Multi-Account Pool & Tier 3 Failover)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 00:30 WIB
+**Terakhir Diperbarui:** 2026-09-13 09:25 WIB
 
 ---
 
@@ -205,6 +205,22 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.22 - 2026-09-13 09:25 WIB
+
+**Integrasi Provider Cloudflare Workers AI (Llama 3.1 70B & Qwen 2.5 Coder 32B), Multi-Account Key Pool & Failover Tier 3 Sebelum Gemini**
+
+- **Integrasi Penuh Provider Cloudflare Workers AI (`src/env.ts`, `src/quota.ts`, `src/providers.ts`, `api/stats.ts`)**:
+  - **Penempatan Hierarki Rantai Failover**: Cloudflare Workers AI ditempatkan secara presisi sebagai **Tingkat 3** tepat sebelum fallback ke Gemini (`xkiro` -> `groq` -> `cloudflare` -> `gemini` -> `openrouter`).
+  - **Model Terverifikasi**:
+    1. **Primary Model**: `@cf/meta/llama-3.1-70b-instruct` (Llama 3.1 70B Instruct untuk penalaran tinggi, teks umum, dan koding).
+    2. **Backup Model**: `@cf/qwen/qwen2.5-coder-32b-instruct` (Qwen 2.5 Coder 32B Instruct).
+  - **Dukungan Multi-Account & Format Fleksibel**:
+    - Parsing otomatis format `accountId:token` maupun bare token dengan fallback konfigurasi `CLOUDFLARE_ACCOUNT_ID` atau in-memory dynamic auto-resolution via Cloudflare API endpoint `/client/v4/accounts`.
+    - Mengintegrasikan 3 pool akun & API key Cloudflare pengguna dengan verifikasi live HTTP 200 pass di kedua model.
+  - **Pelacak Kuota & Dashboard Observabilitas**:
+    - `type ProviderKind` di `src/quota.ts`, `src/providers.ts`, dan `api/stats.ts` diperluas mencakup `'cloudflare'`.
+    - Dashboard observabilitas (`public/dashboard.html`, `public/js/dashboard.js`) dilengkapi kartu katalog model, indikator status `.tag-cloudflare`, pill filter interaktif, dan pelacakan limit harian 10.000 RPD per akun.
 
 ### v0.26.21 - 2026-09-13 00:30 WIB
 

@@ -89,7 +89,7 @@ export interface ChatMsg {
   content: string | ContentPart[];
 }
 
-type ProviderKind = 'xkiro' | 'groq' | 'gemini' | 'openrouter';
+type ProviderKind = 'xkiro' | 'groq' | 'cloudflare' | 'gemini' | 'openrouter';
 
 interface CacheEntry {
   at: number;
@@ -226,6 +226,65 @@ async function openAiChat(
       }
     : undefined;
   return { text, tokens };
+}
+
+interface CloudflareKeyInfo {
+  accountId: string;
+  token: string;
+}
+
+const cfKeyAccountCache = new Map<string, string>();
+
+async function resolveCloudflareKey(rawKey: string): Promise<CloudflareKeyInfo> {
+  if (rawKey.includes(':')) {
+    const idx = rawKey.indexOf(':');
+    return {
+      accountId: rawKey.slice(0, idx).trim(),
+      token: rawKey.slice(idx + 1).trim(),
+    };
+  }
+
+  const token = rawKey.trim();
+  if (config.cloudflareAccountId) {
+    return { accountId: config.cloudflareAccountId, token };
+  }
+
+  const cachedAcc = cfKeyAccountCache.get(token);
+  if (cachedAcc) {
+    return { accountId: cachedAcc, token };
+  }
+
+  try {
+    const res = await fetch('https://api.cloudflare.com/client/v4/accounts', {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(config.connectTimeoutMs),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { result?: Array<{ id: string }> };
+      const accId = data.result?.[0]?.id;
+      if (accId) {
+        cfKeyAccountCache.set(token, accId);
+        return { accountId: accId, token };
+      }
+    }
+  } catch {
+    // abaikan network error saat lookup akun
+  }
+
+  return { accountId: '', token };
+}
+
+async function cloudflareChat(
+  rawKey: string,
+  model: string,
+  messages: ChatMsg[],
+): Promise<ProviderResult> {
+  const { accountId, token } = await resolveCloudflareKey(rawKey);
+  if (!accountId) {
+    throw new Error('CLOUDFLARE_ACCOUNT_ID_MISSING');
+  }
+  const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`;
+  return await openAiChat(baseUrl, token, model, messages);
 }
 
 async function geminiChat(key: string, model: string, messages: ChatMsg[]): Promise<ProviderResult> {
@@ -377,6 +436,14 @@ function steps(): Step[] {
       },
     },
     {
+      kind: 'cloudflare',
+      keys: config.pools.cloudflare,
+      models: [config.models.cfPrimary, config.models.cfBackup],
+      visionModels: [],
+      cap: config.dailyCap.cloudflare,
+      run: (k, m, msgs) => cloudflareChat(k, m, msgs),
+    },
+    {
       kind: 'gemini',
       keys: config.pools.gemini,
       models: [config.models.geminiPrimary, config.models.geminiBackup],
@@ -397,7 +464,7 @@ function steps(): Step[] {
 
 /**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: xKiro (DeepSeek) > Groq > Gemini > OpenRouter.
+ * - Teks umum / matematika / koding: xKiro (DeepSeek) > Groq > Cloudflare (Llama 3.1 70B > Qwen 2.5 Coder) > Gemini > OpenRouter.
  * - Vision / foto / gambar: xKiro (Standby Qwen Free) > Gemini (3.8 Flash > 2.5 Flash) > OpenRouter (Nex Pro > Mini).
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
@@ -419,7 +486,7 @@ export async function chat(
     ? allSteps
         .filter((s) => s.visionModels.length > 0)
         .sort((a, b) => {
-          const priority: Record<string, number> = { xkiro: 1, gemini: 2, openrouter: 3, groq: 4 };
+          const priority: Record<string, number> = { xkiro: 1, gemini: 2, openrouter: 3, groq: 4, cloudflare: 5 };
           return (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
         })
     : allSteps;

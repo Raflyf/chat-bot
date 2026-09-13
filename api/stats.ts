@@ -330,7 +330,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // 4. Bangun status Pool per Provider & tiap API Key
     const providerDefs: Array<{
-      kind: 'xkiro' | 'groq' | 'gemini' | 'openrouter';
+      kind: 'xkiro' | 'groq' | 'cloudflare' | 'gemini' | 'openrouter';
       displayName: string;
       keys: string[];
       cap: number;
@@ -370,6 +370,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         primaryModel: config.models.groqPrimary,
         backupModel: config.models.groqBackup,
         allModels: [config.models.groqPrimary, config.models.groqBackup],
+      },
+      {
+        kind: 'cloudflare',
+        displayName: 'Cloudflare Workers AI',
+        keys: config.pools.cloudflare,
+        cap: config.dailyCap.cloudflare,
+        tokenCapPerKey: 100000,
+        tokenLimitType: 'daily_cap',
+        tokenLimitLabel: '10.000 Request/hari (Workers AI Free Tier)',
+        resetCycle: 'Harian (00:00 UTC)',
+        contextWindow: '131.072 Token (131K)',
+        primaryModel: config.models.cfPrimary,
+        backupModel: config.models.cfBackup,
+        allModels: [config.models.cfPrimary, config.models.cfBackup],
       },
       {
         kind: 'gemini',
