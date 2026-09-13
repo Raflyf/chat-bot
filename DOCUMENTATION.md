@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.26 (Perbaikan Responsivitas Mobile Lintas Platform: Resolusi Kotak Kosong Hero Landing Page & Hardening Navbar Dashboard)  
+**Versi:** v0.26.27 (Perhitungan Token Riil Upstream Provider Groq & Eliminasi Estimasi Statis 380 Token di Seluruh Dashboard Observabilitas)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 10:52 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:05 WIB
 
 ---
 
@@ -207,6 +207,29 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.27 - 2026-09-13 11:05 WIB
+
+**Perhitungan Token Riil Upstream Provider Groq & Eliminasi Estimasi Statis 380 Token di Seluruh Dashboard Observabilitas**
+
+- **Audit & Penemuan Akar Masalah Estimasi Token Semu (`api/stats.ts`, `public/js/dashboard.js`)**:
+  - **Akar Masalah**: Sebelumnya metrik konsumsi token Groq dihitung menggunakan pengali statis `used * 380`, sehingga 1 kali panggilan chat hanya bertambah 380 token (+0.19% dari limit 200.000 TPD), padahal pesan nyata bot mengonsumsi ribuan token prompt konteks (system prompt ~3.500–4.800 token + riwayat chat + completion token).
+  - Akibatnya, pemakaian token di tabel monitoring kuota Groq tampak statis dan tidak bertambah secara proporsional meski pengguna sudah banyak menguji obrolan intensif.
+- **Kalkulasi Token Riil Upstream dari Kolom Database Supabase (`api/stats.ts`)**:
+  - Memperbarui `buildAssistantQuery` untuk mengambil kolom `prompt_tokens`, `completion_tokens`, `total_tokens`, serta parsing tag `#t=prompt,completion,total` pada kolom `via` tabel `messages`.
+  - Mengakumulasikan metrik token riil per-provider (`providerTokenStats`) secara dinamis untuk setiap panggilan asisten dalam rentang waktu yang dipilih ("Hari Ini", "7 Hari", "14 Hari", "30 Hari", "Semua Waktu").
+  - Menghitung rata-rata riil per-chat untuk Groq (~4.459 token/chat) dan mengaitkannya ke konsumsi per-kunci (`used * providerAvgTokens`) serta total token pool Groq secara presisi matematis.
+  - Untuk hari ini, 14 panggilan Groq terbukti mengakumulasikan **62.424 token riil** (31,2% dari batas 200.000 TPD), menggantikan angka estimasi lama 5.320 token (2,6%).
+- **Penyelarasan Dashboard Observabilitas & Tampilan Metrik (`public/js/dashboard.js`)**:
+  - **Tabel Upstream Monitoring (`renderLiveUpstreamTable`)**:
+    - Menampilkan jumlah token riil dan jumlah panggilan sekaligus: `${keyUsed.toLocaleString()} Token (${k.used} calls)`.
+    - Mengganti label `Limit: 200.000 • Bot Monitored` menjadi `Limit: 200.000 TPD • Upstream Real Usage`.
+    - Mengganti label `● Sisa Token Estimasi` menjadi `● Sisa Token Riil (TPD)`.
+    - Menambahkan lencana `● Upstream Real Usage`.
+  - **Matriks Kuota Token Provider (`renderTokenMatrix`)**:
+    - Menghapus subtext statis `"Rata-rata ~380 token/chat"` dan menggantinya dengan informasi dinamis: `● Token Riil Upstream (Rata-rata ~${formatTokens(p.avgTokensPerChat)}/chat)`.
+  - **Kartu KPI Dashboard (`kpi-total-keys`)**:
+    - Mengeliminasi pengali `totalCalls * 380` dan menyajikan total token riil akumulatif dari `data.summary.totalTokensPeriod`.
 
 ### v0.26.26 - 2026-09-13 10:52 WIB
 

@@ -208,7 +208,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
 
       const buildAssistantQuery = () => {
-        let q = c.from('messages').select('via').eq('role', 'assistant').order('id', { ascending: false });
+        let q = c
+          .from('messages')
+          .select('via, prompt_tokens, completion_tokens, total_tokens')
+          .eq('role', 'assistant')
+          .order('id', { ascending: false });
         if (startDateIso) q = q.gte('created_at', startDateIso);
         if (filterPlatform && filterPlatform !== 'all') q = q.eq('platform', filterPlatform);
         return q;
@@ -246,7 +250,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         c.from('messages').select('*', { count: 'exact', head: true }),
         waPeriodQuery,
         telePeriodQuery,
-        fetchPagedRange<{ via: string | null }>(buildAssistantQuery, 1000, 10000),
+        fetchPagedRange<{
+          via: string | null;
+          prompt_tokens?: number | null;
+          completion_tokens?: number | null;
+          total_tokens?: number | null;
+        }>(buildAssistantQuery, 1000, 10000),
         fetchPagedRange<{ content: string | null }>(buildUserMsgsQuery, 1000, 10000),
         fetchPagedRange<{ chat_id: string | null; created_at: string }>(buildWaMonthlyQuery, 1000, 15000),
         c.from('messages').select('via').eq('role', 'assistant').order('id', { ascending: false }).limit(300),
@@ -309,12 +318,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const modelCounts: Record<string, number> = {};
     let totalModelCalls = 0;
 
+    interface ProviderTokenAccumulator {
+      realTokens: number;
+      promptTokens: number;
+      completionTokens: number;
+      callsWithRealTokens: number;
+      totalCalls: number;
+    }
+
+    const providerTokenStats: Record<string, ProviderTokenAccumulator> = {
+      xkiro: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      groq: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      cloudflare: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      gemini: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      openrouter: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+    };
+
+    let grandTotalRealTokens = 0;
+    let grandTotalCallsWithRealTokens = 0;
+
     for (const m of assistantMsgs ?? []) {
       const rawModel = m.via || 'unknown';
       const model = rawModel.split('#')[0].trim();
       modelCounts[model] = (modelCounts[model] || 0) + 1;
       totalModelCalls++;
+
+      const provKind = model.includes('/') ? model.split('/')[0].toLowerCase().trim() : '';
+      if (provKind && !providerTokenStats[provKind]) {
+        providerTokenStats[provKind] = { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 };
+      }
+      if (provKind) {
+        providerTokenStats[provKind].totalCalls++;
+      }
+
+      let pTokens = Number((m as any).prompt_tokens) || 0;
+      let cTokens = Number((m as any).completion_tokens) || 0;
+      let tTokens = Number((m as any).total_tokens) || 0;
+
+      if (tTokens === 0 && rawModel.includes('#t=')) {
+        const tokenMatch = rawModel.match(/#t=(\d+),(\d+),(\d+)/);
+        if (tokenMatch) {
+          pTokens = parseInt(tokenMatch[1], 10) || 0;
+          cTokens = parseInt(tokenMatch[2], 10) || 0;
+          tTokens = parseInt(tokenMatch[3], 10) || 0;
+        }
+      }
+
+      if (tTokens > 0) {
+        grandTotalRealTokens += tTokens;
+        grandTotalCallsWithRealTokens++;
+        if (provKind && providerTokenStats[provKind]) {
+          providerTokenStats[provKind].realTokens += tTokens;
+          providerTokenStats[provKind].promptTokens += pTokens;
+          providerTokenStats[provKind].completionTokens += cTokens;
+          providerTokenStats[provKind].callsWithRealTokens++;
+        }
+      }
     }
+
+    const overallAvgTokens = grandTotalCallsWithRealTokens > 0
+      ? Math.round(grandTotalRealTokens / grandTotalCallsWithRealTokens)
+      : 2500;
+    const totalComputedTokensPeriod = grandTotalRealTokens + (Math.max(0, totalModelCalls - grandTotalCallsWithRealTokens) * overallAvgTokens);
 
     // Daftar model aktif sistem untuk memfilter histori DB lama yang sudah didepresiasi
     const activeSystemModels = [
@@ -472,6 +537,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       const effectiveCapPerKey = daysCount > 0 ? p.cap * daysCount : 0;
       const effectiveTokenCapPerKey = daysCount > 0 ? p.tokenCapPerKey * daysCount : 0;
 
+      const pStats = providerTokenStats[p.kind] || {
+        realTokens: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        callsWithRealTokens: 0,
+        totalCalls: 0,
+      };
+
+      const providerAvgTokens = pStats.callsWithRealTokens > 0
+        ? Math.round(pStats.realTokens / pStats.callsWithRealTokens)
+        : overallAvgTokens;
+
+      const legacyCalls = Math.max(0, pStats.totalCalls - pStats.callsWithRealTokens);
+      const providerComputedTokens = pStats.realTokens + (legacyCalls * providerAvgTokens);
+
       const keysDetail = p.keys.map((k) => {
         const suffix = k.slice(-4);
         const hash12 = crypto.createHash('sha256').update(k).digest('hex').slice(0, 12);
@@ -483,7 +563,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const xkLive = p.kind === 'xkiro' ? xkiroSyncMap.get(k) : null;
         const orLive = p.kind === 'openrouter' ? orSyncMap.get(k) : null;
 
-        let tokensUsed = used * 380;
+        // Hitung token per key secara valid berbasis real upstream usage
+        let tokensUsed = used > 0 ? Math.round(used * providerAvgTokens) : 0;
         let tokenCap = effectiveTokenCapPerKey;
         let remainingTokens: number | null = effectiveTokenCapPerKey > 0 ? Math.max(0, effectiveTokenCapPerKey - tokensUsed) : null;
         let tokenPercent = effectiveTokenCapPerKey > 0 ? Math.min(100, Math.round((tokensUsed / effectiveTokenCapPerKey) * 100)) : 0;
@@ -512,7 +593,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           tokenLimitLabel: p.tokenLimitLabel,
           resetCycle: p.resetCycle,
           contextWindow: p.contextWindow,
-          avgTokensPerChat: 380,
+          avgTokensPerChat: providerAvgTokens,
           status,
           isLiveSynced: !!xkLive || !!orLive,
           liveUserName: xkLive?.userName ?? null,
@@ -528,12 +609,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       const totalTokenPoolCap = effectiveTokenCapPerKey * p.keys.length;
       const poolPercent = totalPoolCap > 0 ? Math.min(100, Math.round((poolUsed / totalPoolCap) * 100)) : 0;
       
+      const isAnyLiveSynced = keysDetail.some((kd) => kd.isLiveSynced);
       let poolTokensUsed = 0;
-      for (const kd of keysDetail) {
-        poolTokensUsed += kd.tokensUsed;
+      if (p.kind === 'xkiro' && isAnyLiveSynced) {
+        for (const kd of keysDetail) {
+          poolTokensUsed += kd.tokensUsed;
+        }
+      } else {
+        poolTokensUsed = providerComputedTokens > 0
+          ? providerComputedTokens
+          : keysDetail.reduce((acc, kd) => acc + kd.tokensUsed, 0);
       }
       const poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolTokensUsed / totalTokenPoolCap) * 100)) : 0;
-      const isAnyLiveSynced = keysDetail.some((kd) => kd.isLiveSynced);
 
       return {
         kind: p.kind,
@@ -555,6 +642,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         totalTokenCap: totalTokenPoolCap,
         totalTokensUsed: poolTokensUsed,
         tokenPercent: poolTokenPercent,
+        avgTokensPerChat: providerAvgTokens,
+        realUsageCalls: pStats.callsWithRealTokens,
+        realTokensUsed: pStats.realTokens,
         isLiveSynced: isAnyLiveSynced,
         keys: keysDetail,
       };
@@ -627,9 +717,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         totalKeys: totalPoolKeys,
         totalCallsPeriod,
         totalCallsToday: totalCallsPeriod,
-        totalTokensPeriod: totalCallsPeriod * 380,
-        totalTokensToday: totalCallsPeriod * 380,
-        avgTokensPerChat: 380,
+        totalTokensPeriod: totalComputedTokensPeriod,
+        totalTokensToday: totalComputedTokensPeriod,
+        avgTokensPerChat: overallAvgTokens,
+        realTokensPeriod: grandTotalRealTokens,
+        callsWithRealTokens: grandTotalCallsWithRealTokens,
         modelsActiveCount: modelsBreakdown.length,
         whatsappMonthlySessions: {
           used: totalWaSessionsMonth,
