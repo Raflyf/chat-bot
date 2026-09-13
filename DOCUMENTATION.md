@@ -219,7 +219,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - Definisi kuota valid per key & pool:
     - **Dahl Global API (Tier 1):** 10 Keys • 100.000.000 Token/key (Total Pool 1.000.000.000 / 1 Miliar Token Balance) • Daily cap 5.000 RPD • Context 131K.
     - **Groq Cloud API (Tier 2):** 5 Keys • 1.000 RPD/key • 8K TPM Tier (Bebas kuota token harian) • Context 131K.
-    - **OpenCode Zen API (Tier 3):** 4 Keys • ~1.000 RPD/key • Contributor Free (Bebas token harian) • Context 131K.
+    - **OpenCode Zen API (Tier 3):** 4 Keys • ~1.000 RPD/key • Contributor Free (Bebas token harian) • Context 1.048.576 (1M) • Multimodal (Text, Image, Audio, Video).
     - **Google Gemini API (Tier 4):** 2 Keys • 1.500 RPD/key • 1M TPM Tier (Bebas kuota token harian) • Context 1M.
     - **Cloudflare Workers AI (Tier 5):** 3 Akun • 10.000 Neuron/hari (~100-300 RPD Free Tier) • Context 131K.
     - **OpenRouter AI (Tier 6):** 5 Keys • Bebas kuota harian model :free (Rate limit 50-1.000 RPD) • Context 131K.
