@@ -234,6 +234,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - **Pembaruan Antarmuka HTML (`public/dashboard.html` & `public/index.html`)**:
   - Penambahan class CSS `.tag-dahl` dan `.tag-opencode`.
   - Filter pills pool API key dan dropdown dataset filter dilengkapi opsi `dahl` dan `opencode` sesuai urutan tier 1-7.
+  - Scrollable Container untuk Daftar Kunci Pool (`.keys-list`): Dibatasi `max-height: 250px` dengan `overflow-y: auto` dan styling scrollbar tipis agar kartu dengan banyak kunci (seperti Dahl 10 keys) tetap rapi dan tidak memanjang ke bawah.
   - Beranda publik (`public/index.html`) dimutakhirkan menampilkan tumpukan 7 Tier Provider dan Failover 7 Tier.
 
 ### v0.27.0 - 2026-09-13 18:30 WIB
