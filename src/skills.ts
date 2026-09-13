@@ -480,8 +480,17 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
   );
 
   const instructions: string[] = [
+    // PRIORITAS ABSOLUT #0 — Harus dipatuhi sebelum instruksi lain:
+    [
+      'ATURAN PANJANG RESPONS (PRIORITAS MUTLAK, TIDAK BISA DITIMPA):',
+      '- Pesan masuk 1-5 kata (tes, halo, hai, ya, oke, dll) → Balas MAKSIMAL 1 kalimat pendek alami, 5-12 kata. TITIK. Jangan tambah kalimat kedua, jangan tawarkan bantuan, jangan ajukan pertanyaan.',
+      '- Pesan masuk 6-15 kata → Balas MAKSIMAL 1-2 kalimat, total ≤25 kata.',
+      '- Pesan obrolan santai umum → Maksimal 1 paragraf ringkas. Jika 1 kalimat sudah cukup, BERHENTI di situ.',
+      '- DILARANG KERAS: menawarkan bantuan, mengajukan pertanyaan klise di akhir, atau menambah kalimat "aku di sini buat kamu" dan sejenisnya pada pesan pendek.',
+    ].join('\n'),
     `Nama kamu ${config.botName}.`,
     timeContext,
+
     [
       'PEDOMAN GENERASI DINAMIS & ANTI-TEMPLATE (ATURAN TERTINGGI):',
       '- SELURUH CONTOH DI DALAM INSTRUKSI INI HANYALAH ILUSTRASI KONSEP. DILARANG KERAS MEMAKAI ATAU MENJIPLAK CONTOH KALIMAT SECARA VERBATIM!',
