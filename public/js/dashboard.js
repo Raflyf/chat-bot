@@ -681,21 +681,21 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["whisper-large-v3-turbo", "whisper-large-v3", "whisper", "groq/whisper"],
         },
 
-        // --- Tier 3: OpenCode Zen Direct API (1.048.576 Context Full Multimodal) ---
+        // --- Tier 3: OpenCode Zen Direct API (1.048.576 Context Text & Reasoning Engine) ---
         {
           name: "Muse Spark 1.3",
           provider: "OPENCODE",
           tagClass: "tag-opencode",
-          capabilities: ["Multimodal (Img/Audio/Video)", "1M Context", "Fast Latency", "Reasoning"],
-          desc: "Prioritas #1 Tier 3 - Frontier 1.048.576 Konteks Multimodal (Text, Image, Audio, Video) & Latensi 1,8s",
+          capabilities: ["Text", "1M Context", "Fast Latency", "Reasoning"],
+          desc: "Prioritas #1 Tier 3 - Frontier 1M Konteks Teks & Penalaran Empatik latensi 1,8s (Endpoint API Teks)",
           matchKeys: ["opencode/muse-spark-1.3-contributor-free", "muse-spark-1.3-contributor-free", "muse-spark-1.3", "muse-1.3"],
         },
         {
           name: "Muse Spark 1.2",
           provider: "OPENCODE",
           tagClass: "tag-opencode",
-          capabilities: ["Multimodal (Img/Audio/Video)", "1M Context", "Fast Latency", "Reasoning"],
-          desc: "Prioritas #2 Tier 3 - Cadangan 1.048.576 Konteks Multimodal OpenCode Zen jika Muse 1.3 sibuk/timeout",
+          capabilities: ["Text", "1M Context", "Fast Latency", "Reasoning"],
+          desc: "Prioritas #2 Tier 3 - Cadangan 1M Konteks Teks OpenCode Zen jika Muse 1.3 sibuk/timeout",
           matchKeys: ["opencode/muse-spark-1.2-contributor-free", "muse-spark-1.2-contributor-free", "muse-spark-1.2", "muse-1.2"],
         },
 
