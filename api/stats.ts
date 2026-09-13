@@ -506,7 +506,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         tokenLimitType: 'requests_tpm',
         tokenLimitLabel: '~1.000 RPD/key • Contributor Free (Bebas Token Harian)',
         resetCycle: 'Harian (00:00 UTC)',
-        contextWindow: '131.072 Token (131K)',
+        contextWindow: '1.048.576 Token (1M)',
         primaryModel: config.models.openCodePrimary,
         backupModel: config.models.openCodeBackup,
         allModels: [config.models.openCodePrimary, config.models.openCodeBackup],
