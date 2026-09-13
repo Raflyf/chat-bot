@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.33 (Resolusi Peringatan Linter CSS: Kepatuhan Standar background-clip pada dashboard.html)  
+**Versi:** v0.26.34 (Standardisasi Dokumentasi Publik: Perombakan Komprehensif README.md & Diagram Arsitektur Sistem)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:45 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:50 WIB
 
 ---
 
@@ -207,6 +207,24 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.34 - 2026-09-13 11:50 WIB
+
+**Standardisasi Dokumentasi Publik: Perombakan Komprehensif README.md & Diagram Arsitektur Sistem**
+
+- **Audit & Penataan Ulang README Publik (`README.md`)**:
+  - Merekonstruksi dokumentasi utama repositori agar menyajikan standar profesional kelas industri bagi pengunjung dan kontributor di GitHub.
+  - Menghilangkan gaya lama yang minimalis menjadi dokumentasi komprehensif, terstruktur, dan berwibawa (*stop-slop standard*).
+- **Komponen yang Ditingkatkan pada README.md**:
+  - **Hero & Shield Badges**: Menambahkan lencana resmi untuk Lisensi MIT, TypeScript 5.6, Node.js, Vercel Serverless, Supabase PostgreSQL, Telegram Bot, dan WhatsApp 24/7.
+  - **Ringkasan Eksekutif & Tabel Saluran Akses**: Matriks akses instan ke bot Telegram, bot WhatsApp, landing page publik, dan panel observabilitas.
+  - **Diagram Arsitektur Mermaid Terintegrasi**: Visualisasi alur end-to-end dari saluran klien, lapisan ingesti & keamanan (dedup atomik, anti-stale guard), lapisan inti (in-memory cache, Supabase RLS, modul multimodal), hingga rantai failover 5 provider.
+  - **Matriks Gateway Multi-Provider**: Rincian teknis 5 provider LLM (xKiro, Groq, Cloudflare, Gemini, OpenRouter), model utama, model cadangan, dan alokasi kuota harian (16 Juta Token + 360 RPD).
+  - **Katalog Perintah & Interaksi**: Panduan lengkap perintah obrolan (`/reset`, `/salah`, `/remind`, dokumen, gambar, VN, GPS).
+  - **Struktur Repositori Terannotasi**: Pemetaan pohon berkas proyek (`api/`, `public/`, `sql/`, `src/`).
+  - **Panduan Pengembang & Penerapan**: Instruksi reproduksi lokal (`npm run dev`, `npm run whatsapp`, `npm run typecheck`, `npm run build`) serta panduan deployment Vercel dan Supabase.
+- **Kepatuhan Protokol**:
+  - Bebas dari emoji (*zero emoji compliance*) sesuai aturan sistem global, mengedepankan keterbacaan teknis yang tajam dan elegan.
 
 ### v0.26.33 - 2026-09-13 11:45 WIB
 
