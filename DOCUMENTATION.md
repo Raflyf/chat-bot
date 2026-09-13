@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.23 (Kalibrasi Kuota Faktual Harian: xKiro 1.500 RPD & Cloudflare 120 RPD Berbasis Metrik Token & Neuron Riil)  
+**Versi:** v0.26.24 (Penyelarasan Matriks Model AI Dashboard dengan Runtime v0.26 & Penguatan Tumpukan MRU All-Time Anti-Reset)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 09:48 WIB
+**Terakhir Diperbarui:** 2026-09-13 10:10 WIB
 
 ---
 
@@ -207,6 +207,28 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.24 - 2026-09-13 10:10 WIB
+
+**Penyelarasan Matriks Model AI Dashboard dengan Runtime v0.26 & Penguatan Tumpukan MRU All-Time Anti-Reset**
+
+- **Penyelarasan Katalog Model AI Dashboard (`public/js/dashboard.js`)**:
+  - Mengeliminasi 6 model hantu xKiro usang yang sudah tidak aktif di runtime (`Qwen 3.8 Max Free`, `Mistral Medium 3.5`, `Mistral Large 2512`, `Qwen 3.7 Max Free`, `Qwen 3.6 Plus Free`, `Mistral Small 2603`).
+  - Mendaftarkan 14 model aktif runtime yang sinkron 100% dengan hierarki failover sistem:
+    1. **Tier 1 (xKiro Gateway)**: `DeepSeek V4 Flash` (Primary), `DeepSeek Chat V3.1` (Backup 1), `DeepSeek V4 Pro` (Backup 2), `DeepSeek V3.2` (Backup 3).
+    2. **Tier 2 (Groq Cloud API)**: `Qwen 3.8 27B` (Primary), `Qwen 3.6 27B` (Backup), `Groq Whisper Turbo` (Voice Note STT).
+    3. **Tier 3 (Cloudflare Workers AI)**: `Llama 3.1 70B Instruct` (Primary), `Qwen 2.5 Coder 32B` (Backup).
+    4. **Tier 4 (Google Gemini API)**: `Gemini 3.8 Flash` (Multimodal Vision/PDF/Video Primary), `Gemini 2.5 Flash` (Backup).
+    5. **Tier 5 (OpenRouter AI)**: `Nex N2.5 Pro Free` (Primary), `Nex N2.5 Mini Free` (Backup), `Nemotron 3.5 Lightning` (Fast Text).
+- **Arsitektur Urutan Dinamis MRU All-Time (`api/stats.ts`, `public/js/dashboard.js`)**:
+  - **Pemisahan Metrik Agregasi vs Urutan Kronologis**: Backend `api/stats.ts` kini memisahkan agregasi hitungan eksekusi (yang tetap menghormati filter tanggal aktif: "Hari Ini", "7 Hari", "30 Hari", "Semua") dengan penentuan urutan kronologis MRU.
+  - **Query Riwayat All-Time**: Backend mengeksekusi query cepat terhadap 300 pesan asisten terbaru lintas seluruh waktu (`allTimeAssistantRes`) untuk membangun tumpukan urutan MRU yang utuh.
+  - **Perilaku Pergeseran Kartu Anti-Reset**:
+    - Model yang paling baru dieksekusi secara otomatis menempati posisi `#1` (`AKTIF TERBARU`).
+    - Model yang sebelumnya berada di `#1` secara otomatis bergeser menjadi `#2`, `#2` menjadi `#3`, dan seterusnya.
+    - Model yang sudah pernah dieksekusi dijamin tidak akan pernah kembali/merosot ke posisi statis bawaannya di bawah, bahkan saat berganti filter tanggal ("Hari Ini" / "Semua") atau saat terjadi pergantian hari/midnight.
+    - Model yang belum pernah dieksekusi sama sekali tetap berada di bawah model-model yang pernah aktif sesuai prioritas tier katalog bawaan.
+  - **Persistensi Sesi Klien (`localStorage`)**: Frontend mengamankan tumpukan MRU ke `localStorage` (`freeaibot_mru_models_stack`) sehingga urutan pergeseran dinamis tetap persisten saat halaman dashboard dimuat ulang (refresh) di browser.
 
 ### v0.26.23 - 2026-09-13 09:48 WIB
 
