@@ -1600,6 +1600,12 @@
       border: 1px solid rgba(16, 185, 129, 0.35);
     }
 
+    .tag-cloudflare {
+      background: rgba(243, 128, 32, 0.15);
+      color: #f38020;
+      border: 1px solid rgba(243, 128, 32, 0.35);
+    }
+
     .tag-cap {
       font-family: var(--font-mono);
       font-size: 0.62rem;
@@ -2033,6 +2039,7 @@
             <button class="pill-filter-btn active" data-provider="all">Semua Provider</button>
             <button class="pill-filter-btn" data-provider="xkiro">xKiro</button>
             <button class="pill-filter-btn" data-provider="groq">Groq</button>
+            <button class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
             <button class="pill-filter-btn" data-provider="gemini">Gemini</button>
             <button class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
           </div>
@@ -2088,7 +2095,7 @@
         <div class="live-stat-box">
           <span class="live-stat-label">Total Kunci &amp; Pool Terhubung</span>
           <span class="live-stat-val" id="upstream-openrouter-status" style="color: #a855f7;">0 Kunci</span>
-          <span class="live-stat-sub" id="upstream-openrouter-sub">4 Provider AI Aktif</span>
+          <span class="live-stat-sub" id="upstream-openrouter-sub">5 Provider AI Aktif</span>
         </div>
         <div class="live-stat-box" style="border-color: rgba(37, 211, 102, 0.25);" title="Meta WhatsApp Business API: 1.000 Sesi Percakapan Gratis per Bulan. 1 sesi = jendela 24 jam per user (chat tanpa batas selama 24 jam dihitung 1 sesi).">
           <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -2277,6 +2284,7 @@
             <option value="xkiro">xKiro</option>
             <option value="opencode">OpenCode Zen</option>
             <option value="groq">Groq</option>
+            <option value="cloudflare">Cloudflare</option>
             <option value="gemini">Gemini</option>
             <option value="openrouter">OpenRouter</option>
           </select>

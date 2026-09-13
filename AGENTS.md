@@ -20,8 +20,9 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
 2. **Rantai Failover Lintas Provider (Sequential Provider Failover):**
    - **Tingkat 1 (Gateway Utama):** xKiro (`deepseek/deepseek-v4-flash` + 3 model cadangan di atas).
    - **Tingkat 2 (Groq):** Primary: `qwen/qwen3.8-27b`, Cadangan: `qwen/qwen3.6-27b`.
-   - **Tingkat 3 (Gemini API):** Primary: `gemini-3.8-flash`, Cadangan: `gemini-2.5-flash` (termasuk native vision engine).
-   - **Tingkat 4 (OpenRouter):** Failover akhir jika seluruh provider sebelumnya mengalami gangguan.
+   - **Tingkat 3 (Cloudflare Workers AI):** Primary: `@cf/meta/llama-3.1-70b-instruct` (Llama 3.1 70B), Cadangan: `@cf/qwen/qwen2.5-coder-32b-instruct` (Qwen 2.5 Coder 32B). Multi-account pool rotation dengan auto-resolution account ID.
+   - **Tingkat 4 (Gemini API):** Primary: `gemini-3.8-flash`, Cadangan: `gemini-2.5-flash` (termasuk native vision engine).
+   - **Tingkat 5 (OpenRouter):** Failover akhir jika seluruh provider sebelumnya mengalami gangguan.
    - **Direct OpenCode Zen API:** Cadangan darurat otonom (`muse-spark-1.3-contributor-free`).
 
 ---

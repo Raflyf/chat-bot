@@ -717,6 +717,22 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["whisper-large-v3-turbo", "whisper", "groq/whisper"],
         },
         {
+          name: "Llama 3.1 70B Instruct",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["High-Reasoning", "Text", "Code"],
+          desc: "Model reasoning andalan Cloudflare Workers AI tier gratis",
+          matchKeys: ["cloudflare/@cf/meta/llama-3.1-70b-instruct", "@cf/meta/llama-3.1-70b-instruct", "llama-3.1-70b"],
+        },
+        {
+          name: "Qwen 2.5 Coder 32B",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["Code", "Math", "Text"],
+          desc: "Cadangan presisi tinggi koding dan penalaran Cloudflare AI",
+          matchKeys: ["cloudflare/@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/qwen/qwen2.5-coder-32b-instruct", "qwen2.5-coder-32b"],
+        },
+        {
           name: "Gemini 3.8 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
@@ -822,6 +838,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           let prov = "AI GATEWAY";
           let tagCls = "tag-xkiro";
           if (keyLower.includes("groq")) { prov = "GROQ"; tagCls = "tag-groq"; }
+          else if (keyLower.includes("cloudflare") || keyLower.includes("@cf")) { prov = "CLOUDFLARE"; tagCls = "tag-cloudflare"; }
           else if (keyLower.includes("gemini")) { prov = "GEMINI"; tagCls = "tag-gemini"; }
           else if (keyLower.includes("openrouter")) { prov = "OPENROUTER"; tagCls = "tag-openrouter"; }
           else if (keyLower.includes("xkiro")) { prov = "XKIRO"; tagCls = "tag-xkiro"; }
@@ -1097,6 +1114,46 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 <td>
                   <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
                   <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Estimasi</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-bot-sync" style="margin-bottom: 4px;">● Bot Monitored</span>
+                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                </td>
+              </tr>
+            `);
+          } else if (p.kind === "cloudflare") {
+            const keyCap = p.cap || 10000;
+            const keyUsed = k.used || 0;
+            const keyRemaining = Math.max(0, keyCap - keyUsed);
+            const pct = keyCap > 0 ? Math.min(100, Math.round((keyUsed / keyCap) * 100)) : 0;
+
+            grandTotalCap += keyCap;
+            grandTotalUsed += keyUsed;
+            grandTotalRemaining += keyRemaining;
+
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #f38020; font-weight: 700; margin-top: 3px;">cfut_...${escapeHtml(cleanSuffix)}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Workers AI Dashboard</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">dash.cloudflare.com/ai</div>
+                </td>
+                <td>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Req</span>
+                    <span style="color: var(--text-dim);">${pct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} RPD &bull; Bot Monitored</div>
+                </td>
+                <td>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Kuota Harian (RPD)</div>
                 </td>
                 <td style="text-align: right;">
                   <span class="badge-bot-sync" style="margin-bottom: 4px;">● Bot Monitored</span>
