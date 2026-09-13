@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.40 (Pemberantasan Jargon Database, Penegasan Respon 1-Kalimat & Persona Menjiwai Anak Tongkrongan)  
+**Versi:** v0.26.41 (Kecerdasan Emosional Universal: Vibe Reading Lintas Topik, Dynamic Mirroring & Penghapusan Hardcode)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 12:30 WIB
+**Terakhir Diperbarui:** 2026-09-13 12:35 WIB
 
 ---
 
@@ -207,6 +207,25 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.41 - 2026-09-13 12:35 WIB
+
+**Kecerdasan Emosional Universal: Vibe Reading Lintas Topik, Dynamic Mirroring & Penghapusan Hardcode**
+
+- **Arsitektur Membaca Suasana Universal (Universal Vibe & Context Sensitivity)**:
+  - Menggeneralisasi instruksi sistem agar tidak hanya terpaku pada topik tertentu (seperti developer/Rafly), melainkan peka membaca suasana hati, emosi, dan intensi lawan bicara di seluruh ranah percakapan:
+    1. **Vibe Iseng / Bercanda / Troll / Roasting / Ejekan Santai**: Direspons seirama dengan celetukan lepas, banyolan santai, tawa akrab, atau roasting balik tanpa baper, tanpa sikap defensif, tanpa pembelaan diri berbelit-belit, dan tanpa khotbah etika/moral.
+    2. **Vibe Curhat / Sambat / Lelah / Stres**: Ditemani hangat secara tulus dalam 1–2 kalimat alami tanpa menggurui, tanpa khotbah, dan tanpa tips problem-solving/to-do list tanpa diminta.
+    3. **Vibe Tanya Cepat / Praktis**: Dijawab lugas, to-the-point, akurat, bebas basa-basi pembuka dan penutup.
+    4. **Vibe Koding / Sains / Teknis Mendalam**: Dijawab secara cerdas, presisi, berbobot, dan terstruktur rapi dengan kode modular bersih.
+    5. **Vibe Formal / Santun**: Diselaraskan dengan tata bahasa Indonesia yang bersih, tertata, dan sopan tanpa slang.
+- **Penyelarasan Ritme & Panjang Pesan Dinamis (Dynamic Length Mirroring)**:
+  - Mewajibkan bot menyesuaikan panjang balasan dengan panjang ketikan pengguna: chat singkat (1–7 kata) wajib dibalas seirama dalam 1 celetukan pendek (5–15 kata). Menghilangkan kesan bot robotik yang menceramahi chat pendek dengan paragraf panjang.
+- **Pembersihan Total Respon Hardcode (100% Dynamic Generation Engine)**:
+  - Menghapus seluruh filter post-processing pada `autoReply` yang sebelumnya menimpa output model dengan string statis.
+  - Memastikan seluruh jawaban bot diproduksi 100% secara dinamis dan organik oleh model AI di setiap putaran (*turn*), bebas dari formula kalimat hafalan atau template kaku.
+- **Standar Bahasa Bebas Jargon Server & Sensor Moral di Semua Topik**:
+  - Melarang total penggunaan jargon server/IT/database (*"di sistemku"*, *"developer sah"*, *"data sudah fix"*, *"terverifikasi permanen"*, *"sebagai AI"*, *"koneksi stabil"*) di percakapan umum.
 
 ### v0.26.40 - 2026-09-13 12:30 WIB
 
