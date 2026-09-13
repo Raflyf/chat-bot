@@ -260,8 +260,10 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   1. **Vision Prioritas 1:** Google Gemini (`gemini-3.8-flash` > `gemini-2.5-flash`)
   2. **Vision Prioritas 2:** Cloudflare Workers AI (`@cf/meta/llama-3.2-11b-vision-instruct` via adapter native array bytes)
   3. **Vision Prioritas 3:** OpenRouter AI (`nex-agi/nex-n2.5-pro:free` > `nex-agi/nex-n2.5-mini:free`)
-- **Zero-Configuration Vercel Models**:
-  - Model default kini dikonfigurasi langsung di dalam kode (`src/env.ts`), sehingga variabel model tidak lagi wajib diisi di dashboard Vercel ataupun file `.env`.
+- **Zero-Configuration Vercel Models & Eliminasi Total Variabel Model di .env**:
+  - Seluruh nama model utama dan cadangan (Tier 1 s.d. Tier 7) kini didefinisikan langsung sebagai konstanta di dalam kode sistem (`src/env.ts`).
+  - Variabel model (`*_MODEL_PRIMARY`, `*_MODEL_BACKUP`) dihapus seutuhnya dari `.env` dan `.env.example`. Pengguna tidak perlu lagi repot mengubah atau menyelaraskan nama model di dashboard Vercel saat sistem memperbarui model AI.
+  - Berkas `.env` dan `.env.example` ditata rapi secara sekuensial berurutan sesuai 7 Tier (Dahl -> Groq -> OpenCode -> Gemini -> Cloudflare -> OpenRouter -> xKiro).
 - **Fast-Pass Circuit Breaker**:
   - Error HTTP 401, 403, 404, 502, 503, `CreditsError`, dan `ModelError` memicu fast-pass seketika ke model berikutnya tanpa loop berulang pada kunci yang sama.
 
