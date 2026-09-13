@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.25 (Redesain Navigasi Utama Dashboard: Frosted Glass, Ambient Glow Line, Telemetry Radar Pill & Unified Actions Cluster)  
+**Versi:** v0.26.26 (Perbaikan Responsivitas Mobile Lintas Platform: Resolusi Kotak Kosong Hero Landing Page & Hardening Navbar Dashboard)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 10:45 WIB
+**Terakhir Diperbarui:** 2026-09-13 10:52 WIB
 
 ---
 
@@ -207,6 +207,22 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.26 - 2026-09-13 10:52 WIB
+
+**Perbaikan Responsivitas Mobile Lintas Platform: Resolusi Kotak Kosong Hero Landing Page & Hardening Navbar Dashboard**
+
+- **Resolusi Kotak Kosong / Hollow Button pada Mobile Landing Page (`public/index.html`)**:
+  - **Akar Masalah**: Selector CSS `.btn-dashboard span:last-child { display: none; }` yang awalnya ditujukan untuk menyembunyikan panah navigasi navbar di layar `< 580px` secara keliru ikut menargetkan tombol ketiga di kelompok Hero CTA (`<a href="/dashboard.html" class="btn btn-dashboard"><span>Buka Panel Dashboard</span></a>`). Karena tombol tersebut hanya memiliki 1 elemen `<span>`, teksnya tersembunyi total dan menyisakan kotak garis biru kosong (*hollow outline*) seperti pada tangkapan layar pengguna.
+  - **Perbaikan Arsitektur CSS**:
+    1. Memisahkan kelas tombol navigasi navbar menjadi `.nav-dashboard-link` dengan teks dinamis (`.nav-dash-full` untuk desktop dan `.nav-dash-short` untuk mobile).
+    2. Mengisolasi tombol hero dashboard menjadi `.btn-hero-dash` dengan ikon visual rapi dan teks utuh yang dijamin tidak akan terpengaruh aturan navbar.
+    3. Menambahkan ikon resmi WhatsApp dan Telegram berformat SVG tajam dengan shadow pendar yang memukau.
+- **Penyempurnaan Navigasi Header Landing Page (`public/index.html`)**:
+  - Bilah atas landing page diselaraskan dengan material *frosted glass* (`backdrop-filter: blur(20px) saturate(180%)`) dan garis pendar luminous bawah (`header::after`).
+  - Pada layar ponsel sempit (< 580px & < 400px), navigasi beradaptasi otomatis menampilkan teks ringkas `Dashboard` tanpa pemotongan atau overflow horizontal.
+- **Hardening Responsif Dashboard Observabilitas (`public/dashboard.html`)**:
+  - Menambahkan breakpoint ketat untuk layar smartphone sempit (< 480px & < 380px) pada kontainer grup brand dan bilah segmen kontrol aksi agar tombol `Auto: 15s`, `Segarkan`, dan `Kunci Keluar` muat sempurna dalam 1 baris tanpa memicu tumpang tindih.
 
 ### v0.26.25 - 2026-09-13 10:45 WIB
 
