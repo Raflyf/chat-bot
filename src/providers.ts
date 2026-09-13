@@ -573,18 +573,6 @@ interface Step {
 function steps(): Step[] {
   return [
     {
-      kind: 'dahl',
-      keys: config.pools.dahl,
-      models: [config.models.dahlPrimary, config.models.dahlBackup],
-      visionModels: [],
-      cap: config.dailyCap.dahl,
-      run: (k, m, msgs) => openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
-        temperature: 0.45,
-        frequency_penalty: 0.5,
-        presence_penalty: 0.0,
-      }),
-    },
-    {
       kind: 'groq',
       keys: config.pools.groq,
       models: [config.models.groqPrimary, config.models.groqBackup],
@@ -629,6 +617,18 @@ function steps(): Step[] {
       visionModels: [config.models.orPrimary, config.models.orMini],
       cap: config.dailyCap.openrouter,
       run: (k, m, msgs) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs),
+    },
+    {
+      kind: 'dahl',
+      keys: config.pools.dahl,
+      models: [config.models.dahlPrimary, config.models.dahlBackup],
+      visionModels: [],
+      cap: config.dailyCap.dahl,
+      run: (k, m, msgs) => openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
+        temperature: 0.45,
+        frequency_penalty: 0.5,
+        presence_penalty: 0.0,
+      }),
     },
     {
       kind: 'xkiro',
