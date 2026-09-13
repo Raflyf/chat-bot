@@ -208,6 +208,32 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.27.1 - 2026-09-13 18:45 WIB
+
+**Penyelarasan Menyeluruh Sistem Monitoring 7-Tier Provider: Penambahan Dahl Global 1B Pool & OpenCode Zen ke Dashboard, Validasi Limit Kuota Faktual Upstream, Sinkronisasi Katalog Model Router & Filter Matrix**
+
+- **Sinkronisasi Backend Monitoring (`api/stats.ts`)**:
+  - Tipe `providerDefs.kind` kini mencakup 7 provider resmi: `'dahl' | 'groq' | 'opencode' | 'gemini' | 'cloudflare' | 'openrouter' | 'xkiro'`.
+  - Inisialisasi akumulator `providerTokenStats` menambahkan `dahl` dan `opencode` untuk agregasi token riil.
+  - Penyelarasan `activeSystemModels` dengan seluruh model runtime aktif: Dahl (`DeepSeek-V4-Flash-0731`, `MiniMax-M2.7`), Groq (`qwen3.8-27b`, `qwen3.6-27b`), OpenCode (`muse-spark-1.3`, `muse-spark-1.2`), Gemini (`3.8-flash`, `2.5-flash`), Cloudflare (`llama-3.1-70b`, `qwen2.5-coder-32b`, `llama-3.2-11b-vision`), OpenRouter (`nex-n2.5-pro:free`, `nex-n2.5-mini:free`, `nemotron-3.5-lightning:free`), dan xKiro (`mistral-small-2603`, `codestral-2508`).
+  - Definisi kuota valid per key & pool:
+    - **Dahl Global API (Tier 1):** 10 Keys • 100.000.000 Token/key (Total Pool 1.000.000.000 / 1 Miliar Token Balance) • Daily cap 5.000 RPD • Context 131K.
+    - **Groq Cloud API (Tier 2):** 5 Keys • 1.000 RPD/key • 8K TPM Tier (Bebas kuota token harian) • Context 131K.
+    - **OpenCode Zen API (Tier 3):** 4 Keys • ~1.000 RPD/key • Contributor Free (Bebas token harian) • Context 131K.
+    - **Google Gemini API (Tier 4):** 2 Keys • 1.500 RPD/key • 1M TPM Tier (Bebas kuota token harian) • Context 1M.
+    - **Cloudflare Workers AI (Tier 5):** 3 Akun • 10.000 Neuron/hari (~100-300 RPD Free Tier) • Context 131K.
+    - **OpenRouter AI (Tier 6):** 5 Keys • Bebas kuota harian model :free (Rate limit 50-1.000 RPD) • Context 131K.
+    - **xKiro Gateway (Tier 7):** 3 Keys • 5.000.000 Token/hari (~500 RPD Mistral Tier) • Context 32K.
+- **Penyelarasan Antarmuka Dashboard (`public/js/dashboard.js`)**:
+  - **Katalog Model Router (`catalog`)**: Dimutakhirkan ke 7 Tier teks dan 3 Tier vision yang sinkron 100% dengan runtime sistem.
+  - **Tabel Upstream Real Usage (`renderLiveUpstreamTable`)**: Ditambahkan rendering khusus baris Dahl Global API (prefix `dahl_...`, tag cyan `#22d3ee`, pool 1B token) dan OpenCode Zen API (prefix `sk-...`, tag pink `#f472b6`, ~1.000 RPD).
+  - **Mini KPI Ribbon**: Perhitungan grand total kuota dan token kini mengagregasi 32 API key dari 7 provider secara universal.
+  - **Matriks Kuota Token (`renderTokenMatrix`)**: Mekanisme dan label kuota resmi untuk Dahl (`Pool Saldo Token (1B)`) dan OpenCode disesuaikan secara presisi.
+- **Pembaruan Antarmuka HTML (`public/dashboard.html` & `public/index.html`)**:
+  - Penambahan class CSS `.tag-dahl` dan `.tag-opencode`.
+  - Filter pills pool API key dan dropdown dataset filter dilengkapi opsi `dahl` dan `opencode` sesuai urutan tier 1-7.
+  - Beranda publik (`public/index.html`) dimutakhirkan menampilkan tumpukan 7 Tier Provider dan Failover 7 Tier.
+
 ### v0.27.0 - 2026-09-13 18:30 WIB
 
 **Restrukturisasi Arsitektur LLM 7-Tier Teks & 3-Tier Vision: Integrasi Dahl Global 1B Pool, Direct OpenCode Zen Muse Spark 1.3 & 1.2, Cloudflare Native Vision Array Bytes, Eliminasi Wajib Konfigurasi Model di Vercel/Env**
