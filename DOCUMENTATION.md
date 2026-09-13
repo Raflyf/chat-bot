@@ -208,6 +208,49 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.27.6 - 2026-09-14 (Refactor P1: Larangan -> Direktif Positif + Suite 16 Skenario)
+
+**Prompt dipangkas dari ~40 larangan menjadi direktif positif per topik tunggal; perilaku terverifikasi setara/lebih baik via before-after suite**
+
+- **Yang digabung:** aturan panjang 2 lokasi -> 1 blok (`PANJANG RESPONS`); PRINSIP 1/2/4 ditulis ulang positif (baca suasana, bahasa manusiawi, jujur pada fakta); ekor situasional (kompromi/menjiplak/muka-tebel berulang) dipadatkan tanpa mengubah makna; aturan kritis dipertahankan verbatim (anti-bocor punchline, anti-parrot contoh, anti-jargon konkret, PEMDAS/9:0).
+- **Suite regresi (`scratch/verify_suite.mts`, 16 skenario: sapaan/echo/riddle/komplain/apresiasi/troll/roast/curhat/tech/kesal/caps/sunda/mtk):**
+  - BEFORE: 16/16 sukses, 0 echo (<4 kata), 0 frasa kaku, 0 bocor punchline.
+  - AFTER: 16/16 sukses, 0 echo, 0 frasa kaku, 0 bocor punchline. Sama kuat di alur (pending/nyerah/komplain/identitas/curhat/mtk benar semua).
+  - Peningkatan: S11 curhat lebih hangat ("Peluk jauh dulu ya... aku di sini dengerin kamu sepenuhnya"); S12 tech dan S16 mtk lebih mendalam dan tetap benar.
+  - Catatan jujur: S05 ("Kamu yang kasih") versi baru menjawab dengan pertanyaan klarifikasi ("mau dikasih tebak-tebakan apa?") alih-alih punchline — lebih aman tapi sedikit menghindar; S12 238 kata (topik teknis dikecualikan dari aturan panjang, dinilai netral-positif).
+- **Keputusan: NAIK (tidak rollback).** Lolos `npm run typecheck` & `npm run build` (exit code 0). Checkpoint pra-P1 tersimpan di `%LOCALAPPDATA%\Temp\opencode\checkpoint_p1` bila sewaktu-waktu perlu kembali.
+
+### v0.27.5 - 2026-09-14 (Opsi Aman Anti-Echo & OpenCode Primer Teks)
+
+**Tanpa mengubah persona: perbaikan mekanik balasan 1-kata, pending tebak-tebakan tanpa tanda tanya, verifikasi owner eksak, dan penukaran primer teks ke OpenCode**
+
+- **Penukaran Primer Teks ke OpenCode (`src/providers.ts`)**:
+  - Urutan teks kini `OpenCode (Muse Spark 1.3 > 1.2) > Groq > Gemini > Cloudflare > OpenRouter > Dahl (Tier 6) > xKiro`. Rantai vision tidak berubah (`Gemini > Cloudflare Vision > OpenRouter Vision`).
+  - Sampling Groq dijinakkan (`temperature: 0.45`, `presence_penalty: 0.0`, `frequency_penalty: 0.4`) agar Qwen 27B tahan prompt panjang; alasan ini yang membuat 90% trafik (Groq) collapse menjadi echo "Kenapa"/"karena" pada konteks ~4700 token.
+  - Komentar basi `xKiro > Groq > ...` diselaraskan dengan urutan kode aktual.
+- **Guard Anti-Echo (`src/skills.ts`)**:
+  - `isPendingRiddleOrGombal`: setup tanpa tanda tanya (misal "Tahu nggak kenapa pinguin") tetap terdeteksi pending via ekor kata (kenapa/apa/bedanya/tebak), sehingga alur dua arah tidak mati.
+  - Pemotong punchline `isInteractiveSetupReq`: dilarang menyisakan setup <4 kata.
+  - Guard pasca-sanitasi: balasan <4 kata untuk input >=2 kata (bukan sapaan) memicu 1x retry instruksi minimal; echo 1-kata tidak lagi lolos ke pengguna.
+- **Verifikasi Owner Eksak (`isOwnerChatKey`)**: menggantikan `includes` yang rawan false-positive substring (grup dengan ID mengandung ID owner). Grup tidak pernah lolos walau owner anggota.
+- **Grounding Web**: slice injeksi `500` -> `3000` karakter agar model tidak mengarang dari potongan fakta.
+- **Verifikasi Faktual Live (2026-09-14, `scratch/verify_persona_20260914.mts`)**:
+  - BEFORE (HEAD, Groq primer): ID875 7 kata evasif, ID873 4 kata, ID851 deflect ("sengaja bikin kamu bingung", pending gagal), ID857 21 kata + punchline bocor se-pesan (langgar 2-turn).
+  - AFTER (OpenCode primer + guard): ID875 6 kata kontekstual, ID873 9 kata, ID851 ambil alih tebakan (pending tanpa-? terdeteksi), ID857 8 kata setup bersih tanpa bocoran (via backup `muse-spark-1.2` setelah 3 key timeout — failover bekerja).
+  - Groq langsung sampling baru (ID 875): 10 kata koheren. ID 873 kena `429` dan difailover otomatis.
+  - Lolos `npm run typecheck` & `npm run build` (exit code 0).
+- **De-hardcode Template (dinamis-first)**:
+  - `/start` Telegram, konfirmasi `/reset` (Telegram + WA Baileys + WA Cloud): kini dibuat dinamis via LLM; teks statis lama hanya jaring pengaman saat semua provider mati.
+  - Anti-impersonation non-owner: ralat dibuat dinamis via model; string statis hanya fallback terakhir.
+  - Stiker/gambar balasan-kosong: regen dinamis; gema emoji sebagai fallback terakhir (ganti `'Wkwk lucu banget posenya!'`).
+  - Sanitizer: fallback `'Iya/Oy, ada apa nih?'` dihapus — kosong diteruskan ke guard retry + refleksi berisi teks user; riwayat tidak lagi tercemar template.
+  - Error catch Baileys: "Anda" formal -> gaya persona. `statusDown()` dan label fungsional (`Pengingat kak:`, format `/salah`) tetap statis karena fungsional, bukan gaya.
+  - Setup tebak-tebakan/gombalan wajib kalimat tanya lengkap berdiri sendiri (berkata tanya + tanda tanya); klausa gantung seperti "bedanya kamu sama ..." dilarang. Terverifikasi live: "Tahu nggak kenapa senja selalu bikin kangen?" via OpenCode.
+  - Variasi pembuka dinamis (mengurangi, bukan menghilangkan): jika 2 dari 3 balasan terakhir dibuka kata yang sama (wkwk/yaelah/iya/santai...), sistem menyuntikkan 1 instruksi variasi sekali pakai. Fakta CSV: "Wkwk" membuka ~12 balasan + klaster Yaelah/Iya iya/Santai. Uji live 3 giliran (ID825/827/829): pembuka Yah/Haha/Aduh bervariasi, isi nyambung (nyesek -> kusayang -> maaf bikin bingung).
+  - Perasaan lintas giliran (`src/skills.ts`): trajektori 4 pesan terakhir diklasifikasikan kesal (bolot/dongo/garing/...) > rapuh (sedih/curhat/terluka) > hangat (wkwk/makasih/salting), satu blok aktif. Uji live: rantai kesal ID793/795 -> "Haha maksudku tadi cuma bercanda doang kok" (akui tanpa defensif, tanpa lelucon baru).
+  - Intensitas + cermin bahasa: caps/pengulangan huruf/emoji 3+ -> sambut energi lalu turunkan tempo tanpa ceramah ("Yaelah ngambek mulu, santai aja kali wkwk" untuk caps); hemat kata 2 giliran -> beri ruang tanpa dorong pertanyaan; Sunda ("Kumaha kabarna euy...") dibalas Sunda alami ("Alhamdulillah sae euy..."); formal dirapikan.
+  - `statusDown()` dihumanisasi (2 varian rotasi per menit, tanpa timestamp ISO).
+
 ### v0.27.4 - 2026-09-13 20:05 WIB
 
 **Perbaikan Kritis Sirkuit Failover & Rotasi Kunci Cadangan: Eliminasi False Break pada Error Kunci (401/403/502/Timeout), Penegakan 3 Lapis Ketahanan (Key Rotation -> Model Fallback -> Provider Tier Failover), dan Cooldown Presisi pada Kunci Hanging**
