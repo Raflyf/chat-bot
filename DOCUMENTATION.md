@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.49 (Eliminasi Total Daftar Objek Acak, Penegakan Logika Natural Gombalan & Pencegahan Analogi Absurd)  
+**Versi:** v0.26.50 (Dukungan Slang Gaming Mabar, Evaluasi Gombalan Manis Pengguna & Eliminasi Respon Pasrah Bot)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 13:56 WIB
+**Terakhir Diperbarui:** 2026-09-13 14:45 WIB
 
 ---
 
@@ -207,6 +207,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.50 - 2026-09-13 14:45 WIB
+
+**Dukungan Slang Gaming Mabar, Evaluasi Gombalan Manis Pengguna & Eliminasi Respon Pasrah Bot**
+
+- **Dukungan Slang Gaming, Mabar & Tongkrongan (`src/skills.ts`)**:
+  - Mengatasi kegagalan model memahami istilah gaul game seperti `infokan permabaran`, `mabar`, `loginn`, `push rank`, dll.
+  - Memperbaiki miskoneksi konteks: kata `login` / `loginn` saat obrolan santai 100% dipahami sebagai ajakan masuk/buka game bareng, BUKAN autentikasi akun atau hak akses developer sistem.
+  - Mengarahkan respon bot untuk antusias, seru, dan suportif layaknya kawan tongkrongan sesama gamer, serta menanyakan game apa yang mau dimainkan (ML, PUBG, FF, Valorant, GTA, dll).
+  - Merespons ejekan tongkrongan (`ah cemen`, `cupu`, `payah`) dengan celetukan santai dan roasting balik yang lucu; melarang keras sikap pasrah lesu (`iya emang cemen`).
+- **Penghapusan Priming Negatif & Penolakan Robot Kaku (`src/skills.ts`, `cleanMathAndNoise`)**:
+  - Mengeliminasi rangkaian token literal negatif `"aku cuma bot ngobrol doang"` dari prompt sistem yang sebelumnya diparrot oleh model berparameter kompak (Groq Qwen 27B) menjadi `"Gak bisa nih, aku cuma bot. Kamu aja yang main, aku dukung moral doang."`.
+  - Melarang keras bot merendahkan diri menjadi bot kaku atau pasrah dan memposisikannya sebagai suporter/komentator setia di chat.
+  - Memperluas pembersih sanitasi output `cleanMathAndNoise` untuk menyingkirkan kalimat pembuka/penutup customer service robotik (`Halo, saya di sini! Ada yang mau kamu tanyakan atau obrolin lagi?`).
+- **Evaluasi Respons Balik Gombalan Manis Pengguna (`src/skills.ts`)**:
+  - Mengatasi kontradiksi absurd model saat pengguna membalikkan gombalan dengan manis (*"kalo wifi bisa jauh, kalo kamu gabisa jauh sama aku"* dijawab *"tebakannya meleset jauh, bro! Itu justru jawaban yang mau aku cari"*).
+  - Menyediakan direktif perilaku eksplisit pada `isPendingRiddleOrGombal`: jika pengguna membalas dengan gombalan manis, tebakan cerdas, atau gombalan balik, bot wajib mengakui kehebatannya dengan tawa akrab dan apresiasi seru (*"Wih cakep juga jawaban lu wkwk! Malah lu yang jago ngegombal haha"*); dilarang keras mengklaim meleset jika jawabannya sudah bagus dan nyambung.
+- **Sanitasi Riwayat Konteks dari Residu Wi-Fi Berulang (`src/skills.ts:buildMessages`)**:
+  - Menambahkan pembersihan residu analogi Wi-Fi berulang (`bedanya kamu sama Wi-Fi`, `sinyal Wi-Fi`, dll) pada filter skip riwayat asisten agar model tidak terus mendaur ulang analogi Wi-Fi yang sama dari jendela konteks percakapan lampau.
+  - Memperbarui apresiasi gombalan (`isGombalAppreciation`) agar menanggapi respons positif dengan tawa akrab (`wkwk`/`haha`) dan celetukan hidup, melarang balasan datar seperti *"Iya, emang jagoan gombalan"*.
 
 ### v0.26.49 - 2026-09-13 13:56 WIB
 
