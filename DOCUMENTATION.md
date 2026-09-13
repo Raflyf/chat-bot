@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.36 (Penguatan Pertahanan Anti-Poisoning Universal & Eliminasi Celah Impersonation Developer)  
+**Versi:** v0.26.37 (Optimalisasi Percakapan Dinamis Universal: Anti-Gaslighting, Anti-Dry Text & Anti-Repetisi Awalan)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:58 WIB
+**Terakhir Diperbarui:** 2026-09-13 12:10 WIB
 
 ---
 
@@ -207,6 +207,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.37 - 2026-09-13 12:10 WIB
+
+**Optimalisasi Percakapan Dinamis Universal: Anti-Gaslighting, Anti-Dry Text & Eliminasi Repetisi Awalan**
+
+- **Proteksi Anti-Gaslighting & Anti-Guilt-Trip Developer (`src/skills.ts`)**:
+  - Menyelesaikan masalah bot yang sempat *caving-in* atau meminta maaf saat dimarahi/dituduh kurang ajar oleh pengguna yang mengaku-ngaku developer.
+  - Menetapkan direktif tegas: bot dilarang meminta maaf, dilarang ragu, dan dilarang mengakui nomor asing sebagai developer. Bot merespons santai dengan logika kawan akrab (misal: *"lahh kan kamu mah bukan developer gua wkwk"*).
+- **Eliminasi Repetisi Kata Pembuka "Yaelah" & Variasi Penolakan**:
+  - Melarang model mengulang-ulang kata seru atau slang pembuka yang sama secara monoton (seperti terus-menerus membuka kalimat dengan kata "Yaelah").
+  - Menambahkan sanitasi otomatis pada riwayat percakapan (`buildMessages`) untuk memutus siklus pembuka repetitif berturut-turut.
+  - Memvariasikan sudut pandang penolakan agar tidak mengulang formula kaku *"jangan sok jadi developer"* atau *"gak ada yang percaya"*.
+- **Penerapan Dinamika Teks Hidup (Anti-Dry Text) Universal**:
+  - Menginstruksikan model untuk memanfaatkan pemanjangan huruf wajar (*natural text lengthening*) seperti `yaaa`, `iyaaa`, `lahhh`, `apaannn`, `donggg`, `santaiii`, atau jeda elipsis santai (`...`) seperti `yaelah...`, `bentar deh...`.
+  - Pesan teks terdengar hidup (*alive*), bernapas, dan hangat layaknya manusia asli yang mengobrol di WhatsApp, mengeliminasi gaya pesan yang terpotong kaku (*dry text*).
 
 ### v0.26.36 - 2026-09-13 11:58 WIB
 
