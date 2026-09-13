@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.43 (Eliminasi Respon Template Tebakan & Penerapan 100% Dynamic Phrasing Tanpa Kalimat Hafalan)  
+**Versi:** v0.26.44 (Fix Anti-Parrot History: Drop-Instead-of-Replace pada Sanitasi Riwayat Percakapan)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 12:45 WIB
+**Terakhir Diperbarui:** 2026-09-13 12:55 WIB
 
 ---
 
@@ -207,6 +207,18 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.44 - 2026-09-13 12:55 WIB
+
+**Fix Anti-Parrot History: Drop-Instead-of-Replace pada Sanitasi Riwayat Percakapan**
+
+- **Root Cause Fix: Akar Masalah Respon "Santai aja wkwk!" yang Diparrot (`src/skills.ts`)**:
+  - Menemukan dan menutup celah fatal di `buildMessages`: seluruh string pengganti hardcoded pada sanitasi history (`'Santai aja wkwk!'`, `'Hahaha ya maap, namanya juga usaha wkwk!'`, `'Santai aja haha!'`, dll) dibaca model sebagai contoh respon valid lalu diparrot berulang-ulang.
+  - Alur kegagalan konkret: pesan asisten lama yang berisi `pemanis telinga` atau `jahat banget ya` diganti dengan `'Hahaha ya maap...'`. Jika dua pesan berbeda di-replace menjadi string identik, deduplication loop mengganti duplikat dengan `'Santai aja wkwk!'`. Model kemudian melihat `'Santai aja wkwk!'` di konteks history dan meparrotnya sebagai balasan.
+- **Solusi: Drop-Instead-of-Replace Pattern**:
+  - Mengubah seluruh logika sanitasi history dari pola *replace-with-canned-string* menjadi pola *skip/drop*: pesan asisten yang perlu disanitasi total **dibuang dari history** menggunakan `continue`, tidak diisi kalimat template apapun.
+  - Mengubah deduplikasi dari *replace-duplicate-with-fallback* menjadi *drop-duplicate*: jika normalisasi 50 karakter pertama sama, pesan kedua di-`continue` (tidak dimasukkan ke `deduped` array).
+  - Fallback konten kosong (`content.trim() || 'Santai aja haha!'`) juga diubah menjadi `continue` agar tidak ada string template yang bocor ke konteks model.
 
 ### v0.26.43 - 2026-09-13 12:45 WIB
 
