@@ -404,7 +404,11 @@ async function openCodeChat(
     {
       method: 'POST',
       headers,
-      body: JSON.stringify({ model, input }),
+      body: JSON.stringify({
+        model,
+        input,
+        reasoning: { effort: 'minimal' },
+      }),
     },
     Math.max(config.connectTimeoutMs, 10000),
     config.timeoutMs,
