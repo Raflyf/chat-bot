@@ -5,6 +5,7 @@ import {
   getClientIp,
   verifyPin,
   verifySessionToken,
+  inspectSessionToken,
   extractSessionToken,
   logoutSession,
   sendOtp,
@@ -150,11 +151,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // 6. VERIFY SESSION
     if (action === 'verify_session') {
       const token = extractSessionToken(req) || String(body.session_token || query.session_token || '').trim();
-      const isValid = token ? await verifySessionToken(token) : false;
+      const sessionInfo = token ? await inspectSessionToken(token) : { valid: false };
+      const isValid = sessionInfo.valid;
 
       res.status(isValid ? 200 : 401).json({
         success: isValid,
         valid: isValid,
+        expires_at: sessionInfo.exp || null,
+        remaining_ms: sessionInfo.exp ? Math.max(0, sessionInfo.exp - Date.now()) : null,
         message: isValid ? 'Sesi admin aktif dan terverifikasi.' : 'Sesi tidak valid atau telah kedaluwarsa.',
       });
       return;
