@@ -569,7 +569,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // Pool reset label
       const poolReset = document.getElementById("pool-reset-label");
       if (poolReset) {
-        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (Dahl, Groq, OpenCode, Cloudflare, OpenRouter, xKiro) \u2022 00:00 PT (Gemini)";
+        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (OpenCode, Groq, Cloudflare, OpenRouter, Dahl, xKiro) \u2022 00:00 PT (Gemini)";
         else poolReset.textContent = `Akumulasi Periode ${rangeLabel}`;
       }
 
@@ -637,39 +637,39 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
       // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover runtime sistem v0.27)
       const catalog = [
-        // --- Tier 1: Dahl Global API (1 Miliar Token Pool) ---
+        // --- Tier 1: OpenCode Zen Direct API (Primer Teks Runtime) ---
         {
-          name: "DeepSeek V4 Flash 0731",
-          provider: "DAHL",
-          tagClass: "tag-dahl",
-          capabilities: ["Fast Reasoning", "Text", "Code"],
-          desc: "Prioritas #1 Tier 1 - SOTA Reasoning kilat latensi 0,22s & 1 Miliar Token Pool",
-          matchKeys: ["dahl/deepseek-ai/deepseek-v4-flash-0731", "deepseek-ai/deepseek-v4-flash-0731", "deepseek-v4-flash-0731", "deepseek-v4-flash"],
+          name: "Muse Spark 1.3",
+          provider: "OPENCODE",
+          tagClass: "tag-opencode",
+          capabilities: ["Text", "Empathetic Chat", "Fast Latency", "Reasoning"],
+          desc: "Prioritas #1 Tier 1 - Primer teks & penalaran empatik latensi 1,8s (Endpoint API Teks)",
+          matchKeys: ["opencode/muse-spark-1.3-contributor-free", "muse-spark-1.3-contributor-free", "muse-spark-1.3", "muse-1.3"],
         },
         {
-          name: "MiniMax M2.7",
-          provider: "DAHL",
-          tagClass: "tag-dahl",
-          capabilities: ["Deep Reasoning", "Auto-Stripped Think"],
-          desc: "Prioritas #2 Tier 1 - Model penalaran mendalam MiniMax dengan think-tag stripper",
-          matchKeys: ["dahl/minimaxai/minimax-m2.7", "minimaxai/minimax-m2.7", "minimax-m2.7", "minimax"],
+          name: "Muse Spark 1.2",
+          provider: "OPENCODE",
+          tagClass: "tag-opencode",
+          capabilities: ["Text", "Empathetic Chat", "Fast Latency", "Reasoning"],
+          desc: "Prioritas #2 Tier 1 - Cadangan teks OpenCode Zen jika Muse 1.3 sibuk/timeout",
+          matchKeys: ["opencode/muse-spark-1.2-contributor-free", "muse-spark-1.2-contributor-free", "muse-spark-1.2", "muse-1.2"],
         },
 
-        // --- Tier 2: Groq Cloud API (LPU Inference Engine) ---
+        // --- Tier 2: Groq Cloud API (LPU Inference Engine, Teks) ---
         {
           name: "Qwen 3.8 27B",
           provider: "GROQ",
           tagClass: "tag-groq",
-          capabilities: ["Vision", "LPU Speed"],
-          desc: "Prioritas #1 Tier 2 - Respons kilat ~500 tok/s LPU & Multimodal",
+          capabilities: ["Text", "LPU Speed"],
+          desc: "Prioritas #1 Tier 2 - Respons kilat ~500 tok/s LPU (jalur teks)",
           matchKeys: ["groq/qwen/qwen3.8-27b", "groq/qwen3.8", "qwen/qwen3.8-27b", "qwen3.8-27b"],
         },
         {
           name: "Qwen 3.6 27B",
           provider: "GROQ",
           tagClass: "tag-groq",
-          capabilities: ["Vision", "LPU Speed"],
-          desc: "Prioritas #2 Tier 2 - Cadangan Groq LPU kecepatan tinggi & Multimodal",
+          capabilities: ["Text", "LPU Speed"],
+          desc: "Prioritas #2 Tier 2 - Cadangan Groq LPU kecepatan tinggi (jalur teks)",
           matchKeys: ["groq/qwen/qwen3.6-27b", "groq/qwen3.6", "qwen/qwen3.6-27b", "qwen3.6-27b"],
         },
         {
@@ -681,31 +681,13 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["whisper-large-v3-turbo", "whisper-large-v3", "whisper", "groq/whisper"],
         },
 
-        // --- Tier 3: OpenCode Zen Direct API (Text & Reasoning Engine) ---
-        {
-          name: "Muse Spark 1.3",
-          provider: "OPENCODE",
-          tagClass: "tag-opencode",
-          capabilities: ["Text", "Empathetic Chat", "Fast Latency", "Reasoning"],
-          desc: "Prioritas #1 Tier 3 - Frontier Teks & Penalaran Empatik latensi 1,8s (Endpoint API Teks)",
-          matchKeys: ["opencode/muse-spark-1.3-contributor-free", "muse-spark-1.3-contributor-free", "muse-spark-1.3", "muse-1.3"],
-        },
-        {
-          name: "Muse Spark 1.2",
-          provider: "OPENCODE",
-          tagClass: "tag-opencode",
-          capabilities: ["Text", "Empathetic Chat", "Fast Latency", "Reasoning"],
-          desc: "Prioritas #2 Tier 3 - Cadangan Teks OpenCode Zen jika Muse 1.3 sibuk/timeout",
-          matchKeys: ["opencode/muse-spark-1.2-contributor-free", "muse-spark-1.2-contributor-free", "muse-spark-1.2", "muse-1.2"],
-        },
-
-        // --- Tier 4: Google Gemini API ---
+        // --- Tier 3: Google Gemini API (Vision Prioritas 1) ---
         {
           name: "Gemini 3.8 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
-          capabilities: ["Multimodal Vision", "PDF & Video", "Audio VN"],
-          desc: "Prioritas #1 Tier 4 - Frontier multimodal native foto, dokumen PDF & video",
+          capabilities: ["Vision Prioritas 1", "PDF & Video", "Audio VN"],
+          desc: "Prioritas #1 Tier 3 - Vision Prioritas #1: foto, dokumen PDF & video native",
           matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
         },
         {
@@ -713,17 +695,17 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "GEMINI",
           tagClass: "tag-gemini",
           capabilities: ["Multimodal Vision", "Document Analysis"],
-          desc: "Prioritas #2 Tier 4 - Cadangan multimodal vision stabil",
+          desc: "Prioritas #2 Tier 3 - Cadangan multimodal vision stabil",
           matchKeys: ["gemini/gemini-2.5-flash", "gemini-2.5-flash"],
         },
 
-        // --- Tier 5: Cloudflare Workers AI ---
+        // --- Tier 4: Cloudflare Workers AI (Vision Prioritas 2) ---
         {
           name: "Llama 3.1 70B Instruct",
           provider: "CLOUDFLARE",
           tagClass: "tag-cloudflare",
           capabilities: ["High-Reasoning", "Text", "Code"],
-          desc: "Prioritas #1 Tier 5 - Model reasoning andalan Cloudflare Workers AI",
+          desc: "Prioritas #1 Tier 4 - Model reasoning andalan Cloudflare Workers AI",
           matchKeys: ["cloudflare/@cf/meta/llama-3.1-70b-instruct", "@cf/meta/llama-3.1-70b-instruct", "llama-3.1-70b"],
         },
         {
@@ -731,7 +713,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "CLOUDFLARE",
           tagClass: "tag-cloudflare",
           capabilities: ["Code", "Math", "Text"],
-          desc: "Prioritas #2 Tier 5 - Cadangan presisi koding Cloudflare Workers AI",
+          desc: "Prioritas #2 Tier 4 - Cadangan presisi koding Cloudflare Workers AI",
           matchKeys: ["cloudflare/@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/qwen/qwen2.5-coder-32b-instruct", "qwen2.5-coder-32b"],
         },
         {
@@ -739,17 +721,17 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "CLOUDFLARE",
           tagClass: "tag-cloudflare",
           capabilities: ["Vision Prioritas 2", "OCR", "Multimodal"],
-          desc: "Cadangan Vision Prioritas #2 - Pemrosesan gambar native byte array Workers AI",
+          desc: "Vision Prioritas #2 - Pemrosesan gambar native byte array Workers AI",
           matchKeys: ["cloudflare/@cf/meta/llama-3.2-11b-vision-instruct", "@cf/meta/llama-3.2-11b-vision-instruct", "llama-3.2-11b-vision"],
         },
 
-        // --- Tier 6: OpenRouter AI ---
+        // --- Tier 5: OpenRouter AI (Vision Prioritas 3) ---
         {
           name: "Nex N2.5 Pro Free",
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Vision Prioritas 3", "Text"],
-          desc: "Prioritas #1 Tier 6 - SOTA Free router & Vision Prioritas #3",
+          desc: "Prioritas #1 Tier 5 - SOTA Free router & Vision Prioritas #3",
           matchKeys: ["openrouter/nex-agi/nex-n2.5-pro:free", "nex-n2.5-pro", "nex-agi/nex-n2.5-pro:free"],
         },
         {
@@ -757,7 +739,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Fast Text", "Vision"],
-          desc: "Prioritas #2 Tier 6 - Cadangan efisien router OpenRouter Cloud",
+          desc: "Prioritas #2 Tier 5 - Cadangan efisien router OpenRouter Cloud",
           matchKeys: ["openrouter/nex-agi/nex-n2.5-mini:free", "nex-n2.5-mini", "nex-agi/nex-n2.5-mini:free"],
         },
         {
@@ -765,8 +747,26 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Fast Text"],
-          desc: "Prioritas #3 Tier 6 - Model kecepatan tinggi OpenRouter Cloud",
+          desc: "Prioritas #3 Tier 5 - Model kecepatan tinggi OpenRouter Cloud",
           matchKeys: ["openrouter/nvidia/nemotron-3.5-lightning:free", "nemotron-3.5-lightning", "nvidia/nemotron-3.5-lightning:free"],
+        },
+
+        // --- Tier 6: Dahl Global API (1 Miliar Token Pool) ---
+        {
+          name: "DeepSeek V4 Flash 0731",
+          provider: "DAHL",
+          tagClass: "tag-dahl",
+          capabilities: ["Fast Reasoning", "Text", "Code"],
+          desc: "Prioritas #1 Tier 6 - SOTA Reasoning kilat latensi 0,22s & 1 Miliar Token Pool",
+          matchKeys: ["dahl/deepseek-ai/deepseek-v4-flash-0731", "deepseek-ai/deepseek-v4-flash-0731", "deepseek-v4-flash-0731", "deepseek-v4-flash"],
+        },
+        {
+          name: "MiniMax M2.7",
+          provider: "DAHL",
+          tagClass: "tag-dahl",
+          capabilities: ["Deep Reasoning", "Auto-Stripped Think"],
+          desc: "Prioritas #2 Tier 6 - Model penalaran mendalam MiniMax dengan think-tag stripper",
+          matchKeys: ["dahl/minimaxai/minimax-m2.7", "minimaxai/minimax-m2.7", "minimax-m2.7", "minimax"],
         },
 
         // --- Tier 7: xKiro Gateway ---
@@ -1018,6 +1018,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       let grandTotalTokenCap = 0;
       let grandTotalTokenUsed = 0;
       let grandTotalTokenRemaining = 0;
+      let grandTotalUnboundedTokenUsed = 0;
       let grandTotalCloudflareRpd = 0;
       let grandTotalCloudflareUsed = 0;
       let grandTotalGroqRpd = 0;
@@ -1054,7 +1055,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 </td>
                 <td>
                   <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Dahl Enterprise Cluster</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">api.dahlglobal.com &bull; 1B Token Pool</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">inference.dahl.global &bull; 1B Token Pool</div>
                 </td>
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
@@ -1152,13 +1153,24 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             const pct = keyCapRpd > 0 ? Math.min(100, Math.round((callsUsed / keyCapRpd) * 100)) : 0;
             const tokensUsed = k.tokensUsed || 0;
 
+            // Groq Free Tier resmi juga dibatasi 200K TPD — mana yang lebih dulu tercapai,
+            // itulah yang menentukan status (TPD biasanya habis lebih cepat dari RPD).
+            const tpdCap = 200000;
+            const tpdPct = Math.min(100, Math.round((tokensUsed / tpdCap) * 100));
+            const bindingPct = Math.max(pct, tpdPct);
+            const tpdBinding = tpdPct > pct;
+
             grandTotalGroqRpd += keyCapRpd;
             grandTotalGroqUsed += callsUsed;
-            grandTotalTokenUsed += tokensUsed;
+            grandTotalUnboundedTokenUsed += tokensUsed;
 
             const callCountText = callsUsed > 0 ? ` (${callsUsed.toLocaleString("id-ID")} calls)` : "";
-            const statusClass = pct >= 100 ? "status-capped" : pct >= 80 ? "status-warning" : "status-healthy";
-            const statusText = pct >= 100 ? "LIMIT RPD" : pct >= 80 ? "WASPADAI" : "OPTIMAL";
+            const statusClass = bindingPct >= 100 ? "status-capped" : bindingPct >= 80 ? "status-warning" : "status-healthy";
+            const statusText = bindingPct >= 100
+              ? (tpdBinding ? "LIMIT TPD" : "LIMIT RPD")
+              : bindingPct >= 80
+              ? "WASPADAI"
+              : "OPTIMAL";
 
             rows.push(`
               <tr>
@@ -1172,20 +1184,20 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 </td>
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #fbbf24;">${tokensUsed.toLocaleString("id-ID")} Token${callCountText}</span>
-                    <span style="color: var(--text-dim);">${pct}%</span>
+                    <span style="font-weight: 700; color: #fbbf24;">${tokensUsed.toLocaleString("id-ID")} / ${tpdCap.toLocaleString("id-ID")} Token${callCountText}</span>
+                    <span style="color: var(--text-dim);">${tpdPct}% TPD &bull; ${pct}% RPD</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${bindingPct}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCapRpd.toLocaleString("id-ID")} RPD &bull; 8K TPM Tier (Bebas Token Harian)</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCapRpd.toLocaleString("id-ID")} RPD &bull; 8K TPM &bull; 200K TPD (Free Tier resmi)</div>
                 </td>
                 <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${callsRemaining.toLocaleString("id-ID")}</div>
-                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Kuota Harian (RPD)</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${Math.max(0, tpdCap - tokensUsed).toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Harian (TPD) &bull; ${callsRemaining.toLocaleString("id-ID")} RPD</div>
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3);">● Upstream Real Usage</span>
+                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3);">● Bot Monitored</span>
                   <div><span class="key-badge-status ${statusClass}">${statusText}</span></div>
                 </td>
               </tr>
@@ -1199,7 +1211,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
             grandTotalOpenCodeRpd += keyCapRpd;
             grandTotalOpenCodeUsed += callsUsed;
-            grandTotalTokenUsed += tokensUsed;
+            grandTotalUnboundedTokenUsed += tokensUsed;
 
             const callCountText = callsUsed > 0 ? ` (${callsUsed.toLocaleString("id-ID")} calls)` : "";
             const statusClass = pct >= 100 ? "status-capped" : pct >= 80 ? "status-warning" : "status-healthy";
@@ -1317,8 +1329,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const orEl = document.getElementById("upstream-openrouter-status");
 
       const capSubEl = document.getElementById("upstream-total-cap-sub");
+      const subEl = document.getElementById("upstream-openrouter-sub");
 
       if (capEl) capEl.textContent = grandTotalTokenCap.toLocaleString("id-ID") + " Token";
+      if (subEl) subEl.textContent = `${pools.filter(p => (p.keys || []).length > 0).length} Provider AI Aktif`;
       if (capSubEl) {
         const extraParts = [];
         if (grandTotalGroqRpd > 0) extraParts.push(`${grandTotalGroqRpd.toLocaleString("id-ID")} RPD Groq`);
@@ -1328,7 +1342,17 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           ? `Dahl & xKiro Gateway (+${extraParts.join(", ")})` 
           : "Dahl & xKiro Gateway (Token Pool)";
       }
-      if (usedEl) usedEl.textContent = grandTotalTokenUsed.toLocaleString("id-ID") + " Token";
+      if (usedEl) {
+        // Token pool berbatas (Dahl + xKiro) ditampilkan utama agar sinkron dengan cap & sisa;
+        // token provider bebas kuota (Groq/OpenCode) dilaporkan terpisah di subtext.
+        usedEl.textContent = grandTotalTokenUsed.toLocaleString("id-ID") + " Token";
+      }
+      const usedSubEl = document.getElementById("upstream-total-used-sub");
+      if (usedSubEl) {
+        usedSubEl.textContent = grandTotalUnboundedTokenUsed > 0
+          ? `Pool Dahl & xKiro • +${grandTotalUnboundedTokenUsed.toLocaleString("id-ID")} Token Bebas Kuota (Groq/OpenCode)`
+          : "Akumulasi Global (Bot + IDE)";
+      }
       if (remEl) remEl.textContent = grandTotalTokenRemaining.toLocaleString("id-ID") + " Token";
       if (pctEl && grandTotalTokenCap > 0) {
         const remainingPct = Math.round((grandTotalTokenRemaining / grandTotalTokenCap) * 100);
@@ -1383,6 +1407,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         } else if (p.kind === "cloudflare") {
           mechanismText = "Batas Neuron Harian";
           limitOfficial = `10.000 Neuron (~${(p.capPerKey || 300).toLocaleString()} RPD)`;
+        } else if (p.kind === "groq") {
+          mechanismText = "RPD + TPD (Token Harian)";
+          limitOfficial = "1.000 RPD • 8K TPM • 200K TPD";
         } else if (p.tokenLimitType === "requests_tpm") {
           mechanismText = "Batas Permintaan & TPM";
           limitOfficial = p.totalCap > 0 ? `${p.capPerKey.toLocaleString()} RPD/key` : "Tanpa Limit Mutlak";

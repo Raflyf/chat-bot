@@ -5,7 +5,8 @@ import { db } from '../src/db.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
 
 function detectMessageType(content: string): 'voice' | 'document' | 'image' | 'sticker' | 'video' | 'text' {
-  if (content.startsWith('[Voice Note]')) return 'voice';
+  // Tanpa kurung tutup agar varian grup ("[Voice Note dari X]: ...") ikut terdeteksi
+  if (content.startsWith('[Voice Note')) return 'voice';
   if (content.startsWith('[Dokumen:')) return 'document';
   if (content.startsWith('[Gambar')) return 'image';
   if (content.startsWith('[Stiker')) return 'sticker';
@@ -339,13 +340,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let grandTotalRealTokens = 0;
     let grandTotalCallsWithRealTokens = 0;
 
+    // Atribusi provider dari string via. Format bisa berlapis (mis. "local-parser/groq/qwen/...",
+    // "dynamic-pdf-error/opencode/..."), jadi cari segmen path yang cocok dengan provider resmi —
+    // bukan hanya segmen pertama — agar token tetap terhitung ke pool yang benar.
+    const KNOWN_PROVIDER_KINDS = ['opencode', 'groq', 'gemini', 'cloudflare', 'openrouter', 'dahl', 'xkiro'];
+    const extractProviderKind = (via: string): string => {
+      const segments = via.toLowerCase().split('/');
+      return segments.find((s) => KNOWN_PROVIDER_KINDS.includes(s)) || '';
+    };
+
     for (const m of assistantMsgs ?? []) {
       const rawModel = m.via || 'unknown';
       const model = rawModel.split('#')[0].trim();
       modelCounts[model] = (modelCounts[model] || 0) + 1;
       totalModelCalls++;
 
-      const provKind = model.includes('/') ? model.split('/')[0].toLowerCase().trim() : '';
+      const provKind = extractProviderKind(model);
       if (provKind && !providerTokenStats[provKind]) {
         providerTokenStats[provKind] = { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 };
       }
@@ -384,27 +394,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const totalComputedTokensPeriod = grandTotalRealTokens + (Math.max(0, totalModelCalls - grandTotalCallsWithRealTokens) * overallAvgTokens);
 
     // Daftar model aktif sistem untuk memfilter histori DB lama yang sudah didepresiasi
+    // Urutan komentar mengikuti rantai failover teks runtime: OpenCode > Groq > Gemini > Cloudflare > OpenRouter > Dahl > xKiro
     const activeSystemModels = [
-      // Tier 1: Dahl Global
-      config.models.dahlPrimary,
-      config.models.dahlBackup,
+      // Tier 1: OpenCode Zen Direct (primer teks)
+      config.models.openCodePrimary,
+      config.models.openCodeBackup,
       // Tier 2: Groq
       config.models.groqPrimary,
       config.models.groqBackup,
-      // Tier 3: OpenCode Zen Direct
-      config.models.openCodePrimary,
-      config.models.openCodeBackup,
-      // Tier 4: Gemini
+      // Tier 3: Gemini
       config.models.geminiPrimary,
       config.models.geminiBackup,
-      // Tier 5: Cloudflare Workers AI
+      // Tier 4: Cloudflare Workers AI
       config.models.cfPrimary,
       config.models.cfBackup,
       config.models.cfVision,
-      // Tier 6: OpenRouter
+      // Tier 5: OpenRouter
       config.models.orPrimary,
       config.models.orMini,
       config.models.orText,
+      // Tier 6: Dahl Global
+      config.models.dahlPrimary,
+      config.models.dahlBackup,
       // Tier 7: xKiro
       config.models.xkiroPrimary,
       ...config.models.xkiroBackup,
@@ -470,34 +481,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       allModels: string[];
     }> = [
       {
-        kind: 'dahl',
-        displayName: 'Dahl Global API',
-        keys: config.pools.dahl,
-        cap: config.dailyCap.dahl,
-        tokenCapPerKey: 100000000,
-        tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '1 Miliar Token Pool (100M/key • 5.000 RPD)',
-        resetCycle: 'Token Balance (1B Pool)',
-        contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.dahlPrimary,
-        backupModel: config.models.dahlBackup,
-        allModels: [config.models.dahlPrimary, config.models.dahlBackup],
-      },
-      {
-        kind: 'groq',
-        displayName: 'Groq Cloud API',
-        keys: config.pools.groq,
-        cap: config.dailyCap.groq,
-        tokenCapPerKey: 0,
-        tokenLimitType: 'requests_tpm',
-        tokenLimitLabel: '1.000 RPD/key • 8K TPM Tier (Bebas Kuota Token Harian)',
-        resetCycle: 'Harian (00:00 UTC)',
-        contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.groqPrimary,
-        backupModel: config.models.groqBackup,
-        allModels: [config.models.groqPrimary, config.models.groqBackup, 'whisper-large-v3-turbo'],
-      },
-      {
         kind: 'opencode',
         displayName: 'OpenCode Zen API',
         keys: config.pools.opencode,
@@ -512,11 +495,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         allModels: [config.models.openCodePrimary, config.models.openCodeBackup],
       },
       {
+        kind: 'opencode',
+        displayName: 'OpenCode Zen API',
+        keys: config.pools.opencode,
+        cap: config.dailyCap.opencode,
+        tokenCapPerKey: config.dailyTokenCap.opencode,
+        tokenLimitType: 'requests_tpm',
+        tokenLimitLabel: '~1.000 RPD/key • Contributor Free (Bebas Token Harian)',
+        resetCycle: 'Harian (00:00 UTC)',
+        contextWindow: '1.048.576 Token (1M)',
+        primaryModel: config.models.openCodePrimary,
+        backupModel: config.models.openCodeBackup,
+        allModels: [config.models.openCodePrimary, config.models.openCodeBackup],
+      },
+      {
         kind: 'gemini',
         displayName: 'Google Gemini API',
         keys: config.pools.gemini,
         cap: config.dailyCap.gemini,
-        tokenCapPerKey: 0,
+        tokenCapPerKey: config.dailyTokenCap.gemini,
         tokenLimitType: 'requests_tpm',
         tokenLimitLabel: '1.500 RPD/key • 1M TPM Tier (Bebas Kuota Token Harian)',
         resetCycle: 'Harian (00:00 PT / 14:00 WIB)',
@@ -530,7 +527,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         displayName: 'Cloudflare Workers AI',
         keys: config.pools.cloudflare,
         cap: config.dailyCap.cloudflare,
-        tokenCapPerKey: 10000,
+        tokenCapPerKey: config.dailyTokenCap.cloudflare,
         tokenLimitType: 'daily_cap',
         tokenLimitLabel: '10.000 Neuron/hari (~100-300 RPD Free Tier)',
         resetCycle: 'Harian (00:00 UTC)',
@@ -544,7 +541,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         displayName: 'OpenRouter AI',
         keys: config.pools.openrouter,
         cap: config.dailyCap.openrouter,
-        tokenCapPerKey: 0,
+        tokenCapPerKey: config.dailyTokenCap.openrouter,
         tokenLimitType: 'requests_tpm',
         tokenLimitLabel: 'Bebas Kuota Harian (Model :free • Rate Limit 50-1.000 RPD)',
         resetCycle: 'Harian (00:00 UTC)',
@@ -554,11 +551,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         allModels: [config.models.orPrimary, config.models.orMini, config.models.orText],
       },
       {
+        kind: 'dahl',
+        displayName: 'Dahl Global API',
+        keys: config.pools.dahl,
+        cap: config.dailyCap.dahl,
+        tokenCapPerKey: 100000000,
+        tokenLimitType: 'daily_cap',
+        tokenLimitLabel: '1 Miliar Token Pool (100M/key • 5.000 RPD)',
+        resetCycle: 'Token Balance (1B Pool)',
+        contextWindow: '131.072 Token (131K)',
+        primaryModel: config.models.dahlPrimary,
+        backupModel: config.models.dahlBackup,
+        allModels: [config.models.dahlPrimary, config.models.dahlBackup],
+      },
+      {
         kind: 'xkiro',
         displayName: 'xKiro Gateway',
         keys: config.pools.xkiro,
         cap: config.dailyCap.xkiro,
-        tokenCapPerKey: 5000000,
+        tokenCapPerKey: config.dailyTokenCap.xkiro || 5000000,
         tokenLimitType: 'daily_cap',
         tokenLimitLabel: '5.000.000 Token/hari (~500 RPD Mistral Tier)',
         resetCycle: 'Harian (00:00 UTC)',
@@ -577,7 +588,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       let poolUsed = 0;
 
       const effectiveCapPerKey = daysCount > 0 ? p.cap * daysCount : 0;
-      const effectiveTokenCapPerKey = daysCount > 0 ? p.tokenCapPerKey * daysCount : 0;
+      // Saldo token Dahl adalah pool 1B (bukan kuota harian), jadi TIDAK dikali jumlah hari —
+      // sisa saldo tetap sama berapa pun rentang tanggal yang dipilih.
+      const effectiveTokenCapPerKey =
+        p.kind === 'dahl' ? p.tokenCapPerKey : daysCount > 0 ? p.tokenCapPerKey * daysCount : 0;
 
       const pStats = providerTokenStats[p.kind] || {
         realTokens: 0,

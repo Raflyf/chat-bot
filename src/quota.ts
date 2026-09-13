@@ -1,5 +1,8 @@
 // Pelacak kuota harian per key (hybrid in-memory + Supabase provider_quota).
 // Reset otomatis tiap tanggal UTC baru. 429 ikut dihitung agar pool berhenti.
+// Sejak v0.27.13: juga melacak TOKEN harian (TPD) per key — limit Groq Free Tier
+// (200K TPD) lebih cepat tercapai daripada RPD 1.000, jadi wajib dipantau agar
+// pool tidak menabrak 429 sebelum RPD habis.
 
 import crypto from 'crypto';
 import { db } from './db.js';
@@ -12,6 +15,13 @@ interface Counter {
 }
 
 const counters = new Map<string, Counter>();
+
+interface TokenCounter {
+  date: string;
+  tokens: number;
+}
+
+const tokenCounters = new Map<string, TokenCounter>();
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -38,6 +48,27 @@ function slot(kind: ProviderKind, key: string): Counter {
   return fresh;
 }
 
+function tokenSlot(kind: ProviderKind, key: string): TokenCounter {
+  if (tokenCounters.size > 200) {
+    const t = today();
+    for (const [k, v] of tokenCounters.entries()) {
+      if (v.date !== t) tokenCounters.delete(k);
+    }
+  }
+
+  const id = `${kind}:${keyHash(key)}`;
+  const cur = tokenCounters.get(id);
+  if (cur && cur.date === today()) return cur;
+  const fresh: TokenCounter = { date: today(), tokens: 0 };
+  tokenCounters.set(id, fresh);
+  return fresh;
+}
+
+/** Pemakaian token harian key (TPD) — untuk limit token per hari (mis. Groq 200K TPD). */
+export function keyTokensUsedToday(kind: ProviderKind, key: string): number {
+  return tokenSlot(kind, key).tokens;
+}
+
 const hydratedKeys = new Set<string>();
 const pendingHydrations = new Map<string, Promise<void>>();
 
@@ -60,7 +91,7 @@ export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<
     try {
       const { data, error } = await c
         .from('provider_quota')
-        .select('used')
+        .select('used, tokens_used')
         .eq('kind', kind)
         .eq('key_suffix', suffix)
         .eq('day', day)
@@ -70,6 +101,11 @@ export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<
         if (data && typeof data.used === 'number') {
           const s = slot(kind, key);
           s.count = Math.max(s.count, data.used);
+        }
+        // Hydrate juga token harian (TPD) agar instance baru tahu pemakaian token sebelumnya
+        if (data && typeof (data as { tokens_used?: number }).tokens_used === 'number') {
+          const ts = tokenSlot(kind, key);
+          ts.tokens = Math.max(ts.tokens, Number((data as { tokens_used?: number }).tokens_used) || 0);
         }
         // HANYA tandai hydrated setelah database query sukses (C5 & E8)
         hydratedKeys.add(cacheKey);
@@ -98,10 +134,18 @@ export async function ensureKeyQuotaHydrated(kind: ProviderKind, key: string): P
 /**
  * Evaluasi izin pemakaian key secara async dengan jaminan hidrasi DB (C4).
  * Menghilangkan celah cold-start over-quota dan fire-and-forget race.
+ * tokenCapPerDay > 0 mengaktifkan guard TPD (mis. Groq Free Tier 200K TPD).
  */
-export async function isKeyAllowed(kind: ProviderKind, key: string, cap: number): Promise<boolean> {
+export async function isKeyAllowed(
+  kind: ProviderKind,
+  key: string,
+  cap: number,
+  tokenCapPerDay: number = 0,
+): Promise<boolean> {
   await ensureKeyQuotaHydrated(kind, key);
-  return slot(kind, key).count < cap;
+  if (slot(kind, key).count >= cap) return false;
+  if (tokenCapPerDay > 0 && tokenSlot(kind, key).tokens >= tokenCapPerDay) return false;
+  return true;
 }
 
 /** Catat satu pemakaian sukses/gagal-terkirim (429 ikut dihitung agar pool berhenti). */
@@ -137,6 +181,51 @@ export function keyUsed(kind: ProviderKind, key: string): void {
       const nextUsed = (data?.used ?? 0) + 1;
       await c.from('provider_quota').upsert(
         { kind, key_suffix: suffix, day, used: nextUsed },
+        { onConflict: 'kind,key_suffix,day' },
+      );
+    } catch {
+      // best-effort, abaikan
+    }
+  })();
+}
+
+/**
+ * Catat pemakaian token harian (TPD) untuk key.
+ * Dipakai provider dengan limit token per hari (mis. Groq Free Tier 200K TPD)
+ * agar pool berhenti sebelum menabrak 429 upstream.
+ */
+export function keyTokensUsed(kind: ProviderKind, key: string, tokens: number): void {
+  const amount = Math.max(0, Math.round(tokens));
+  if (amount <= 0) return;
+  const ts = tokenSlot(kind, key);
+  ts.tokens += amount;
+
+  const c = db();
+  if (!c) return;
+  const suffix = keyHash(key);
+  const day = today();
+  void (async () => {
+    try {
+      const { error } = await c.rpc('atomic_increment_provider_tokens', {
+        p_kind: kind,
+        p_key_suffix: suffix,
+        p_day: day,
+        p_amount: amount,
+      });
+      if (!error) return;
+
+      // Fallback RMW jika RPC v18 belum di-deploy
+      const { data } = await c
+        .from('provider_quota')
+        .select('tokens_used')
+        .eq('kind', kind)
+        .eq('key_suffix', suffix)
+        .eq('day', day)
+        .maybeSingle();
+
+      const nextTokens = (Number((data as { tokens_used?: number } | null)?.tokens_used) || 0) + amount;
+      await c.from('provider_quota').upsert(
+        { kind, key_suffix: suffix, day, tokens_used: nextTokens },
         { onConflict: 'kind,key_suffix,day' },
       );
     } catch {
