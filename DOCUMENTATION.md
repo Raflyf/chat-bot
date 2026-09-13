@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.47 (Live Web Search Humor & Gombalan, Few-Shot Penegakan Setup Dua Arah, dan Eliminasi Kebocoran 'Muka Tebel')  
+**Versi:** v0.26.48 (Zero-Template Dynamic Response Engine, Eliminasi Total Kalimat Template & Canned Quotes, dan Dynamic Anti-Repetition Fallback)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 13:45 WIB
+**Terakhir Diperbarui:** 2026-09-13 13:52 WIB
 
 ---
 
@@ -207,6 +207,25 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.48 - 2026-09-13 13:52 WIB
+
+**Zero-Template Dynamic Response Engine, Eliminasi Total Kalimat Template & Canned Quotes, dan Dynamic Anti-Repetition Fallback**
+
+- **Eliminasi Total Contoh Kalimat Canned / Quotes pada Prompt (`src/skills.ts` & `src/timezone.ts`)**:
+  - Menghapus seluruh contoh kalimat hafalan dalam tanda kutip (seperti contoh analogi maps *"Kamu tahu nggak kenapa aku suka maps? Coba tebak!"*, kue cucur, stiker komuk/anjing, ringkasan dokumen, dan kalimat sapaan waktu).
+  - Model AI (terutama parameter kompak seperti Qwen 27B) sebelumnya membeo (*parroting*) kutipan contoh tersebut secara repetitif setiap kali topik terkait dipicu.
+  - Mengganti seluruh contoh kutipan dengan direktif perilaku terstruktur (*pure structural & behavioral directives*): instruksi hanya mengatur alur interaksi (tanyakan dulu di giliran pertama, tunggu respons pengguna, baru berikan punchline di giliran kedua; gunakan ragam analogi objek sehari-hari yang berganti-ganti secara spontan; dilarang template hafalan).
+- **Penggantian Fallback Lelucon Zombie dengan Dynamic LLM Regeneration (`src/skills.ts`)**:
+  - Menghapus string lelucon zombie statis (*"Anjir wkwk, nih yang beda: Kenapa zombie kalau nyerang bareng-bareng? Coba tebak!"*) pada deteksi loop balasan identik.
+  - Menggantinya dengan pemicu regenerasi dinamis model (`chatRetry`) yang meminta variasi jawaban baru secara spontan jika terjadi duplikasi respons, menjaga kemurnian 100% generasi dinamis tanpa string hardcoded.
+- **Generalisasi Pemangkas Setup Interaktif Dua Arah (`isInteractiveSetupReq`)**:
+  - Mengembangkan cakupan pencegahan kebocoran punchline otomatis di putaran pertama untuk tebak-tebakan maupun gombalan/rayuan (`tebak|teka-teki|gombal|gombalan|gombalin|rayu|rayuan|ngerayu`).
+  - Jika model membocorkan punchline langsung di giliran pertama, sistem memangkas punchline secara alami dan menyisakan murni kalimat pertanyaan orisinal yang diajukan model, sehingga interaksi dua arah tetap berjalan tanpa menyuntikkan template statis buatan.
+- **Sanitasi Konteks Riwayat Masa Lalu dari Frasa Residu Toksik (`buildMessages`)**:
+  - Menambahkan frasa *"muka tebel"* dan *"cuci piring"* ke filter skip pembersihan riwayat percakapan asisten, mencegah residu respons buruk masa lalu meracuni konteks inferensi mendatang.
+- **Kepatuhan Zero Emoji**:
+  - Membersihkan emoji jempol yang tersisa pada pembersihan token dan menjaga output tetap bersih, elegan, dan profesional.
 
 ### v0.26.47 - 2026-09-13 13:45 WIB
 
