@@ -337,7 +337,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
-        const { reply, via, tokens } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', promptCaption);
+        const { reply, via, tokens } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', promptCaption, await getContext(chatKey, msgSentAt));
         await sendTelegramMessageSafe(bot, chatId, reply);
         if (msgId) void markMessageProcessed('telegram', msgId);
         await saveMessage({

@@ -521,21 +521,34 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         if (text.startsWith('/remind ') || text === '/remind') {
           const args = text.replace(/^\/remind\s*/, '').trim();
           const mRemind = args.match(/^(\d+)\s+([\s\S]+)/);
+          const remindCtx = await getContext(chatKey, msgSentAt);
           if (!mRemind) {
-            await sendWhatsAppCloudMessageSafe(from, 'Format: /remind <menit> <pesan>\nContoh: /remind 10 matikan kompor');
+            const { reply } = await autoReply(
+              'User salah format perintah pengingat (tidak ada angka menit dan pesan). Jelaskan format yang benar: /remind <menit> <pesan>, dengan satu contoh singkat dan ramah.',
+              remindCtx,
+            );
+            await sendWhatsAppCloudMessageSafe(from, reply || 'Format: /remind <menit> <pesan>\nContoh: /remind 10 matikan kompor');
             void markMessageProcessed('whatsapp', messageId);
             continue;
           }
           const minutes = Number(mRemind[1]);
           const message = mRemind[2].trim().slice(0, 500);
           if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440 || !message) {
-            await sendWhatsAppCloudMessageSafe(from, 'Waktu pengingat harus antara 1 sampai 1440 menit (24 jam).');
+            const { reply } = await autoReply(
+              `User salah format perintah pengingat (menit="${mRemind[1]}"). Jelaskan syaratnya (angka 1-1440 + pesan) dengan satu contoh singkat dan ramah.`,
+              remindCtx,
+            );
+            await sendWhatsAppCloudMessageSafe(from, reply || 'Waktu pengingat harus antara 1 sampai 1440 menit (24 jam).');
             void markMessageProcessed('whatsapp', messageId);
             continue;
           }
           const dueAt = new Date(Date.now() + minutes * 60_000);
           await saveReminderToDb(from, message, dueAt, 'whatsapp');
-          await sendWhatsAppCloudMessageSafe(from, `Pengingat "${message}" berhasil dicatat dan akan dikirim ${minutes} menit lagi via WhatsApp.`);
+          const { reply } = await autoReply(
+            `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.`,
+            remindCtx,
+          );
+          await sendWhatsAppCloudMessageSafe(from, reply || `Siap, pengingat "${message}" sudah dicatat.`);
           void markMessageProcessed('whatsapp', messageId);
           continue;
         }

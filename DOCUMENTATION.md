@@ -208,6 +208,70 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.27.10 - 2026-09-14 (Anti Over-React & Anti Over-Sharing pada Info Netral)
+
+**Respons kini sebanding dengan pesannya: kabar ringan dijawab wajar dan tenang, tanpa sorakan/doa berlebihan, tanpa menu bantuan, tanpa mengalihkan topik ke diri bot**
+
+- **Temuan uji live (sebelum):** "aku abis makan" -> "Wah mantap, semoga kenyang dan happy terus" (sorakan + doa berlebihan); "barusan aku nonton film" -> "Wah mantap, semoga filmnya seru banget ya" (menyimpulkan kualitas yang belum disebut user). Ini over-react halus yang belum tercakup aturan lama.
+- **Aturan baru di PRINSIP 1 (UKURAN RESPON SEBANDING PESANNYA):** info biasa tanpa emosi kuat cukup 1 komentar wajar; dilarang menyimpulkan perasaan/kualitas yang tidak disebut; dilarang membuka daftar kemampuan diri, menjelaskan sistem, atau menyodorkan menu bantuan kecuali diminta; dilarang mengalihkan topik ke diri bot.
+- **Guard kontekstual (`INFO NETRAL`):** deteksi kalimat kabar ringan ("aku baru/barusan/abis/udah ...") yang datar (tanpa "!", emoji, atau kata emosi kuat), aktif hanya saat suasana tidak kesal/rapuh. Contoh pesan dari instruksi ini: "Balas 1 komentar wajar 4-10 kata, datar dan tenang, tanpa sorakan/doa berlebihan."
+- **Verifikasi sesudah (live):**
+  - "aku baru beli laptop" -> "ohh, noted soal laptop barunya."
+  - "barusan aku nonton film" -> "ohh lagi nonton film ternyata"
+  - "aku abis makan" -> "Okee, perut aman berarti buat lanjut aktivitas."
+  - "biasa aja sih hari ini" -> "Ohh yang penting harinya tetap aman terkendali."
+- **Anti-flat (revisi setelah feedback):** jawaban pendek tidak boleh polos dingin ("Oke,"/"sip,") — kata pengakuan pembuka wajib dibentangkan ringan (ohh, okee, sipp, iyaa) agar hangat. Namun kata isi/kesimpulan tetap normal: dilarang menyimpulkan rasa/kualitas yang user tidak sebut ("seru/enak/keren" saat dia cuma berbagi fakta). Semua ini murni instruksi prompt — TIDAK ada penggantian kata di kode (sesuai prinsip zero-hardcode).
+- **Uji over-sharing:** "kamu bisa apa aja" kini 9 kata (sebelumnya di CSV lama 747 token berstruktur dengan heading/bullet). "kamu model apa" -> "Aku FreeAIBot, dibuat santai oleh Rafly Firmansyah."
+- **Non-regresi:** suite 21 skenario tetap 0 echo, 0 frasa kaku, 0 kebocoran punchline; curhat tetap hangat tanpa bentangan; lolos `npm run typecheck` & `npm run build`.
+
+### v0.27.9 - 2026-09-14 (Sweep Zero-Hardcode: Semua Balasan Dinamis, Statis Hanya Jaring Terakhir)
+
+**Seluruh jalur percakapan kini 100% dinamis; tidak ada lagi kalimat template statis yang bisa terulang kecuali saat SEMUA provider AI mati total**
+
+- **`/remind` (WA Baileys + WA Cloud)**: format salah, waktu tidak valid, dan konfirmasi sukses kini dijawab dinamis via `autoReply` (dengan konteks); teks statis hanya fallback saat AI mati.
+- **Pengiriman pengingat (`src/remind.ts`)**: teks "Pengingat kak:" diganti pembangkitan dinamis sesuai gaya bot (termasuk jalur in-memory lokal); fallback fungsional `Pengingat: <pesan>` hanya jika AI mati.
+- **Fallback media (`src/media.ts`)**: PDF gagal, video gagal, format tidak didukung kini menghasilkan pesan dinamis via `autoReply`; teks teknis statis hanya jaring terakhir. `processIncomingVideo` kini menerima `ctx` dari pemanggil (Telegram + Baileys) agar sadar suasana.
+- **Anti-impersonation (`src/skills.ts`)**: ralat "bukan Rafly" dibuat dinamis via model; string statis hanya jika regen gagal.
+- **Jaring anti-pesan-kosong**: kini mencoba regen dinamis dulu, lalu refleksi ringkas berisi teks user sebagai benteng terakhir.
+- **Bug fix fallback stiker**: fallback lama mengambil kata pertama caption (bisa salah, misal kata "Emoji"); kini mengekstrak emoji asli dari stiker user.
+- **Verifikasi:**
+  - Suite regresi 21 skenario: 0 echo, 0 frasa kaku, 0 kebocoran punchline.
+  - Uji variasi (`scratch/verify_variasi.mts`): 3 pertanyaan "tes" identik menghasilkan 3 jawaban berbeda (Halo/Siap/Oke) — terbukti tidak template.
+  - Pesan format `/remind` salah kini dinamis: "Formatnya /remind <menit> <pesan>, contohnya /remind 10 jangan lupa minum air ya".
+  - Lolos `npm run typecheck` & `npm run build` (exit code 0).
+- **Yang tetap statis (sengaja)**: `statusDown()` (semua AI mati, 2 varian rotasi), label fungsional minimal, dan instruksi perbaikan internal yang tidak terlihat user.
+
+### v0.27.8 - 2026-09-14 (Ekspresi Tulisan Manusiawi Mengikuti Suasana)
+
+**Penambahan aturan ekspresi tulisan (bentangan huruf + emoji kontekstual) yang menyesuaikan mood chat — melengkapi kemampuan baca suasana yang sudah ada**
+
+- **Aturan baru di PRINSIP 2 (`src/skills.ts`)**: bentangkan huruf saat nada memanggil ("siapp", "okehh", "gasss", "laksanakann") dan boleh ditutup 1 emoji ekspresif yang pas (hormat saat menyanggupi, api saat semangat, tangan saat tos). Saat suasana serius, sedih, atau tenang: tempo normal tanpa bentangan dan tanpa emoji.
+- **MODE SERIUS eksplisit**: user minta "serius dikit / jangan bercanda / stop becanda" -> instruksi khusus menurunkan candaan, bentangan, dan emoji.
+- **Cakupan mood diperluas**: kata "lemas/lesu" masuk deteksi suasana rapuh (sebelumnya hanya sedih/capek/lelah).
+- **Verifikasi live (`scratch/verify_expression.mts`, 6 skenario):**
+  - "tolong bikin ringkasan..." -> "Siapp, kirim aja catatannya..." (bentangan, nada sanggup)
+  - "besok kita mabar gas?" -> "Gasss besok mabar, mau main game apa kita?" (bentangan, semangat)
+  - "serius dikit dong..." -> "Siap, aku serius sekarang." (tempo normal, tanpa bentangan/emoji)
+  - "aku lemas banget..." -> hangat menenangkan tanpa ceria berlebihan
+  - "aku lagi sedih banget..." -> hadir menemani, tanpa solusi buru-buru
+  - Pertanyaan faktual biasa -> jawaban lugas tempo normal
+- Lolos `npm run typecheck` & `npm run build` (exit code 0).
+
+### v0.27.7 - 2026-09-14 (Audit Logika Prompt: 8 Cacat Ditemukan & Diperbaiki + Suite 21 Skenario)
+
+**Audit menyeluruh sistem aturan prompt menemukan 8 kecacatan logika (guard salah konteks / over-trigger); seluruhnya diperbaiki dan diverifikasi suite regresi 21 skenario**
+
+- **Guard komplain gombalan tanpa konteks (fatal):** `isGombalComplaintOrChange` sebelumnya bisa aktif hanya dari kata "apasi/ngaco/garing/cringe" di pesan mana pun, sehingga di tengah obrolan marah bot justru disuruh melempar gombalan baru. Kini WAJIB ada konteks gombalan/lelucon di riwayat + diblokir saat trajektori kesal aktif. Verifikasi S17: "Apasi kamu ngomong apa aku ga ngerti" -> menenangkan, bukan gombalan.
+- **Stop-peran over-trigger:** kata "selesai/cukup/stop" di kalimat panjang (misal "tugasnya belum selesai") salah memicu mode berhenti peran. Kini frasa kuat kapan pun, kata pendek hanya bila pesan <=4 kata. Verifikasi S18.
+- **Permintaan berhenti gombal:** "jangan gombal dulu" sebelumnya tetap memicu instruksi melempar gombalan baru (regex request menang). Ditambah `stopGombal` guard. Verifikasi S19: "Oke siap, mode serius aktif sekarang."
+- **Pending tebak-tebakan tanpa tanda tanya panjang:** setup "Tahu nggak kenapa pinguin selalu pakai jas hitam" (berakhir objek, tanpa "?") sebelumnya tidak terdeteksi pending. Syarat "?" dihapus karena regex pola setup sudah spesifik. Verifikasi S20/S21: permintaan jawaban langsung dibalas punchline.
+- **"Login" over-trigger game:** kata `login` berdiri sendiri (misal "cara login akun") memicu mode mabar. Kini hanya `login game` eksplisit atau pola lanjutan dengan konteks game di riwayat. Verifikasi tidak ada regresi S10.
+- **Register formal over-trigger:** kata "bapak/ibu" biasa (tanpa konteks formal lain) memicu mode bahasa formal. Diperketat ke frasa formal asli (mohon/dengan hormat/dimohon/yang terhormat/saudara).
+- **Intensitas high caps over-trigger:** `(.)\1{3,}` menangkap tanda baca berulang seperti "....". Dibatasi ke huruf `([A-Za-z])\1{3,}`.
+- **Kontradiksi akses internet:** PRINSIP 5 melarang mutlak berdalih tidak ada akses internet, padahal hasil pencarian bisa kosong -> mendorong halusinasi. Kini: koneksi internet dinyatakan ada, dan bila data topik tertentu belum ketemu, jawab jujur apa adanya tanpa mengarang.
+- **Konsistensi**: blok SUASANA kesal kini juga menghitung sinyal dari pesan saat ini; pesan hangat (wkwk/makasih) tidak dihitung sebagai kesal; contoh setup "Tahu nggak kenapa..." dihapus dari prompt (anti-parrot); contoh template PDF "Udah kubaca nih dokumennya" di `src/media.ts` dihapus.
+- **Verifikasi:** suite regresi diperluas ke 21 skenario (`scratch/verify_suite.mts`), seluruhnya lulus tanpa echo/kebocoran/template; lolos `npm run typecheck` & `npm run build` (exit code 0).
+
 ### v0.27.6 - 2026-09-14 (Refactor P1: Larangan -> Direktif Positif + Suite 16 Skenario)
 
 **Prompt dipangkas dari ~40 larangan menjadi direktif positif per topik tunggal; perilaku terverifikasi setara/lebih baik via before-after suite**
