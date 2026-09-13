@@ -578,7 +578,11 @@ function steps(): Step[] {
       models: [config.models.dahlPrimary, config.models.dahlBackup],
       visionModels: [],
       cap: config.dailyCap.dahl,
-      run: (k, m, msgs) => openAiChat(config.dahlProxyUrl, k, m, msgs),
+      run: (k, m, msgs) => openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
+        temperature: 0.45,
+        frequency_penalty: 0.5,
+        presence_penalty: 0.0,
+      }),
     },
     {
       kind: 'groq',
