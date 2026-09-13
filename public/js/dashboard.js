@@ -1122,7 +1122,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
               </tr>
             `);
           } else if (p.kind === "cloudflare") {
-            const keyCap = p.cap || 10000;
+            const keyCap = p.cap || 120;
             const keyUsed = k.used || 0;
             const keyRemaining = Math.max(0, keyCap - keyUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((keyUsed / keyCap) * 100)) : 0;
@@ -1149,7 +1149,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} RPD &bull; Bot Monitored</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} RPD (~10K Neurons) &bull; Bot Monitored</div>
                 </td>
                 <td>
                   <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
@@ -1253,7 +1253,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
         let mechanismText = "Kuota Token Harian";
         let limitOfficial = `${formatTokens(p.tokenCapPerKey)}/hari/key`;
-        if (p.tokenLimitType === "requests_tpm") {
+        if (p.kind === "cloudflare") {
+          mechanismText = "Batas Neuron Harian";
+          limitOfficial = `10.000 Neuron (~${(p.capPerKey || 120).toLocaleString()} RPD)`;
+        } else if (p.tokenLimitType === "requests_tpm") {
           mechanismText = "Batas Permintaan & TPM";
           limitOfficial = p.totalCap > 0 ? `${p.capPerKey.toLocaleString()} RPD/key` : "Tanpa Limit Mutlak";
         } else if (p.tokenLimitType === "monthly_credits") {

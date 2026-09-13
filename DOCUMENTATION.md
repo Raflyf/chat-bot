@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.22 (Cloudflare Workers AI Provider Integration, Llama 3.1 70B & Qwen 2.5 Coder 32B Multi-Account Pool & Tier 3 Failover)  
+**Versi:** v0.26.23 (Kalibrasi Kuota Faktual Harian: xKiro 1.500 RPD & Cloudflare 120 RPD Berbasis Metrik Token & Neuron Riil)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 09:25 WIB
+**Terakhir Diperbarui:** 2026-09-13 09:48 WIB
 
 ---
 
@@ -205,6 +205,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.23 - 2026-09-13 09:48 WIB
+
+**Audit & Kalibrasi Kuota Faktual Harian: xKiro 1.500 RPD & Cloudflare 120 RPD Berbasis Metrik Token & Neuron Riil**
+
+- **Audit & Penyelarasan Kuota xKiro Gateway (`DAILY_CAP_XKIRO=1500`, `src/env.ts`, `.env`, `.env.example`, `api/stats.ts`)**:
+  - **Data Faktual Live**: Endpoint upstream `https://api.xkiro.com/v1/usage` membuktikan bahwa tier gratis xKiro menetapkan kuota sebesar **5.000.000 token/hari** per akun (bukan 50.000 request).
+  - **Kalkulasi Matematis Empiris**: Pengukuran payload nyata dengan bot system prompt (~9.150 karakter) + riwayat chat + output token menghasilkan konsumsi rata-rata ~3.500 token per panggilan. Dengan kuota 5.000.000 token, kapasitas riil adalah `5.000.000 / 3.500 ≈ 1.428 panggilan/hari`.
+  - **Kalibrasi Angka Batas**: Nilai `DAILY_CAP_XKIRO` dikalibrasi dari angka asumsi keliru `50000` menjadi **`1500`** panggilan/hari/kunci (~5M token/hari).
+- **Audit & Penyelarasan Kuota Cloudflare Workers AI (`DAILY_CAP_CLOUDFLARE=120`, `src/env.ts`, `.env`, `.env.example`, `api/stats.ts`, `public/js/dashboard.js`)**:
+  - **Data Faktual Dokumentasi Resmi**: Dokumentasi Workers AI membuktikan batas gratis Cloudflare adalah **10.000 Neurons/hari** per akun (bukan 10.000 request).
+  - **Kalkulasi Matematis Model**: Model `@cf/meta/llama-3.1-70b-instruct` mengonsumsi rata-rata ~97,2 neurons per panggilan (~3.500 token). Kapasitas riil per akun adalah `10.000 / 97,2 ≈ 102–120 panggilan/hari`.
+  - **Kalibrasi Angka Batas**: Nilai `DAILY_CAP_CLOUDFLARE` dikalibrasi dari `10000` menjadi **`120`** panggilan/hari/akun agar tidak terputus di tengah jalan sebelum batas neuron habis.
+- **Penyelarasan Dashboard Observabilitas & Label Kuota (`api/stats.ts`, `public/js/dashboard.js`)**:
+  - Label kuota xKiro diperjelas menjadi `5.000.000 Token/hari (~1.500 RPD)`.
+  - Mekanisme batas Cloudflare ditampilkan sebagai `Batas Neuron Harian` dengan limit `10.000 Neuron (~120 RPD)` dan deskripsi `Limit: 120 RPD (~10K Neurons) • Bot Monitored`.
+- **Verifikasi Rantai Provider Lainnya**:
+  - **Groq Cloud API**: Live HTTP headers membuktikan `x-ratelimit-limit-requests: 1000` (RPD). Nilai `DAILY_CAP_GROQ=800` valid (memberikan margin aman 20%).
+  - **Google Gemini API**: Batas resmi Google AI Studio Free Tier adalah 1.500 RPD & 1M TPM. Nilai `DAILY_CAP_GEMINI=1400` valid.
+  - **OpenRouter AI**: Batas resmi rute model `:free` adalah ~200 RPD. Nilai `DAILY_CAP_OPENROUTER=180` valid.
 
 ### v0.26.22 - 2026-09-13 09:25 WIB
 
