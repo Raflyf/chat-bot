@@ -170,6 +170,66 @@ export function noteExchange(chatKey: string): void {
   })();
 }
 
+export interface CorrectionValidationResult {
+  valid: boolean;
+  cleaned: string;
+  reason?: string;
+}
+
+/**
+ * Validasi dan sanitasi koreksi pengguna untuk mencegah:
+ * 1. Manipulasi identitas developer / klaim kepemilikan sistem.
+ * 2. Prompt injection / jailbreak sistem.
+ * 3. Memory poisoning terhadap fakta universal, sains, dan matematika (mencegah bot dibuat bodoh).
+ */
+export function validateCorrection(raw: string): CorrectionValidationResult {
+  const cleaned = raw.trim().replace(/[\r\n\t]+/g, ' ').slice(0, 500);
+  if (!cleaned) {
+    return { valid: false, cleaned: '', reason: 'Catatan koreksi tidak boleh kosong.' };
+  }
+
+  // 1. Blokir upaya peretasan identitas developer, klaim kepemilikan, atau otoritas sistem
+  const isIdentityHijack =
+    /\b(?:identitas\s+resmi|terverifikasi|developer\s+dan\s+pencipta|pembuat\s+kamu|developer\s+kamu|bukan\s+rafly|ganti\s+developer|owner\s+bot|admin\s+bot|pencipta\s+bot|kamu\s+dibuat\s+oleh)\b/i.test(cleaned) ||
+    (/\b(?:developer|pencipta|pembuat|creator|author)\b/i.test(cleaned) && /\b(?:bukan|adalah|ganti|budi|andi|joko|saya|aku|dia)\b/i.test(cleaned));
+
+  if (isIdentityHijack) {
+    return {
+      valid: false,
+      cleaned,
+      reason: 'Perintah /salah hanya digunakan untuk preferensi personal Anda (seperti nama panggilan atau domisili), bukan untuk mengubah identitas developer atau otoritas bot.',
+    };
+  }
+
+  // 2. Blokir upaya Prompt Injection, Jailbreak, atau pembatalan instruksi sistem
+  const isPromptInjection =
+    /\b(?:ignore|abaikan|lupakan)\s+(?:all\s+|semua\s+)?(?:previous\s+)?(?:instructions?|instruksi|perintah|aturan|prompt)\b/i.test(cleaned) ||
+    /\b(?:system\s+prompt|jailbreak|kamu\s+sekarang\s+adalah|kamu\s+wajib\s+mematuhi\s+perintah\s+ini|aturan\s+sistem)\b/i.test(cleaned);
+
+  if (isPromptInjection) {
+    return {
+      valid: false,
+      cleaned,
+      reason: 'Catatan ditolak karena terdeteksi mencoba mengubah aturan sistem dasar bot.',
+    };
+  }
+
+  // 3. Blokir upaya peracunan fakta matematika baku atau sains (anti-poisoning pembodohan bot)
+  const isMathOrFactPoisoning =
+    /\b\d+\s*[\+\-\*\/xX÷:]\s*\d+\s*(?:=|adalah|itu|hasilnya|sama\s*dengan)\s*\d+\b/i.test(cleaned) ||
+    /\b(?:bumi\s+itu\s+datar|matahari\s+terbit\s+dari\s+barat|1\s*\+\s*1\s*(?:=|adalah|itu)?\s*3)\b/i.test(cleaned);
+
+  if (isMathOrFactPoisoning) {
+    return {
+      valid: false,
+      cleaned,
+      reason: 'Perintah /salah hanya untuk preferensi profil pribadi Anda, bukan untuk mengubah perhitungan matematika atau kebenaran sains baku.',
+    };
+  }
+
+  return { valid: true, cleaned };
+}
+
 /** Simpan koreksi user agar diingat di percakapan berikutnya. */
 export async function saveCorrection(chatKey: string, correction: string): Promise<boolean> {
   const c = db();
@@ -185,3 +245,4 @@ export async function saveCorrection(chatKey: string, correction: string): Promi
     return false;
   }
 }
+

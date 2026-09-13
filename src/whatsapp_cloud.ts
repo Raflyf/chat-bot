@@ -3,7 +3,7 @@ import { config } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
-import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
+import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
@@ -476,14 +476,20 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         // Cek perintah koreksi fakta /salah
         if (text.startsWith('/salah ') || text === '/salah') {
-          const correction = text.replace(/^\/salah\s*/, '').trim();
-          if (!correction) {
+          const rawCorrection = text.replace(/^\/salah\s*/, '').trim();
+          if (!rawCorrection) {
             await sendWhatsAppCloudMessageSafe(from, 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
             void markMessageProcessed('whatsapp', messageId);
             continue;
           }
-          await saveCorrection(chatKey, correction);
-          await sendWhatsAppCloudMessageSafe(from, `Siap kak, koreksinya sudah dicatat: "${correction}". Aku akan mengingat ini untuk obrolan berikutnya.`);
+          const check = validateCorrection(rawCorrection);
+          if (!check.valid) {
+            await sendWhatsAppCloudMessageSafe(from, check.reason || 'Perintah /salah hanya untuk preferensi personal (seperti nama panggilan atau domisili), bukan untuk mengubah fakta atau aturan bot.');
+            void markMessageProcessed('whatsapp', messageId);
+            continue;
+          }
+          await saveCorrection(chatKey, check.cleaned);
+          await sendWhatsAppCloudMessageSafe(from, `Siap kak, koreksinya sudah dicatat: "${check.cleaned}". Aku akan mengingat ini untuk obrolan berikutnya.`);
           void markMessageProcessed('whatsapp', messageId);
           continue;
         }
