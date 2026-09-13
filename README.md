@@ -21,9 +21,9 @@ Asisten AI cerdas, multimodal, dan beroperasi 24/7 di WhatsApp dan Telegram. Dib
 ## Fitur Utama
 
 1. **Multimodal Lengkap**: Mendukung transkripsi Voice Note Whisper, analisis dokumen (PDF, Word, teks, kode), serta pemahaman foto dan stiker.
-2. **Memori Cerdas & Konteks**: Mengingat alur percakapan aktif (24 pesan terakhir), distilasi profil jangka panjang di Supabase, dan perintah `/reset` untuk membersihkan sesi aktif secara instan.
+2. **Memori Cerdas & Konteks**: Mengingat alur percakapan aktif (15 pesan terakhir), distilasi profil jangka panjang di Supabase, dan perintah `/reset` untuk membersihkan sesi aktif secara instan.
 3. **Zona Waktu & Lokasi Dinamis**: Mengenali waktu akurat (WIB, WITA, WIT, dan waktu internasional), deteksi lokasi otomatis dari nomor telepon, serta penerimaan pin lokasi GPS.
-4. **Rantai Failover Multi-Provider**: Rotasi otomatis antara xKiro, Groq, Google Gemini, dan OpenRouter agar bot tetap aktif saat terjadi limit kuota.
+4. **Rantai Failover Multi-Provider**: Rotasi otomatis 5 provider (xKiro, Groq, Cloudflare Workers AI, Google Gemini, dan OpenRouter) agar bot tetap aktif saat terjadi limit kuota.
 5. **Dashboard Monitoring & Dataset AI**: Panel observabilitas kuota API terproteksi PIN dan ekspor riwayat evaluasi ke format JSONL dan CSV untuk fine-tuning.
 
 ---

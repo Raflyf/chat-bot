@@ -552,7 +552,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // Pool reset label
       const poolReset = document.getElementById("pool-reset-label");
       if (poolReset) {
-        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (xKiro, Groq, OpenRouter) \u2022 00:00 PT (Gemini)";
+        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (xKiro, Groq, Cloudflare, OpenRouter) \u2022 00:00 PT (Gemini)";
         else poolReset.textContent = `Akumulasi Periode ${rangeLabel}`;
       }
 
