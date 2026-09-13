@@ -763,94 +763,106 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
 
   // Sanitasi riwayat percakapan asisten sebelum disuntikkan ke konteks model
   // Mencegah penularan loop peran lama, skrip panggung kurung siku, atau menu kaku
+  // PRINSIP: jika konten harus disanitasi total, DROP dari history (jangan replace dengan
+  // kalimat template hardcoded — model akan menghafal dan meparrot kalimat itu)
   const history: ChatMsg[] = [];
   for (const h of rawHistory) {
     if (h.role === 'assistant' && typeof h.content === 'string') {
       let content = cleanMathAndNoise(h.content);
-      if (/Oke deh, kalo kamu nggak mau jadi pacar|pacar\s+fiktif/i.test(content)) {
-        content = 'Oke siap, kita ngobrol santai biasa aja ya!';
-      }
-      if (/si botak|si kumis|teknologi canggih banget|siapa yang ngelawak aku|cuma bot yang dibuat sama Rafly|ngerasa aneh-aneh|masih bodo-bodoan/i.test(content)) {
-        content = 'Santai aja haha!';
-      }
-      if (/kucing selalu ngintip layar laptop|debugging dari jauh|butuh syntax untuk hidup/i.test(content)) {
-        content = 'Hahaha ngakak kan lu!';
-      }
-      if (/maaf ya kalo bikin lu nangis|bikin lu nangis/i.test(content)) {
-        content = 'Hahaha puas kan lu!';
-      }
+      let skip = false;
+
+      if (/Oke deh, kalo kamu nggak mau jadi pacar|pacar\s+fiktif/i.test(content)) skip = true;
+      if (/si botak|si kumis|teknologi canggih banget|siapa yang ngelawak aku|cuma bot yang dibuat sama Rafly|ngerasa aneh-aneh|masih bodo-bodoan/i.test(content)) skip = true;
+      if (/kucing selalu ngintip layar laptop|debugging dari jauh|butuh syntax untuk hidup/i.test(content)) skip = true;
+      if (/maaf ya kalo bikin lu nangis|bikin lu nangis/i.test(content)) skip = true;
+
       // Sanitasi balasan asisten yang minta maaf saat digertak klaim developer palsu (mencegah penularan gaslighting)
       if (
         /maap\s+(?:ya|maaf)|aku\s+kira\s+kamu\s+cuma\s+iseng|kurang\s+ajar\s+sama\s+developer|nomor\s+cadangan|oke\s+deh\s+aku\s+percaya|aku\s+emang\s+beda\s+sama\s+dia/i.test(
           content,
         )
       ) {
-        content = 'Lahh kan nomor kamu emang bukan si Rafly wkwk!';
+        skip = true;
       }
+
       // Sanitasi tanggapan kaku / sok moralis / robotik masa lalu agar tidak menulari context window
       if (
         /tetap\s+jaga\s+etika|jangan\s+gatel-gatel\s+tangan|perang\s+dingin\s+kamu\s+berdua|bukan\s+aku.*dia\s+yang\s+di\s+belakang\s+layar|di\s+sistem(?:ku|aku)|developer\s+(?:yang\s+)?sah|daftar\s+developer|data\s+(?:di\s+sistemku\s+)?udah\s+fix|terverifikasi\s+permanen|bukan\s+gitu\s+sih,\s*data|nama\s+itu\s+nggak\s+ada\s+di\s+daftar/i.test(
           content,
         )
       ) {
-        content = 'Yeee orang jelas-jelas yang bikin gua si Rafly wkwkk!';
+        skip = true;
       }
+
       // Sanitasi frasa repetitif penghakiman developer
-      if (/jangan\s+sok\s+(?:sokan\s+)?jadi\s+developer|gak\s+ada\s+yang\s+percaya/i.test(content)) {
-        content = 'Nomor lu jelas beda sama si Rafly wkwkk!';
-      }
+      if (/jangan\s+sok\s+(?:sokan\s+)?jadi\s+developer|gak\s+ada\s+yang\s+percaya/i.test(content)) skip = true;
+
       // Sanitasi residu drama, gombalan cringe, dan respon baper di riwayat masa lalu
       if (
         /tobat\s+deh\s+dari\s+drama|debat\s+soal\s+nama|database-ku|pemanis\s+telinga|jangan\s+terlalu\s+serius|jahat\s+banget\s+ya|mau\s+yang\s+model\s+apa\s+lagi|ganti\s+topik\s+biar\s+nggak\s+makin\s+cringe|pede\s+nggak|masih\s+cringe|jangan\s+terlalu\s+lama\s+menatapku|orang\s+yang\s+kamu\s+rindukan/i.test(
           content,
         )
       ) {
-        content = 'Hahaha ya maap, namanya juga usaha wkwk!';
+        skip = true;
       }
+
+      if (skip) continue; // Buang pesan dari history — jangan replace dengan kalimat template
+
       content = content.replace(/(?:,\s*atau\s+(?:malah\s+)?(?:nge)?gombalin\s+lagi\??)/gi, '');
       content = content.replace(/(?:,\s*ngebantu,\s*atau\s+ngegombalin\s+kamu)/gi, ', atau ngebantu kamu');
       content = content.replace(/(?:Kalo\s+mau\s+ngegombal\s+lagi[^.\n]*[.\n]?)/gi, '');
       content = content.replace(/(?:(?:,\s*)?atau\s+mau\s+aku\s+gombalin\s+lagi\??)/gi, '');
-      history.push({ role: 'assistant', content: content.trim() || 'Santai aja haha!' });
+
+      const trimmed = content.trim();
+      if (!trimmed) continue; // Jika konten kosong setelah sanitasi, skip juga
+
+      history.push({ role: 'assistant', content: trimmed });
     } else {
       history.push(h);
     }
   }
 
   // Deduplikasi respons asisten di riwayat percakapan agar tidak memicu few-shot repetition loop
+  // PRINSIP: jika duplikat ditemukan, DROP dari history (jangan replace dengan kalimat template hardcoded)
   const seenAssistantTexts = new Set<string>();
+  const deduped: ChatMsg[] = [];
   let lastOpening = '';
   for (let i = 0; i < history.length; i++) {
     if (history[i].role === 'assistant') {
       const norm = (history[i].content as string).toLowerCase().replace(/\s+/g, ' ').slice(0, 50);
       if (seenAssistantTexts.has(norm)) {
-        history[i].content = 'Santai aja wkwk!';
-      } else {
-        seenAssistantTexts.add(norm);
+        continue; // Drop duplikat — jangan suntikkan kalimat template yang bisa dihafal model
       }
+      seenAssistantTexts.add(norm);
 
       // Bersihkan pengulangan kata pembuka yang sama persis (misal 'yaelah' berturut-turut)
       const openingMatch = (history[i].content as string).trim().match(/^([a-zA-Z]+)[,\s.]+/);
       if (openingMatch) {
         const word = openingMatch[1].toLowerCase();
         if (word === lastOpening && (word === 'yaelah' || word === 'bukan' || word === 'wah')) {
-          history[i].content = (history[i].content as string).replace(/^([a-zA-Z]+)[,\s.]+\s*/i, '');
+          history[i] = {
+            ...history[i],
+            content: (history[i].content as string).replace(/^([a-zA-Z]+)[,\s.]+\s*/i, ''),
+          };
         } else {
           lastOpening = word;
         }
       }
+      deduped.push(history[i]);
+    } else {
+      deduped.push(history[i]);
     }
   }
 
-  // Cegah duplikasi jika pesan pengguna saat ini kebetulan sudah tersimpan di ujung history
+  // Cegah duplikasi jika pesan pengguna saat ini kebetulan sudah tersimpan di ujung deduped history
   if (
-    history.length > 0 &&
-    history[history.length - 1].role === 'user' &&
-    history[history.length - 1].content === clean
+    deduped.length > 0 &&
+    deduped[deduped.length - 1].role === 'user' &&
+    deduped[deduped.length - 1].content === clean
   ) {
-    for (const h of history) messages.push(h);
+    for (const h of deduped) messages.push(h);
   } else {
-    for (const h of history) messages.push(h);
+    for (const h of deduped) messages.push(h);
     messages.push({ role: 'user', content: clean });
   }
 
