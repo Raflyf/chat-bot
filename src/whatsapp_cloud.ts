@@ -208,6 +208,8 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         const from = m.from; // Nomor telepon pengirim (misal: 628123456789)
         if (!messageId || !from || isDuplicate(messageId)) continue;
 
+        const msgSentAt = Number(m.timestamp) ? new Date(Number(m.timestamp) * 1000) : undefined;
+
         const chatKey = 'wa_' + from;
         let initialContent = `[${m.type || 'msg'}]`;
         if (m.type === 'text' && m.text?.body) {
@@ -240,7 +242,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           const media = await downloadWhatsAppCloudMedia(m.image.id);
 
           if (media) {
-            const context = await getContext(chatKey);
+            const context = await getContext(chatKey, msgSentAt);
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
@@ -273,7 +275,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           const media = await downloadWhatsAppCloudMedia(m.document.id);
 
           if (media) {
-            const context = await getContext(chatKey);
+            const context = await getContext(chatKey, msgSentAt);
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
@@ -313,7 +315,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           if (media) {
             try {
               const transcription = await transcribeAudio(media.buffer, mime);
-              const context = await getContext(chatKey);
+              const context = await getContext(chatKey, msgSentAt);
 
               await saveMessage({
                 platform: 'whatsapp',
@@ -361,7 +363,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         if (msgType === 'sticker' && m.sticker?.id) {
           const media = await downloadWhatsAppCloudMedia(m.sticker.id);
           if (media) {
-            const context = await getContext(chatKey);
+            const context = await getContext(chatKey, msgSentAt);
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
@@ -395,7 +397,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // Kasus 5: Video
         if (msgType === 'video' && m.video?.id) {
           const caption = m.video.caption?.trim();
-          const context = await getContext(chatKey);
+          const context = await getContext(chatKey, msgSentAt);
 
           await saveMessage({
             platform: 'whatsapp',
@@ -477,7 +479,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // Cek perintah koreksi fakta /salah
         if (text.startsWith('/salah ') || text === '/salah') {
           const rawCorrection = text.replace(/^\/salah\s*/, '').trim();
-          const ctx = await getContext(chatKey);
+          const ctx = await getContext(chatKey, msgSentAt);
           if (!rawCorrection) {
             const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
             await sendWhatsAppCloudMessageSafe(from, reply || 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
@@ -528,7 +530,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         }
 
         // 1. Ambil riwayat percakapan (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
-        const context = await getContext(chatKey);
+        const context = await getContext(chatKey, msgSentAt);
 
         // 2. Update cache in-memory & sinkronkan teks riil user ke database (non-blocking agar tidak menunda autoReply)
         updateContextCache(chatKey, 'user', text);

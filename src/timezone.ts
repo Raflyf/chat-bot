@@ -385,13 +385,19 @@ export function resolveTimezoneFromCoords(lat: number, lon: number): { zone: str
 }
 
 /**
- * Bangun blok konteks waktu universal yang dinamis untuk systemPrompt.
+ * Membangun prompt waktu universal yang sadar konteks geografis pengguna:
+ * - Waktu Server (UTC & WIB)
+ * - Waktu Pengiriman Asli Pesan Pengguna (jika tersedia)
+ * - Waktu di lokasi/kota spesifik yang ditanyakan pengguna di chat
+ * - Waktu di lokasi pengguna yang tersimpan di memori/profil
+ * - 3 Zona Waktu Indonesia (WIB, WITA, WIT) jika pengguna +62 belum punya profil lokasi
  */
 export function buildUniversalTimePrompt(
   now: Date = new Date(),
   chatKey: string = '',
   userPrompt: string = '',
   profileOrHistoryText: string = '',
+  msgSentAt?: Date | null,
 ): string {
   const parts: string[] = [];
   const utc = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
@@ -406,12 +412,18 @@ export function buildUniversalTimePrompt(
   const askingTime = isAskingTime(userPrompt);
   const detectedUserCountry = detectUserCountry(chatKey);
 
+  const targetZone = profileLoc?.zone || detectedUserCountry?.zone || 'Asia/Jakarta';
+  const sentTime = msgSentAt instanceof Date && !isNaN(msgSentAt.getTime()) ? formatInZone(msgSentAt, targetZone) : null;
+
   // KASUS 1: PENGGUNA TIDAK BERTANYA JAM DAN TIDAK MENYATAKAN LOKASI
-  // Berikan info waktu server secara pasif (hanya latar belakang).
+  // Berikan info waktu server & waktu kirim secara pasif (hanya latar belakang).
   // Larang keras bot mengungkit waktu atau menanyakan kota pengguna!
   if (!askingTime && !userDeclaringLoc) {
     parts.push(`[WAKTU & KALENDER SISTEM (BACKGROUND CONTEXT)]:`);
     parts.push(`- Waktu Server Saat Ini: ${wib.dayName}, ${wib.dateStr} ${wib.time} WIB (UTC+7)`);
+    if (sentTime) {
+      parts.push(`- Waktu Pengiriman Pesan Ini oleh Pengguna: ${sentTime.dayName}, ${sentTime.dateStr} ${sentTime.time.slice(0, 5)} ${sentTime.tzName}`);
+    }
     if (profileLoc) {
       parts.push(`- Lokasi Pengguna Tersimpan: ${profileLoc.label} (Zona: ${profileLoc.zone})`);
     } else if (detectedUserCountry) {
@@ -419,7 +431,8 @@ export function buildUniversalTimePrompt(
     }
     parts.push(`[DIREKTIF MUTLAK KOMUNIKASI]:`);
     parts.push(`- Teman bicaramu TIDAK sedang bertanya tentang jam, waktu, atau jadwal!`);
-    parts.push(`- DILARANG KERAS membuka jawaban dengan menyebutkan jam saat ini!`);
+    parts.push(`- DILARANG KERAS membuka jawaban dengan menyebutkan jam saat ini atau mengomentari jam kirim pesan (dilarang latah "tumben kirim jam sekian")!`);
+    parts.push(`- DILARANG KERAS basa-basi meminta maaf soal delay jaringan atau antrean server!`);
     parts.push(`- DILARANG KERAS menanyakan lokasi, tempat tinggal, atau kota pengguna karena sama sekali tidak relevan dengan topik obrolan!`);
     parts.push(`- Tanggapi HANYA pesan dan topik yang sedang dibahas oleh temanmu secara natural, hangat, dan mengalir!`);
     return parts.join('\n');
@@ -446,7 +459,16 @@ export function buildUniversalTimePrompt(
   parts.push(`[WAKTU & KALENDER GLOBAL (UNIVERSAL REAL-TIME CLOCK)]:`);
   parts.push(`- Waktu Universal Standar: ${utc}`);
 
-  // 3a. Pengguna menanyakan jam kota/negara spesifik di pesannya (misal "jam berapa di Tokyo/London/Bali")
+  // 3a. Pengguna menanyakan jam berapa dia mengirim pesan atau kapan pesan masuk
+  if (/\b(?:kirim|terkirim|dikirim|ngechat|pesan\s*ini|chat\s*ini)\b/i.test(userPrompt) && sentTime) {
+    parts.push(`- PERTANYAAN KHUSUS WAKTU PENGIRIMAN PESAN: Temanmu menanyakan jam berapa dia mengirim pesan.`);
+    parts.push(`  * Jam Pengiriman Asli Pengguna: ${sentTime.time.slice(0, 5)} ${sentTime.tzName} (${sentTime.dayName}, ${sentTime.dateStr})`);
+    parts.push(`  * Jam Server AI Memproses: ${wib.time.slice(0, 5)} WIB`);
+    parts.push(`  * DIREKTIF: Jawab langsung to-the-point bahwa pesannya terkirim pada jam ${sentTime.time.slice(0, 5)} ${sentTime.tzName} secara santai, ramah, dan bersahabat tanpa kalimat template hafalan.`);
+    return parts.join('\n');
+  }
+
+  // 3b. Pengguna menanyakan jam kota/negara spesifik di pesannya (misal "jam berapa di Tokyo/London/Bali")
   if (promptLoc) {
     const locTime = formatInZone(now, promptLoc.zone);
     parts.push(`- LOKASI SPESIFIK YANG DITANYAKAN: ${promptLoc.label}`);
