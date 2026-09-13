@@ -461,9 +461,20 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         if (!text) continue;
 
-        // Cek perintah reset sesi
+        // Cek perintah reset sesi (konfirmasi dinamis; statis hanya jika provider mati)
         if (isResetCommand(text)) {
-          const reply = await resetSession(chatKey, 'whatsapp');
+          const fallback = await resetSession(chatKey, 'whatsapp');
+          let reply = fallback;
+          try {
+            const resetCtx = await getContext(chatKey, msgSentAt);
+            const dyn = await autoReply(
+              'Konfirmasi santai 1 kalimat dengan gayamu sendiri bahwa sesi sudah di-reset dan memori bersih.',
+              resetCtx,
+            );
+            if (dyn.reply.trim()) reply = dyn.reply;
+          } catch {
+            // pertahankan fallback statis
+          }
           await sendWhatsAppCloudMessageSafe(from, reply);
           void markMessageProcessed('whatsapp', messageId);
           await saveMessage({

@@ -545,9 +545,20 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // Kasus 2: Pesan Teks
   if (!text) return;
 
-  // Cek perintah reset sesi
+  // Cek perintah reset sesi (konfirmasi dinamis; statis hanya jika provider mati)
   if (isResetCommand(text)) {
-    const reply = await resetSession(chatKey, 'whatsapp');
+    const fallback = await resetSession(chatKey, 'whatsapp');
+    let reply = fallback;
+    try {
+      const resetCtx = await getContext(chatKey, msgSentAt);
+      const dyn = await autoReply(
+        'Konfirmasi santai 1 kalimat dengan gayamu sendiri bahwa sesi sudah di-reset dan memori bersih.',
+        resetCtx,
+      );
+      if (dyn.reply.trim()) reply = dyn.reply;
+    } catch {
+      // pertahankan fallback statis
+    }
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
     if (messageId) void markMessageProcessed('whatsapp', messageId);
     void saveMessage({
@@ -667,7 +678,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   } catch (err) {
     console.error('[whatsapp] Gagal menghasilkan balasan AI:', err);
     await sock.sendMessage(remoteJid, {
-      text: 'Maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi.',
+      text: 'Waduh, ada kendala teknis nih, coba kirim ulang sebentar lagi ya.',
     });
   } finally {
     try {

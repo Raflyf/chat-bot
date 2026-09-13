@@ -573,6 +573,14 @@ interface Step {
 function steps(): Step[] {
   return [
     {
+      kind: 'opencode',
+      keys: config.pools.opencode,
+      models: [config.models.openCodePrimary, config.models.openCodeBackup],
+      visionModels: [],
+      cap: config.dailyCap.opencode,
+      run: (k, m, msgs) => openCodeChat(k, m, msgs),
+    },
+    {
       kind: 'groq',
       keys: config.pools.groq,
       models: [config.models.groqPrimary, config.models.groqBackup],
@@ -583,16 +591,12 @@ function steps(): Step[] {
         const groqMsgs = trimMessagesToTokenBudget(msgs, 7200);
         return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, 800, {
           reasoning_effort: 'none',
+          // Jinakkan sampling Qwen kecil: suhu + repetisi rendah agar tahan prompt panjang
+          temperature: 0.45,
+          presence_penalty: 0.0,
+          frequency_penalty: 0.4,
         });
       },
-    },
-    {
-      kind: 'opencode',
-      keys: config.pools.opencode,
-      models: [config.models.openCodePrimary, config.models.openCodeBackup],
-      visionModels: [],
-      cap: config.dailyCap.opencode,
-      run: (k, m, msgs) => openCodeChat(k, m, msgs),
     },
     {
       kind: 'gemini',
@@ -648,8 +652,8 @@ function steps(): Step[] {
 
 /**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: xKiro (DeepSeek) > Groq > Cloudflare (Llama 3.1 70B > Qwen 2.5 Coder) > Gemini > OpenRouter.
- * - Vision / foto / gambar: xKiro (Standby Qwen Free) > Gemini (3.8 Flash > 2.5 Flash) > OpenRouter (Nex Pro > Mini).
+ * - Teks umum / matematika / koding: OpenCode (Muse Spark 1.3 > 1.2) > Groq (Qwen 3.8 > 3.6) > Gemini > Cloudflare > OpenRouter > Dahl > xKiro.
+ * - Vision / foto / gambar: Gemini (3.8 Flash > 2.5 Flash) > Cloudflare Vision > OpenRouter Vision.
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
 export async function chat(
@@ -665,7 +669,7 @@ export async function chat(
 
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
-  // Untuk vision: Urutan sesuai instruksi (xKiro -> Gemini -> OpenRouter)
+  // Untuk vision: Gemini -> Cloudflare Vision -> OpenRouter Vision (teks-only dilewati 0ms)
   const orderedSteps = needVision
     ? allSteps
         .filter((s) => s.visionModels.length > 0)

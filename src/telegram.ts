@@ -200,9 +200,9 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       return;
     }
 
-    // 1. Perintah /start (Respons statis instan tanpa memanggil LLM demi kecepatan & efisiensi)
+    // 1. Perintah /start (sapaan dinamis via LLM; statis hanya jika semua provider mati)
     if (text === '/start') {
-      const welcomeText = isGroup
+      const staticText = isGroup
         ? `Halo semua! Saya *${config.botName}*, asisten AI siap bantu di grup ini.\n\n` +
           `Cara pakai di grup:\n` +
           `- Tag/mention *@${botUsername}* diikuti pertanyaan kamu\n` +
@@ -219,6 +219,20 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           `- Menyimpan preferensi/koreksi khusus dengan perintah: /salah <catatan>\n` +
           `- Mereset sesi percakapan dengan perintah: /reset\n\n` +
           `Ada yang bisa saya bantu sekarang?`;
+      let welcomeText = staticText;
+      try {
+        const startCtx = await getContext(chatKey, msgSentAt);
+        const { reply } = await autoReply(
+          `User ${isGroup ? `di grup bersama ${senderName} ` : ''}baru menjalankan /start. Sapa dia secara dinamis dengan gayamu sendiri dan sebutkan singkat kemampuan utamamu (ngobrol, info internet real-time, baca dokumen/gambar/VN/stiker/video, /remind, /salah, /reset).` +
+            (isGroup
+              ? ` Sebutkan juga cara pakai di grup: tag @${botUsername} atau reply pesanmu, perintah /tanya dan /ai, /remind, /reset.`
+              : ''),
+          startCtx,
+        );
+        if (reply.trim()) welcomeText = reply;
+      } catch {
+        // pertahankan teks statis
+      }
       await sendTelegramMessageSafe(bot, chatId, welcomeText);
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
@@ -262,12 +276,22 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       return;
     }
 
-    // 3b. Perintah /reset atau /clear atau reset sesi
+    // 3b. Perintah /reset atau /clear atau reset sesi (konfirmasi dinamis; statis hanya jika provider mati)
     if (text && isResetCommand(text)) {
-      const reply = await resetSession(chatKey, 'telegram');
-      const resetReply = isGroup
-        ? `Sesi percakapan grup berhasil di-reset oleh *${senderName}*. Memori aktif grup sudah kembali bersih.`
-        : reply;
+      const fallback = await resetSession(chatKey, 'telegram');
+      let resetReply = fallback;
+      try {
+        const resetCtx = await getContext(chatKey, msgSentAt);
+        const { reply } = await autoReply(
+          `Konfirmasi santai 1 kalimat dengan gayamu sendiri bahwa sesi ${isGroup ? `grup (diminta ${senderName}) ` : ''}sudah di-reset dan memori bersih.`,
+          resetCtx,
+        );
+        if (reply.trim()) resetReply = reply;
+      } catch {
+        if (isGroup) {
+          resetReply = `Sesi percakapan grup berhasil di-reset oleh *${senderName}*. Memori aktif grup sudah kembali bersih.`;
+        }
+      }
       await sendTelegramMessageSafe(bot, chatId, resetReply);
       if (msgId) void markMessageProcessed('telegram', msgId);
       await saveMessage({
