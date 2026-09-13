@@ -316,6 +316,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       totalModelCalls++;
     }
 
+    // Daftar model aktif sistem untuk memfilter histori DB lama yang sudah didepresiasi
+    const activeSystemModels = [
+      config.models.xkiroPrimary,
+      ...config.models.xkiroBackup,
+      config.models.groqPrimary,
+      config.models.groqBackup,
+      config.models.cfPrimary,
+      config.models.cfBackup,
+      config.models.geminiPrimary,
+      config.models.geminiBackup,
+      config.models.orPrimary,
+      config.models.orMini,
+      config.models.orText,
+      'whisper-large-v3-turbo',
+      'whisper-large-v3',
+    ].map((m) => m.toLowerCase());
+
+    const isModelActive = (modelStr: string): boolean => {
+      const lower = modelStr.toLowerCase();
+      return activeSystemModels.some(
+        (act) => lower === act || lower.endsWith('/' + act) || act.endsWith('/' + lower)
+      );
+    };
+
     // Urutan MRU (Most Recently Used) All-Time:
     // Urutan kronologis model diambil dari riwayat all-time agar tumpukan MRU tidak terputus/reset saat berganti filter tanggal
     const recentModelOrder: string[] = [];
@@ -325,7 +349,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     for (const m of candidateRecentMsgs) {
       const rawModel = m?.via || 'unknown';
       const model = rawModel.split('#')[0].trim();
-      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && !seenRecent.has(model)) {
+      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && isModelActive(model) && !seenRecent.has(model)) {
         seenRecent.add(model);
         recentModelOrder.push(model);
       }
@@ -335,13 +359,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     for (const m of assistantMsgs ?? []) {
       const rawModel = m?.via || 'unknown';
       const model = rawModel.split('#')[0].trim();
-      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && !seenRecent.has(model)) {
+      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && isModelActive(model) && !seenRecent.has(model)) {
         seenRecent.add(model);
         recentModelOrder.push(model);
       }
     }
 
-    const latestActiveModel = recentModelOrder[0] || (assistantMsgs?.[0]?.via ? assistantMsgs[0].via.split('#')[0].trim() : null);
+    const latestActiveModel = recentModelOrder[0] || null;
 
     const modelsBreakdown = Object.entries(modelCounts)
       .map(([name, count]) => ({

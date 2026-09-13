@@ -785,13 +785,25 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         }
       });
 
-      // Simpan state MRU terkini ke localStorage
+      // Purge sembarang model historis yang sudah tidak ada di katalog aktif sistem
+      window.__mruModelHistory = (window.__mruModelHistory || []).filter(mruKey => {
+        if (!mruKey) return false;
+        const keyLower = mruKey.toLowerCase();
+        return catalog.some(item =>
+          item.matchKeys.some(k => {
+            const kl = k.toLowerCase();
+            return keyLower === kl || keyLower.endsWith('/' + kl) || kl.endsWith('/' + keyLower) || keyLower.includes(kl) || kl.includes(keyLower);
+          })
+        );
+      });
+
+      // Simpan state MRU bersih terkini ke localStorage
       try {
         localStorage.setItem(MRU_STORAGE_KEY, JSON.stringify(window.__mruModelHistory));
       } catch {}
 
       // 3. Susun orderedCatalog:
-      // Petakan model dari window.__mruModelHistory ke item katalog statis
+      // Petakan model dari window.__mruModelHistory ke item katalog aktif
       const orderedCatalog = [];
       const usedCatalogIndices = new Set();
 
@@ -808,23 +820,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         if (catIdx !== -1) {
           usedCatalogIndices.add(catIdx);
           orderedCatalog.push(catalog[catIdx]);
-        } else {
-          // Model dinamis di luar katalog statis
-          let prov = "AI GATEWAY";
-          let tagCls = "tag-xkiro";
-          if (keyLower.includes("groq")) { prov = "GROQ"; tagCls = "tag-groq"; }
-          else if (keyLower.includes("cloudflare") || keyLower.includes("@cf")) { prov = "CLOUDFLARE"; tagCls = "tag-cloudflare"; }
-          else if (keyLower.includes("gemini")) { prov = "GEMINI"; tagCls = "tag-gemini"; }
-          else if (keyLower.includes("openrouter")) { prov = "OPENROUTER"; tagCls = "tag-openrouter"; }
-          else if (keyLower.includes("xkiro") || keyLower.includes("deepseek")) { prov = "XKIRO"; tagCls = "tag-xkiro"; }
-
-          orderedCatalog.push({
-            name: mruKey,
-            provider: prov,
-            tagClass: tagCls,
-            desc: "Model dinamis yang aktif melayani inferensi pengguna",
-            matchKeys: [mruKey],
-          });
         }
       }
 
