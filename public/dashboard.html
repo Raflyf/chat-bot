@@ -2028,6 +2028,32 @@
     }
 
     @media (max-width: 480px) {
+      .nav-brand-group {
+        gap: 0.45rem;
+      }
+      .brand-badge-version {
+        display: none;
+      }
+      .nav-back-btn {
+        padding: 0.32rem 0.55rem;
+        gap: 0.25rem;
+      }
+      .nav-back-btn span:not(.nav-back-arrow) {
+        display: none;
+      }
+      .nav-control-group {
+        gap: 0.2rem;
+        padding: 2px;
+      }
+      .nav-btn-control {
+        padding: 0.32rem 0.52rem !important;
+        font-size: 0.73rem !important;
+        gap: 0.25rem;
+      }
+      .status-pill {
+        padding: 0.25rem 0.48rem;
+        font-size: 0.7rem;
+      }
       .modal-overlay {
         padding: 0.75rem;
       }
@@ -2053,6 +2079,16 @@
       }
       .pagination-controls {
         justify-content: center;
+      }
+    }
+
+    @media (max-width: 380px) {
+      .status-pill span:not(.pulse-dot) {
+        display: none;
+      }
+      .status-pill {
+        padding: 0.4rem;
+        border-radius: 50%;
       }
     }
   </style>

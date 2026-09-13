@@ -56,15 +56,35 @@
       width: 100%;
     }
 
-    /* Top Navigation Bar */
+    /* Top Navigation Bar - Ultra-Sleek Frosted Glass & Ambient Glow */
     header {
-      border-bottom: 1px solid var(--border-subtle);
-      background: rgba(17, 24, 39, 0.8);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      background: rgba(11, 17, 32, 0.82);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
       position: sticky;
       top: 0;
       z-index: 50;
+      transition: background-color 0.25s ease, border-color 0.25s ease;
+    }
+
+    header::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, 
+        transparent 0%, 
+        rgba(56, 189, 248, 0) 8%, 
+        rgba(56, 189, 248, 0.35) 30%, 
+        rgba(168, 85, 247, 0.35) 70%, 
+        rgba(56, 189, 248, 0) 92%, 
+        transparent 100%
+      );
+      pointer-events: none;
+      opacity: 0.75;
     }
 
     .nav-inner {
@@ -155,16 +175,49 @@
       font-family: inherit;
     }
 
-    .btn-dashboard {
+    .nav-dashboard-link {
       background: rgba(56, 189, 248, 0.12);
       border: 1px solid rgba(56, 189, 248, 0.35);
       color: var(--accent-blue);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.45rem 0.95rem;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      white-space: nowrap;
     }
 
-    .btn-dashboard:hover {
+    .nav-dashboard-link:hover {
       background: rgba(56, 189, 248, 0.22);
       border-color: var(--accent-blue);
       box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
+      transform: translateY(-1px);
+    }
+
+    .nav-dash-short {
+      display: none;
+    }
+
+    .btn-hero-dash {
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #38bdf8;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-hero-dash:hover {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: #38bdf8;
+      color: #7dd3fc;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.28);
+      transform: translateY(-1px);
     }
 
     .btn-primary {
@@ -203,6 +256,18 @@
       background: #1e8dbf;
       transform: translateY(-1px);
       box-shadow: 0 4px 15px rgba(34, 158, 217, 0.35);
+    }
+
+    .btn-icon {
+      flex-shrink: 0;
+    }
+
+    .btn-arrow {
+      transition: transform 0.2s ease;
+    }
+
+    .btn:hover .btn-arrow {
+      transform: translateX(3px);
     }
 
     /* Hero Section */
@@ -424,12 +489,13 @@
         padding: 0 1rem;
       }
       .nav-inner {
-        padding: 0.75rem 0;
+        padding: 0.65rem 0;
+        gap: 0.5rem;
       }
       .brand-icon {
         width: 34px;
         height: 34px;
-        font-size: 1rem;
+        font-size: 0.95rem;
         border-radius: 10px;
       }
       .brand-text h1 {
@@ -438,19 +504,30 @@
       .brand-text p {
         display: none;
       }
+      .nav-actions {
+        gap: 0.45rem;
+      }
       .status-pill {
-        padding: 0.3rem 0.6rem;
+        padding: 0.28rem 0.55rem;
         font-size: 0.72rem;
+        gap: 0.35rem;
       }
-      .btn-dashboard {
-        padding: 0.42rem 0.75rem;
+      .nav-dashboard-link {
+        padding: 0.38rem 0.7rem;
         font-size: 0.78rem;
+        gap: 0.3rem;
       }
-      .btn-dashboard span:last-child {
+      .nav-dash-full {
+        display: none;
+      }
+      .nav-dash-short {
+        display: inline;
+      }
+      .nav-dash-arrow {
         display: none;
       }
       .hero-badge {
-        font-size: 0.7rem;
+        font-size: 0.68rem;
         padding: 0.3rem 0.75rem;
         letter-spacing: 0.02em;
       }
@@ -463,8 +540,9 @@
         width: 100%;
         justify-content: center;
         text-align: center;
-        padding: 0.8rem 1rem !important;
-        font-size: 0.9rem !important;
+        padding: 0.85rem 1.15rem !important;
+        font-size: 0.92rem !important;
+        border-radius: 12px;
       }
       .feature-card {
         padding: 1.35rem 1.15rem;
@@ -479,11 +557,15 @@
         display: none;
       }
       .status-pill {
-        padding: 0.35rem;
+        padding: 0.4rem;
         border-radius: 50%;
       }
       .hero-title {
-        font-size: 1.55rem;
+        font-size: 1.65rem;
+      }
+      .nav-dashboard-link {
+        padding: 0.35rem 0.6rem;
+        font-size: 0.75rem;
       }
     }
   </style>
@@ -501,13 +583,14 @@
         </div>
       </a>
       <div class="nav-actions">
-        <div class="status-pill">
+        <div class="status-pill" title="Status Engine Bot &amp; Konektivitas">
           <span class="pulse-dot"></span>
           <span>Online 24/7</span>
         </div>
-        <a href="/dashboard.html" class="btn btn-dashboard" title="Buka Monitoring Dashboard">
-          <span>Monitoring Dashboard</span>
-          <span>&rarr;</span>
+        <a href="/dashboard.html" class="nav-dashboard-link" title="Buka Monitoring Dashboard">
+          <span class="nav-dash-full">Monitoring Dashboard</span>
+          <span class="nav-dash-short">Dashboard</span>
+          <span class="nav-dash-arrow">&rarr;</span>
         </a>
       </div>
     </div>
@@ -527,14 +610,26 @@
       </p>
 
       <div class="hero-cta-group">
-        <a href="https://wa.me/6283874640066" target="_blank" rel="noopener noreferrer" class="btn btn-wa" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+        <a href="https://wa.me/6283874640066" target="_blank" rel="noopener noreferrer" class="btn btn-wa">
+          <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86.174.086.275.072.376-.044.101-.116.433-.506.549-.68.116-.173.231-.145.39-.086s1.011.477 1.184.564.289.13.332.203c.043.072.043.419-.101.824z"/>
+          </svg>
           <span>Mulai Chat di WhatsApp</span>
         </a>
-        <a href="https://t.me/chatkita_bot" target="_blank" rel="noopener noreferrer" class="btn btn-tele" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;" title="Mulai Chat dengan FreeAiBot (@chatkita_bot)">
+        <a href="https://t.me/chatkita_bot" target="_blank" rel="noopener noreferrer" class="btn btn-tele" title="Mulai Chat dengan FreeAiBot (@chatkita_bot)">
+          <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.52 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
+          </svg>
           <span>Mulai Chat di Telegram (@chatkita_bot)</span>
         </a>
-        <a href="/dashboard.html" class="btn btn-dashboard" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
-          <span>Buka Panel Dashboard</span>
+        <a href="/dashboard.html" class="btn btn-hero-dash" title="Buka Monitoring Console &amp; Evaluasi Dataset">
+          <svg class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="3" y1="9" x2="21" y2="9"></line>
+            <line x1="9" y1="21" x2="9" y2="9"></line>
+          </svg>
+          <span>Buka Monitoring &amp; Dataset Console</span>
+          <span class="btn-arrow">&rarr;</span>
         </a>
       </div>
     </div>
@@ -625,7 +720,7 @@
   <!-- Footer -->
   <footer>
     <div class="container">
-      FreeAiBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.26.23
+      FreeAiBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.26.25
     </div>
   </footer>
 
