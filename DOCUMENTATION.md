@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.34 (Standardisasi Dokumentasi Publik: Perombakan Komprehensif README.md & Diagram Arsitektur Sistem)  
+**Versi:** v0.26.35 (Penyederhanaan README Publik: Reduksi Redundansi & Eliminasi Rincian Internal Model)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:50 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:55 WIB
 
 ---
 
@@ -207,6 +207,15 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.35 - 2026-09-13 11:55 WIB
+
+**Penyederhanaan README Publik: Reduksi Redundansi & Eliminasi Rincian Internal Model**
+
+- **Audit & Penyelarasan Fokus Pembaca (`README.md`)**:
+  - Menghapus tabel spesifikasi model internal (`deepseek`, `qwen`, `llama`, dll.) dan diagram teknis berlebihan dari berkas pembuka repositori agar ringkas, padat, dan langsung pada substansi produk.
+  - Mempertahankan informasi esensial bagi pengguna dan pengembang: lencana status, saluran akses cepat, poin fitur utama, daftar perintah interaksi, panduan instalasi lokal ringkas, serta deployment produksi.
+  - Menyelaraskan seluruh rincian arsitektur mendalam untuk tetap berpusat pada [DOCUMENTATION.md](file:///d:/code/project/projek_no_name/DOCUMENTATION.md) dan [AGENTS.md](file:///d:/code/project/projek_no_name/AGENTS.md).
 
 ### v0.26.34 - 2026-09-13 11:50 WIB
 
