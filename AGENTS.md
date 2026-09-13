@@ -1,28 +1,55 @@
 # Arsitektur Agen & Sistem Multi-Model (AGENTS.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.26.24.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.27.0.
 
 ---
 
 ## 1. Arsitektur Multi-Provider & Rantai Failover (LLM Engine)
 
-Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automatic failover dan load-balancing:
+Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automatic failover, adaptive circuit breaker, dan output sanitization:
 
-1. **Gateway Primer (xKiro API):**
-   - Endpoint: `https://api.xkiro.com/v1/chat/completions`
-   - Model Prioritas:
-     1. `deepseek/deepseek-v4-flash` (Model teks utama / failover kecepatan tinggi)
-     2. `deepseek/deepseek-v4-pro` (Cadangan 1 / penalaran mendalam & koding)
-     3. `deepseek/deepseek-v3.2` (Cadangan 2)
-   - Multi-Key Rotation: Menggunakan pool API keys dengan rotasi otomatis saat limit tercapai.
+1. **Rantai Failover Teks (7 Tier Otomatis):**
+   - **Tier 1 (Dahl Global API):**
+     - Pool: 10 API Key (`dahl_Kiv1N...` s.d. `dahl_GsHqB...`) dengan kuota 1 Miliar Token.
+     - Primary: `deepseek-ai/DeepSeek-V4-Flash-0731` (latensi ~0,22s, sangat patuh persona).
+     - Cadangan: `MiniMaxAI/MiniMax-M2.7` (dengan pembersih tag penalaran `<think>...</think>` otomatis).
+   - **Tier 2 (Groq Cloud API):**
+     - Pool: 5 API Key (800 RPD/key).
+     - Primary: `qwen/qwen3.8-27b`, Cadangan: `qwen/qwen3.6-27b`.
+     - Buffer: Message history dipangkas adaptif ke 7.200 token agar aman di bawah limit ketat 8K TPM.
+   - **Tier 3 (Direct OpenCode Zen API):**
+     - Pool: 4 API Key (`sk-Mm56c...`, `sk-YWTsb...`, `sk-dVsDp...`, `sk-kmc7K...`).
+     - Primary: `muse-spark-1.3-contributor-free` (bahasa luwes, santai, empatik).
+     - Cadangan: `muse-spark-1.2-contributor-free` (failover jika versi 1.3 sibuk/timeout).
+     - Adapter kustom `{ model, input }` dengan koneksi 10s non-streaming.
+   - **Tier 4 (Google Gemini API):**
+     - Pool: 2 API Key (1.400 RPD/key).
+     - Primary: `gemini-3.8-flash`, Cadangan: `gemini-2.5-flash`.
+   - **Tier 5 (Cloudflare Workers AI):**
+     - Pool: 3 Akun Cloudflare (rotasi multi-account dengan auto-resolution ID akun).
+     - Primary: `@cf/meta/llama-3.1-70b-instruct` (Llama 3.1 70B).
+     - Cadangan: `@cf/qwen/qwen2.5-coder-32b-instruct` (Qwen 2.5 Coder 32B).
+   - **Tier 6 (OpenRouter AI):**
+     - Pool: 5 API Key pool rotation.
+     - Primary: `nex-agi/nex-n2.5-pro:free`, Cadangan: `nvidia/nemotron-3.5-lightning:free`.
+   - **Tier 7 (xKiro Gateway):**
+     - Pool: 3 API Key pool rotation.
+     - Primary: `mistralai/mistral-small-2603`, Cadangan: `mistralai/codestral-2508`.
+     - Penjinak Mistral: `temperature: 0.35`, `presence_penalty: 0.0`, `frequency_penalty: 0.0`.
 
-2. **Rantai Failover Lintas Provider (Sequential Provider Failover):**
-   - **Tingkat 1 (Gateway Utama):** xKiro (`deepseek/deepseek-v4-flash` + 2 model cadangan di atas).
-   - **Tingkat 2 (Groq):** Primary: `qwen/qwen3.8-27b`, Cadangan: `qwen/qwen3.6-27b`.
-   - **Tingkat 3 (Cloudflare Workers AI):** Primary: `@cf/meta/llama-3.1-70b-instruct` (Llama 3.1 70B), Cadangan: `@cf/qwen/qwen2.5-coder-32b-instruct` (Qwen 2.5 Coder 32B). Multi-account pool rotation dengan auto-resolution account ID.
-   - **Tingkat 4 (Gemini API):** Primary: `gemini-3.8-flash`, Cadangan: `gemini-2.5-flash` (termasuk native vision engine).
-   - **Tingkat 5 (OpenRouter):** Failover akhir jika seluruh provider sebelumnya mengalami gangguan.
-   - **Direct OpenCode Zen API:** Cadangan darurat otonom (`muse-spark-1.3-contributor-free`).
+2. **Rantai Failover Multimodal / Vision (Foto, Gambar, Stiker):**
+   - **Vision Prioritas 1:** Google Gemini (`gemini-3.8-flash` > `gemini-2.5-flash`) — Native vision token parser.
+   - **Vision Prioritas 2:** Cloudflare Workers AI (`@cf/meta/llama-3.2-11b-vision-instruct`) — Pemanggilan native `/ai/run` endpoint dengan payload byte array biner.
+   - **Vision Prioritas 3:** OpenRouter AI (`nex-agi/nex-n2.5-pro:free` > `nex-agi/nex-n2.5-mini:free`).
+   - Provider teks murni (`dahl`, `groq`, `opencode`, `xkiro`) dilewati otomatis (0ms overhead) saat query membutuhkan vision.
+
+3. **Audio & Dokumen:**
+   - Audio / Voice Note: Groq Whisper (`whisper-large-v3` > `whisper-large-v3-turbo`) dengan fallback transkripsi Gemini Native Audio.
+   - File Dokumen (.docx, .txt): Ekstraksi lokal via Mammoth / TextParser -> dialihkan ke Tier 1 (Dahl DeepSeek).
+   - Dokumen PDF Visual & Video: Gemini Multimodal (`gemini-3.8-flash` > `gemini-2.5-flash`).
+
+4. **Zero-Configuration Vercel Models (Hardcoded Code Fallback):**
+   - Seluruh model default dikonfigurasi langsung di dalam kode (`src/env.ts`), sehingga pengguna tidak perlu mendaftarkan variabel model di dashboard Vercel / `.env`. Cukup menyuplai API key masing-masing provider.
 
 ---
 

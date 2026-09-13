@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.53 (Koreksi Faktual Kuota Groq: Eliminasi Limit Semu 200.000 TPD, Penyelarasan 1.000 RPD & 8K TPM Tier Bebas Token Harian)  
+**Versi:** v0.27.0 (Restrukturisasi Arsitektur LLM 7-Tier Teks & 3-Tier Vision, Integrasi Dahl Global 1 Miliar Token Pool, Direct OpenCode Zen Muse Spark 1.3 & 1.2, Cloudflare Native Vision Array Bytes, Eliminasi Wajib Konfigurasi Model di Vercel/Env)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 15:45 WIB
+**Terakhir Diperbarui:** 2026-09-13 18:30 WIB
 
 ---
 
@@ -207,6 +207,36 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.27.0 - 2026-09-13 18:30 WIB
+
+**Restrukturisasi Arsitektur LLM 7-Tier Teks & 3-Tier Vision: Integrasi Dahl Global 1B Pool, Direct OpenCode Zen Muse Spark 1.3 & 1.2, Cloudflare Native Vision Array Bytes, Eliminasi Wajib Konfigurasi Model di Vercel/Env**
+
+- **Integrasi Provider Tier 1: Dahl Global Inference API**:
+  - Pool: 10 API Key (`dahl_Kiv1N...` s.d. `dahl_GsHqB...`) dengan kapasitas 1 Miliar Token gratis selamanya.
+  - Model Utama: `deepseek-ai/DeepSeek-V4-Flash-0731` (kecepatan respon ~0,22s, sangat patuh persona, anti-to-do-list).
+  - Model Cadangan: `MiniMaxAI/MiniMax-M2.7` dengan integrasi `cleanModelOutput()` otomatis untuk menyaring tag penalaran internal `<think>...</think>`.
+- **Integrasi Provider Tier 3: Direct OpenCode Zen API**:
+  - Pool: 4 API Key (`sk-Mm56c...`, `sk-YWTsb...`, `sk-dVsDp...`, `sk-kmc7K...`).
+  - Model Utama: `muse-spark-1.3-contributor-free` (gaya bahasa luwes, empatik, santai).
+  - Model Cadangan: `muse-spark-1.2-contributor-free` (cadangan jika versi 1.3 sibuk).
+  - Adapter `openCodeChat`: Konversi otomatis riwayat percakapan ke payload `{ model, input }` dengan koneksi 10s non-streaming.
+- **Rantai Failover Teks 7-Tier Terpadu**:
+  1. **Tier 1:** Dahl Global (`DeepSeek-V4-Flash` > `MiniMax-M2.7`)
+  2. **Tier 2:** Groq (`qwen3.8-27b` > `qwen3.6-27b`, buffer 7.200 token)
+  3. **Tier 3:** OpenCode Zen (`muse-spark-1.3` > `muse-spark-1.2`)
+  4. **Tier 4:** Google Gemini (`gemini-3.8-flash` > `gemini-2.5-flash`)
+  5. **Tier 5:** Cloudflare Workers AI (`llama-3.1-70b` > `qwen2.5-coder-32b`)
+  6. **Tier 6:** OpenRouter AI (`nex-n2.5-pro:free` > `nemotron-3.5-lightning:free`)
+  7. **Tier 7:** xKiro Gateway (`mistral-small-2603` > `codestral-2508`, parameter penjinak `temp: 0.35`)
+- **Rantai Failover Multimodal / Vision 3-Tier**:
+  1. **Vision Prioritas 1:** Google Gemini (`gemini-3.8-flash` > `gemini-2.5-flash`)
+  2. **Vision Prioritas 2:** Cloudflare Workers AI (`@cf/meta/llama-3.2-11b-vision-instruct` via adapter native array bytes)
+  3. **Vision Prioritas 3:** OpenRouter AI (`nex-agi/nex-n2.5-pro:free` > `nex-agi/nex-n2.5-mini:free`)
+- **Zero-Configuration Vercel Models**:
+  - Model default kini dikonfigurasi langsung di dalam kode (`src/env.ts`), sehingga variabel model tidak lagi wajib diisi di dashboard Vercel ataupun file `.env`.
+- **Fast-Pass Circuit Breaker**:
+  - Error HTTP 401, 403, 404, 502, 503, `CreditsError`, dan `ModelError` memicu fast-pass seketika ke model berikutnya tanpa loop berulang pada kunci yang sama.
 
 ### v0.26.53 - 2026-09-13 15:45 WIB
 

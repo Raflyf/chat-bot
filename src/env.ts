@@ -32,33 +32,46 @@ export const config = {
   ownerChatId: cleanStr('OWNER_CHAT_ID'),
   ownerWaNumber: cleanStr('OWNER_WA_NUMBER'),
   pools: {
-    xkiro: csv('XKIRO_KEYS'),
+    dahl: csv('DAHL_KEYS'),
+    groq: csv('GROQ_KEYS'),
+    opencode: csv('OPENCODE_KEYS'),
+    gemini: csv('GEMINI_KEYS'),
     cloudflare: csv('CLOUDFLARE_KEYS'),
     openrouter: csv('OPENROUTER_KEYS'),
-    groq: csv('GROQ_KEYS'),
-    gemini: csv('GEMINI_KEYS'),
+    xkiro: csv('XKIRO_KEYS'),
   },
   cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
   models: {
-    xkiroPrimary: cleanStr('XKIRO_MODEL_PRIMARY') || 'deepseek/deepseek-v4-flash',
+    // Tier 1: Dahl Global
+    dahlPrimary: cleanStr('DAHL_MODEL_PRIMARY') || 'deepseek-ai/DeepSeek-V4-Flash-0731',
+    dahlBackup: cleanStr('DAHL_MODEL_BACKUP') || 'MiniMaxAI/MiniMax-M2.7',
+    // Tier 2: Groq
+    groqPrimary: cleanStr('GROQ_MODEL_PRIMARY') || 'qwen/qwen3.8-27b',
+    groqBackup: cleanStr('GROQ_MODEL_BACKUP') || 'qwen/qwen3.6-27b',
+    // Tier 3: OpenCode Zen Direct
+    openCodePrimary: cleanStr('OPENCODE_MODEL_PRIMARY') || 'muse-spark-1.3-contributor-free',
+    openCodeBackup: cleanStr('OPENCODE_MODEL_BACKUP') || 'muse-spark-1.2-contributor-free',
+    // Tier 4: Gemini
+    geminiPrimary: cleanStr('GEMINI_MODEL_PRIMARY') || 'gemini-3.8-flash',
+    geminiBackup: cleanStr('GEMINI_MODEL_BACKUP') || 'gemini-2.5-flash',
+    // Tier 5: Cloudflare Workers AI
+    cfPrimary: cleanStr('CLOUDFLARE_MODEL_PRIMARY') || '@cf/meta/llama-3.1-70b-instruct',
+    cfBackup: cleanStr('CLOUDFLARE_MODEL_BACKUP') || '@cf/qwen/qwen2.5-coder-32b-instruct',
+    cfVision: cleanStr('CLOUDFLARE_MODEL_VISION') || '@cf/meta/llama-3.2-11b-vision-instruct',
+    // Tier 6: OpenRouter
+    orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
+    orMini: cleanStr('OR_MODEL_MINI') || 'nex-agi/nex-n2.5-mini:free',
+    orText: cleanStr('OR_MODEL_TEXT') || 'nvidia/nemotron-3.5-lightning:free',
+    // Tier 7: xKiro
+    xkiroPrimary: cleanStr('XKIRO_MODEL_PRIMARY') || 'mistralai/mistral-small-2603',
     xkiroBackup: (() => {
       const envList = csv('XKIRO_MODEL_BACKUPS');
       return envList.length > 0
         ? envList
         : [
-            'deepseek/deepseek-v4-pro',
-            'deepseek/deepseek-v3.2',
+            'mistralai/codestral-2508',
           ];
     })(),
-    cfPrimary: cleanStr('CLOUDFLARE_MODEL_PRIMARY') || '@cf/meta/llama-3.1-70b-instruct',
-    cfBackup: cleanStr('CLOUDFLARE_MODEL_BACKUP') || '@cf/qwen/qwen2.5-coder-32b-instruct',
-    orPrimary: cleanStr('OR_MODEL_PRIMARY') || 'nex-agi/nex-n2.5-pro:free',
-    orMini: cleanStr('OR_MODEL_MINI') || 'nex-agi/nex-n2.5-mini:free',
-    orText: cleanStr('OR_MODEL_TEXT') || 'nvidia/nemotron-3.5-lightning:free',
-    groqPrimary: cleanStr('GROQ_MODEL_PRIMARY') || 'qwen/qwen3.8-27b',
-    groqBackup: cleanStr('GROQ_MODEL_BACKUP') || 'qwen/qwen3.6-27b',
-    geminiPrimary: cleanStr('GEMINI_MODEL_PRIMARY') || 'gemini-3.8-flash',
-    geminiBackup: cleanStr('GEMINI_MODEL_BACKUP') || 'gemini-2.5-flash',
   },
   supabaseUrl: (() => {
     const raw = firstEnv('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
@@ -98,11 +111,13 @@ export const config = {
   cacheTtlMs: num('CACHE_TTL_MS', 3600000),
   isServerless: process.env.VERCEL === '1' || !!process.env.AWS_LAMBDA_FUNCTION_NAME,
   dailyCap: {
-    xkiro: num('DAILY_CAP_XKIRO', 1500),
+    dahl: num('DAILY_CAP_DAHL', 5000),
     groq: num('DAILY_CAP_GROQ', 800),
-    cloudflare: num('DAILY_CAP_CLOUDFLARE', 120),
+    opencode: num('DAILY_CAP_OPENCODE', 1000),
     gemini: num('DAILY_CAP_GEMINI', 1400),
+    cloudflare: num('DAILY_CAP_CLOUDFLARE', 300),
     openrouter: num('DAILY_CAP_OPENROUTER', 180),
+    xkiro: num('DAILY_CAP_XKIRO', 500),
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
@@ -144,10 +159,12 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
     throw new Error('SUPABASE_URL terisi tetapi SUPABASE_KEY / SUPABASE_SERVICE_ROLE_KEY kosong.');
   }
   const totalKeys =
-    config.pools.xkiro.length +
+    config.pools.dahl.length +
+    config.pools.groq.length +
+    config.pools.opencode.length +
+    config.pools.gemini.length +
     config.pools.cloudflare.length +
     config.pools.openrouter.length +
-    config.pools.groq.length +
-    config.pools.gemini.length;
+    config.pools.xkiro.length;
   if (totalKeys === 0) throw new Error('Semua pool key kosong. Isi minimal satu provider di .env.');
 }
