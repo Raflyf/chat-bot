@@ -230,6 +230,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - **Mini KPI Ribbon**: Perhitungan grand total kuota dan token kini mengagregasi 32 API key dari 7 provider secara universal.
   - **Matriks Kuota Token (`renderTokenMatrix`)**: Mekanisme dan label kuota resmi untuk Dahl (`Pool Saldo Token (1B)`) dan OpenCode disesuaikan secara presisi.
   - **Eliminasi Subjudul Model pada Header Pool & Matriks Token**: Menghapus seluruh baris teks nama model di bawah nama provider pada kartu pool API key dan tabel matriks token agar representasi kartu murni mencerminkan status pool/provider tanpa menimbulkan kebingungan model nama.
+  - **Eliminasi Kolom Jendela Konteks pada Matriks Kuota**: Menghapus kolom "Jendela Konteks" dan badge context window dari tabel matriks provider karena metrik tersebut tidak esensial bagi lalu lintas percakapan chatbot.
 - **Pembaruan Antarmuka HTML (`public/dashboard.html` & `public/index.html`)**:
   - Penambahan class CSS `.tag-dahl` dan `.tag-opencode`.
   - Filter pills pool API key dan dropdown dataset filter dilengkapi opsi `dahl` dan `opencode` sesuai urutan tier 1-7.
