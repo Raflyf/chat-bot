@@ -539,9 +539,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
       document.getElementById("kpi-title-calls").textContent = `Panggilan & Token API (${rangeLabel})`;
       const totalCalls = data.summary.totalCallsPeriod ?? data.summary.totalCallsToday ?? 0;
-      const totalTokens = data.summary.totalTokensPeriod ?? (totalCalls * 380);
+      const totalTokens = data.summary.totalTokensPeriod ?? 0;
       document.getElementById("kpi-calls-today").textContent = totalCalls.toLocaleString() + " calls";
-      document.getElementById("kpi-total-keys").textContent = `~${formatTokens(totalTokens)} \u2022 ${data.summary.totalKeys} Keys Terpantau`;
+      document.getElementById("kpi-total-keys").textContent = `${formatTokens(totalTokens)} Token \u2022 ${data.summary.totalKeys} Keys Terpantau`;
 
       document.getElementById("kpi-title-model").textContent = `Model Terpopuler (${rangeLabel})`;
       const topModel = data.modelsBreakdown && data.modelsBreakdown.length > 0
@@ -1061,6 +1061,8 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             grandTotalUsed += keyUsed;
             grandTotalRemaining += keyRemaining;
 
+            const callCountText = k.used > 0 ? ` (${k.used.toLocaleString()} calls)` : "";
+
             rows.push(`
               <tr>
                 <td>
@@ -1069,24 +1071,24 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 </td>
                 <td>
                   <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Groq Cloud Console</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">console.groq.com</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">console.groq.com &bull; Free Tier</div>
                 </td>
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token</span>
+                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token${callCountText}</span>
                     <span style="color: var(--text-dim);">${pct}%</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} &bull; Bot Monitored</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} TPD &bull; Upstream Real Usage</div>
                 </td>
                 <td>
                   <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
-                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Estimasi</div>
+                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Riil (TPD)</div>
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px;">● Bot Monitored</span>
+                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3);">● Upstream Real Usage</span>
                   <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
                 </td>
               </tr>
@@ -1209,7 +1211,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
       pools.forEach(p => {
         const usedCalls = p.usedPeriod ?? p.usedToday ?? 0;
-        const tokensUsed = p.totalTokensUsed ?? (usedCalls * 380);
+        const tokensUsed = p.totalTokensUsed ?? (usedCalls * (p.avgTokensPerChat || 0));
 
         let statusBadgeClass = "status-healthy";
         let statusText = "Optimal";
@@ -1234,9 +1236,14 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           limitOfficial = "Included Usage Credits";
         }
 
-        const syncSubtext = p.isLiveSynced
-          ? `<div style="font-size: 0.72rem; color: #34d399; margin-top: 2px; font-weight: 600;">● Live API Sync (Global di Semua App &amp; IDE)</div>`
-          : `<div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Rata-rata ~380 token/chat</div>`;
+        let syncSubtext = "";
+        if (p.isLiveSynced) {
+          syncSubtext = `<div style="font-size: 0.72rem; color: #34d399; margin-top: 2px; font-weight: 600;">● Live API Sync (Global di Semua App &amp; IDE)</div>`;
+        } else if (p.realUsageCalls > 0 || (p.avgTokensPerChat && p.avgTokensPerChat > 0)) {
+          syncSubtext = `<div style="font-size: 0.72rem; color: #38bdf8; margin-top: 2px; font-weight: 600;">● Token Riil Upstream (Rata-rata ~${formatTokens(p.avgTokensPerChat)}/chat)</div>`;
+        } else {
+          syncSubtext = `<div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Terhitung dari riwayat pesan</div>`;
+        }
 
         const tr = document.createElement("tr");
         tr.innerHTML = `
