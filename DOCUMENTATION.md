@@ -229,6 +229,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
   - **Tabel Upstream Real Usage (`renderLiveUpstreamTable`)**: Ditambahkan rendering khusus baris Dahl Global API (prefix `dahl_...`, tag cyan `#22d3ee`, pool 1B token) dan OpenCode Zen API (prefix `sk-...`, tag pink `#f472b6`, ~1.000 RPD).
   - **Mini KPI Ribbon**: Perhitungan grand total kuota dan token kini mengagregasi 32 API key dari 7 provider secara universal.
   - **Matriks Kuota Token (`renderTokenMatrix`)**: Mekanisme dan label kuota resmi untuk Dahl (`Pool Saldo Token (1B)`) dan OpenCode disesuaikan secara presisi.
+  - **Eliminasi Subjudul Model pada Header Pool & Matriks Token**: Menghapus seluruh baris teks nama model di bawah nama provider pada kartu pool API key dan tabel matriks token agar representasi kartu murni mencerminkan status pool/provider tanpa menimbulkan kebingungan model nama.
 - **Pembaruan Antarmuka HTML (`public/dashboard.html` & `public/index.html`)**:
   - Penambahan class CSS `.tag-dahl` dan `.tag-opencode`.
   - Filter pills pool API key dan dropdown dataset filter dilengkapi opsi `dahl` dan `opencode` sesuai urutan tier 1-7.
