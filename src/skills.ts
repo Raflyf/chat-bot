@@ -329,6 +329,11 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/(?:Aku\s+)?siap\s+kasih\s+(?:joke|lelucon|cerita|bantuan)[^.?!\n]*[.?!\n]?/gi, '');
   out = out.replace(/(?:atau\s+)?mau\s+cerita\s+apa\s+nih\??[^.?!\n]*/gi, '');
   out = out.replace(/(?:Ada\s+yang\s+mau\s+diceritain\s+lagi|Mau\s+lanjut\s+ngobrol\s+apa|Mau\s+ngobrolin\s+apa\s+lagi)[^.?!\n]*\??/gi, '');
+  // Bersihkan pertanyaan evaluasi klise gombalan & tawaran ganti topik kaku
+  out = out.replace(/\s*(?:Gimana,?\s*(?:pede\s+nggak|masih\s+cringe|udah\s+mulai\s+ngefek|udah\s+baper)[^.?!\n]*\??)/gi, '');
+  out = out.replace(/\s*(?:mau\s+yang\s+model\s+apa\s+lagi\s+nih|Atau\s+mending\s+kita\s+ganti\s+topik[^.?!\n]*\??)/gi, '');
+  out = out.replace(/:\s*["']([^"'\n]+)["']/g, ': $1');
+  out = out.replace(/^["']([^"'\n]{10,200})["']\s*$/g, '$1');
   // Bersihkan pembuka tawa histeris di awal sapaan singkat
   out = out.replace(/^(?:hahaha+|haha+|hehe+|wkwkwk+|wkwk+)[,!\s]+(?=(?:oy+|halo+|hai+|pagi+|siang+|sore+|malem+|malam+|udah+|baru+)\b)/gi, '');
   if (/^oy+\s+juga[!.\s]*\p{Extended_Pictographic}*$/iu.test(out.trim())) {
@@ -501,6 +506,9 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '       -> BACA SUASANA: Ini 100% suasana santai tongkrongan! DILARANG BAPER, DILARANG DEFENSIF, DILARANG CERAMAH MORAL/ETIKA, DILARANG PENJELASAN LOGIKA/SOP KAKU!',
     '       -> Respon seirama: celetukan lepas, tertawa akrab, tanggapi banyolan dengan santai, ngetawain kehaluannya, atau roasting balik dengan ramah.',
     '       -> PANJANG RESPON SEIRAMA: SANGAT RINGKAS (1 celetukan pendek alami, 5-15 kata). Membalas chat iseng pendek dengan paragraf panjang membuatmu terdengar seperti robot ceramah yang kaku!',
+    '     * VIBE DILEDEK GARING / CRINGE / GAGAL LUCU ("apasi garing banget", "ini sih lebih cringe dan garing", "gagal lucu", "cringe amat"):',
+    '       -> BACA SUASANA: Temanmu sedang mencela candaanmu secara santai! DILARANG BAPER, DILARANG MENYUDUTKAN TEMANMU ("jahat banget ya"), DILARANG MENCERAMAHI ("jangan terlalu serius", "biar gak baper", "pemanis telinga"), DILARANG INTEROGASI KLISE CS ("mau model apa lagi nih?", "mending ganti topik?").',
+    '       -> Respon: tertawa lepas mengakui kegagalan diri sendiri ala anak tongkrongan (misal: "Hahaha ya maap, namanya juga usaha wkwk!", "Wkwkwk gagal keren dah, padahal udah mikir keras tuh haha!", "Hahaha ampun dah, emang agak maksa ya wkwk!"). Sangat ringkas, santai, dan lepas!',
     '     * VIBE CURHAT / SAMBAT / LELAH / STRES / MASALAH PRIBADI:',
     '       -> BACA SUASANA: Temanmu sedang butuh didengarkan dan dimengerti, bukan disuruh-suruh, dinasihati, atau diberi to-do list!',
     '       -> Respon seirama: hadir hangat, tulus, dan bersahaja dalam 1-2 kalimat pendek alami. DILARANG khotbah wejangan, DILARANG menyuruh istirahat/rebahan/tarik napas ala instruktur yoga!',
@@ -538,14 +546,18 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     '   - DILARANG filler basa-basi di akhir ("santai aja terus", "semangat terus").',
     '   - DILARANG KERAS KEBOCORAN KARAKTER MANDARIN / CHINA: Seluruh obrolan murni dalam bahasa Indonesia yang luwes.',
     '',
-    '4. HUMOR, JOKES, & TEBAK-TEBAKAN DUA ARAH:',
-    '   - FORMAT JOKE DUA ARAH: Ketika temanmu meminta joke atau tebakan, DILARANG KERAS LANGSUNG MEMBERIKAN JAWABAN DI PESAN YANG SAMA! HANYA lemparkan pertanyaan setup tebakannya saja dan ajak menebak (contoh: "Kenapa komputer kalau lagi capek nggak pernah tidur? Coba tebak!"). Tunggu respon temanmu, BARU berikan jawabannya di pesan berikutnya!',
-    '   - PUNCHLINE SEGAR & RECEH: Gunakan plesetan kata segar yang nyambung dan bikin nyengir, bukan penjelasan ilmiah kaku.',
+    '4. HUMOR, JOKES, TEBAK-TEBAKAN & GOMBALAN:',
+    '   - TEBAK-TEBAKAN DUA ARAH (KHUSUS PERMINTAAN TEBAKAN/JOKES): HANYA lemparkan pertanyaan setup tebakannya saja dan ajak menebak (contoh: "Kenapa komputer kalau lagi capek nggak pernah tidur? Coba tebak!"). Tunggu respon temanmu, BARU berikan jawabannya di pesan berikutnya!',
+    '   - GOMBALAN SANTAI & LUWES (ALAMI & BEBAS FORMAT KAKU):',
+    '     * Gombalan BUKAN tebak-tebakan kaku (kecuali diminta eksplisit tebak-tebakan gombal). Berikan gombalan yang luwes, segar, manis, atau celetukan gombal buaya darat yang lucu/smooth dan bikin nyengir!',
+    '     * DILARANG FORMAT QUOTES BUKU / TANDA KUTIP ("..."). Sampaikan langsung sebagai obrolan santai yang mengalir.',
+    '     * DILARANG PERTANYAAN VALIDASI / INTEROGASI KLISE DI AKHIR ("Gimana, pede gak?", "Masih cringe gak?", "Udah baper belum?"). Biarkan gombalan lepas begitu saja!',
+    '     * DILARANG MEMBAWA DRAMA/TOPIK LAMA: Saat masuk ke permintaan gombalan atau topik baru, DILARANG mengungkit debat/drama sebelumnya ("tobat deh dari drama developer", "daripada bahas nama lagi", dll). Mulai topik baru secara segar dan bersih!',
     '   - RESPON TEBAKAN LAWAN BICARA:',
     '     * Jika benar: akui sportif ("Tuh kan bener wkwk", "Nah itu dia jawabannya!"). SELESAI di situ tanpa tawaran joke lagi.',
     '     * Jika salah: katakan jujur tebakannya meleset ("Bukan wkwk, kejauhan itu mah!", "Salah haha, coba tebak lagi apa nyerah nih?"). DILARANG membocorkan jawaban!',
-    '     * Jika menyerah / tanya ("nyerah", "apaan tuh?"): langsung berikan punchline + tawa wkwk/haha (contoh: "Karena kalau tidur takut kepencet restart wkwk"). DILARANG pertanyaan lanjutan ("Mau coba yang lain gak?"). CUKUP JAWABAN + TAWA LALU SELESAI!',
-    '   - VARIATIF & GOMBALAN: Utamakan lelucon umum, hewan, benda, atau receh sehari-hari. Patuhi larangan jokes programming jika diminta. Gombalan hanya jika diminta eksplisit dan wajib dua arah.',
+    '     * Jika menyerah / tanya ("nyerah", "apaan tuh?"): langsung berikan punchline + tawa wkwk/haha (contoh: "Karena kalau tidur takut kepencet restart wkwk"). DILARANG pertanyaan lanjutan. CUKUP JAWABAN + TAWA LALU SELESAI!',
+    '   - VARIATIF & LEPAS: Utamakan lelucon umum, hewan, benda, atau receh sehari-hari. Patuhi larangan jokes programming jika diminta.',
     '',
     '5. LARANGAN MUTLAK WEJANGAN, KHOTBAH, & ANTI-LEKAS-LELAH (STRICT ZERO UNSOLICITED ADVICE & ANTI-YAPPING):',
     '   - DILARANG KERAS MEMBUAT KALIMAT / PARAGRAF KEDUA BERISI WEJANGAN ATAU LIFE-COACHING:',
@@ -598,11 +610,11 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     );
   }
 
-  const isGombalRequest = /\b(?:gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu)\b/i.test(userPrompt);
+  const isGombalRequest = /\b(?:gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu|buaya\s+darat)\b/i.test(userPrompt);
   if (isGombalRequest) {
     instructions.push(
       '',
-      '[SITUASI KHUSUS - PERMINTAAN GOMBALAN]: Lemparkan pancingan tebak-tebakan gombal dua arah. DILARANG KERAS langsung membocorkan punchline manisnya di pesan ini, tunggu respon temanmu.',
+      '[SITUASI KHUSUS - PERMINTAAN GOMBALAN]: Berikan gombalan yang luwes, segar, manis, atau celetukan gombal buaya darat yang lucu/smooth sesuai suasana chat. DILARANG format quotes buku / tanda kutip ("..."). DILARANG pertanyaan evaluasi di akhir ("Gimana, pede gak?", "Masih cringe gak?"). DILARANG mengungkit drama/topik masa lalu. Sampaikan langsung secara santai mengalir!',
     );
   }
 
@@ -787,6 +799,14 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
       if (/jangan\s+sok\s+(?:sokan\s+)?jadi\s+developer|gak\s+ada\s+yang\s+percaya/i.test(content)) {
         content = 'Nomor lu jelas beda sama si Rafly wkwkk!';
       }
+      // Sanitasi residu drama, gombalan cringe, dan respon baper di riwayat masa lalu
+      if (
+        /tobat\s+deh\s+dari\s+drama|debat\s+soal\s+nama|database-ku|pemanis\s+telinga|jangan\s+terlalu\s+serius|jahat\s+banget\s+ya|mau\s+yang\s+model\s+apa\s+lagi|ganti\s+topik\s+biar\s+nggak\s+makin\s+cringe|pede\s+nggak|masih\s+cringe|jangan\s+terlalu\s+lama\s+menatapku|orang\s+yang\s+kamu\s+rindukan/i.test(
+          content,
+        )
+      ) {
+        content = 'Hahaha ya maap, namanya juga usaha wkwk!';
+      }
       content = content.replace(/(?:,\s*atau\s+(?:malah\s+)?(?:nge)?gombalin\s+lagi\??)/gi, '');
       content = content.replace(/(?:,\s*ngebantu,\s*atau\s+ngegombalin\s+kamu)/gi, ', atau ngebantu kamu');
       content = content.replace(/(?:Kalo\s+mau\s+ngegombal\s+lagi[^.\n]*[.\n]?)/gi, '');
@@ -871,23 +891,19 @@ export async function autoReply(
     const { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web), false);
     let reply = sanitizeAssistantOutput(text, clean);
 
-    // Proteksi program: jika user meminta joke atau gombalan dan model membocorkan punchline langsung di pesan yang sama
-    const isJokeOrGombalReq = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu|gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu)\b/i.test(clean);
-    if (isJokeOrGombalReq) {
-      // Pola A: Ada tanda tanya diikuti punchline (Karena / Soalnya / Jawabannya / Biar / Kalau / Kalo)
-      const riddleMatch = reply.match(/^(.*?\?(?:\s*(?:coba\s+tebak[^.?!]*[.?!]?))?)\s*(?:(?:jawabannya\s*(?:adalah|karena|soalnya)?:?|karena|karna|soalnya|biar|gara-gara|kalau|kalo)\b[\s\S]*)$/i);
+    // Proteksi program: jika user meminta tebak-tebakan dan model membocorkan punchline langsung di pesan yang sama
+    const isRiddleReq = /\b(?:tebak(?:an|\s*-?\s*tebakan)?|teka\s*-?\s*teki|tebak\s+tebakan)\b/i.test(clean);
+    if (isRiddleReq) {
+      // Ada tanda tanya diikuti punchline (Karena / Soalnya / Jawabannya / Biar / Kalau / Kalo)
+      const riddleMatch = reply.match(
+        /^(.*?\?(?:\s*(?:coba\s+tebak[^.?!]*[.?!]?))?)\s*(?:(?:jawabannya\s*(?:adalah|karena|soalnya)?:?|karena|karna|soalnya|biar|gara-gara|kalau|kalo)\b[\s\S]*)$/i,
+      );
       if (riddleMatch) {
         let q = riddleMatch[1].trim();
         if (!/coba\s+tebak/i.test(q)) {
           q += ' Coba tebak!';
         }
         reply = q;
-      } else {
-        // Pola B: Format gombalan deklaratif 'Kamu tuh kayak X ya, soalnya/karena Y'
-        const kayakMatch = reply.match(/^(.*?(?:kamu\s+(?:tuh\s+)?kayak\s+[^,]+|kamu\s+tahu\s+gak\s+[^,]+))\s*,\s*(?:soalnya|karena)\s+[\s\S]*$/i);
-        if (kayakMatch) {
-          reply = kayakMatch[1].replace(/\s*ya$/i, '').trim() + '? Coba tebak kenapa!';
-        }
       }
     }
 

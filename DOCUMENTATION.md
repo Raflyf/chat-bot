@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.41 (Kecerdasan Emosional Universal: Vibe Reading Lintas Topik, Dynamic Mirroring & Penghapusan Hardcode)  
+**Versi:** v0.26.42 (Pelepasan Format Kaku Gombalan, Eliminasi Sikap Baper & Anti-Quotes Cringe)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 12:35 WIB
+**Terakhir Diperbarui:** 2026-09-13 12:40 WIB
 
 ---
 
@@ -207,6 +207,24 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.42 - 2026-09-13 12:40 WIB
+
+**Pelepasan Format Kaku Gombalan, Eliminasi Sikap Baper & Anti-Quotes Cringe**
+
+- **Pelepasan Gombalan dari Paksaan Tebak-Tebakan Dua Arah (`src/skills.ts`)**:
+  - Mengatasi akar masalah gombalan yang selalu dipaksa menjadi teka-teki kaku (*"Kenapa aku nggak pernah bosen ngobrol sama kamu? Coba tebak!"*).
+  - Menghapus pemotongan regex Pola B di `autoReply` yang sebelumnya memangkas gombalan deklaratif menjadi pertanyaan tebak-tebakan.
+  - Memisahkan domain: tebak-tebakan dua arah hanya berlaku untuk teka-teki logika/jokes murni (`tebakan`, `teka-teki`). Gombalan (maut, buaya darat, manis, receh) kini mengalir secara langsung, luwes, dan natural layaknya obrolan santai anak muda.
+- **Eliminasi Format Quotes Buku & Pertanyaan Evaluasi Klise**:
+  - Melarang format quotes buku bertanda kutip (`"..."`) yang terkesan seperti copas kata mutiara Instagram lawas.
+  - Membersihkan pertanyaan evaluasi klise di akhir kalimat (*"Gimana, pede gak?"*, *"Masih cringe gak?"*, *"Udah mulai ngefek?"*, *"Mau model apa lagi nih?"*).
+- **Penanganan Sportif Saat Candaan/Gombalan Dibilang Garing atau Cringe**:
+  - Mengatasi kendala bot yang baper, menyudutkan pengguna (*"jahat banget ya"*), menceramahi (*"jangan terlalu serius"*, *"biar gak baper"*, *"pemanis telinga"*), atau interogasi CS kaku (*"mending ganti topik?"*).
+  - Mengarahkan bot untuk menanggapi celaan secara santai dengan tawa menertawakan kekonyolan diri sendiri (*"Hahaha ya maap, namanya juga usaha wkwk!"*, *"Wkwkwk gagal keren dah haha!"*).
+- **Pembersihan Residu Topik Lama & Sanitasi Riwayat (`buildMessages`)**:
+  - Melarang model mengungkit drama/debat topik lampau saat pengguna berganti topik (misal: *"tobat deh dari drama nama developer"*).
+  - Menyaring dan menetralkan pesan-pesan asisten terdahulu yang memuat residu drama atau gombalan cringe dari memori riwayat percakapan.
 
 ### v0.26.41 - 2026-09-13 12:35 WIB
 
