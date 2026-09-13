@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.28 (Arsitektur Full-Width Edge-to-Edge Navbar Dashboard & Anti-Break Zoom Out 80% / Ultrawide)  
+**Versi:** v0.26.29 (Resolusi Horizontal Overflow Mobile: Presisi Bar Filter Pool API Key & Eliminasi Kebutuhan Zoom-Out)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:20 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:25 WIB
 
 ---
 
@@ -207,6 +207,31 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.29 - 2026-09-13 11:25 WIB
+
+**Resolusi Horizontal Overflow Mobile: Presisi Bar Filter Pool API Key & Eliminasi Kebutuhan Zoom-Out di Smartphone**
+
+- **Audit & Penemuan Akar Masalah Overflow Horizontal Mobile (`public/dashboard.html`)**:
+  - **Akar Masalah**: Pada bagian "Matriks Penggunaan Pool API Key", kontainer filter baris ke-2 dibungkus oleh `div` inline tanpa batasan (`display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;`). Di dalam flexbox, flex item memiliki default `min-width: auto;`. Karena tombol-tombol pill provider (`#provider-filter-pills`) berjumlah 6 tombol ("Semua Provider", "xKiro", "Groq", "Cloudflare", "Gemini", "OpenRouter") dengan `white-space: nowrap; flex-shrink: 0;`, kontainer filter melebar secara intrinsik hingga **512.68px**.
+  - **Dampak Glitch Tampilan**:
+    1. Di layar smartphone (lebar 360–410px), kontainer tersebut meluap melewati batas kanan layar (`right = 524.6px`), menyebabkan kata "OpenRouter" terpotong menjadi "Open...".
+    2. Melebarnya kontainer ini memaksa `document.documentElement.scrollWidth` membengkak dari 390px menjadi **525px**.
+    3. Akibat kebocoran lebar 525px, seluruh halaman dashboard memiliki scroll horizontal liar. Kartu-kartu tampak miring/condong ke kiri dengan ruang kosong di kanan.
+    4. Pengguna terpaksa melakukan zoom-out manual di HP agar konten muat, namun zoom-out tersebut mengecilkan seluruh font, kartu, dan tombol sehingga tampilan menjadi tidak proporsional dan tidak rapi.
+- **Implementasi Perbaikan Presisi Bedah UI/UX**:
+  - **Enkapsulasi Semantik `.pool-filter-controls` & `.pool-section-header`**: Mengganti inline style dengan class terdedikasi yang memiliki `min-width: 0; max-width: 100%;` di seluruh tingkatan flex induk.
+  - **Layout Vertikal Adaptif pada Smartphone (`<= 768px`)**:
+    - `.pool-section-header` beralih ke `flex-direction: column; align-items: flex-start; gap: 0.85rem;`.
+    - `.pool-filter-controls` mengambil `width: 100%; max-width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 0.6rem;`.
+    - `.pill-filter-group` terkunci di `width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch;`. Pengguna HP kini dapat menggeser (swipe horizontal) tombol filter secara mulus tanpa membuat halaman utama bocor.
+    - Dropdown status key (`#key-status-filter`) diposisikan di bawah pill filter dengan `width: 100%; max-width: 100%;` sejajar simetris dengan kartu provider.
+  - **Optimasi Tipografi & Padding Kartu Provider Mobile (`<= 480px`)**:
+    - Menyesuaikan padding kartu `.provider-card` menjadi `1rem 0.9rem; gap: 0.85rem;`.
+    - Menyetel ukuran font `.provider-name` (0.95rem), `.provider-usage-text` (1rem), dan `.key-stats` (0.73rem) agar tidak bertabrakan pada layar beresolusi kompak (360–390px).
+- **Hasil Verifikasi Faktual**:
+  - `document.documentElement.scrollWidth` turun dari 525px menjadi tepat **390px** pada viewport 390px (`Is overflowing: False`).
+  - Halaman tampil pas 100% di layar HP pada skala normal (100%), menghilangkan keharusan zoom-out manual.
 
 ### v0.26.28 - 2026-09-13 11:20 WIB
 
