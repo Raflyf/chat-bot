@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.31 (Anti-Stale Message Guard: Eliminasi Respon Tertunda atas Pesan Basi & Webhook Retry Storm pada WhatsApp & Telegram)  
+**Versi:** v0.26.32 (Resolusi Tata Letak Navbar Mobile: Rekonstruksi CSS Grid 2-Baris Presisi & Eliminasi Kesenjangan Brand-Action)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:35 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:40 WIB
 
 ---
 
@@ -207,6 +207,32 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.32 - 2026-09-13 11:40 WIB
+
+**Resolusi Tata Letak Navbar Mobile: Rekonstruksi CSS Grid 2-Baris Presisi & Eliminasi Kesenjangan Brand-Action**
+
+- **Audit & Penemuan Investigasi Root Cause (`public/dashboard.html`)**:
+  - **Akar Masalah**:
+    1. Pada layar mobile (`<= 768px`), container `.nav-brand-group` diberi rule `width: 100%; justify-content: space-between;`. Hal ini memaksa tombol back `(<-)` terlempar sendirian ke ujung kiri layar, sementara logo dan judul `[AI] FreeAIBot Console` terdorong ke ujung kanan layar dengan ruang kosong menganga di tengahnya.
+    2. Pada baris kedua (`.header-actions`), rule `width: 100%; justify-content: space-between;` memaksa `.status-pill` terdorong ke ujung kiri, sedangkan tombol kontrol (`Auto: 15s`, `Segarkan`, `Kunci Keluar`) terjepit di kanan sehingga label "Kunci Keluar" terpotong menjadi "Kunci Kel...".
+    3. Pada `@media (max-width: 440px)`, terdapat rule destruktif `.status-pill span:not(.pulse-dot) { display: none; }` yang menghapus seluruh teks status dan hanya menyisakan titik hijau bulat tanpa label.
+- **Implementasi Perbaikan Presisi Bedah UI/UX**:
+  - **Arsitektur CSS Grid 2-Baris Terstruktur (`display: contents` pada `.header-actions`)**:
+    - **Baris 1**:
+      - Sisi Kiri (`grid-column: 1 / 2`): `.nav-brand-group` menyatukan tombol navigasi `(<-)`, garis pembatas vertikal `.nav-divider`, ikon `[AI]`, dan judul `FreeAIBot Console` secara kohesif dan rapat.
+      - Sisi Kanan (`grid-column: 2 / 3; justify-self: end`): `.status-pill` diposisikan sejajar di baris pertama sebelah kanan, menyajikan indikator status operasional secara simetris dan elegan.
+    - **Baris 2 (`grid-column: 1 / -1`)**:
+      - Container `.nav-control-group` menggunakan layout CSS Grid 3-kolom merata (`grid-template-columns: repeat(3, 1fr); width: 100%; gap: 0.4rem;`).
+      - Tombol `Auto: 15s`, `Segarkan`, dan `Kunci Keluar` mendapatkan ruang sentuh (*tap target*) yang lega dan seimbang tanpa ada teks yang terpotong.
+  - **Tipografi & Label Responsif Adaptif (`status-text-full` vs `status-text-short`)**:
+    - Menambahkan span `.status-text-full` ("Sistem Aktif") dan `.status-text-short` ("Aktif").
+    - Pada layar sangat sempit (`<= 380px`), sistem secara otomatis mengganti label menjadi "Aktif", menjaga keseimbangan visual tanpa tabrakan antarelemen.
+  - **Integritas Desktop 100% Terjaga**:
+    - Tampilan desktop (baik pada zoom normal 100% maupun zoom-out 80% pada resolusi 1920x1080/2400px) tetap 1-baris penuh *edge-to-edge* tanpa efek samping.
+- **Hasil Verifikasi**:
+  - `document.documentElement.scrollWidth` tetap stabil di 390px pada viewport 390px dan 360px pada viewport 360px (`overflow: False`).
+  - Navbar di ponsel tampil rapi, modern, dan seimbang seperti aplikasi mobile native.
 
 ### v0.26.31 - 2026-09-13 11:35 WIB
 

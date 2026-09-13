@@ -310,6 +310,10 @@
       flex-shrink: 0;
     }
 
+    .status-text-short {
+      display: none;
+    }
+
     .status-pill:hover {
       border-color: rgba(16, 185, 129, 0.45);
       box-shadow: 0 0 18px rgba(16, 185, 129, 0.25);
@@ -2038,32 +2042,91 @@
         margin-bottom: 1rem;
       }
       .nav-inner {
-        padding: 0.5rem 0.75rem;
-        flex-wrap: wrap;
-        gap: 0.5rem;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        row-gap: 0.6rem;
+        column-gap: 0.5rem;
+        align-items: center;
+        padding: 0.65rem 0.85rem;
       }
       .nav-brand-group {
-        width: 100%;
-        justify-content: space-between;
+        grid-column: 1 / 2;
+        grid-row: 1 / 2;
+        width: auto;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        justify-content: flex-start;
+        min-width: 0;
+      }
+      .nav-brand-group .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        min-width: 0;
+      }
+      .brand-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 0.95rem;
+        border-radius: 10px;
+        flex-shrink: 0;
+      }
+      .brand-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-width: 0;
+      }
+      .brand-title-wrap h1 {
+        font-size: 1.05rem;
+        white-space: nowrap;
       }
       .brand-info p {
         display: none;
       }
-      .header-actions {
-        width: 100%;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 0.35rem;
-        flex-wrap: nowrap;
+      .nav-back-btn {
+        padding: 0.35rem 0.65rem;
+        flex-shrink: 0;
       }
-      .nav-control-group {
-        flex: 1;
-        justify-content: flex-end;
+      .nav-divider {
+        display: block;
+        height: 18px;
+        flex-shrink: 0;
+      }
+      .header-actions {
+        display: contents;
       }
       .status-pill {
-        padding: 0.28rem 0.55rem;
-        font-size: 0.72rem;
+        grid-column: 2 / 3;
+        grid-row: 1 / 2;
+        justify-self: end;
+        padding: 0.32rem 0.65rem;
+        font-size: 0.74rem;
+        white-space: nowrap;
+        border-radius: 9999px;
+        flex-shrink: 0;
+      }
+      .status-text-full {
+        display: inline !important;
+      }
+      .status-text-short {
+        display: none !important;
+      }
+      .nav-control-group {
+        grid-column: 1 / -1;
+        grid-row: 2 / 3;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.4rem;
+        width: 100%;
+      }
+      .nav-btn-control {
+        width: 100%;
+        justify-content: center;
+        padding: 0.42rem 0.5rem !important;
+        font-size: 0.75rem !important;
+        white-space: nowrap;
       }
       .filter-dashboard-bar {
         padding: 0.75rem 0.85rem;
@@ -2095,8 +2158,14 @@
     }
 
     @media (max-width: 480px) {
-      .nav-brand-group {
-        gap: 0.45rem;
+      .brand-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 0.88rem;
+        border-radius: 8px;
+      }
+      .brand-title-wrap h1 {
+        font-size: 0.96rem;
       }
       .brand-badge-version {
         display: none;
@@ -2108,18 +2177,17 @@
       .nav-back-btn span:not(.nav-back-arrow) {
         display: none;
       }
+      .status-pill {
+        padding: 0.28rem 0.52rem;
+        font-size: 0.7rem;
+      }
       .nav-control-group {
-        gap: 0.2rem;
-        padding: 2px;
+        gap: 0.3rem;
       }
       .nav-btn-control {
-        padding: 0.32rem 0.52rem !important;
-        font-size: 0.73rem !important;
-        gap: 0.25rem;
-      }
-      .status-pill {
-        padding: 0.25rem 0.48rem;
-        font-size: 0.7rem;
+        padding: 0.38rem 0.35rem !important;
+        font-size: 0.72rem !important;
+        gap: 0.2rem;
       }
       .modal-overlay {
         padding: 0.75rem;
@@ -2168,13 +2236,18 @@
       }
     }
 
-    @media (max-width: 440px) {
-      .status-pill span:not(.pulse-dot) {
-        display: none;
+    @media (max-width: 380px) {
+      .status-text-full {
+        display: none !important;
       }
-      .status-pill {
-        padding: 0.42rem;
-        border-radius: 50%;
+      .status-text-short {
+        display: inline !important;
+      }
+      .brand-title-wrap h1 {
+        font-size: 0.88rem;
+      }
+      .nav-inner {
+        padding: 0.55rem 0.65rem;
       }
     }
   </style>
@@ -2314,7 +2387,8 @@
       <div class="header-actions">
         <div class="status-pill" title="Status Engine Bot &amp; Konektivitas">
           <span class="pulse-dot"></span>
-          <span>Sistem Aktif</span>
+          <span class="status-text-full">Sistem Aktif</span>
+          <span class="status-text-short">Aktif</span>
         </div>
         <div class="nav-control-group">
           <button class="btn nav-btn-control active" id="btn-auto" title="Nyalakan / Matikan Auto Refresh 15 detik">
