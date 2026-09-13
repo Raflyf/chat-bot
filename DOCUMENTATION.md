@@ -208,6 +208,19 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.27.14 - 2026-09-14 (Perbaikan TPD: Estimasi Legacy, TPD Riil di Dashboard, Binding Status)
+
+**Investigasi laporan "Groq sudah over 200K tapi masih merespons" menemukan 3 akar masalah yang saling terkait, seluruhnya diperbaiki**
+
+- **Akar 1 — dashboard menampilkan estimasi, bukan TPD riil**: `api/stats.ts` menghitung `tokensUsed = used × avgTokensPerChat` (estimasi dari call count), sehingga 268 panggilan tampil sebagai ~670.000 token — melewati 200K padahal TPD riil belum tentu tercapai. Kini `stats.ts` membaca kolom `tokens_used` dari DB dan memprioritaskannya (`isRealTokenData`), estimasi hanya dipakai sebagai pelengkap saat data riil belum ada, dan UI menandai "estimasi" secara eksplisit.
+- **Akar 2 — baris legacy punya `tokens_used = 0`**: panggilan yang terjadi sebelum deploy pelacakan TPD tidak punya data token, sehingga guard membaca 0 dan tidak pernah memblokir. Kini hidrasi (`src/quota.ts`) memberi estimasi konservatif `LEGACY_TOKENS_PER_CALL_ESTIMATE = 2500` token/call untuk baris legacy yang punya `used > 0` tapi `tokens_used = 0`, sehingga guard TPD langsung efektif pada deployment pertama.
+- **Akar 3 — status key hanya melihat RPD**: status `capped/warning/healthy` dihitung dari persentase RPD saja. Kini memakai `bindingPercent = max(percentRPD, percentTPD)` — mana yang lebih dulu tercapai itulah yang menentukan status, konsisten dengan perilaku upstream Groq.
+- **Verifikasi faktual (live DB + runtime):**
+  - Diagnostik DB: kolom `tokens_used` ada, RPC `atomic_increment_provider_tokens` ada dan menulis benar (uji tulis `12345` → row terkonfirmasi).
+  - Uji guard: key di-seed `tokens_used=250000` (over 200K) → `isKeyAllowed() = false` (diblokir). Data uji dibersihkan setelah verifikasi.
+  - Uji failover: dengan key Groq diblokir, permintaan tetap terlayani via `opencode/muse-spark-1.3` — pool tidak mati, hanya berpindah tier.
+- **Verifikasi kode:** `npm run typecheck` & `npm run build` exit 0; `node --check` dashboard.js lolos.
+
 ### v0.27.13 - 2026-09-14 (Koreksi Limit Groq Resmi + Pelacakan TPD Runtime)
 
 **Verifikasi langsung ke dokumentasi resmi Groq (console.groq.com/docs/rate-limits) membatalkan klaim lama "Groq tidak punya batas token harian": Free Tier qwen3.8-27b & qwen3.6-27b = 30 RPM / 1.000 RPD / 8K TPM / 200K TPD. TPD 200K tercapai jauh lebih dulu daripada RPD (±66-80 panggilan pada ±3K token/call), sehingga runtime wajib melacaknya agar tidak menabrak 429.**

@@ -137,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
     });
 
-    let quotasData: Array<{ kind: string; key_suffix: string; used: number }> = [];
+    let quotasData: Array<{ kind: string; key_suffix: string; used: number; tokens_used?: number }> = [];
     let totalMessagesAllTime: number = 0;
     let waPeriod: number = 0;
     let telePeriod: number = 0;
@@ -172,7 +172,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let orLiveResults: OrLiveItem[] = [];
 
     if (c) {
-      let quotaQuery = c.from('provider_quota').select('kind, key_suffix, used');
+      // Ambil tokens_used juga agar TPD riil bisa ditampilkan (bukan estimasi calls × rata-rata)
+      let quotaQuery = c.from('provider_quota').select('kind, key_suffix, used, tokens_used');
       if (startDayStr) {
         if (range === 'today') {
           quotaQuery = quotaQuery.eq('day', startDayStr);
@@ -304,9 +305,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     const quotaMap = new Map<string, number>();
+    // TPD riil per key dari kolom tokens_used (bukan estimasi calls × rata-rata)
+    const tokenQuotaMap = new Map<string, number>();
     for (const q of quotasData ?? []) {
       const key = `${q.kind}:${q.key_suffix}`;
       quotaMap.set(key, (quotaMap.get(key) || 0) + (q.used || 0));
+      tokenQuotaMap.set(key, (tokenQuotaMap.get(key) || 0) + (Number(q.tokens_used) || 0));
     }
 
     const totalMessagesPeriod =
@@ -619,8 +623,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const xkLive = p.kind === 'xkiro' ? xkiroSyncMap.get(k) : null;
         const orLive = p.kind === 'openrouter' ? orSyncMap.get(k) : null;
 
-        // Hitung token per key secara valid berbasis real upstream usage
-        let tokensUsed = used > 0 ? Math.round(used * providerAvgTokens) : 0;
+        // Token riil per key dari DB (kolom tokens_used) — sumber valid untuk TPD.
+        // Estimasi (used × rata-rata) hanya dipakai sebagai pelengkap saat data riil kosong.
+        const realTokensForKey =
+          (tokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (tokenQuotaMap.get(`${p.kind}:${suffix}`) || 0);
+        const isRealTokenData = realTokensForKey > 0;
+
+        let tokensUsed = isRealTokenData
+          ? realTokensForKey
+          : used > 0
+          ? Math.round(used * providerAvgTokens)
+          : 0;
         let tokenCap = effectiveTokenCapPerKey;
         let remainingTokens: number | null = effectiveTokenCapPerKey > 0 ? Math.max(0, effectiveTokenCapPerKey - tokensUsed) : null;
         let tokenPercent = effectiveTokenCapPerKey > 0 ? Math.min(100, Math.round((tokensUsed / effectiveTokenCapPerKey) * 100)) : 0;
@@ -634,7 +647,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         }
 
         const percent = effectiveCapPerKey > 0 ? Math.min(100, Math.round((used / effectiveCapPerKey) * 100)) : 0;
-        const status = effectiveCapPerKey > 0 && used >= effectiveCapPerKey ? 'capped' : percent >= 80 ? 'warning' : 'healthy';
+        // Status key mempertimbangkan RPD DAN TPD — mana yang lebih dulu tercapai.
+        const bindingPercent = Math.max(percent, tokenPercent);
+        const status = bindingPercent >= 100 ? 'capped' : bindingPercent >= 80 ? 'warning' : 'healthy';
 
         return {
           suffix,
@@ -645,6 +660,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           tokensUsed,
           tokenCap,
           tokenPercent,
+          isRealTokenData,
           tokenLimitType: p.tokenLimitType,
           tokenLimitLabel: p.tokenLimitLabel,
           resetCycle: p.resetCycle,
@@ -666,8 +682,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       const poolPercent = totalPoolCap > 0 ? Math.min(100, Math.round((poolUsed / totalPoolCap) * 100)) : 0;
       
       const isAnyLiveSynced = keysDetail.some((kd) => kd.isLiveSynced);
+      const anyRealTokenData = keysDetail.some((kd) => kd.isRealTokenData);
       let poolTokensUsed = 0;
       if (p.kind === 'xkiro' && isAnyLiveSynced) {
+        for (const kd of keysDetail) {
+          poolTokensUsed += kd.tokensUsed;
+        }
+      } else if (anyRealTokenData) {
+        // Prioritas data token riil dari DB (valid untuk TPD & pelaporan)
         for (const kd of keysDetail) {
           poolTokensUsed += kd.tokensUsed;
         }
