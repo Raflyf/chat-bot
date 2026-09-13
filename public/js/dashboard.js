@@ -569,7 +569,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // Pool reset label
       const poolReset = document.getElementById("pool-reset-label");
       if (poolReset) {
-        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (xKiro, Groq, Cloudflare, OpenRouter) \u2022 00:00 PT (Gemini)";
+        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (Dahl, Groq, OpenCode, Cloudflare, OpenRouter, xKiro) \u2022 00:00 PT (Gemini)";
         else poolReset.textContent = `Akumulasi Periode ${rangeLabel}`;
       }
 
@@ -635,32 +635,24 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         return 0;
       }
 
-      // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover runtime sistem v0.26)
+      // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover runtime sistem v0.27)
       const catalog = [
-        // --- Tier 1: xKiro Gateway (DeepSeek Engine) ---
+        // --- Tier 1: Dahl Global API (1 Miliar Token Pool) ---
         {
-          name: "DeepSeek V4 Flash",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Fast Reasoning", "Text"],
-          desc: "Prioritas #1 Tier 1 - Model penalaran super cepat latensi rendah",
-          matchKeys: ["deepseek/deepseek-v4-flash", "deepseek-v4-flash", "xkiro/deepseek/deepseek-v4-flash"],
+          name: "DeepSeek V4 Flash 0731",
+          provider: "DAHL",
+          tagClass: "tag-dahl",
+          capabilities: ["Fast Reasoning", "Text", "Code"],
+          desc: "Prioritas #1 Tier 1 - SOTA Reasoning kilat latensi 0,22s & 1 Miliar Token Pool",
+          matchKeys: ["dahl/deepseek-ai/deepseek-v4-flash-0731", "deepseek-ai/deepseek-v4-flash-0731", "deepseek-v4-flash-0731", "deepseek-v4-flash"],
         },
         {
-          name: "DeepSeek V4 Pro",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Code", "Deep Reasoning"],
-          desc: "Prioritas #2 Tier 1 - Frontier reasoning & logika koding mendalam",
-          matchKeys: ["deepseek/deepseek-v4-pro", "deepseek-v4-pro", "xkiro/deepseek/deepseek-v4-pro"],
-        },
-        {
-          name: "DeepSeek V3.2",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Text", "Reasoning"],
-          desc: "Prioritas #3 Tier 1 - Cadangan penalaran stabil xKiro Gateway",
-          matchKeys: ["deepseek/deepseek-v3.2", "deepseek-v3.2", "xkiro/deepseek/deepseek-v3.2"],
+          name: "MiniMax M2.7",
+          provider: "DAHL",
+          tagClass: "tag-dahl",
+          capabilities: ["Deep Reasoning", "Auto-Stripped Think"],
+          desc: "Prioritas #2 Tier 1 - Model penalaran mendalam MiniMax dengan think-tag stripper",
+          matchKeys: ["dahl/minimaxai/minimax-m2.7", "minimaxai/minimax-m2.7", "minimax-m2.7", "minimax"],
         },
 
         // --- Tier 2: Groq Cloud API (LPU Inference Engine) ---
@@ -689,22 +681,22 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["whisper-large-v3-turbo", "whisper-large-v3", "whisper", "groq/whisper"],
         },
 
-        // --- Tier 3: Cloudflare Workers AI ---
+        // --- Tier 3: OpenCode Zen Direct API ---
         {
-          name: "Llama 3.1 70B Instruct",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["High-Reasoning", "Text", "Code"],
-          desc: "Prioritas #1 Tier 3 - Model reasoning andalan Cloudflare Workers AI",
-          matchKeys: ["cloudflare/@cf/meta/llama-3.1-70b-instruct", "@cf/meta/llama-3.1-70b-instruct", "llama-3.1-70b"],
+          name: "Muse Spark 1.3",
+          provider: "OPENCODE",
+          tagClass: "tag-opencode",
+          capabilities: ["Empathetic Chat", "Fast Latency", "Text"],
+          desc: "Prioritas #1 Tier 3 - Respon luwes empatik latensi 1,8s (minimal reasoning)",
+          matchKeys: ["opencode/muse-spark-1.3-contributor-free", "muse-spark-1.3-contributor-free", "muse-spark-1.3", "muse-1.3"],
         },
         {
-          name: "Qwen 2.5 Coder 32B",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Code", "Math", "Text"],
-          desc: "Prioritas #2 Tier 3 - Cadangan presisi tinggi koding Cloudflare AI",
-          matchKeys: ["cloudflare/@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/qwen/qwen2.5-coder-32b-instruct", "qwen2.5-coder-32b"],
+          name: "Muse Spark 1.2",
+          provider: "OPENCODE",
+          tagClass: "tag-opencode",
+          capabilities: ["Text", "Fast Latency"],
+          desc: "Prioritas #2 Tier 3 - Cadangan OpenCode Zen jika Muse 1.3 sibuk/timeout",
+          matchKeys: ["opencode/muse-spark-1.2-contributor-free", "muse-spark-1.2-contributor-free", "muse-spark-1.2", "muse-1.2"],
         },
 
         // --- Tier 4: Google Gemini API ---
@@ -712,34 +704,60 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           name: "Gemini 3.8 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
-          capabilities: ["Multimodal Vision"],
-          desc: "Prioritas #1 Tier 4 - Frontier multimodal native foto, PDF & dokumen",
+          capabilities: ["Multimodal Vision", "PDF & Video", "1M Context"],
+          desc: "Prioritas #1 Tier 4 - Frontier multimodal native foto, dokumen PDF & video",
           matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
         },
         {
           name: "Gemini 2.5 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
-          capabilities: ["Multimodal Vision"],
+          capabilities: ["Multimodal Vision", "1M Context"],
           desc: "Prioritas #2 Tier 4 - Cadangan multimodal vision stabil 1M konteks",
           matchKeys: ["gemini/gemini-2.5-flash", "gemini-2.5-flash"],
         },
 
-        // --- Tier 5: OpenRouter AI ---
+        // --- Tier 5: Cloudflare Workers AI ---
+        {
+          name: "Llama 3.1 70B Instruct",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["High-Reasoning", "Text", "Code"],
+          desc: "Prioritas #1 Tier 5 - Model reasoning andalan Cloudflare Workers AI",
+          matchKeys: ["cloudflare/@cf/meta/llama-3.1-70b-instruct", "@cf/meta/llama-3.1-70b-instruct", "llama-3.1-70b"],
+        },
+        {
+          name: "Qwen 2.5 Coder 32B",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["Code", "Math", "Text"],
+          desc: "Prioritas #2 Tier 5 - Cadangan presisi koding Cloudflare Workers AI",
+          matchKeys: ["cloudflare/@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/qwen/qwen2.5-coder-32b-instruct", "qwen2.5-coder-32b"],
+        },
+        {
+          name: "Llama 3.2 11B Vision",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["Vision Prioritas 2", "OCR", "Multimodal"],
+          desc: "Cadangan Vision Prioritas #2 - Pemrosesan gambar native byte array Workers AI",
+          matchKeys: ["cloudflare/@cf/meta/llama-3.2-11b-vision-instruct", "@cf/meta/llama-3.2-11b-vision-instruct", "llama-3.2-11b-vision"],
+        },
+
+        // --- Tier 6: OpenRouter AI ---
         {
           name: "Nex N2.5 Pro Free",
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
-          capabilities: ["Text", "Vision"],
-          desc: "Prioritas #1 Tier 5 - Dynamic SOTA Free router & Multimodal",
+          capabilities: ["Vision Prioritas 3", "Text"],
+          desc: "Prioritas #1 Tier 6 - SOTA Free router & Vision Prioritas #3",
           matchKeys: ["openrouter/nex-agi/nex-n2.5-pro:free", "nex-n2.5-pro", "nex-agi/nex-n2.5-pro:free"],
         },
         {
           name: "Nex N2.5 Mini Free",
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
-          capabilities: ["Text", "Vision"],
-          desc: "Prioritas #2 Tier 5 - Cadangan efisien router OpenRouter",
+          capabilities: ["Fast Text", "Vision"],
+          desc: "Prioritas #2 Tier 6 - Cadangan efisien router OpenRouter Cloud",
           matchKeys: ["openrouter/nex-agi/nex-n2.5-mini:free", "nex-n2.5-mini", "nex-agi/nex-n2.5-mini:free"],
         },
         {
@@ -747,8 +765,26 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
           capabilities: ["Fast Text"],
-          desc: "Prioritas #3 Tier 5 - Model berkecepatan tinggi OpenRouter Cloud",
+          desc: "Prioritas #3 Tier 6 - Model kecepatan tinggi OpenRouter Cloud",
           matchKeys: ["openrouter/nvidia/nemotron-3.5-lightning:free", "nemotron-3.5-lightning", "nvidia/nemotron-3.5-lightning:free"],
+        },
+
+        // --- Tier 7: xKiro Gateway ---
+        {
+          name: "Mistral Small 2603",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          capabilities: ["Text", "Reasoning", "Safety"],
+          desc: "Prioritas #1 Tier 7 - Model stabil xKiro dengan penjinak temperature 0.35",
+          matchKeys: ["xkiro/mistralai/mistral-small-2603", "mistralai/mistral-small-2603", "mistral-small-2603", "mistral-small"],
+        },
+        {
+          name: "Codestral 2508",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          capabilities: ["Code", "Logic"],
+          desc: "Prioritas #2 Tier 7 - Cadangan koding presisi frontier xKiro Gateway",
+          matchKeys: ["xkiro/mistralai/codestral-2508", "mistralai/codestral-2508", "codestral-2508", "codestral"],
         },
       ];
 
@@ -991,6 +1027,8 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       let grandTotalCloudflareUsed = 0;
       let grandTotalGroqRpd = 0;
       let grandTotalGroqUsed = 0;
+      let grandTotalOpenCodeRpd = 0;
+      let grandTotalOpenCodeUsed = 0;
       let totalAllKeys = 0;
       let totalOrUsageUsd = 0;
 
@@ -1003,7 +1041,47 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           totalAllKeys++;
           const cleanSuffix = k.suffix.startsWith("...") ? k.suffix : "..." + k.suffix;
 
-          if (p.kind === "xkiro") {
+          if (p.kind === "dahl") {
+            const keyCap = k.tokenCap || 100000000;
+            const keyUsed = k.tokensUsed || 0;
+            const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);
+            const pct = k.tokenPercent || 0;
+
+            grandTotalTokenCap += keyCap;
+            grandTotalTokenUsed += keyUsed;
+            grandTotalTokenRemaining += keyRemaining;
+
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #22d3ee; font-weight: 700; margin-top: 3px;">dahl_...${escapeHtml(cleanSuffix)}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Dahl Enterprise Cluster</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">api.dahlglobal.com &bull; 1B Token Pool</div>
+                </td>
+                <td>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token</span>
+                    <span style="color: var(--text-dim);">${pct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: 100M Token/key &bull; 5.000 RPD</div>
+                </td>
+                <td>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Saldo Token Key</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(6, 182, 212, 0.15); color: #22d3ee; border-color: rgba(6, 182, 212, 0.3);">● Bot Monitored</span>
+                  <div><span class="key-badge-status ${pct >= 100 ? 'status-capped' : pct >= 80 ? 'status-warning' : 'status-healthy'}">${pct >= 100 ? 'LIMIT CAP' : pct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
+                </td>
+              </tr>
+            `);
+          } else if (p.kind === "xkiro") {
             const keyCap = k.tokenCap || 5000000;
             const keyUsed = k.tokensUsed || 0;
             const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);
@@ -1117,8 +1195,53 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 </td>
               </tr>
             `);
+          } else if (p.kind === "opencode") {
+            const keyCapRpd = p.cap || 1000;
+            const callsUsed = k.used || 0;
+            const callsRemaining = Math.max(0, keyCapRpd - callsUsed);
+            const pct = keyCapRpd > 0 ? Math.min(100, Math.round((callsUsed / keyCapRpd) * 100)) : 0;
+            const tokensUsed = k.tokensUsed || 0;
+
+            grandTotalOpenCodeRpd += keyCapRpd;
+            grandTotalOpenCodeUsed += callsUsed;
+            grandTotalTokenUsed += tokensUsed;
+
+            const callCountText = callsUsed > 0 ? ` (${callsUsed.toLocaleString("id-ID")} calls)` : "";
+            const statusClass = pct >= 100 ? "status-capped" : pct >= 80 ? "status-warning" : "status-healthy";
+            const statusText = pct >= 100 ? "LIMIT RPD" : pct >= 80 ? "WASPADAI" : "OPTIMAL";
+
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #f472b6; font-weight: 700; margin-top: 3px;">sk-...${escapeHtml(cleanSuffix)}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Zen Contributor Node</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">opencode.ai/zen &bull; Latensi 1,8s</div>
+                </td>
+                <td>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #fbbf24;">${tokensUsed.toLocaleString("id-ID")} Token${callCountText}</span>
+                    <span style="color: var(--text-dim);">${pct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCapRpd.toLocaleString("id-ID")} RPD &bull; Contributor Free (Bebas Token)</div>
+                </td>
+                <td>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${callsRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Kuota Harian (RPD)</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(236, 72, 153, 0.15); color: #f472b6; border-color: rgba(236, 72, 153, 0.3);">● Bot Monitored</span>
+                  <div><span class="key-badge-status ${statusClass}">${statusText}</span></div>
+                </td>
+              </tr>
+            `);
           } else if (p.kind === "cloudflare") {
-            const keyCap = p.cap || 120;
+            const keyCap = p.cap || 300;
             const keyUsed = k.used || 0;
             const keyRemaining = Math.max(0, keyCap - keyUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((keyUsed / keyCap) * 100)) : 0;
@@ -1204,10 +1327,11 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       if (capSubEl) {
         const extraParts = [];
         if (grandTotalGroqRpd > 0) extraParts.push(`${grandTotalGroqRpd.toLocaleString("id-ID")} RPD Groq`);
+        if (grandTotalOpenCodeRpd > 0) extraParts.push(`${grandTotalOpenCodeRpd.toLocaleString("id-ID")} RPD OpenCode`);
         if (grandTotalCloudflareRpd > 0) extraParts.push(`${grandTotalCloudflareRpd.toLocaleString("id-ID")} RPD Cloudflare`);
         capSubEl.textContent = extraParts.length > 0 
-          ? `xKiro Gateway (+${extraParts.join(", ")})` 
-          : "xKiro Gateway (Token Harian)";
+          ? `Dahl & xKiro Gateway (+${extraParts.join(", ")})` 
+          : "Dahl & xKiro Gateway (Token Pool)";
       }
       if (usedEl) usedEl.textContent = grandTotalTokenUsed.toLocaleString("id-ID") + " Token";
       if (remEl) remEl.textContent = grandTotalTokenRemaining.toLocaleString("id-ID") + " Token";
@@ -1258,9 +1382,12 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
         let mechanismText = "Kuota Token Harian";
         let limitOfficial = `${formatTokens(p.tokenCapPerKey)}/hari/key`;
-        if (p.kind === "cloudflare") {
+        if (p.kind === "dahl") {
+          mechanismText = "Pool Saldo Token (1B)";
+          limitOfficial = "100M Token/key (~5K RPD)";
+        } else if (p.kind === "cloudflare") {
           mechanismText = "Batas Neuron Harian";
-          limitOfficial = `10.000 Neuron (~${(p.capPerKey || 120).toLocaleString()} RPD)`;
+          limitOfficial = `10.000 Neuron (~${(p.capPerKey || 300).toLocaleString()} RPD)`;
         } else if (p.tokenLimitType === "requests_tpm") {
           mechanismText = "Batas Permintaan & TPM";
           limitOfficial = p.totalCap > 0 ? `${p.capPerKey.toLocaleString()} RPD/key` : "Tanpa Limit Mutlak";

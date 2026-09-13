@@ -327,11 +327,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     const providerTokenStats: Record<string, ProviderTokenAccumulator> = {
-      xkiro: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      dahl: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       groq: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
-      cloudflare: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      opencode: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       gemini: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      cloudflare: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       openrouter: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      xkiro: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
     };
 
     let grandTotalRealTokens = 0;
@@ -383,17 +385,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // Daftar model aktif sistem untuk memfilter histori DB lama yang sudah didepresiasi
     const activeSystemModels = [
-      config.models.xkiroPrimary,
-      ...config.models.xkiroBackup,
+      // Tier 1: Dahl Global
+      config.models.dahlPrimary,
+      config.models.dahlBackup,
+      // Tier 2: Groq
       config.models.groqPrimary,
       config.models.groqBackup,
-      config.models.cfPrimary,
-      config.models.cfBackup,
+      // Tier 3: OpenCode Zen Direct
+      config.models.openCodePrimary,
+      config.models.openCodeBackup,
+      // Tier 4: Gemini
       config.models.geminiPrimary,
       config.models.geminiBackup,
+      // Tier 5: Cloudflare Workers AI
+      config.models.cfPrimary,
+      config.models.cfBackup,
+      config.models.cfVision,
+      // Tier 6: OpenRouter
       config.models.orPrimary,
       config.models.orMini,
       config.models.orText,
+      // Tier 7: xKiro
+      config.models.xkiroPrimary,
+      ...config.models.xkiroBackup,
       'whisper-large-v3-turbo',
       'whisper-large-v3',
     ].map((m) => m.toLowerCase());
@@ -440,9 +454,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }))
       .sort((a, b) => b.count - a.count);
 
-    // 4. Bangun status Pool per Provider & tiap API Key
+    // 4. Bangun status Pool per Provider & tiap API Key (7 Tier Resmi Runtime Sistem)
     const providerDefs: Array<{
-      kind: 'xkiro' | 'groq' | 'cloudflare' | 'gemini' | 'openrouter';
+      kind: 'dahl' | 'groq' | 'opencode' | 'gemini' | 'cloudflare' | 'openrouter' | 'xkiro';
       displayName: string;
       keys: string[];
       cap: number;
@@ -456,18 +470,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       allModels: string[];
     }> = [
       {
-        kind: 'xkiro',
-        displayName: 'xKiro Gateway',
-        keys: config.pools.xkiro,
-        cap: config.dailyCap.xkiro,
-        tokenCapPerKey: 5000000,
+        kind: 'dahl',
+        displayName: 'Dahl Global API',
+        keys: config.pools.dahl,
+        cap: config.dailyCap.dahl,
+        tokenCapPerKey: 100000000,
         tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '5.000.000 Token/hari (~1.500 RPD)',
-        resetCycle: 'Harian (00:00 UTC)',
-        contextWindow: '1.000.000 Token (1M)',
-        primaryModel: config.models.xkiroPrimary,
-        backupModel: config.models.xkiroBackup[0] || 'deepseek/deepseek-v4-pro',
-        allModels: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
+        tokenLimitLabel: '1 Miliar Token Pool (100M/key • 5.000 RPD)',
+        resetCycle: 'Token Balance (1B Pool)',
+        contextWindow: '131.072 Token (131K)',
+        primaryModel: config.models.dahlPrimary,
+        backupModel: config.models.dahlBackup,
+        allModels: [config.models.dahlPrimary, config.models.dahlBackup],
       },
       {
         kind: 'groq',
@@ -481,21 +495,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.groqPrimary,
         backupModel: config.models.groqBackup,
-        allModels: [config.models.groqPrimary, config.models.groqBackup],
+        allModels: [config.models.groqPrimary, config.models.groqBackup, 'whisper-large-v3-turbo'],
       },
       {
-        kind: 'cloudflare',
-        displayName: 'Cloudflare Workers AI',
-        keys: config.pools.cloudflare,
-        cap: config.dailyCap.cloudflare,
-        tokenCapPerKey: 10000,
-        tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '10.000 Neuron/hari (~120 RPD Free Tier)',
+        kind: 'opencode',
+        displayName: 'OpenCode Zen API',
+        keys: config.pools.opencode,
+        cap: config.dailyCap.opencode,
+        tokenCapPerKey: 0,
+        tokenLimitType: 'requests_tpm',
+        tokenLimitLabel: '~1.000 RPD/key • Contributor Free (Bebas Token Harian)',
         resetCycle: 'Harian (00:00 UTC)',
         contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.cfPrimary,
-        backupModel: config.models.cfBackup,
-        allModels: [config.models.cfPrimary, config.models.cfBackup],
+        primaryModel: config.models.openCodePrimary,
+        backupModel: config.models.openCodeBackup,
+        allModels: [config.models.openCodePrimary, config.models.openCodeBackup],
       },
       {
         kind: 'gemini',
@@ -504,12 +518,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         cap: config.dailyCap.gemini,
         tokenCapPerKey: 0,
         tokenLimitType: 'requests_tpm',
-        tokenLimitLabel: 'Bebas Kuota Harian (1M TPM & 1.500 RPD)',
-        resetCycle: 'Harian (00:00 Pacific Time)',
+        tokenLimitLabel: '1.500 RPD/key • 1M TPM Tier (Bebas Kuota Token Harian)',
+        resetCycle: 'Harian (00:00 PT / 14:00 WIB)',
         contextWindow: '1.000.000 Token (1M)',
         primaryModel: config.models.geminiPrimary,
         backupModel: config.models.geminiBackup,
         allModels: [config.models.geminiPrimary, config.models.geminiBackup],
+      },
+      {
+        kind: 'cloudflare',
+        displayName: 'Cloudflare Workers AI',
+        keys: config.pools.cloudflare,
+        cap: config.dailyCap.cloudflare,
+        tokenCapPerKey: 10000,
+        tokenLimitType: 'daily_cap',
+        tokenLimitLabel: '10.000 Neuron/hari (~100-300 RPD Free Tier)',
+        resetCycle: 'Harian (00:00 UTC)',
+        contextWindow: '131.072 Token (131K)',
+        primaryModel: config.models.cfPrimary,
+        backupModel: config.models.cfBackup,
+        allModels: [config.models.cfPrimary, config.models.cfBackup, config.models.cfVision],
       },
       {
         kind: 'openrouter',
@@ -518,12 +546,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         cap: config.dailyCap.openrouter,
         tokenCapPerKey: 0,
         tokenLimitType: 'requests_tpm',
-        tokenLimitLabel: 'Bebas Kuota Harian (Dibatasi 50-1.000 RPD)',
+        tokenLimitLabel: 'Bebas Kuota Harian (Model :free • Rate Limit 50-1.000 RPD)',
         resetCycle: 'Harian (00:00 UTC)',
         contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.orPrimary,
         backupModel: config.models.orMini,
         allModels: [config.models.orPrimary, config.models.orMini, config.models.orText],
+      },
+      {
+        kind: 'xkiro',
+        displayName: 'xKiro Gateway',
+        keys: config.pools.xkiro,
+        cap: config.dailyCap.xkiro,
+        tokenCapPerKey: 5000000,
+        tokenLimitType: 'daily_cap',
+        tokenLimitLabel: '5.000.000 Token/hari (~500 RPD Mistral Tier)',
+        resetCycle: 'Harian (00:00 UTC)',
+        contextWindow: '32.768 Token (32K)',
+        primaryModel: config.models.xkiroPrimary,
+        backupModel: config.models.xkiroBackup[0] || 'mistralai/codestral-2508',
+        allModels: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
       },
     ];
 

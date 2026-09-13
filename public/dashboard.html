@@ -1829,9 +1829,9 @@
       flex-shrink: 0;
     }
 
-    .tag-xkiro {
+    .tag-dahl {
       background: rgba(6, 182, 212, 0.15);
-      color: #38bdf8;
+      color: #22d3ee;
       border: 1px solid rgba(6, 182, 212, 0.35);
     }
 
@@ -1841,10 +1841,22 @@
       border: 1px solid rgba(249, 115, 22, 0.35);
     }
 
+    .tag-opencode {
+      background: rgba(236, 72, 153, 0.15);
+      color: #f472b6;
+      border: 1px solid rgba(236, 72, 153, 0.35);
+    }
+
     .tag-gemini {
       background: rgba(59, 130, 246, 0.15);
       color: #60a5fa;
       border: 1px solid rgba(59, 130, 246, 0.35);
+    }
+
+    .tag-cloudflare {
+      background: rgba(243, 128, 32, 0.15);
+      color: #f38020;
+      border: 1px solid rgba(243, 128, 32, 0.35);
     }
 
     .tag-openrouter {
@@ -1853,10 +1865,10 @@
       border: 1px solid rgba(16, 185, 129, 0.35);
     }
 
-    .tag-cloudflare {
-      background: rgba(243, 128, 32, 0.15);
-      color: #f38020;
-      border: 1px solid rgba(243, 128, 32, 0.35);
+    .tag-xkiro {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.35);
     }
 
     .tag-cap {
@@ -2472,11 +2484,13 @@
         <div class="pool-filter-controls">
           <div class="pill-filter-group" id="provider-filter-pills">
             <button class="pill-filter-btn active" data-provider="all">Semua Provider</button>
-            <button class="pill-filter-btn" data-provider="xkiro">xKiro</button>
+            <button class="pill-filter-btn" data-provider="dahl">Dahl</button>
             <button class="pill-filter-btn" data-provider="groq">Groq</button>
-            <button class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
+            <button class="pill-filter-btn" data-provider="opencode">OpenCode</button>
             <button class="pill-filter-btn" data-provider="gemini">Gemini</button>
+            <button class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
             <button class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
+            <button class="pill-filter-btn" data-provider="xkiro">xKiro</button>
           </div>
           <select id="key-status-filter" class="filter-select">
             <option value="all">Semua Status Key</option>
@@ -2716,12 +2730,13 @@
           </select>
           <select id="dataset-model-filter" class="filter-select">
             <option value="">Semua Model</option>
-            <option value="xkiro">xKiro</option>
-            <option value="opencode">OpenCode Zen</option>
+            <option value="dahl">Dahl Global</option>
             <option value="groq">Groq</option>
-            <option value="cloudflare">Cloudflare</option>
+            <option value="opencode">OpenCode Zen</option>
             <option value="gemini">Gemini</option>
+            <option value="cloudflare">Cloudflare</option>
             <option value="openrouter">OpenRouter</option>
+            <option value="xkiro">xKiro</option>
           </select>
           <button class="btn btn-today" id="btn-download-csv" title="Unduh CSV data percakapan sesuai filter dropdown aktif (Waktu, Platform, Model, dan Pencarian)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.35rem; vertical-align: -2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
