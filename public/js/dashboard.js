@@ -989,6 +989,8 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       let grandTotalTokenRemaining = 0;
       let grandTotalCloudflareRpd = 0;
       let grandTotalCloudflareUsed = 0;
+      let grandTotalGroqRpd = 0;
+      let grandTotalGroqUsed = 0;
       let totalAllKeys = 0;
       let totalOrUsageUsd = 0;
 
@@ -1071,16 +1073,19 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
               </tr>
             `);
           } else if (p.kind === "groq") {
-            const keyCap = k.tokenCap || 200000;
-            const keyUsed = k.tokensUsed || 0;
-            const keyRemaining = Math.max(0, keyCap - keyUsed);
-            const pct = k.tokenPercent || 0;
+            const keyCapRpd = p.cap || 1000;
+            const callsUsed = k.used || 0;
+            const callsRemaining = Math.max(0, keyCapRpd - callsUsed);
+            const pct = keyCapRpd > 0 ? Math.min(100, Math.round((callsUsed / keyCapRpd) * 100)) : 0;
+            const tokensUsed = k.tokensUsed || 0;
 
-            grandTotalTokenCap += keyCap;
-            grandTotalTokenUsed += keyUsed;
-            grandTotalTokenRemaining += keyRemaining;
+            grandTotalGroqRpd += keyCapRpd;
+            grandTotalGroqUsed += callsUsed;
+            grandTotalTokenUsed += tokensUsed;
 
-            const callCountText = k.used > 0 ? ` (${k.used.toLocaleString()} calls)` : "";
+            const callCountText = callsUsed > 0 ? ` (${callsUsed.toLocaleString("id-ID")} calls)` : "";
+            const statusClass = pct >= 100 ? "status-capped" : pct >= 80 ? "status-warning" : "status-healthy";
+            const statusText = pct >= 100 ? "LIMIT RPD" : pct >= 80 ? "WASPADAI" : "OPTIMAL";
 
             rows.push(`
               <tr>
@@ -1094,21 +1099,21 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 </td>
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token${callCountText}</span>
+                    <span style="font-weight: 700; color: #fbbf24;">${tokensUsed.toLocaleString("id-ID")} Token${callCountText}</span>
                     <span style="color: var(--text-dim);">${pct}%</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} TPD &bull; Upstream Real Usage</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCapRpd.toLocaleString("id-ID")} RPD &bull; 8K TPM Tier (Bebas Token Harian)</div>
                 </td>
                 <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
-                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Riil (TPD)</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${callsRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Kuota Harian (RPD)</div>
                 </td>
                 <td style="text-align: right;">
                   <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3);">● Upstream Real Usage</span>
-                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                  <div><span class="key-badge-status ${statusClass}">${statusText}</span></div>
                 </td>
               </tr>
             `);
@@ -1147,7 +1152,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 </td>
                 <td style="text-align: right;">
                   <span class="badge-bot-sync" style="margin-bottom: 4px;">● Bot Monitored</span>
-                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                  <div><span class="key-badge-status ${pct >= 100 ? 'status-capped' : pct >= 80 ? 'status-warning' : 'status-healthy'}">${pct >= 100 ? 'LIMIT RPD' : pct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
                 </td>
               </tr>
             `);
@@ -1172,7 +1177,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 </td>
                 <td style="text-align: right;">
                   <span class="badge-bot-sync" style="margin-bottom: 4px;">● Bot Monitored</span>
-                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                  <div><span class="key-badge-status ${k.status === 'capped' ? 'status-capped' : k.status === 'warning' ? 'status-warning' : 'status-healthy'}">${k.status === 'capped' ? 'LIMIT RPD' : k.status === 'warning' ? 'WASPADAI' : 'OPTIMAL'}</span></div>
                 </td>
               </tr>
             `);
@@ -1197,9 +1202,12 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
       if (capEl) capEl.textContent = grandTotalTokenCap.toLocaleString("id-ID") + " Token";
       if (capSubEl) {
-        capSubEl.textContent = grandTotalCloudflareRpd > 0 
-          ? `xKiro & Groq (+${grandTotalCloudflareRpd} RPD Cloudflare)` 
-          : "Seluruh Provider Terdaftar";
+        const extraParts = [];
+        if (grandTotalGroqRpd > 0) extraParts.push(`${grandTotalGroqRpd.toLocaleString("id-ID")} RPD Groq`);
+        if (grandTotalCloudflareRpd > 0) extraParts.push(`${grandTotalCloudflareRpd.toLocaleString("id-ID")} RPD Cloudflare`);
+        capSubEl.textContent = extraParts.length > 0 
+          ? `xKiro Gateway (+${extraParts.join(", ")})` 
+          : "xKiro Gateway (Token Harian)";
       }
       if (usedEl) usedEl.textContent = grandTotalTokenUsed.toLocaleString("id-ID") + " Token";
       if (remEl) remEl.textContent = grandTotalTokenRemaining.toLocaleString("id-ID") + " Token";
