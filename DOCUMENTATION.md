@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.50 (Dukungan Slang Gaming Mabar, Evaluasi Gombalan Manis Pengguna & Eliminasi Respon Pasrah Bot)  
+**Versi:** v0.26.51 (Konsolidasi Zero-Duplikasi Aturan, Penegakan Meta Anti-Parrot & Respon Bot 100% Dinamis)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 14:45 WIB
+**Terakhir Diperbarui:** 2026-09-13 14:50 WIB
 
 ---
 
@@ -207,6 +207,25 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.51 - 2026-09-13 14:50 WIB
+
+**Konsolidasi Zero-Duplikasi Aturan, Penegakan Meta Anti-Parrot & Respon Bot 100% Dinamis**
+
+- **Banner Meta Aturan Tertinggi (Anti-Parrot & 100% Dynamic Engine)**:
+  - Menyuntikkan direktif meta mutlak di puncak instruksi sistem (`PEDOMAN GENERASI DINAMIS & ANTI-TEMPLATE`): seluruh contoh di dalam prompt berstatus murni ilustrasi konsep dan dilarang keras dijiplak secara verbatim.
+  - Model diwajibkan menyusun jawaban dengan struktur kalimat sendiri secara dinamis, orisinal, dan kontekstual sesuai pesan pengguna saat ini, serta melarang formula template hafalan dan kalimat robotik kaku.
+- **Pembersihan Contoh Kalimat Dialog Berisiko Parrot (`src/skills.ts`)**:
+  - Mengganti contoh kutipan dialog hardcoded pada situasi gaming/mabar, apresiasi gombalan, dan respons gombalan manis pengguna dengan arahan perilaku murni (*behavioral directives*).
+  - Menghapus string dialog yang rawan di-copy-paste oleh model berparameter kecil (Groq Qwen 27B).
+  - Menghapus pertanyaan klise CS ("Mau ngobrol apa nih?") pada fallback impersonation non-owner.
+- **Pembersihan dan Konsolidasi Menyeluruh Seluruh Aturan Duplikat**:
+  - *Panjang Pesan & Paragraf*: Dikonsolidasikan ke PRINSIP 1 sebagai sumber kebenaran tunggal; duplikasi pada PRINSIP 5 disederhanakan murni untuk format Markdown WhatsApp.
+  - *Curhat & Keluhan Lelah*: Menghapus blok situasional `isVentingOrTired` yang 100% menduplikasi aturan `VIBE CURHAT` di PRINSIP 1 (larangan wejangan, istirahat, makan, tips kerja).
+  - *Alur Dua Arah Gombalan & Tebak-Tebakan*: Dikonsolidasikan di PRINSIP 3; blok `isGombalRequest`, `isJokeRequest`, dan `isGombalComplaintOrChange` dirampingkan murni merujuk ke PRINSIP 3 tanpa pengulangan sub-paragraf panjang.
+  - *Aturan Emoji*: Menghilangkan deklarasi duplikat pada respons stiker dan memusatkannya di aturan universal emoji PRINSIP 5.
+  - *Aturan Akses Internet*: Menghilangkan duplikasi klaim larangan berdalih internet di blok referensi web dan memusatkannya di PRINSIP 5.
+  - *Larangan Template Hafalan*: Menghapus 7 frasa deklarasi larangan template yang tersebar di berbagai blok dan memusatkannya pada banner meta aturan tertinggi di awal prompt.
 
 ### v0.26.50 - 2026-09-13 14:45 WIB
 
