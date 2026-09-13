@@ -23,6 +23,13 @@ interface TokenCounter {
 
 const tokenCounters = new Map<string, TokenCounter>();
 
+/**
+ * Estimasi konservatif token per panggilan untuk baris legacy yang calls-nya tercatat
+ * sebelum pelacakan TPD aktif (tokens_used masih 0). Dipakai hanya saat hidrasi agar
+ * guard TPD tetap efektif; nilai riil akan menimpa setelah panggilan berikutnya.
+ */
+const LEGACY_TOKENS_PER_CALL_ESTIMATE = 2500;
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -102,10 +109,17 @@ export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<
           const s = slot(kind, key);
           s.count = Math.max(s.count, data.used);
         }
-        // Hydrate juga token harian (TPD) agar instance baru tahu pemakaian token sebelumnya
-        if (data && typeof (data as { tokens_used?: number }).tokens_used === 'number') {
-          const ts = tokenSlot(kind, key);
-          ts.tokens = Math.max(ts.tokens, Number((data as { tokens_used?: number }).tokens_used) || 0);
+        // Hydrate juga token harian (TPD) agar instance baru tahu pemakaian token sebelumnya.
+        // Baris legacy (calls tercatat tapi tokens_used masih 0, dari sebelum pelacakan TPD aktif)
+        // diberi estimasi konservatif agar guard TPD tetap efektif dan tidak meloloskan key.
+        if (data) {
+          const rawTokens = Number((data as { tokens_used?: number }).tokens_used) || 0;
+          const rawCalls = Number((data as { used?: number }).used) || 0;
+          const hydratedTokens = rawTokens > 0 ? rawTokens : rawCalls > 0 ? rawCalls * LEGACY_TOKENS_PER_CALL_ESTIMATE : 0;
+          if (hydratedTokens > 0) {
+            const ts = tokenSlot(kind, key);
+            ts.tokens = Math.max(ts.tokens, hydratedTokens);
+          }
         }
         // HANYA tandai hydrated setelah database query sukses (C5 & E8)
         hydratedKeys.add(cacheKey);

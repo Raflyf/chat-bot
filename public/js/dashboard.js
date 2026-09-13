@@ -1190,7 +1190,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${bindingPct}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCapRpd.toLocaleString("id-ID")} RPD &bull; 8K TPM &bull; 200K TPD (Free Tier resmi)</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCapRpd.toLocaleString("id-ID")} RPD &bull; 8K TPM &bull; 200K TPD (Free Tier resmi)${k.isRealTokenData ? '' : ' &bull; <span style="color:#fbbf24;">estimasi</span>'}</div>
                 </td>
                 <td>
                   <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${Math.max(0, tpdCap - tokensUsed).toLocaleString("id-ID")}</div>
