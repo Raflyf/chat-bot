@@ -156,7 +156,11 @@ async function fetchJsonWithLifecycle(
     err.code = 'RATE_LIMITED';
     throw err;
   }
-  if (!res.ok) throw new Error(`PROVIDER_${res.status}`);
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    console.warn(`[providers] Upstream error dari ${url}: status=${res.status}, body=${errBody.slice(0, 300)}`);
+    throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 100)}`);
+  }
 
   // Tier 2: Model aktif dan sedang berpikir / menghasilkan konten
   let totalTimer: NodeJS.Timeout | undefined;
@@ -185,7 +189,12 @@ async function postJson(url: string, key: string, body: unknown): Promise<unknow
     url,
     {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        Accept: 'application/json',
+      },
       body: JSON.stringify(body),
     },
     config.connectTimeoutMs,
@@ -569,7 +578,7 @@ function steps(): Step[] {
       models: [config.models.dahlPrimary, config.models.dahlBackup],
       visionModels: [],
       cap: config.dailyCap.dahl,
-      run: (k, m, msgs) => openAiChat('https://inference.dahl.global/v1', k, m, msgs),
+      run: (k, m, msgs) => openAiChat(config.dahlProxyUrl, k, m, msgs),
     },
     {
       kind: 'groq',
