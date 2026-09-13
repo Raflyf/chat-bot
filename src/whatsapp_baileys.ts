@@ -176,6 +176,16 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // Klaim atomik anti-TOCTOU
   if (messageId && !(await claimIncomingMessage('whatsapp', messageId, chatKey, text || '[baileys-msg]'))) return;
 
+  // Anti-Stale Message Guard: abaikan pesan basi hasil history sync atau saat bot offline (> 180 detik)
+  const nowSec = Math.floor(Date.now() / 1000);
+  const rawTs = m.messageTimestamp;
+  const msgTs = typeof rawTs === 'number' ? rawTs : (rawTs as any)?.low ? Number((rawTs as any).low) : 0;
+  if (msgTs > 0 && (nowSec - msgTs) > 180) {
+    console.warn(`[whatsapp] Mengabaikan pesan basi/history sync (umur: ${nowSec - msgTs} detik, id: ${messageId}). Tandai selesai tanpa memanggil AI.`);
+    if (messageId) void markMessageProcessed('whatsapp', messageId);
+    return;
+  }
+
   const hasImage = !!m.message?.imageMessage;
   const hasDoc = !!m.message?.documentMessage;
   const hasAudio = !!m.message?.audioMessage;
