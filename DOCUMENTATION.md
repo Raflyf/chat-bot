@@ -84,7 +84,9 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
    - **Build Command**: `npm install && npm run build`
    - **Start Command**: `npm run whatsapp:prod`
 5. Masukkan **Environment Variables** (salin nilai yang sama dari berkas `.env` Anda):
+   - `XKIRO_KEYS`
    - `GROQ_KEYS`
+   - `CLOUDFLARE_KEYS`
    - `GEMINI_KEYS`
    - `OPENROUTER_KEYS`
    - `SUPABASE_URL`
@@ -143,9 +145,9 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
        ▼
 [Router Cepat Kilat & Rantai Failover (`src/providers.ts`)]
   ├── Mode Teks/Matematika/Koding:
-  │     Groq (qwen3.8-27b ~2s) ──(fail)──> Gemini (2.5-flash) ──(fail)──> OpenRouter Pool ──(fail)──> Ollama
+  │     xKiro (DeepSeek) ──(fail)──> Groq (Qwen 3.8) ──(fail)──> Cloudflare (Llama 3.1 70B) ──(fail)──> Gemini (3.8 Flash) ──(fail)──> OpenRouter Pool
   └── Mode Vision/Gambar:
-        Gemini (Native Vision ~1.7s) ──(fail)──> OpenRouter Vision
+        xKiro (Standby Qwen Free) ──(fail)──> Gemini (3.8 Flash / 2.5 Flash) ──(fail)──> OpenRouter Vision
        │
        ▼
 [Post-Processing & Formatter Telegram (`cleanMathAndNoise`)]
