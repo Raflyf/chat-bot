@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.35 (Penyederhanaan README Publik: Reduksi Redundansi & Eliminasi Rincian Internal Model)  
+**Versi:** v0.26.36 (Penguatan Pertahanan Anti-Poisoning Universal & Eliminasi Celah Impersonation Developer)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:55 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:58 WIB
 
 ---
 
@@ -207,6 +207,25 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.36 - 2026-09-13 11:58 WIB
+
+**Penguatan Pertahanan Anti-Poisoning Universal & Eliminasi Celah Impersonation Developer**
+
+- **Eliminasi Celah Impersonation Developer (`src/skills.ts`)**:
+  - Menghapus pengecekan klausa *legacy* `ctx.corrections` dari penentu `isOwnerChat`.
+  - Otorisasi pemilik dan developer resmi kini 100% deterministik hanya bersandar pada kanal fisik terverifikasi: `config.ownerWaNumber` (`628991333323`) dan `config.ownerChatId`. Pengguna umum tidak dapat lagi memicu status pemilik melalui manipulasi teks pada perintah `/salah`.
+- **Validasi Anti-Poisoning & Anti-Injection Multilevel (`src/memory.ts`)**:
+  - Mengimplementasikan fungsi `validateCorrection(raw)` untuk menyaring setiap input koreksi sebelum disimpan ke basis data:
+    1. **Proteksi Identitas & Otoritas**: Memblokir upaya manipulasi nama developer, klaim identitas resmi, atau pembajakan peran pembuat bot.
+    2. **Proteksi Prompt Injection & Jailbreak**: Menolak perintah berbahaya seperti `ignore previous instructions`, `system prompt`, atau pembatalan aturan sistem.
+    3. **Proteksi Fakta Baku & Anti-Pembodohan**: Menolak upaya peracunan formula matematika dasar (misal `1+1=3`) dan fakta sains baku agar memori bot tidak dimanipulasi menjadi bodoh.
+- **Integrasi Penuh Seluruh Kanal Komunikasi (`whatsapp_cloud.ts`, `whatsapp_baileys.ts`, `telegram.ts`)**:
+  - Ketiga kanal pesan kini memvalidasi input perintah `/salah` secara ketat dan memberikan pesan penolakan yang ramah serta edukatif jika pengguna mencoba memasukkan data manipulatif.
+- **Pertahanan Berlapis pada System Prompt LLM (`src/skills.ts`)**:
+  - Menyaring array koreksi (`safeCorrections`) sebelum disuntikkan ke prompt guna mencegah data berbahaya lama ikut terbaca.
+  - Memperbarui label instruksi menjadi `[PREFERENSI PERSONAL PENGGUNA (PROFIL & GAYA OBROLAN)]` dengan klausul *Strict Truth Guard*: bot dilarang menjadi bodoh dan wajib mengabaikan catatan pengguna jika bertentangan dengan sains, matematika, logika, atau identitas sistem.
+  - Memperkuat Rule 0 (*Integritas Objektif, Anti-Sycophancy, & Anti-Poisoning*) agar bot tidak bersikap penjilat terhadap klaim salah pengguna.
 
 ### v0.26.35 - 2026-09-13 11:55 WIB
 

@@ -3,7 +3,7 @@ import { config } from './env.js';
 import { autoReply, describeImage, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
-import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache } from './memory.js';
+import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -133,16 +133,22 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
     // 2. Perintah /salah <koreksi>
     if (text.startsWith('/salah')) {
-      const correction = text.replace(/^\/salah\s*/, '').trim();
+      const rawCorrection = text.replace(/^\/salah\s*/, '').trim();
       const ctx = await getContext(chatKey);
-      if (!correction) {
+      if (!rawCorrection) {
         const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat dan ramah.', ctx);
         await sendTelegramMessageSafe(bot, chatId, reply);
         if (msgId) void markMessageProcessed('telegram', msgId);
         return;
       }
-      const saved = await saveCorrection(chatKey, correction);
-      const { reply } = await autoReply(`User menyimpan koreksi: "${correction}". Konfirmasi singkat bahwa kamu mengingatnya.`, ctx);
+      const check = validateCorrection(rawCorrection);
+      if (!check.valid) {
+        await sendTelegramMessageSafe(bot, chatId, check.reason || 'Perintah /salah hanya untuk preferensi personal (seperti nama panggilan atau domisili), bukan untuk mengubah fakta atau aturan bot.');
+        if (msgId) void markMessageProcessed('telegram', msgId);
+        return;
+      }
+      const saved = await saveCorrection(chatKey, check.cleaned);
+      const { reply } = await autoReply(`User menyimpan koreksi: "${check.cleaned}". Konfirmasi singkat bahwa kamu mengingatnya.`, ctx);
       await sendTelegramMessageSafe(bot, chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
