@@ -31,6 +31,10 @@ export const config = {
   telegramToken: cleanStr('TELEGRAM_BOT_TOKEN'),
   ownerChatId: cleanStr('OWNER_CHAT_ID'),
   ownerWaNumber: cleanStr('OWNER_WA_NUMBER'),
+  // Jika DAHL_PROXY_URL diset, semua request Tier 1 dialihkan ke Cloudflare Worker
+  // (bypass Cloudflare WAF Dahl yang memblokir IP AWS/Vercel).
+  // Kosongkan / hapus var ini untuk kembali ke endpoint langsung.
+  dahlProxyUrl: cleanStr('DAHL_PROXY_URL') || 'https://inference.dahl.global/v1',
   pools: {
     dahl: csv('DAHL_KEYS'),
     groq: csv('GROQ_KEYS'),
