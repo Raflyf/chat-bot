@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.24 (Penyelarasan Matriks Model AI Dashboard dengan Runtime v0.26 & Penguatan Tumpukan MRU All-Time Anti-Reset)  
+**Versi:** v0.26.25 (Redesain Navigasi Utama Dashboard: Frosted Glass, Ambient Glow Line, Telemetry Radar Pill & Unified Actions Cluster)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 10:10 WIB
+**Terakhir Diperbarui:** 2026-09-13 10:45 WIB
 
 ---
 
@@ -207,6 +207,23 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.25 - 2026-09-13 10:45 WIB
+
+**Redesain Navigasi Utama Dashboard Observabilitas: Frosted Glass, Ambient Glow Line, Telemetry Radar Pill & Unified Actions Cluster**
+
+- **Rombak Desain Bilah Navigasi (`public/dashboard.html`)**:
+  - **Frosted Glass & Ambient Glow Line**: Bilah atas (`header`) ditingkatkan menggunakan material transparan `rgba(11, 17, 32, 0.82)` dengan filter blur 20px `saturate(180%)`, serta garis pendar luminous horizontal (cyan ke ungu) pada batas bawah (`header::after`).
+  - **Elevasi Responsif Saat Scroll**: Transisi mulus `box-shadow` dan opasitas latar belakang saat pengguna menggulir ke bawah (`header.header-scrolled`).
+- **Grup Identitas & Tombol Navigasi Kiri (`.nav-brand-group`)**:
+  - **Pill Navigasi Beranda (`#link-home-header`)**: Tombol kembali beranda diubah menjadi pill kaca minimalis dengan animasi gerak mikro panah (`←`) saat disentuh kursor.
+  - **Divider & Badge AI**: Garis pemisah transparan vertikal dan lencana AI kubus gradien 3D dengan rotasi halus dan efek pendar saat di-hover.
+  - **Tipografi & Status Sinkronisasi**: Judul `FreeAIBot Console` dengan gradien putih-perak, tag versi `v0.26`, serta indikator sinkronisasi waktu bersanding dengan micro-pulse dot.
+- **Kluster Aksi & Telemetri Kanan (`.header-actions`)**:
+  - **Telemetry Radar Pill (`.status-pill`)**: Indikator status sistem dengan efek radar ganda (*pulse-ring animation*) yang memancarkan pendar gelombang hijau secara halus.
+  - **Unified Action Controls Segment (`.nav-control-group`)**: Tiga tombol kontrol (`#btn-auto`, `#btn-manual-refresh`, `#btn-logout`) disatukan ke dalam satu kontainer segmen kaca terpadu dengan feedback hover dan active-state spring physics (`scale(0.96)`).
+  - **Animasi Ikon Segarkan**: Ikon refresh berputar 180 derajat secara elastis saat kursor mendekat dan berputar kontinu saat pemuatan data aktif.
+  - **Tombol Kunci Keluar**: Desain pengaman dengan rona merah transparan dan aurora glow saat disentuh kursor.
 
 ### v0.26.24 - 2026-09-13 10:10 WIB
 
