@@ -628,7 +628,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     const avoidProgramming = /\b(?:jangan\s+(?:jokes?\s+)?programming|bukan\s+programming|jokes?\s+umum|jangan\s+koding)\b/i.test(userPrompt);
     instructions.push(
       '',
-      `[SITUASI KHUSUS - TEBAK-TEBAKAN DUA ARAH]: HANYA berikan pertanyaan setup tebakannya saja dan akhiri dengan ajakan menebak (contoh: "Kenapa programmer selalu bawa payung? Coba tebak!"). DILARANG KERAS menuliskan jawabannya di pesan ini! ${
+      `[SITUASI KHUSUS - TEBAK-TEBAKAN DUA ARAH]: HANYA berikan pertanyaan setup tebakannya saja lalu ajak menebak secara orisinal dan segar. DILARANG KERAS menuliskan jawabannya di pesan ini! ${
         avoidProgramming ? 'Temanmu melarang jokes programming, gunakan tebakan umum.' : 'Berikan tebakan segar yang belum pernah keluar sebelumnya.'
       }`,
     );
@@ -653,7 +653,7 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
   if (isGombalReject) {
     instructions.push(
       '',
-      '[SITUASI KHUSUS - GOMBALAN DITOLAK / DIREJECT]: Temanmu bereaksi jijik atau menolak gombalanmu. Tetap pede dan santai layaknya buaya darat muka tebel — DILARANG minta maaf berlebihan atau meratap. Bisa balas dengan banter cuek percaya diri ("ye ditolak mah udah biasa wkwk"), atau langsung coba pendekatan gombal lain yang lebih smooth dan beda gaya. JANGAN merespons dengan kalimat nasihat atau ceramah. Ringkas, satu baris, tetap cool.',
+      '[SITUASI KHUSUS - GOMBALAN DITOLAK / DIREJECT]: Temanmu bereaksi jijik atau menolak gombalanmu. Tetap pede dan santai layaknya buaya darat muka tebel — DILARANG minta maaf berlebihan atau meratap. Balas dengan banter cuek percaya diri menggunakan bahasamu sendiri yang spontan, atau langsung coba pendekatan gombal lain dengan gaya berbeda. JANGAN merespons dengan kalimat nasihat atau ceramah. Ringkas, satu baris, tetap cool.',
     );
   }
 
@@ -706,9 +706,9 @@ function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string
     instructions.push(
       '',
       '[EVALUASI TEBAKAN TEMANMU]:',
-      '1. JIKA TEBAKANNYA BENAR: Akui sportif dan santai bahwa tebakannya tepat ("Tuh kan bener wkwk", "Nah itu dia jawabannya!"). SELESAI di situ tanpa pertanyaan klise.',
-      '2. JIKA TEBAKANNYA SALAH / BUKAN PUNCHLINE ASLINYA: Beritahu santai bahwa tebakannya meleset/salah (contoh: "Bukan wkwk, kejauhan itu mah!", "Salah haha, coba tebak lagi apa nyerah nih?") dan DILARANG KERAS langsung membocorkan jawaban aslinya!',
-      '3. JIKA DIA NYERAH ATAU TANYA ("nyerah", "apaan tuh?"): Berikan punchline lelucon yang segar dan nyambung + tawa wkwk/haha lalu SELESAI di situ tanpa pertanyaan lanjutan.',
+      '1. JIKA TEBAKANNYA BENAR: Akui sportif dan santai bahwa tebakannya tepat menggunakan bahasamu sendiri yang variatif. SELESAI di situ tanpa pertanyaan klise.',
+      '2. JIKA TEBAKANNYA SALAH / BUKAN PUNCHLINE ASLINYA: Beritahu bahwa tebakannya meleset secara santai dan dinamis dengan bahasamu sendiri — DILARANG KERAS langsung membocorkan jawaban aslinya!',
+      '3. JIKA DIA NYERAH ATAU TANYA JAWABAN: Berikan punchline lelucon yang segar dan nyambung dengan bahasamu sendiri lalu SELESAI di situ tanpa pertanyaan lanjutan.',
     );
   }
 
