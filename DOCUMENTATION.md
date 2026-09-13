@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.27 (Perhitungan Token Riil Upstream Provider Groq & Eliminasi Estimasi Statis 380 Token di Seluruh Dashboard Observabilitas)  
+**Versi:** v0.26.28 (Arsitektur Full-Width Edge-to-Edge Navbar Dashboard & Anti-Break Zoom Out 80% / Ultrawide)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 11:05 WIB
+**Terakhir Diperbarui:** 2026-09-13 11:20 WIB
 
 ---
 
@@ -207,6 +207,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.28 - 2026-09-13 11:20 WIB
+
+**Arsitektur Full-Width Edge-to-Edge Navbar Dashboard & Anti-Break Zoom Out 80% / Layar Ultrawide**
+
+- **Audit & Investigasi Masalah Navbar Dashboard Rusak Saat Zoom Out 80% (`public/dashboard.html`)**:
+  - **Akar Masalah 1 (Navbar Tidak Mentok Kiri-Kanan)**: Elemen `<header>` diletakkan di dalam `<div class="container" id="main-content">` yang dibatasi `max-width: 1400px; margin: 0 auto;`, dengan `body` yang memiliki `padding: 0 1.5rem 2rem 1.5rem;`. Meskipun diberi `margin: 0 -1.5rem;`, header tetap terkurung di dalam container 1400px di tengah layar. Pada resolusi layar besar atau saat browser di-zoom out ke 80% (lebar viewport mencapai ~2.400px), sisi kiri dan kanan bilah navbar menyisakan ruang kosong hitam lebar (~500px tiap sisi) dan tidak full mentok edge-to-edge seperti di Landing Page (`public/index.html`).
+  - **Akar Masalah 2 (Navbar Patah Menjadi 2 Baris & Tergencet Saat Zoom Out 80%)**: CSS header lama menerapkan formula padding rapuh: `padding: 0.55rem max(1.5rem, calc((100vw - 1400px) / 2 + 1.5rem));`. Saat di-zoom out ke 80%, `100vw` membesar drastis sehingga formula menghasilkan padding horizontal > 520px di kiri dan 520px di kanan (total > 1.040px). Karena header tetap terkurung dalam container 1400px, ruang efektif untuk konten tombol hanya tersisa ~360px. Akibatnya, seluruh tombol status dan kontrol terdorong jatuh ke baris kedua dan saling bertumpuk.
+- **Implementasi Arsitektur Full-Width Edge-to-Edge Mengikuti Pola Landing Page**:
+  - **Relokasi DOM `<header>`**: Memindahkan elemen `<header>` keluar dari `#main-content` sehingga menjadi anak langsung dari `<body>`.
+  - **Penghapusan Padding Horizontal pada `body`**: Menghilangkan `padding: 0 1.5rem` dari `body` dan memindahkannya ke `.container` (`padding: 0 1.5rem; width: 100%; max-width: 1400px; margin: 0 auto;`).
+  - **Kontainer Fleksibel `.nav-inner`**: Membungkus isi navigasi dengan `.nav-inner` (`max-width: 1400px; margin: 0 auto; padding: 0.6rem 1.5rem; width: 100%; display: flex; justify-content: space-between; align-items: center;`). Background frosted-glass dan garis glow horizontal bawah (`header::after`) kini membentang 100% penuh dari tepi kiri ke kanan layar tanpa batas.
+  - **Stabilisasi Single-Line Navigation**: Menambahkan `flex-shrink: 0;` dan `white-space: nowrap;` pada `.nav-brand-group`, `.header-actions`, `.status-pill`, dan `.nav-btn-control` untuk menjamin tata letak 1 baris kokoh di semua rasio zoom (80%, 90%, 100%, 110%, 125%) dan monitor ultrawide.
+  - **Penyelarasan Mode Mobile (`<= 640px` & `<= 440px`)**: Menyesuaikan `.header-actions` dengan `flex-wrap: nowrap;` dan menaikkan breakpoint penyembunyian teks status pill ke `<= 440px` agar ikon dot hijau tetap rapi dan ringkas di satu baris bersama tombol aksi pada layar smartphone modern.
+  - **Sinkronisasi Anti-FOUC Authentication Guards**: Memperbarui selector `html.not-authenticated header` agar header otomatis tersembunyi total sebelum otentikasi Master PIN berhasil diverifikasi.
 
 ### v0.26.27 - 2026-09-13 11:05 WIB
 
