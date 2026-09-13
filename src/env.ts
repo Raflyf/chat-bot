@@ -46,7 +46,6 @@ export const config = {
       return envList.length > 0
         ? envList
         : [
-            'deepseek/deepseek-chat-v3.1',
             'deepseek/deepseek-v4-pro',
             'deepseek/deepseek-v3.2',
           ];

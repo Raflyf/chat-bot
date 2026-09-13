@@ -214,8 +214,8 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 - **Penyelarasan Katalog Model AI Dashboard (`public/js/dashboard.js`)**:
   - Mengeliminasi 6 model hantu xKiro usang yang sudah tidak aktif di runtime (`Qwen 3.8 Max Free`, `Mistral Medium 3.5`, `Mistral Large 2512`, `Qwen 3.7 Max Free`, `Qwen 3.6 Plus Free`, `Mistral Small 2603`).
-  - Mendaftarkan 14 model aktif runtime yang sinkron 100% dengan hierarki failover sistem:
-    1. **Tier 1 (xKiro Gateway)**: `DeepSeek V4 Flash` (Primary), `DeepSeek Chat V3.1` (Backup 1), `DeepSeek V4 Pro` (Backup 2), `DeepSeek V3.2` (Backup 3).
+  - Mendaftarkan 13 model aktif runtime yang sinkron 100% dengan hierarki failover sistem:
+    1. **Tier 1 (xKiro Gateway)**: `DeepSeek V4 Flash` (Primary), `DeepSeek V4 Pro` (Backup 1), `DeepSeek V3.2` (Backup 2).
     2. **Tier 2 (Groq Cloud API)**: `Qwen 3.8 27B` (Primary), `Qwen 3.6 27B` (Backup), `Groq Whisper Turbo` (Voice Note STT).
     3. **Tier 3 (Cloudflare Workers AI)**: `Llama 3.1 70B Instruct` (Primary), `Qwen 2.5 Coder 32B` (Backup).
     4. **Tier 4 (Google Gemini API)**: `Gemini 3.8 Flash` (Multimodal Vision/PDF/Video Primary), `Gemini 2.5 Flash` (Backup).
