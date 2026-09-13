@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.26.48 (Zero-Template Dynamic Response Engine, Eliminasi Total Kalimat Template & Canned Quotes, dan Dynamic Anti-Repetition Fallback)  
+**Versi:** v0.26.49 (Eliminasi Total Daftar Objek Acak, Penegakan Logika Natural Gombalan & Pencegahan Analogi Absurd)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 13:52 WIB
+**Terakhir Diperbarui:** 2026-09-13 13:56 WIB
 
 ---
 
@@ -207,6 +207,19 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.26.49 - 2026-09-13 13:56 WIB
+
+**Eliminasi Total Daftar Objek Acak, Penegakan Logika Natural Gombalan & Pencegahan Analogi Absurd**
+
+- **Eliminasi Total Enumerasi Benda Fisik Acak (`src/skills.ts`)**:
+  - Menghapus daftar benda acak (*kopi, charger, wifi, helm, kalender, sinyal, kunci, kasur, matahari, dll*) dari direktif sistem prompt.
+  - Daftar objek fisik acak sebelumnya memaksa model (khususnya Qwen 27B) untuk memeras analogi cinta dari benda mati yang sama sekali tidak memiliki hubungan romantis wajar (seperti helm, kalender, atau kasur), sehingga menghasilkan gombalan yang terdengar aneh, tidak masuk akal, dan rusak logikanya.
+- **Penegakan Logika Alami & Keterhubungan Relatable (*Natural Sense & Relatable Humor*)**:
+  - Mengganti pemaksaan analogi benda dengan direktif humor/rayuan yang mengalir secara alami: mengutamakan kata sifat, celetukan manis, tebakan populer, atau situasi nyata yang relate dengan perasaan tanpa memaksakan mencocok-cocokkan benda mati acak.
+  - Mempertahankan alur interaktif dua arah yang elegan: setup/pertanyaan di giliran pertama dan punchline di giliran kedua tanpa membocorkan jawaban di awal.
+- **Penyelarasan Seluruh Penanganan Respon Humor & Lelucon**:
+  - Memperbarui instruksi pada situasi gombalan dikomplain (`isGombalComplaintOrChange`) dan permintaan lelucon (`isJokeRequest`) agar model memproduksi humor segar yang logis dan bervariasi secara spontan tanpa formula template hafalan.
 
 ### v0.26.48 - 2026-09-13 13:52 WIB
 
