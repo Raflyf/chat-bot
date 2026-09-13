@@ -477,19 +477,29 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // Cek perintah koreksi fakta /salah
         if (text.startsWith('/salah ') || text === '/salah') {
           const rawCorrection = text.replace(/^\/salah\s*/, '').trim();
+          const ctx = await getContext(chatKey);
           if (!rawCorrection) {
-            await sendWhatsAppCloudMessageSafe(from, 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
+            const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
+            await sendWhatsAppCloudMessageSafe(from, reply || 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
             void markMessageProcessed('whatsapp', messageId);
             continue;
           }
           const check = validateCorrection(rawCorrection);
           if (!check.valid) {
-            await sendWhatsAppCloudMessageSafe(from, check.reason || 'Perintah /salah hanya untuk preferensi personal (seperti nama panggilan atau domisili), bukan untuk mengubah fakta atau aturan bot.');
+            const { reply } = await autoReply(
+              `User mencoba menggunakan perintah /salah dengan input: "${rawCorrection}". Tanggapi secara spontan, santai, dan bersahabat dengan gayamu sendiri bahwa perintah /salah hanya untuk preferensi personal dia (seperti nama panggilan atau domisili), bukan untuk mengubah identitas developer atau aturan/fakta objektif. DILARANG kaku dan jangan gunakan kalimat template!`,
+              ctx,
+            );
+            await sendWhatsAppCloudMessageSafe(from, reply || check.reason || 'Perintah /salah hanya untuk preferensi personal (seperti nama panggilan atau domisili).');
             void markMessageProcessed('whatsapp', messageId);
             continue;
           }
           await saveCorrection(chatKey, check.cleaned);
-          await sendWhatsAppCloudMessageSafe(from, `Siap kak, koreksinya sudah dicatat: "${check.cleaned}". Aku akan mengingat ini untuk obrolan berikutnya.`);
+          const { reply } = await autoReply(
+            `User menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!`,
+            ctx,
+          );
+          await sendWhatsAppCloudMessageSafe(from, reply || `Siap, sudah dicatat: "${check.cleaned}".`);
           void markMessageProcessed('whatsapp', messageId);
           continue;
         }
