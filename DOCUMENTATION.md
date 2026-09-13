@@ -2,7 +2,7 @@
 
 **Versi:** v0.27.0 (Restrukturisasi Arsitektur LLM 7-Tier Teks & 3-Tier Vision, Integrasi Dahl Global 1 Miliar Token Pool, Direct OpenCode Zen Muse Spark 1.3 & 1.2, Cloudflare Native Vision Array Bytes, Eliminasi Wajib Konfigurasi Model di Vercel/Env)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 18:30 WIB
+**Terakhir Diperbarui:** 2026-09-13 19:30 WIB
 
 ---
 
@@ -207,6 +207,16 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.27.2 - 2026-09-13 19:30 WIB
+
+**Penyempurnaan UI/UX: Stabilisasi Layout Status Badge & Stats Baris Kunci Pool API Key**
+
+- **Perbaikan Tata Letak Single-Line Baris Kunci (`public/dashboard.html`)**:
+  - Mengeliminasi penumpukan (*overlapping / wrapping*) teks status badge "OPTIMAL" dan angka penggunaan pada baris kunci API di dalam kartu pool.
+  - Menambahkan `flex-wrap: nowrap;` dan `gap: 0.5rem;` pada `.key-info-line`.
+  - Mengonfigurasi `.key-identity` dengan `min-width: 0; flex: 1 1 auto; overflow: hidden;` serta `.key-label` dengan `overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`.
+  - Mengunci `.key-badge-status` dan `.key-stats` dengan `white-space: nowrap; flex-shrink: 0;` sehingga lencana status dan metrik panggilan selalu sejajar rapi dalam satu baris di berbagai resolusi layar.
 
 ### v0.27.1 - 2026-09-13 18:45 WIB
 
