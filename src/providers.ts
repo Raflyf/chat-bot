@@ -570,6 +570,28 @@ interface Step {
   run: (key: string, model: string, messages: ChatMsg[]) => Promise<ProviderResult>;
 }
 
+/**
+ * Penyesuaian khusus gaya bicara untuk keluarga model DeepSeek:
+ * Memastikan output tetap santai, luwes, dan akrab layaknya percakapan WhatsApp manusiawi
+ * tanpa mengutip label instruksi teknis secara harfiah dan tanpa penutup klise robotik.
+ */
+function injectDeepSeekTuning(messages: ChatMsg[]): ChatMsg[] {
+  const deepseekTuning = [
+    '[PENYESUAIAN GAYA KHUSUS DEEPSEEK (PRIORITAS MUTLAK)]:',
+    '- Gaya bicara: Sangat santai, luwes, mengalir, dan manusiawi layaknya sahabat karib mengobrol di WhatsApp.',
+    '- DILARANG KERAS mengutip atau menjiplak frasa instruksi sistem secara verbatim (seperti "terverifikasi resmi di database", "FreeAIBot", "partner polymath", "status pengembang", dll). Tanggapi dengan bahasa obrolan santai yang orisinal dan akrab.',
+    '- DILARANG kalimat penutup klise robotik atau template CS (seperti "siap nemenin ngobrol", "ada yang mau dibahas?", "ada yang bisa kubantu?"). Selesaikan kalimat tepat saat jawaban tuntas tanpa embel-embel penutup.',
+  ].join('\n');
+
+  return messages.map((m) => {
+    if (m.role === 'system') {
+      const text = typeof m.content === 'string' ? m.content : '';
+      return { ...m, content: text ? `${text}\n\n${deepseekTuning}` : deepseekTuning };
+    }
+    return m;
+  });
+}
+
 function steps(): Step[] {
   return [
     {
@@ -579,6 +601,22 @@ function steps(): Step[] {
       visionModels: [],
       cap: config.dailyCap.opencode,
       run: (k, m, msgs) => openCodeChat(k, m, msgs),
+    },
+    {
+      kind: 'xkiro',
+      keys: config.pools.xkiro,
+      models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
+      visionModels: [],
+      cap: config.dailyCap.xkiro,
+      run: (k, m, msgs) => {
+        const isDeepSeek = m.toLowerCase().includes('deepseek');
+        const finalMsgs = isDeepSeek ? injectDeepSeekTuning(msgs) : msgs;
+        return openAiChat('https://api.xkiro.com/v1', k, m, finalMsgs, undefined, {
+          temperature: isDeepSeek ? 0.65 : 0.35,
+          presence_penalty: isDeepSeek ? 0.1 : 0.0,
+          frequency_penalty: isDeepSeek ? 0.1 : 0.0,
+        });
+      },
     },
     {
       kind: 'groq',
@@ -628,31 +666,22 @@ function steps(): Step[] {
       models: [config.models.dahlPrimary, config.models.dahlBackup],
       visionModels: [],
       cap: config.dailyCap.dahl,
-      run: (k, m, msgs) => openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
-        temperature: 0.45,
-        frequency_penalty: 0.5,
-        presence_penalty: 0.0,
-      }),
-    },
-    {
-      kind: 'xkiro',
-      keys: config.pools.xkiro,
-      models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
-      visionModels: [],
-      cap: config.dailyCap.xkiro,
-      run: (k, m, msgs) =>
-        openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
-          temperature: 0.35,
-          presence_penalty: 0.0,
-          frequency_penalty: 0.0,
-        }),
+      run: (k, m, msgs) => {
+        const isDeepSeek = m.toLowerCase().includes('deepseek');
+        const finalMsgs = isDeepSeek ? injectDeepSeekTuning(msgs) : msgs;
+        return openAiChat(config.dahlProxyUrl, k, m, finalMsgs, 800, {
+          temperature: isDeepSeek ? 0.65 : 0.45,
+          frequency_penalty: isDeepSeek ? 0.1 : 0.5,
+          presence_penalty: isDeepSeek ? 0.1 : 0.0,
+        });
+      },
     },
   ];
 }
 
 /**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: OpenCode (Muse Spark 1.3 > 1.2) > Groq (Qwen 3.8 > 3.6) > Gemini > Cloudflare > OpenRouter > Dahl > xKiro.
+ * - Teks umum / matematika / koding: OpenCode (Muse Spark 1.3 > 1.2) > xKiro (DeepSeek v4.1 Flash Free) > Groq (Qwen 3.8 > 3.6) > Gemini > Cloudflare > OpenRouter > Dahl.
  * - Vision / foto / gambar: Gemini (3.8 Flash > 2.5 Flash) > Cloudflare Vision > OpenRouter Vision.
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
