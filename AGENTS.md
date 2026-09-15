@@ -18,7 +18,7 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
      - Pool: 3 API Key (`sk-xt-f785...`, `sk-xt-6c69...`, `sk-xt-061a...`).
      - Primary: `deepseek/deepseek-v4.1-flash:free` (latensi ~2.3s, super cepat, coding & reasoning kuat).
      - Cadangan: `deepseek/deepseek-v4.1-flash`, `deepseek/deepseek-chat-v3.1`, `mistralai/mistral-small-2603`.
-     - Penyetelan Khusus DeepSeek: Injeksi pengarah gaya santai/anti-klise (`injectDeepSeekTuning`), `temperature: 0.65`, `presence_penalty: 0.1`, `frequency_penalty: 0.1` agar output luwes manusiawi dan tidak menjiplak instruksi prompt secara harfiah.
+     - Penyetelan Sampling DeepSeek: `temperature: 0.65`, `presence_penalty: 0.1`, `frequency_penalty: 0.1` murni dinamis tanpa injeksi template statis agar model leluasa menghasilkan gaya naturalnya sendiri.
    - **Tier 3 (Groq Cloud API):**
      - Pool: 5 API Key (800 RPD/key).
      - Primary: `qwen/qwen3.8-27b`, Cadangan: `qwen/qwen3.6-27b`.
