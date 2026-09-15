@@ -66,9 +66,9 @@ export const config = {
     orPrimary: 'nex-agi/nex-n2.5-pro:free',
     orMini: 'nex-agi/nex-n2.5-mini:free',
     orText: 'nvidia/nemotron-3.5-lightning:free',
-    // Tier 7: xKiro Gateway (Mistral Small & Codestral)
-    xkiroPrimary: 'mistralai/mistral-small-2603',
-    xkiroBackup: ['mistralai/codestral-2508'],
+    // Tier 2: xKiro Gateway (DeepSeek v4.1 Flash Free & Failover)
+    xkiroPrimary: 'deepseek/deepseek-v4.1-flash:free',
+    xkiroBackup: ['deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-chat-v3.1', 'mistralai/mistral-small-2603'],
   },
   supabaseUrl: (() => {
     const raw = firstEnv('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');

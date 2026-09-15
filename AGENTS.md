@@ -9,19 +9,20 @@ Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi
 Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automatic failover, adaptive circuit breaker, dan output sanitization:
 
 1. **Rantai Failover Teks (7 Tier Otomatis):**
-   - **Tier 1 (Dahl Global API):**
-     - Pool: 10 API Key (`dahl_Kiv1N...` s.d. `dahl_GsHqB...`) dengan kuota 1 Miliar Token.
-     - Primary: `deepseek-ai/DeepSeek-V4-Flash-0731` (latensi ~0,22s, sangat patuh persona).
-     - Cadangan: `MiniMaxAI/MiniMax-M2.7` (dengan pembersih tag penalaran `<think>...</think>` otomatis).
-   - **Tier 2 (Groq Cloud API):**
+   - **Tier 1 (Direct OpenCode Zen API):**
+     - Pool: 4 API Key (`sk-Mm56c...`, `sk-YWTsb...`, `sk-dVsDp...`, `sk-kmc7K...`).
+     - Primary: `muse-spark-1.3-contributor-free` (bahasa luwes, santai, empatik, 1M context).
+     - Cadangan: `muse-spark-1.2-contributor-free` (failover jika versi 1.3 sibuk/timeout).
+     - Adapter kustom `{ model, input }` dengan koneksi 10s non-streaming.
+   - **Tier 2 (xKiro Gateway):**
+     - Pool: 3 API Key (`sk-xt-f785...`, `sk-xt-6c69...`, `sk-xt-061a...`).
+     - Primary: `deepseek/deepseek-v4.1-flash:free` (latensi ~2.3s, super cepat, coding & reasoning kuat).
+     - Cadangan: `deepseek/deepseek-v4.1-flash`, `deepseek/deepseek-chat-v3.1`, `mistralai/mistral-small-2603`.
+     - Penyetelan Khusus DeepSeek: Injeksi pengarah gaya santai/anti-klise (`injectDeepSeekTuning`), `temperature: 0.65`, `presence_penalty: 0.1`, `frequency_penalty: 0.1` agar output luwes manusiawi dan tidak menjiplak instruksi prompt secara harfiah.
+   - **Tier 3 (Groq Cloud API):**
      - Pool: 5 API Key (800 RPD/key).
      - Primary: `qwen/qwen3.8-27b`, Cadangan: `qwen/qwen3.6-27b`.
      - Buffer: Message history dipangkas adaptif ke 7.200 token agar aman di bawah limit ketat 8K TPM.
-   - **Tier 3 (Direct OpenCode Zen API):**
-     - Pool: 4 API Key (`sk-Mm56c...`, `sk-YWTsb...`, `sk-dVsDp...`, `sk-kmc7K...`).
-     - Primary: `muse-spark-1.3-contributor-free` (bahasa luwes, santai, empatik).
-     - Cadangan: `muse-spark-1.2-contributor-free` (failover jika versi 1.3 sibuk/timeout).
-     - Adapter kustom `{ model, input }` dengan koneksi 10s non-streaming.
    - **Tier 4 (Google Gemini API):**
      - Pool: 2 API Key (1.400 RPD/key).
      - Primary: `gemini-3.8-flash`, Cadangan: `gemini-2.5-flash`.
@@ -32,10 +33,9 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Tier 6 (OpenRouter AI):**
      - Pool: 5 API Key pool rotation.
      - Primary: `nex-agi/nex-n2.5-pro:free`, Cadangan: `nvidia/nemotron-3.5-lightning:free`.
-   - **Tier 7 (xKiro Gateway):**
-     - Pool: 3 API Key pool rotation.
-     - Primary: `mistralai/mistral-small-2603`, Cadangan: `mistralai/codestral-2508`.
-     - Penjinak Mistral: `temperature: 0.35`, `presence_penalty: 0.0`, `frequency_penalty: 0.0`.
+   - **Tier 7 (Dahl Global API):**
+     - Pool: 10 API Key (`dahl_Kiv1N...` s.d. `dahl_GsHqB...`) dengan kuota 1 Miliar Token via Cloudflare Worker proxy.
+     - Primary: `deepseek-ai/DeepSeek-V4-Flash-0731`, Cadangan: `MiniMaxAI/MiniMax-M2.7`.
 
 2. **Rantai Failover Multimodal / Vision (Foto, Gambar, Stiker):**
    - **Vision Prioritas 1:** Google Gemini (`gemini-3.8-flash` > `gemini-2.5-flash`) — Native vision token parser.
