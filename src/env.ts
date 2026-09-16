@@ -141,7 +141,7 @@ export const config = {
   resendApiKey: cleanStr('RESEND_API_KEY'),
   resendFrom: cleanStr('RESEND_FROM') || 'ChatBot Security <notifications@resend.dev>',
   adminEmail: cleanStr('ADMIN_EMAIL'),
-  pinSalt: cleanStr('PIN_SALT'),
+  pinSalt: cleanStr('PIN_SALT') || 'rafly_telemetry_salt',
   adminPin: cleanStr('ADMIN_PIN'),
 };
 

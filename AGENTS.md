@@ -77,7 +77,8 @@ Bot beroperasi secara paralel pada tiga platform perpesanan utama:
 ## 3. Sistem Keamanan & Pertahanan Data (Security & Guardrails)
 
 1. **Perlindungan Otentikasi Admin:**
-   - Master PIN diproteksi hashing SHA-256 dengan per-instance cryptographically strong salt (`PIN_SALT`) dan automatic first-run random PIN provisioning jika belum dikonfigurasi.
+   - Master PIN diproteksi hashing SHA-256 dengan canonical universal salt (`CANONICAL_SALT` default: `'rafly_telemetry_salt'`) serta multi-salt matching resolution (`resolveMatchingHash`) untuk menjamin paritas cross-device tanpa hambatan antara localhost dan Vercel Serverless.
+   - Auto-upgrade salt database: saat verifikasi PIN berhasil menggunakan salt legacy/fallback, hash database otomatis di-upgrade ke canonical salt secara transparan.
    - Row-Level Locking (`FOR UPDATE`) pada operasi verifikasi (`rpc_admin_verify_pin`), reset OTP (`rpc_admin_verify_otp_and_reset_pin`), dan penggantian PIN (`rpc_admin_change_pin`) untuk mencegah race condition.
    - Rate limiting bertingkat dan lockout progresif pada kegagalan otentikasi.
    - Strict Origin & Referer checking pada seluruh mutasi kredensial.
