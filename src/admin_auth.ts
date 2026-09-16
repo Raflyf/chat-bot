@@ -13,8 +13,53 @@ export interface AdminAuthConfig {
 }
 
 const ENV_PIN = config.adminPin || '';
-const PIN_SALT = config.pinSalt || (config.supabaseKey ? crypto.createHash('sha256').update(config.supabaseKey).digest('hex').slice(0, 32) : 'agentkit_runtime_internal_salt');
+// Salt kanonikal universal (selaras di localhost maupun Vercel)
+const CANONICAL_SALT = config.pinSalt || 'rafly_telemetry_salt';
+const PIN_SALT = CANONICAL_SALT;
+
+// Daftar kandidat salt yang valid untuk verifikasi cross-device & backward-compatibility
+const FALLBACK_SALTS = [
+  CANONICAL_SALT,
+  'rafly_telemetry_salt',
+  ...(config.supabaseKey ? [crypto.createHash('sha256').update(config.supabaseKey).digest('hex').slice(0, 32)] : []),
+  'agentkit_runtime_internal_salt',
+].filter((s, i, arr) => Boolean(s) && arr.indexOf(s) === i);
+
 const TARGET_EMAIL = config.adminEmail || '';
+
+export function hashValue(val: string, salt: string = CANONICAL_SALT): string {
+  return crypto.createHash('sha256').update(String(val) + salt).digest('hex');
+}
+
+/**
+ * Mencari hash yang cocok dengan storedHash dari daftar kandidat salt yang valid.
+ * Mengembalikan matching hash jika cocok, atau hash default (canonical) jika tidak ada yang cocok.
+ */
+export function resolveMatchingHash(
+  val: string,
+  storedHash?: string | null
+): { hash: string; isMatch: boolean; needsUpgrade: boolean } {
+  const canonicalHash = hashValue(val, CANONICAL_SALT);
+  if (!storedHash) {
+    return { hash: canonicalHash, isMatch: false, needsUpgrade: false };
+  }
+
+  // 1. Cek salt kanonikal terlebih dahulu
+  if (timingSafeMatch(canonicalHash, storedHash)) {
+    return { hash: canonicalHash, isMatch: true, needsUpgrade: false };
+  }
+
+  // 2. Cek kandidat salt fallback (misal jika sebelumnya di-hash di Vercel tanpa PIN_SALT atau sebaliknya)
+  for (const salt of FALLBACK_SALTS) {
+    if (salt === CANONICAL_SALT) continue;
+    const candidateHash = hashValue(val, salt);
+    if (timingSafeMatch(candidateHash, storedHash)) {
+      return { hash: candidateHash, isMatch: true, needsUpgrade: true };
+    }
+  }
+
+  return { hash: canonicalHash, isMatch: false, needsUpgrade: false };
+}
 
 const DEFAULT_PIN_HASH = ENV_PIN ? hashValue(ENV_PIN) : '';
 
@@ -42,10 +87,6 @@ const OTP_SEND_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const OTP_SEND_MIN_INTERVAL_MS = 60 * 1000; // 60 seconds interval
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
-
-export function hashValue(val: string): string {
-  return crypto.createHash('sha256').update(String(val) + PIN_SALT).digest('hex');
-}
 
 export function timingSafeMatch(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -272,16 +313,24 @@ export async function inspectSessionToken(token: string): Promise<{ valid: boole
     const signature = raw.slice(dotIdx + 1);
 
     try {
-      let hmacKey = crypto.createHash('sha256').update(PIN_SALT + ':' + config.pinHash).digest();
-      let expectedSig = crypto.createHmac('sha256', hmacKey).update(payloadStr).digest('hex');
+      let signatureValid = false;
+      for (const salt of FALLBACK_SALTS) {
+        const hmacKey = crypto.createHash('sha256').update(salt + ':' + config.pinHash).digest();
+        const expectedSig = crypto.createHmac('sha256', hmacKey).update(payloadStr).digest('hex');
+        if (timingSafeMatch(signature, expectedSig)) {
+          signatureValid = true;
+          break;
+        }
 
-      let signatureValid = timingSafeMatch(signature, expectedSig);
-
-      // Fallback jika config.pinHash dari DB berbeda dengan DEFAULT_PIN_HASH (misal saat inisialisasi cold-start)
-      if (!signatureValid && DEFAULT_PIN_HASH && DEFAULT_PIN_HASH !== config.pinHash) {
-        const fallbackHmacKey = crypto.createHash('sha256').update(PIN_SALT + ':' + DEFAULT_PIN_HASH).digest();
-        const fallbackSig = crypto.createHmac('sha256', fallbackHmacKey).update(payloadStr).digest('hex');
-        signatureValid = timingSafeMatch(signature, fallbackSig);
+        // Fallback jika config.pinHash dari DB berbeda dengan DEFAULT_PIN_HASH
+        if (DEFAULT_PIN_HASH && DEFAULT_PIN_HASH !== config.pinHash) {
+          const fallbackHmacKey = crypto.createHash('sha256').update(salt + ':' + DEFAULT_PIN_HASH).digest();
+          const fallbackSig = crypto.createHmac('sha256', fallbackHmacKey).update(payloadStr).digest('hex');
+          if (timingSafeMatch(signature, fallbackSig)) {
+            signatureValid = true;
+            break;
+          }
+        }
       }
 
       if (!signatureValid) {
@@ -371,16 +420,46 @@ export async function verifyPin(
   remainingAttempts?: number;
   message: string;
 }> {
-  // Selalu hash PIN input dengan PIN_SALT server (tidak mempercayai hash mentah dari client - C1)
-  const inputHash = hashValue(inputPinOrHash);
   const now = Date.now();
+  const current = await getAuthConfig();
+
+  // Check if unconfigured
+  if (!current.pinHash) {
+    return {
+      success: false,
+      verified: false,
+      isLocked: false,
+      lockedUntil: null,
+      lockoutAttempts: 0,
+      remainingAttempts: 0,
+      message: 'Master PIN belum dikonfigurasi di server. Silakan isi ADMIN_PIN di environment variable.',
+    };
+  }
+
+  // Check if locked
+  if (current.lockedUntil && new Date(current.lockedUntil).getTime() > now) {
+    return {
+      success: false,
+      verified: false,
+      isLocked: true,
+      lockedUntil: current.lockedUntil,
+      lockoutAttempts: current.lockoutAttempts,
+      remainingAttempts: 0,
+      message: 'Akses terkunci sementara karena melebihi batas percobaan PIN. Gunakan pemulihan OTP.',
+    };
+  }
+
+  // Multi-salt matching resolution untuk backward compatibility lintas device & environment
+  const canonicalHash = hashValue(inputPinOrHash, CANONICAL_SALT);
+  const { hash: matchingHash, isMatch, needsUpgrade } = resolveMatchingHash(inputPinOrHash, current.pinHash);
+  const queryHash = isMatch ? matchingHash : canonicalHash;
 
   const c = db();
   // Coba verifikasi atomik via RPC PostgreSQL terlebih dahulu (C3 & P0-2)
   if (c) {
     try {
       const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_verify_pin', {
-        p_pin_hash: inputHash,
+        p_pin_hash: queryHash,
       });
 
       if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
@@ -395,18 +474,19 @@ export async function verifyPin(
         };
 
         if (res.verified) {
-          const { token: sessionToken, exp: expiresAt } = createSessionToken(inputHash, 15 * 60 * 1000);
-          const current = await getAuthConfig();
+          // Selalu terbitkan session token dengan CANONICAL_SALT dan canonicalHash
+          const { token: sessionToken, exp: expiresAt } = createSessionToken(canonicalHash, 15 * 60 * 1000);
           const updatedTokens = [
             ...current.sessionTokens.filter(s => Number(s.exp) > now),
             { token: sessionToken, exp: expiresAt }
           ].slice(-10);
 
-          saveAuthConfig({
+          await saveAuthConfig({
+            ...(needsUpgrade ? { pinHash: canonicalHash } : {}),
             lockoutAttempts: 0,
             lockedUntil: null,
             sessionTokens: updatedTokens,
-          }).catch(e => console.warn('[admin-auth] saveAuthConfig async error:', e));
+          });
 
           return {
             success: true,
@@ -440,49 +520,21 @@ export async function verifyPin(
   }
 
   // Fallback JS Engine (Dual-Store / In-Memory)
-  const current = await getAuthConfig();
-
-  // Check if unconfigured
-  if (!current.pinHash) {
-    return {
-      success: false,
-      verified: false,
-      isLocked: false,
-      lockedUntil: null,
-      lockoutAttempts: 0,
-      remainingAttempts: 0,
-      message: 'Master PIN belum dikonfigurasi di server. Silakan isi ADMIN_PIN di environment variable.',
-    };
-  }
-
-  // Check if locked
-  if (current.lockedUntil && new Date(current.lockedUntil).getTime() > now) {
-    return {
-      success: false,
-      verified: false,
-      isLocked: true,
-      lockedUntil: current.lockedUntil,
-      lockoutAttempts: current.lockoutAttempts,
-      remainingAttempts: 0,
-      message: 'Akses terkunci sementara karena melebihi batas percobaan PIN. Gunakan pemulihan OTP.',
-    };
-  }
-
-  // Match comparison
-  if (timingSafeMatch(inputHash, current.pinHash)) {
-    // Berhasil: buat session token kriptografis HMAC 15 menit
-    const { token: sessionToken, exp: expiresAt } = createSessionToken(current.pinHash, 15 * 60 * 1000);
+  if (isMatch) {
+    // Berhasil: buat session token kriptografis HMAC 15 menit dengan canonical hash
+    const { token: sessionToken, exp: expiresAt } = createSessionToken(canonicalHash, 15 * 60 * 1000);
 
     const updatedTokens = [
       ...current.sessionTokens.filter(s => Number(s.exp) > now),
       { token: sessionToken, exp: expiresAt }
     ].slice(-10); // Simpan maks 10 sesi aktif
 
-    saveAuthConfig({
+    await saveAuthConfig({
+      ...(needsUpgrade ? { pinHash: canonicalHash } : {}),
       lockoutAttempts: 0,
       lockedUntil: null,
       sessionTokens: updatedTokens,
-    }).catch(e => console.warn('[admin-auth] saveAuthConfig async error:', e));
+    });
 
     return {
       success: true,
@@ -695,15 +747,17 @@ export async function verifyOtpAndResetPin(
     return { success: false, message: 'Master PIN baru harus berupa 4 hingga 8 digit angka.' };
   }
 
-  const inputOtpHash = hashValue(enteredOtp);
-  const newPinHash = hashValue(cleanNewPin);
+  const current = await getAuthConfig();
+  // Validasi kecocokan hash OTP dengan multi-salt resolution
+  const { hash: matchingOtpHash, isMatch: otpMatches } = resolveMatchingHash(enteredOtp, current.otpCodeHash);
+  const newPinHash = hashValue(cleanNewPin, CANONICAL_SALT);
 
   const c = db();
   // Prioritaskan eksekusi atomik RPC PostgreSQL (FOR UPDATE)
   if (c) {
     try {
       const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_verify_otp_and_reset_pin', {
-        p_otp_hash: inputOtpHash,
+        p_otp_hash: matchingOtpHash,
         p_new_pin_hash: newPinHash,
       });
 
@@ -711,6 +765,14 @@ export async function verifyOtpAndResetPin(
         const res = rpcRes as { success?: boolean; message?: string };
         if (res.success) {
           otpAttemptCache.delete(clientIp);
+          await saveAuthConfig({
+            pinHash: newPinHash,
+            lockoutAttempts: 0,
+            lockedUntil: null,
+            otpCodeHash: null,
+            otpExpiresAt: null,
+            sessionTokens: [],
+          });
           return {
             success: true,
             message: res.message || 'Master PIN keamanan berhasil diperbarui dan status penguncian dinolkan.',
@@ -734,8 +796,6 @@ export async function verifyOtpAndResetPin(
   }
 
   // Fallback ke JS Engine
-  const current = await getAuthConfig();
-
   if (!current.otpCodeHash || !current.otpExpiresAt) {
     return { success: false, message: 'Tidak ada kode OTP aktif. Silakan minta kode OTP baru.' };
   }
@@ -744,7 +804,7 @@ export async function verifyOtpAndResetPin(
     return { success: false, message: 'Kode OTP telah kadaluwarsa. Silakan minta kode OTP baru.' };
   }
 
-  if (!timingSafeMatch(inputOtpHash, current.otpCodeHash)) {
+  if (!otpMatches) {
     // Record failure
     const rec = otpAttemptCache.get(clientIp);
     if (!rec || now - rec.start > OTP_ATTEMPT_WINDOW_MS) {
@@ -789,31 +849,6 @@ export async function updatePin(
     return { success: false, message: 'PIN baru harus berupa 4 hingga 8 digit angka.' };
   }
 
-  const currentHash = hashValue(currentPinOrHash);
-  const newPinHash = hashValue(cleanNewPin);
-
-  const c = db();
-  // Prioritaskan eksekusi atomik RPC PostgreSQL (C6 & F4)
-  if (c) {
-    try {
-      const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_change_pin', {
-        p_old_pin_hash: currentHash,
-        p_new_pin_hash: newPinHash,
-      });
-
-      if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
-        const res = rpcRes as { success?: boolean; message?: string };
-        return {
-          success: !!res.success,
-          message: res.message || (res.success ? 'Master PIN berhasil diubah di seluruh sesi.' : 'Gagal mengubah PIN.'),
-        };
-      }
-    } catch (e) {
-      console.warn('[admin-auth] rpc_admin_change_pin fallback to JS:', e);
-    }
-  }
-
-  // Fallback ke JS Engine
   const current = await getAuthConfig();
   const now = Date.now();
 
@@ -825,7 +860,40 @@ export async function updatePin(
     };
   }
 
-  if (!timingSafeMatch(currentHash, current.pinHash)) {
+  const { hash: matchingCurrentHash, isMatch } = resolveMatchingHash(currentPinOrHash, current.pinHash);
+  const newPinHash = hashValue(cleanNewPin, CANONICAL_SALT);
+
+  const c = db();
+  // Prioritaskan eksekusi atomik RPC PostgreSQL (C6 & F4)
+  if (c) {
+    try {
+      const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_change_pin', {
+        p_old_pin_hash: matchingCurrentHash,
+        p_new_pin_hash: newPinHash,
+      });
+
+      if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
+        const res = rpcRes as { success?: boolean; message?: string };
+        if (res.success) {
+          await saveAuthConfig({
+            pinHash: newPinHash,
+            lockoutAttempts: 0,
+            lockedUntil: null,
+            sessionTokens: [],
+          });
+        }
+        return {
+          success: !!res.success,
+          message: res.message || (res.success ? 'Master PIN berhasil diubah di seluruh sesi.' : 'Gagal mengubah PIN.'),
+        };
+      }
+    } catch (e) {
+      console.warn('[admin-auth] rpc_admin_change_pin fallback to JS:', e);
+    }
+  }
+
+  // Fallback ke JS Engine
+  if (!isMatch) {
     const newAttempts = current.lockoutAttempts + 1;
     const willLock = newAttempts >= 5;
     const lockedUntil = willLock ? new Date(now + 15 * 60 * 1000).toISOString() : null;

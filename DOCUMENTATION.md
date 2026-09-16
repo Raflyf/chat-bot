@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.27.4 (Perbaikan Kritis Sirkuit Failover & Rotasi Kunci Cadangan: Eliminasi False Break pada Error Kunci 401/403/502/Timeout, Penegakan 3 Lapis Ketahanan Key Rotation -> Model Fallback -> Provider Tier Failover, dan Cooldown Presisi pada Kunci Hanging)  
+**Versi:** v0.27.15 (Resolusi Cross-Device Master PIN & Multi-Salt Resolution: Eliminasi Salt Mismatch Localhost vs Vercel Serverless, Auto-Upgrade Salt Database ke Canonical, dan Paritas Otentikasi Lintas Perangkat)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-13 20:05 WIB
+**Terakhir Diperbarui:** 2026-09-16 07:30 WIB
 
 ---
 
@@ -207,6 +207,30 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.27.15 - 2026-09-16 (Resolusi Cross-Device Master PIN & Multi-Salt Resolution)
+
+**Penyelidikan mendalam terhadap keluhan: PIN yang direset di laptop dapat login di laptop tetapi gagal di perangkat lain (smartphone/mobile), dan sebaliknya ketika direset di smartphone malah tidak bisa login di laptop dengan PIN yang sama.**
+
+- **Akar Masalah Matematis (Salt Divergence antara Localhost dan Vercel Serverless)**:
+  - Laptop menjalankan server lokal dengan konfigurasi `.env` berisi `PIN_SALT=rafly_telemetry_salt`.
+  - Smartphone mengakses dashboard produksi di Vercel Serverless yang environment variable `PIN_SALT`-nya belum didefinisikan, sehingga otomatis jatuh ke fallback derivasi kunci Supabase `crypto.createHash('sha256').update(SUPABASE_SERVICE_KEY).digest('hex').slice(0, 32)` (`6d9cd3acd009adc57e69b897eb18ee7b`).
+  - Kedua lingkungan membaca dan menulis ke **satu tabel Supabase yang sama** (`public.admin_auth_config`).
+  - Ketika PIN direset di laptop, laptop menulis hash dengan salt `rafly_telemetry_salt`. Saat smartphone mencoba login dengan PIN yang sama di Vercel, Vercel menghitung hash menggunakan salt fallback Vercel, menghasilkan hash yang berbeda sehingga ditolak ("Master PIN salah").
+  - Ketika PIN direset di smartphone, Vercel menulis hash bersalt Vercel ke database, sehingga giliran laptop yang gagal login karena salt laptop berbeda.
+- **Resolusi Universal 3 Lapis (`src/env.ts`, `src/admin_auth.ts`, `AGENTS.md`)**:
+  1. **Canonical Salt Default Universal (`src/env.ts`)**:
+     - `config.pinSalt` kini memiliki nilai default mutlak `'rafly_telemetry_salt'` jika `PIN_SALT` tidak diset di dashboard Vercel, menyamakan salt default di seluruh instance serverless dan localhost secara otomatis.
+  2. **Multi-Salt Resolution Engine (`resolveMatchingHash`)**:
+     - Menyediakan daftar kandidat `FALLBACK_SALTS` yang mencakup canonical salt, legacy salt, dan derivasi Supabase key.
+     - `verifyPin`, `resetPinWithOtp`, dan `updatePin` memeriksa seluruh kandidat salt untuk mencocokkan hash yang sedang tersimpan di database secara aman (`timingSafeMatch`).
+  3. **Auto-Upgrade Salt Database Transparan**:
+     - Jika hash di database terdeteksi masih menggunakan salt fallback lama, verifikasi tetap diloloskan dan sistem otomatis memperbarui `pin_hash` di database ke canonical salt (`needsUpgrade: true`) tanpa memerlukan tindakan pengguna.
+  4. **Paritas Kriptografis Session Token (`inspectSessionToken`)**:
+     - Validasi HMAC session token memeriksa seluruh salt yang valid untuk memastikan transisi mulus dan eliminasi penolakan sesi yang salah antar-device.
+- **Verifikasi Faktual**:
+  - Simulasi pencocokan multi-salt membuktikan bahwa PIN yang sama berhasil dicocokkan baik pada canonical salt maupun fallback salt dengan bendera `needsUpgrade: true`.
+  - Lolos uji build dan typecheck TypeScript (`npm run typecheck` & `npm run build`, exit code 0).
 
 ### v0.27.14 - 2026-09-14 (Perbaikan TPD: Estimasi Legacy, TPD Riil di Dashboard, Binding Status)
 
