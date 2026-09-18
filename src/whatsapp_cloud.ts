@@ -115,6 +115,7 @@ export async function sendWhatsAppCloudMessageSafe(
     try {
       const res = await fetch(url, {
         method: 'POST',
+        signal: AbortSignal.timeout(config.timeoutMs),
         headers: {
           Authorization: `Bearer ${config.whatsappToken}`,
           'Content-Type': 'application/json',
@@ -152,6 +153,7 @@ export async function markWhatsAppCloudMessageRead(messageId: string): Promise<v
   try {
     await fetch(url, {
       method: 'POST',
+      signal: AbortSignal.timeout(config.downloadTimeoutMs),
       headers: {
         Authorization: `Bearer ${config.whatsappToken}`,
         'Content-Type': 'application/json',
@@ -176,6 +178,7 @@ async function downloadWhatsAppCloudMedia(mediaId: string): Promise<{ buffer: Bu
   try {
     // 1. Ambil URL media
     const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+      signal: AbortSignal.timeout(config.downloadTimeoutMs),
       headers: { Authorization: `Bearer ${config.whatsappToken}` },
     });
     if (!metaRes.ok) return null;
@@ -184,6 +187,7 @@ async function downloadWhatsAppCloudMedia(mediaId: string): Promise<{ buffer: Bu
 
     // 2. Unduh binary media
     const fileRes = await fetch(metaData.url, {
+      signal: AbortSignal.timeout(config.downloadTimeoutMs),
       headers: { Authorization: `Bearer ${config.whatsappToken}` },
     });
     if (!fileRes.ok) return null;
@@ -227,6 +231,10 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         const from = m.from; // Nomor telepon pengirim (misal: 628123456789)
         if (!messageId || !from || isDuplicate(messageId)) continue;
 
+        // Satu pesan poison TIDAK boleh menggagalkan seluruh batch webhook (audit F2.3):
+        // tanpa try/catch per-pesan, throw dari describeImage/processIncomingDocument/autoReply
+        // membatalkan sisa array dan webhook tetap di-ack 200 → pesan lain hilang permanen.
+        try {
         const msgSentAt = Number(m.timestamp) ? new Date(Number(m.timestamp) * 1000) : undefined;
 
         const chatKey = 'wa_' + from;
@@ -570,9 +578,10 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             continue;
           }
           const dueAt = new Date(Date.now() + minutes * 60_000);
-          await saveReminderToDb(from, message, dueAt, 'whatsapp');
+          const reminderSaved = await saveReminderToDb(from, message, dueAt, 'whatsapp');
           const { reply } = await autoReply(
-            `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.`,
+            `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.` +
+              (reminderSaved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa pengingat mungkin tidak tersimpan.'),
             remindCtx,
           );
           await sendWhatsAppCloudMessageSafe(from, reply);
@@ -629,6 +638,21 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat
         noteExchange(chatKey);
+        } catch (err) {
+          console.error(`[wa-cloud] Gagal memproses pesan ${messageId} (lanjut ke pesan berikutnya):`, err);
+          // Tandai selesai agar Meta tidak retry-storm pesan yang sama.
+          void markMessageProcessed('whatsapp', messageId);
+          // Beri tahu pengguna secara dinamis bila memungkinkan (best-effort).
+          try {
+            const notice = await dynamicNotice(
+              'Terjadi kendala teknis saat memproses pesan temanmu. Sampaikan permintaan maaf singkat dengan gayamu sendiri dan minta dia mengirim ulang pesannya.',
+              undefined,
+            );
+            if (notice.trim()) await sendWhatsAppCloudMessageSafe(from, notice);
+          } catch {
+            // best-effort
+          }
+        }
       }
     }
   }

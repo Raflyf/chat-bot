@@ -24,6 +24,29 @@ interface CachedContext {
 
 const contextCache = new Map<string, CachedContext>();
 const CONTEXT_TTL_MS = 25000; // 25 detik (jendela percakapan cepat aktif)
+
+/**
+ * Lock per-chat: serialisasi pemrosesan pesan dalam satu chat agar balasan tidak
+ * keluar urutan / saling menimpa konteks (audit F3.1). Antrean in-process; pada
+ * serverless tiap instance punya antreannya sendiri (cukup untuk retry webhook
+ * dan pesan beruntun yang biasanya mendarat di instance yang sama).
+ */
+const chatLocks = new Map<string, Promise<unknown>>();
+
+export async function withChatLock<T>(chatKey: string, fn: () => Promise<T>): Promise<T> {
+  const prev = chatLocks.get(chatKey) ?? Promise.resolve();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  const tail = prev.then(() => gate, () => gate);
+  chatLocks.set(chatKey, tail);
+  try {
+    await prev.catch(() => undefined);
+    return await fn();
+  } finally {
+    release();
+    if (chatLocks.get(chatKey) === tail) chatLocks.delete(chatKey);
+  }
+}
 const CONTEXT_CACHE_MAX = 500;
 
 /** Sweep entri kedaluwarsa saat cache membesar (cegah leak di instance long-running). */
@@ -138,7 +161,15 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
     };
 
     contextCache.set(chatKey, { at: Date.now(), data: ctx });
-    return ctx;
+    // Kembalikan SALINAN: dua request paralel untuk chat yang sama tidak boleh berbagi
+    // objek yang sama (mutasi corrections di skills.ts bisa bocor antar-request — audit M12).
+    return {
+      history: [...ctx.history],
+      summary: ctx.summary,
+      corrections: [...ctx.corrections],
+      chatId: ctx.chatId,
+      msgSentAt: ctx.msgSentAt,
+    };
   } catch {
     return empty;
   }

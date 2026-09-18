@@ -100,7 +100,9 @@ async function transcribeViaCloudflare(buffer: Buffer, model: string): Promise<s
 
   for (const rawKey of keys) {
     if (!(await isKeyAllowed('cloudflare', rawKey, config.dailyCap.cloudflare))) continue;
-    const accountId = rawKey.includes(':') ? rawKey.slice(0, rawKey.indexOf(':')).trim() : '';
+    const accountId = rawKey.includes(':')
+      ? rawKey.slice(0, rawKey.indexOf(':')).trim()
+      : (config.cloudflareAccountId || '').trim();
     const token = rawKey.includes(':') ? rawKey.slice(rawKey.indexOf(':') + 1).trim() : rawKey.trim();
     if (!accountId) continue;
     try {
