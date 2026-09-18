@@ -1,54 +1,66 @@
 # Arsitektur Agen & Sistem Multi-Model (AGENTS.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.27.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.29.0.
 
 ---
 
 ## 1. Arsitektur Multi-Provider & Rantai Failover (LLM Engine)
 
-Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automatic failover, adaptive circuit breaker, dan output sanitization:
+Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automatic failover, adaptive circuit breaker, failover berbasis waktu respons, dan output sanitization:
 
-1. **Rantai Failover Teks (7 Tier Otomatis):**
-   - **Tier 1 (Direct OpenCode Zen API):**
-     - Pool: 4 API Key (`sk-Mm56c...`, `sk-YWTsb...`, `sk-dVsDp...`, `sk-kmc7K...`).
-     - Primary: `muse-spark-1.3-contributor-free` (bahasa luwes, santai, empatik, 1M context).
-     - Cadangan: `muse-spark-1.2-contributor-free` (failover jika versi 1.3 sibuk/timeout).
-     - Adapter kustom `{ model, input }` dengan koneksi 10s non-streaming.
-   - **Tier 2 (xKiro Gateway):**
-     - Pool: 3 API Key (`sk-xt-f785...`, `sk-xt-6c69...`, `sk-xt-061a...`).
-     - Primary: `deepseek/deepseek-v4.1-flash:free` (latensi ~2.3s, super cepat, coding & reasoning kuat).
-     - Cadangan: `deepseek/deepseek-v4.1-flash`, `deepseek/deepseek-chat-v3.1`, `mistralai/mistral-small-2603`.
-     - Penyetelan Sampling DeepSeek: `temperature: 0.65`, `presence_penalty: 0.1`, `frequency_penalty: 0.1` murni dinamis tanpa injeksi template statis agar model leluasa menghasilkan gaya naturalnya sendiri.
+1. **Rantai Failover Teks (6 Tier Otomatis):**
+   - **Tier 1 (xKiro Gateway):**
+     - Pool: 3 API Key.
+     - Primary: `qwen/qwen3.8-max:free` (latensi ~0,15s, kualitas Qwen terbaru).
+     - Cadangan: `minimax/minimax-m3:free` (GPQA 93,0), lalu slot arsip `deepseek/deepseek-v4.1-flash:free` (diaktifkan otomatis begitu kembali tersedia di endpoint xKiro).
+     - Penyetelan sampling: `temperature` 0,35 (non-DeepSeek) / 0,65 (DeepSeek) dengan `presence_penalty`/`frequency_penalty` murni dinamis tanpa injeksi template statis.
+   - **Tier 2 (OpenRouter AI):**
+     - Pool: 5 API Key (rotasi).
+     - Primary: `deepseek/deepseek-v4-flash-0731:free` (GPQA 90,8), Cadangan: `nex-agi/nex-n2.5-pro:free`, `nvidia/nemotron-3.5-lightning:free`.
+     - Juga menjadi jalur vision prioritas #3.
    - **Tier 3 (Groq Cloud API):**
-     - Pool: 5 API Key (800 RPD/key).
-     - Primary: `qwen/qwen3.8-27b`, Cadangan: `qwen/qwen3.6-27b`.
+     - Pool: 5 API Key (1.000 RPD/key).
+     - Primary: `qwen/qwen3.8-27b` (~284 tok/s), Cadangan: `openai/gpt-oss-120b`.
      - Buffer: Message history dipangkas adaptif ke 7.200 token agar aman di bawah limit ketat 8K TPM.
-   - **Tier 4 (Google Gemini API):**
-     - Pool: 2 API Key (1.400 RPD/key).
-     - Primary: `gemini-3.8-flash`, Cadangan: `gemini-2.5-flash`.
-   - **Tier 5 (Cloudflare Workers AI):**
+   - **Tier 4 (Cloudflare Workers AI):**
      - Pool: 3 Akun Cloudflare (rotasi multi-account dengan auto-resolution ID akun).
-     - Primary: `@cf/meta/llama-3.1-70b-instruct` (Llama 3.1 70B).
-     - Cadangan: `@cf/qwen/qwen2.5-coder-32b-instruct` (Qwen 2.5 Coder 32B).
-   - **Tier 6 (OpenRouter AI):**
-     - Pool: 5 API Key pool rotation.
-     - Primary: `nex-agi/nex-n2.5-pro:free`, Cadangan: `nvidia/nemotron-3.5-lightning:free`.
-   - **Tier 7 (Dahl Global API):**
-     - Pool: 10 API Key (`dahl_Kiv1N...` s.d. `dahl_GsHqB...`) dengan kuota 1 Miliar Token via Cloudflare Worker proxy.
-     - Primary: `deepseek-ai/DeepSeek-V4-Flash-0731`, Cadangan: `MiniMaxAI/MiniMax-M2.7`.
+     - Primary: `@cf/qwen/qwen3.8-27b` (Qwen 3.8 27B).
+     - Cadangan: `@cf/zai-org/glm-4.7-flash`, `@cf/openai/gpt-oss-120b`, `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.
+   - **Tier 5 (Google Gemini API):**
+     - Pool: 2 API Key (1.500 RPD/key).
+     - Primary: `gemini-3.8-flash`, Cadangan: `gemini-3.5-flash`.
+     - Jalur vision prioritas #1 (foto/PDF/video native).
+   - **Tier 6 (Dahl Global API):**
+     - Pool: 10 API Key dengan kuota 1 Miliar Token via Cloudflare Worker proxy.
+     - Primary: `deepseek-ai/DeepSeek-V4-Flash-0731`, Cadangan: `zai-org/GLM-5.3-Flash`, `MiniMaxAI/MiniMax-M2.7`.
 
-2. **Rantai Failover Multimodal / Vision (Foto, Gambar, Stiker):**
-   - **Vision Prioritas 1:** Google Gemini (`gemini-3.8-flash` > `gemini-2.5-flash`) — Native vision token parser.
-   - **Vision Prioritas 2:** Cloudflare Workers AI (`@cf/meta/llama-3.2-11b-vision-instruct`) — Pemanggilan native `/ai/run` endpoint dengan payload byte array biner.
-   - **Vision Prioritas 3:** OpenRouter AI (`nex-agi/nex-n2.5-pro:free` > `nex-agi/nex-n2.5-mini:free`).
-   - Provider teks murni (`dahl`, `groq`, `opencode`, `xkiro`) dilewati otomatis (0ms overhead) saat query membutuhkan vision.
+2. **Failover Berbasis Waktu Respons (Intra-Tier):**
+   - Setiap model dilacak latensi aktualnya (EWMA 0,7/0,3) via `recordModelLatency`.
+   - Model yang rata-rata merespons lebih lambat dari `SLOW_MODEL_MS` (default 12.000 ms) diturunkan prioritasnya di dalam tier yang sama (`orderModelsByLatency`), sehingga request berikutnya mencoba model cadangan yang lebih gesit lebih dulu.
+   - Failover antar-tier otomatis: bila SEMUA model dalam satu tier gagal/timeout/rate-limit, rantai langsung turun ke tier berikutnya.
 
-3. **Audio & Dokumen:**
-   - Audio / Voice Note: Groq Whisper (`whisper-large-v3` > `whisper-large-v3-turbo`) dengan fallback transkripsi Gemini Native Audio.
-   - File Dokumen (.docx, .txt): Ekstraksi lokal via Mammoth / TextParser -> dialihkan ke Tier 1 (Dahl DeepSeek).
-   - Dokumen PDF Visual & Video: Gemini Multimodal (`gemini-3.8-flash` > `gemini-2.5-flash`).
+3. **Rantai Failover Multimodal / Vision (Foto, Gambar, Stiker, Gambar di Word):**
+   - Urutan eksplisit di `config.models.visionChain` — dihormati mutlak (tidak disusun ulang pengurutan latensi):
+     1. Groq `qwen/qwen3.8-27b` (token pertama ~408ms)
+     2. Cloudflare `@cf/qwen/qwen3.8-27b` (~429ms)
+     3. Cloudflare `@cf/google/gemma-4-26b-a4b-it` (endpoint OpenAI-compat)
+     4. xKiro `minimax/minimax-m3:free`
+     5. Cloudflare `@cf/llava-hf/llava-1.5-7b-hf` (endpoint native `/ai/run`, field `description`)
+     6. Gemini `gemini-3.6-flash`
+     7. Gemini `gemini-3.5-flash-lite`
+     8. Gemini `gemini-2.5-flash`
+     9. xKiro `qwen/qwen3.8-max:free`
+     10. xKiro `qwen/qwen3.8-omni-flash:free`
+   - `gemini-3.8-flash` **dikecualikan** dari rantai foto: terbukti hang ~60 detik tanpa token saat menerima gambar (uji live), tetap primer teks & dokumen/video saja.
+   - Model free OpenRouter tidak mendukung image input (HTTP404) — hanya teks & parser PDF.
 
-4. **Zero-Configuration Vercel Models (Hardcoded Code Fallback):**
+4. **Audio, Dokumen & Video:**
+   - Audio / Voice Note: Groq Whisper (`whisper-large-v3` > `whisper-large-v3-turbo`), cadangan Cloudflare Whisper (`@cf/openai/whisper-large-v3-turbo`, pool & kuota berbeda), lalu Gemini native audio (3.5 Flash Lite > 2.5 Flash).
+   - File Dokumen (.docx, .txt): Ekstraksi lokal via Mammoth / TextParser → rantai teks utama. Jika .docx memuat gambar, gambar diekstrak (maks 3) dan dianalisis via rantai vision (`docx-vision`).
+   - Dokumen PDF: Gemini native PDF (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) → cadangan OpenRouter plugin `file-parser` (engine `pdf-text`) → parser teks lokal.
+   - Video: Gemini native video (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) → cadangan transkripsi trek audio (Whisper) lalu dijawab rantai teks.
+
+5. **Zero-Configuration Vercel Models (Hardcoded Code Fallback):**
    - Seluruh model default dikonfigurasi langsung di dalam kode (`src/env.ts`), sehingga pengguna tidak perlu mendaftarkan variabel model di dashboard Vercel / `.env`. Cukup menyuplai API key masing-masing provider.
 
 ---

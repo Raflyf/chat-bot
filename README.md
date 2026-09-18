@@ -1,6 +1,6 @@
 # FreeAIBot
 
-Asisten AI cerdas dan multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. Dibangun dengan TypeScript, Vercel Serverless, dan Supabase PostgreSQL.
+Asisten AI multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. Dibangun dengan TypeScript, Vercel Serverless, dan Supabase PostgreSQL.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -25,11 +25,11 @@ Asisten AI cerdas dan multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. 
 
 ## Fitur Utama
 
-- **Multimodal Lengkap**: Mampu memproses pesan suara (*Voice Note* via Whisper), dokumen kerja (PDF, Word, TXT, CSV), gambar/foto (*Vision*), serta stiker dan video pendek.
+- **Multimodal Lengkap**: Memproses pesan suara (*Voice Note* via Whisper), dokumen kerja (PDF, Word, TXT, CSV), gambar/foto (*Vision*), serta stiker dan video pendek.
 - **Pencarian Web Real-Time**: Dilengkapi mesin pencari internet untuk menyajikan data dan berita terkini secara faktual.
 - **Persona Dinamis & Baca Suasana**: Respon menyesuaikan suasana chat (canda, serius, sedih, lemas), mengikuti trajektori emosi lintas giliran, intensitas pesan, dan register bahasa lawan bicara. Tanpa kalimat template hafalan.
 - **Memori & Konteks Percakapan**: Menjaga kesinambungan alur obrolan secara alami dengan penyimpanan aman di Supabase PostgreSQL.
-- **Keandalan Tinggi**: Sistem failover 7 tier otomatis (OpenCode → Groq → Gemini → Cloudflare → OpenRouter → Dahl → xKiro) dengan rotasi kunci, circuit breaker, dan cooldown presisi.
+- **Keandalan Tinggi**: Sistem failover berlapis antar provider dengan rotasi kunci, circuit breaker, cooldown presisi, dan failover berbasis waktu respons antar model dalam satu tier.
 - **Zona Waktu Dinamis**: Mengenali waktu lokal secara akurat (WIB, WITA, WIT, dan waktu internasional) berdasarkan deteksi nomor atau lokasi GPS.
 - **Pengingat Terjadwal**: Mendukung penjadwalan pengingat otomatis yang dikirimkan langsung ke ruang obrolan Anda.
 - **Konsol Observabilitas**: Panel web terproteksi PIN untuk memantau status sistem, kesehatan koneksi, kuota per key (RPD + TPD), dan metrik penggunaan.
@@ -37,19 +37,20 @@ Asisten AI cerdas dan multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. 
 
 ---
 
-## Arsitektur Provider (Failover 7 Tier)
+## Arsitektur Provider (Failover 6 Tier)
 
-| Tier | Provider | Model Utama | Limit Free Tier |
-| :--- | :--- | :--- | :--- |
-| 1 | OpenCode Zen | Muse Spark 1.3 → 1.2 | ~1.000 RPD/key, 1M konteks |
-| 2 | Groq Cloud | Qwen 3.8-27B → 3.6-27B | 1.000 RPD • 8K TPM • **200K TPD** |
-| 3 | Google Gemini | Gemini 3.8 Flash → 2.5 Flash | 1.500 RPD/key, 1M konteks |
-| 4 | Cloudflare Workers AI | Llama 3.1 70B → Qwen 2.5 Coder | 10.000 Neuron/hari |
-| 5 | OpenRouter | Nex N2.5 Pro → Nemotron | Bebas kuota model `:free` |
-| 6 | Dahl Global | DeepSeek V4 Flash → MiniMax M2.7 | Pool 1 Miliar Token |
-| 7 | xKiro Gateway | Mistral Small 2603 → Codestral | 5 juta Token/hari |
+Sistem merutekan setiap percakapan melalui enam tingkat provider dengan failover otomatis. Bila seluruh model dalam satu tier gagal, timeout, atau menyentuh batas kuota, rantai berpindah ke tier berikutnya tanpa intervensi manual.
 
-Rantai **Vision** (gambar/PDF/video): Gemini → Cloudflare Vision → OpenRouter Vision.
+| Tier | Provider | Peran Utama |
+| :--- | :--- | :--- |
+| 1 | xKiro Gateway | Jalur utama teks; model vision tersedia sebagai cadangan rantai multimodal |
+| 2 | OpenRouter | Jalur teks & parser dokumen PDF |
+| 3 | Groq Cloud | Inferensi LPU ultra-cepat, transkripsi suara, & vision terdepan |
+| 4 | Cloudflare Workers AI | Teks, vision, & transkripsi cadangan |
+| 5 | Google Gemini | Konteks 1M, vision, dokumen PDF, video & audio native |
+| 6 | Dahl Global | Pool token besar sebagai jaring pengaman akhir |
+
+Di dalam setiap tier, model yang rata-rata merespons lambat diturunkan prioritasnya secara otomatis, sehingga request berikutnya mencoba model cadangan yang lebih gesit terlebih dahulu.
 
 ---
 
@@ -81,7 +82,7 @@ Salin template konfigurasi `.env.example` ke `.env`:
 ```bash
 cp .env.example .env
 ```
-Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key yang digunakan.
+Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key provider yang digunakan. Seluruh nama model dikelola langsung di dalam kode (`src/env.ts`), sehingga cukup menyuplai API key tanpa konfigurasi model tambahan.
 
 Catatan kuota penting:
 - `DAILY_CAP_GROQ=1000` dan `DAILY_TOKEN_CAP_GROQ=200000` mengikuti Free Tier resmi Groq (1.000 RPD + 200K TPD per key). TPD biasanya tercapai lebih dulu, jadi keduanya dibatasi runtime.

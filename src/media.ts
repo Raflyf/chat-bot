@@ -1,5 +1,6 @@
 import { config } from './env.js';
 import { autoReply, describeImage, sanitizeAssistantOutput } from './skills.js';
+import { chat } from './providers.js';
 import type { ChatContext } from './memory.js';
 import { keyUsed, isKeyAllowed, keyTokensUsed } from './quota.js';
 import mammoth from 'mammoth';
@@ -92,31 +93,65 @@ async function transcribeViaGemini(buffer: Buffer, mime: string, model: string):
   return null;
 }
 
+/** Helper transkripsi audio via Cloudflare Workers AI Whisper (endpoint native /ai/run). */
+async function transcribeViaCloudflare(buffer: Buffer, model: string): Promise<string | null> {
+  const keys = config.pools.cloudflare;
+  if (!keys || keys.length === 0) return null;
+
+  for (const rawKey of keys) {
+    if (!(await isKeyAllowed('cloudflare', rawKey, config.dailyCap.cloudflare))) continue;
+    const accountId = rawKey.includes(':') ? rawKey.slice(0, rawKey.indexOf(':')).trim() : '';
+    const token = rawKey.includes(':') ? rawKey.slice(rawKey.indexOf(':') + 1).trim() : rawKey.trim();
+    if (!accountId) continue;
+    try {
+      const res = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio: buffer.toString('base64') }),
+          signal: AbortSignal.timeout(config.downloadTimeoutMs || 20000),
+        },
+      );
+      if (!res.ok) continue;
+      const data = (await res.json()) as { result?: { text?: string } };
+      const text = data.result?.text?.trim();
+      if (text) {
+        keyUsed('cloudflare', rawKey);
+        return text;
+      }
+    } catch (err) {
+      console.warn(`[media] Cloudflare transkripsi [${model}] gagal:`, err);
+    }
+  }
+  return null;
+}
+
 /**
  * Transkripsi audio / Voice Note (VN) WhatsApp & Telegram:
  * - Primary: whisper-large-v3 (Groq)
- * - Cadangan 1: gemini-3.8-flash (Gemini native audio)
+ * - Cadangan 1: whisper-large-v3-turbo (Cloudflare Workers AI, endpoint native)
  * - Cadangan 2: whisper-large-v3-turbo (Groq)
- * - Cadangan 3: gemini-2.5-flash (Gemini native audio)
+ * - Cadangan 3: Gemini native audio (3.5 Flash Lite > 2.5 Flash)
  */
 export async function transcribeAudio(buffer: Buffer, mime: string = 'audio/ogg'): Promise<string> {
   // 1. Primary: Groq whisper-large-v3
   const t1 = await transcribeViaGroq(buffer, mime, 'whisper-large-v3');
   if (t1) return t1;
 
-  // 2. Cadangan 1: Gemini gemini-3.8-flash
-  const geminiPrimary = config.models.geminiPrimary || 'gemini-3.8-flash';
-  const t2 = await transcribeViaGemini(buffer, mime, geminiPrimary);
+  // 2. Cadangan 1: Cloudflare Whisper (pool & kuota berbeda dari Groq)
+  const t2 = await transcribeViaCloudflare(buffer, '@cf/openai/whisper-large-v3-turbo');
   if (t2) return t2;
 
   // 3. Cadangan 2: Groq whisper-large-v3-turbo
   const t3 = await transcribeViaGroq(buffer, mime, 'whisper-large-v3-turbo');
   if (t3) return t3;
 
-  // 4. Cadangan 3: Gemini gemini-2.5-flash
-  const geminiBackup = config.models.geminiBackup || 'gemini-2.5-flash';
-  const t4 = await transcribeViaGemini(buffer, mime, geminiBackup);
-  if (t4) return t4;
+  // 4. Cadangan 3: Gemini native audio
+  for (const model of config.models.geminiVision) {
+    const t = await transcribeViaGemini(buffer, mime, model);
+    if (t) return t;
+  }
 
   throw new Error('TRANSCRIPTION_ALL_KEYS_FAILED');
 }
@@ -215,6 +250,65 @@ async function processPdfViaGemini(
       }
     } catch (err) {
       console.warn(`[media] Gemini PDF [${model}] gagal:`, err);
+    }
+  }
+  return null;
+}
+
+/**
+ * Helper analisis PDF via OpenRouter (plugin `file-parser`, engine pdf-text).
+ * Dipakai sebagai cadangan setelah Gemini: model free OpenRouter menerima
+ * part `file` berisi PDF base64 dan memparsenya di sisi gateway.
+ */
+async function processPdfViaOpenRouter(
+  buffer: Buffer,
+  prompt: string,
+  filename: string,
+): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } } | null> {
+  const keys = config.pools.openrouter;
+  if (!keys || keys.length === 0) return null;
+
+  for (const key of keys) {
+    if (!(await isKeyAllowed('openrouter', key, config.dailyCap.openrouter))) continue;
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(config.timeoutMs),
+        body: JSON.stringify({
+          model: config.models.orPrimary,
+          max_tokens: config.maxOutputTokens,
+          plugins: [{ id: 'file-parser', pdf: { engine: 'pdf-text' } }],
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'file', file: { filename, file_data: `data:application/pdf;base64,${buffer.toString('base64')}` } },
+              { type: 'text', text: prompt },
+            ],
+          }],
+        }),
+      });
+
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      };
+      const text = data?.choices?.[0]?.message?.content?.trim();
+      if (text) {
+        keyUsed('openrouter', key);
+        const tokens = data.usage
+          ? {
+              prompt: Number(data.usage.prompt_tokens) || 0,
+              completion: Number(data.usage.completion_tokens) || 0,
+              total: Number(data.usage.total_tokens) || 0,
+            }
+          : undefined;
+        if (tokens?.total) keyTokensUsed('openrouter', key, tokens.total);
+        return { reply: sanitizeAssistantOutput(text), via: `openrouter/${config.models.orPrimary}`, tokens };
+      }
+    } catch (err) {
+      console.warn(`[media] OpenRouter PDF gagal:`, err);
     }
   }
   return null;
@@ -340,6 +434,38 @@ export async function extractDocumentText(
 }
 
 /**
+ * Ekstraksi gambar dari dokumen Word (.docx) via mammoth (convertImage → data URI).
+ * Dipakai agar dokumen berisi gambar/screenshot ikut dianalisis rantai vision.
+ * Batas: maksimal 3 gambar pertama, hanya raster, tiap gambar <= ~4MB base64.
+ */
+async function extractDocxImages(buffer: Buffer, max = 3): Promise<Array<{ base64: string; mime: string }>> {
+  try {
+    const result = await mammoth.convertToHtml(
+      { buffer },
+      {
+        convertImage: mammoth.images.imgElement((image) =>
+          image.read('base64').then((data) => ({ src: `data:${image.contentType};base64,${data}` })),
+        ),
+      },
+    );
+    const out: Array<{ base64: string; mime: string }> = [];
+    const re = /src="data:([^;"]+);base64,([^"]+)"/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(result.value)) !== null && out.length < max) {
+      const mime = m[1];
+      // Hanya raster yang didukung model vision (lewati svg/emf/wmf)
+      if (!/^image\/(png|jpe?g|webp|gif)/.test(mime)) continue;
+      if (m[2].length > 5_500_000) continue; // ~4MB biner
+      out.push({ mime, base64: m[2] });
+    }
+    return out;
+  } catch (err) {
+    console.warn('[media] Gagal ekstraksi gambar .docx via mammoth:', err);
+    return [];
+  }
+}
+
+/**
  * Memproses dan menganalisis berkas dokumen (PDF, Word, File Teks) secara cerdas.
  * Dokumen PDF:
  * - Primary: gemini-3.8-flash (native multimodal document)
@@ -363,15 +489,17 @@ export async function processIncomingDocument(
       ? `Pengguna mengirim dokumen PDF "${filename}". Pertanyaan / instruksi temanmu:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, jelas, dan manusiawi layaknya sahabat diskusi tanpa pembuka klise robotik.`
       : `Pengguna mengirim dokumen PDF "${filename}". Tolong baca dan rangkum inti terpentingnya secara ringkas, padat, dan ramah selayaknya teman ngobrol yang membantu meringkas isi dokumen dengan susunan kalimatmu sendiri (tanpa kalimat template hafalan).`;
 
-    // 1. Primary: gemini-3.8-flash
-    const p1 = await processPdfViaGemini(buffer, prompt, config.models.geminiPrimary || 'gemini-3.8-flash');
-    if (p1) return p1;
+    // 1. Gemini native PDF (model vision: 3.6 Flash > 3.5 Flash Lite > 2.5 Flash)
+    for (const model of config.models.geminiVision) {
+      const p = await processPdfViaGemini(buffer, prompt, model);
+      if (p) return p;
+    }
 
-    // 2. Cadangan: gemini-2.5-flash
-    const p2 = await processPdfViaGemini(buffer, prompt, config.models.geminiBackup || 'gemini-2.5-flash');
-    if (p2) return p2;
+    // 2. Cadangan: OpenRouter plugin file-parser (engine pdf-text)
+    const pOr = await processPdfViaOpenRouter(buffer, prompt, filename);
+    if (pOr) return pOr;
 
-    // 3. Parser Teks Lokal (Fallback): Ekstrak teks halaman PDF secara lokal lalu teruskan ke xKiro Qwen 3.8
+    // 3. Parser Teks Lokal (Fallback): Ekstrak teks halaman PDF secara lokal lalu teruskan ke rantai teks utama
     const extractedText = extractPdfTextSimple(buffer);
     if (extractedText && extractedText.length > 20) {
       const localPrompt = [
@@ -418,6 +546,29 @@ export async function processIncomingDocument(
         : 'Tolong baca dan rangkum inti dokumen ini secara bersahabat, jelas, dan terstruktur.',
     ].join('\n');
 
+    // Jika .docx memuat gambar (screenshot/diagram), sertakan ke rantai vision agar
+    // isi visualnya ikut dianalisis, bukan hanya teksnya.
+    if (effectiveMime.includes('wordprocessingml') || lowerName.endsWith('.docx')) {
+      const images = await extractDocxImages(buffer);
+      if (images.length > 0) {
+        try {
+          const parts: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [
+            { type: 'text', text: `${prompt}\n\nDokumen ini juga memuat ${images.length} gambar; analisis juga isi gambarnya.` },
+            ...images.map((img) => ({
+              type: 'image_url' as const,
+              image_url: { url: `data:${img.mime};base64,${img.base64}` },
+            })),
+          ];
+          const visionRes = await chat([{ role: 'user', content: parts }], { vision: true });
+          if (visionRes.text.trim()) {
+            return { reply: sanitizeAssistantOutput(visionRes.text), via: `docx-vision/${visionRes.via}`, tokens: visionRes.tokens };
+          }
+        } catch (err) {
+          console.warn('[media] Analisis gambar .docx via vision gagal, lanjut teks saja:', err);
+        }
+      }
+    }
+
     return await autoReply(prompt, ctx);
   }
 
@@ -439,6 +590,8 @@ export async function processIncomingDocument(
 
 /**
  * Memproses video (MP4 / WebM) via Google Gemini Multimodal API.
+ * Cadangan: transkripsi trek audio (Groq/Cloudflare Whisper) lalu jawab dari teks
+ * bila seluruh jalur video native gagal (video tetap bisa ditanggapi isinya).
  */
 export async function processIncomingVideo(
   buffer: Buffer,
@@ -451,10 +604,9 @@ export async function processIncomingVideo(
     ? `Pengguna mengirim video "${filename}". Pertanyaan / instruksi:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, santai, dan alami tanpa kalimat pembuka robotik seperti "Video ini menampilkan...".`
     : `Pengguna mengirim video "${filename}". Tonton dan tanggapi kejadian atau suasana dalam video ini secara wajar, santai, dan seru layaknya teman yang baru saja menonton bersama. DILARANG membuka dengan "Video ini memperlihatkan...".`;
 
-  const models = [config.models.geminiPrimary || 'gemini-3.8-flash', config.models.geminiBackup || 'gemini-2.5-flash'];
   const keys = config.pools.gemini;
 
-  for (const model of models) {
+  for (const model of config.models.geminiVision) {
     for (const key of keys) {
       if (!(await isKeyAllowed('gemini', key, config.dailyCap.gemini))) continue;
       try {
@@ -501,6 +653,29 @@ export async function processIncomingVideo(
         console.warn(`[media] Video via Gemini [${model}] gagal:`, err);
       }
     }
+  }
+
+  // Cadangan: transkripsi trek audio video (Whisper menerima MP4/WebM) lalu jawab
+  // dari transkripnya via rantai teks. Menjaga video tetap terproses saat seluruh
+  // jalur video native (Gemini) gagal.
+  try {
+    const transcript = await transcribeAudio(buffer, mime);
+    if (transcript && transcript.trim().length > 0) {
+      const textPrompt = [
+        `[TRANSKRIP AUDIO DARI VIDEO: "${filename}"]`,
+        '--- ISI TRANSKRIP ---',
+        transcript.slice(0, 20000),
+        '--- AKHIR TRANSKRIP ---',
+        '',
+        caption && caption.trim()
+          ? `Pertanyaan / instruksi temanmu tentang video ini: ${caption.trim()}`
+          : 'Tolong tanggapi isi video ini secara wajar, santai, dan seru layaknya teman yang baru saja menonton bersama. Sebutkan bahwa kamu menangkap isinya dari suara video.',
+      ].join('\n');
+      const res = await autoReply(textPrompt, ctx);
+      return { reply: res.reply, via: `transkrip-video/${res.via}`, tokens: res.tokens };
+    }
+  } catch {
+    // lanjut ke fallback dinamis
   }
 
   // Fallback terakhir: jawaban dinamis; teks teknis statis hanya jika AI juga mati
