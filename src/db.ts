@@ -175,8 +175,10 @@ export async function claimIncomingMessage(
           }
 
           // Durability check: jika worker sebelumnya crash (>45 detik tanpa processed_at):
+          // Ambang dinaikkan ke 90 dtk agar retry Telegram (timeout webhook ~60s) tidak
+          // memicu re-claim saat pemrosesan masih berjalan → cegah balasan ganda (audit F2.1).
           const ageMs = Date.now() - new Date(existing.created_at).getTime();
-          if (ageMs > 45_000) {
+          if (ageMs > 90_000) {
             console.warn(`[db] Re-claiming stuck/crashed message: platform=${platform}, msg_id=${msgId}, age=${ageMs}ms`);
             return true;
           }

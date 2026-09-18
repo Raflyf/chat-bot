@@ -555,8 +555,8 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/^(?:Wah,\s*)?stiker\s+(?:ini\s+)?(?:seru|lucu|keren|kocak|menarik|banget|apaan)[^.!?\n]*[.!?\n]+\s*/i, '');
   out = out.replace(/(?:^|\s)#[a-zA-Z][a-zA-Z0-9_-]+/g, ' ');
   out = out.replace(/[🐾🤖]/gu, '');
-  if (/^SiSi$/i.test(out.trim())) out = 'Siapp!';
-  out = out.replace(/^SiSi\b/i, 'Siapp');
+  // 'SiSi' (bukan kata Indonesia) dibiarkan mengalir ke jalur regen/autoReply — TIDAK
+  // diganti kalimat hardcoded (aturan keras: zero teks statis dari bot).
 
   // 18. Bersihkan tanda kutip pembungkus tunggal di awal dan akhir balasan
   out = out.replace(/^["']\s*([\s\S]*?)\s*["']$/, '$1').trim();
@@ -1157,7 +1157,13 @@ async function chatRetry(
 ): Promise<{ text: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   try {
     return await chat(messages, { vision });
-  } catch {
+  } catch (err) {
+    const msg = String((err as Error)?.message ?? err);
+    // Hanya retry untuk kegagalan transien (rate-limit/timeout). Error deterministik
+    // (400/401/403/404/422/payload) akan gagal identik di percobaan kedua — membuang
+    // waktu serverless tanpa manfaat (audit L16).
+    const transient = /RATE_LIMITED|TIMEOUT|NO_FIRST_TOKEN|STREAM_IDLE|PROVIDER_5\d\d|EMPTY_RESPONSE|ALL_PROVIDERS_FAILED/.test(msg);
+    if (!transient) throw err;
     await wait(1500);
     return await chat(messages, { vision });
   }

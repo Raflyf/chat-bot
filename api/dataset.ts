@@ -425,7 +425,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // Format 2: CSV (Format Evaluasi Spreadsheet / Excel dengan Tanggal & Jam Terpisah)
     if (format === 'csv') {
-      const escapeCsv = (str: string | number | undefined | null) => `"${String(str ?? '').replace(/"/g, '""')}"`;
+      // Prefix ' mencegah formula execution (CSV injection) di Excel/Sheets —
+      // sel yang diawali = + - @ tab CR dieksekusi sebagai formula oleh spreadsheet.
+      const sanitizeCsvCell = (value: unknown): string => {
+        let s = String(value ?? '');
+        if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+        return s;
+      };
+      const escapeCsv = (str: unknown): string => `"${sanitizeCsvCell(str).replace(/"/g, '""')}"`;
       const csvHeader = 'ID,Tanggal,Jam,Waktu_Lokal,Platform,User_Chat,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n';
       const csvRows = finalPairs
         .map((p) =>

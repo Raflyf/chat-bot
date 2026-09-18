@@ -934,16 +934,24 @@ export async function chat(
   // tidak menghabiskan jatah serverless. Sisa anggaran diteruskan ke tiap attempt (`t`).
   const deadline = Date.now() + config.chainDeadlineMs;
 
+  // Anti-blackhole (audit H1): jika cooldown model menutup SEMUA kandidat, rantai akan
+  // melempar ALL_PROVIDERS_FAILED tanpa satu pun percobaan upstream selama cooldown (bisa
+  // 15 menit). Pass kedua "best-effort" mengabaikan cooldown sekali agar selalu ada percobaan.
+  let anyModelAttempted = false;
+  for (const allowCoolingPass of [false, true]) {
   for (const step of orderedSteps) {
     if (Date.now() >= deadline - 1500) break;
     // Urutkan model dalam tier ini berdasarkan latensi terukur (gesit di depan, lambat di belakang).
     // Rantai vision dibiarkan apa adanya karena tiap step hanya berisi satu model.
     const models = needVision ? step.models : orderModelsByLatency(step.kind, step.models);
     for (const model of models) {
-      // Fast-pass: Lewati model yang sedang dalam cooldown server error (0ms overhead)
-      if (isModelCoolingDown(step.kind, model)) {
+      // Fast-pass: Lewati model yang sedang dalam cooldown server error (0ms overhead).
+      // Pass best-effort (allowCoolingPass) mengabaikan cooldown — hanya berjalan bila pass
+      // pertama tidak menghasilkan percobaan apa pun.
+      if (!allowCoolingPass && isModelCoolingDown(step.kind, model)) {
         continue;
       }
+      anyModelAttempted = true;
 
       const candidateKeys = getOrderedKeys(step.kind, step.keys);
       let anyKeyAttempted = false;
@@ -954,7 +962,16 @@ export async function chat(
         if (modelUnresponsive) break;
         // Guard RPD + TPD (token/hari): hentikan pool sebelum menabrak 429 upstream.
         // Groq Free Tier: 1.000 RPD DAN 200K TPD — TPD biasanya tercapai lebih dulu.
-        if (!(await isKeyAllowed(step.kind, key, step.cap, config.dailyTokenCap[step.kind] || 0))) continue;
+        // try/catch: kegagalan DB kuota (mis. URL Supabase buruk) tidak boleh membatalkan
+        // seluruh rantai failover — tanpa ini satu error DB melempar keluar dari chat() (audit H2).
+        let keyAllowed = true;
+        try {
+          keyAllowed = await isKeyAllowed(step.kind, key, step.cap, config.dailyTokenCap[step.kind] || 0);
+        } catch (quotaErr) {
+          console.warn(`[providers] Gagal cek kuota key ${step.kind} (${String((quotaErr as Error)?.message ?? quotaErr).slice(0, 80)}). Lanjut tanpa guard kuota.`);
+          keyAllowed = true;
+        }
+        if (!keyAllowed) continue;
         const remainingMs = deadline - Date.now();
         if (remainingMs < 1500) {
           lastError = 'CHAIN_DEADLINE';
@@ -1002,12 +1019,22 @@ export async function chat(
           // - PROVIDER_404: Model tidak terdaftar di endpoint upstream
           // - ModelError: Upstream menyatakan nama model tidak didukung
           // - PROVIDER_413: Ukuran payload prompt melampaui kapasitas model
+          // Error deterministik (bentuk request salah / kredensial ditolak / gambar tidak
+          // didukung): mengulang di key lain menghasilkan hasil identik dan membakar deadline.
+          // Langsung ganti model (audit H5).
           if (
             lastError.includes('PROVIDER_404') ||
             lastError.includes('ModelError') ||
-            lastError.includes('PROVIDER_413')
+            lastError.includes('PROVIDER_413') ||
+            lastError.includes('PROVIDER_400') ||
+            lastError.includes('PROVIDER_401') ||
+            lastError.includes('PROVIDER_403') ||
+            lastError.includes('PROVIDER_422') ||
+            lastError.includes('BAD_IMAGE') ||
+            lastError.includes('NO_IMAGE_DATA_FOR_VISION') ||
+            lastError.includes('CLOUDFLARE_ACCOUNT_ID_MISSING')
           ) {
-            console.warn(`[providers] Model ${step.kind}/${model} tidak valid atau payload melampaui batas (${lastError}). Beralih ke model cadangan.`);
+            console.warn(`[providers] Model ${step.kind}/${model} menolak request secara deterministik (${lastError}). Beralih ke model cadangan.`);
             recordModelFailure(step.kind, model, 15 * 60_000);
             break;
           }
@@ -1033,6 +1060,9 @@ export async function chat(
       }
     }
     if (Date.now() >= deadline - 1500) break;
+  }
+    // Pass pertama sudah menghasilkan percobaan -> tidak perlu pass best-effort.
+    if (anyModelAttempted) break;
   }
   throw new Error(`ALL_PROVIDERS_FAILED:${lastError}`);
 }

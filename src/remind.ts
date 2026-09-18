@@ -204,11 +204,28 @@ export async function handleRemind(
 
 let workerInterval: NodeJS.Timeout | null = null;
 
-/** Worker lokal untuk memproses reminder tiap 30 detik saat bot dijalankan di terminal. */
-export function startReminderWorker(bot: TelegramBot): void {
+/**
+ * Worker lokal untuk memproses reminder tiap 30 detik saat bot dijalankan di terminal.
+ * WAJIB menghormati `platform` — chat_id WhatsApp (mis. '62812...') tidak boleh dikirim
+ * ke Telegram (Number('62812...') menargetkan chat id Telegram yang salah — misdelivery).
+ * sendWhatsApp opsional agar pemanggil WhatsApp-only tidak perlu impor Telegram.
+ */
+export function startReminderWorker(
+  bot: TelegramBot,
+  sendWhatsApp?: (chatId: string, text: string) => Promise<unknown>,
+): void {
   if (config.isServerless || workerInterval) return;
   workerInterval = setInterval(() => {
-    void checkDueReminders(async (chatId, text) => {
+    void checkDueReminders(async (chatId, text, platform) => {
+      if (platform === 'whatsapp') {
+        if (sendWhatsApp) {
+          await sendWhatsApp(chatId, text);
+        } else {
+          console.warn(`[remind] Reminder WhatsApp dilewati (tanpa sender WA): ${chatId}`);
+        }
+        return;
+      }
+      // Telegram (atau platform belum tercatat): kirim via bot Telegram.
       await bot.sendMessage(Number(chatId), text);
     });
   }, 30_000);

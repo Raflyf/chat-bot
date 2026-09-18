@@ -219,6 +219,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 **Audit penuh 5 area** (keamanan API/auth, database+RLS, frontend XSS, logika providers/media, handlers Telegram+WhatsApp) via subagent paralel + inspeksi manual file inti. Semua temuan diverifikasi di kode sebelum patch.
 
 **Keamanan (CRITICAL/HIGH):**
+- **Token admin fail-closed saat sistem belum dikonfigurasi** (`src/admin_auth.ts`): tanpa `pinHash`, kunci HMAC menjadi `sha256(salt + ':')` dengan salt publik — token bisa diforge. `inspectSessionToken` kini menolak semua token bila `pinHash` kosong.
 - **WhatsApp webhook verifikasi diperketat** (`src/whatsapp_cloud.ts`): dengan secret terpasang → verifikasi HMAC ketat fail-closed (signature salah/kosong ditolak). Tanpa secret → request tetap diproses dengan PERINGATAN KEAMANAN mencolok di log (bot tidak mati; kompatibilitas produksi), dan verifikasi otomatis aktif begitu `WHATSAPP_APP_SECRET` dipasang. Dev lokal bisa skip eksplisit via `WHATSAPP_INSECURE_SKIP_VERIFY=1` (non-serverless).
 - **Logout benar-benar mencabut token** (`src/admin_auth.ts`): token HMAC stateless dulu tetap valid 15 menit penuh setelah logout. Ditambah daftar `revokedTokens` (dipangkas otomatis saat kedaluwarsa, format penyimpanan backward-compatible `{active, revoked}`) — token yang di-logout ditolak walau HMAC-nya sah.
 - **Rate-limit tidak bisa di-spoof** (`src/admin_auth.ts`): `getClientIp` dulu memprioritaskan header `x-vercel-forwarded-for` yang bisa dipalsukan client. Kini entri PALING KANAN `x-forwarded-for` (dari edge proxy) yang dipakai.
@@ -231,11 +232,21 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - Index standalone `web_knowledge(expires_at)` untuk purge retensi (sebelumnya seq scan), dan `reminders(chat_id)` untuk lookup per-chat.
 
 **Robustness (logika):**
+- **Anti-blackhole rantai failover** (`src/providers.ts`): bila cooldown model menutup SEMUA kandidat, rantai dulu melempar `ALL_PROVIDERS_FAILED` tanpa satu pun percobaan upstream (bisa 15 menit). Kini ada pass kedua "best-effort" yang mengabaikan cooldown sekali.
+- **Kegagalan DB kuota tidak membatalkan rantai** (`src/providers.ts`): `isKeyAllowed` dibungkus try/catch — error DB (mis. URL Supabase buruk) tidak lagi melempar keluar dari `chat()` sebelum provider mana pun dicoba.
+- **Error deterministik tidak diulang sia-sia** (`src/providers.ts`): 400/401/403/404/413/422/BAD_IMAGE kini langsung ganti model (bukan mencoba semua key dengan hasil identik).
+- **Per-chat lock** (`src/memory.ts` + `src/telegram.ts`): pesan beruntun dalam satu chat diproses berurutan — balasan tidak lagi keluar urutan atau saling menimpa konteks.
 - **SSE decoder flush** (`src/providers.ts`): sequence multi-byte yang terbelah di batas chunk terakhir dulu hilang — kini di-flush di EOF.
 - **Estimasi token legacy tidak menonaktifkan key sehat** (`src/quota.ts`): hidrasi `used × 2500` kini bertanda `estimated` dan digantikan laporan token riil pertama (bukan ditumpuk).
-- **Media gagal tidak lagi senyap** (`src/telegram.ts`, `src/whatsapp_baileys.ts`): download/proses gagal pada dokumen, VN, gambar, stiker, video kini mengirim notifikasi dinamis (via `dynamicNotice`) — sebelumnya user tidak menerima balasan apa pun.
+- **Media gagal tidak lagi senyap** (`src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`): download/proses gagal pada dokumen, VN, gambar, stiker, video kini mengirim notifikasi dinamis (via `dynamicNotice`); batch WA Cloud dibungkus try/catch per-pesan agar satu pesan poison tidak menghilangkan sisa batch.
 - **Cache sweep** (`src/memory.ts`, `src/quota.ts`): `contextCache`/`hydratedKeys` dibatasi 500 entri dengan pemangkasan otomatis.
-- **Timeout media dari config** (`src/media.ts`): hardcoded 35000 diganti `config.timeoutMs`.
+- **Timeout media & Meta Graph API dari config** (`src/media.ts`, `src/whatsapp_cloud.ts`, `src/admin_auth.ts`): fetch tanpa timeout (Resend OTP, kirim pesan WA, download media WA) kini memakai `AbortSignal.timeout`.
+- **Cron reminder** (`vercel.json`): `crons` ditambahkan (`*/5 * * * *`); worker lokal menghormati `platform` (reminder WhatsApp tidak lagi salah kirim ke Telegram).
+- **Retry cerdas** (`src/skills.ts`): `chatRetry` hanya mengulang untuk kegagalan transien — error deterministik tidak membuang 1,5 dtk + rantai penuh.
+- **`numAllowZero`** (`src/env.ts`): `DAILY_TOKEN_CAP_*=0` kini benar-benar "tanpa batas" (sebelumnya diam-diam menjadi default).
+- **CF Whisper fallback hidup** (`src/media.ts`): transkripsi Cloudflare kini memakai `CLOUDFLARE_ACCOUNT_ID` untuk key berformat token bare (sebelumnya selalu no-op).
+- **PIN tidak pernah dicetak ke log** (`src/admin_auth.ts`); **CSV export anti formula-injection** (`api/dataset.ts`).
+- **Re-claim pesan naik 45 dtk → 90 dtk** (`src/db.ts`): retry Telegram saat pemrosesan masih berjalan tidak lagi memicu balasan ganda.
 
 **Frontend (dashboard):**
 - Render ganda tiap tick 15 dtk dihilangkan (payload identik → skip rebuild DOM).

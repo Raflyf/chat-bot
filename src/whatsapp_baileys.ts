@@ -13,7 +13,7 @@ import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
-import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
+import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
@@ -676,9 +676,10 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     }
     const dueAt = new Date(Date.now() + minutes * 60_000);
     const targetChat = remoteJid.replace(/@.*$/, '');
-    await saveReminderToDb(targetChat, message, dueAt, 'whatsapp');
+    const reminderSaved = await saveReminderToDb(targetChat, message, dueAt, 'whatsapp');
     const { reply } = await autoReply(
-      `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.`,
+      `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.` +
+        (reminderSaved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa pengingat mungkin tidak tersimpan.'),
       remindCtx,
     );
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);

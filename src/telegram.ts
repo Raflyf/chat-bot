@@ -3,7 +3,7 @@ import { config } from './env.js';
 import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
-import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
+import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -82,8 +82,17 @@ async function answerPhoto(
   return true;
 }
 
-/** Handler inti pesan Telegram: dipakai bersama oleh Polling lokal & Webhook Vercel */
+/**
+ * Wrapper publik: serialkan pemrosesan per-chat agar balasan tidak keluar urutan
+ * saat dua pesan tiba beruntun (audit F3.1). Handler inti dipakai bersama oleh
+ * Polling lokal & Webhook Vercel.
+ */
 export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.Message): Promise<void> {
+  const chatKey = msg.chat?.id ? String(msg.chat.id) : 'unknown';
+  return withChatLock(`tg:${chatKey}`, () => handleIncomingMessageInner(bot, msg));
+}
+
+async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Message): Promise<void> {
   try {
     if (msg.from?.is_bot) return;
     const chatId = msg.chat.id;

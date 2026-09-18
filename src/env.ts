@@ -22,6 +22,13 @@ function csv(name: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+function numAllowZero(name: string, fallback: number): number {
+  const raw = cleanStr(name);
+  if (!raw) return fallback;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 ? v : fallback;
+}
+
 function num(name: string, fallback: number): number {
   const v = Number(cleanStr(name));
   return Number.isFinite(v) && v > 0 ? v : fallback;
@@ -161,12 +168,12 @@ export const config = {
   // Groq Free Tier resmi: 200K TPD untuk qwen3.8-27b & qwen3.6-27b
   // (tercapai jauh lebih cepat daripada RPD 1.000 pada ~2.5K token/call).
   dailyTokenCap: {
-    dahl: num('DAILY_TOKEN_CAP_DAHL', 0),
-    groq: num('DAILY_TOKEN_CAP_GROQ', 200000),
-    gemini: num('DAILY_TOKEN_CAP_GEMINI', 0),
-    cloudflare: num('DAILY_TOKEN_CAP_CLOUDFLARE', 0),
-    openrouter: num('DAILY_TOKEN_CAP_OPENROUTER', 0),
-    xkiro: num('DAILY_TOKEN_CAP_XKIRO', 0),
+    dahl: numAllowZero('DAILY_TOKEN_CAP_DAHL', 0),
+    groq: numAllowZero('DAILY_TOKEN_CAP_GROQ', 200000),
+    gemini: numAllowZero('DAILY_TOKEN_CAP_GEMINI', 0),
+    cloudflare: numAllowZero('DAILY_TOKEN_CAP_CLOUDFLARE', 0),
+    openrouter: numAllowZero('DAILY_TOKEN_CAP_OPENROUTER', 0),
+    xkiro: numAllowZero('DAILY_TOKEN_CAP_XKIRO', 0),
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',

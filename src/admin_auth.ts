@@ -209,7 +209,12 @@ export async function getAuthConfig(forceRefresh = false): Promise<AdminAuthConf
         // Auto-provisioning first-run: jika ADMIN_PIN belum di-set, buat PIN 6-digit acak aman via CSPRNG
         const autoPin = String(crypto.randomInt(100000, 999999));
         activePinHash = hashValue(autoPin);
-        console.log(`[admin-auth] First-run provisioning: Master PIN acak dibuat: ${autoPin} (Simpan angka ini atau atur ADMIN_PIN di env)`);
+        // PIN TIDAK pernah dicetak ke log (log drain / Vercel logs bisa dibaca pihak lain).
+        // Set ADMIN_PIN di environment untuk PIN yang diketahui, atau gunakan alur OTP reset.
+        console.warn(
+          '[admin-auth] First-run provisioning: Master PIN acak telah dibuat (tidak ditampilkan di log demi keamanan). ' +
+            'Atur ADMIN_PIN di environment untuk PIN yang Anda ketahui, atau gunakan pemulihan OTP untuk mereset.',
+        );
         saveAuthConfig({ pinHash: activePinHash }).catch(() => {});
       } else if (!tableData.pin_hash && DEFAULT_PIN_HASH) {
         saveAuthConfig({ pinHash: DEFAULT_PIN_HASH }).catch(() => {});
@@ -287,7 +292,12 @@ export async function saveAuthConfig(updates: Partial<AdminAuthConfig>): Promise
   cachedAuthConfigTime = Date.now();
 
   const c = db();
-  if (!c) return true;
+  if (!c) {
+    // Tanpa DB, penulisan status keamanan (lockout/OTP/session) tidak durable —
+    // jangan laporkan sukses agar pemanggil bisa fail-closed (audit F9).
+    console.warn('[admin-auth] saveAuthConfig tanpa koneksi DB — perubahan tidak tersimpan permanen.');
+    return false;
+  }
 
   try {
     // 1. Try admin_auth_config table
@@ -359,6 +369,10 @@ export async function inspectSessionToken(token: string): Promise<{ valid: boole
 
   const config = await getAuthConfig();
   const now = Date.now();
+
+  // FAIL-CLOSED (audit F1): tanpa pinHash, kunci HMAC menjadi sha256(salt + ':') dengan
+  // salt publik — token apa pun bisa diforge. Sistem yang belum dikonfigurasi = deny all.
+  if (!config.pinHash) return { valid: false };
 
   // 1. Cek token kriptografis HMAC: adm_<payload_base64url>.<signature_hex>
   const raw = token.slice(4); // hilangkan 'adm_'
@@ -691,6 +705,7 @@ async function dispatchEmail(otpCode: string): Promise<{ dispatched: boolean; pr
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
+      signal: AbortSignal.timeout(10000),
       headers: {
         'Authorization': `Bearer ${apiKey.trim()}`,
         'Content-Type': 'application/json',
