@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.34.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.35.0.
 
 ---
 
@@ -12,7 +12,7 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Tier 1 (xKiro Gateway):**
      - Pool: 3 API Key.
      - Primary: `qwen/qwen3.8-max:free` (latensi ~0,15s, kualitas Qwen terbaru).
-     - Cadangan: `minimax/minimax-m3:free` (GPQA 93,0), lalu slot arsip `deepseek/deepseek-v4.1-flash:free` (diaktifkan otomatis begitu kembali tersedia di endpoint xKiro).
+     - Cadangan: slot arsip `deepseek/deepseek-v4.1-flash:free` (diaktifkan otomatis begitu kembali tersedia di endpoint xKiro). `minimax/minimax-m3:free` (GPQA 93,0) khusus rantai multimodal (prioritas #4), bukan cadangan teks.
      - Penyetelan sampling: `temperature` 0,35 (non-DeepSeek) / 0,65 (DeepSeek) dengan `presence_penalty`/`frequency_penalty` murni dinamis tanpa injeksi template statis.
    - **Tier 2 (OpenRouter AI):**
      - Pool: 5 API Key (rotasi).
@@ -102,6 +102,11 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Trigger situasi bingung:** regex `isUserConfusedOrFlagged` ("hah", "ngetik apa", "salah ngomong", "ngaco", "ga nyambung", dll.) → instruksi akui kekeliruan tanpa drama, bahasa sehari-hari tanpa jargon teknis.
    - **Guard program:** `selfDevClaimRe` mendeteksi klaim-diri-developer di balasan (semua lawan bicara) → ralat dinamis sekali; bila bandel → klausa dibuang murni; bila habis → regenerasi dinamis. `PROMPT_VERSION` naik `v0.34.0`.
    - **Verifikasi:** `scratch/verify_v34_identity.mjs` 4/4 skenario log asli bersih; regresi v0.32/v0.33 hijau.
+
+11. **MiniMax M3 Khusus Multimodal — Bukan Cadangan Teks (v0.35):**
+   - **Keputusan user:** MiniMax M3 dihapus dari cadangan teks Tier 1, tetap dipertahankan di rantai multimodal.
+   - `xkiroBackup` kini hanya berisi slot arsip `deepseek/deepseek-v4.1-flash:free`; MiniMax M3 tetap di `visionChain` prioritas #4.
+   - Dashboard, `CLAUDE.md`, `DOCUMENTATION.md`, `.env` & `.env.example` disinkronkan; `PROMPT_VERSION` naik `v0.35.0`.
 
 ---
 

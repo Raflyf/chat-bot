@@ -45,9 +45,10 @@ export const config = {
   },
   cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
   models: {
-    // Tier 1: xKiro Gateway (Qwen 3.8 Max Free → MiniMax M3 Free; slot DeepSeek arsip bila pulih)
+    // Tier 1: xKiro Gateway (Qwen 3.8 Max Free → slot DeepSeek arsip bila pulih;
+    // MiniMax M3 dipakai KHUSUS di rantai multimodal, bukan cadangan teks)
     xkiroPrimary: 'qwen/qwen3.8-max:free',
-    xkiroBackup: ['deepseek/deepseek-v4.1-flash:free', 'minimax/minimax-m3:free'],
+    xkiroBackup: ['deepseek/deepseek-v4.1-flash:free'],
     // Tier 2: OpenRouter (DeepSeek V4 Flash 0731 Free → Nex N2.5 Pro / Nemotron Lightning)
     orPrimary: 'deepseek/deepseek-v4-flash-0731:free',
     orBackup: ['nex-agi/nex-n2.5-pro:free', 'nvidia/nemotron-3.5-lightning:free'],

@@ -635,7 +635,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         return 0;
       }
 
-      // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover runtime sistem v0.34)
+      // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover runtime sistem v0.35)
       const catalog = [
         // --- Tier 1: xKiro Gateway (Primer Teks Runtime) ---
         {
@@ -650,8 +650,8 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           name: "MiniMax M3 Free",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
-          capabilities: ["Text", "Deep Reasoning", "Vision"],
-          desc: "Prioritas #2 Tier 1 - Cadangan penalaran xKiro (GPQA 93,0); vision prioritas #4 rantai multimodal",
+          capabilities: ["Vision", "Deep Reasoning", "Multimodal"],
+          desc: "Vision prioritas #4 rantai multimodal xKiro (GPQA 93,0) - khusus jalur gambar, bukan cadangan teks",
           matchKeys: ["xkiro/minimax/minimax-m3:free", "minimax/minimax-m3:free", "minimax-m3"],
         },
         {

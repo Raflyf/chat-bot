@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.34.0 (Anti-Konfabulasi & Identitas Tegas — Bot Bukan Developer)  
+**Versi:** v0.35.0 (MiniMax M3 Khusus Multimodal — Bukan Cadangan Teks)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-18 WIB
 
@@ -214,6 +214,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 ## 5. Riwayat Versi & Kronologi Perubahan
 
+### v0.35.0 - 2026-09-18 (MiniMax M3 Khusus Multimodal — Bukan Cadangan Teks)
+
+**Keputusan user:** *"untuk minimax itu hilangkan saja deh dari backup text, simpan di multimodal saja"*.
+
+- **`src/env.ts`:** `xkiroBackup` kini `['deepseek/deepseek-v4.1-flash:free']` — `minimax/minimax-m3:free` **dihapus dari cadangan teks** Tier 1. Entri MiniMax M3 di `visionChain` (prioritas #4) **tetap dipertahankan** sebagai model multimodal.
+- **`src/providers.ts`:** komentar step xKiro disesuaikan — MiniMax M3 tercatat sebagai model khusus rantai multimodal.
+- **`public/js/dashboard.js`:** entri katalog MiniMax M3 kini berlabel `["Vision", "Deep Reasoning", "Multimodal"]` dengan deskripsi "Vision prioritas #4 rantai multimodal xKiro — khusus jalur gambar, bukan cadangan teks".
+- **Dokumen (`CLAUDE.md`, `DOCUMENTATION.md`, `.env`/`.env.example`):** seluruh deskripsi Tier 1 diperbarui — cadangan teks tersisa slot arsip DeepSeek V4.1 Flash; MiniMax M3 tercatat khusus multimodal.
+- **`.env` asli & `.env.example`:** header seksi Tier 1 diganti menjadi `(QWEN 3.8 MAX FREE & DEEPSEEK V4.1 FLASH ARSIP)`; backup `.env.bak_v34_*` dibuat sebelum perubahan.
+- **`PROMPT_VERSION` dinaikkan `v0.34.0` → `v0.35.0`** di ketiga handler platform.
+
 ### v0.34.0 - 2026-09-18 (Anti-Konfabulasi & Identitas Tegas — Bot Bukan Developer)
 
 **Akar masalah (temuan dari log produksi 18 Sep):** saat user mengirim stiker bermakna "saya lupa", model (xKiro qwen3.8-max) justru mengklaim **dirinya** developer ("kamu dong yang developernya aku") lalu pada pesan berikutnya mengarang narasi teknis tanpa dasar ("namain aja lagi ngebug dikit, kan yang bikin kode kamu juga lahh", "Typo-ti cokk, kodenya dikoreksi terus sama kamu biar makin pinter"). Gejala: klaim identitas terbalik + konfabulasi konteks + kosakata rusak/tidak jelas.
@@ -328,7 +339,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 **Kronologi: audit menyeluruh seluruh API key & model gratis menemukan OpenCode Zen free tier kini terkunci oleh gate anti-abuse resmi (mulai 17 Sep 2026, "You cannot use the free tier in other harnesses"), sehingga provider dikeluarkan dari rantai produksi. Rantai disusun ulang menjadi 6 tier dengan xKiro sebagai Tier 1 dan ditambah mekanisme failover berbasis waktu respons.**
 
 - **Rantai Teks Baru (6 Tier) — `src/providers.ts` & `src/env.ts`:**
-  - **Tier 1 xKiro:** primary `qwen/qwen3.8-max:free` (~0,15s), cadangan `minimax/minimax-m3:free` (GPQA 93,0), plus slot arsip `deepseek/deepseek-v4.1-flash:free` yang aktif otomatis bila model kembali muncul di endpoint.
+  - **Tier 1 xKiro:** primary `qwen/qwen3.8-max:free` (~0,15s), plus slot arsip `deepseek/deepseek-v4.1-flash:free` yang aktif otomatis bila model kembali muncul di endpoint. `minimax/minimax-m3:free` dipakai khusus di rantai multimodal (prioritas #4), bukan cadangan teks.
   - **Tier 2 OpenRouter:** primary `deepseek/deepseek-v4-flash-0731:free` (GPQA 90,8), cadangan `nex-agi/nex-n2.5-pro:free`, `nvidia/nemotron-3.5-lightning:free`.
   - **Tier 3 Groq:** primary `qwen/qwen3.8-27b` (~284 tok/s), cadangan `openai/gpt-oss-120b`.
   - **Tier 4 Cloudflare:** primary `@cf/qwen/qwen3.8-27b`, cadangan `@cf/zai-org/glm-4.7-flash`, `@cf/openai/gpt-oss-120b`, `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.
