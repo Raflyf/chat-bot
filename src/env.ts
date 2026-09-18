@@ -31,10 +31,10 @@ export const config = {
   telegramToken: cleanStr('TELEGRAM_BOT_TOKEN'),
   ownerChatId: cleanStr('OWNER_CHAT_ID'),
   ownerWaNumber: cleanStr('OWNER_WA_NUMBER'),
-  // Jika DAHL_PROXY_URL diset, semua request Dahl (Tier 7) dialihkan ke Cloudflare Worker
+  // Jika DAHL_PROXY_URL diset, semua request Dahl dialihkan ke Cloudflare Worker
   // (bypass Cloudflare WAF Dahl yang memblokir IP AWS/Vercel).
-  // Kosongkan / hapus var ini untuk kembali ke endpoint langsung.
-  dahlProxyUrl: cleanStr('DAHL_PROXY_URL') || 'https://inference.dahl.global/v1',
+  // Bila kosong: pakai DAHL_BASE_URL (endpoint langsung) atau default resmi Dahl.
+  dahlProxyUrl: cleanStr('DAHL_PROXY_URL') || cleanStr('DAHL_BASE_URL') || 'https://inference.dahl.global/v1',
   pools: {
     dahl: csv('DAHL_KEYS'),
     groq: csv('GROQ_KEYS'),
@@ -101,15 +101,14 @@ export const config = {
     }
     return raw;
   })(),
-  // Service-role diutamakan (server-side only); mendukung format integrasi Supabase Vercel
+  // Service-role diutamakan (server-side only). Fallback anon DIHAPUS dari runtime:
+  // memakai anon key di server berarti setiap query tunduk pada RLS `anon` — jika ada
+  // kebijakan yang lolos, seluruh data bot bisa terbaca/tertulis. Untuk mencegah
+  // kejadian senyap itu, hanya key service/secret yang diterima (audit v19 F3).
   supabaseKey: firstEnv(
     'SUPABASE_SERVICE_KEY',
     'SUPABASE_SERVICE_ROLE_KEY',
     'SUPABASE_SECRET_KEY',
-    'SUPABASE_KEY',
-    'SUPABASE_ANON_KEY',
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-    'NEXT_PUBLIC_SUPABASE_KEY',
   ),
   telegramWebhookSecret: cleanStr('TELEGRAM_WEBHOOK_SECRET'),
   telegramBotUsername: cleanStr('TELEGRAM_BOT_USERNAME') || 'chatkita_bot',

@@ -610,7 +610,7 @@ export async function processIncomingVideo(
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(35000),
+          signal: AbortSignal.timeout(config.timeoutMs),
           body: JSON.stringify({
             contents: [{
               role: 'user',

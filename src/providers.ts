@@ -367,6 +367,27 @@ async function streamSse(
       }
     }
 
+    // Flush decoder di EOF: sequence multi-byte yang terbelah di batas chunk
+    // terakhir masih tertahan di decoder — tanpa flush, karakter terakhir hilang.
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      const lastLine = buffer.trim();
+      if (lastLine.startsWith('data:')) {
+        const payload = lastLine.slice(5).trim();
+        if (payload && payload !== '[DONE]') {
+          try {
+            const json = JSON.parse(payload);
+            const u = extractUsage(json);
+            if (u) usage = u;
+            const delta = extractDelta(json);
+            if (typeof delta.text === 'string' && delta.text.length > 0) text += delta.text;
+          } catch {
+            // JSON tidak lengkap — abaikan
+          }
+        }
+      }
+    }
+
     const cleaned = cleanModelOutput(text.trim());
     if (!cleaned) throw new Error('EMPTY_RESPONSE');
     return { text: cleaned, tokens: usage, firstTokenMs };

@@ -495,7 +495,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       }
 
       const btnIcon = document.getElementById("btn-refresh-icon");
-      if (btnIcon) btnIcon.innerHTML = '<span class="pulse-dot"></span>';
+      if (btnIcon) btnIcon.classList.add("spinning");
 
       try {
         const url = `/api/stats?range=${encodeURIComponent(currentTimeRange)}&platform=${encodeURIComponent(currentPlatform)}`;
@@ -523,13 +523,18 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
+        const prev = statsCache.get(cacheKey);
         statsCache.set(cacheKey, data);
         cachedDashboardData = data;
-        renderDashboard(data);
+        // Hindari rebuild DOM ganda tiap tick 15 dtk: render ulang hanya bila
+        // payload benar-benar berubah (audit P-4).
+        if (!prev || JSON.stringify(prev) !== JSON.stringify(data)) {
+          renderDashboard(data);
+        }
       } catch (err) {
         console.error("Gagal mengambil metrik:", err);
       } finally {
-        if (btnIcon) btnIcon.innerHTML = "&#x21bb;";
+        if (btnIcon) btnIcon.classList.remove("spinning");
       }
     }
 
@@ -1657,7 +1662,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       }
     }
 
-    function downloadDataset(format) {
+    async function downloadDataset(format) {
       const token = getStoredToken();
       if (!token) return;
 
@@ -1668,10 +1673,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const model = document.getElementById("dataset-model-filter")?.value || "";
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
 
-      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=3000&token=${encodeURIComponent(token)}`;
+      // Token TIDAK ditaruh di URL (bocor ke log proxy/history browser). Unduh via
+      // fetch ber-header, lalu buat blob — URL hanya hidup sesaat di memori.
+      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=3000`;
 
-      const a = document.createElement("a");
-      a.href = url;
       const filePrefix = format === "csv" ? "evaluasi_chatbot" : "training_dataset";
       const rangeLabel = range === "today" ? "hari_ini" : range === "all" ? "semua" : range;
       const now = new Date();
@@ -1683,10 +1688,23 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       if (platform) filterSuffix += `_${platform}`;
       if (model) filterSuffix += `_${model.replace(/[^a-z0-9_-]/gi, "")}`;
 
-      a.download = `${filePrefix}_${rangeLabel}_${dateTag}_jam_${timeTag}${filterSuffix}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      const filename = `${filePrefix}_${rangeLabel}_${dateTag}_jam_${timeTag}${filterSuffix}.${format}`;
+
+      try {
+        const res = await fetch(url, { headers: { "x-admin-token": token } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } catch (err) {
+        console.warn("[dashboard] Gagal unduh dataset:", err);
+      }
     }
 
     function escapeHtml(str) {

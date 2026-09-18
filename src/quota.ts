@@ -19,6 +19,13 @@ const counters = new Map<string, Counter>();
 interface TokenCounter {
   date: string;
   tokens: number;
+  /**
+   * True bila `tokens` masih berupa ESTIMASI hidrasi (baris legacy yang calls-nya
+   * tercatat sebelum pelacakan TPD aktif). Estimasi hanya menjaga sampai laporan
+   * token riil pertama datang, lalu diganti angka riil — mencegah key sehat
+   * ter-disable seharian karena estimasi berlebih (audit v19).
+   */
+  estimated?: boolean;
 }
 
 const tokenCounters = new Map<string, TokenCounter>();
@@ -79,12 +86,23 @@ export function keyTokensUsedToday(kind: ProviderKind, key: string): number {
 const hydratedKeys = new Set<string>();
 const pendingHydrations = new Map<string, Promise<void>>();
 
+/** Prune tanda hidrasi hari lama (set tumbuh satu entri per key per hari). */
+function pruneHydratedKeys(): void {
+  if (hydratedKeys.size < 500) return;
+  const t = today();
+  for (const k of hydratedKeys) {
+    // Format: kind:hash:YYYY-MM-DD
+    if (!k.endsWith(t)) hydratedKeys.delete(k);
+  }
+}
+
 /** Hydrate kuota pemakaian dari Supabase provider_quota saat instance baru aktif (C5 & P1-4) */
 export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<void> {
   const suffix = keyHash(key);
   const id = `${kind}:${suffix}`;
   const day = today();
   const cacheKey = `${id}:${day}`;
+  pruneHydratedKeys();
   if (hydratedKeys.has(cacheKey)) return;
 
   if (pendingHydrations.has(cacheKey)) {
@@ -111,14 +129,22 @@ export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<
         }
         // Hydrate juga token harian (TPD) agar instance baru tahu pemakaian token sebelumnya.
         // Baris legacy (calls tercatat tapi tokens_used masih 0, dari sebelum pelacakan TPD aktif)
-        // diberi estimasi konservatif agar guard TPD tetap efektif dan tidak meloloskan key.
+        // diberi estimasi konservatif SEMENTARA (estimated=true) agar guard TPD tetap efektif,
+        // lalu diganti angka riil pada laporan token pertama (audit v19 — cegah disable keliru).
         if (data) {
           const rawTokens = Number((data as { tokens_used?: number }).tokens_used) || 0;
           const rawCalls = Number((data as { used?: number }).used) || 0;
-          const hydratedTokens = rawTokens > 0 ? rawTokens : rawCalls > 0 ? rawCalls * LEGACY_TOKENS_PER_CALL_ESTIMATE : 0;
-          if (hydratedTokens > 0) {
+          if (rawTokens > 0) {
             const ts = tokenSlot(kind, key);
-            ts.tokens = Math.max(ts.tokens, hydratedTokens);
+            ts.tokens = Math.max(ts.tokens, rawTokens);
+            ts.estimated = false;
+          } else if (rawCalls > 0) {
+            const ts = tokenSlot(kind, key);
+            const estimate = rawCalls * LEGACY_TOKENS_PER_CALL_ESTIMATE;
+            if (!ts.estimated || estimate > ts.tokens) {
+              ts.tokens = Math.max(ts.tokens, estimate);
+              ts.estimated = true;
+            }
           }
         }
         // HANYA tandai hydrated setelah database query sukses (C5 & E8)
@@ -212,7 +238,14 @@ export function keyTokensUsed(kind: ProviderKind, key: string, tokens: number): 
   const amount = Math.max(0, Math.round(tokens));
   if (amount <= 0) return;
   const ts = tokenSlot(kind, key);
-  ts.tokens += amount;
+  // Laporan token riil pertama menggantikan estimasi hidrasi legacy (bukan ditambahkan
+  // di atasnya) agar estimasi berlebih tidak ikut terakumulasi (audit v19).
+  if (ts.estimated) {
+    ts.tokens = amount;
+    ts.estimated = false;
+  } else {
+    ts.tokens += amount;
+  }
 
   const c = db();
   if (!c) return;

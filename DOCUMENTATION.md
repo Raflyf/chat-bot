@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.36.0 (Anti-Konfabulasi Audio — Pesan Teks Tidak Dibalas Seolah Uji Suara)  
+**Versi:** v0.37.0 (Audit Menyeluruh — Keamanan Fail-Closed, Revokasi Token, Robustness)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-18 WIB
 
@@ -213,6 +213,39 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.37.0 - 2026-09-19 (Audit Menyeluruh — Keamanan Fail-Closed, Revokasi Token, Robustness)
+
+**Audit penuh 5 area** (keamanan API/auth, database+RLS, frontend XSS, logika providers/media, handlers Telegram+WhatsApp) via subagent paralel + inspeksi manual file inti. Semua temuan diverifikasi di kode sebelum patch.
+
+**Keamanan (CRITICAL/HIGH):**
+- **WhatsApp webhook fail-closed** (`src/whatsapp_cloud.ts`): `WHATSAPP_APP_SECRET` kosong dulu berarti webhook memproses SEMUA request tanpa verifikasi HMAC. Kini request DITOLAK bila secret kosong (kecuali dev lokal eksplisit `WHATSAPP_INSECURE_SKIP_VERIFY=1` non-serverless).
+- **Logout benar-benar mencabut token** (`src/admin_auth.ts`): token HMAC stateless dulu tetap valid 15 menit penuh setelah logout. Ditambah daftar `revokedTokens` (dipangkas otomatis saat kedaluwarsa, format penyimpanan backward-compatible `{active, revoked}`) — token yang di-logout ditolak walau HMAC-nya sah.
+- **Rate-limit tidak bisa di-spoof** (`src/admin_auth.ts`): `getClientIp` dulu memprioritaskan header `x-vercel-forwarded-for` yang bisa dipalsukan client. Kini entri PALING KANAN `x-forwarded-for` (dari edge proxy) yang dipakai.
+- **Token tidak lagi via query string** (`api/stats.ts`, `api/dataset.ts`, `public/js/dashboard.js`): token di URL bocor ke log proxy/history/Referer. Endpoint hanya menerima header; unduhan dataset memakai `fetch` ber-header + Blob URL sesaat.
+- **Fallback anon key dihapus** (`src/env.ts`): runtime hanya menerima service/secret key Supabase — mencegah seluruh query tunduk RLS `anon` secara senyap.
+
+**Database (migrasi `sql/migrate_v19_audit_fixes.sql`):**
+- Index `messages(platform,msg_id)` diubah dari PARTIAL menjadi unique index penuh — upsert PostgREST `onConflict: 'platform,msg_id'` tidak bisa inferensi constraint pada partial index (pesan gagal tersimpan senyap). Kode `saveMessage` kini juga fallback ke insert bila DB masih partial (kompatibel sebelum/sesudah migrasi).
+- Index standalone `web_knowledge(expires_at)` untuk purge retensi (sebelumnya seq scan), dan `reminders(chat_id)` untuk lookup per-chat.
+
+**Robustness (logika):**
+- **SSE decoder flush** (`src/providers.ts`): sequence multi-byte yang terbelah di batas chunk terakhir dulu hilang — kini di-flush di EOF.
+- **Estimasi token legacy tidak menonaktifkan key sehat** (`src/quota.ts`): hidrasi `used × 2500` kini bertanda `estimated` dan digantikan laporan token riil pertama (bukan ditumpuk).
+- **Media gagal tidak lagi senyap** (`src/telegram.ts`, `src/whatsapp_baileys.ts`): download/proses gagal pada dokumen, VN, gambar, stiker, video kini mengirim notifikasi dinamis (via `dynamicNotice`) — sebelumnya user tidak menerima balasan apa pun.
+- **Cache sweep** (`src/memory.ts`, `src/quota.ts`): `contextCache`/`hydratedKeys` dibatasi 500 entri dengan pemangkasan otomatis.
+- **Timeout media dari config** (`src/media.ts`): hardcoded 35000 diganti `config.timeoutMs`.
+
+**Frontend (dashboard):**
+- Render ganda tiap tick 15 dtk dihilangkan (payload identik → skip rebuild DOM).
+- Ikon refresh memakai `classList` + animasi CSS, bukan `innerHTML` berulang.
+- Index env: `.env.example` + `.env` disinkronkan 56 key (9 key runtime sebelumnya tidak terdokumentasi: `DAILY_TOKEN_CAP_*` ×6, `MAX_TOKENS_LIMIT`, `WHATSAPP_PREFIX`, `WHATSAPP_RESPOND_GROUPS`, `LOG_PRETTY`).
+
+**Fix tambahan:**
+- `detectUserCountry` (`src/timezone.ts`): ID numerik Telegram (mis. `1073504871`) dulu salah dibaca sebagai nomor +1 (AS/Kanada) → zona waktu salah. Kini deteksi negara hanya untuk chat key WhatsApp (`wa_<jid>`).
+- `DAHL_BASE_URL` (`src/env.ts`): dulu variabel mati (tidak dibaca); kini dipakai sebagai fallback endpoint Dahl bila `DAHL_PROXY_URL` kosong.
+
+**Verifikasi:** typecheck + build + `node --check` hijau; regresi v0.32 (15/15), v0.34 (4/4), v0.36 (7/7) tetap hijau; unit test baru: fail-closed webhook, revokasi token (sebelum valid → setelah logout ditolak → token lain tetap valid), ekstraksi IP anti-spoof, ekstraksi token header-only.
 
 ### v0.36.0 - 2026-09-18 (Anti-Konfabulasi Audio — Pesan Teks Tidak Dibalas Seolah Uji Suara)
 

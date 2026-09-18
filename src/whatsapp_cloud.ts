@@ -9,7 +9,7 @@ import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.36.0';
+const PROMPT_VERSION = 'v0.37.0';
 
 // Cache deduplikasi pesan (mencegah Meta webhook retry memproses pesan 2 kali)
 const processedMessageIds = new Map<string, number>();
@@ -45,11 +45,20 @@ export function verifyWhatsAppWebhook(
 
 /**
  * Verifikasi signature webhook Meta X-Hub-Signature-256 secara timing-safe.
+ * FAIL-CLOSED: bila secret belum diset, tolak request (jangan proses tanpa verifikasi)
+ * — kecuali mode development lokal eksplisit (WHATSAPP_INSECURE_SKIP_VERIFY=1).
  */
 export function verifyMetaSignature(rawBody: string | Buffer, signatureHeader?: string): boolean {
   if (!config.whatsappAppSecret) {
-    console.warn('[whatsapp] PERINGATAN: WHATSAPP_APP_SECRET belum diset di environment. Memproses webhook tanpa verifikasi HMAC Meta (terlindungi verify token handshake).');
-    return true;
+    if (process.env.WHATSAPP_INSECURE_SKIP_VERIFY === '1' && !config.isServerless) {
+      console.warn('[whatsapp] DEV MODE: verifikasi HMAC dilewati (WHATSAPP_INSECURE_SKIP_VERIFY=1, non-serverless).');
+      return true;
+    }
+    console.error(
+      '[whatsapp] FAIL-CLOSED: WHATSAPP_APP_SECRET belum diset — webhook ditolak. ' +
+        'Set WHATSAPP_APP_SECRET dari Meta App Dashboard (WhatsApp > Configuration > App Secret) untuk mengaktifkan verifikasi.',
+    );
+    return false;
   }
   if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
 

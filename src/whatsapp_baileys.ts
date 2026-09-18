@@ -27,7 +27,7 @@ const logger = pino({ level: 'silent' });
 const sessionDir = path.resolve(process.cwd(), 'session_wa');
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.36.0';
+const PROMPT_VERSION = 'v0.37.0';
 
 /**
  * Mengirim pesan teks ke WhatsApp dengan pemecahan cerdas
@@ -256,6 +256,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       }
     } catch (err) {
       console.error('[whatsapp] Gagal memproses gambar:', err);
+      await sendWhatsAppMessageSafe(
+        sock,
+        remoteJid,
+        await dynamicNotice(
+          'Gambar dari temanmu gagal diproses atau tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang.',
+          await getContext(chatKey, msgSentAt),
+        ),
+      );
     } finally {
       try {
         await sock.sendPresenceUpdate('paused', remoteJid);
@@ -316,6 +324,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       }
     } catch (err) {
       console.error('[whatsapp] Gagal memproses dokumen:', err);
+      await sendWhatsAppMessageSafe(
+        sock,
+        remoteJid,
+        await dynamicNotice(
+          'Dokumen dari temanmu gagal diproses atau isinya tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik isinya lewat teks.',
+          await getContext(chatKey, msgSentAt),
+        ),
+      );
     } finally {
       try {
         await sock.sendPresenceUpdate('paused', remoteJid);
@@ -392,6 +408,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       }
     } catch (err) {
       console.error('[whatsapp] Gagal memproses voice note:', err);
+      await sendWhatsAppMessageSafe(
+        sock,
+        remoteJid,
+        await dynamicNotice(
+          'Rekaman suara dari temanmu gagal diunduh atau diproses. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik lewat teks.',
+          await getContext(chatKey, msgSentAt),
+        ),
+      );
     } finally {
       try {
         await sock.sendPresenceUpdate('paused', remoteJid);
@@ -443,6 +467,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       }
     } catch (err) {
       console.error('[whatsapp] Gagal memproses stiker:', err);
+      await sendWhatsAppMessageSafe(
+        sock,
+        remoteJid,
+        await dynamicNotice(
+          'Stiker dari temanmu gagal diproses. Beri tahu dia dengan gayamu sendiri, singkat dan santai, lalu minta kirim ulang.',
+          await getContext(chatKey, msgSentAt),
+        ),
+      );
     } finally {
       try {
         await sock.sendPresenceUpdate('paused', remoteJid);
@@ -513,6 +545,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       return;
     } catch (err) {
       console.error('[whatsapp] Gagal memproses video:', err);
+      await sendWhatsAppMessageSafe(
+        sock,
+        remoteJid,
+        await dynamicNotice(
+          'Video dari temanmu gagal diproses atau tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik isinya lewat teks.',
+          await getContext(chatKey, msgSentAt),
+        ),
+      );
     } finally {
       try {
         await sock.sendPresenceUpdate('paused', remoteJid);

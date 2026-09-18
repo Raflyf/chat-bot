@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.36.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.37.0.
 
 ---
 
@@ -114,6 +114,17 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Guard program:** helper murni `hasAudioClaim` / `stripAudioClaims` / `isAudioInput` + gerbang `audioContextOk` (VN, transkrip audio video, topik lagu/film/video, pertanyaan kemampuan dengar). Klaim audio → ralat dinamis; bandel → klausa dibuang murni. Jaring regen terakhir ikut dibersihkan.
    - **Perbaikan alur:** retry anti-echo tidak lagi `return` awal — seluruh guard (audio, identitas) tetap berjalan pada balasan hasil retry.
    - **Verifikasi:** `scratch/verify_v36_audio.mjs` 7/7 bersih; regresi v0.32/v0.33/v0.34 hijau. `PROMPT_VERSION` naik `v0.36.0`.
+
+13. **Audit Menyeluruh — Keamanan & Robustness (v0.37):**
+   - **WhatsApp webhook fail-closed:** `WHATSAPP_APP_SECRET` kosong → webhook DITOLAK (dulu diloloskan tanpa verifikasi HMAC). Dev lokal bisa skip eksplisit via `WHATSAPP_INSECURE_SKIP_VERIFY=1` (non-serverless saja).
+   - **Revokasi token admin:** logout kini benar-benar mencabut token HMAC stateless (daftar `revokedTokens`, dipangkas otomatis; format simpan `{active, revoked}` backward-compatible).
+   - **Anti-spoof IP:** `getClientIp` memakai entri paling kanan `x-forwarded-for` (edge proxy), bukan header yang bisa diset client.
+   - **Token admin tidak via query string:** endpoint hanya terima header; unduh dataset via fetch ber-header + Blob URL.
+   - **Runtime hanya service key Supabase** (fallback anon dihapus — cegah query senyap di bawah RLS anon).
+   - **Migrasi `sql/migrate_v19_audit_fixes.sql`:** unique index penuh `messages(platform,msg_id)` (upsert PostgREST butuh non-partial; kode punya fallback insert bila belum di-apply), index `web_knowledge(expires_at)` + `reminders(chat_id)`.
+   - **SSE decoder flush di EOF; estimasi token legacy bertanda `estimated` dan digantikan laporan riil; media gagal mengirim notifikasi dinamis (dokumen/VN/gambar/stiker/video); cache sweep 500 entri; timeout media dari config.**
+   - **Timezone:** `detectUserCountry` hanya untuk chat key WhatsApp — ID numerik Telegram tidak lagi salah dibaca sebagai nomor +1.
+   - **Env:** 9 key runtime yang sebelumnya tidak terdokumentasi masuk `.env.example` + `.env` (56 key, urutan identik).
 
 ---
 

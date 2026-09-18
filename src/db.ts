@@ -54,9 +54,27 @@ export async function saveMessage(row: {
     if (row.prompt_version !== undefined) insertPayload.prompt_version = row.prompt_version;
     if (row.feedback !== undefined) insertPayload.feedback = row.feedback;
     if (row.msg_id) {
-      await c.from('messages').upsert(insertPayload, { onConflict: 'platform,msg_id' });
+      // Upsert membutuhkan unique index NON-partial pada (platform, msg_id).
+      // Bila DB masih memakai index partial (migrasi v19 belum di-apply), PostgREST
+      // menolak dengan 42P10 — fallback ke insert biasa agar pesan tetap tersimpan.
+      const { error: upsertErr } = await c
+        .from('messages')
+        .upsert(insertPayload, { onConflict: 'platform,msg_id' });
+      if (upsertErr) {
+        if (upsertErr.code === '42P10' || /no unique|exclusion constraint/i.test(upsertErr.message || '')) {
+          const { error: insertErr } = await c.from('messages').insert(insertPayload);
+          if (insertErr && insertErr.code !== '23505') {
+            console.warn('[db] saveMessage insert fallback error:', insertErr.message);
+          }
+        } else if (upsertErr.code !== '23505') {
+          console.warn('[db] saveMessage upsert error:', upsertErr.message);
+        }
+      }
     } else {
-      await c.from('messages').insert(insertPayload);
+      const { error: insErr } = await c.from('messages').insert(insertPayload);
+      if (insErr && insErr.code !== '23505') {
+        console.warn('[db] saveMessage insert error:', insErr.message);
+      }
     }
   } catch (err: any) {
     if (err?.code !== '23505') {

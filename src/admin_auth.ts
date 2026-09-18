@@ -10,6 +10,9 @@ export interface AdminAuthConfig {
   otpCodeHash: string | null;
   otpExpiresAt: string | null;
   sessionTokens: Array<{ token: string; exp: number }>;
+  // Token yang sudah logout (dicabut). Token HMAC stateless tidak bisa di-invalidate
+  // hanya dengan menghapus dari daftar aktif — daftar cabut ini yang membuat logout nyata.
+  revokedTokens: Array<{ token: string; exp: number }>;
 }
 
 const ENV_PIN = config.adminPin || '';
@@ -71,6 +74,7 @@ let inMemoryAuthConfig: AdminAuthConfig = {
   otpCodeHash: null,
   otpExpiresAt: null,
   sessionTokens: [],
+  revokedTokens: [],
 };
 
 // Rolling in-memory cache untuk meredam cold-start & load spike dari polling interval
@@ -97,13 +101,16 @@ export function timingSafeMatch(a: string, b: string): boolean {
 }
 
 export function getClientIp(req: VercelRequest): string {
-  const trusted = req.headers['x-vercel-forwarded-for'];
-  if (trusted && typeof trusted === 'string') return trusted.split(',')[0].trim();
+  // Di Vercel, x-forwarded-for diset oleh edge proxy: entri PALING KANAN adalah IP
+  // yang dilihat edge (satu-satunya yang tidak bisa dipalsukan client). Entri kiri
+  // bisa disisipkan client, jadi jangan dipakai untuk rate-limit/audit.
   const xff = req.headers['x-forwarded-for'];
   if (xff && typeof xff === 'string') {
-    const parts = xff.split(',');
-    return (parts[parts.length - 1] || '').trim() || req.socket?.remoteAddress || 'unknown-client';
+    const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
+    return parts[parts.length - 1] || req.socket?.remoteAddress || 'unknown-client';
   }
+  const trusted = req.headers['x-vercel-forwarded-for'];
+  if (trusted && typeof trusted === 'string') return trusted.split(',')[0].trim();
   return req.socket?.remoteAddress || 'unknown-client';
 }
 
@@ -136,11 +143,21 @@ export async function getAuthConfig(forceRefresh = false): Promise<AdminAuthConf
 
     if (!tableErr && tableData) {
       let sessionTokens: Array<{ token: string; exp: number }> = [];
+      let revokedTokens: Array<{ token: string; exp: number }> = [];
       if (tableData.session_token) {
         try {
           const parsed = JSON.parse(tableData.session_token);
           if (Array.isArray(parsed)) {
+            // Format lama: array token aktif saja
             sessionTokens = parsed.filter(s => s && s.token && Number(s.exp) > Date.now());
+          } else if (parsed && typeof parsed === 'object') {
+            // Format baru: { active, revoked }
+            if (Array.isArray(parsed.active)) {
+              sessionTokens = parsed.active.filter((s: any) => s && s.token && Number(s.exp) > Date.now());
+            }
+            if (Array.isArray(parsed.revoked)) {
+              revokedTokens = parsed.revoked.filter((s: any) => s && s.token && Number(s.exp) > Date.now());
+            }
           }
         } catch {
           // single token legacy string
@@ -171,6 +188,7 @@ export async function getAuthConfig(forceRefresh = false): Promise<AdminAuthConf
         otpCodeHash: tableData.otp_code_hash || null,
         otpExpiresAt: tableData.otp_expires_at || null,
         sessionTokens,
+        revokedTokens,
       };
       cachedAuthConfig = res;
       cachedAuthConfigTime = Date.now();
@@ -196,6 +214,9 @@ export async function getAuthConfig(forceRefresh = false): Promise<AdminAuthConf
           otpExpiresAt: parsed.otpExpiresAt || null,
           sessionTokens: Array.isArray(parsed.sessionTokens)
             ? parsed.sessionTokens.filter((s: { token: string; exp: number }) => s && s.token && Number(s.exp) > Date.now())
+            : [],
+          revokedTokens: Array.isArray(parsed.revokedTokens)
+            ? parsed.revokedTokens.filter((s: { token: string; exp: number }) => s && s.token && Number(s.exp) > Date.now())
             : [],
         };
         cachedAuthConfig = res;
@@ -245,7 +266,7 @@ export async function saveAuthConfig(updates: Partial<AdminAuthConfig>): Promise
         locked_until: current.lockedUntil,
         otp_code_hash: current.otpCodeHash,
         otp_expires_at: current.otpExpiresAt,
-        session_token: JSON.stringify(current.sessionTokens),
+        session_token: JSON.stringify({ active: current.sessionTokens, revoked: current.revokedTokens }),
         session_expires_at: current.sessionTokens.length > 0
           ? new Date(Math.max(...current.sessionTokens.map(s => s.exp))).toISOString()
           : null,
@@ -354,6 +375,15 @@ export async function inspectSessionToken(token: string): Promise<{ valid: boole
         return { valid: false };
       }
 
+      // Token yang sudah di-logout (dicabut) tidak boleh dipakai lagi walau HMAC-nya valid.
+      if (
+        config.revokedTokens.some(
+          (r) => r && Number(r.exp) > now && timingSafeMatch(r.token, token),
+        )
+      ) {
+        return { valid: false };
+      }
+
       return { valid: true, exp: payload.exp, iat: payload.iat };
     } catch {
       return { valid: false };
@@ -394,13 +424,33 @@ export function extractSessionToken(req: VercelRequest): string | null {
 }
 
 /**
- * Invalidate session token saat logout.
+ * Invalidate session token saat logout (berlaku juga untuk token HMAC stateless).
  */
 export async function logoutSession(token: string): Promise<boolean> {
   if (!token) return true;
   const current = await getAuthConfig();
+  const now = Date.now();
+
+  // Tentukan masa berlaku token agar entri cabut bisa dipangkas otomatis saat kedaluwarsa.
+  let exp = now + 16 * 60 * 1000;
+  const raw = token.startsWith('adm_') ? token.slice(4) : '';
+  const dotIdx = raw.indexOf('.');
+  if (dotIdx > 0) {
+    try {
+      const payload = JSON.parse(Buffer.from(raw.slice(0, dotIdx), 'base64url').toString('utf8'));
+      if (typeof payload.exp === 'number' && payload.exp > now) exp = payload.exp;
+    } catch {
+      // pakai fallback 16 menit
+    }
+  }
+
   const remaining = current.sessionTokens.filter(s => !timingSafeMatch(s.token, token));
-  return await saveAuthConfig({ sessionTokens: remaining });
+  const revoked = [
+    ...current.revokedTokens.filter(r => r && Number(r.exp) > now && !timingSafeMatch(r.token, token)),
+    { token, exp },
+  ].slice(-50);
+
+  return await saveAuthConfig({ sessionTokens: remaining, revokedTokens: revoked });
 }
 
 /**
