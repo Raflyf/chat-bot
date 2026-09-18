@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.30.0 (Thinking Off / Effort Minimal di Semua Provider — Respons Multimodal Kilat)  
+**Versi:** v0.31.0 (Tuning Persona Natural — Tawa Proporsional, Anti-Halu/Anti-Teater, Anti-Template CS)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-19 02:30 WIB
+**Terakhir Diperbarui:** 2026-09-18 WIB
 
 ---
 
@@ -213,6 +213,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.31.0 - 2026-09-18 (Tuning Persona Natural — Tawa Proporsional, Anti-Halu/Anti-Teater, Anti-Template CS)
+
+**Kronologi: user menyerahkan dataset evaluasi 469 baris (`evaluasi_chatbot_semua_2026-09-18_jam_21-11.csv`) dan meminta tuning respons bot agar lebih natural, manusiawi, membaca situasi chat, serta tidak ngawur/halu/cringe. Temuan analisis: 96 baris memakai "wkwk" (95 di antaranya tanpa konteks tawa dari user), 45 baris "haha" (tanpa user tertawa duluan), 12 opener "Sesi..." statis, roleplay drama "mata berkaca-kaca / aku bisa jadi pacarmu", dan template customer service toko. Instruksi user: kurangi wkwk (bukan hilangkan), token ≤8K, TANPA hardcode respons (semua dinamis).**
+
+- **Akar masalah:** baris prompt menjadikan `wkwk` sebagai contoh partikel gaul yang dianjurkan, plus 4 instruksi "tertawa akrab" tanpa syarat pemicu — model besar memakai tawa sebagai hiasan basa-basi.
+- **Patch prompt (`src/skills.ts` `systemPrompt`):**
+  - `wkwk` dihapus dari daftar contoh partikel gaul; diganti partikel kontekstual murni (waduh, lahh, astaga, buset, kan, dong, sih, nih, deh).
+  - Blok baru "TAWA ITU PROPORSIONAL, BUKAN HIASAN (ATURAN KERAS)": dilarang tertawa bila user tidak tertawa/bercanda lebih dulu; dilarang membuka pesan dengan tawa; maksimal 1 kata tawa per pesan; ZERO tawa saat suasana serius/sedih/teknis.
+  - Blok baru PRINSIP 4 "TETAP DI DUNIA NYATA (ANTI-HALU & ANTI-TEATER)": larangan narasi akting/arahan panggung dalam tanda bintang, larangan mengaku/menawarkan diri jadi pacar tanpa diminta, larangan mengarang kejadian/pengalaman fisik/fakta tentang user.
+- **Patch sanitizer generik (`cleanMathAndNoise` / `sanitizeAssistantOutput`) — hanya PEMBERSIHAN pola, tanpa menyuntikkan kalimat (zero hardcode):**
+  - Aturan tawa sadar-konteks: bila pesan user TIDAK mengandung sinyal humor (wkwk/haha/ngakak/lucu/garing/tebak/gombal/dll), SELURUH kata tawa dibuang dari balasan; bila ada sinyal humor, maksimal 1 kata tawa dipertahankan.
+  - Pembersih template CS (terima kasih menghubungi, jam layanan WIB, admin akan segera membantu), penolakan robotik murni ("Maaf, saya tidak bisa membantu") dikosongkan agar diregenerasi dinamis.
+  - Pembersih dialog bernarasi `*"..."*` dan menu pilihan kaku (daftar 2-8 item yang diperkenalkan "Kamu mau main apa dulu?" / "aku bisa jadi:") — termasuk baris penutup pilihan; daftar teknis/kode tidak pernah tersentuh.
+  - Anti-halu peran romantis: klausa/baris menu "aku bisa jadi pacar..." dibuang bila user tidak meminta peran romantis.
+  - Fallback statis `'...bukan si Rafly wkwk!'` dan `'Wkwk!'` (stiker) dilepas dari kata tawa; fallback stiker kosong menjadi netral.
+- **Batas token ≤8K:** rasio estimasi pemangkasan `trimMessagesToTokenBudget` dikalibrasi ulang dari 3,8 → 3,3 karakter/token (terukur ~3,4 pada output nyata) agar pemakaian token AKTUAL konservatif — buffer Groq 6.800 tetap, aman di bawah 8K TPM.
+- **Verifikasi terhadap dataset 469 baris (simulasi sanitizer):** baris bertawa 114 → 27 (87 dibersihkan, 27 dipertahankan karena user bercanda duluan); template CS 15 → 1; hanya 5 balasan menjadi kosong (semuanya langsung diregenerasi dinamis oleh `autoReply`/`describeImage`).
+- **Uji live end-to-end (rantai produksi):** sapaan netral tanpa tawa; info netral tanpa tawa; user bercanda duluan → bot boleh ikut "Wkwk buset"; ejekan "kamu ngelawak lagi dong" → dijawab tebak-tebakan waras (bukan drama); user capek → hangat tanpa tawa. Semua tanpa roleplay, tanpa menu kaku, token jauh di bawah 8K.
+- **`PROMPT_VERSION` dinaikkan `v0.26.5` → `v0.31.0`** di ketiga handler platform (telegram, whatsapp_baileys, whatsapp_cloud) agar instrumentasi dataset menandai era prompt baru.
 
 ### v0.30.0 - 2026-09-19 (Thinking Off / Effort Minimal di Semua Provider — Akar Masalah Respons Multimodal Lambat)
 

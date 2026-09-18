@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.30.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.31.0.
 
 ---
 
@@ -64,13 +64,21 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
      - Dahl: `reasoning_effort: 'none'` (`minimal` memunculkan teks berulang + karakter zero-width).
    - Berlaku juga di seluruh jalur media (audio Gemini, PDF Gemini, PDF OpenRouter, video Gemini) — bukan hanya chat teks.
 
-5. **Audio, Dokumen & Video:**
+5. **Tuning Persona Natural — Tawa Proporsional, Anti-Halu/Anti-Teater (v0.31):**
+   - **Tawa proporsional (bukan dihilangkan):** kata tawa (wkwk/haha/hehe/ckck) hanya pantas bila lawan bicara menunjukkan sinyal humor/tertawa lebih dulu. Prompt melarang tawa sebagai hiasan basa-basi dan membuka pesan dengan tawa; sanitizer membuang seluruh kata tawa bila tidak ada sinyal humor dari user, dan menyisakan maksimal 1 bila ada.
+   - **Anti-halu & anti-teater:** larangan narasi akting/arahan panggung dalam tanda bintang (`*[mata berkaca-kaca]*`), larangan mengaku/menawarkan diri sebagai pacar tanpa diminta, larangan mengarang kejadian/pengalaman fisik/fakta tentang user.
+   - **Anti-template CS:** pembersih pola customer service ("terima kasih telah menghubungi", "jam layanan ... WIB", "admin akan segera membantu") dan penolakan robotik murni; menu pilihan kaku (daftar item yang diperkenalkan "Kamu mau main apa dulu?" / "aku bisa jadi:") dibersihkan — daftar teknis/kode tidak pernah tersentuh.
+   - **Zero-hardcode:** seluruh pembersihan hanya MENGHAPUS/menormalkan pola; tidak ada satu pun kalimat balasan yang disuntikkan. Balasan kosong diregenerasi dinamis oleh `autoReply`/`describeImage`.
+   - **Batas token ≤8K:** estimasi pemangkasan `trimMessagesToTokenBudget` dikalibrasi 3,3 karakter/token (konservatif) — buffer Groq 6.800 tetap, aman di bawah 8K TPM.
+   - Verifikasi dataset 469 baris: tawa 114 → 27 baris (87 dibersihkan, 27 dipertahankan karena user bercanda duluan); template CS 15 → 1; `PROMPT_VERSION` naik ke `v0.31.0`.
+
+6. **Audio, Dokumen & Video:**
    - Audio / Voice Note: Groq Whisper (`whisper-large-v3` > `whisper-large-v3-turbo`), cadangan Cloudflare Whisper (`@cf/openai/whisper-large-v3-turbo`, pool & kuota berbeda), lalu Gemini native audio (3.5 Flash Lite > 2.5 Flash).
    - File Dokumen (.docx, .txt): Ekstraksi lokal via Mammoth / TextParser → rantai teks utama. Jika .docx memuat gambar, gambar diekstrak (maks 3) dan dianalisis via rantai vision (`docx-vision`).
    - Dokumen PDF: Gemini native PDF (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) → cadangan OpenRouter plugin `file-parser` (engine `pdf-text`) → parser teks lokal.
    - Video: Gemini native video (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) → cadangan transkripsi trek audio (Whisper) lalu dijawab rantai teks.
 
-6. **Zero-Configuration Vercel Models (Hardcoded Code Fallback):**
+7. **Zero-Configuration Vercel Models (Hardcoded Code Fallback):**
    - Seluruh model default dikonfigurasi langsung di dalam kode (`src/env.ts`), sehingga pengguna tidak perlu mendaftarkan variabel model di dashboard Vercel / `.env`. Cukup menyuplai API key masing-masing provider.
 
 ---

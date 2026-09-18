@@ -747,7 +747,9 @@ export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: 
         }
       }
     }
-    return Math.ceil(chars / 3.8);
+    // Rasio konservatif 3,3 karakter/token (terukur ~3,4 pada output nyata) agar
+    // pemakaian token AKTUAL tetap di bawah ambang — termasuk batas ketat 8K TPM Groq.
+    return Math.ceil(chars / 3.3);
   };
 
   let totalTokens = estimateTokens(messages);
