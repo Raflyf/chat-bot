@@ -9,7 +9,7 @@ import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.36.0';
+const PROMPT_VERSION = 'v0.37.0';
 
 let sharedBot: TelegramBot | null = null;
 
@@ -363,21 +363,43 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
-        const ctx = await getContext(chatKey, msgSentAt);
-        const { reply, via, tokens } = await processIncomingDocument(dl.buffer, mime, filename, promptCaption, ctx);
-        await sendTelegramMessageSafe(bot, chatId, reply);
-        if (msgId) void markMessageProcessed('telegram', msgId);
-        await saveMessage({
-          platform: 'telegram',
-          chat_id: chatKey,
-          role: 'assistant',
-          content: reply,
-          via,
-          tokens,
-        }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc assistant:', err));
-        noteExchange(chatKey);
+        try {
+          const ctx = await getContext(chatKey, msgSentAt);
+          const { reply, via, tokens } = await processIncomingDocument(dl.buffer, mime, filename, promptCaption, ctx);
+          await sendTelegramMessageSafe(bot, chatId, reply);
+          if (msgId) void markMessageProcessed('telegram', msgId);
+          await saveMessage({
+            platform: 'telegram',
+            chat_id: chatKey,
+            role: 'assistant',
+            content: reply,
+            via,
+            tokens,
+          }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc assistant:', err));
+          noteExchange(chatKey);
+        } catch (err) {
+          console.error('[telegram] Gagal proses dokumen:', err);
+          await sendTelegramMessageSafe(
+            bot,
+            chatId,
+            await dynamicNotice(
+              'Dokumen dari temanmu gagal diproses atau isinya tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik isinya lewat teks.',
+              await getContext(chatKey, msgSentAt),
+            ),
+          );
+        }
         return;
       }
+      // Download gagal: beri tahu dinamis — jangan diamkan user tanpa balasan.
+      await sendTelegramMessageSafe(
+        bot,
+        chatId,
+        await dynamicNotice(
+          'Dokumen dari temanmu gagal diunduh dari server Telegram. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang.',
+          await getContext(chatKey, msgSentAt),
+        ),
+      );
+      return;
     }
 
     // 6. Voice Note (VN) atau File Audio
@@ -439,6 +461,16 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         }
         return;
       }
+      // Download gagal: beri tahu dinamis — jangan diamkan user tanpa balasan.
+      await sendTelegramMessageSafe(
+        bot,
+        chatId,
+        await dynamicNotice(
+          'Rekaman suara dari temanmu gagal diunduh dari server Telegram. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik lewat teks.',
+          await getContext(chatKey, msgSentAt),
+        ),
+      );
+      return;
     }
 
     // 6b. Lokasi Pengguna (Location Pin / Live Location)
@@ -630,7 +662,9 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
   } catch (err) {
     console.error(`[telegram] handler: ${String((err as Error).message ?? err)}`);
     try {
-      const { reply, via, tokens } = await autoReply('sapa user dengan ramah dan tawarkan bantuan');
+      const { reply, via, tokens } = await autoReply(
+        'Terjadi kendala teknis saat memproses pesan temanmu barusan. Sampaikan permintaan maaf singkat dengan gayamu sendiri dan tawarkan agar dia mengirim ulang pesannya.',
+      );
       await sendTelegramMessageSafe(bot, msg.chat.id, reply);
       await saveMessage({
         platform: 'telegram',

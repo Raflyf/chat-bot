@@ -410,7 +410,10 @@ export function buildUniversalTimePrompt(
   const profileLoc = detectLocation(profileOrHistoryText);
   const userDeclaringLoc = detectUserLocationDeclaration(userPrompt);
   const askingTime = isAskingTime(userPrompt);
-  const detectedUserCountry = detectUserCountry(chatKey);
+  // Hanya WhatsApp yang chat key-nya memuat nomor telepon asli (wa_<jid>).
+  // ID numerik Telegram BUKAN nomor telepon — ID seperti "1073..." jangan sampai
+  // dibaca sebagai kode negara +1 (AS/Kanada) yang membuat zona waktu salah.
+  const detectedUserCountry = /^wa[_:]/i.test(chatKey) ? detectUserCountry(chatKey) : null;
 
   const targetZone = profileLoc?.zone || detectedUserCountry?.zone || 'Asia/Jakarta';
   const sentTime = msgSentAt instanceof Date && !isNaN(msgSentAt.getTime()) ? formatInZone(msgSentAt, targetZone) : null;

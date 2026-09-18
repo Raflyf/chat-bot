@@ -194,7 +194,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   // Verifikasi Session Token Admin
-  const token = extractSessionToken(req) || (typeof req.query.token === 'string' ? req.query.token : null);
+  // Token hanya diterima via header Authorization/x-admin-token (tidak via query
+  // string — query bocor ke log proxy, history browser, dan Referer).
+  const token = extractSessionToken(req);
   const isAuthed = token ? await verifySessionToken(token) : false;
   if (!isAuthed) {
     res.status(401).json({

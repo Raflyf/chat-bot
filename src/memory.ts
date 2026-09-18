@@ -24,9 +24,28 @@ interface CachedContext {
 
 const contextCache = new Map<string, CachedContext>();
 const CONTEXT_TTL_MS = 25000; // 25 detik (jendela percakapan cepat aktif)
+const CONTEXT_CACHE_MAX = 500;
+
+/** Sweep entri kedaluwarsa saat cache membesar (cegah leak di instance long-running). */
+function sweepContextCache(now: number): void {
+  if (contextCache.size < CONTEXT_CACHE_MAX) return;
+  for (const [k, v] of contextCache.entries()) {
+    if (now - v.at >= CONTEXT_TTL_MS) contextCache.delete(k);
+  }
+  // Bila masih penuh setelah sweep, buang entri tertua (Map mempertahankan urutan insert).
+  if (contextCache.size >= CONTEXT_CACHE_MAX) {
+    const overflow = contextCache.size - CONTEXT_CACHE_MAX + 1;
+    let i = 0;
+    for (const k of contextCache.keys()) {
+      contextCache.delete(k);
+      if (++i >= overflow) break;
+    }
+  }
+}
 
 export function updateContextCache(chatKey: string, role: 'user' | 'assistant', content: string): void {
   if (!content || !content.trim()) return; // jangan simpan balasan kosong (zero teks statis)
+  sweepContextCache(Date.now());
   const cached = contextCache.get(chatKey);
   if (cached && Date.now() - cached.at < CONTEXT_TTL_MS) {
     cached.data.history.push({ role, content });
@@ -76,6 +95,7 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
   const empty: ChatContext = { history: [], summary: null, corrections: [], chatId: chatKey, msgSentAt };
 
   // Fast-path in-memory cache: respon instan 0ms saat user sedang aktif chatting
+  sweepContextCache(Date.now());
   const cached = contextCache.get(chatKey);
   if (cached && Date.now() - cached.at < CONTEXT_TTL_MS) {
     return {

@@ -330,6 +330,15 @@
       flex-shrink: 0;
     }
 
+    /* Indikator loading tombol refresh (dipakai via classList, bukan innerHTML) */
+    #btn-refresh-icon.spinning {
+      display: inline-block;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
     .pulse-dot::before {
       content: '';
       position: absolute;
@@ -2417,7 +2426,7 @@
           <div class="brand-info">
             <div class="brand-title-wrap">
               <h1 id="bot-name">FreeAIBot Console</h1>
-              <span class="brand-badge-version">v0.36</span>
+              <span class="brand-badge-version">v0.37</span>
             </div>
             <div class="brand-sub-wrap">
               <span class="pulse-dot-mini"></span>
