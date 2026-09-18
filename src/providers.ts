@@ -51,6 +51,35 @@ function recordModelFailure(kind: ProviderKind, model: string, durationMs: numbe
   modelCooldownMap.set(`${kind}:${model}`, Date.now() + durationMs);
 }
 
+// --- PELACAK LATENSI PER MODEL (EWMA) ---
+// Dipakai untuk failover berbasis WAKTU RESPONS: model yang lambat (> config.slowModelMs)
+// diturunkan prioritasnya di dalam tier yang sama agar request berikutnya mencoba
+// model cadangan yang lebih gesit lebih dulu. EWMA 0,7/0,3 meredam lonjakan sesaat.
+const modelLatencyMap = new Map<string, number>();
+
+function recordModelLatency(kind: ProviderKind, model: string, ms: number): void {
+  const id = `${kind}:${model}`;
+  const prev = modelLatencyMap.get(id);
+  modelLatencyMap.set(id, prev === undefined ? ms : prev * 0.7 + ms * 0.3);
+}
+
+/** Model dianggap lambat jika rata-rata waktu responsnya melewati ambang config.slowModelMs. */
+function isModelSlow(kind: ProviderKind, model: string): boolean {
+  const lat = modelLatencyMap.get(`${kind}:${model}`);
+  return lat !== undefined && lat > config.slowModelMs;
+}
+
+/**
+ * Susun ulang model dalam satu tier: yang gesit / belum diketahui di depan (urutan
+ * konfigurasi dipertahankan), model lambat dipindah ke belakang agar failover dalam
+ * tier tetap responsif. Model yang sedang cooling-down tetap dihormati oleh pemanggil.
+ */
+function orderModelsByLatency(kind: ProviderKind, models: string[]): string[] {
+  const fast = models.filter((m) => !isModelSlow(kind, m));
+  const slow = models.filter((m) => isModelSlow(kind, m));
+  return [...fast, ...slow];
+}
+
 function getOrderedKeys(kind: ProviderKind, keys: string[]): string[] {
   if (keys.length <= 1) return keys;
   const now = Date.now();
@@ -93,6 +122,18 @@ export type ContentPart = TextPart | ImagePart;
 export interface ChatMsg {
   role: 'system' | 'user' | 'assistant';
   content: string | ContentPart[];
+}
+
+/** Deteksi apakah payload berisi gambar (butuh timeout koneksi lebih longgar saat upload). */
+function messagesContainImage(messages: ChatMsg[]): boolean {
+  for (const m of messages) {
+    if (Array.isArray(m.content)) {
+      for (const p of m.content) {
+        if (p.type === 'image_url') return true;
+      }
+    }
+  }
+  return false;
 }
 
 // ProviderKind diimpor dari ./quota.js
@@ -162,7 +203,7 @@ async function fetchJsonWithLifecycle(
     throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 100)}`);
   }
 
-  // Tier 2: Model aktif dan sedang berpikir / menghasilkan konten
+  // Fase timeout: model aktif dan sedang berpikir / menghasilkan konten
   let totalTimer: NodeJS.Timeout | undefined;
   try {
     const bodyPromise = res.json();
@@ -184,7 +225,13 @@ async function fetchJsonWithLifecycle(
   }
 }
 
-async function postJson(url: string, key: string, body: unknown): Promise<unknown> {
+async function postJson(
+  url: string,
+  key: string,
+  body: unknown,
+  totalTimeoutMs: number = config.timeoutMs,
+  connectTimeoutMs: number = config.connectTimeoutMs,
+): Promise<unknown> {
   return await fetchJsonWithLifecycle(
     url,
     {
@@ -197,9 +244,192 @@ async function postJson(url: string, key: string, body: unknown): Promise<unknow
       },
       body: JSON.stringify(body),
     },
-    config.connectTimeoutMs,
-    config.timeoutMs,
+    connectTimeoutMs,
+    totalTimeoutMs,
   );
+}
+
+// --- STREAMING SSE DUA-FASE (timeout pintar sesuai perilaku model) ---
+// Fase 1 (firstTokenMs): menunggu TOKEN PERTAMA. Bila model tidak kunjung merespon
+//   sampai batas ini → dianggap TIDAK MERESPON → failover cepat, tidak menunggu lama.
+// Fase 2 (idleMs): setelah token pertama tiba, model terbukti merespon dan sedang
+//   menyusun jawaban → batas jeda antar-chunk dibuat JAUH LEBIH LAMA agar model
+//   reasoning panjang tidak terputus di tengah jalan.
+// Pagar total (totalMs) tetap ada sebagai pengaman batas serverless.
+const ERR_NO_FIRST_TOKEN = 'NO_FIRST_TOKEN';
+const ERR_STREAM_IDLE = 'STREAM_IDLE_TIMEOUT';
+
+interface StreamPhaseTimeouts {
+  /** Batas fase 1: menunggu token pertama (model belum merespon sama sekali). */
+  firstTokenMs: number;
+  /** Batas fase 2: jeda antar-chunk setelah model terbukti merespon. */
+  idleMs: number;
+  /** Pagar total keseluruhan request (pengaman serverless). */
+  totalMs: number;
+}
+
+interface StreamDelta {
+  /** Teks jawaban yang dikirim ke user (delta.content / parts[].text). */
+  text?: string;
+  /** Sinyal model AKTIF (termasuk reasoning tersembunyi) — mereset idle timer tanpa ikut dikirim ke user. */
+  active?: boolean;
+}
+
+async function streamSse(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  timeouts: StreamPhaseTimeouts,
+  extractDelta: (json: unknown) => StreamDelta,
+  extractUsage: (json: unknown) => ProviderResult['tokens'] | undefined,
+): Promise<ProviderResult & { firstTokenMs: number }> {
+  const controller = new AbortController();
+  let phaseTimeout: string | null = null;
+  const abortWith = (code: string) => {
+    if (!phaseTimeout) phaseTimeout = code;
+    controller.abort();
+  };
+
+  let firstTimer: NodeJS.Timeout | undefined = setTimeout(() => abortWith(ERR_NO_FIRST_TOKEN), timeouts.firstTokenMs);
+  const totalTimer = setTimeout(() => abortWith('THINKING_TIMEOUT'), timeouts.totalMs);
+  let idleTimer: NodeJS.Timeout | undefined;
+
+  const startedAt = Date.now();
+  let firstTokenMs = 0;
+  let streaming = false;
+  let text = '';
+  let usage: ProviderResult['tokens'] | undefined;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (res.status === 429) {
+      const err = new Error('RATE_LIMITED') as Error & { code?: string };
+      err.code = 'RATE_LIMITED';
+      throw err;
+    }
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      console.warn(`[providers] Upstream error dari ${url}: status=${res.status}, body=${errBody.slice(0, 300)}`);
+      throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 100)}`);
+    }
+    if (!res.body) throw new Error('NO_STREAM_BODY');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+
+        let json: unknown;
+        try {
+          json = JSON.parse(payload);
+        } catch {
+          continue; // potongan JSON tidak lengkap — abaikan
+        }
+
+        const u = extractUsage(json);
+        if (u) usage = u;
+
+        const delta = extractDelta(json);
+        const hasText = typeof delta.text === 'string' && delta.text.length > 0;
+        if (!hasText && !delta.active) continue;
+
+        if (!streaming) {
+          // Token pertama tiba → model terbukti merespon: matikan timer fase 1,
+          // aktifkan timer fase 2 (idle antar-chunk) yang jauh lebih longgar.
+          streaming = true;
+          firstTokenMs = Date.now() - startedAt;
+          if (firstTimer) {
+            clearTimeout(firstTimer);
+            firstTimer = undefined;
+          }
+        }
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => abortWith(ERR_STREAM_IDLE), timeouts.idleMs);
+        if (hasText && delta.text) text += delta.text;
+      }
+    }
+
+    const cleaned = cleanModelOutput(text.trim());
+    if (!cleaned) throw new Error('EMPTY_RESPONSE');
+    return { text: cleaned, tokens: usage, firstTokenMs };
+  } catch (err) {
+    if (phaseTimeout) throw new Error(phaseTimeout);
+    throw err;
+  } finally {
+    if (firstTimer) clearTimeout(firstTimer);
+    if (idleTimer) clearTimeout(idleTimer);
+    clearTimeout(totalTimer);
+  }
+}
+
+/** Ekstraksi delta format OpenAI-compatible (content + reasoning sebagai sinyal aktif). */
+function openAiDelta(json: unknown): StreamDelta {
+  const j = json as { choices?: Array<{ delta?: { content?: string | null; reasoning?: string | null } }> };
+  const delta = j.choices?.[0]?.delta;
+  if (!delta) return {};
+  const out: StreamDelta = {};
+  if (typeof delta.content === 'string' && delta.content.length > 0) out.text = delta.content;
+  // Reasoning tersembunyi (thinking model) juga bukti model AKTIF — reset idle timer
+  // agar model reasoning panjang tidak salah dianggap hang.
+  if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) out.active = true;
+  return out;
+}
+
+function openAiUsage(json: unknown): ProviderResult['tokens'] | undefined {
+  const u = (json as { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } }).usage;
+  if (!u) return undefined;
+  return {
+    prompt: Number(u.prompt_tokens) || 0,
+    completion: Number(u.completion_tokens) || 0,
+    total: Number(u.total_tokens) || 0,
+  };
+}
+
+/** Ekstraksi delta format Gemini SSE (parts[].text; part thought hanya sinyal aktif). */
+function geminiDelta(json: unknown): StreamDelta {
+  const j = json as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
+  };
+  const parts = j.candidates?.[0]?.content?.parts;
+  if (!parts) return {};
+  const out: StreamDelta = {};
+  for (const p of parts) {
+    if (typeof p.text === 'string' && p.text.length > 0) {
+      if (p.thought) out.active = true;
+      else out.text = (out.text ?? '') + p.text;
+    }
+  }
+  return out;
+}
+
+function geminiUsage(json: unknown): ProviderResult['tokens'] | undefined {
+  const u = (json as {
+    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number };
+  }).usageMetadata;
+  if (!u) return undefined;
+  return {
+    prompt: Number(u.promptTokenCount) || 0,
+    completion: Number(u.candidatesTokenCount) || 0,
+    total: Number(u.totalTokenCount) || 0,
+  };
 }
 
 export interface ProviderResult {
@@ -218,8 +448,13 @@ async function openAiChat(
   messages: ChatMsg[],
   maxTokensOverride?: number,
   extraBody?: Record<string, unknown>,
+  totalTimeoutMs: number = config.timeoutMs,
+  connectTimeoutMs?: number,
 ): Promise<ProviderResult> {
-  const data = (await postJson(`${baseUrl}/chat/completions`, key, {
+  const hasImage = messagesContainImage(messages);
+  // Timeout koneksi adaptif: request berisi gambar (base64 besar) butuh waktu upload lebih lama.
+  const connectMs = connectTimeoutMs ?? (hasImage ? config.visionConnectTimeoutMs : config.connectTimeoutMs);
+  const body = {
     model,
     messages,
     max_tokens: maxTokensOverride ?? config.maxOutputTokens,
@@ -227,21 +462,48 @@ async function openAiChat(
     presence_penalty: 0.5,
     frequency_penalty: 0.3,
     ...extraBody,
-  })) as {
-    choices?: Array<{ message?: { content?: string } }>;
-    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    stream: true,
+    stream_options: { include_usage: true },
   };
-  const rawText = data.choices?.[0]?.message?.content?.trim() ?? '';
-  const text = cleanModelOutput(rawText);
-  if (!text) throw new Error('EMPTY_RESPONSE');
-  const tokens = data.usage
-    ? {
-        prompt: Number(data.usage.prompt_tokens) || 0,
-        completion: Number(data.usage.completion_tokens) || 0,
-        total: Number(data.usage.total_tokens) || 0,
-      }
-    : undefined;
-  return { text, tokens };
+  const headers = {
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    Accept: 'text/event-stream',
+  };
+
+  try {
+    // Jalur utama: streaming dua-fase (token pertama = cepat, fase jawaban = longgar).
+    // Vision butuh waktu lebih lama sebelum token pertama (analisis gambar), jadi diberi kelonggaran.
+    const firstTokenMs = hasImage ? config.visionFirstTokenMs : Math.min(connectMs, config.firstTokenTimeoutMs);
+    const result = await streamSse(`${baseUrl}/chat/completions`, headers, body, {
+      firstTokenMs,
+      idleMs: config.streamIdleTimeoutMs,
+      totalMs: totalTimeoutMs,
+    }, openAiDelta, openAiUsage);
+    return { text: result.text, tokens: result.tokens };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '';
+    // Provider tanpa dukungan SSE (mis. Dahl → HTTP405): ulangi non-streaming sekali.
+    if (msg.startsWith('PROVIDER_405') || msg.includes('NO_STREAM_BODY')) {
+      const data = (await postJson(`${baseUrl}/chat/completions`, key, { ...body, stream: undefined, stream_options: undefined }, totalTimeoutMs, connectMs)) as {
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      };
+      const rawText = data.choices?.[0]?.message?.content?.trim() ?? '';
+      const text = cleanModelOutput(rawText);
+      if (!text) throw new Error('EMPTY_RESPONSE');
+      const tokens = data.usage
+        ? {
+            prompt: Number(data.usage.prompt_tokens) || 0,
+            completion: Number(data.usage.completion_tokens) || 0,
+            total: Number(data.usage.total_tokens) || 0,
+          }
+        : undefined;
+      return { text, tokens };
+    }
+    throw e;
+  }
 }
 
 function cleanModelOutput(text: string): string {
@@ -300,6 +562,7 @@ async function cloudflareVisionChat(
   token: string,
   model: string,
   messages: ChatMsg[],
+  totalTimeoutMs: number = config.timeoutMs,
 ): Promise<ProviderResult> {
   let prompt = '';
   let imageBytes: number[] = [];
@@ -339,16 +602,18 @@ async function cloudflareVisionChat(
         image: imageBytes,
       }),
     },
-    config.connectTimeoutMs,
-    config.timeoutMs,
+    config.visionConnectTimeoutMs,
+    totalTimeoutMs,
   )) as {
     result?: {
+      // Llama 3.2 Vision membalas `response`; LLaVA membalas `description`.
       response?: string;
+      description?: string;
       usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     };
   };
 
-  const rawText = data.result?.response?.trim() ?? '';
+  const rawText = (data.result?.response ?? data.result?.description)?.trim() ?? '';
   const text = cleanModelOutput(rawText);
   if (!text) throw new Error('EMPTY_RESPONSE');
 
@@ -367,88 +632,25 @@ async function cloudflareChat(
   rawKey: string,
   model: string,
   messages: ChatMsg[],
+  totalTimeoutMs: number = config.timeoutMs,
 ): Promise<ProviderResult> {
   const { accountId, token } = await resolveCloudflareKey(rawKey);
   if (!accountId) {
     throw new Error('CLOUDFLARE_ACCOUNT_ID_MISSING');
   }
-  if (model === config.models.cfVision || model.includes('vision')) {
-    return await cloudflareVisionChat(accountId, token, model, messages);
+  // Hanya model vision native (Llama 3.2 Vision, LLaVA) yang memakai endpoint /ai/run
+  // dengan payload byte array. Qwen & Gemma vision memakai endpoint OpenAI-compat /ai/v1.
+  if (model.includes('vision') || model.includes('llava')) {
+    return await cloudflareVisionChat(accountId, token, model, messages, totalTimeoutMs);
   }
   const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`;
-  return await openAiChat(baseUrl, token, model, messages);
+  return await openAiChat(baseUrl, token, model, messages, undefined, undefined, totalTimeoutMs);
 }
 
-async function openCodeChat(
-  key: string,
-  model: string,
-  messages: ChatMsg[],
-): Promise<ProviderResult> {
-  const lines: string[] = [];
-  for (const m of messages) {
-    const content =
-      typeof m.content === 'string'
-        ? m.content
-        : m.content
-            .map((p) => (p.type === 'text' ? p.text : ''))
-            .filter(Boolean)
-            .join(' ');
-    if (!content.trim()) continue;
-    if (m.role === 'system') {
-      lines.push(`[Instruksi Sistem]\n${content}`);
-    } else if (m.role === 'user') {
-      lines.push(`User: ${content}`);
-    } else if (m.role === 'assistant') {
-      lines.push(`Assistant: ${content}`);
-    }
-  }
-  const input = lines.join('\n\n');
-
-  const headers: Record<string, string> = {
-    'Authorization': `Bearer ${key}`,
-    'Content-Type': 'application/json',
-    'User-Agent': 'opencode',
-    'x-opencode-client': 'desktop',
-    'x-opencode-project': 'global',
-    'x-opencode-session': crypto.randomUUID(),
-    'x-opencode-request': crypto.randomUUID(),
-  };
-
-  const data = (await fetchJsonWithLifecycle(
-    'https://opencode.ai/zen/v1/responses',
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        input,
-        reasoning: { effort: 'minimal' },
-      }),
-    },
-    Math.max(config.connectTimeoutMs, 10000),
-    config.timeoutMs,
-  )) as {
-    output?: Array<{ type?: string; content?: Array<{ text?: string }> }>;
-    usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
-  };
-
-  const msg = data.output?.find((o) => o.type === 'message');
-  const rawText = msg?.content?.[0]?.text?.trim() ?? '';
-  const text = cleanModelOutput(rawText);
-  if (!text) throw new Error('EMPTY_RESPONSE');
-
-  const tokens = data.usage
-    ? {
-        prompt: Number(data.usage.input_tokens) || 0,
-        completion: Number(data.usage.output_tokens) || 0,
-        total: Number(data.usage.total_tokens) || 0,
-      }
-    : undefined;
-
-  return { text, tokens };
-}
-
-async function geminiChat(key: string, model: string, messages: ChatMsg[]): Promise<ProviderResult> {
+async function geminiChat(key: string, model: string, messages: ChatMsg[], totalTimeoutMs: number = config.timeoutMs, connectTimeoutMs?: number): Promise<ProviderResult> {
+  // Timeout koneksi adaptif: upload gambar ke Gemini butuh waktu lebih lama.
+  const hasImage = messagesContainImage(messages);
+  const connectMs = connectTimeoutMs ?? (hasImage ? config.visionConnectTimeoutMs : config.connectTimeoutMs);
   const contents: Array<{ role: 'user' | 'model'; parts: unknown[] }> = [];
   for (const m of messages) {
     if (m.role === 'system') continue;
@@ -492,35 +694,21 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[]): Prom
     body.systemInstruction = { parts: [{ text: sysText }] };
   }
 
-  const data = (await fetchJsonWithLifecycle(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+  // Streaming SSE dua-fase (sama seperti provider lain): token pertama cepat → failover gesit,
+  // fase penyusunan jawaban longgar agar model reasoning tidak terputus di tengah.
+  const result = await streamSse(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`,
+    { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body,
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      firstTokenMs: hasImage ? config.visionFirstTokenMs : Math.min(connectMs, config.firstTokenTimeoutMs),
+      idleMs: config.streamIdleTimeoutMs,
+      totalMs: totalTimeoutMs,
     },
-    config.connectTimeoutMs,
-    config.timeoutMs,
-  )) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    usageMetadata?: {
-      promptTokenCount?: number;
-      candidatesTokenCount?: number;
-      totalTokenCount?: number;
-    };
-  };
-
-  const rawText = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('').trim() ?? '';
-  const text = cleanModelOutput(rawText);
-  if (!text) throw new Error('EMPTY_RESPONSE');
-  const tokens = data.usageMetadata
-    ? {
-        prompt: Number(data.usageMetadata.promptTokenCount) || 0,
-        completion: Number(data.usageMetadata.candidatesTokenCount) || 0,
-        total: Number(data.usageMetadata.totalTokenCount) || 0,
-      }
-    : undefined;
-  return { text, tokens };
+    geminiDelta,
+    geminiUsage,
+  );
+  return { text: result.text, tokens: result.tokens };
 }
 
 /**
@@ -564,45 +752,44 @@ interface Step {
   kind: ProviderKind;
   keys: string[];
   models: string[];
-  /** Subset models yang terbukti vision-capable. Kosong = step dilewati saat butuh vision. */
-  visionModels: string[];
   cap: number;
-  run: (key: string, model: string, messages: ChatMsg[]) => Promise<ProviderResult>;
+  /** `t` = sisa anggaran waktu (ms) untuk attempt ini, agar satu model yang menggantung tidak menghabiskan seluruh deadline rantai. */
+  run: (key: string, model: string, messages: ChatMsg[], t: number) => Promise<ProviderResult>;
 }
 
 function steps(): Step[] {
   return [
-    {
-      kind: 'opencode',
-      keys: config.pools.opencode,
-      models: [config.models.openCodePrimary, config.models.openCodeBackup],
-      visionModels: [],
-      cap: config.dailyCap.opencode,
-      run: (k, m, msgs) => openCodeChat(k, m, msgs),
-    },
+    // --- TIER 1: xKiro Gateway (primer teks) ---
     {
       kind: 'xkiro',
       keys: config.pools.xkiro,
       models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
-      visionModels: [],
       cap: config.dailyCap.xkiro,
-      run: (k, m, msgs) => {
+      run: (k, m, msgs, t) => {
         const isDeepSeek = m.toLowerCase().includes('deepseek');
         return openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
           // Sampling luwes agar output DeepSeek mengalir alami & dinamis
           temperature: isDeepSeek ? 0.65 : 0.35,
           presence_penalty: isDeepSeek ? 0.1 : 0.0,
           frequency_penalty: isDeepSeek ? 0.1 : 0.0,
-        });
+        }, t);
       },
     },
+    // --- TIER 2: OpenRouter (free models) ---
+    {
+      kind: 'openrouter',
+      keys: config.pools.openrouter,
+      models: [config.models.orPrimary, ...config.models.orBackup],
+      cap: config.dailyCap.openrouter,
+      run: (k, m, msgs, t) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, undefined, t),
+    },
+    // --- TIER 3: Groq Cloud API (LPU ultra-cepat) ---
     {
       kind: 'groq',
       keys: config.pools.groq,
-      models: [config.models.groqPrimary, config.models.groqBackup],
-      visionModels: [],
+      models: [config.models.groqPrimary, ...config.models.groqBackup],
       cap: config.dailyCap.groq,
-      run: (k, m, msgs) => {
+      run: (k, m, msgs, t) => {
         // Pangkas pesan agar total (prompt + output 800) muat di bawah limit ketat Groq 8K TPM
         const groqMsgs = trimMessagesToTokenBudget(msgs, 7200);
         return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, 800, {
@@ -611,55 +798,67 @@ function steps(): Step[] {
           temperature: 0.45,
           presence_penalty: 0.0,
           frequency_penalty: 0.4,
-        });
+        }, t);
       },
     },
-    {
-      kind: 'gemini',
-      keys: config.pools.gemini,
-      models: [config.models.geminiPrimary, config.models.geminiBackup],
-      visionModels: [config.models.geminiPrimary, config.models.geminiBackup],
-      cap: config.dailyCap.gemini,
-      run: (k, m, msgs) => geminiChat(k, m, msgs),
-    },
+    // --- TIER 4: Cloudflare Workers AI ---
     {
       kind: 'cloudflare',
       keys: config.pools.cloudflare,
-      models: [config.models.cfPrimary, config.models.cfBackup],
-      visionModels: [config.models.cfVision],
+      models: [config.models.cfPrimary, ...config.models.cfBackup],
       cap: config.dailyCap.cloudflare,
-      run: (k, m, msgs) => cloudflareChat(k, m, msgs),
+      run: (k, m, msgs, t) => cloudflareChat(k, m, msgs, t),
     },
+    // --- TIER 5: Google Gemini API (1M konteks) ---
     {
-      kind: 'openrouter',
-      keys: config.pools.openrouter,
-      models: [config.models.orPrimary, config.models.orText, config.models.orMini],
-      visionModels: [config.models.orPrimary, config.models.orMini],
-      cap: config.dailyCap.openrouter,
-      run: (k, m, msgs) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs),
+      kind: 'gemini',
+      keys: config.pools.gemini,
+      models: [config.models.geminiPrimary, ...config.models.geminiBackup],
+      cap: config.dailyCap.gemini,
+      run: (k, m, msgs, t) => geminiChat(k, m, msgs, t),
     },
+    // --- TIER 6: Dahl Global API (1B token pool) ---
     {
       kind: 'dahl',
       keys: config.pools.dahl,
-      models: [config.models.dahlPrimary, config.models.dahlBackup],
-      visionModels: [],
+      models: [config.models.dahlPrimary, ...config.models.dahlBackup],
       cap: config.dailyCap.dahl,
-      run: (k, m, msgs) => {
+      run: (k, m, msgs, t) => {
         const isDeepSeek = m.toLowerCase().includes('deepseek');
         return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
           temperature: isDeepSeek ? 0.65 : 0.45,
           frequency_penalty: isDeepSeek ? 0.1 : 0.5,
           presence_penalty: isDeepSeek ? 0.1 : 0.0,
-        });
+        }, t);
       },
     },
   ];
 }
 
 /**
+ * Bangun urutan step khusus VISION dari `config.models.visionChain` — daftar
+ * (provider, model) eksplisit yang urutannya dihormati mutlak, bukan disusun ulang
+ * oleh pengurutan latensi. Setiap entri menjadi satu step berisi satu model saja,
+ * memakai pool key dan adapter provider aslinya.
+ */
+function visionSteps(all: Step[]): Step[] {
+  const byKind = new Map(all.map((s) => [s.kind, s]));
+  const out: Step[] = [];
+  for (const entry of config.models.visionChain) {
+    const base = byKind.get(entry.kind);
+    if (!base) continue;
+    out.push({ ...base, models: [entry.model] });
+  }
+  return out;
+}
+
+/**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: OpenCode (Muse Spark 1.3 > 1.2) > xKiro (DeepSeek v4.1 Flash Free) > Groq (Qwen 3.8 > 3.6) > Gemini > Cloudflare > OpenRouter > Dahl.
- * - Vision / foto / gambar: Gemini (3.8 Flash > 2.5 Flash) > Cloudflare Vision > OpenRouter Vision.
+ * - Teks umum / matematika / koding: xKiro (Qwen 3.8 Max > MiniMax M3) > OpenRouter (DeepSeek V4 Flash > Nex N2.5 Pro > Nemotron Lightning) > Groq (Qwen 3.8 > GPT-OSS 120B) > Cloudflare (Qwen 3.8 > GLM 4.7 > GPT-OSS > Llama 3.3) > Gemini (3.8 > 3.5) > Dahl (DeepSeek V4 Flash > GLM 5.3 > MiniMax M2.7).
+ * - Vision / foto / stiker: rantai eksplisit `config.models.visionChain` — Groq > Cloudflare (Qwen > Gemma > Llama Vision > LLaVA) > xKiro (MiniMax M3) > Gemini (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) > xKiro (Qwen 3.8 Max > Qwen Omni Flash).
+ * Failover antar-tier otomatis: bila SEMUA model dalam satu tier gagal/timeout, lanjut ke tier berikutnya.
+ * Failover dalam-tier berbasis WAKTU RESPONS: model yang rata-rata lambat diturunkan prioritasnya
+ * (config.slowModelMs) agar request berikutnya mencoba model cadangan yang lebih gesit lebih dulu.
  * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
  */
 export async function chat(
@@ -675,18 +874,19 @@ export async function chat(
 
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
-  // Untuk vision: Gemini -> Cloudflare Vision -> OpenRouter Vision (teks-only dilewati 0ms)
-  const orderedSteps = needVision
-    ? allSteps
-        .filter((s) => s.visionModels.length > 0)
-        .sort((a, b) => {
-          const priority: Record<string, number> = { gemini: 1, cloudflare: 2, openrouter: 3 };
-          return (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99);
-        })
-    : allSteps;
+  // Untuk vision: rantai eksplisit dari config.models.visionChain (urutan mutlak sesuai
+  // keputusan review user, tidak disusun ulang oleh pengurutan latensi).
+  const orderedSteps = needVision ? visionSteps(allSteps) : allSteps;
+
+  // Anggaran waktu TOTAL seluruh rantai failover: pagar agar satu model yang menggantung
+  // tidak menghabiskan jatah serverless. Sisa anggaran diteruskan ke tiap attempt (`t`).
+  const deadline = Date.now() + config.chainDeadlineMs;
 
   for (const step of orderedSteps) {
-    const models = needVision ? step.visionModels : step.models;
+    if (Date.now() >= deadline - 1500) break;
+    // Urutkan model dalam tier ini berdasarkan latensi terukur (gesit di depan, lambat di belakang).
+    // Rantai vision dibiarkan apa adanya karena tiap step hanya berisi satu model.
+    const models = needVision ? step.models : orderModelsByLatency(step.kind, step.models);
     for (const model of models) {
       // Fast-pass: Lewati model yang sedang dalam cooldown server error (0ms overhead)
       if (isModelCoolingDown(step.kind, model)) {
@@ -696,15 +896,26 @@ export async function chat(
       const candidateKeys = getOrderedKeys(step.kind, step.keys);
       let anyKeyAttempted = false;
       let allKeysFailedWithServerError = true;
+      let modelUnresponsive = false;
 
       for (const key of candidateKeys) {
+        if (modelUnresponsive) break;
         // Guard RPD + TPD (token/hari): hentikan pool sebelum menabrak 429 upstream.
         // Groq Free Tier: 1.000 RPD DAN 200K TPD — TPD biasanya tercapai lebih dulu.
         if (!(await isKeyAllowed(step.kind, key, step.cap, config.dailyTokenCap[step.kind] || 0))) continue;
+        const remainingMs = deadline - Date.now();
+        if (remainingMs < 1500) {
+          lastError = 'CHAIN_DEADLINE';
+          break;
+        }
         anyKeyAttempted = true;
+        const attemptStart = Date.now();
         try {
-          const result = await step.run(key, model, messages);
+          // `t` = sisa anggaran rantai (dibatasi timeout per-request) agar attempt ini tidak melewati deadline
+          const result = await step.run(key, model, messages, Math.min(remainingMs, config.timeoutMs));
           recordKeySuccess(step.kind, key, model);
+          // Catat latensi aktual untuk failover berbasis waktu respons pada request berikutnya
+          recordModelLatency(step.kind, model, Date.now() - attemptStart);
           keyUsed(step.kind, key);
           // Catat token harian (TPD) agar limit token upstream terpantau presisi
           if (result.tokens?.total) {
@@ -716,6 +927,24 @@ export async function chat(
           lastError = e instanceof Error ? e.message : 'UNKNOWN';
           recordKeyFailure(step.kind, key, e);
           console.warn(`[providers] Kegagalan key pada ${step.kind}/${model} (key: ${key.slice(0, 10)}...): ${lastError}. Mencoba key berikutnya...`);
+
+          // FASE 1 timeout: model TIDAK merespon sama sekali dalam batas singkat.
+          // Ini masalah model/provider (bukan key) → failover LANGSUNG ke model berikutnya,
+          // tanpa mencoba key lain untuk model yang sama (menghindari tunggu berulang).
+          if (lastError === ERR_NO_FIRST_TOKEN) {
+            console.warn(`[providers] Model ${step.kind}/${model} tidak merespon (fase-1 ${config.firstTokenTimeoutMs}ms). Failover cepat ke model berikutnya.`);
+            recordModelFailure(step.kind, model, 3 * 60_000);
+            modelUnresponsive = true;
+            break;
+          }
+          // FASE 2 timeout: model SUDAH merespon tapi berhenti di tengah jawaban.
+          // Juga masalah model → lompat ke model berikutnya (jawaban parsial tidak bisa dikirim).
+          if (lastError === ERR_STREAM_IDLE) {
+            console.warn(`[providers] Model ${step.kind}/${model} berhenti di tengah jawaban (idle ${config.streamIdleTimeoutMs}ms). Failover ke model berikutnya.`);
+            recordModelFailure(step.kind, model, 60_000);
+            modelUnresponsive = true;
+            break;
+          }
 
           // HANYA break perulangan kunci jika error murni kegagalan model global (bukan error kunci/kuota/jaringan):
           // - PROVIDER_404: Model tidak terdaftar di endpoint upstream
@@ -747,10 +976,11 @@ export async function chat(
 
       // Jika seluruh key yang dicoba pada model ini gagal karena server outage / timeout,
       // beri cooldown pada model tersebut agar request berikutnya langsung melompat tanpa delay
-      if (anyKeyAttempted && allKeysFailedWithServerError) {
+      if (anyKeyAttempted && allKeysFailedWithServerError && !modelUnresponsive) {
         recordModelFailure(step.kind, model);
       }
     }
+    if (Date.now() >= deadline - 1500) break;
   }
   throw new Error(`ALL_PROVIDERS_FAILED:${lastError}`);
 }

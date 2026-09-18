@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.27.15 (Resolusi Cross-Device Master PIN & Multi-Salt Resolution: Eliminasi Salt Mismatch Localhost vs Vercel Serverless, Auto-Upgrade Salt Database ke Canonical, dan Paritas Otentikasi Lintas Perangkat)  
+**Versi:** v0.29.0 (Rantai Vision Multimodal Eksplisit 10 Model, PDF Multi-Jalur, Audio Cloudflare Whisper, Analisis Gambar di Word)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-16 07:30 WIB
+**Terakhir Diperbarui:** 2026-09-19 02:30 WIB
 
 ---
 
@@ -18,9 +18,9 @@ Sistem dirancang dengan fleksibilitas tinggi menggunakan prinsip _Single Unified
    - Berjalan sebagai client WhatsApp Multi-Device resmi via `@whiskeysockets/baileys` (`src/whatsapp_baileys.ts`).
    - **Supabase Cloud Session Persistence (`src/whatsapp_session.ts`)**: File sesi otentikasi disinkronkan otomatis ke tabel Supabase `whatsapp_sessions` dengan proteksi Row Level Security (RLS). Pengguna hanya perlu scan QR Code satu kali; bot langsung login otomatis saat container cloud gratis (seperti Render.com atau Koyeb) melakukan restart berkala.
    - Bebas batas kuota 1.000 pesan ($0 gratis selamanya).
-   - Mendukung chat teks dengan _safe paragraph chunking_ (> 4000 karakter) dan analisis gambar multimodal via Gemini Vision.
+   - Mendukung chat teks dengan _safe paragraph chunking_ (> 4000 karakter) dan analisis gambar multimodal via rantai vision multi-provider.
 3. **Unified Monitoring & Dataset Console (Vercel Serverless + Obsidian Web UI)**:
-   - Dashboard observabilitas real-time di `/` dan `/dashboard` untuk memantau status kesehatan 12 API key, konsumsi kuota harian, metrik platform, dan model AI terpopuler.
+   - Dashboard observabilitas real-time di `/` dan `/dashboard` untuk memantau status kesehatan seluruh API key pool, konsumsi kuota harian, metrik platform, dan model AI terpopuler.
    - **Otentikasi Kriptografis Master PIN**: Dilindungi oleh PIN default (`080402`), hashing SHA-256 + salt statis (`rafly_telemetry_salt`), komparasi timing-safe, token sesi acak (`adm_<hex32>`), serta sistem penguncian anti-brute force (5x salah = lockout 1 menit).
    - **Pemulihan Lupa PIN via Resend Email OTP**: Kode OTP 6-digit acak dikirim ke email admin (`raflyfirmansyah02@gmail.com`) dengan validasi kedaluwarsa 10 menit dan pembatasan rate limiter 60 detik.
    - **Dataset Engine Evaluasi & Fine-Tuning**: Endpoint `GET /api/dataset` memasangkan setiap pesan pengguna dengan balasan bot, mendukung ekspor instan JSONL (format fine-tuning OpenAI/ShareGPT) dan format CSV.
@@ -86,9 +86,10 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 5. Masukkan **Environment Variables** (salin nilai yang sama dari berkas `.env` Anda):
    - `XKIRO_KEYS`
    - `GROQ_KEYS`
-   - `CLOUDFLARE_KEYS`
    - `GEMINI_KEYS`
+   - `CLOUDFLARE_KEYS`
    - `OPENROUTER_KEYS`
+   - `DAHL_KEYS`
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_KEY`
    - `BOT_NAME`, `BOT_PROFILE`
@@ -145,9 +146,11 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
        ▼
 [Router Cepat Kilat & Rantai Failover (`src/providers.ts`)]
   ├── Mode Teks/Matematika/Koding:
-  │     xKiro (DeepSeek) ──(fail)──> Groq (Qwen 3.8) ──(fail)──> Cloudflare (Llama 3.1 70B) ──(fail)──> Gemini (3.8 Flash) ──(fail)──> OpenRouter Pool
+  │     xKiro (Qwen 3.8 Max) ──(fail)──> OpenRouter (DeepSeek V4 Flash Free) ──(fail)──> Groq (Qwen 3.8) ──(fail)──> Cloudflare (Qwen 3.8 27B) ──(fail)──> Gemini (3.8 Flash) ──(fail)──> Dahl (DeepSeek V4 Flash)
+  │     (Dalam satu tier: model gesit didahulukan; model lambat > SLOW_MODEL_MS diturunkan prioritasnya)
   └── Mode Vision/Gambar:
-        xKiro (Standby Qwen Free) ──(fail)──> Gemini (3.8 Flash / 2.5 Flash) ──(fail)──> OpenRouter Vision
+        Rantai eksplisit visionChain (10 model, urutan mutlak):
+        Groq (Qwen 3.8 27B) ──(fail)──> Cloudflare (Qwen 3.8 27B) ──(fail)──> Cloudflare (Gemma 4 26B) ──(fail)──> xKiro (MiniMax M3) ──(fail)──> Cloudflare (LLaVA 1.5 7B) ──(fail)──> Gemini (3.6 Flash) ──(fail)──> Gemini (3.5 Flash Lite) ──(fail)──> Gemini (2.5 Flash) ──(fail)──> xKiro (Qwen 3.8 Max) ──(fail)──> xKiro (Qwen 3.8 Omni Flash)
        │
        ▼
 [Post-Processing & Formatter Telegram (`cleanMathAndNoise`)]
@@ -181,13 +184,13 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ### 3.3. Pemrosesan Multimodal & Media Komprehensif (WhatsApp & Telegram)
 
 - **Teks & Chat:** Percakapan natural, flow-conscious, ramah sahabat, dan zero unsolicited advice.
-- **Foto & Gambar:** Dianalisis oleh model vision (Gemini & OpenRouter) dengan penjelasan dan pemecahan masalah visual.
-- **Dokumen PDF:** Dianalisis secara native multimodal via Google Gemini API (`inlineData`) untuk membaca teks, tabel, bagan, dan rangkuman.
-- **Dokumen Word (.docx):** Diekstrak teks mentahnya via pustaka murni JavaScript `mammoth` dan dianalisis mendalam oleh AI.
+- **Foto & Gambar:** Dianalisis oleh rantai vision 10 model lintas provider (Groq, Cloudflare, xKiro, Gemini) dengan urutan eksplisit dan failover otomatis.
+- **Dokumen PDF:** Dianalisis native via Gemini (`inlineData`), cadangan OpenRouter plugin `file-parser`, lalu parser teks lokal — membaca teks, tabel, bagan, dan rangkuman.
+- **Dokumen Word (.docx):** Diekstrak teks mentahnya via pustaka murni JavaScript `mammoth` dan dianalisis mendalam oleh AI. Gambar di dalam dokumen ikut diekstrak (maks 3) dan dianalisis via rantai vision.
 - **Dokumen Teks, Data & Kode (.txt, .md, .csv, .json, kode):** Dibaca secara langsung via UTF-8 dengan batas token aman hingga 32.000 karakter.
-- **Voice Note (VN / Audio):** Ditranskripsi otomatis sub-detik (~500ms) menggunakan Groq Whisper (`whisper-large-v3-turbo`) 100% gratis ($0 free-tier), kemudian dibalas secara alami oleh asisten.
-- **Stiker WhatsApp & Telegram:** Diunduh (.webp) dan dianalisis ekspresi serta konteks humornya via model Vision AI, dengan fallback cerdas berbasis representasi emoji untuk stiker animasi/video.
-- **Video & Catatan:** Merespons video kiriman pengguna secara kontekstual berbasis teks catatan (_caption_).
+- **Voice Note (VN / Audio):** Ditranskripsi otomatis sub-detik (~500ms) menggunakan Groq Whisper (`whisper-large-v3`), cadangan Cloudflare Whisper (pool berbeda), lalu Gemini native audio.
+- **Stiker WhatsApp & Telegram:** Diunduh (.webp) dan dianalisis ekspresi serta konteks humornya via rantai vision, dengan fallback cerdas berbasis representasi emoji untuk stiker animasi/video.
+- **Video:** Dianalisis native via Gemini video; bila seluruh jalur video gagal, trek audio ditranskripsi (Whisper) lalu dijawab via rantai teks.
 
 ### 3.4. Pengingat Terjadwal (Reminders)
 
@@ -207,6 +210,79 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.29.0 - 2026-09-19 (Rantai Vision Multimodal Eksplisit 10 Model, PDF Multi-Jalur, Audio Cloudflare Whisper, Analisis Gambar di Word)
+
+**Kronologi: review user atas hasil uji live 25 kandidat vision menetapkan urutan rantai vision eksplisit 10 model (Groq > Cloudflare > xKiro > Gemini). Uji lanjutan membuktikan PDF bisa lewat OpenRouter (plugin file-parser), Cloudflare Whisper aktif untuk audio, dan video hanya bisa native via Gemini — sehingga jalur media diperluas dan rantai vision dikunci sesuai keputusan user.**
+
+- **Rantai Vision Eksplisit (10 Model) — `src/env.ts` & `src/providers.ts`:**
+  - Konfigurasi baru `config.models.visionChain` berisi pasangan (provider, model) berurutan: Groq `qwen/qwen3.8-27b` > Cloudflare `@cf/qwen/qwen3.8-27b` > Cloudflare `@cf/google/gemma-4-26b-a4b-it` > xKiro `minimax/minimax-m3:free` > Cloudflare `@cf/llava-hf/llava-1.5-7b-hf` > Gemini `gemini-3.6-flash` > `gemini-3.5-flash-lite` > `gemini-2.5-flash` > xKiro `qwen/qwen3.8-max:free` > `qwen/qwen3.8-omni-flash:free`.
+  - `visionSteps()` membangun urutan step vision langsung dari `visionChain` — urutan dihormati mutlak, tidak disusun ulang oleh pengurutan latensi.
+  - Mekanisme lama `visionModels` per-step dihapus dari `Step`; model free OpenRouter tetap tidak dipakai untuk vision (HTTP404 no image input).
+  - `gemini-3.8-flash` dikecualikan dari rantai foto: uji live menunjukkan hang ~60 detik tanpa token saat menerima gambar; tetap primer teks & dokumen/video.
+- **Cloudflare Vision Multi-Endpoint — `src/providers.ts`:**
+  - `cfVision` kini array: Qwen 3.8 27B, Gemma 4 26B (endpoint OpenAI-compat `/ai/v1`), LLaVA 1.5 7B (endpoint native `/ai/run`, field respons `description`).
+  - `cloudflareVisionChat` menerima `totalTimeoutMs`, memakai `visionConnectTimeoutMs`, dan membaca `result.response` maupun `result.description`.
+- **PDF Multi-Jalur — `src/media.ts`:**
+  - Jalur baru `processPdfViaOpenRouter()` memakai plugin resmi `file-parser` (engine `pdf-text`) — terbukti membaca PDF di uji live, mencatat kuota OpenRouter.
+  - Urutan PDF: Gemini native (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) > OpenRouter file-parser > parser teks lokal > fallback dinamis.
+- **Audio Cloudflare Whisper — `src/media.ts`:**
+  - Helper baru `transcribeViaCloudflare()` (endpoint native `@cf/openai/whisper-large-v3-turbo`, pool & kuota Cloudflare terpisah dari Groq).
+  - Urutan transkripsi: Groq `whisper-large-v3` > Cloudflare Whisper > Groq `whisper-large-v3-turbo` > Gemini native audio (3.5 Flash Lite > 2.5 Flash).
+- **Video Fallback Transkripsi — `src/media.ts`:**
+  - Video tetap native via Gemini (3.6 Flash > 3.5 Flash Lite > 2.5 Flash); bila seluruh jalur gagal, trek audio ditranskripsi (Whisper menerima MP4) lalu dijawab rantai teks dengan `via` `transkrip-video/...`.
+- **Analisis Gambar di Dokumen Word — `src/media.ts`:**
+  - Helper baru `extractDocxImages()` mengekstrak maksimal 3 gambar raster (<= ~4MB) dari .docx via mammoth `convertToHtml`; jika ada gambar, dokumen dianalisis via rantai vision (`via` `docx-vision/...`), jatuh ke teks murni bila vision gagal.
+- **Sinkronisasi Permukaan (Backend, Dashboard, Dokumen):**
+  - `api/stats.ts`: `activeSystemModels` memuat `...cfVision`, `...geminiVision`, dan seluruh model `visionChain`; `allModels` provider Cloudflare & Gemini ikut memuat model vision.
+  - `public/js/dashboard.js`: kartu katalog vision baru (Qwen 3.8 Omni Flash, Gemma 4 26B, LLaVA 1.5 7B, Gemini 3.6 Flash, 3.5 Flash Lite, 2.5 Flash); kartu Llama 3.2 11B dihapus (tidak dipakai rantai); capability Vision disinkronkan dengan prioritas rantai; matchKey rawan dirapikan (ghost-match).
+  - `public/index.html`: klaim vision & Whisper diselaraskan ke deskripsi multi-provider (tanpa nama model spesifik).
+  - `AGENTS.md` & `DOCUMENTATION.md`: rantai vision 10 model, jalur PDF/audio/video/Word terbaru, diagram pipeline baru.
+  - `README.md`: ditulis ulang — tabel provider-level tanpa nama model, deskripsi peran tiap tier.
+- **Verifikasi:** `npm run typecheck` hijau; uji live vision (Groq 408ms, CF 429ms, Gemma compat OK, LLaVA native OK), PDF (Gemini & OpenRouter OK), audio (Groq 431ms, CF 3,9s), video (Gemini 2.5 OK + fallback transkrip OK).
+
+### v0.28.0 - 2026-09-18 (Rombak Rantai Failover 6-Tier: OpenCode Dikeluarkan, xKiro Tier 1, Failover Berbasis Waktu Respons)
+
+**Kronologi: audit menyeluruh seluruh API key & model gratis menemukan OpenCode Zen free tier kini terkunci oleh gate anti-abuse resmi (mulai 17 Sep 2026, "You cannot use the free tier in other harnesses"), sehingga provider dikeluarkan dari rantai produksi. Rantai disusun ulang menjadi 6 tier dengan xKiro sebagai Tier 1 dan ditambah mekanisme failover berbasis waktu respons.**
+
+- **Rantai Teks Baru (6 Tier) — `src/providers.ts` & `src/env.ts`:**
+  - **Tier 1 xKiro:** primary `qwen/qwen3.8-max:free` (~0,15s), cadangan `minimax/minimax-m3:free` (GPQA 93,0), plus slot arsip `deepseek/deepseek-v4.1-flash:free` yang aktif otomatis bila model kembali muncul di endpoint.
+  - **Tier 2 OpenRouter:** primary `deepseek/deepseek-v4-flash-0731:free` (GPQA 90,8), cadangan `nex-agi/nex-n2.5-pro:free`, `nvidia/nemotron-3.5-lightning:free`.
+  - **Tier 3 Groq:** primary `qwen/qwen3.8-27b` (~284 tok/s), cadangan `openai/gpt-oss-120b`.
+  - **Tier 4 Cloudflare:** primary `@cf/qwen/qwen3.8-27b`, cadangan `@cf/zai-org/glm-4.7-flash`, `@cf/openai/gpt-oss-120b`, `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.
+  - **Tier 5 Gemini:** primary `gemini-3.8-flash`, cadangan `gemini-3.5-flash`.
+  - **Tier 6 Dahl:** primary `deepseek-ai/DeepSeek-V4-Flash-0731`, cadangan `zai-org/GLM-5.3-Flash`, `MiniMaxAI/MiniMax-M2.7`.
+  - Setiap provider kini mendukung **banyak cadangan berurutan** (`xkiroBackup`, `orBackup`, `groqBackup`, `cfBackup`, `geminiBackup`, `dahlBackup` bertipe `string[]`).
+- **Failover Berbasis Waktu Respons (Intra-Tier) — `src/providers.ts`:**
+  - Ditambahkan pelacak latensi per model `modelLatencyMap` (EWMA 0,7/0,3) via `recordModelLatency`; latensi diukur pada setiap panggilan sukses.
+  - `orderModelsByLatency` menurunkan prioritas model yang rata-rata merespons lebih lambat dari ambang `SLOW_MODEL_MS` (default 12.000 ms, env baru `SLOW_MODEL_MS`), sehingga model cadangan yang lebih gesit dicoba lebih dulu pada request berikutnya.
+  - Failover antar-tier tetap otomatis: bila SEMUA model satu tier gagal/timeout/rate-limit, rantai turun ke tier berikutnya.
+- **Penghapusan OpenCode:**
+  - `src/providers.ts`: adapter `openCodeChat` dihapus; `src/quota.ts`: `ProviderKind` tidak lagi memuat `'opencode'`; `src/env.ts`: pool/dailyCap/dailyTokenCap `opencode` dihapus.
+  - `api/stats.ts`: entri `providerDefs` OpenCode dihapus, `providerTokenStats` & `KNOWN_PROVIDER_KINDS` disesuaikan (6 tier).
+  - `public/js/dashboard.js`: kartu Muse Spark 1.3/1.2 dihapus, katalog diganti sesuai rantai baru; blok rendering khusus `opencode` dihapus.
+  - `public/index.html`, `public/dashboard.html`: teks "7 tier" → "6 tier", pill filter & dropdown `opencode` dihapus.
+- **Dokumentasi:** `README.md` (tabel Arsitektur Provider 6 Tier), `AGENTS.md` (v0.28.0, rantai 6 tier + bagian failover waktu respons), `.env.example` (urutan seksi provider baru + `SLOW_MODEL_MS`), dan `DOCUMENTATION.md` (header, diagram pipeline, daftar env var).
+- **Verifikasi:** `npm run typecheck` & `npm run build` exit 0; `node --check public/js/dashboard.js` lolos. Uji live: xKiro Qwen 3.8 Max & MiniMax M3, OpenRouter DeepSeek V4 Flash 0731, Groq Qwen 3.8 & GPT-OSS 120B, Cloudflare Qwen 3.8 & GLM 4.7 Flash & GPT-OSS 120B & Llama 3.3 70B, Dahl MiniMax M2.7 — semuanya merespons 200 OK.
+
+### v0.27.16 - 2026-09-18 (Promosi xKiro DeepSeek V4.1 Flash ke Tier 2 & Sinkronisasi Rantai Failover Menyeluruh)
+
+**Kronologi: model `deepseek/deepseek-v4.1-flash:free` sempat hilang dari endpoint xKiro sehingga provider diturunkan ke Tier 7; model kini tersedia kembali sehingga xKiro dikembalikan ke Tier 2 (commit `9806d48`). Audit lanjutan menemukan 7 berkas lain masih memuat urutan tier lama — seluruhnya disinkronkan pada rilis ini.**
+
+- **Promosi Runtime (`src/providers.ts`, `src/env.ts`)**:
+  - Urutan rantai teks final: **OpenCode (Muse Spark 1.3 > 1.2) > xKiro (DeepSeek V4.1 Flash Free) > Groq > Gemini > Cloudflare > OpenRouter > Dahl**.
+  - Pool xKiro: 3 API Key, primary `deepseek/deepseek-v4.1-flash:free`, cadangan berurut `deepseek/deepseek-v4.1-flash`, `deepseek/deepseek-chat-v3.1`, `mistralai/mistral-small-2603`.
+  - Sampling DeepSeek khusus (`temperature: 0.65`, `presence_penalty: 0.1`, `frequency_penalty: 0.1`) murni dinamis; blok injeksi prompt statis dihapus pada commit `c6688e6` agar gaya bahasa model 100% natural.
+- **Sinkronisasi Dashboard & Statistik**:
+  - `api/stats.ts`: `activeSystemModels` + urutan `providerDefs` kini mengikuti rantai runtime (OpenCode > xKiro > Groq > Gemini > Cloudflare > OpenRouter > Dahl), sehingga kartu pool & atribusi token tidak lagi menempatkan Dahl di depan.
+  - `public/js/dashboard.js`: katalog matriks model menyertakan 3 model xKiro aktif (DeepSeek V4.1 Flash, DeepSeek Chat v3.1, Mistral Small 2603) di Tier 2; 2 kartu ghost lama di Tier 7 (Mistral Small 2603 & Codestral 2508 — model tidak lagi ada di rantai runtime) dihapus agar eksekusi `xkiro/*` tidak lagi jatuh ke "0x".
+  - `public/dashboard.html` & `public/index.html`: urutan pill filter provider, dropdown filter dataset, dan teks landing page diselaraskan.
+- **Sinkronisasi Dokumentasi**:
+  - `README.md`: tabel Arsitektur Provider 7 Tier diperbarui (xKiro Tier 2, Dahl Tier 7) beserta daftar rantai failover.
+  - `.env.example`: penomoran seksi provider diurutkan ulang sesuai tier runtime (OpenCode Tier 1 → xKiro Tier 2 → Groq Tier 3 → ... → Dahl Tier 7).
+  - `AGENTS.md`: referensi "Tier 1 (Dahl DeepSeek)" pada alur dokumen dikoreksi menjadi rantai failover teks utama; limit Groq 800 → 1.000 RPD/key dan Gemini 1.400 → 1.500 RPD/key diselaraskan dengan Free Tier resmi.
+  - Diagram pipeline `DOCUMENTATION.md` dikoreksi: sebelumnya masih menampilkan urutan lama (xKiro → Groq → Cloudflare → Gemini) dan vision tanpa Cloudflare.
+- **Verifikasi:** `npm run typecheck` & `npm run build` exit 0; `node --check public/js/dashboard.js` lolos.
 
 ### v0.27.15 - 2026-09-16 (Resolusi Cross-Device Master PIN & Multi-Salt Resolution)
 

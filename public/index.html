@@ -640,7 +640,7 @@
     <div class="container">
       <div class="section-title-wrap">
         <h3 class="section-title">Kapabilitas Lengkap Tanpa Batas</h3>
-        <p class="section-subtitle">Didukung tumpukan 7 tier provider tangguh (OpenCode, Groq, Gemini, Cloudflare, OpenRouter, Dahl, xKiro) dengan otomatisasi failover.</p>
+        <p class="section-subtitle">Didukung tumpukan 6 tier provider tangguh (xKiro, OpenRouter, Groq, Cloudflare, Gemini, Dahl) dengan otomatisasi failover.</p>
       </div>
 
       <div class="features-grid">
@@ -649,7 +649,7 @@
           <div class="feature-icon-box f-rose">VN</div>
           <h4 class="feature-title">Transkripsi Voice Note Sub-Detik</h4>
           <p class="feature-desc">
-            Kirimkan rekaman suara VN di WhatsApp atau Telegram. Model Groq Whisper menerjemahkan suara ke teks secara instan (~500ms) dan AI menjawab pertanyaannya secara alami.
+            Kirimkan rekaman suara VN di WhatsApp atau Telegram. Model Whisper menerjemahkan suara ke teks secara instan (~500ms) dan AI menjawab pertanyaannya secara alami.
           </p>
         </div>
 
@@ -667,7 +667,7 @@
           <div class="feature-icon-box f-emerald">VIS</div>
           <h4 class="feature-title">Analisis Foto &amp; Stiker Kontekstual</h4>
           <p class="feature-desc">
-            Dianalisis oleh Google Gemini Vision. Mampu membaca foto tugas, diagram alir, grafik, tangkapan layar, hingga memahami ekspresi stiker WhatsApp.
+            Dianalisis oleh rantai model vision multi-provider. Mampu membaca foto tugas, diagram alir, grafik, tangkapan layar, hingga memahami ekspresi stiker WhatsApp.
           </p>
         </div>
 
@@ -680,12 +680,12 @@
           </p>
         </div>
 
-        <!-- Feature 5: 7-Tier Failover -->
+        <!-- Feature 5: 6-Tier Failover -->
         <div class="feature-card">
           <div class="feature-icon-box f-blue">AI</div>
-          <h4 class="feature-title">Rantai Failover 7 Tier</h4>
+          <h4 class="feature-title">Rantai Failover 6 Tier</h4>
           <p class="feature-desc">
-            Jika satu model terkena rate limit, sistem otomatis mengalihkan panggilan ke provider berikutnya (OpenCode &rarr; Groq &rarr; Gemini &rarr; Cloudflare &rarr; OpenRouter &rarr; Dahl &rarr; xKiro) dalam hitungan milidetik.
+            Jika satu model terkena rate limit, sistem otomatis mengalihkan panggilan ke provider berikutnya (xKiro &rarr; OpenRouter &rarr; Groq &rarr; Cloudflare &rarr; Gemini &rarr; Dahl) dalam hitungan milidetik.
           </p>
         </div>
 
@@ -720,7 +720,7 @@
   <!-- Footer -->
   <footer>
     <div class="container">
-      FreeAiBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.27
+      FreeAiBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.29
     </div>
   </footer>
 
