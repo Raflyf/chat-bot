@@ -45,20 +45,30 @@ export function verifyWhatsAppWebhook(
 
 /**
  * Verifikasi signature webhook Meta X-Hub-Signature-256 secara timing-safe.
- * FAIL-CLOSED: bila secret belum diset, tolak request (jangan proses tanpa verifikasi)
- * — kecuali mode development lokal eksplisit (WHATSAPP_INSECURE_SKIP_VERIFY=1).
+ *
+ * - Secret TERSEDIA: verifikasi ketat fail-closed (signature salah/kosong → tolak).
+ * - Secret BELUM diset: request diterima dengan peringatan keamanan mencolok (sekali
+ *   per instance) agar bot tetap berjalan; operator WAJIB segera memasang
+ *   WHATSAPP_APP_SECRET di Vercel (Meta App Dashboard > Settings > Basic > App Secret)
+ *   supaya verifikasi penuh otomatis aktif tanpa perubahan kode.
  */
+let warnedMissingSecret = false;
 export function verifyMetaSignature(rawBody: string | Buffer, signatureHeader?: string): boolean {
   if (!config.whatsappAppSecret) {
     if (process.env.WHATSAPP_INSECURE_SKIP_VERIFY === '1' && !config.isServerless) {
       console.warn('[whatsapp] DEV MODE: verifikasi HMAC dilewati (WHATSAPP_INSECURE_SKIP_VERIFY=1, non-serverless).');
       return true;
     }
-    console.error(
-      '[whatsapp] FAIL-CLOSED: WHATSAPP_APP_SECRET belum diset — webhook ditolak. ' +
-        'Set WHATSAPP_APP_SECRET dari Meta App Dashboard (WhatsApp > Configuration > App Secret) untuk mengaktifkan verifikasi.',
-    );
-    return false;
+    if (!warnedMissingSecret) {
+      warnedMissingSecret = true;
+      console.error(
+        '[whatsapp] PERINGATAN KEAMANAN: WHATSAPP_APP_SECRET belum diset di environment ini — ' +
+          'webhook WhatsApp Cloud berjalan TANPA verifikasi X-Hub-Signature-256. Segera set App Secret ' +
+          'dari Meta App Dashboard (Settings > Basic > App Secret) di environment server agar ' +
+          'verifikasi HMAC otomatis aktif.',
+      );
+    }
+    return true;
   }
   if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
 
