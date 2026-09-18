@@ -12,7 +12,7 @@ CREATE OR REPLACE FUNCTION public.rpc_admin_change_pin(
     p_old_pin_hash text,
     p_new_pin_hash text
 )
-RETURNS jsonb
+RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -23,16 +23,16 @@ BEGIN
     SELECT * INTO v_row FROM public.admin_auth_config WHERE id = 'master_auth' FOR UPDATE;
 
     IF NOT FOUND THEN
-        RETURN jsonb_build_object('success', false, 'message', 'Konfigurasi admin belum ada. Gunakan pemulihan OTP.');
+        RETURN json_build_object('success', false, 'message', 'Konfigurasi admin belum ada. Gunakan pemulihan OTP.');
     END IF;
 
     -- FAIL-CLOSED: sistem belum dikonfigurasi (pin_hash NULL) -> wajib lewat OTP.
     IF v_row.pin_hash IS NULL THEN
-        RETURN jsonb_build_object('success', false, 'message', 'PIN belum dikonfigurasi. Gunakan pemulihan OTP untuk mengatur PIN baru.');
+        RETURN json_build_object('success', false, 'message', 'PIN belum dikonfigurasi. Gunakan pemulihan OTP untuk mengatur PIN baru.');
     END IF;
 
     IF v_row.pin_hash != p_old_pin_hash THEN
-        RETURN jsonb_build_object('success', false, 'message', 'PIN saat ini tidak cocok.');
+        RETURN json_build_object('success', false, 'message', 'PIN saat ini tidak cocok.');
     END IF;
 
     UPDATE public.admin_auth_config
@@ -44,7 +44,7 @@ BEGIN
         updated_at = now()
     WHERE id = 'master_auth';
 
-    RETURN jsonb_build_object('success', true, 'message', 'Master PIN berhasil diubah di seluruh sesi.');
+    RETURN json_build_object('success', true, 'message', 'Master PIN berhasil diubah di seluruh sesi.');
 END;
 $$;
 
@@ -60,7 +60,7 @@ CREATE OR REPLACE FUNCTION public.rpc_admin_verify_otp_and_reset_pin(
     p_otp_hash text,
     p_new_pin_hash text
 )
-RETURNS jsonb
+RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -72,16 +72,16 @@ BEGIN
     SELECT * INTO v_row FROM public.admin_auth_config WHERE id = 'master_auth' FOR UPDATE;
 
     IF NOT FOUND THEN
-        RETURN jsonb_build_object('success', false, 'message', 'Konfigurasi admin belum ada.');
+        RETURN json_build_object('success', false, 'message', 'Konfigurasi admin belum ada.');
     END IF;
 
     -- Lockout percobaan OTP (durable, lintas instance serverless)
     IF v_row.otp_locked_until IS NOT NULL AND v_row.otp_locked_until > now() THEN
-        RETURN jsonb_build_object('success', false, 'message', 'Terlalu banyak percobaan OTP gagal. Minta kode baru atau tunggu 10 menit.');
+        RETURN json_build_object('success', false, 'message', 'Terlalu banyak percobaan OTP gagal. Minta kode baru atau tunggu 10 menit.');
     END IF;
 
     IF v_row.otp_code_hash IS NULL OR v_row.otp_expires_at IS NULL OR v_row.otp_expires_at < now() THEN
-        RETURN jsonb_build_object('success', false, 'message', 'Kode OTP tidak cocok atau telah kadaluwarsa.');
+        RETURN json_build_object('success', false, 'message', 'Kode OTP tidak cocok atau telah kadaluwarsa.');
     END IF;
 
     IF v_row.otp_code_hash != p_otp_hash THEN
@@ -93,7 +93,7 @@ BEGIN
             otp_expires_at = CASE WHEN v_row.otp_attempts + 1 >= v_max_attempts THEN NULL ELSE otp_expires_at END,
             updated_at = now()
         WHERE id = 'master_auth';
-        RETURN jsonb_build_object('success', false, 'message', 'Kode OTP tidak cocok atau telah kadaluwarsa.');
+        RETURN json_build_object('success', false, 'message', 'Kode OTP tidak cocok atau telah kadaluwarsa.');
     END IF;
 
     -- Sukses: reset PIN + bersihkan OTP & counter & semua sesi.
@@ -110,7 +110,7 @@ BEGIN
         updated_at = now()
     WHERE id = 'master_auth';
 
-    RETURN jsonb_build_object('success', true, 'message', 'Master PIN berhasil diperbarui dan status penguncian dinolkan.');
+    RETURN json_build_object('success', true, 'message', 'Master PIN berhasil diperbarui dan status penguncian dinolkan.');
 END;
 $$;
 
