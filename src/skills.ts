@@ -568,9 +568,54 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   return out;
 }
 
-export function sanitizeAssistantOutput(text: string, userPrompt?: string): string {
+/** Interjeksi murni (filler reaksi) yang tidak boleh menjadi pembuka berulang antar pesan. */
+const FILLER_INTERJECTIONS = new Set([
+  'eh', 'ehh', 'ehhh', 'ehhhh', 'waduh', 'aduh', 'aduhh', 'hmm', 'hmmm', 'hm',
+  'oh', 'ooh', 'ohh', 'loh', 'lho', 'lah', 'lahh', 'astaga', 'buset', 'duh', 'duhh',
+  'yah', 'wah', 'nah', 'tuh', 'heh', 'beh', 'ih', 'ihh',
+]);
+
+/** Ambil interjeksi pembuka bila berupa filler murni (mis. "Eh," → "eh"); null bila bukan. */
+function leadingInterjection(text: string): string | null {
+  const m = (text || '').trim().match(/^([A-Za-z]+)\b[,!.\s]/);
+  if (!m) return null;
+  const w = m[1].toLowerCase();
+  return FILLER_INTERJECTIONS.has(w) ? w : null;
+}
+
+/** Buang interjeksi pembuka murni; kembalikan teks asli bila hasilnya kosong. */
+function stripLeadingInterjection(text: string): string {
+  const rest = (text || '').trim().replace(/^[A-Za-z]+\b[,!.\s]+/, '').trim();
+  if (!rest) return text;
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
+/**
+ * Anti-pembuka-repetitif (murni PEMBERSIHAN, tanpa menyuntikkan kalimat):
+ * bila balasan dibuka interjeksi filler yang sudah dipakai di balasan-balasan
+ * sebelumnya, interjeksi itu dibuang agar tidak berpola. Berlapis (mis. "Eh, waduh...").
+ */
+function avoidRepeatedOpening(text: string, recentOpenings?: string[]): string {
+  if (!text || !recentOpenings || recentOpenings.length === 0) return text;
+  const used = new Set(recentOpenings.filter(Boolean).map((s) => s.trim().toLowerCase()));
+  let out = text;
+  for (let i = 0; i < 3; i++) {
+    const w = leadingInterjection(out);
+    if (!w || !used.has(w)) break;
+    const next = stripLeadingInterjection(out);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
+export function sanitizeAssistantOutput(
+  text: string,
+  userPrompt?: string,
+  recentOpenings?: string[],
+): string {
   const cleaned = cleanMathAndNoise(text, userPrompt);
-  return redactOutput(cleaned);
+  return avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
 }
 
 /**
@@ -687,6 +732,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '',
     'PRINSIP 2: BAHASA SEPERTI MANUSIA ASLI DI WHATSAPP:',
     '- Hidupkan intonasi dengan kata seru dan partikel gaul yang kontekstual (waduh, lahh, astaga, buset, kan, dong, sih, nih, deh) plus jeda "...". Variasikan pembuka tiap pesan.',
+    '- VARIASI PEMBUKA (ATURAN KERAS): DILARANG membuka beberapa pesan berturut-turut dengan kata seru yang sama (mis. "Eh", "Waduh", "Hmm", "Oke", "Aduh"). Periksa balasan-balasanmu sebelumnya di riwayat obrolan: bila kata seru itu sudah kamu pakai di pesan sebelumnya, pakai kata seru lain yang berbeda atau langsung masuk ke inti kalimat tanpa kata seru. Kata seru yang diulang-ulang membuatmu terdengar seperti robot berpola.',
     '- TAWA ITU PROPORSIONAL, BUKAN HIASAN (ATURAN KERAS):',
     '  * JANGAN pernah memakai kata tawa (wkwk, haha, hehe, ckck, kwkwk) jika lawan bicaramu TIDAK tertawa/bercanda lebih dulu di pesannya.',
     '  * DILARANG membuka pesan dengan tawa sebagai basa-basi atau penanda akrab. Tawa yang tidak dipicu itu cringe dan mengganggu.',
@@ -1151,7 +1197,7 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
       const openingMatch = (history[i].content as string).trim().match(/^([a-zA-Z]+)[,\s.]+/);
       if (openingMatch) {
         const word = openingMatch[1].toLowerCase();
-        if (word === lastOpening && (word === 'yaelah' || word === 'bukan' || word === 'wah')) {
+        if (word === lastOpening && (FILLER_INTERJECTIONS.has(word) || word === 'yaelah' || word === 'bukan')) {
           history[i] = {
             ...history[i],
             content: (history[i].content as string).replace(/^([a-zA-Z]+)[,\s.]+\s*/i, ''),
@@ -1211,9 +1257,16 @@ export async function autoReply(
     }
   }
 
+  // Pembuka balasan-balasan sebelumnya (untuk cegah kata seru pembuka berulang antar pesan)
+  const recentOpenings = (ctx?.history ?? [])
+    .filter((h) => h.role === 'assistant' && typeof h.content === 'string')
+    .slice(-4)
+    .map((h) => leadingInterjection(h.content as string))
+    .filter((w): w is string => Boolean(w));
+
   try {
     const { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web), false);
-    let reply = sanitizeAssistantOutput(text, clean);
+    let reply = sanitizeAssistantOutput(text, clean, recentOpenings);
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
     const replyWords = reply.split(/\s+/).filter(Boolean).length;
@@ -1229,7 +1282,7 @@ export async function autoReply(
           },
         ];
         const secondTry = await chatRetry(retryMsgs, false);
-        const secondReply = sanitizeAssistantOutput(secondTry.text, clean);
+        const secondReply = sanitizeAssistantOutput(secondTry.text, clean, recentOpenings);
         if (secondReply.split(/\s+/).filter(Boolean).length >= 4) {
           reply = secondReply;
           return { reply, escalate: false, via: secondTry.via, tokens: secondTry.tokens };
@@ -1272,7 +1325,7 @@ export async function autoReply(
           ];
           const secondTry = await chatRetry(retryMsgs, false);
           if (secondTry.text && secondTry.text.trim().toLowerCase() !== normLast) {
-            reply = sanitizeAssistantOutput(secondTry.text, clean);
+            reply = sanitizeAssistantOutput(secondTry.text, clean, recentOpenings);
           }
         } catch {
           // Fallback graceful jika retry tidak tersedia
@@ -1296,7 +1349,7 @@ export async function autoReply(
             },
           ];
           const fix = await chatRetry(fixMsgs, false);
-          const fixReply = sanitizeAssistantOutput(fix.text, clean);
+          const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings);
           if (fixReply.trim() && !surrenderRe.test(fixReply)) {
             reply = fixReply;
           }
@@ -1319,7 +1372,7 @@ export async function autoReply(
     if (!reply.trim()) {
       try {
         const regen = await chatRetry(buildMessages(clean, ctx, web), false);
-        const regenReply = sanitizeAssistantOutput(regen.text, clean);
+        const regenReply = sanitizeAssistantOutput(regen.text, clean, recentOpenings);
         if (regenReply.trim()) reply = regenReply;
       } catch {
         // tetap kosong
@@ -1438,7 +1491,12 @@ export async function describeImage(
 
   const { text, via, tokens } = await chatRetry(messages, true);
   // Sanitasi memakai teks user asli (caption) sebagai konteks sinyal humor — bukan teks instruksi
-  let reply = sanitizeAssistantOutput(text, caption?.trim() || undefined);
+  const recentOpenings = (ctx?.history ?? [])
+    .filter((h) => h.role === 'assistant' && typeof h.content === 'string')
+    .slice(-4)
+    .map((h) => leadingInterjection(h.content as string))
+    .filter((w): w is string => Boolean(w));
+  let reply = sanitizeAssistantOutput(text, caption?.trim() || undefined, recentOpenings);
 
   // Jika sanitasi menghabiskan balasan, bangkitkan ulang secara dinamis (teks saja, murah)
   if (!reply.trim()) {
