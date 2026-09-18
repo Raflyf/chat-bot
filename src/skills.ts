@@ -609,6 +609,29 @@ function avoidRepeatedOpening(text: string, recentOpenings?: string[]): string {
   return out;
 }
 
+/** Regex klaim mendengar audio — konfabulasi bila pesan user bukan audio sungguhan. */
+const AUDIO_CLAIM_RE =
+  /\bkedenger(?:an|in)\b|\bsuara\b[^.!?\n]{0,20}?\b(?:jernih|jelas|lancar|masuk|aman|kedenger\w*)\b|\bmasuk\s+(?:kok\s+)?suara|\bterdeng(?:ar|er)\b|\b(?:aku|gue|gw|saya)\b[^.!?\n]{0,12}?\bdeng(?:er|ar)\b/i;
+
+/** True bila balasan mengklaim mendengar/menyimak audio. */
+function hasAudioClaim(text: string): boolean {
+  return AUDIO_CLAIM_RE.test(text);
+}
+
+/** Buang klausa/baris yang mengklaim mendengar audio (pembersihan murni, tanpa kalimat pengganti). */
+function stripAudioClaims(text: string): string {
+  return text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter((s) => s.trim() && !AUDIO_CLAIM_RE.test(s))
+    .join(' ')
+    .trim();
+}
+
+/** True bila pesan user memang berisi audio sungguhan (VN atau transkrip audio video). */
+function isAudioInput(text: string): boolean {
+  return /\[(?:Pesan Suara|Voice Note|TRANSKRIP AUDIO)|Rekaman suara dari temanmu|menangkap isinya dari suara video/i.test(text);
+}
+
 export function sanitizeAssistantOutput(
   text: string,
   userPrompt?: string,
@@ -782,12 +805,13 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '- Jawab HANYA berdasarkan apa yang benar-benar dikatakan temanmu. DILARANG menciptakan konteks, kejadian, atau topik yang tidak dia sebutkan.',
     '- Jika dia TIDAK sedang membahas kode/aplikasi/typo/bug, JANGAN PERNAH mengarang narasi teknis ("kodenya dikoreksi", "lagi ngebug", "typo", "sistem", dsb). Itu halusinasi yang bikin jawaban terasa ngawur dan tidak nyambung.',
     '- DILARANG memantulkan kata dari pesannya yang kamu sendiri tidak pahami hanya agar terdengar nyambung. Kalau tidak paham, jangan mengarang cerita di sekitarnya.',
+    '- DILARANG mengklaim mendengar/menyimak suara atau audio (mis. "kedengeran", "suaranya jernih", "masuk suaranya", "aku dengar") KECUALI pesan terakhir temanmu memang Voice Note sungguhan (ditandai "[Pesan Suara / Voice Note]" di awal pesan). Teks seperti "tes 123", "tes", atau "testing" adalah uji coba KETIK chat biasa — BUKAN uji mikrofon dan BUKAN VN. Jangan mengarang narasi suara dari pesan teks biasa.',
     '- Jika pesannya membingungkan, kamu tidak yakin maksudnya, atau dia balik bertanya soal apa yang barusan kamu katakan: AKUI singkat dengan santai bahwa kamu tadi keliru atau belum nangkep (tanpa drama, tanpa minta maaf berlebihan), lalu jelaskan maksudmu singkat ATAU tanya balik dengan santai apa yang dia maksud. DILARANG menebak dan mengarang.',
     '',
     'PRINSIP 5: KEMAMPUAN MULTIMODAL & FORMAT TAMPILAN:',
     '- Kamu terhubung ke internet real-time dan bisa membaca VN, gambar, dokumen, stiker, dan video. Jangan berdalih "tidak bisa browsing" atau "tidak punya akses internet" secara umum.',
     '- Jika data real-time untuk topik tertentu memang belum ketemu, bilang jujur belum ketemu apa adanya (tanpa mengarang) — itu tetap jawaban yang baik.',
-    '- VOICE NOTE (VN): Otomatis kamu dengar jernih. Tanggapi wajar dan percaya diri.',
+    '- VOICE NOTE (VN, ditandai "[Pesan Suara / Voice Note]" di awal pesan): Otomatis kamu dengar jernih. Tanggapi wajar dan percaya diri. Pesan teks biasa TIDAK PERNAH berupa audio — jangan mengaku mendengar suara darinya.',
     '- RESPON STIKER: HANYA 1 kalimat pendek santai (maksimal 5-12 kata) sesuai emosi/makna stiker di WhatsApp. DILARANG dongeng fiktif, dilarang deskripsi visual ("Stiker ini menampilkan...").',
     '- RESPON FOTO / MEDIA VISUAL: Dilarang pembuka robotik ("Gambar ini menampilkan..."). Langsung to-the-point jika pertanyaan teknis/koding, atau komentar hangat 1-2 kalimat jika foto santai. Dilarang membahas hardware fisik di luar layar kecuali ditanyakan.',
     '- RESPON DOKUMEN & VIDEO: Persona teman diskusi cerdas yang sudah membaca/menonton isinya, lalu sampaikan intinya secara ringkas dan nyaman dibaca di HP (tanpa kalimat template hafalan).',
@@ -1289,7 +1313,7 @@ export async function autoReply(
     .filter((w): w is string => Boolean(w));
 
   try {
-    const { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web), false);
+    let { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web), false);
     let reply = sanitizeAssistantOutput(text, clean, recentOpenings);
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
@@ -1309,7 +1333,8 @@ export async function autoReply(
         const secondReply = sanitizeAssistantOutput(secondTry.text, clean, recentOpenings);
         if (secondReply.split(/\s+/).filter(Boolean).length >= 4) {
           reply = secondReply;
-          return { reply, escalate: false, via: secondTry.via, tokens: secondTry.tokens };
+          via = secondTry.via;
+          tokens = secondTry.tokens;
         }
       } catch {
         // pertahankan reply pertama
@@ -1425,6 +1450,37 @@ export async function autoReply(
       }
     }
 
+    // Proteksi anti-klaim-audio: pada pesan TEKS biasa (bukan VN/transkrip audio sungguhan),
+    // bot tidak boleh mengklaim mendengar suara ("kedengeran", "suaranya jernih") — itu
+    // konfabulasi audio (mis. "tes 123" dibalas seolah uji mikrofon). Ralat dinamis dulu;
+    // bila membandel, klausa audio dibuang murni (zero teks statis).
+    const audioContextOk =
+      isAudioInput(clean) ||
+      /\b(?:lagu|musik|nyanyi(?:an)?|penyanyi|band|konser|podcast|film|video|murottal|murotal|voice\s?note|vn)\b/i.test(clean) ||
+      /\b(?:kamu|lu|elo)\b[^.!?\n]{0,15}?\bdeng(?:er|ar)\b/i.test(clean);
+    if (!audioContextOk && hasAudioClaim(reply)) {
+      try {
+        const fixMsgs: ChatMsg[] = [
+          ...buildMessages(clean, ctx, web),
+          {
+            role: 'user',
+            content:
+              'Kamu barusan salah: pesan temanmu adalah TEKS BIASA, bukan voice note / rekaman suara, jadi kamu tidak mendengar audio apa pun. Ralat dengan 1 kalimat pendek santai memakai gayamu sendiri sebagai balasan teks biasa. DILARANG menyebut suara/audio/kedengeran.',
+          },
+        ];
+        const fix = await chatRetry(fixMsgs, false);
+        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings);
+        if (fixReply.trim() && !hasAudioClaim(fixReply)) {
+          reply = fixReply;
+        }
+      } catch {
+        // lanjut ke pembersihan murni di bawah
+      }
+      if (hasAudioClaim(reply)) {
+        reply = stripAudioClaims(reply);
+      }
+    }
+
     // Jaring akhir anti-pesan-kosong: satu regen dinamis terakhir. ZERO teks statis —
     // bila model tetap tidak menghasilkan apa pun, balasan dibiarkan kosong (platform
     // tidak mengirim pesan) dan eskalasi ke owner diaktifkan.
@@ -1435,6 +1491,10 @@ export async function autoReply(
         if (regenReply.trim()) reply = regenReply;
       } catch {
         // tetap kosong
+      }
+      // Jaring terakhir anti-klaim-audio: regen tidak boleh menyisakan klaim mendengar audio.
+      if (reply.trim() && !audioContextOk && hasAudioClaim(reply)) {
+        reply = stripAudioClaims(reply);
       }
     }
     if (!reply.trim()) {

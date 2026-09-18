@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.35.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.36.0.
 
 ---
 
@@ -107,6 +107,13 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Keputusan user:** MiniMax M3 dihapus dari cadangan teks Tier 1, tetap dipertahankan di rantai multimodal.
    - `xkiroBackup` kini hanya berisi slot arsip `deepseek/deepseek-v4.1-flash:free`; MiniMax M3 tetap di `visionChain` prioritas #4.
    - Dashboard, `CLAUDE.md`, `DOCUMENTATION.md`, `.env` & `.env.example` disinkronkan; `PROMPT_VERSION` naik `v0.35.0`.
+
+12. **Anti-Konfabulasi Audio — Pesan Teks Tidak Dibalas Seolah Uji Suara (v0.36):**
+   - **Masalah (log produksi 23.27):** pesan teks `"tes 123"` (WhatsApp & Telegram) dibalas *"Masuk kok suaranya"* / *"suaranya jernih banget"* padahal tidak ada VN — model mengasosiasikan frasa tes mikrofon lalu mengarang narasi audio.
+   - **Prompt:** PRINSIP 4B melarang klaim mendengar audio (`kedengeran`, `suaranya jernih`, `masuk suaranya`) kecuali input VN bertanda `[Pesan Suara / Voice Note]`; `tes 123` ditegaskan uji ketik chat. PRINSIP 5 membatasi baris VN hanya untuk VN asli.
+   - **Guard program:** helper murni `hasAudioClaim` / `stripAudioClaims` / `isAudioInput` + gerbang `audioContextOk` (VN, transkrip audio video, topik lagu/film/video, pertanyaan kemampuan dengar). Klaim audio → ralat dinamis; bandel → klausa dibuang murni. Jaring regen terakhir ikut dibersihkan.
+   - **Perbaikan alur:** retry anti-echo tidak lagi `return` awal — seluruh guard (audio, identitas) tetap berjalan pada balasan hasil retry.
+   - **Verifikasi:** `scratch/verify_v36_audio.mjs` 7/7 bersih; regresi v0.32/v0.33/v0.34 hijau. `PROMPT_VERSION` naik `v0.36.0`.
 
 ---
 

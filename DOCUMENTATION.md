@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.35.0 (MiniMax M3 Khusus Multimodal — Bukan Cadangan Teks)  
+**Versi:** v0.36.0 (Anti-Konfabulasi Audio — Pesan Teks Tidak Dibalas Seolah Uji Suara)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-18 WIB
 
@@ -213,6 +213,17 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.36.0 - 2026-09-18 (Anti-Konfabulasi Audio — Pesan Teks Tidak Dibalas Seolah Uji Suara)
+
+**Keluhan user:** log produksi 23.27 — pesan teks biasa `"tes 123"` (WhatsApp & Telegram) dibalas *"Masuk kok suaranya, amann."* / *"Okee, tes masuk lancar nih suaranya jernih banget."* padahal tidak ada audio apa pun. *"kadang jadi kedengaran dan lainnya, padahal itu hanya teks biasa bukan VN"*.
+
+- **Akar masalah:** frasa `tes 123`/`tess 123` adalah asosiasi umum "tes mikrofon", sehingga model mengarang narasi suara dari pesan teks (kelas bug sama dengan v0.34, dimensi audio). Baris prompt VN (*"Otomatis kamu dengar jernih"*) tidak membatasi bahwa itu hanya untuk VN sungguhan.
+- **Prompt (`src/skills.ts`):** PRINSIP 4B ditambah larangan keras mengklaim mendengar suara (`kedengeran`, `suaranya jernih`, `masuk suaranya`) kecuali pesan berupa VN bertanda `[Pesan Suara / Voice Note]`; `tes 123` ditegaskan sebagai uji ketik chat, bukan uji mikrofon. PRINSIP 5 membatasi baris VN hanya untuk VN asli.
+- **Guard program (`src/skills.ts`):** helper murni `hasAudioClaim` / `stripAudioClaims` / `isAudioInput` + gerbang `audioContextOk` (VN sungguhan, transkrip audio video, topik lagu/film/video, atau user bertanya kemampuan dengar bot). Klaim audio pada pesan teks → ralat dinamis; bila membandel, klausa audio dibuang murni (zero teks statis). Jaring regen terakhir ikut dibersihkan.
+- **Perbaikan alur (temuan uji):** retry anti-echo yang `return` awal kini melanjutkan seluruh guard (via/tokens mutable), sehingga guard audio/identitas tidak lagi dilewati pada balasan hasil retry.
+- **Verifikasi:** `scratch/verify_v36_audio.mjs` — 7/7 skenario bersih (owner/non-owner × `tes 123`/`tess 123`/`tes`/`tes suara`; VN asli tetap ditanggapi natural). Regresi v0.32 (15/15), v0.33 (11/11), v0.34 (4/4) tetap hijau.
+- **`PROMPT_VERSION` dinaikkan `v0.35.0` → `v0.36.0`** di ketiga handler platform.
 
 ### v0.35.0 - 2026-09-18 (MiniMax M3 Khusus Multimodal — Bukan Cadangan Teks)
 
