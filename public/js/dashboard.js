@@ -635,7 +635,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         return 0;
       }
 
-      // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover runtime sistem v0.29)
+      // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover runtime sistem v0.30)
       const catalog = [
         // --- Tier 1: xKiro Gateway (Primer Teks Runtime) ---
         {

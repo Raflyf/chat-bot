@@ -644,7 +644,20 @@ async function cloudflareChat(
     return await cloudflareVisionChat(accountId, token, model, messages, totalTimeoutMs);
   }
   const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`;
-  return await openAiChat(baseUrl, token, model, messages, undefined, undefined, totalTimeoutMs);
+  // Matikan mode thinking SEMUA model Cloudflare (keputusan user: thinking=false):
+  // tanpa ini qwen3.8-27b bisa "berpikir" puluhan detik dan gemma membuang ~1.000
+  // token thinking untuk balasan pendek — penyebab utama respons stiker/foto lambat.
+  return await openAiChat(baseUrl, token, model, messages, undefined, { chat_template_kwargs: { enable_thinking: false } }, totalTimeoutMs);
+}
+
+/**
+ * Konfigurasi thinking MINIMAL untuk Gemini (keputusan user: thinking off / effort minimal).
+ * Model 2.5 & 3.x utama menerima `thinkingBudget: 0`; varian `flash-lite` menolaknya
+ * (HTTP400 "invalid argument") dan memakai `thinkingLevel: 'low'`.
+ */
+export function geminiThinkingConfig(model: string): { thinkingConfig: Record<string, unknown> } {
+  if (model.includes('flash-lite')) return { thinkingConfig: { thinkingLevel: 'low' } };
+  return { thinkingConfig: { thinkingBudget: 0 } };
 }
 
 async function geminiChat(key: string, model: string, messages: ChatMsg[], totalTimeoutMs: number = config.timeoutMs, connectTimeoutMs?: number): Promise<ProviderResult> {
@@ -683,7 +696,12 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[], total
   const system = messages.find((m) => m.role === 'system');
   const body: Record<string, unknown> = {
     contents,
-    generationConfig: { maxOutputTokens: config.maxOutputTokens, temperature: 0.7 },
+    generationConfig: {
+      maxOutputTokens: config.maxOutputTokens,
+      temperature: 0.7,
+      // Thinking off / effort minimal (keputusan user) — jawaban langsung tanpa "berpikir" panjang.
+      ...geminiThinkingConfig(model),
+    },
   };
   if (system) {
     const sysText = typeof system.content === 'string'
@@ -768,6 +786,9 @@ function steps(): Step[] {
       run: (k, m, msgs, t) => {
         const isDeepSeek = m.toLowerCase().includes('deepseek');
         return openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
+          // Effort reasoning MINIMAL (keputusan user). Hasil uji: 'none' membuat
+          // MiniMax M3 membalas KOSONG, jadi 'minimal' yang dipakai.
+          reasoning: { effort: 'minimal' },
           // Sampling luwes agar output DeepSeek mengalir alami & dinamis
           temperature: isDeepSeek ? 0.65 : 0.35,
           presence_penalty: isDeepSeek ? 0.1 : 0.0,
@@ -781,7 +802,11 @@ function steps(): Step[] {
       keys: config.pools.openrouter,
       models: [config.models.orPrimary, ...config.models.orBackup],
       cap: config.dailyCap.openrouter,
-      run: (k, m, msgs, t) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, undefined, t),
+      run: (k, m, msgs, t) =>
+        openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, {
+          // Thinking off (keputusan user): 3,5 dtk -> ~1 dtk, output tetap bersih.
+          reasoning: { effort: 'none' },
+        }, t),
     },
     // --- TIER 3: Groq Cloud API (LPU ultra-cepat) ---
     {
@@ -790,8 +815,9 @@ function steps(): Step[] {
       models: [config.models.groqPrimary, ...config.models.groqBackup],
       cap: config.dailyCap.groq,
       run: (k, m, msgs, t) => {
-        // Pangkas pesan agar total (prompt + output 800) muat di bawah limit ketat Groq 8K TPM
-        const groqMsgs = trimMessagesToTokenBudget(msgs, 7200);
+        // Pangkas pesan agar total (prompt + output 800) benar-benar di bawah limit ketat Groq 8K TPM
+        // (6.800 + 800 = 7.600, menyisakan margin 400 token agar tidak mudah kena 429).
+        const groqMsgs = trimMessagesToTokenBudget(msgs, 6800);
         return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, 800, {
           reasoning_effort: 'none',
           // Jinakkan sampling Qwen kecil: suhu + repetisi rendah agar tahan prompt panjang
@@ -826,6 +852,9 @@ function steps(): Step[] {
       run: (k, m, msgs, t) => {
         const isDeepSeek = m.toLowerCase().includes('deepseek');
         return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
+          // Thinking off (keputusan user): ~0,25 dtk dengan output bersih.
+          // 'minimal' justru memunculkan teks berulang + karakter zero-width di model ini.
+          reasoning_effort: 'none',
           temperature: isDeepSeek ? 0.65 : 0.45,
           frequency_penalty: isDeepSeek ? 0.1 : 0.5,
           presence_penalty: isDeepSeek ? 0.1 : 0.0,

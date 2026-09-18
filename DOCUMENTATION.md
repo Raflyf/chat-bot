@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.29.0 (Rantai Vision Multimodal Eksplisit 10 Model, PDF Multi-Jalur, Audio Cloudflare Whisper, Analisis Gambar di Word)  
+**Versi:** v0.30.0 (Thinking Off / Effort Minimal di Semua Provider — Respons Multimodal Kilat)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-19 02:30 WIB
 
@@ -145,6 +145,9 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
        │
        ▼
 [Router Cepat Kilat & Rantai Failover (`src/providers.ts`)]
+  ├── Thinking Off / Effort Minimal di SEMUA provider (v0.30):
+  │     Cloudflare `enable_thinking:false` · Groq `reasoning_effort:none` · OpenRouter `reasoning.effort:none`
+  │     xKiro `reasoning.effort:minimal` · Gemini `thinkingBudget:0` (flash-lite: `thinkingLevel:low`) · Dahl `reasoning_effort:none`
   ├── Mode Teks/Matematika/Koding:
   │     xKiro (Qwen 3.8 Max) ──(fail)──> OpenRouter (DeepSeek V4 Flash Free) ──(fail)──> Groq (Qwen 3.8) ──(fail)──> Cloudflare (Qwen 3.8 27B) ──(fail)──> Gemini (3.8 Flash) ──(fail)──> Dahl (DeepSeek V4 Flash)
   │     (Dalam satu tier: model gesit didahulukan; model lambat > SLOW_MODEL_MS diturunkan prioritasnya)
@@ -210,6 +213,26 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.30.0 - 2026-09-19 (Thinking Off / Effort Minimal di Semua Provider — Akar Masalah Respons Multimodal Lambat)
+
+**Kronologi: keluhan user atas respons stiker/foto yang sangat lama (contoh produksi: balasan stiker dijawab CF gemma-4-26b dengan 996 token output). Investigasi live menemukan akar masalah: model-model reasoning membuang ratusan-puluhan ribu token "thinking" sebelum menjawab. Uji matriks seluruh provider menetapkan parameter thinking-off per provider; satu parameter untuk semua.**
+
+- **Akar masalah terkonfirmasi (uji TTFT live):**
+  - CF `@cf/qwen/qwen3.8-27b`: "berpikir" hingga **60 detik** untuk pertanyaan sepele (326 token thinking) — kalah oleh timeout fase-1 12 detik → selalu failover.
+  - CF `@cf/google/gemma-4-26b-a4b-it`: membuang **996–1.153 token thinking** untuk balasan stiker 1 kalimat (17 detik) — persis yang dialami user di produksi.
+  - CF `@cf/zai-org/glm-4.7-flash`: 9 detik / 420 token thinking.
+- **Parameter thinking-off per provider (hasil uji langsung, dipasang permanen):**
+  - Cloudflare: `chat_template_kwargs: { enable_thinking: false }` → qwen 60 dtk → **0,9 dtk**; gemma 6,4 dtk → **0,47 dtk**; glm 9 dtk → **0,37 dtk**.
+  - Groq: `reasoning_effort: 'none'` (sudah terpasang) → tetap 0,4 dtk.
+  - OpenRouter: `reasoning: { effort: 'none' }` → 3,5 dtk → **1 dtk**.
+  - xKiro: `reasoning: { effort: 'minimal' }` → 2 dtk → **1,1 dtk** (`none` membuat MiniMax M3 membalas KOSONG, jadi tidak dipakai).
+  - Gemini: helper baru `geminiThinkingConfig()` — `thinkingBudget: 0` untuk model utama; varian `flash-lite` memakai `thinkingLevel: 'low'` (menolak budget 0 dengan HTTP400).
+  - Dahl: `reasoning_effort: 'none'` → ~0,25 dtk output bersih (`minimal` memunculkan teks berulang + zero-width).
+- **Cakupan patch:** `src/providers.ts` (cloudflareChat, xKiro/OpenRouter/Dahl steps, geminiChat) + `src/media.ts` (audio Gemini, PDF Gemini, PDF OpenRouter, video Gemini — semuanya ikut thinking-off).
+- **Tambahan:** ambang pangkas prompt Groq 7.200 → 6.800 token agar total (prompt + output 800) menyisakan margin 400 token di bawah limit ketat 8K TPM.
+- **Verifikasi e2e (jalur produksi asli):** stiker **1,0–2,2 dtk via Groq** (sebelumnya 17–44 dtk); foto 1,2–1,6 dtk; teks 3,1 dtk via xKiro; PDF, audio, video semua tetap berfungsi.
+- **Catatan:** kualitas vision tidak dikorbankan — model tetap mengenali isi gambar dengan benar pada uji ulang.
 
 ### v0.29.0 - 2026-09-19 (Rantai Vision Multimodal Eksplisit 10 Model, PDF Multi-Jalur, Audio Cloudflare Whisper, Analisis Gambar di Word)
 

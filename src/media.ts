@@ -1,6 +1,6 @@
 import { config } from './env.js';
 import { autoReply, describeImage, sanitizeAssistantOutput } from './skills.js';
-import { chat } from './providers.js';
+import { chat, geminiThinkingConfig } from './providers.js';
 import type { ChatContext } from './memory.js';
 import { keyUsed, isKeyAllowed, keyTokensUsed } from './quota.js';
 import mammoth from 'mammoth';
@@ -68,7 +68,7 @@ async function transcribeViaGemini(buffer: Buffer, mime: string, model: string):
               { text: 'Transkripsikan isi rekaman suara ini persis kata demi kata dalam Bahasa Indonesia tanpa komentar tambahan. Tuliskan teks transkripsinya saja.' }
             ]
           }],
-          generationConfig: { temperature: 0.1 }
+          generationConfig: { temperature: 0.1, ...geminiThinkingConfig(model) }
         })
       });
 
@@ -221,7 +221,7 @@ async function processPdfViaGemini(
               { text: prompt }
             ]
           }],
-          generationConfig: { temperature: 0.3 }
+          generationConfig: { temperature: 0.3, ...geminiThinkingConfig(model) }
         })
       });
 
@@ -278,6 +278,8 @@ async function processPdfViaOpenRouter(
         body: JSON.stringify({
           model: config.models.orPrimary,
           max_tokens: config.maxOutputTokens,
+          // Thinking off (keputusan user): model free DeepSeek tetap menjawab bersih & cepat.
+          reasoning: { effort: 'none' },
           plugins: [{ id: 'file-parser', pdf: { engine: 'pdf-text' } }],
           messages: [{
             role: 'user',
@@ -622,7 +624,7 @@ export async function processIncomingVideo(
                 { text: prompt }
               ]
             }],
-            generationConfig: { temperature: 0.3 }
+            generationConfig: { temperature: 0.3, ...geminiThinkingConfig(model) }
           })
         });
 
