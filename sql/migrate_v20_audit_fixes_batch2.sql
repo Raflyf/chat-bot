@@ -121,7 +121,13 @@ GRANT EXECUTE ON FUNCTION public.rpc_admin_verify_otp_and_reset_pin(text, text) 
 REVOKE ALL ON TABLE public.admin_auth_config FROM anon, authenticated, public;
 GRANT ALL ON TABLE public.admin_auth_config TO service_role;
 
--- 5. Catat migrasi (selaras ledger v17/v18).
+-- 5. Catat migrasi (selaras ledger v17/v18). Guard: tabel ledger mungkin belum ada
+-- bila migrasi ini dijalankan standalone di project baru.
+CREATE TABLE IF NOT EXISTS public.schema_migrations (
+    version text PRIMARY KEY,
+    applied_at timestamptz NOT NULL DEFAULT now()
+);
+
 INSERT INTO public.schema_migrations (version, applied_at)
-SELECT 'v20_audit_fixes_batch2', now()
-WHERE NOT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = 'v20_audit_fixes_batch2');
+VALUES ('v20_audit_fixes_batch2', now())
+ON CONFLICT (version) DO NOTHING;
