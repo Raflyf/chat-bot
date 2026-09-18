@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.33.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.34.0.
 
 ---
 
@@ -94,6 +94,14 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Lapis prompt:** blok "VARIASI PEMBUKA (ATURAN KERAS)" — dilarang membuka beberapa pesan berturut-turut dengan kata seru sama; model diperintahkan memeriksa balasan sebelumnya di riwayat lalu memakai kata seru berbeda atau langsung masuk ke inti kalimat.
    - **Lapis sanitizer (pembersihan murni, tanpa menyuntikkan kalimat):** `avoidRepeatedOpening()` membuang interjeksi pembuka murni (set `FILLER_INTERJECTIONS`) bila kata itu sudah dipakai di balasan-balasan sebelumnya (`recentOpenings` dihitung dari `ctx.history`, maksimal 4 balasan terakhir). Berlapis (mis. "Eh, waduh, ..." → dibuang bertahap). Tanpa riwayat → tidak ada interjeksi yang dibuang (anti over-filter). Bila seluruh teks habis karena pembuangan → teks asli dipertahankan (tidak pernah dikosongkan).
    - **Berlaku di jalur teks (`autoReply`) dan media (`describeImage`).**
+
+10. **Anti-Konfabulasi & Identitas Tegas — Bot Bukan Developer (v0.34):**
+   - **Masalah (log produksi):** model mengklaim dirinya developer ("kamu dong yang developernya aku") lalu mengarang narasi teknis tak berdasar ("ngebug", "typo", "kodenya dikoreksi") — klaim identitas terbalik + konfabulasi + kosakata rusak.
+   - **Identitas tegas (prompt):** di blok identitas owner & non-owner ditegaskan bot BUKAN developer/pencipta siapa pun; Rafly-lah developernya, bot produknya.
+   - **PRINSIP 4B (anti-konfabulasi, aturan keras):** jawab hanya dari yang benar-benar dikatakan user; dilarang menciptakan konteks/narasi teknis yang tidak disebut; dilarang memantulkan kata yang tidak dipahami; bila bingung → akui singkat & tanya balik, bukan menebak.
+   - **Trigger situasi bingung:** regex `isUserConfusedOrFlagged` ("hah", "ngetik apa", "salah ngomong", "ngaco", "ga nyambung", dll.) → instruksi akui kekeliruan tanpa drama, bahasa sehari-hari tanpa jargon teknis.
+   - **Guard program:** `selfDevClaimRe` mendeteksi klaim-diri-developer di balasan (semua lawan bicara) → ralat dinamis sekali; bila bandel → klausa dibuang murni; bila habis → regenerasi dinamis. `PROMPT_VERSION` naik `v0.34.0`.
+   - **Verifikasi:** `scratch/verify_v34_identity.mjs` 4/4 skenario log asli bersih; regresi v0.32/v0.33 hijau.
 
 ---
 

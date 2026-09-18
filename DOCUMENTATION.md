@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.33.0 (Variasi Pembuka — Anti Kata Seru Berulang Antar Pesan)  
+**Versi:** v0.34.0 (Anti-Konfabulasi & Identitas Tegas — Bot Bukan Developer)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-18 WIB
 
@@ -213,6 +213,18 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.34.0 - 2026-09-18 (Anti-Konfabulasi & Identitas Tegas — Bot Bukan Developer)
+
+**Akar masalah (temuan dari log produksi 18 Sep):** saat user mengirim stiker bermakna "saya lupa", model (xKiro qwen3.8-max) justru mengklaim **dirinya** developer ("kamu dong yang developernya aku") lalu pada pesan berikutnya mengarang narasi teknis tanpa dasar ("namain aja lagi ngebug dikit, kan yang bikin kode kamu juga lahh", "Typo-ti cokk, kodenya dikoreksi terus sama kamu biar makin pinter"). Gejala: klaim identitas terbalik + konfabulasi konteks + kosakata rusak/tidak jelas.
+
+**Perbaikan (3 lapis, semua tetap 100% dinamis):**
+- **Lapis prompt — identitas tegas:** pada blok identitas owner & non-owner ditambahkan larangan eksplisit: *kamu BUKAN developer dan BUKAN pencipta siapa pun; kamu bot yang DIBUAT oleh Rafly — Rafly-lah developernya, kamu produknya.*
+- **Lapis prompt — PRINSIP 4B (anti-konfabulasi, aturan keras):** jawab hanya berdasarkan yang benar-benar dikatakan user; dilarang menciptakan konteks/kejadian/topik yang tidak disebut; dilarang mengarang narasi teknis (kode/typo/bug/sistem) bila user tidak membahasnya; dilarang memantulkan kata yang tidak dipahami. Bila pesan membingungkan atau user menilai ucapan keliru → akui singkat & santai lalu jelaskan/tanya balik, **dilarang menebak**.
+- **Lapis prompt — trigger situasi bingung:** deteksi regex `isUserConfusedOrFlagged` ("hah", "ngetik apa", "maksudnya apa", "salah ngomong", "ngaco", "gajelas", "ga nyambung", dll.) memicu instruksi khusus: akui kekeliruan tanpa drama, ulangi maksud dengan 1 kalimat sederhana, **wajib bahasa sehari-hari tanpa jargon teknis**.
+- **Guard program (jaring pengaman, bukan pengganti prompt):** `selfDevClaimRe`/`selfDevClaimRe2` mendeteksi klaim-diri-developer pada balasan (berlaku untuk SEMUA lawan bicara, termasuk owner) → ralat dinamis sekali; bila masih membandel, klausa keliru dibuang murni (tanpa kalimat pengganti); bila habis → autoReply meregenerasi dinamis.
+- **`PROMPT_VERSION` dinaikkan `v0.33.0` → `v0.34.0`** di ketiga handler platform.
+- **Verifikasi live:** `scratch/verify_v34_identity.mjs` — 4/4 skenario dari log asli bersih (identitas benar, tanpa konfabulasi jargon teknis); regresi v0.33 (11/11) & v0.32 (15/15) tetap hijau.
 
 ### v0.33.0 - 2026-09-18 (Variasi Pembuka — Anti Kata Seru Berulang Antar Pesan)
 

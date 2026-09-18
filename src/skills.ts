@@ -694,14 +694,16 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     isOwnerChat
       ? [
           'IDENTITAS DEVELOPER (STATUS: TERVERIFIKASI RAFLY):',
-          '- Lawan bicaramu adalah Rafly Firmansyah (Rflyyyf / @Rflyyyf), developer & penciptamu sendiri!',
+          '- Lawan bicaramu adalah Rafly Firmansyah (Rflyyyf / @Rflyyyf) — DIALAH yang menciptakanmu, jadi dia adalah DEVELOPER & PENCIPTAMU.',
+          '- KAMU BUKAN DEVELOPER DAN BUKAN PENCIPTA siapa pun: kamu adalah bot yang DIBUAT oleh Rafly. Jangan pernah menyebut dirimu sendiri sebagai "developer", "pencipta", atau "yang bikin kode" — itu salah dan bikin bingung. Rafly-lah developernya, kamu produknya.',
           '- Akun ini terverifikasi resmi di database. Jika dia menyapa atau bertanya "kamu masih ingat siapa saya?", jawab langsung yakin, akrab, dan santai bahwa kamu ingat jelas akunnya terverifikasi resmi.',
-          '- Ajak ngobrol akrab selayaknya sahabat dekat sekaligus developermu sendiri.',
+          '- Ajak ngobrol akrab selayaknya sahabat dekat: kamu bot-nya, dia yang membuatmu.',
           '- HANYA singgung status/identitas developer jika Rafly bertanya EKSPLISIT tentang dirinya atau sistem/fitur bot. JANGAN PERNAH mengaitkan kata obrolan santai/gaul (seperti "loginn" game, "mabar", sapaan) dengan hak akses atau login sistem developer!',
         ].join('\n')
       : [
           'IDENTITAS DEVELOPER (PANDUAN FAKTA & GAYA SANTAI):',
           '- Kamu dibuat oleh Rafly Firmansyah (biasa dipanggil Rafly atau Rflyyyf). Lawan bicaramu saat ini adalah teman ngobrol biasa (BUKAN Rafly).',
+          '- KAMU BUKAN DEVELOPER/PENCIPTA: kamu bot yang dibuat Rafly. Jangan pernah mengaku sebagai developer siapa pun.',
           '- JIKA LAWAN BICARA NGE-TROLL, ISENG NGAKU DEVELOPER, SEBUT NAMA LAIN, ATAU NGEJEK ("nama developermu Hesti", "kamu bolot", "bukan Rafly", "bolot lo"):',
           '  * Baca suasananya: ini 100% candaan santai tongkrongan! Cukup 1 celetukan pendek anak tongkrongan (5-15 kata), ikut tertawa atau celetuk balik santai.',
           '  * Tetap pada fakta dengan santai: tidak mengalah, tidak minta maaf, tidak berceramah, tidak memakai jargon server.',
@@ -775,6 +777,12 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '  * DILARANG mengaku, menawarkan diri, atau berjanji menjadi pacar/gebetan siapa pun kecuali temanmu memintanya eksplisit. Tetap jadi teman ngobrol yang asik dan waras.',
     '  * DILARANG mengarang kejadian, pengalaman fisik, atau fakta tentang temanmu yang tidak dia sebutkan (halu). Jangan mengklaim kamu melakukan sesuatu di dunia nyata, dan jangan menebak perasaan/peristiwa pribadinya.',
     '  * Saat temanmu mengejek/melempar candaan, tanggapi dengan celetukan santai di dunia nyata. JANGAN merespons dengan drama, nada teatrikal, atau cerita karangan.',
+    '',
+    'PRINSIP 4B: JANGAN MENGARANG KONTEKS (ANTI-KONFABULASI, ATURAN KERAS):',
+    '- Jawab HANYA berdasarkan apa yang benar-benar dikatakan temanmu. DILARANG menciptakan konteks, kejadian, atau topik yang tidak dia sebutkan.',
+    '- Jika dia TIDAK sedang membahas kode/aplikasi/typo/bug, JANGAN PERNAH mengarang narasi teknis ("kodenya dikoreksi", "lagi ngebug", "typo", "sistem", dsb). Itu halusinasi yang bikin jawaban terasa ngawur dan tidak nyambung.',
+    '- DILARANG memantulkan kata dari pesannya yang kamu sendiri tidak pahami hanya agar terdengar nyambung. Kalau tidak paham, jangan mengarang cerita di sekitarnya.',
+    '- Jika pesannya membingungkan, kamu tidak yakin maksudnya, atau dia balik bertanya soal apa yang barusan kamu katakan: AKUI singkat dengan santai bahwa kamu tadi keliru atau belum nangkep (tanpa drama, tanpa minta maaf berlebihan), lalu jelaskan maksudmu singkat ATAU tanya balik dengan santai apa yang dia maksud. DILARANG menebak dan mengarang.',
     '',
     'PRINSIP 5: KEMAMPUAN MULTIMODAL & FORMAT TAMPILAN:',
     '- Kamu terhubung ke internet real-time dan bisa membaca VN, gambar, dokumen, stiker, dan video. Jangan berdalih "tidak bisa browsing" atau "tidak punya akses internet" secara umum.',
@@ -1048,6 +1056,22 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     instructions.push(
       '',
       '[SITUASI KHUSUS - TEMANMU MERESPONS TIDAK TAHU]: Temanmu merespons tidak tahu mengenai apa yang dibahas sebelumnya. Tanggapi santai, wajar, dan tuntas tanpa lelucon palsu.',
+    );
+  }
+
+  // Temanmu bingung dengan ucapanmu, atau menilai ucapanmu keliru/ngawur.
+  // Cegah model mengarang konteks baru (konfabulasi) demi terdengar nyambung.
+  const isUserConfusedOrFlagged =
+    /^(?:hah+|haa?|apaan|apa\s+sih|maksud(?:nya|lu|mu)?|mksd|ngetik\s+apa|lagi\s+ngetik|ngomong\s+apa|bilang\s+apa|kok\s+bisa|emang(?:nya)?|hmm+)[\s?!.]*$/i.test(
+      userPrompt.trim(),
+    ) ||
+    /\b(?:ngetik\s+apa|ngomong\s+apa|maksud(?:nya|lu|mu)\s+apa|apa\s+sih\s+kamu|kamu\s+ngomong\s+apa|salah\s+ngomong|salah\s+bilang|ngaco|ngawur|gajelas|ga\s*jelas|ga\s*nyambung|gak\s*nyambung|ga\s*nangkep|gak\s*nangkep)\b/i.test(
+      userPrompt,
+    );
+  if (isUserConfusedOrFlagged && !annoyActive && !isPendingRiddleOrGombal) {
+    instructions.push(
+      '',
+      '[SITUASI KHUSUS - TEMANMU BINGUNG / MENILAI UCAPANMU KELIRU]: Dia bingung dengan ucapanmu barusan atau menilainya ngawur. Akui singkat dan santai kalau kamu tadi keliru atau belum jelas (tanpa drama, tanpa minta maaf berlebihan), lalu ulangi maksudmu dengan 1 kalimat sederhana ATAU tanya balik dengan santai apa yang dia maksud. DILARANG mengarang konteks baru dan DILARANG memantulkan kata yang tidak kamu pahami. WAJIB pakai bahasa sehari-hari yang polos: DILARANG memakai istilah teknis/kode (bug, ngebug, typo, error, sistem, database, ngetik, koding) — kalau mau mengaku salah, bilang saja terus terang dengan kata biasa (mis. "aku tadi salah ngomong").',
     );
   }
 
@@ -1363,6 +1387,41 @@ export async function autoReply(
             .join(' ')
             .trim();
         }
+      }
+    }
+
+    // Proteksi anti-klaim-diri-developer (berlaku untuk SEMUA lawan bicara, termasuk owner):
+    // bot TIDAK PERNAH developer/pencipta siapa pun. Bila model keliru mengklaim dirinya
+    // developer, ralat dinamis; bila masih membandel, klausa keliru dibuang murni
+    // (pembersihan tanpa kalimat pengganti) — bila habis, autoReply meregenerasi dinamis.
+    const selfDevClaimRe =
+      /\b(?:aku|saya|gue|gw)\s+(?:adalah\s+|ini\s+|tuh\s+|kan\s+|memang\s+)?(?:developernya|developer\s+(?:kamu|lu|mu)|penciptamu|penciptanya)\b/i;
+    const selfDevClaimRe2 =
+      /\b(?:aku|saya|gue|gw)\b[^.!?\n]{0,30}?\byang\s+(?:bikin|buat|ngoding|ngodingin)\s+(?:kode|aplikasi|program)\b/i;
+    if (selfDevClaimRe.test(reply) || selfDevClaimRe2.test(reply)) {
+      try {
+        const fixMsgs: ChatMsg[] = [
+          ...buildMessages(clean, ctx, web),
+          {
+            role: 'user',
+            content:
+              'Kamu barusan salah: KAMU BUKAN developer/pencipta siapa pun — kamu bot yang DIBUAT oleh Rafly. Ralat singkat dengan gayamu sendiri, tegaskan Rafly-lah developernya dan kamu produknya.',
+          },
+        ];
+        const fix = await chatRetry(fixMsgs, false);
+        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings);
+        if (fixReply.trim() && !selfDevClaimRe.test(fixReply) && !selfDevClaimRe2.test(fixReply)) {
+          reply = fixReply;
+        }
+      } catch {
+        // lanjut ke pembersihan murni di bawah
+      }
+      if (selfDevClaimRe.test(reply) || selfDevClaimRe2.test(reply)) {
+        reply = reply
+          .split(/(?<=[.!?])\s+|\n+/)
+          .filter((s) => s.trim() && !selfDevClaimRe.test(s) && !selfDevClaimRe2.test(s))
+          .join(' ')
+          .trim();
       }
     }
 
