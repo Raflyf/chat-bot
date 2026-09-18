@@ -9,7 +9,7 @@ import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.26.5';
+const PROMPT_VERSION = 'v0.31.0';
 
 // Cache deduplikasi pesan (mencegah Meta webhook retry memproses pesan 2 kali)
 const processedMessageIds = new Map<string, number>();

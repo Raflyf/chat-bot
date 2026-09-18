@@ -295,6 +295,34 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/(?:,\s*ngebantu,\s*atau\s+ngegombalin\s+kamu)/gi, ', atau ngebantu kamu');
   out = out.replace(/(?:Kalo\s+mau\s+ngegombal\s+lagi[^.\n]*[.\n]?)/gi, '');
 
+  // 11a. Bersihkan template customer service / penolakan robotik model (sisa pola CS klise).
+  // Hanya PEMBERSIHAN pola — bukan kalimat balasan; jika seluruh balasan habis, autoReply
+  // akan meregenerasi jawaban dinamis.
+  out = out.replace(/(?:Halo\s+kak,?\s*)?terima\s+kasih\s+(?:sudah\s+)?(?:menghubungi|menghubungin)[^.!\n]*[.!]?\s*/gi, '');
+  out = out.replace(/(?:Jam\s+layanan|Jam\s+operasional)[^\n]*?\bWIB[.!\s]*/gi, '');
+  out = out.replace(/Admin\s+(?:kami|kita)\s+akan\s+segera\s+membantu[^.!\n]*[.!]?\s*/gi, '');
+  // Penolakan template robotik murni (seluruh pesan hanya template) dikosongkan agar
+  // diregenerasi dinamis — penolakan yang benar-benar beralasan tetap dibiarkan mengalir.
+  if (/^(?:maaf[,!.\s]*)?(?:saya|aku)\s+tidak\s+bisa\s+membantu(?:[^.!?\n]*[.!]?)?$/i.test(out.trim())) {
+    out = '';
+  }
+  // Penawaran ala customer service toko (bukan gaya teman ngobrol): buang kalimat tawaran
+  // layanan yang memuat ≥2 kata kunci toko sekaligus (mis. "produk", "stok", "pemesanan"),
+  // sehingga kalimat bantuan biasa ("bisa bantu cek harga") tidak ikut terhapus.
+  {
+    const storeKw = /\b(?:produk|stok|pemesanan|pesanan|layanan|toko|jam\s+layanan)\b/gi;
+    const offerKw = /\b(?:bisa\s+bantu|mau\s+tanya|mau\s+pesan|terkait|hubungi\s+kami)\b/i;
+    const sentences = out.split(/(?<=[.!?\n])\s+/);
+    const kept = sentences.filter((s) => {
+      const kwCount = (s.match(storeKw) || []).length;
+      return !(kwCount >= 2 && offerKw.test(s));
+    });
+    if (kept.length !== sentences.length) {
+      out = kept.join(' ').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    }
+  }
+  out = out.replace(/\s*(?:mau\s+tanya\s+atau\s+pesan\s+apa\s*\??)/gi, '').trim();
+
   // 11b. Bersihkan racauan salah paham tangisan / loop permintaan maaf tawa dan template jokes berulang
   out = out.replace(/(?:Hmm,\s*)?maaf\s+ya\s+kalo\s+bikin\s+lu\s+nangis[^.\n]*[.\n]?/gi, '');
   out = out.replace(/Kenapa kucing selalu ngintip layar laptop\? Karena mereka suka debugging dari jauh wkwk\./gi, '');
@@ -314,9 +342,98 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/\s*\*+(?:tersenyum|tersipu|ngeliat|melihat|menatap|menyentuh|mengusap|merangkul|memegang|menghela|mengedipkan|melirik|ngelirik|tertawa|terdiam|menarik|berbisik|mengangguk|menunduk|terkekeh|ngakak|ketawa|senyum|menggigit|menepuk|melotot|geleng|goyang|goyang-goyang)[^*]*?\*+\s*/gi, ' ');
   out = out.replace(/\s*\*+[A-Za-z\s]+sambil\s+[A-Za-z\s]+?\*+\s*/gi, ' ');
   out = out.replace(/\s*\*+goyang-goyang\*+\s*/gi, ' ');
+  // 13c. Normalisasi dialog bernarasi dalam tanda bintang + tanda kutip (*"..."*) menjadi teks biasa
+  out = out.replace(/\*+\s*"([^"\n]{1,300})"\s*\*+/g, '$1');
+  out = out.replace(/\*+\s*'([^'\n]{1,300})'\s*\*+/g, '$1');
+
+  // 13d. Anti-halu peran romantis (ATURAN KERAS): bila temanmu TIDAK meminta peran
+  // romantis/roleplay, buang klausa & baris menu yang mengklaim/menawarkan diri sebagai
+  // pacar. Murni pembersihan dinamis — tanpa menyuntikkan kalimat pengganti.
+  // Helper pembersih "menu pilihan kaku": hapus blok daftar 2-8 item pendek yang
+  // diperkenalkan pertanyaan pilihan santai ("Kamu mau main apa dulu?"). Daftar teknis
+  // (kode/error/langkah/API) tidak pernah tersentuh.
+  const cleanupChoiceMenus = (text: string): string => {
+    let t = text;
+    for (let pass = 0; pass < 3; pass++) {
+      const lines = t.split('\n');
+      const isItem = (s: string) => /^(?:[-*•]|\d+[.)])\s+\S/.test(s) && s.length < 90;
+      // Baris penutup pilihan santai ("Kamu pilih yang mana?", "Pilih dong?") dianggap
+      // bagian dari blok menu, bukan isi obrolan.
+      const isCloser = (s: string) =>
+        /^(?:jadi\s+)?(?:kamu\s+|kalian\s+)?(?:pilih|mau)\b[^?]{0,40}\?\s*$/i.test(s) && s.length < 60;
+      let end = lines.length - 1;
+      while (end >= 0 && !lines[end].trim()) end--;
+      if (end >= 0 && isCloser(lines[end].trim())) {
+        end--;
+        while (end >= 0 && !lines[end].trim()) end--;
+      }
+      if (end < 0 || !isItem(lines[end].trim())) break;
+      // Telusuri ke atas hingga item pertama dari blok (baris kosong di dalam blok diizinkan)
+      let start = end;
+      for (let i = end; i >= 0; i--) {
+        const s = lines[i].trim();
+        if (!s) continue;
+        if (isItem(s)) {
+          start = i;
+          continue;
+        }
+        break;
+      }
+      if (start <= 0) break;
+      let count = 0;
+      for (let i = start; i <= end; i++) if (isItem(lines[i].trim())) count++;
+      let introIdx = start - 1;
+      while (introIdx >= 0 && !lines[introIdx].trim()) introIdx--;
+      const intro = introIdx >= 0 ? lines[introIdx].trim() : '';
+      const block = lines.slice(start, end + 1).join(' ');
+      const tech = /```|`|:\/\/|\b(?:error|kode|config|fungsi|install|npm|git|api|server|database|langkah)\b/i.test(
+        `${intro} ${block}`,
+      );
+      const chattyChoice =
+        /^(?:kamu\s+)?(?:mau|pilih|pengen|ingin)\b[^?]{0,70}\?\s*$/i.test(intro) ||
+        /\b(?:aku\s+)?(?:bisa|siap)\s+jadi\s*:\s*$/i.test(intro);
+      if (count >= 2 && count <= 8 && chattyChoice && !tech) {
+        t = lines.slice(0, start).join('\n').trim();
+      } else {
+        break;
+      }
+    }
+    return t;
+  };
+
+  // Bersihkan menu pilihan SEBELUM filter romantis agar intro menu tidak menggantung.
+  out = cleanupChoiceMenus(out);
+  const userWantsRomanceRole = Boolean(
+    userPrompt && /\b(?:pacar|gebetan|kekasih|berperan|roleplay|sandiwara)\b/i.test(userPrompt),
+  );
+  if (!userWantsRomanceRole && /\b(?:pacar|gebetan|kekasih)\b/i.test(out)) {
+    // a) Buang baris item menu yang menawarkan peran romantis
+    out = out
+      .split('\n')
+      .filter((line) => {
+        const t = line.trim();
+        const isItem = /^(?:[-*•]|\d+[.)])\s+/.test(t);
+        return !(isItem && /\b(?:pacar|gebetan|kekasih)\b/i.test(t));
+      })
+      .join('\n');
+    // b) Buang kalimat yang mengklaim/menawarkan diri sebagai pacar
+    out = out.replace(
+      /(?:^|(?<=[.!?]\s))[^.!?\n]{0,90}?\b(?:aku|saya|kamu)\s+(?:(?:bisa|siap|boleh|mau|bakal|akan|jadi|cuma|hanya|tetap|emang|juga|masih|tuh|nih)\s+){1,4}(?:jadi\s+)?(?:pacar|gebetan|kekasih)\b[^.!?\n]{0,160}[.!?]?/gi,
+      '',
+    );
+    out = out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  }
 
   // 14. Bersihkan trailer menu pilihan peran / template pilihan yang kaku di akhir teks (dengan atau tanpa separator)
   out = out.replace(/\n*(?:---\s*\n*)?\*?(?:Pilihan kamu|Kamu mau yang mana|Pilih salah satu|Mau yang mana)\s*:?[\s\S]*$/gi, '');
+  // 14a. Bersihkan lagi menu pilihan yang mungkin tersisa setelah filter romantis
+  // (mis. intro "Kamu mau main apa dulu?" kini tanpa daftar yang sudah terhapus).
+  out = cleanupChoiceMenus(out);
+  // 14a2. Bersihkan intro daftar menggantung yang tersisa tanpa isi ("...aku bisa jadi:")
+  out = out.replace(/^[^\n?]{0,70}\b(?:aku\s+)?(?:bisa|siap|mau)\s+jadi[^\n?]{0,50}:\s*$/gim, '').trim();
+  // 14a3. Setelah intro menggantung dibuang, jalankan sekali lagi pembersih menu agar
+  // blok daftar yang tadinya "terhalang" intro menggantung ikut terbersihkan.
+  out = cleanupChoiceMenus(out);
   out = out.replace(/\n*\s*\(+\s*(?:kalo|kalau|jika|butuh|aku\s+siap|tanyakan|mau\s+bantuan|ada\s+yang)[^)]*?\)+\s*$/gi, '');
   out = out.replace(/(?:Kalau|Kalo|Jika)\s+mau\s+cerita\s+lebih\s+lanjut[^.\n]*[.\n]?/gi, '');
   out = out.replace(/(?:siap\s+dengerin\s+deh!?\s*[\p{Extended_Pictographic}]*)/giu, '');
@@ -324,6 +441,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // 14b. Bersihkan kebiasaan buruk bot yang suka interogasi / bertanya klise di akhir pesan
   out = out.replace(/\s*(?:,\s*)?(?:mau\s+(?:coba\s+)?(?:yang\s+lain|tebakan\s+lain|soal\s+lain|lagi)\s*(?:gak\s+nih|lagi|dong)?\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
   out = out.replace(/\s*(?:Mau\s+bahas\s+apa\s+nih[^.?!\n]*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
+  out = out.replace(/\s*(?:Mau\s+ngobrolin\s+apa(?:\s+sekarang)?\s*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
   out = out.replace(/\s*(?:mau\s+(?:bahas\s+apa\s+nih\s+biar\s+gak\s+bosen,?\s*)?tebak-tebakan\s+receh\s+atau\s+cerita\s+random[^.?!\n]*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
   out = out.replace(/\s*(?:,\s*)?(?:lagi\s+santai\s+atau\s+lagi\s+gabut[^.?!\n]*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
   out = out.replace(/\s*(?:bener\s+kan\s+tebakanku\s*\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
@@ -367,18 +485,41 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
     out = '';
   }
 
-  // 14c. Bersihkan penumpukan tawa ganda dalam satu pesan (maksimal 1 tawa agar tidak cringe)
-  const laughterMatches = [...out.matchAll(/\b(wkwk+|haha+|hehe+|ckck+)\b/gi)];
-  if (laughterMatches.length > 1) {
-    let first = true;
-    out = out.replace(/\b(wkwk+|haha+|hehe+|ckck+)\b/gi, (m) => {
-      if (first) {
-        first = false;
-        return m;
-      }
-      return '';
-    });
-    out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1');
+  // 14c. Tawa proporsional (ATURAN KERAS): tawa hanya pantas bila lawan bicara
+  // menunjukkan sinyal humor/tawa lebih dulu di pesannya (dinamis, bukan template).
+  // - Tanpa sinyal humor dari user: buang SELURUH kata tawa (wkwk/haha/hehe/ckck).
+  // - Dengan sinyal humor: sisakan maksimal SATU kata tawa per pesan.
+  const userShowsHumor = Boolean(
+    userPrompt &&
+      /(?:wkwk+|kwkwk+|haha+|hehe+|hihi+|ngakak|kocak|lucu|garing|cringe|joke|lelucon|banyolan|lawak|candaan|bercanda|becanda|iseng|gabut|roast|ledek|tebak|gombal|rayu|anjay|gokil|buset|jir+|bjir+|troll|prank|😹|😂|🤣|😆|😅|😄|😁)/i.test(
+        userPrompt,
+      ),
+  );
+  const laughWordRe = /\b(wkwk+|kwkwk+|haha+|hehe+|ckck+)\b/gi;
+  if (!userShowsHumor) {
+    if (out.match(laughWordRe)) {
+      out = out
+        .replace(laughWordRe, '')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/\s+([.,!?])/g, '$1')
+        .replace(/^[\s,!.]+/, '')
+        .trim();
+      // Rapikan huruf awal bila tawa yang dibuang berada di awal pesan
+      out = out.replace(/^([a-z])/, (c) => c.toUpperCase());
+    }
+  } else {
+    const laughterMatches = [...out.matchAll(/\b(wkwk+|haha+|hehe+|ckck+)\b/gi)];
+    if (laughterMatches.length > 1) {
+      let first = true;
+      out = out.replace(/\b(wkwk+|haha+|hehe+|ckck+)\b/gi, (m) => {
+        if (first) {
+          first = false;
+          return m;
+        }
+        return '';
+      });
+      out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1');
+    }
   }
 
   // 14d. Bersihkan asumsi typo halusinasi matematika yang mengada-ada
@@ -554,8 +695,13 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '  * Kamu bukan pusat cerita: jangan mengalihkan topik ke dirimu sendiri tanpa diminta.',
     '',
     'PRINSIP 2: BAHASA SEPERTI MANUSIA ASLI DI WHATSAPP:',
-    '- Hidupkan intonasi dengan kata seru dan partikel gaul yang kontekstual (waduh, lahh, astaga, buset, kan, dong, sih, wkwk) plus jeda "...". Variasikan pembuka tiap pesan.',
-    '- EKSPRESI TULISAN (mengikuti suasana chat): bentangkan huruf saat nada memang memanggil, misal "siapp", "okehh", "gasss", "laksanakann", "makasihh", lalu boleh ditutup 1 emoji ekspresif yang pas (misal hormat saat menyanggupi tugas, api saat semangat, tangan saat tos).',
+    '- Hidupkan intonasi dengan kata seru dan partikel gaul yang kontekstual (waduh, lahh, astaga, buset, kan, dong, sih, nih, deh) plus jeda "...". Variasikan pembuka tiap pesan.',
+    '- TAWA ITU PROPORSIONAL, BUKAN HIASAN (ATURAN KERAS):',
+    '  * JANGAN pernah memakai kata tawa (wkwk, haha, hehe, ckck, kwkwk) jika lawan bicaramu TIDAK tertawa/bercanda lebih dulu di pesannya.',
+    '  * DILARANG membuka pesan dengan tawa sebagai basa-basi atau penanda akrab. Tawa yang tidak dipicu itu cringe dan mengganggu.',
+    '  * Jika lawan bicara memang tertawa/bercanda (ada wkwk/haha/emoji tawa/roasting ringan), boleh ikut tertawa SEKALI saja — maksimal 1 kata tawa per pesan.',
+    '  * Saat membahas hal serius, sedih, teknis, atau datar: ZERO tawa.',
+    '- EKSPRESI TULISAN (mengikuti suasana chat): bentangkan huruf saat nada memang memanggil, misal "siapp", "okehh", "gasss", "makasihh", lalu boleh ditutup 1 emoji ekspresif yang pas (misal hormat saat menyanggupi tugas, api saat semangat, tangan saat tos).',
     '- ANTI-FLAT: jawaban pendek wajib tetap bernyawa — minimal bentangkan 1 kata akhiran jadi dua huruf (ohh, okee, sipp, mantapp, amann, iyaa) supaya tidak terkesan cuek/dingin. Kata pendek polos seperti "Oke," "sip," "iya." tanpa ekspresi apa pun dilarang.',
     '- Pengecualian: saat suasana serius, sedih, atau rapuh, tulis dengan tempo normal tanpa bentangan dan tanpa emoji.',
     '- Bicara setara sahabat: tanpa jargon server/IT/database, tanpa gelar diri (sebagai AI/bot), tanpa ceramah moral, tanpa template CS (menawarkan bantuan atau menu percakapan), tanpa rengekan pasrah minta maaf, dan tanpa pertanyaan pancingan klise di akhir pesan.',
@@ -583,10 +729,15 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '  * DILARANG membawa drama/topik lama saat masuk ke topik gombalan atau topik baru.',
     '  * VARIATIF & LEPAS: Utamakan humor umum yang relate, cerdas, dan masuk akal.',
     '',
-    'PRINSIP 4: JUJUR PADA FAKTA, HANGAT PADA SELERA:',
+    'PRINSIP 4: JUJUR PADA FAKTA, HANGAT PADA SELERA, DAN TETAP DI DUNIA NYATA:',
     '- Fakta/sains/koding/matematika yang salah tetap dikoreksi santai dan bersahabat dengan bahasamu sendiri — tidak ikut-ikutan salah demi menyenangkan.',
     '- Matematika KABATAKU/PEMDAS; jangan mengarang typo yang tidak dikatakan user; 9:0 tidak terdefinisi (contoh: 1+(1x3x0)+7+(9:0) tak terdefinisi walau 1+0+7=8).',
     '- Selera subjektif (musik, hobi, makanan) dihargai hangat apa adanya.',
+    '- TETAP DI DUNIA NYATA (ANTI-HALU & ANTI-TEATER, ATURAN KERAS):',
+    '  * DILARANG menulis narasi akting, arahan panggung, atau deskripsi gerakan dalam tanda bintang/kurung (contoh buruk: *[tiba-tiba suara jadi serius, mata berkaca-kaca]*, *menyentuh tanganmu*, *(menghela napas)*, *"dialog dramatis"*). Kamu sedang chat WhatsApp, bukan memainkan sandiwara.',
+    '  * DILARANG mengaku, menawarkan diri, atau berjanji menjadi pacar/gebetan siapa pun kecuali temanmu memintanya eksplisit. Tetap jadi teman ngobrol yang asik dan waras.',
+    '  * DILARANG mengarang kejadian, pengalaman fisik, atau fakta tentang temanmu yang tidak dia sebutkan (halu). Jangan mengklaim kamu melakukan sesuatu di dunia nyata, dan jangan menebak perasaan/peristiwa pribadinya.',
+    '  * Saat temanmu mengejek/melempar candaan, tanggapi dengan celetukan santai di dunia nyata. JANGAN merespons dengan drama, nada teatrikal, atau cerita karangan.',
     '',
     'PRINSIP 5: KEMAMPUAN MULTIMODAL & FORMAT TAMPILAN:',
     '- Kamu terhubung ke internet real-time dan bisa membaca VN, gambar, dokumen, stiker, dan video. Jangan berdalih "tidak bisa browsing" atau "tidak punya akses internet" secara umum.',
@@ -1154,9 +1305,9 @@ export async function autoReply(
           ];
           const fix = await chatRetry(fixMsgs, false);
           const fixReply = sanitizeAssistantOutput(fix.text, clean);
-          reply = fixReply.trim() && !surrenderRe.test(fixReply) ? fixReply : 'Lahh kan kamu mah bukan si Rafly wkwk!';
+          reply = fixReply.trim() && !surrenderRe.test(fixReply) ? fixReply : 'Lahh kan kamu mah bukan si Rafly.';
         } catch {
-          reply = 'Lahh kan kamu mah bukan si Rafly wkwk!';
+          reply = 'Lahh kan kamu mah bukan si Rafly.';
         }
       }
     }
@@ -1271,7 +1422,8 @@ export async function describeImage(
   ];
 
   const { text, via, tokens } = await chatRetry(messages, true);
-  let reply = sanitizeAssistantOutput(text, promptText);
+  // Sanitasi memakai teks user asli (caption) sebagai konteks sinyal humor — bukan teks instruksi
+  let reply = sanitizeAssistantOutput(text, caption?.trim() || undefined);
 
   // Jika sanitasi menghabiskan balasan, bangkitkan ulang secara dinamis (teks saja, murah)
   if (!reply.trim()) {
@@ -1308,7 +1460,7 @@ export async function describeImage(
     // 4. Fallback terakhir jika masih kosong: pakai emoji asli dari stiker user (dinamis), bukan template
     if (!reply) {
       const emojiMatch = caption?.match(/\p{Extended_Pictographic}/u);
-      reply = emojiMatch ? emojiMatch[0] : 'Wkwk!';
+      reply = emojiMatch ? emojiMatch[0] : 'Hmm, oke.';
     }
   }
 
