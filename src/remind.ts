@@ -115,15 +115,16 @@ export async function checkDueReminders(
       }
 
       try {
-        // Teks pengingat dibuat dinamis mengikuti gaya bot; fallback fungsional hanya jika AI mati.
-        let deliveryText = `Pengingat: ${item.message}`;
+        // Teks pengingat dibuat dinamis mengikuti gaya bot. ZERO teks statis:
+        // bila model mati, teks pengingat milik user sendiri yang dikirim apa adanya.
+        let deliveryText = item.message;
         try {
           const gen = await autoReply(
             `Sampaikan pengingat ini ke user dengan gayamu sendiri, singkat dan hangat, tanpa pertanyaan tambahan: "${item.message}"`,
           );
           if (gen.reply.trim()) deliveryText = gen.reply;
         } catch {
-          // pertahankan fallback fungsional
+          // kirim teks pengingat user apa adanya
         }
         await sendFn(item.chat_id, deliveryText, item.platform);
         // Tandai selesai (sent) HANYA setelah pesan benar-benar sukses terkirim (C1)
@@ -159,7 +160,7 @@ export async function handleRemind(
     const { reply } = await autoReply(
       'User salah format perintah pengingat (tidak ada angka menit dan pesan). Jelaskan format yang benar: /remind <menit> <pesan>, dengan satu contoh singkat dan ramah.',
     );
-    await bot.sendMessage(chatId, reply);
+    if (reply.trim()) await bot.sendMessage(chatId, reply);
     return;
   }
 
@@ -169,7 +170,7 @@ export async function handleRemind(
     const { reply } = await autoReply(
       `User salah format perintah pengingat (menit="${m[1]}"). Jelaskan syaratnya (angka 1-1440 + pesan) dengan satu contoh singkat dan ramah.`,
     );
-    await bot.sendMessage(chatId, reply);
+    if (reply.trim()) await bot.sendMessage(chatId, reply);
     return;
   }
 
@@ -185,9 +186,9 @@ export async function handleRemind(
           const gen = await autoReply(
             `Sampaikan pengingat ini ke user dengan gayamu sendiri, singkat dan hangat, tanpa pertanyaan tambahan: "${rawMessage}"`,
           );
-          await bot.sendMessage(chatId, gen.reply.trim() || `Pengingat: ${message}`);
+          await bot.sendMessage(chatId, gen.reply.trim() || rawMessage);
         } catch {
-          await bot.sendMessage(chatId, `Pengingat: ${message}`).catch(() => undefined);
+          await bot.sendMessage(chatId, rawMessage).catch(() => undefined);
         }
       })();
     }, minutes * 60_000);
@@ -198,9 +199,7 @@ export async function handleRemind(
     : `Konfirmasi singkat dan hangat: pengingat "${rawMessage}" telah dicatat dan akan dikirim ${minutes} menit lagi.`;
 
   const { reply } = await autoReply(promptConfirm);
-
-  const note = !dbSaved && config.isServerless ? '\n(Catatan: pastikan tabel reminders sudah dimigrasi di Supabase.)' : '';
-  await bot.sendMessage(chatId, `${reply}${note}`);
+  if (reply.trim()) await bot.sendMessage(chatId, reply);
 }
 
 let workerInterval: NodeJS.Timeout | null = null;

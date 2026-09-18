@@ -518,7 +518,8 @@ export async function processIncomingDocument(
       return { reply: autoRes.reply, via: `local-parser/${autoRes.via}`, tokens: autoRes.tokens };
     }
 
-    // Fallback terakhir: bangkitkan jawaban dinamis; teks teknis statis hanya jika AI juga mati
+    // Fallback terakhir: murni dinamis. ZERO teks statis — bila model juga mati,
+    // balasan dibiarkan kosong dan platform tidak mengirim pesan apa pun.
     try {
       const gen = await autoReply(
         `Berkas PDF "${filename}" gagal diproses otomatis oleh modul visual. Beri tahu user dengan gayamu sendiri, singkat dan hangat, bahwa berkasnya diterima tapi sedang gagal dibaca, lalu tawarkan minta dia tanyakan bagian tertentu via teks.`,
@@ -526,12 +527,9 @@ export async function processIncomingDocument(
       );
       if (gen.reply.trim()) return { reply: gen.reply, via: `dynamic-pdf-error/${gen.via}` };
     } catch {
-      // lanjut ke fallback statis
+      // diam
     }
-    return {
-      reply: `Berkas PDF *${filename}* berhasil diterima, namun sistem AI sedang mengalami antrean pemrosesan dokumen visual. Silakan coba kirim ulang beberapa saat lagi atau tanyakan bagian tertentu via teks.`,
-      via: 'fallback-pdf-error',
-    };
+    return { reply: '', via: 'pdf-unavailable' };
   }
 
   // Kasus B: Dokumen Word (.docx) atau berkas teks/kode
@@ -574,7 +572,7 @@ export async function processIncomingDocument(
     return await autoReply(prompt, ctx);
   }
 
-  // Kasus C: Dokumen tidak didukung (misal biner terenkripsi)
+  // Kasus C: Dokumen tidak didukung (misal biner terenkripsi) — murni dinamis, tanpa teks statis.
   try {
     const gen = await autoReply(
       `Berkas "${filename}" diterima tapi formatnya tidak bisa dibaca langsung. Beri tahu user dengan gayamu sendiri, singkat dan hangat, lalu sebutkan format yang didukung: PDF, Word (.docx), atau teks (.txt, .md, .csv, kode).`,
@@ -582,12 +580,9 @@ export async function processIncomingDocument(
     );
     if (gen.reply.trim()) return { reply: gen.reply, via: `dynamic-unsupported/${gen.via}` };
   } catch {
-    // lanjut ke fallback statis
+    // diam
   }
-  return {
-    reply: `Berkas *${filename}* berhasil diterima, namun formatnya tidak dapat dibaca secara langsung. Coba kirim dalam format PDF, Word (.docx), atau file teks (.txt, .md, .csv, kode).`,
-    via: 'fallback-unsupported',
-  };
+  return { reply: '', via: 'unsupported-unavailable' };
 }
 
 /**
@@ -680,7 +675,8 @@ export async function processIncomingVideo(
     // lanjut ke fallback dinamis
   }
 
-  // Fallback terakhir: jawaban dinamis; teks teknis statis hanya jika AI juga mati
+  // Fallback terakhir: murni dinamis. ZERO teks statis — bila model juga mati,
+  // balasan dibiarkan kosong dan platform tidak mengirim pesan apa pun.
   try {
     const gen = await autoReply(
       `Video "${filename}" gagal dianalisis otomatis. Beri tahu user dengan gayamu sendiri, singkat dan hangat, bahwa videonya diterima tapi sedang gagal diproses, lalu minta dia kirim ulang sebentar lagi.`,
@@ -688,12 +684,9 @@ export async function processIncomingVideo(
     );
     if (gen.reply.trim()) return { reply: gen.reply, via: `dynamic-video-error/${gen.via}` };
   } catch {
-    // lanjut ke fallback statis
+    // diam
   }
-  return {
-    reply: `Video *${filename}* berhasil diterima, namun sistem AI video sedang sibuk. Silakan coba kirim ulang beberapa saat lagi.`,
-    via: 'fallback-video-error',
-  };
+  return { reply: '', via: 'video-unavailable' };
 }
 
 /**

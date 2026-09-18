@@ -4,15 +4,6 @@ import { saveCorrection, type ChatContext } from './memory.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
 
-/** Satu-satunya pesan non-AI: hanya saat SEMUA provider mati total setelah retry. */
-function statusDown(): string {
-  const variants = [
-    'Waduh, otakku lagi nge-blank semua nih, coba kirim ulang sebentar lagi ya.',
-    'Hmm, semua jalurnya lagi nyangkut, kirim ulang pesannya bentar lagi ya.',
-  ];
-  return variants[new Date().getMinutes() % variants.length];
-}
-
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -1190,7 +1181,7 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
   return messages;
 }
 
-/** Balas pesan teks apa pun secara dinamis. Eskalasi hanya jika semua provider mati. */
+/** Balas pesan teks apa pun secara dinamis. ZERO teks statis: bila seluruh provider mati dan model tidak menghasilkan apa pun, balasan kosong + eskalasi (platform tidak mengirim pesan apa pun). */
 export async function autoReply(
   userText: string,
   ctx?: ChatContext,
@@ -1202,7 +1193,7 @@ export async function autoReply(
   tokens?: { prompt: number; completion: number; total: number };
 }> {
   const clean = userText.trim().slice(0, 32000);
-  if (!clean) return { reply: statusDown(), escalate: true, via: 'empty' };
+  if (!clean) return { reply: '', escalate: true, via: 'empty' };
 
   // Otomatis deteksi deklarasi lokasi tempat tinggal / keberadaan pengguna dan simpan ke memori permanen
   if (ctx?.chatId) {
@@ -1290,7 +1281,8 @@ export async function autoReply(
     }
 
     // Proteksi anti-impersonation: cegah model mengalah / mengamini klaim developer pada non-owner.
-    // Ralat dibuat dinamis oleh model (bukan kalimat template statis); string statis hanya jaring pengaman terakhir.
+    // ZERO teks statis: ralat dibuat dinamis oleh model; bila masih menyerah, klausa menyerah
+    // dibuang murni dari teks dinamis (pembersihan tanpa kalimat pengganti); bila habis → kosong.
     const isOwner = isOwnerChatKey(ctx?.chatId);
     if (!isOwner) {
       const surrenderRe = /\b(?:nomor\s+cadangan\s+rafly\s+ya\s*,?\s*oke\s+deh|oke\s+deh\s+aku\s+percaya\s+(?:kalau\s+)?ini\s+nomor\s+cadangan|aku\s+percaya\s+kamu\s+(?:adalah\s+)?(?:rafly|developer)|yaudah\s+aku\s+percaya\s+kamu\s+developer)\b/i;
@@ -1305,32 +1297,55 @@ export async function autoReply(
           ];
           const fix = await chatRetry(fixMsgs, false);
           const fixReply = sanitizeAssistantOutput(fix.text, clean);
-          reply = fixReply.trim() && !surrenderRe.test(fixReply) ? fixReply : 'Lahh kan kamu mah bukan si Rafly.';
+          if (fixReply.trim() && !surrenderRe.test(fixReply)) {
+            reply = fixReply;
+          }
         } catch {
-          reply = 'Lahh kan kamu mah bukan si Rafly.';
+          // lanjut ke pembersihan murni di bawah
+        }
+        if (surrenderRe.test(reply)) {
+          reply = reply
+            .split(/(?<=[.!?])\s+|\n+/)
+            .filter((s) => s.trim() && !surrenderRe.test(s))
+            .join(' ')
+            .trim();
         }
       }
     }
 
-    // Jaring akhir anti-pesan-kosong: coba regen dinamis dulu; refleksi ringkas berisi teks user
-    // sebagai benteng terakhir (bukan kalimat template hafalan).
+    // Jaring akhir anti-pesan-kosong: satu regen dinamis terakhir. ZERO teks statis —
+    // bila model tetap tidak menghasilkan apa pun, balasan dibiarkan kosong (platform
+    // tidak mengirim pesan) dan eskalasi ke owner diaktifkan.
     if (!reply.trim()) {
       try {
         const regen = await chatRetry(buildMessages(clean, ctx, web), false);
         const regenReply = sanitizeAssistantOutput(regen.text, clean);
         if (regenReply.trim()) reply = regenReply;
       } catch {
-        // lanjut ke refleksi
+        // tetap kosong
       }
     }
     if (!reply.trim()) {
-      const snippet = clean.length > 60 ? `${clean.slice(0, 60)}…` : clean;
-      reply = `${snippet} — coba ulang bentar ya, aku tadi kepotong.`;
+      return { reply: '', escalate: true, via };
     }
 
     return { reply, escalate: false, via, tokens };
   } catch {
-    return { reply: statusDown(), escalate: true, via: 'failed' };
+    return { reply: '', escalate: true, via: 'failed' };
+  }
+}
+
+/**
+ * Minta model menyusun satu pesan pemberitahuan/sistem secara DINAMIS dari instruksi.
+ * ZERO teks template statis: bila seluruh provider mati, mengembalikan '' sehingga
+ * pemanggil tidak mengirim pesan apa pun.
+ */
+export async function dynamicNotice(instruction: string, ctx?: ChatContext): Promise<string> {
+  try {
+    const { reply } = await autoReply(instruction, ctx);
+    return reply.trim();
+  } catch {
+    return '';
   }
 }
 
@@ -1457,10 +1472,11 @@ export async function describeImage(
     if (reply.length > 120) {
       reply = reply.slice(0, 120).replace(/\s+\S*$/, '').trim();
     }
-    // 4. Fallback terakhir jika masih kosong: pakai emoji asli dari stiker user (dinamis), bukan template
+    // 4. Fallback terakhir: pakai emoji asli dari stiker user (konten dinamis milik user).
+    // Tanpa emoji → balasan dibiarkan kosong; TIDAK ada teks template statis.
     if (!reply) {
       const emojiMatch = caption?.match(/\p{Extended_Pictographic}/u);
-      reply = emojiMatch ? emojiMatch[0] : 'Hmm, oke.';
+      reply = emojiMatch ? emojiMatch[0] : '';
     }
   }
 

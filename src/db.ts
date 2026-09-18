@@ -24,6 +24,7 @@ export async function saveMessage(row: {
   prompt_version?: string;
   feedback?: string;
 }): Promise<void> {
+  if (!row.content || !row.content.trim()) return; // balasan kosong tidak pernah disimpan
   const c = db();
   if (!c) return;
   try {
