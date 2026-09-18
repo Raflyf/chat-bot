@@ -86,6 +86,40 @@ const AUTH_CONFIG_CACHE_TTL_MS = 25 * 1000; // 25 detik cache
 const otpSendCache = new Map<string, { count: number; start: number; lastSendAt: number }>();
 const otpAttemptCache = new Map<string, { count: number; start: number }>();
 
+// Throttle PIN per-IP: mencegah satu IP menaikkan lockout GLOBAL (yang tersimpan di
+// satu baris admin_auth_config) sampai admin sungguhan terkunci — DoS admin (audit F18).
+// Ambang per-IP (3) sengaja lebih ketat dari ambang global (5): brute force satu IP
+// berhenti sebelum pernah mencapai penguncian global.
+const pinAttemptByIp = new Map<string, { count: number; start: number }>();
+const PIN_IP_MAX = 3;
+const PIN_IP_WINDOW_MS = 15 * 60 * 1000;
+
+/** True bila IP sudah melewati batas percobaan PIN per-IP (tanpa menaikkan counter global). */
+function isPinThrottledForIp(clientIp: string, now: number): boolean {
+  // Prune map agar tidak tumbuh tanpa batas
+  if (pinAttemptByIp.size > 500) {
+    for (const [k, v] of pinAttemptByIp.entries()) {
+      if (now - v.start > PIN_IP_WINDOW_MS) pinAttemptByIp.delete(k);
+    }
+  }
+  const rec = pinAttemptByIp.get(clientIp);
+  return !!(rec && now - rec.start < PIN_IP_WINDOW_MS && rec.count >= PIN_IP_MAX);
+}
+
+/** Catat satu kegagalan PIN dari IP; reset saat berhasil. */
+function notePinFailureForIp(clientIp: string, now: number, reset: boolean = false): void {
+  if (reset) {
+    pinAttemptByIp.delete(clientIp);
+    return;
+  }
+  const rec = pinAttemptByIp.get(clientIp);
+  if (!rec || now - rec.start > PIN_IP_WINDOW_MS) {
+    pinAttemptByIp.set(clientIp, { count: 1, start: now });
+  } else {
+    rec.count += 1;
+  }
+}
+
 const OTP_SEND_MAX = 3;
 const OTP_SEND_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const OTP_SEND_MIN_INTERVAL_MS = 60 * 1000; // 60 seconds interval
@@ -473,6 +507,20 @@ export async function verifyPin(
   const now = Date.now();
   const current = await getAuthConfig();
 
+  // Throttle per-IP lebih dulu: bila IP ini sudah kehabisan jatah, tolak TANPA
+  // menaikkan lockout global (satu IP tidak boleh bisa mengunci admin — audit F18).
+  if (isPinThrottledForIp(clientIp, now)) {
+    return {
+      success: false,
+      verified: false,
+      isLocked: false,
+      lockedUntil: null,
+      lockoutAttempts: current.lockoutAttempts,
+      remainingAttempts: 0,
+      message: 'Terlalu banyak percobaan PIN dari jaringan ini. Tunggu 15 menit atau gunakan pemulihan OTP.',
+    };
+  }
+
   // Check if unconfigured
   if (!current.pinHash) {
     return {
@@ -524,6 +572,7 @@ export async function verifyPin(
         };
 
         if (res.verified) {
+          notePinFailureForIp(clientIp, now, true);
           // Selalu terbitkan session token dengan CANONICAL_SALT dan canonicalHash
           const { token: sessionToken, exp: expiresAt } = createSessionToken(canonicalHash, 15 * 60 * 1000);
           const updatedTokens = [
@@ -553,6 +602,7 @@ export async function verifyPin(
 
         // Jika rpcRes bukan verified tapi ada response valid dari DB
         if (res.message && !res.message.includes('belum dikonfigurasi')) {
+          notePinFailureForIp(clientIp, now);
           return {
             success: false,
             verified: false,
@@ -571,6 +621,7 @@ export async function verifyPin(
 
   // Fallback JS Engine (Dual-Store / In-Memory)
   if (isMatch) {
+    notePinFailureForIp(clientIp, now, true);
     // Berhasil: buat session token kriptografis HMAC 15 menit dengan canonical hash
     const { token: sessionToken, exp: expiresAt } = createSessionToken(canonicalHash, 15 * 60 * 1000);
 
@@ -599,7 +650,8 @@ export async function verifyPin(
     };
   }
 
-  // Gagal: tambah hitungan percobaan
+  // Gagal: catat di throttle per-IP + tambah hitungan percobaan global
+  notePinFailureForIp(clientIp, now);
   const newAttempts = current.lockoutAttempts + 1;
   const willLock = newAttempts >= 5;
   // Kunci selama 15 menit jika gagal 5x berturut-turut
