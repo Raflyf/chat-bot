@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.32.0 (Zero Teks Statis — Semua Balasan 100% Dinamis via LLM)  
+**Versi:** v0.33.0 (Variasi Pembuka — Anti Kata Seru Berulang Antar Pesan)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-18 WIB
 
@@ -213,6 +213,18 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.33.0 - 2026-09-18 (Variasi Pembuka — Anti Kata Seru Berulang Antar Pesan)
+
+**Kronologi: user menyoroti balasan "Eh, VN-nya malah nggak kedengeran nih..." dan "Eh, pesannya tadi agak nyangkut nih..." — kata seru "Eh" terlalu sering dipakai sebagai pembuka. Akar masalah: prompt menganjurkan kata seru tanpa aturan variasi, sehingga model berpola dengan interjeksi favoritnya.**
+
+- **Akar masalah:** blok PRINSIP 2 prompt menganjurkan kata seru/partikel gaul (waduh, lahh, astaga, buset) dan meminta "variasikan pembuka tiap pesan", tetapi tidak ada larangan eksplisit mengulang kata seru yang SAMA antar pesan — model bebas jatuh ke pola "Eh, ..." berulang.
+- **Lapis prompt (ATURAN KERAS baru "VARIASI PEMBUKA"):** dilarang membuka beberapa pesan berturut-turut dengan kata seru yang sama (mis. "Eh", "Waduh", "Hmm", "Oke", "Aduh"); model diperintahkan memeriksa balasan-balasan sebelumnya di riwayat dan memakai kata seru berbeda atau langsung masuk ke inti kalimat.
+- **Lapis sanitizer (`avoidRepeatedOpening`) — murni pembersihan, tanpa menyuntikkan kalimat:** set `FILLER_INTERJECTIONS` (eh, waduh, aduh, hmm, oh, loh, lah, astaga, buset, duh, yah, wah, nah, tuh, heh, beh, ih, dll) diperiksa pada kata pembuka balasan; bila sudah dipakai di balasan sebelumnya, interjeksi itu dibuang. Berlapis (mis. "Eh, waduh, ..." dibuang bertahap hingga 3 pass). `sanitizeAssistantOutput` menerima parameter ketiga `recentOpenings` yang dihitung dari `ctx.history` (maksimal 4 balasan asisten terakhir).
+- **Anti over-filter:** tanpa riwayat (`recentOpenings` kosong) tidak ada interjeksi yang dibuang; bila seluruh teks habis karena pembuangan, teks asli dipertahankan (balasan tidak pernah dikosongkan oleh pembersih ini). Kata seru yang berbeda dari sebelumnya tetap dipertahankan.
+- **Cakupan:** berlaku di jalur teks (`autoReply` — termasuk retry, ralat anti-impersonation, dan regen) sekaligus jalur media (`describeImage`).
+- **Verifikasi `scratch/verify_v33_opening.mjs`: 11/11 lolos** — unit helper (berulang dibuang, variasi baru dipertahankan, tanpa riwayat tidak dibuang, dua lapis dibersihkan, teks habis dipertahankan) + live 4 balasan beruntun dengan pembuka `[aman, waduh, dari, lahh]` (tidak ada yang identik berturut-turut).
+- **`PROMPT_VERSION` dinaikkan `v0.32.0` → `v0.33.0`** di ketiga handler platform.
 
 ### v0.32.0 - 2026-09-18 (Zero Teks Statis — Semua Balasan 100% Dinamis via LLM)
 

@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.32.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.33.0.
 
 ---
 
@@ -88,6 +88,12 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Degradasi senyap (fail-silent):** bila model gagal menghasilkan teks (semua provider mati), balasan dibiarkan kosong dan platform tidak mengirim pesan; `escalate: true` tetap memicu notifikasi ke owner di Telegram.
    - **Guard integritas data:** balasan kosong tidak pernah disimpan ke Supabase (`saveMessage`/`updateContextCache` early-return) dan `resetSession` kini `Promise<void>` (tanpa teks konfirmasi statis).
    - **Fallback berbasis data user tetap sah:** emoji asli stiker user dan teks pengingat milik user sendiri (`item.message`) dipakai apa adanya bila model mati — keduanya konten dinamis milik user, bukan template bot.
+
+9. **Variasi Pembuka — Anti Kata Seru Berulang Antar Pesan (v0.33):**
+   - **Masalah:** prompt menganjurkan kata seru (waduh, lahh, astaga, buset) tanpa aturan variasi, sehingga model berpola membuka banyak pesan dengan interjeksi favorit yang sama (mis. "Eh, ..." berulang).
+   - **Lapis prompt:** blok "VARIASI PEMBUKA (ATURAN KERAS)" — dilarang membuka beberapa pesan berturut-turut dengan kata seru sama; model diperintahkan memeriksa balasan sebelumnya di riwayat lalu memakai kata seru berbeda atau langsung masuk ke inti kalimat.
+   - **Lapis sanitizer (pembersihan murni, tanpa menyuntikkan kalimat):** `avoidRepeatedOpening()` membuang interjeksi pembuka murni (set `FILLER_INTERJECTIONS`) bila kata itu sudah dipakai di balasan-balasan sebelumnya (`recentOpenings` dihitung dari `ctx.history`, maksimal 4 balasan terakhir). Berlapis (mis. "Eh, waduh, ..." → dibuang bertahap). Tanpa riwayat → tidak ada interjeksi yang dibuang (anti over-filter). Bila seluruh teks habis karena pembuangan → teks asli dipertahankan (tidak pernah dikosongkan).
+   - **Berlaku di jalur teks (`autoReply`) dan media (`describeImage`).**
 
 ---
 
