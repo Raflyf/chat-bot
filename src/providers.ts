@@ -789,7 +789,7 @@ function steps(): Step[] {
         const isDeepSeek = m.toLowerCase().includes('deepseek');
         return openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
           // Effort reasoning MINIMAL (keputusan user). Hasil uji: 'none' membuat
-          // MiniMax M3 membalas KOSONG, jadi 'minimal' yang dipakai.
+          // MiniMax M3 (kini khusus rantai multimodal) membalas KOSONG, jadi 'minimal' yang dipakai.
           reasoning: { effort: 'minimal' },
           // Sampling luwes agar output DeepSeek mengalir alami & dinamis
           temperature: isDeepSeek ? 0.65 : 0.35,
