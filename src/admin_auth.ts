@@ -969,6 +969,16 @@ export async function updatePin(
   const current = await getAuthConfig();
   const now = Date.now();
 
+  // FAIL-CLOSED (audit F3): sistem belum dikonfigurasi (pin_hash NULL) tidak boleh
+  // menerima penetapan PIN baru tanpa verifikasi — wajib lewat alur pemulihan OTP.
+  // Guard ini berlaku bahkan bila RPC database masih versi lama.
+  if (!current.pinHash) {
+    return {
+      success: false,
+      message: 'PIN belum dikonfigurasi di server. Gunakan pemulihan OTP untuk mengatur PIN baru.',
+    };
+  }
+
   // Cek apakah sistem sedang terkunci (C3 & P1-2)
   if (current.lockedUntil && new Date(current.lockedUntil).getTime() > now) {
     return {

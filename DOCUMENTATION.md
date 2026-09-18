@@ -227,9 +227,10 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - **Fallback anon key dihapus** (`src/env.ts`): runtime hanya menerima service/secret key Supabase — mencegah seluruh query tunduk RLS `anon` secara senyap.
 - **Throttle PIN per-IP** (`src/admin_auth.ts`): lockout global (satu baris `admin_auth_config`) dulu bisa di-DoS satu IP sampai admin sungguhan terkunci 15 menit. Kini throttle per-IP (3 percobaan/15 menit) dievaluasi lebih dulu dan tidak menyentuh counter global; direset saat PIN benar.
 
-**Database (migrasi `sql/migrate_v19_audit_fixes.sql`):**
+**Database (migrasi `sql/migrate_v19_audit_fixes.sql` + `sql/migrate_v20_audit_fixes_batch2.sql`):**
 - Index `messages(platform,msg_id)` diubah dari PARTIAL menjadi unique index penuh — upsert PostgREST `onConflict: 'platform,msg_id'` tidak bisa inferensi constraint pada partial index (pesan gagal tersimpan senyap). Kode `saveMessage` kini juga fallback ke insert bila DB masih partial (kompatibel sebelum/sesudah migrasi).
 - Index standalone `web_knowledge(expires_at)` untuk purge retensi (sebelumnya seq scan), dan `reminders(chat_id)` untuk lookup per-chat.
+- **v20:** `rpc_admin_change_pin` fail-closed saat `pin_hash IS NULL` (dulu NULL dianggap cocok → takeover tanpa PIN lama); counter percobaan OTP durable (`otp_attempts`/`otp_locked_until`) di `rpc_admin_verify_otp_and_reset_pin`; revoke grant anon/authenticated pada `admin_auth_config`. Guard setara juga di kode (`updatePin`), berlaku bahkan sebelum migrasi di-apply.
 
 **Robustness (logika):**
 - **Anti-blackhole rantai failover** (`src/providers.ts`): bila cooldown model menutup SEMUA kandidat, rantai dulu melempar `ALL_PROVIDERS_FAILED` tanpa satu pun percobaan upstream (bisa 15 menit). Kini ada pass kedua "best-effort" yang mengabaikan cooldown sekali.
