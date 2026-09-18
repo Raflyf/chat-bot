@@ -10,7 +10,7 @@ import {
   type WAMessage,
 } from '@whiskeysockets/baileys';
 import { config, assertRuntime } from './env.js';
-import { autoReply, describeImage, splitMessageSmart } from './skills.js';
+import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
@@ -27,7 +27,7 @@ const logger = pino({ level: 'silent' });
 const sessionDir = path.resolve(process.cwd(), 'session_wa');
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.31.0';
+const PROMPT_VERSION = 'v0.32.0';
 
 /**
  * Mengirim pesan teks ke WhatsApp dengan pemecahan cerdas
@@ -382,7 +382,10 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           await sendWhatsAppMessageSafe(
             sock,
             remoteJid,
-            'Suara dalam rekaman audio tidak terdengar jelas atau kosong. Boleh tolong kirim ulang atau sampaikan melalui teks?',
+            await dynamicNotice(
+              'Rekaman suara dari temanmu gagal diproses atau tidak terdengar jelas. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik lewat teks.',
+              await getContext(chatKey, msgSentAt),
+            ),
           );
         }
         return;
@@ -528,7 +531,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       const tzInfo = resolveTimezoneFromCoords(lat, lon);
       await saveCorrection(chatKey, `Lokasi pengguna berada di koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`);
       const locTime = formatInZone(new Date(), tzInfo.zone);
-      const reply = `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
+      // Konfirmasi 100% dinamis: model menyusun kalimatnya sendiri dari data waktu (ZERO teks statis)
+      const reply = await dynamicNotice(
+        `Temanmu baru membagikan lokasi: ${tzInfo.label}. Waktu setempat saat ini ${locTime.time} ${locTime.tzName} (${locTime.full}). Konfirmasi singkat dengan gayamu sendiri bahwa lokasinya sudah dicatat dan sebutkan waktu setempat itu; nyatakan kamu akan mengingat lokasinya.`,
+        await getContext(chatKey, msgSentAt),
+      );
       await sendWhatsAppMessageSafe(sock, remoteJid, reply);
       if (messageId) void markMessageProcessed('whatsapp', messageId);
       await saveMessage({
@@ -545,10 +552,10 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // Kasus 2: Pesan Teks
   if (!text) return;
 
-  // Cek perintah reset sesi (konfirmasi dinamis; statis hanya jika provider mati)
+  // Cek perintah reset sesi (konfirmasi 100% dinamis — ZERO teks statis)
   if (isResetCommand(text)) {
-    const fallback = await resetSession(chatKey, 'whatsapp');
-    let reply = fallback;
+    await resetSession(chatKey, 'whatsapp');
+    let reply = '';
     try {
       const resetCtx = await getContext(chatKey, msgSentAt);
       const dyn = await autoReply(
@@ -557,7 +564,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       );
       if (dyn.reply.trim()) reply = dyn.reply;
     } catch {
-      // pertahankan fallback statis
+      // diam — ZERO teks statis
     }
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
     if (messageId) void markMessageProcessed('whatsapp', messageId);
@@ -577,7 +584,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const ctx = await getContext(chatKey, msgSentAt);
     if (!rawCorrection) {
       const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
-      await sendWhatsAppMessageSafe(sock, remoteJid, reply || 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
+      await sendWhatsAppMessageSafe(sock, remoteJid, reply);
       if (messageId) void markMessageProcessed('whatsapp', messageId);
       return;
     }
@@ -587,16 +594,17 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         `User mencoba menggunakan perintah /salah dengan input: "${rawCorrection}". Tanggapi secara spontan, santai, dan bersahabat dengan gayamu sendiri bahwa perintah /salah hanya untuk preferensi personal dia (seperti nama panggilan atau domisili), bukan untuk mengubah identitas developer atau aturan/fakta objektif. DILARANG kaku dan jangan gunakan kalimat template!`,
         ctx,
       );
-      await sendWhatsAppMessageSafe(sock, remoteJid, reply || check.reason || 'Perintah /salah hanya untuk preferensi personal (seperti nama panggilan atau domisili).');
+      await sendWhatsAppMessageSafe(sock, remoteJid, reply);
       if (messageId) void markMessageProcessed('whatsapp', messageId);
       return;
     }
-    await saveCorrection(chatKey, check.cleaned);
+    const saved = await saveCorrection(chatKey, check.cleaned);
     const { reply } = await autoReply(
-      `User menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!`,
+      `User menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!` +
+        (saved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa catatan mungkin tidak tersimpan lama.'),
       ctx,
     );
-    await sendWhatsAppMessageSafe(sock, remoteJid, reply || `Siap, sudah dicatat: "${check.cleaned}".`);
+    await sendWhatsAppMessageSafe(sock, remoteJid, reply);
     if (messageId) void markMessageProcessed('whatsapp', messageId);
     return;
   }
@@ -611,7 +619,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         'User salah format perintah pengingat (tidak ada angka menit dan pesan). Jelaskan format yang benar: /remind <menit> <pesan>, dengan satu contoh singkat dan ramah.',
         remindCtx,
       );
-      await sendWhatsAppMessageSafe(sock, remoteJid, reply || 'Format: /remind <menit> <pesan>\nContoh: /remind 10 matikan kompor');
+      await sendWhatsAppMessageSafe(sock, remoteJid, reply);
       if (messageId) void markMessageProcessed('whatsapp', messageId);
       return;
     }
@@ -622,7 +630,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         `User salah format perintah pengingat (menit="${mRemind[1]}"). Jelaskan syaratnya (angka 1-1440 + pesan) dengan satu contoh singkat dan ramah.`,
         remindCtx,
       );
-      await sendWhatsAppMessageSafe(sock, remoteJid, reply || 'Waktu pengingat harus antara 1 sampai 1440 menit (24 jam).');
+      await sendWhatsAppMessageSafe(sock, remoteJid, reply);
       if (messageId) void markMessageProcessed('whatsapp', messageId);
       return;
     }
@@ -633,7 +641,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.`,
       remindCtx,
     );
-    await sendWhatsAppMessageSafe(sock, remoteJid, reply || `Siap, pengingat "${message}" sudah dicatat.`);
+    await sendWhatsAppMessageSafe(sock, remoteJid, reply);
     if (messageId) void markMessageProcessed('whatsapp', messageId);
     return;
   }
@@ -690,9 +698,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     noteExchange(chatKey);
   } catch (err) {
     console.error('[whatsapp] Gagal menghasilkan balasan AI:', err);
-    await sock.sendMessage(remoteJid, {
-      text: 'Waduh, ada kendala teknis nih, coba kirim ulang sebentar lagi ya.',
-    });
+    // Beri tahu secara dinamis (ZERO template statis); bila AI juga mati, tidak ada pesan terkirim.
+    await sendWhatsAppMessageSafe(
+      sock,
+      remoteJid,
+      await dynamicNotice(
+        'Ada kendala teknis saat memproses pesan temanmu. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, minta coba kirim ulang sebentar lagi.',
+      ),
+    );
   } finally {
     try {
       await sock.sendPresenceUpdate('paused', remoteJid);

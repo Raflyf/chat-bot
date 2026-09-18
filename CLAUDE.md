@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.31.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.32.0.
 
 ---
 
@@ -80,6 +80,14 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
 
 7. **Zero-Configuration Vercel Models (Hardcoded Code Fallback):**
    - Seluruh model default dikonfigurasi langsung di dalam kode (`src/env.ts`), sehingga pengguna tidak perlu mendaftarkan variabel model di dashboard Vercel / `.env`. Cukup menyuplai API key masing-masing provider.
+
+8. **Zero Teks Statis — Semua Balasan 100% Dinamis (v0.32):**
+   - **Prinsip mutlak:** tidak ada satu pun kalimat balasan bot yang di-hardcode. Setiap respons (termasuk pesan sistem, konfirmasi perintah, dan pemberitahuan kegagalan) disusun sendiri oleh model dari instruksi kontekstual.
+   - **Helper `dynamicNotice(instruction, ctx)`** di `src/skills.ts`: meminta model menyusun pesan pemberitahuan/kontrol secara dinamis; mengembalikan `''` bila seluruh provider mati sehingga pemanggil tidak mengirim apa pun.
+   - **Penghapusan fallback statis:** `statusDown()`, `'Lahh kan kamu mah bukan si Rafly.'`, pesan antrean PDF/video, pesan VN gagal, konfirmasi reset sesi, konfirmasi lokasi, pesan error WhatsApp, dan seluruh fallback `reply || '...'` pada perintah `/salah` & `/remind` telah dihapus di ketiga kanal (Telegram, WhatsApp Cloud, WhatsApp Baileys).
+   - **Degradasi senyap (fail-silent):** bila model gagal menghasilkan teks (semua provider mati), balasan dibiarkan kosong dan platform tidak mengirim pesan; `escalate: true` tetap memicu notifikasi ke owner di Telegram.
+   - **Guard integritas data:** balasan kosong tidak pernah disimpan ke Supabase (`saveMessage`/`updateContextCache` early-return) dan `resetSession` kini `Promise<void>` (tanpa teks konfirmasi statis).
+   - **Fallback berbasis data user tetap sah:** emoji asli stiker user dan teks pengingat milik user sendiri (`item.message`) dipakai apa adanya bila model mati — keduanya konten dinamis milik user, bukan template bot.
 
 ---
 

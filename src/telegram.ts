@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { config } from './env.js';
-import { autoReply, describeImage, splitMessageSmart } from './skills.js';
+import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
@@ -9,7 +9,7 @@ import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.31.0';
+const PROMPT_VERSION = 'v0.32.0';
 
 let sharedBot: TelegramBot | null = null;
 
@@ -200,26 +200,8 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       return;
     }
 
-    // 1. Perintah /start (sapaan dinamis via LLM; statis hanya jika semua provider mati)
+    // 1. Perintah /start (sapaan 100% dinamis via LLM — ZERO teks statis)
     if (text === '/start') {
-      const staticText = isGroup
-        ? `Halo semua! Saya *${config.botName}*, asisten AI siap bantu di grup ini.\n\n` +
-          `Cara pakai di grup:\n` +
-          `- Tag/mention *@${botUsername}* diikuti pertanyaan kamu\n` +
-          `- Atau balas (reply) pesan saya langsung\n` +
-          `- Tanya cepat: \`/tanya <pertanyaan>\` atau \`/ai <pertanyaan>\`\n` +
-          `- Pasang pengingat grup: \`/remind <menit> <pesan>\`\n` +
-          `- Reset memori grup: \`/reset\``
-        : `Halo! Saya *${config.botName}*, asisten AI pribadi kamu.\n\n` +
-          `Kemampuan yang dapat kamu gunakan:\n` +
-          `- Diskusi, tanya jawab, atau analisis berbagai topik secara mendalam\n` +
-          `- Menelusuri informasi internet terkini secara real-time\n` +
-          `- Membaca & menganalisis dokumen (PDF, Word, TXT, CSV), gambar, pesan suara (VN), stiker, dan video\n` +
-          `- Mengatur pengingat otomatis dengan perintah: /remind <menit> <pesan>\n` +
-          `- Menyimpan preferensi/koreksi khusus dengan perintah: /salah <catatan>\n` +
-          `- Mereset sesi percakapan dengan perintah: /reset\n\n` +
-          `Ada yang bisa saya bantu sekarang?`;
-      let welcomeText = staticText;
       try {
         const startCtx = await getContext(chatKey, msgSentAt);
         const { reply } = await autoReply(
@@ -229,11 +211,10 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
               : ''),
           startCtx,
         );
-        if (reply.trim()) welcomeText = reply;
+        await sendTelegramMessageSafe(bot, chatId, reply);
       } catch {
-        // pertahankan teks statis
+        // diam — ZERO teks statis
       }
-      await sendTelegramMessageSafe(bot, chatId, welcomeText);
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
     }
@@ -244,7 +225,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const ctx = await getContext(chatKey, msgSentAt);
       if (!rawCorrection) {
         const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
-        await sendTelegramMessageSafe(bot, chatId, reply || 'Format: /salah <koreksi kamu>\nContoh: /salah namaku Budi bukan Andi');
+        await sendTelegramMessageSafe(bot, chatId, reply);
         if (msgId) void markMessageProcessed('telegram', msgId);
         return;
       }
@@ -254,16 +235,17 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           `User ${senderName} mencoba menggunakan perintah /salah dengan input: "${rawCorrection}". Tanggapi secara spontan, santai, dan bersahabat dengan gayamu sendiri bahwa perintah /salah hanya untuk preferensi personal dia (seperti nama panggilan atau domisili), bukan untuk mengubah identitas developer atau aturan/fakta objektif. DILARANG kaku dan jangan gunakan kalimat template!`,
           ctx,
         );
-        await sendTelegramMessageSafe(bot, chatId, reply || check.reason || 'Perintah /salah hanya untuk preferensi personal (seperti nama panggilan atau domisili).');
+        await sendTelegramMessageSafe(bot, chatId, reply);
         if (msgId) void markMessageProcessed('telegram', msgId);
         return;
       }
       const saved = await saveCorrection(chatKey, isGroup ? `[${senderName}]: ${check.cleaned}` : check.cleaned);
       const { reply } = await autoReply(
-        `User ${senderName} ${isGroup ? 'di grup ' : ''}menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!`,
+        `User ${senderName} ${isGroup ? 'di grup ' : ''}menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!` +
+          (saved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa catatan mungkin tidak tersimpan lama.'),
         ctx,
       );
-      await sendTelegramMessageSafe(bot, chatId, saved ? reply : `${reply}\n(Catatan: penyimpanan koreksi butuh tabel corrections.)`);
+      await sendTelegramMessageSafe(bot, chatId, reply);
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
     }
@@ -276,10 +258,10 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       return;
     }
 
-    // 3b. Perintah /reset atau /clear atau reset sesi (konfirmasi dinamis; statis hanya jika provider mati)
+    // 3b. Perintah /reset atau /clear atau reset sesi (konfirmasi 100% dinamis — ZERO teks statis)
     if (text && isResetCommand(text)) {
-      const fallback = await resetSession(chatKey, 'telegram');
-      let resetReply = fallback;
+      await resetSession(chatKey, 'telegram');
+      let resetReply = '';
       try {
         const resetCtx = await getContext(chatKey, msgSentAt);
         const { reply } = await autoReply(
@@ -288,9 +270,7 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
         );
         if (reply.trim()) resetReply = reply;
       } catch {
-        if (isGroup) {
-          resetReply = `Sesi percakapan grup berhasil di-reset oleh *${senderName}*. Memori aktif grup sudah kembali bersih.`;
-        }
+        // diam — ZERO teks statis
       }
       await sendTelegramMessageSafe(bot, chatId, resetReply);
       if (msgId) void markMessageProcessed('telegram', msgId);
@@ -451,7 +431,10 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
           await sendTelegramMessageSafe(
             bot,
             chatId,
-            'Suara dalam rekaman audio tidak terdengar jelas atau kosong. Boleh tolong kirim ulang atau sampaikan melalui teks?',
+            await dynamicNotice(
+              'Rekaman suara dari temanmu gagal diproses atau tidak terdengar jelas. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik lewat teks.',
+              await getContext(chatKey, msgSentAt),
+            ),
           );
         }
         return;
@@ -466,9 +449,11 @@ export async function handleIncomingMessage(bot: TelegramBot, msg: TelegramBot.M
       const locPrefix = isGroup ? `[Lokasi dari ${senderName}]: ` : 'Lokasi pengguna berada di ';
       await saveCorrection(chatKey, `${locPrefix}koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`);
       const locTime = formatInZone(new Date(), tzInfo.zone);
-      const reply = isGroup
-        ? `Lokasi ${senderName} berhasil dicatat di ${tzInfo.label}. Waktu setempat saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}).`
-        : `Lokasimu berhasil aku catat di ${tzInfo.label}. Waktu setempat di lokasimu saat ini adalah *${locTime.time} ${locTime.tzName}* (${locTime.full}). Mulai sekarang aku akan selalu mengingat waktu lokasimu.`;
+      // Konfirmasi 100% dinamis: model menyusun kalimatnya sendiri dari data waktu (ZERO teks statis)
+      const reply = await dynamicNotice(
+        `Temanmu ${isGroup ? `(di grup) ${senderName} ` : ''}baru membagikan lokasi: ${tzInfo.label}. Waktu setempat saat ini ${locTime.time} ${locTime.tzName} (${locTime.full}). Konfirmasi singkat dengan gayamu sendiri bahwa lokasinya sudah dicatat dan sebutkan waktu setempat itu; nyatakan kamu akan mengingat lokasinya.`,
+        await getContext(chatKey, msgSentAt),
+      );
       await sendTelegramMessageSafe(bot, chatId, reply);
       if (msgId) void markMessageProcessed('telegram', msgId);
       await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply })

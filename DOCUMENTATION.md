@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.31.0 (Tuning Persona Natural — Tawa Proporsional, Anti-Halu/Anti-Teater, Anti-Template CS)  
+**Versi:** v0.32.0 (Zero Teks Statis — Semua Balasan 100% Dinamis via LLM)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-18 WIB
 
@@ -213,6 +213,20 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.32.0 - 2026-09-18 (Zero Teks Statis — Semua Balasan 100% Dinamis via LLM)
+
+**Kronologi: user menemukan sisa fallback statis `'Lahh kan kamu mah bukan si Rafly.'` dan menegaskan instruksi: "saya bilang jangan ada respon statis dari bot, jangan menghardcode respon ny. biarkan dijawab secara dinamis". Audit menyeluruh menemukan belasan fallback statis di 7 modul (bukan hanya satu) — semuanya dihapus.**
+
+- **Temuan audit (fallback statis user-facing):** `statusDown()` (2 varian "otakku nge-blank"/"jalurnya nyangkut"), `'Lahh kan kamu mah bukan si Rafly.'` (2 titik), pesan antrean PDF & "sistem AI video sedang sibuk", pesan format dokumen tak didukung, pesan VN gagal di 3 kanal, konfirmasi reset sesi (memory + 3 kanal), konfirmasi lokasi (3 kanal), pesan error WhatsApp Baileys, dan seluruh fallback `reply || '...'` pada perintah `/salah` & `/remind` (3 kanal), plus teks `/start` statis.
+- **Helper baru `dynamicNotice(instruction, ctx)`** (`src/skills.ts`): meminta model menyusun pesan pemberitahuan/kontrol secara dinamis dari instruksi kontekstual. Bila seluruh provider mati → mengembalikan `''` sehingga pemanggil tidak mengirim pesan apa pun.
+- **Degradasi senyap (fail-silent):** `autoReply` kini mengembalikan `reply: ''` + `escalate: true` bila seluruh rantai gagal setelah regen terakhir (bukan lagi `statusDown()`). Platform tidak mengirim pesan kosong; notifikasi eskalasi ke owner tetap berjalan.
+- **Anti-impersonation tanpa string statis:** bila model masih "menyerah" mengakui klaim developer palsu, klausa menyerah dibuang murni sebagai pembersihan baris (tanpa kalimat pengganti); bila seluruh teks habis → kosong.
+- **Konfirmasi reset sesi & lokasi 100% dinamis:** `resetSession` kini `Promise<void>` (tak mengembalikan teks); ketiga kanal memanggil `autoReply`/`dynamicNotice` untuk menyusun konfirmasi sendiri dari data (zona waktu, label lokasi, nama pengirim).
+- **Guard integritas data:** `saveMessage` dan `updateContextCache` early-return untuk konten kosong — balasan kosong tidak pernah masuk Supabase/history. Fallback berbasis data user tetap sah: emoji asli stiker user dan teks pengingat milik user (`item.message`) dikirim apa adanya bila model mati (keduanya konten dinamis milik user, bukan template bot).
+- **Verifikasi live `scratch/verify_v32_zero_static.mjs`: 15/15 lolos** — autoReply teks, dynamicNotice (VN gagal, kendala teknis, lokasi), resetSession void, anti-impersonation ("Ngaco lu, aku FreeAIBot buatan Rafly, bukan nomor cadangannya."), sanitizer input kosong, dan `chat()` langsung; tidak satu pun memuat tanda tangan teks statis.
+- **Audit otomatis pasca-patch:** 0 sisa fallback statis user-facing di `src/` + `api/`; sisa pola `|| '...'` seluruhnya default teknis (MIME, env, auth admin) yang bukan balasan chat.
+- **`PROMPT_VERSION` dinaikkan `v0.31.0` → `v0.32.0`** di ketiga handler platform.
 
 ### v0.31.0 - 2026-09-18 (Tuning Persona Natural — Tawa Proporsional, Anti-Halu/Anti-Teater, Anti-Template CS)
 

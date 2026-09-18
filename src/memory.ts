@@ -26,6 +26,7 @@ const contextCache = new Map<string, CachedContext>();
 const CONTEXT_TTL_MS = 25000; // 25 detik (jendela percakapan cepat aktif)
 
 export function updateContextCache(chatKey: string, role: 'user' | 'assistant', content: string): void {
+  if (!content || !content.trim()) return; // jangan simpan balasan kosong (zero teks statis)
   const cached = contextCache.get(chatKey);
   if (cached && Date.now() - cached.at < CONTEXT_TTL_MS) {
     cached.data.history.push({ role, content });
@@ -46,8 +47,9 @@ export function isResetCommand(text: string): boolean {
   );
 }
 
-/** Reset sesi percakapan aktif: menyematkan checkpoint pemotong riwayat, menghapus ringkasan lama & membersihkan cache. */
-export async function resetSession(chatKey: string, platform: string = 'whatsapp'): Promise<string> {
+/** Reset sesi percakapan aktif: menyematkan checkpoint pemotong riwayat, menghapus ringkasan lama & membersihkan cache.
+ * Tidak mengembalikan teks konfirmasi statis — balasan dibuat dinamis oleh pemanggil via autoReply. */
+export async function resetSession(chatKey: string, platform: string = 'whatsapp'): Promise<void> {
   contextCache.delete(chatKey);
   counters.delete(chatKey);
   const c = db();
@@ -67,7 +69,6 @@ export async function resetSession(chatKey: string, platform: string = 'whatsapp
       // best-effort
     }
   }
-  return 'Sesi percakapan berhasil di-reset. Memori aktif sudah kembali bersih.';
 }
 
 /** Ambil konteks chat: 24 pesan terakhir sejak checkpoint reset + ringkasan + koreksi. Tanpa DB = kosong. */
