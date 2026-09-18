@@ -224,6 +224,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - **Rate-limit tidak bisa di-spoof** (`src/admin_auth.ts`): `getClientIp` dulu memprioritaskan header `x-vercel-forwarded-for` yang bisa dipalsukan client. Kini entri PALING KANAN `x-forwarded-for` (dari edge proxy) yang dipakai.
 - **Token tidak lagi via query string** (`api/stats.ts`, `api/dataset.ts`, `public/js/dashboard.js`): token di URL bocor ke log proxy/history/Referer. Endpoint hanya menerima header; unduhan dataset memakai `fetch` ber-header + Blob URL sesaat.
 - **Fallback anon key dihapus** (`src/env.ts`): runtime hanya menerima service/secret key Supabase — mencegah seluruh query tunduk RLS `anon` secara senyap.
+- **Throttle PIN per-IP** (`src/admin_auth.ts`): lockout global (satu baris `admin_auth_config`) dulu bisa di-DoS satu IP sampai admin sungguhan terkunci 15 menit. Kini throttle per-IP (3 percobaan/15 menit) dievaluasi lebih dulu dan tidak menyentuh counter global; direset saat PIN benar.
 
 **Database (migrasi `sql/migrate_v19_audit_fixes.sql`):**
 - Index `messages(platform,msg_id)` diubah dari PARTIAL menjadi unique index penuh — upsert PostgREST `onConflict: 'platform,msg_id'` tidak bisa inferensi constraint pada partial index (pesan gagal tersimpan senyap). Kode `saveMessage` kini juga fallback ke insert bila DB masih partial (kompatibel sebelum/sesudah migrasi).

@@ -119,6 +119,7 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **WhatsApp webhook verifikasi diperketat:** secret terpasang → HMAC ketat fail-closed (signature salah/kosong ditolak); secret belum ada → request diproses dengan PERINGATAN KEAMANAN mencolok di log (bot tetap jalan), verifikasi otomatis aktif begitu `WHATSAPP_APP_SECRET` dipasang. Dev lokal: `WHATSAPP_INSECURE_SKIP_VERIFY=1` (non-serverless). **TODO operator: pasang `WHATSAPP_APP_SECRET` di Vercel** (Meta App Dashboard > Settings > Basic > App Secret).
    - **Revokasi token admin:** logout kini benar-benar mencabut token HMAC stateless (daftar `revokedTokens`, dipangkas otomatis; format simpan `{active, revoked}` backward-compatible).
    - **Anti-spoof IP:** `getClientIp` memakai entri paling kanan `x-forwarded-for` (edge proxy), bukan header yang bisa diset client.
+   - **Throttle PIN per-IP (F18):** 3 percobaan/15 menit per IP dievaluasi sebelum lockout global — satu IP tidak bisa mengunci admin (DoS); counter per-IP direset saat PIN benar.
    - **Token admin tidak via query string:** endpoint hanya terima header; unduh dataset via fetch ber-header + Blob URL.
    - **Runtime hanya service key Supabase** (fallback anon dihapus — cegah query senyap di bawah RLS anon).
    - **Migrasi `sql/migrate_v19_audit_fixes.sql`:** unique index penuh `messages(platform,msg_id)` (upsert PostgREST butuh non-partial; kode punya fallback insert bila belum di-apply), index `web_knowledge(expires_at)` + `reminders(chat_id)`.
