@@ -1,6 +1,6 @@
-# Arsitektur Agen & Sistem Multi-Model (AGENTS.md)
+# Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.29.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.30.0.
 
 ---
 
@@ -17,11 +17,11 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Tier 2 (OpenRouter AI):**
      - Pool: 5 API Key (rotasi).
      - Primary: `deepseek/deepseek-v4-flash-0731:free` (GPQA 90,8), Cadangan: `nex-agi/nex-n2.5-pro:free`, `nvidia/nemotron-3.5-lightning:free`.
-     - Juga menjadi jalur vision prioritas #3.
+     - Tidak dipakai untuk vision (model free menolak image input); berperan sebagai parser PDF cadangan (plugin `file-parser`).
    - **Tier 3 (Groq Cloud API):**
      - Pool: 5 API Key (1.000 RPD/key).
      - Primary: `qwen/qwen3.8-27b` (~284 tok/s), Cadangan: `openai/gpt-oss-120b`.
-     - Buffer: Message history dipangkas adaptif ke 7.200 token agar aman di bawah limit ketat 8K TPM.
+     - Buffer: Message history dipangkas adaptif ke 6.800 token (menyisakan margin 400 token di bawah limit ketat 8K TPM bersama output 800).
    - **Tier 4 (Cloudflare Workers AI):**
      - Pool: 3 Akun Cloudflare (rotasi multi-account dengan auto-resolution ID akun).
      - Primary: `@cf/qwen/qwen3.8-27b` (Qwen 3.8 27B).
@@ -54,13 +54,23 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - `gemini-3.8-flash` **dikecualikan** dari rantai foto: terbukti hang ~60 detik tanpa token saat menerima gambar (uji live), tetap primer teks & dokumen/video saja.
    - Model free OpenRouter tidak mendukung image input (HTTP404) — hanya teks & parser PDF.
 
-4. **Audio, Dokumen & Video:**
+4. **Thinking Off / Effort Minimal di Semua Provider (v0.30):**
+   - Seluruh model reasoning dimatikan mode "berpikir"nya agar token pertama keluar secepat mungkin (keputusan user; akar masalah respons multimodal lambat):
+     - Cloudflare: `chat_template_kwargs: { enable_thinking: false }` (qwen 60 dtk → 0,9 dtk; gemma 996 token thinking → 12 token).
+     - Groq: `reasoning_effort: 'none'`.
+     - OpenRouter: `reasoning: { effort: 'none' }` (3,5 dtk → 1 dtk).
+     - xKiro: `reasoning: { effort: 'minimal' }` (`none` membuat MiniMax M3 membalas kosong).
+     - Gemini: `thinkingBudget: 0`; varian `flash-lite` memakai `thinkingLevel: 'low'` (menolak budget 0 dengan HTTP400).
+     - Dahl: `reasoning_effort: 'none'` (`minimal` memunculkan teks berulang + karakter zero-width).
+   - Berlaku juga di seluruh jalur media (audio Gemini, PDF Gemini, PDF OpenRouter, video Gemini) — bukan hanya chat teks.
+
+5. **Audio, Dokumen & Video:**
    - Audio / Voice Note: Groq Whisper (`whisper-large-v3` > `whisper-large-v3-turbo`), cadangan Cloudflare Whisper (`@cf/openai/whisper-large-v3-turbo`, pool & kuota berbeda), lalu Gemini native audio (3.5 Flash Lite > 2.5 Flash).
    - File Dokumen (.docx, .txt): Ekstraksi lokal via Mammoth / TextParser → rantai teks utama. Jika .docx memuat gambar, gambar diekstrak (maks 3) dan dianalisis via rantai vision (`docx-vision`).
    - Dokumen PDF: Gemini native PDF (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) → cadangan OpenRouter plugin `file-parser` (engine `pdf-text`) → parser teks lokal.
    - Video: Gemini native video (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) → cadangan transkripsi trek audio (Whisper) lalu dijawab rantai teks.
 
-5. **Zero-Configuration Vercel Models (Hardcoded Code Fallback):**
+6. **Zero-Configuration Vercel Models (Hardcoded Code Fallback):**
    - Seluruh model default dikonfigurasi langsung di dalam kode (`src/env.ts`), sehingga pengguna tidak perlu mendaftarkan variabel model di dashboard Vercel / `.env`. Cukup menyuplai API key masing-masing provider.
 
 ---

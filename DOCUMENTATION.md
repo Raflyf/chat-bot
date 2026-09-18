@@ -233,6 +233,7 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 - **Tambahan:** ambang pangkas prompt Groq 7.200 → 6.800 token agar total (prompt + output 800) menyisakan margin 400 token di bawah limit ketat 8K TPM.
 - **Verifikasi e2e (jalur produksi asli):** stiker **1,0–2,2 dtk via Groq** (sebelumnya 17–44 dtk); foto 1,2–1,6 dtk; teks 3,1 dtk via xKiro; PDF, audio, video semua tetap berfungsi.
 - **Catatan:** kualitas vision tidak dikorbankan — model tetap mengenali isi gambar dengan benar pada uji ulang.
+- **Rename dokumen arsitektur:** `AGENTS.md` → **`CLAUDE.md`** (keputusan user — agar penamaan berkas proyek tidak bertabrakan dengan aturan global `AGENTS.md` milik agen). Isi dokumen disinkronkan ke v0.30.0 sekaligus: perilaku thinking-off seluruh provider, ambang pangkas Groq 6.800 token, dan koreksi peran OpenRouter (parser PDF cadangan, bukan jalur vision).
 
 ### v0.29.0 - 2026-09-19 (Rantai Vision Multimodal Eksplisit 10 Model, PDF Multi-Jalur, Audio Cloudflare Whisper, Analisis Gambar di Word)
 
