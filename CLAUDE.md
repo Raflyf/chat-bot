@@ -116,7 +116,7 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Verifikasi:** `scratch/verify_v36_audio.mjs` 7/7 bersih; regresi v0.32/v0.33/v0.34 hijau. `PROMPT_VERSION` naik `v0.36.0`.
 
 13. **Audit Menyeluruh — Keamanan & Robustness (v0.37):**
-   - **WhatsApp webhook fail-closed:** `WHATSAPP_APP_SECRET` kosong → webhook DITOLAK (dulu diloloskan tanpa verifikasi HMAC). Dev lokal bisa skip eksplisit via `WHATSAPP_INSECURE_SKIP_VERIFY=1` (non-serverless saja).
+   - **WhatsApp webhook verifikasi diperketat:** secret terpasang → HMAC ketat fail-closed (signature salah/kosong ditolak); secret belum ada → request diproses dengan PERINGATAN KEAMANAN mencolok di log (bot tetap jalan), verifikasi otomatis aktif begitu `WHATSAPP_APP_SECRET` dipasang. Dev lokal: `WHATSAPP_INSECURE_SKIP_VERIFY=1` (non-serverless). **TODO operator: pasang `WHATSAPP_APP_SECRET` di Vercel** (Meta App Dashboard > Settings > Basic > App Secret).
    - **Revokasi token admin:** logout kini benar-benar mencabut token HMAC stateless (daftar `revokedTokens`, dipangkas otomatis; format simpan `{active, revoked}` backward-compatible).
    - **Anti-spoof IP:** `getClientIp` memakai entri paling kanan `x-forwarded-for` (edge proxy), bukan header yang bisa diset client.
    - **Token admin tidak via query string:** endpoint hanya terima header; unduh dataset via fetch ber-header + Blob URL.
