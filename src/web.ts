@@ -71,9 +71,15 @@ export function cleanStr(str: string): string {
     '&mdash;': ' - ',
     '&ndash;': ' - ',
   };
-  return str
-    .replace(/<[^>]+>/g, '')
-    .replace(/&(?:quot|#39|amp|lt|gt|nbsp|mdash|ndash);/g, (m) => entityMap[m] || m)
+  // URUTAN PENTING: decode entitas HTML DULU (sehingga &lt;p&gt; menjadi <p>),
+  // BARU buang tag. Bila dibalik, HTML yang ter-encode lolos mentah ke konteks model
+  // (pernah kejadian: deskripsi RSS tampil sebagai "<ol><li><a href=...>" di balasan).
+  let out = str.replace(/&(?:quot|#39|amp|lt|gt|nbsp|mdash|ndash);/g, (m) => entityMap[m] || m);
+  // Buang tag HTML/XML berulang (termasuk yang muncul setelah decode) hingga stabil.
+  for (let i = 0; i < 3 && /<[^>]+>/.test(out); i++) {
+    out = out.replace(/<[^>]+>/g, ' ');
+  }
+  return out
     .replace(/[—–]/g, ' - ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -145,6 +151,9 @@ export function extractFitMarkdownContent(rawHtml: string): string {
 export async function scrapeWebpage(url: string): Promise<string> {
   if (!url || !isSafePublicUrl(url)) return '';
 
+  // 0. PDF & dokumen biner: HANYA lewat Jina Reader (direct fetch akan mengembalikan biner rusak)
+  const isBinaryDoc = /\.(?:pdf|docx?|xlsx?|pptx?)(?:[?#]|$)/i.test(url);
+
   // 1. Coba Jina AI LLM Reader (merender SPA dan Javascript menjadi Markdown)
   try {
     const jinaRes = await fetch(`https://r.jina.ai/${url}`, {
@@ -152,17 +161,19 @@ export async function scrapeWebpage(url: string): Promise<string> {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         Accept: 'text/plain',
       },
-      signal: AbortSignal.timeout(2800),
+      signal: AbortSignal.timeout(2500),
     });
     if (jinaRes.ok) {
       const text = await jinaRes.text();
       if (text && text.length > 80) {
-        return text.slice(0, 5000).trim();
+        return text.slice(0, 6000).trim();
       }
     }
   } catch {
     // abaikan fallback ke direct fetch
   }
+
+  if (isBinaryDoc) return ''; // biner tidak bisa dibaca via direct fetch
 
   // 2. Direct fetch fallback
   try {
@@ -171,7 +182,7 @@ export async function scrapeWebpage(url: string): Promise<string> {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 FreeAIBot/2026',
         Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
       },
-      signal: AbortSignal.timeout(2500),
+      signal: AbortSignal.timeout(2000),
     });
     if (res.ok) {
       const raw = await res.text();
@@ -268,6 +279,15 @@ export function needsSearch(text: string): boolean {
     return false;
   }
 
+  // 9a. Topik pengetahuan faktual-dinamis (hukum, ekonomi, kesehatan, olahraga, hiburan,
+  // sains terapan) + kata recency → wajib cari data terbaru agar tidak kaku/basi.
+  if (
+    /\b(?:hukum|uu|undang-undang|regulasi|kebijakan|aturan\s+baru|pajak|ekonomi|inflasi|kurs|investasi|crypto|bitcoin|kesehatan|obat|vaksin|penyakit|olahraga|liga|klub|transfer|pemain|hiburan|film|series|anime|konser|musik|game|turnamen|kejuaraan|beasiswa|seleksi|pendaftaran)\b/i.test(qNorm) &&
+    /\b(?:terbaru|terkini|baru|sekarang|rilis|update|jadwal|hasil|kapan|20\d\d)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
   // 9b. Topik teknologi/AI/gadget UMUM + kata recency → WAJIB cari data terbaru.
   // Menangkap pertanyaan TANPA nama brand (mis. "model AI terbaru sekarang apa?",
   // "hp terbaru 2026", "teknologi terbaru") yang sebelumnya lolos tanpa penelusuran
@@ -288,7 +308,7 @@ export function needsSearch(text: string): boolean {
   }
 
   // - Keyword recency informal & viralitas (C4)
-  if (/\b(?:lagi\s+rame|yang\s+lagi\s+viral|berita\s+heboh|ada\s+apa\s+(?:sih\s+)?sekarang|yang\s+baru\s+keluar)\b/i.test(qNorm)) {
+  if (/\b(?:lagi\s+rame|yang\s+lagi\s+viral|berita\s+heboh|ada\s+apa\s+(?:sih\s+)?sekarang|yang\s+baru\s+keluar|kabar\s+terbaru|info\s+terbaru|update\s+terkini)\b/i.test(qNorm)) {
     return true;
   }
 
@@ -569,6 +589,13 @@ export function keywords(query: string, previousContext?: string): string {
 export async function searchWeb(query: string, previousContext?: string): Promise<string> {
   if (!query || typeof query !== 'string' || query.trim().length < 2) return '';
 
+  const searchStart = Date.now();
+  // Budget latensi total: balasan harus tetap gesit. Fase yang tidak kritis
+  // (crawl lanjutan, deep-scrape tambahan) dilewati bila sudah melewati anggaran.
+  const SEARCH_BUDGET_MS = 9000;
+  const elapsed = () => Date.now() - searchStart;
+  const overBudget = (ms: number = SEARCH_BUDGET_MS) => elapsed() > ms;
+
   const cleanQuery = query.trim();
 
   // Deteksi kueri berita (freshness-critical). Cache web_knowledge TIDAK dipakai untuk
@@ -581,9 +608,18 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     isNewsLike &&
     /\b(?:hari\s*ini|terkini|terbaru|terpanas|pagi\s*ini|siang\s*ini|sore\s*ini|malam\s*ini|breaking|viral|saat\s*ini)\b/i.test(cleanQuery);
 
+  // Kueri yang memuat URL/link: kontennya spesifik halaman, bukan entitas — cache
+  // berbasis entity key akan MENABRAKKAN kueri berbeda (URL dibuang saat normalisasi,
+  // mis. dua pertanyaan "ringkas <url>" menjadi kunci "ringkas" yang sama) sehingga
+  // jawaban bisa tertukar. Karena itu kueri ber-URL selalu live, tanpa cache.
+  const queryHasUrl =
+    /https?:\/\//i.test(cleanQuery) ||
+    /\bwww\.[a-z0-9-]+\.[a-z]{2,}/i.test(cleanQuery) ||
+    /\b[a-z0-9-]+\.(?:com|org|io|net|id|ai|co|xyz|dev|app|tech|info|me|site|cloud|edu|gov|ac\.id|co\.id|go\.id)\b/i.test(cleanQuery);
+
   // 0. Cek Persistent Knowledge Memory (Hot Cache & Supabase web_knowledge)
   // Jika fakta sudah pernah dipelajari dan masih berlaku segar, kembalikan instan (0 - 30ms)!
-  if (!isNewsLike) {
+  if (!isNewsLike && !queryHasUrl) {
     try {
       const cached = await getKnowledge(cleanQuery);
       if (cached && cached.knowledge && cached.knowledge.length > 50) {
@@ -656,29 +692,37 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   }
 
   // Jika user menyertakan link/URL, langsung jelajahi dan baca isi halaman web tersebut
-  if (targetUrls.size > 0) {
-    const urlsToScrape = Array.from(targetUrls).slice(0, 2);
-    for (const u of urlsToScrape) {
-      try {
-        const scraped = await scrapeWebpage(u);
-        if (scraped && scraped.length > 50) {
-          let host = u;
-          try {
-            host = new URL(u).hostname;
-          } catch {
-            // abaikan
-          }
-          structuredSnippets.push({
-            text: `[Isi Lengkap Halaman Web (${host})]:\n${scraped.slice(0, 4500)}`,
-            timestamp: Date.now() + 1_000_000_000,
-            score: 100,
-          });
+  const alreadyScrapedUrls = new Set<string>();
+  // Fase 1 (baca URL user) TIDAK di-await di sini: dijalankan paralel dengan fase 2
+  // (mesin pencari) lalu ditunggu bersama di akhir. Serialisasi keduanya menambah
+  // ~3-4 dtk latensi balasan tanpa manfaat.
+  const urlScrapePromise: Promise<void> = (async () => {
+    if (targetUrls.size === 0) return;
+    // Semua URL yang dikirim user dibaca PARALEL (maks 4). Sekuensial akan menjumlahkan
+    // timeout tiap URL (4 x ~4.5s) dan membuat balasan lambat; paralel = 1x timeout terlama.
+    const urlsToScrape = Array.from(targetUrls).slice(0, 4);
+    const urlResults = await Promise.allSettled(
+      urlsToScrape.map((u) => scrapeWebpage(u).then((content) => ({ u, content }))),
+    );
+    for (const r of urlResults) {
+      if (r.status !== 'fulfilled') continue;
+      const { u, content } = r.value;
+      alreadyScrapedUrls.add(u);
+      if (content && content.length > 50) {
+        let host = u;
+        try {
+          host = new URL(u).hostname;
+        } catch {
+          // abaikan
         }
-      } catch {
-        // lanjut ke pencarian web
+        structuredSnippets.push({
+          text: `[Isi Lengkap Halaman Web (${host})]:\n${content.slice(0, 4500)}`,
+          timestamp: Date.now() + 1_000_000_000,
+          score: 130,
+        });
       }
     }
-  }
+  })();
 
   // 2. Formulasi Kueri Entitas Multi-Engine dengan Anaphora Resolution
   const searchQueries = formulateSmartSearchQueries(cleanQuery, previousContext);
@@ -916,6 +960,77 @@ export async function searchWeb(query: string, previousContext?: string): Promis
         .catch(() => {}),
     );
 
+    // 2e1. RSS MEDIA INDONESIA LANGSUNG (link artikel asli — bisa dibaca penuh).
+    // Hanya untuk kueri berita: memberi isi berita nyata, bukan sekadar judul + redirect.
+    if (isNewsLike) {
+      const directFeeds = [
+        'https://www.antaranews.com/rss/terkini',
+        'https://www.cnnindonesia.com/rss/',
+        'https://www.cnbcindonesia.com/rss',
+        'https://rss.tempo.co/',
+      ];
+      for (const feed of directFeeds) {
+        fetches.push(
+          fetch(feed, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            signal: controller.signal,
+          })
+            .then((r) => (r.ok ? r.text() : ''))
+            .then((txt) => {
+              if (!txt) return;
+              let feedHost = feed;
+              try { feedHost = new URL(feed).hostname; } catch { /* */ }
+              const items = txt.match(/<item[\s>][\s\S]*?<\/item>/gi) || [];
+              for (const item of items.slice(0, 6)) {
+                const tm = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+                const lm = item.match(/<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i);
+                const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+                if (!tm) continue;
+                const link = lm ? lm[1].trim() : '';
+                if (link && isSafePublicUrl(link)) discoveredUrls.add(link);
+                addSnippet(feedHost, tm[1], '', pm ? pm[1] : '', link, isGeneralNews ? 88 : 60);
+              }
+            })
+            .catch(() => {}),
+        );
+      }
+    }
+
+    // 2e2. DuckDuckGo HTML (mesin cadangan bila Bing kosong / kena blokir)
+    if (bingQueries.length > 0) {
+      fetches.push(
+        fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(bingQueries[0])}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            'Accept-Language': 'id-ID,id;q=0.9,en;q=0.8',
+          },
+          signal: controller.signal,
+        })
+          .then((r) => (r.ok ? r.text() : ''))
+          .then((html) => {
+            if (!html) return;
+            const items = html.split('class="result__body"');
+            for (let i = 1; i < Math.min(items.length, 7); i++) {
+              const chunk = items[i];
+              const linkMatch = chunk.match(/<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+              const descMatch = chunk.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
+              if (!linkMatch) continue;
+              let rawUrl = linkMatch[1].replace(/&amp;/g, '&');
+              // DDG membungkus tautan: /l/?uddg=<encoded>
+              const uddg = rawUrl.match(/[?&]uddg=([^&]+)/);
+              if (uddg) { try { rawUrl = decodeURIComponent(uddg[1]); } catch { /* */ } }
+              const title = linkMatch[2].replace(/<[^>]+>/g, '').trim();
+              const desc = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+              if (isSafePublicUrl(rawUrl)) {
+                discoveredUrls.add(rawUrl);
+                addSnippet('DuckDuckGo', title, desc, '', rawUrl, 52);
+              }
+            }
+          })
+          .catch(() => {}),
+      );
+    }
+
     // 2f. Wikipedia ID + EN paralel
     const wikiQueries = [
       { lang: 'id', base: 'https://id.wikipedia.org', label: 'Wikipedia Indonesia', q: entityQ },
@@ -962,23 +1077,30 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   } finally {
     clearTimeout(timeout);
   }
+  // Fase 1 & 2 selesai — pastikan hasil baca URL user sudah masuk sebelum deep-scrape.
+  await urlScrapePromise;
 
-  // 3. Universal Autonomous Deep Web Scraping
-  // Hanya lakukan deep-scraping halaman jika user menyertakan link eksplisit atau jika hasil snippet pencarian masih minim (< 2)
-  const shouldDeepScrape = targetUrls.size > 0 || structuredSnippets.length < 2;
-  const skippedDomains = /(kbbi\.|wikipedia\.org|youtube\.com|facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com|google\.com\/search|bing\.com|duckduckgo\.com)/i;
-  const scrapeTargets = shouldDeepScrape
+  // 3. Universal Autonomous Deep Web Scraping + Crawl 1 Level
+  // Deep-scrape halaman bila: user menyertakan link eksplisit, hasil snippet minim, ATAU
+  // kueri berita/teknologi segar (butuh isi artikel langsung, bukan hanya deskripsi RSS).
+  const shouldDeepScrape =
+    targetUrls.size > 0 || structuredSnippets.length < 2 || strictFreshNews ||
+    (isNewsLike && structuredSnippets.length < 6);
+  // Link redirect Google News/Bing tidak bisa dibaca langsung — dibuang dari target scrape.
+  const skippedDomains = /(kbbi\.|wikipedia\.org|youtube\.com|facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com|google\.com|bing\.com|duckduckgo\.com|news\.google\.com)/i;
+  const scrapeTargets = shouldDeepScrape && !overBudget(7000)
     ? [
-        ...Array.from(targetUrls),
-        ...Array.from(discoveredUrls).filter((u) => !skippedDomains.test(u)),
-      ].slice(0, targetUrls.size > 0 ? 2 : 1)
+        ...Array.from(targetUrls).filter((u) => !alreadyScrapedUrls.has(u)),
+        ...Array.from(discoveredUrls).filter((u) => !skippedDomains.test(u) && !alreadyScrapedUrls.has(u)),
+      ].slice(0, targetUrls.size > 0 ? 4 : isNewsLike ? 3 : 3)
     : [];
 
   if (scrapeTargets.length > 0) {
-    // Scrape paralel dengan batas waktu cepat 2500ms
     const scrapeResults = await Promise.allSettled(
       scrapeTargets.map((url) => scrapeWebpage(url).then((content) => ({ url, content })))
     );
+    // Kumpulkan tautan internal same-host dari halaman yang berhasil dibaca → crawl 1 level
+    const followLinks: string[] = [];
     for (const result of scrapeResults) {
       if (result.status === 'fulfilled' && result.value.content && result.value.content.length > 80) {
         const { url, content } = result.value;
@@ -987,8 +1109,39 @@ export async function searchWeb(query: string, previousContext?: string): Promis
         structuredSnippets.unshift({
           text: `[Isi Halaman Web (${host})]:\n${content.slice(0, 4000)}`,
           timestamp: Date.now() + 500_000_000,
-          score: 95,
+          score: 120,
         });
+        // Ekstrak tautan markdown internal (same host) untuk pendalaman — maks 3 kandidat.
+        try {
+          for (const m of content.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)) {
+            if (followLinks.length >= 3) break;
+            const link = m[1];
+            if (/\.(?:jpg|jpeg|png|gif|svg|webp|mp4|zip|rar|mp3)(?:[?#]|$)/i.test(link)) continue;
+            try {
+              const lh = new URL(link).hostname;
+              if (lh === host && !scrapeTargets.includes(link) && !followLinks.includes(link)) followLinks.push(link);
+            } catch { /* */ }
+          }
+        } catch { /* */ }
+      }
+    }
+    // Crawl 1 level: baca 2 tautan internal teratas bila hasil masih belum kaya (< 8 snippet)
+    // DAN masih ada anggaran waktu (menjaga latensi balasan tetap gesit).
+    if (followLinks.length > 0 && structuredSnippets.length < 8 && !overBudget(4500)) {
+      const followResults = await Promise.allSettled(
+        followLinks.slice(0, 2).map((url) => scrapeWebpage(url).then((content) => ({ url, content }))),
+      );
+      for (const result of followResults) {
+        if (result.status === 'fulfilled' && result.value.content && result.value.content.length > 80) {
+          const { url, content } = result.value;
+          let host = url;
+          try { host = new URL(url).hostname; } catch { /* */ }
+          structuredSnippets.unshift({
+            text: `[Halaman Terkait (${host})]:\n${content.slice(0, 3000)}`,
+            timestamp: Date.now() + 400_000_000,
+            score: 110,
+          });
+        }
       }
     }
   }
@@ -998,13 +1151,15 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   // Urutkan bukti: artikel terbaca langsung di paling atas, kemudian berdasarkan recency & relevansi skor
   structuredSnippets.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp);
 
-  const selected = structuredSnippets.slice(0, 14).map((s) => s.text);
+  // Ambil lebih banyak sumber (20) agar pengetahuan lebih luas — model memilih yang relevan.
+  const selected = structuredSnippets.slice(0, 20).map((s) => s.text);
   const finalKnowledge = selected.join('\n\n');
 
   // Simpan hasil ke Persistent Knowledge Memory secara non-blocking.
-  // Kueri berita TIDAK disimpan: berita cepat basi dan entri cache-nya bisa tampil
-  // sebagai "kabar hari ini" di kueri berikutnya (penyebab berita lama muncul lagi).
-  if (!isNewsLike && finalKnowledge.length > 80) {
+  // Kueri berita & kueri ber-URL TIDAK disimpan: berita cepat basi, dan kunci entitas
+  // kueri ber-URL menabrak kueri lain (URL dibuang saat normalisasi) sehingga jawaban
+  // bisa tertukar antar pertanyaan berbeda.
+  if (!isNewsLike && !queryHasUrl && finalKnowledge.length > 80) {
     const sourceUrls = Array.from(discoveredUrls).slice(0, 5);
     void saveKnowledge(cleanQuery, finalKnowledge, sourceUrls).catch(() => {});
   }

@@ -1274,7 +1274,7 @@ ${ctx.summary}
     instructions.push(
       '',
       `[DATA INTERNET REAL-TIME (REFERENSI FAKTUAL EKSTERNAL)]:
-${sanitizedWeb.slice(0, 3000)}
+${sanitizedWeb.slice(0, 4500)}
 
 PEDOMAN DATA INTERNET & WAKTU BERITA:
 - Gunakan data internet di atas untuk menjawab berita, peristiwa, angka, nama, harga, atau perkembangan terkini (konteks tahun: ${nowYear}).
