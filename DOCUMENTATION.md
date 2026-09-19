@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.37.0 (Audit Menyeluruh — Keamanan Fail-Closed, Revokasi Token, Robustness)  
+**Versi:** v0.38.0 (Stiker Balasan Bot + Guard Anti-Narasi Media)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-18 WIB
 
@@ -213,6 +213,28 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.38.0 - 2026-09-19 (Stiker Balasan Bot + Guard Anti-Narasi Media)
+
+**Keluhan user:** stiker kucing ketawa dibalas *"Kucingnya malah ketawa ngakak, kamu yang jadi bahan bercandanya."* — *"tidak usah mendeskripsikan apa yg user kirim, cukup dibalas dengan natural responnya, jawaban yg sekarang itu aneh dan ga nyambung malah garing dan tidak natural"* — dan berlaku untuk **semua** media (stiker, foto, video, VN, dokumen).
+
+**Permintaan fitur:** *"buat respon bot nya bisa pakai stiker juga, kalo tidak bisa maka pakai emoji tergantung situasi... tapi jangan terlalu sering nanti malah jadi ga jelas... dan ingat jangan ada respon atau jawaban bot yg di hardcode. biarkan jawabannya tetap dinamis"*.
+
+**Guard anti-narasi media (berlaku semua jenis kiriman):**
+- `MEDIA_NARRATION_RE` + `stripMediaNarration()` (`src/skills.ts`) — pembersihan murni tanpa kalimat pengganti. Subjek sengaja spesifik (hewan/karakter: kucing, anjing, meme, dst.) agar TIDAK false-positive pada cerita user ("bapaknya ketawa lihat tingkahku") atau dokumen ("Dokumennya berisi laporan").
+- `userAskedAboutMedia()` — pengecualian: bila user menulis pertanyaan/instruksi eksplisit di caption ("ini apa?", "coba jelaskan"), isi boleh dijawab.
+- `sanitizeAssistantOutput(..., mediaReply=true)` dipasang di jalur `describeImage` (stiker/foto) dan video; dokumen dikeluarkan dari daftar (memang untuk dibaca).
+- Prompt diperbarui: PRINSIP 5 + prompt stiker/foto/video kini eksplisit melarang narasi isi kiriman ("Kamu MELIHAT isinya untuk memahami suasana, tapi cukup BALAS DENGAN REAKSI NATURAL").
+
+**Fitur stiker balasan bot (100% dinamis, tanpa hardcode):**
+- Model memilih emoji sendiri via tag `[[sticker:<emoji>]]` di akhir balasan (dipandu prompt: ~1 dari 4-6 balasan, tidak saat serius/sedih/teknis/formal, emoji harus relevan).
+- **147 aset stiker webp** di `public/stickers/` (generated dari emoji Windows Segoe UI Emoji, ~2 MB) — nama file hex codepoint (mis. 😎 → `1f60e.webp`).
+- `src/stickers.ts`: `emojiToHex()`, `stickerPublicUrl()` (dari `VERCEL_PROJECT_PRODUCTION_URL`), `fetchStickerBuffer()` (fetch + cache in-memory), `allowStickerForChat()` (cooldown 2 stiker / 10 menit per chat).
+- Pengiriman per platform: Telegram `sendSticker` (multipart buffer), WA Baileys `{ sticker: buffer }`, WA Cloud upload media (`/media`) + kirim `type: 'sticker'`.
+- **Fallback**: bila file stiker tidak tersedia atau pengiriman gagal → emoji dikirim sebagai teks (konten dari model, bukan template hardcode).
+- Anti-spam level program (bukan teks balasan): maksimal 1 tag per balasan (parser ambil tag pertama), cooldown per chat, dan prompt melarang pemakaian saat suasana tidak tepat.
+
+**Verifikasi:** `scratch/verify_v38_sticker.mjs` 22/22 lolos (parser tag, guard narasi + anti-false-positive, pengecualian pertanyaan, cooldown, hex mapping). Live: apresiasi → sticker 😎 terkirim; sedih & teknis → tanpa sticker. Aset stiker live di production (HTTP 200, valid WEBP RIFF header).
 
 ### v0.37.0 - 2026-09-19 (Audit Menyeluruh — Keamanan Fail-Closed, Revokasi Token, Robustness)
 

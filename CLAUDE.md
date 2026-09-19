@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.37.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.38.0.
 
 ---
 
@@ -126,6 +126,12 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **SSE decoder flush di EOF; estimasi token legacy bertanda `estimated` dan digantikan laporan riil; media gagal mengirim notifikasi dinamis (dokumen/VN/gambar/stiker/video); cache sweep 500 entri; timeout media dari config.**
    - **Timezone:** `detectUserCountry` hanya untuk chat key WhatsApp — ID numerik Telegram tidak lagi salah dibaca sebagai nomor +1.
    - **Env:** 9 key runtime yang sebelumnya tidak terdokumentasi masuk `.env.example` + `.env` (56 key, urutan identik).
+
+14. **Stiker Balasan Bot + Guard Anti-Narasi Media (v0.38):**
+   - **Aturan keras user (SEMUA media):** bot DILARANG menarasikan/mendeskripsikan isi kiriman user (stiker/foto/video/VN/dokumen) — cukup reaksi natural. Isi hanya dibaca untuk memahami konteks, bukan dibacakan ulang. Pengecualian: user bertanya/instruksi eksplisit di caption.
+   - **Guard:** `MEDIA_NARRATION_RE` + `stripMediaNarration()` (pembersihan murni, tanpa kalimat pengganti); subjek sengaja spesifik (hewan/karakter) agar tidak false-positive pada cerita user; `userAskedAboutMedia()` untuk pengecualian; `sanitizeAssistantOutput(..., mediaReply=true)` di jalur describeImage + video.
+   - **Stiker balasan (dinamis, tanpa hardcode):** model memilih emoji via tag `[[sticker:<emoji>]]` di akhir balasan (prompt-guided: ~1 dari 4-6 balasan, tidak saat serius/sedih/teknis/formal); 147 aset webp di `public/stickers/` (nama hex codepoint); `src/stickers.ts` (URL dari `VERCEL_PROJECT_PRODUCTION_URL`, fetch+cache buffer, cooldown 2 stiker/10 menit per chat); pengiriman per platform (Telegram `sendSticker`, WA Baileys `{sticker}`, WA Cloud upload media + `type:sticker`); fallback emoji teks bila file/gagal.
+   - **Verifikasi:** `scratch/verify_v38_sticker.mjs` 22/22; live apresiasi → sticker 😎 terkirim, sedih/teknis → tanpa sticker; aset live di production (200, WEBP valid).
 
 ---
 
