@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.40.0 (Audit Prompt Universal + Anti-Berita Basi)  
+**Versi:** v0.41.0 (Scraper Diperluas + Latensi Terkendali)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-19 WIB
 
@@ -213,6 +213,32 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.41.0 - 2026-09-19 (Scraper Diperluas + Latensi Terkendali)
+
+**Permintaan user:** *"untuk metode scrapping nya bisa di tunning lagi ga? agar bisa mengakses seluruh url, web, halaman, dan apapun itu yg ada di internet agar jawaban dan informasi dan pengetahuannya lebih luas dan terus berkembang tidak kaku statis pada 1 waktu, tapi dinamis megikuti jaman"* + koreksi penting: *"tapi jangan membuat respon bot nya jadi lama, kalo naik sedikit saja tidak apa apa"*.
+
+**Perluasan cakupan (dinamis mengikuti zaman):**
+1. **Semua URL user dibaca** (2 → 4), **PARALEL** — bukan berurutan.
+2. **Crawl 1 level**: tautan internal same-host dari halaman yang berhasil dibaca diikuti otomatis (maks 2), sehingga informasi lebih dalam.
+3. **RSS media Indonesia langsung** (Antara, CNN Indonesia, CNBC, Tempo) untuk kueri berita — memberi **URL artikel asli** yang bisa dibaca penuh (link Google News RSS hanya redirect dan tidak bisa di-scrape).
+4. **DuckDuckGo HTML** sebagai mesin pencari cadangan (tanpa API key) bila Bing kosong/kena blokir.
+5. **Dukungan PDF/dokumen biner** via Jina Reader (direct fetch hanya menghasilkan biner rusak).
+6. **Jumlah sumber ke model** 14 → 20 snippet; **slice data web di prompt** 3000 → 4500 char.
+7. **Cakupan topik dinamis diperluas**: hukum/pajak/regulasi, ekonomi/inflasi/kurs/investasi, kesehatan/obat/vaksin, olahraga/liga/transfer, hiburan/film/konser, beasiswa/pendaftaran — plus kata recency → wajib cari data terbaru.
+
+**Optimasi latensi (permintaan eksplisit user):**
+- **Paralelisasi fase**: pembacaan URL user + mesin pencari + deep-scrape kini tumpang tindih, bukan berurutan.
+- **Budget latensi global** (`SEARCH_BUDGET_MS = 9000`): fase tidak kritis (crawl lanjutan, deep-scrape tambahan) dilewati bila anggaran hampir habis.
+- **Dedupe URL**: halaman yang sudah dibaca di fase awal tidak dibaca ulang di deep-scrape.
+- **Timeout dirapikan**: Jina 4.5s → 2.5s, direct fetch 2.5s → 2.0s.
+- **Hasil terukur**: 3 URL fresh **4.1s** (sebelumnya bisa 13s+ sekuensial), berita fresh **2.5s**, kueri teknologi **0.4s** (cache).
+
+**Bug penting yang ditemukan & diperbaiki:**
+- **`cleanStr` urutan salah**: entitas HTML di-decode SETELAH strip tag, sehingga `&lt;ol&gt;&lt;li&gt;...` lolos **mentah** ke konteks model (terlihat di output audit sebagai `<ol><li><a href=...>`). Fix: decode entitas dulu, lalu strip tag (iteratif hingga stabil).
+- **Tabrakan cache kueri ber-URL**: `normalizeEntityKey` membuang URL, jadi dua pertanyaan berbeda ("ringkas &lt;url-A&gt;", "ringkas &lt;url-B&gt;") memakai kunci cache yang **sama** ("ringkas") → jawaban bisa **tertukar**. Fix: kueri ber-URL tidak memakai cache dan tidak disimpan ke cache; 2 entri tercemar di DB dibersihkan.
+
+**Verifikasi:** `verify_v41_scraper.mjs` 21/21; `verify_v41b_cache_latency.mjs` 11/11 (termasuk uji anti-kontaminasi silang A/B); regresi v32 15/15, v33 11/11, v34 bersih (2×), v38 36/36, v39 33/33, v40 21/21.
 
 ### v0.40.0 - 2026-09-19 (Audit Prompt Universal + Anti-Berita Basi)
 

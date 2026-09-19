@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.40.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.41.0.
 
 ---
 
@@ -149,6 +149,14 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Inkonsistensi prompt/runtime stiker disamakan** (5 giliran, ~1 dari 8-10 balasan).
    - **Aturan data internet dipertegas:** dilarang menyebut versi/produk "terbaru" dari ingatan; wajib dari data scraping; jujur bila tidak ada data.
    - **Verifikasi:** `scratch/verify_v40_audit.mjs` 21/21; regresi v32/v33/v34/v38/v39 semua lolos.
+
+17. **Scraper Diperluas + Latensi Terkendali (v0.41):**
+   - **Cakupan:** semua URL user dibaca paralel (maks 4), crawl 1 level tautan internal, RSS media Indonesia langsung (Antara/CNN/CNBC/Tempo — URL artikel asli, bukan redirect Google), DuckDuckGo HTML cadangan, dukungan PDF via Jina, 20 snippet & 4500 char ke prompt.
+   - **Topik dinamis diperluas:** hukum/pajak, ekonomi/kurs/investasi, kesehatan/vaksin, olahraga/liga, hiburan/film, beasiswa + recency → wajib search.
+   - **Latensi (permintaan user):** paralelisasi fase (URL + mesin pencari + deep-scrape tumpang tindih), budget global 9s, dedupe URL, timeout Jina 2.5s/direct 2.0s. Hasil: 3 URL fresh 4.1s, berita 2.5s, teknologi 0.4s.
+   - **Bug `cleanStr`:** decode entitas HTML dilakukan SETELAH strip tag → HTML mentah (`&lt;ol&gt;...`) lolos ke konteks model. Fix: decode dulu, strip tag iteratif.
+   - **Bug tabrakan cache ber-URL:** URL dibuang saat normalisasi kunci → dua pertanyaan berbeda berbagi kunci ("ringkas") dan jawaban tertukar. Fix: kueri ber-URL bypass cache (baca & simpan); entri tercemar dibersihkan.
+   - **Verifikasi:** `verify_v41_scraper.mjs` 21/21; `verify_v41b_cache_latency.mjs` 11/11; regresi penuh lolos.
 
 ---
 
