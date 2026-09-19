@@ -1,8 +1,8 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.38.0 (Stiker Balasan Bot + Guard Anti-Narasi Media)  
+**Versi:** v0.39.0 (Anti-Overuse Stiker + Kunci Jawaban Tebakan)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
-**Terakhir Diperbarui:** 2026-09-18 WIB
+**Terakhir Diperbarui:** 2026-09-19 WIB
 
 ---
 
@@ -213,6 +213,34 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.39.0 - 2026-09-19 (Anti-Overuse Stiker + Kunci Jawaban Tebakan)
+
+**Keluhan user 1:** *"sekarang malah jadi overuser stiker nya"* — bot mengirim stiker di dua balasan beruntun dengan **stiker yang sama** dan tidak cocok dengan konteks ("coba sekarang gombalan" → gombalan + stiker; lanjutannya → gombalan + stiker yang sama lagi). Di chat WhatsApp stiker tampil sebagai *"Sticker with no label"*.
+
+**Keluhan user 2:** tebak-tebakan/gombalan sering **ngawur dan tidak nyambung**; bot bahkan mengakui tebakan SALAH sebagai BENAR dan mengarang alasan palsu (kasus nyata: user menebak "orang aring", bot menjawab *"iya bener banget kok, orang aring kan matanya emang melek terus walaupun tidur"*).
+
+**Akar masalah 1 (overuse):** penanda stiker `[Stiker terkirim: …]` hanya ditulis ke cache in-memory, **tidak pernah tersimpan durable** ke DB. Di serverless Vercel tiap request bisa mendarat di instance berbeda dengan cache kosong → cooldown berbasis waktu (2 stiker/10 menit) praktis tidak pernah terlihat. Query DB membuktikan: **0 baris** memuat penanda stiker.
+
+**Perbaikan overuse:**
+- Cooldown diganti dari **berbasis waktu** menjadi **berbasis giliran**: `STICKER_MIN_TURNS_SINCE_LAST = 5` — minimal 5 balasan asisten sejak stiker terakhir (`assistantTurnsSinceLastSticker`), plus emoji **tidak boleh sama** dengan stiker terakhir (`lastStickerEmoji`).
+- Penanda durable disimpan di kolom `feedback` tabel `messages` (format `sticker:<emoji>|riddle:<jawaban>`, encoder `src/markers.ts`), disintesis ulang oleh `getContext()` menjadi penanda riwayat — jadi cooldown benar-benar lintas instance.
+- Guard prompt diperketat: stiker **dibuang** bila balasan mengandung pertanyaan (termasuk setup gombalan/tebakan), > 20 kata, > 140 karakter, atau bersifat informatif.
+- Penanda internal (`[Stiker terkirim: …]`, `[Jawaban: …]`) **tidak pernah** dikirim ke model sebagai pesan nyata (`stripDurableMarkers`), kecuali `[Jawaban: …]` yang justru wajib ikut sebagai kunci jawaban.
+
+**Akar masalah 2 (tebakan ngawur):** balasan bot diproduksi model yang bisa **berganti tiap pesan** (failover provider). Model di giliran berikutnya tidak tahu jawaban benar dari tebakannya sendiri, lalu mengarang pembenaran demi terdengar nyambung.
+
+**Perbaikan tebakan:**
+- Tag `[[jawab:<jawaban>]]` wajib disisipkan model saat melempar setup tebak-tebakan/gombalan. Tag dibuang dari balasan user (`extractRiddleTag`) dan disimpan durable di `feedback` (`riddle:<jawaban>`).
+- Saat user menebak, jawaban terkunci disuntikkan **eksplisit** ke instruksi sistem (`JAWABAN BENAR TERKUNCI: "…"`), sehingga model apa pun menilai secara jujur.
+- Aturan kejujuran mutlak di prompt: dilarang mengakui tebakan salah sebagai benar, dilarang mengarang alasan pembenaran; standar mutu tebakan (jawaban harus nyata + alasan masuk akal) diperketat.
+- Deteksi "tebakan masih menggantung" diperluas: selain pola setup, kini juga dikenali dari keberadaan kunci jawaban di balasan asisten terakhir.
+
+**Perbaikan label stiker ("Sticker with no label"):**
+- `scripts/fix_sticker_labels.py` menyisipkan chunk **EXIF tag 0x5741 ("AW")** berisi JSON `accessibility-text` (label teks hasil pelabelan) + `emojis` ke **221/221** stiker — inilah field yang dibaca WhatsApp Web/Desktop sebagai label stiker. Metadata lama (`sticker-pack-*`) dipertahankan.
+- Stiker statis > 100 KB direkompres ulang (7 file) agar sesuai batas WhatsApp (< 100 KB); animasi < 500 KB.
+
+**Verifikasi:** `scratch/verify_v39_sticker_overuse.mjs` **33/33** lolos; regresi `verify_v38_sticker.mjs` **36/36** lolos; uji live 3 kasus keluhan user: tebakan salah → ditolak jujur ("Meleset nih, orang aring mah gak ada"), tebakan benar → diakui, gombalan beruntun → stiker jarang dan tidak berulang; integrasi DB round-trip terbukti (marker terbaca lintas `getContext`).
 
 ### v0.38.0 - 2026-09-19 (Stiker Balasan Bot + Guard Anti-Narasi Media)
 

@@ -109,6 +109,11 @@ export async function fetchStickerBuffer(emoji: string): Promise<Buffer | null> 
 /**
  * Cek cooldown per chat. Mengembalikan true bila stiker BOLEH dikirim
  * (menghormati batas 2 stiker / 10 menit), dan mencatat pemakaian bila boleh.
+ *
+ * PENTING (serverless): state in-memory per-instance tidak reliable di Vercel —
+ * beberapa request berurutan bisa mendarat di instance berbeda sehingga cooldown
+ * tidak terlihat. Karena itu caller WAJIB juga memeriksa riwayat chat
+ * (getRecentStickerCount) yang tersimpan durable; fungsi ini adalah fast-path lokal.
  */
 export function allowStickerForChat(chatKey: string): boolean {
   const now = Date.now();
@@ -126,4 +131,68 @@ export function allowStickerForChat(chatKey: string): boolean {
     }
   }
   return true;
+}
+
+/**
+ * Jarak MINIMUM (dalam jumlah balasan asisten) sebelum bot boleh mengirim stiker lagi.
+ * Mengapa berbasis balasan, bukan waktu: cooldown berbasis waktu (10 menit) tidak
+ * handal di serverless Vercel (tiap request bisa mendarat di instance berbeda dengan
+ * state in-memory kosong). Menghitung balasan sejak stiker terakhir bersifat DURABLE
+ * karena dibaca dari riwayat percakapan yang tersimpan.
+ */
+export const STICKER_MIN_TURNS_SINCE_LAST = 5;
+
+/**
+ * Penanda durable stiker di riwayat: "[Stiker terkirim: <emoji>]".
+ * Sengaja TANPA anchor: penanda bisa berdiri sendiri (entri cache) atau
+ * ditempel sebagai baris terakhir balasan (hasil sintesis dari DB), keduanya valid.
+ */
+const STICKER_MARKER_RE = /\[Stiker terkirim:\s*([^\]]+)\]/;
+
+/** True bila konten memuat penanda stiker (baik berdiri sendiri maupun menempel di akhir balasan). */
+export function isStickerMarker(content: unknown): boolean {
+  return typeof content === 'string' && STICKER_MARKER_RE.test(content);
+}
+
+/** Buang baris penanda stiker dari konten balasan (agar tidak ikut ke model). */
+export function stripStickerMarker(content: string): string {
+  return content.replace(/\n?\[Stiker terkirim:[^\]]*\]/g, '').trim();
+}
+
+/**
+ * Emoji stiker terakhir yang dikirim ke chat ini (dari riwayat durable), atau null.
+ * Dipakai untuk mencegah pengiriman emoji stiker yang SAMA dua kali beruntun.
+ */
+export function lastStickerEmoji(
+  history: Array<{ role: string; content: string | unknown }> | undefined,
+): string | null {
+  if (!history || history.length === 0) return null;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    if (h.role !== 'assistant' || typeof h.content !== 'string') continue;
+    const m = h.content.match(STICKER_MARKER_RE);
+    if (m) return m[1].trim();
+    if (history.length - i > 40) break;
+  }
+  return null;
+}
+
+/**
+ * Berapa balasan asisten (teks biasa) yang sudah lewat sejak stiker TERAKHIR dikirim.
+ * Bila belum pernah ada stiker dalam jendela riwayat, kembalikan angka besar (boleh).
+ * Durable: dibaca dari riwayat percakapan yang tersimpan, bukan state in-memory.
+ */
+export function assistantTurnsSinceLastSticker(
+  history: Array<{ role: string; content: string | unknown }> | undefined,
+): number {
+  if (!history || history.length === 0) return Number.MAX_SAFE_INTEGER;
+  let turns = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    if (h.role !== 'assistant' || typeof h.content !== 'string') continue;
+    if (isStickerMarker(h.content)) return turns;
+    turns++;
+    if (turns > 60) break;
+  }
+  return Number.MAX_SAFE_INTEGER;
 }

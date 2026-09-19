@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.38.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.39.0.
 
 ---
 
@@ -132,6 +132,14 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Guard:** `MEDIA_NARRATION_RE` + `stripMediaNarration()` (pembersihan murni, tanpa kalimat pengganti); subjek sengaja spesifik (hewan/karakter) agar tidak false-positive pada cerita user; `userAskedAboutMedia()` untuk pengecualian; `sanitizeAssistantOutput(..., mediaReply=true)` di jalur describeImage + video.
    - **Stiker balasan (dinamis, tanpa hardcode):** model memilih emoji via tag `[[sticker:<emoji>]]` di akhir balasan (prompt-guided: ~1 dari 4-6 balasan, tidak saat serius/sedih/teknis/formal); 147 aset webp di `public/stickers/` (nama hex codepoint); `src/stickers.ts` (URL dari `VERCEL_PROJECT_PRODUCTION_URL`, fetch+cache buffer, cooldown 2 stiker/10 menit per chat); pengiriman per platform (Telegram `sendSticker`, WA Baileys `{sticker}`, WA Cloud upload media + `type:sticker`); fallback emoji teks bila file/gagal.
    - **Verifikasi:** `scratch/verify_v38_sticker.mjs` 22/22; live apresiasi → sticker 😎 terkirim, sedih/teknis → tanpa sticker; aset live di production (200, WEBP valid).
+
+15. **Anti-Overuse Stiker + Kunci Jawaban Tebakan (v0.39):**
+   - **Akar overuse:** penanda stiker hanya di cache in-memory, tidak durable → cooldown berbasis waktu tidak terlihat lintas instance Vercel (query DB: 0 baris penanda). **Fix:** cooldown berbasis **giliran** (`STICKER_MIN_TURNS_SINCE_LAST = 5` balasan asisten) + emoji tidak boleh sama beruntun; penanda disimpan durable di kolom `messages.feedback` (`src/markers.ts`, format `sticker:<emoji>|riddle:<jawaban>`) lalu disintesis `getContext()`.
+   - **Guard prompt diperketat:** stiker dibuang bila balasan mengandung pertanyaan (termasuk setup gombalan/tebakan), panjang (> 20 kata / > 140 char), atau informatif.
+   - **Akar tebakan ngawur:** model berganti tiap pesan (failover) → tidak tahu jawaban benar tebakannya sendiri → mengarang pembenaran (kasus: "orang aring matanya melek terus"). **Fix:** tag `[[jawab:<jawaban>]]` wajib saat setup, dibuang dari balasan (`extractRiddleTag`), disimpan durable, lalu disuntikkan eksplisit sebagai `JAWABAN BENAR TERKUNCI` di instruksi + aturan kejujuran mutlak di prompt.
+   - **Label stiker:** `scripts/fix_sticker_labels.py` menyisipkan EXIF tag 0x5741 `accessibility-text` ke 221/221 stiker (WhatsApp Web menampilkan "Sticker with no label" tanpa field ini); 7 stiker statis > 100 KB direkompres.
+   - **Penanda internal** (`[Stiker terkirim: …]`, `[Jawaban: …]`) tidak pernah masuk sebagai pesan model (`stripDurableMarkers`), kecuali `[Jawaban: …]` yang memang kunci jawaban.
+   - **Verifikasi:** `scratch/verify_v39_sticker_overuse.mjs` 33/33; regresi v38 36/36; 3 kasus keluhan user live terbukti benar; round-trip DB terbukti.
 
 ---
 

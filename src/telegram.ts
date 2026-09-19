@@ -4,13 +4,14 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
-import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
+import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.38.0';
+const PROMPT_VERSION = 'v0.39.0';
 
 let sharedBot: TelegramBot | null = null;
 
@@ -662,24 +663,45 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       }
     }
     const tStart = Date.now();
-    const { reply, escalate, via, tokens, sticker } = await autoReply(promptText, ctx, web);
+    const { reply, escalate, via, tokens, sticker, riddleAnswer } = await autoReply(promptText, ctx, web);
     const latencyMs = Date.now() - tStart;
     await sendTelegramMessageSafe(bot, chatId, reply);
-    // Stiker balasan (opsional, model yang memilih via tag) — hormati cooldown per chat.
-    // Hanya kirim bila emoji punya aset stiker; bila tidak, cukup teks balasannya (tanpa emoji mentah).
+    // Stiker balasan (opsional) — hormati cooldown DURABLE (riwayat chat) + fast-path lokal.
     // Emoji "keras" (🖕/🤬/👊) hanya boleh saat konteks bercanda (user bercanda/roasting dulu).
     const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text || rawText);
-    if (sticker && reply.trim() && edgyOk && hasStickerForEmoji(sticker) && allowStickerForChat(`tg:${chatKey}`)) {
+    // Cooldown DURABLE: minimal N balasan sejak stiker terakhir + emoji tidak boleh sama beruntun.
+    const turnsSinceSticker = assistantTurnsSinceLastSticker(ctx?.history);
+    const prevStickerEmoji = lastStickerEmoji(ctx?.history);
+    let stickerSent = false;
+    if (
+      sticker &&
+      reply.trim() &&
+      edgyOk &&
+      turnsSinceSticker >= STICKER_MIN_TURNS_SINCE_LAST &&
+      sticker !== prevStickerEmoji &&
+      hasStickerForEmoji(sticker) &&
+      allowStickerForChat(`tg:${chatKey}`)
+    ) {
       const sent = await sendTelegramStickerSafe(bot, chatId, sticker);
       if (!sent) {
         // Fallback: stiker gagal terkirim -> emoji sebagai teks (konten dari model).
         await sendTelegramMessageSafe(bot, chatId, sticker);
+      } else {
+        stickerSent = true;
       }
     }
     if (msgId) void markMessageProcessed('telegram', msgId);
 
     // Update cache memori & simpan balasan asisten ke database secara synchronous (terjamin terekam di serverless)
-    updateContextCache(chatKey, 'assistant', reply);
+    updateContextCache(
+      chatKey,
+      'assistant',
+      riddleAnswer
+        ? `${reply}\n[Jawaban: ${riddleAnswer}]${stickerSent && sticker ? `\n[Stiker terkirim: ${sticker}]` : ''}`
+        : stickerSent && sticker
+          ? `${reply}\n[Stiker terkirim: ${sticker}]`
+          : reply,
+    );
     await saveMessage({
       platform: 'telegram',
       chat_id: chatKey,
@@ -690,6 +712,12 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       latency_ms: latencyMs,
       needs_search: web !== null,
       prompt_version: PROMPT_VERSION,
+      // Sinyal durable: emoji stiker yang benar-benar terkirim (anti-overuse) dan
+      // jawaban benar tebakan (agar model giliran berikutnya menilai secara jujur).
+      feedback: encodeMarkers({
+        sticker: stickerSent && sticker ? sticker : undefined,
+        riddle: riddleAnswer || undefined,
+      }),
     }).catch((err) => console.warn('[telegram] Gagal simpan pesan assistant:', err));
     noteExchange(chatKey);
 
