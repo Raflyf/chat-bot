@@ -14,7 +14,8 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
-import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
+import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
@@ -28,7 +29,7 @@ const logger = pino({ level: 'silent' });
 const sessionDir = path.resolve(process.cwd(), 'session_wa');
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.38.0';
+const PROMPT_VERSION = 'v0.39.0';
 
 /**
  * Mengirim pesan teks ke WhatsApp dengan pemecahan cerdas
@@ -735,25 +736,47 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
     // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
     const tStart = Date.now();
-    const { reply, via, tokens, sticker } = await autoReply(text, context, webResults);
+    const { reply, via, tokens, sticker, riddleAnswer } = await autoReply(text, context, webResults);
     const latencyMs = Date.now() - tStart;
 
     // 5. Kirim balasan ke WhatsApp secepat mungkin
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
-    // Stiker balasan (opsional) — hanya bila emoji punya aset + cooldown per chat.
+    // Stiker balasan (opsional) — cooldown DURABLE (riwayat chat) + fast-path lokal.
     // Emoji "keras" (🖕/🤬/👊) hanya saat konteks bercanda (user bercanda/roasting dulu).
     const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text);
-    if (sticker && reply.trim() && edgyOk && hasStickerForEmoji(sticker) && allowStickerForChat(`wa:${chatKey}`)) {
+    // Cooldown DURABLE: minimal N balasan sejak stiker terakhir + emoji tidak boleh sama beruntun.
+    const turnsSinceSticker = assistantTurnsSinceLastSticker(context?.history);
+    const prevStickerEmoji = lastStickerEmoji(context?.history);
+    let stickerSent = false;
+    if (
+      sticker &&
+      reply.trim() &&
+      edgyOk &&
+      turnsSinceSticker >= STICKER_MIN_TURNS_SINCE_LAST &&
+      sticker !== prevStickerEmoji &&
+      hasStickerForEmoji(sticker) &&
+      allowStickerForChat(`wa:${chatKey}`)
+    ) {
       const sent = await sendWhatsAppStickerSafe(sock, remoteJid, sticker);
       if (!sent) {
         // Fallback: stiker gagal terkirim -> emoji sebagai teks (konten dari model).
         await sendWhatsAppMessageSafe(sock, remoteJid, sticker);
+      } else {
+        stickerSent = true;
       }
     }
     if (messageId) void markMessageProcessed('whatsapp', messageId);
 
     // 6. Update cache memori & simpan balasan asisten ke database secara non-blocking
-    updateContextCache(chatKey, 'assistant', reply);
+    updateContextCache(
+      chatKey,
+      'assistant',
+      riddleAnswer
+        ? `${reply}\n[Jawaban: ${riddleAnswer}]${stickerSent && sticker ? `\n[Stiker terkirim: ${sticker}]` : ''}`
+        : stickerSent && sticker
+          ? `${reply}\n[Stiker terkirim: ${sticker}]`
+          : reply,
+    );
     void saveMessage({
       platform: 'whatsapp',
       chat_id: chatKey,
@@ -764,6 +787,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       latency_ms: latencyMs,
       needs_search: webResults !== null,
       prompt_version: PROMPT_VERSION,
+      // Sinyal durable: emoji stiker yang benar-benar terkirim (anti-overuse) dan
+      // jawaban benar tebakan (agar model giliran berikutnya menilai secara jujur).
+      feedback: encodeMarkers({
+        sticker: stickerSent && sticker ? sticker : undefined,
+        riddle: riddleAnswer || undefined,
+      }),
     }).catch((err) => console.warn('[whatsapp] Gagal simpan pesan assistant:', err));
 
     // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat

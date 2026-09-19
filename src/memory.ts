@@ -136,7 +136,7 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
   if (!c) return empty;
   try {
     const [h, s, k] = await Promise.all([
-      c.from('messages').select('role,content').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(15),
+      c.from('messages').select('role,content,feedback').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(15),
       c.from('summaries').select('summary').eq('chat_id', chatKey).limit(1).maybeSingle(),
       c.from('corrections').select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(5),
     ]);
@@ -144,15 +144,33 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
     if (s.error && s.error.code !== 'PGRST116') warnOnce('summaries', s.error.message);
     if (k.error) warnOnce('corrections', k.error.message);
 
-    const rawMessages = (h.data ?? []) as Array<{ role: string; content: string }>;
+    const rawMessages = (h.data ?? []) as Array<{ role: string; content: string; feedback?: string | null }>;
     // Cari index checkpoint reset (karena diurutkan descending, index terkecil adalah reset terbaru)
     const resetIdx = rawMessages.findIndex(
       (m) => m.content === '[SESSION_RESET]' || m.content.startsWith('[SESSION_RESET]'),
     );
     const validMessages = resetIdx >= 0 ? rawMessages.slice(0, resetIdx) : rawMessages;
 
+    // Sinyal stiker durable: kolom `feedback` menyimpan "sticker:<emoji>" pada baris
+    // balasan yang disertai stiker. Disintesis jadi penanda riwayat agar cooldown
+    // anti-overuse tetap terlihat lintas instance serverless (tanpa polusi tabel).
+    const withStickerMarkers = validMessages.map((m) => {
+      const fb = typeof m.feedback === 'string' ? m.feedback.trim() : '';
+      let content = m.content;
+      for (const part of fb.split('|')) {
+        const i = part.indexOf(':');
+        if (i < 0) continue;
+        const key = part.slice(0, i).trim();
+        const val = part.slice(i + 1).trim();
+        if (!val) continue;
+        if (key === 'sticker') content = `${content}\n[Stiker terkirim: ${val}]`;
+        else if (key === 'riddle') content = `${content}\n[Jawaban: ${val}]`;
+      }
+      return { role: m.role, content };
+    });
+
     const ctx: ChatContext = {
-      history: validMessages
+      history: withStickerMarkers
         .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.content.includes('[SESSION_RESET]'))
         .reverse()
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),

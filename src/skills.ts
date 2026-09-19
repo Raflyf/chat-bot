@@ -3,6 +3,13 @@ import { chat, type ChatMsg, type ContentPart } from './providers.js';
 import { saveCorrection, type ChatContext } from './memory.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
+import { stripStickerMarker } from './stickers.js';
+import { stripRiddleMarker, lastRiddleAnswer } from './markers.js';
+
+/** Buang SEMUA penanda internal durable (stiker + kunci jawaban) dari teks riwayat. */
+function stripDurableMarkers(text: string): string {
+  return stripRiddleMarker(stripStickerMarker(text));
+}
 
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
@@ -54,6 +61,13 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
       out = out.replace(/<(?:think|thought)>[\s\S]*$/gi, '').trim();
     }
   }
+
+  // 1b. Buang tag penanda internal model yang bocor ke balasan (mis. <CPA_DONE>,
+  // <END>, <|im_end|>, <answer>). Model kecil kadang menyalin token kontrol pipeline
+  // ke output; token ini BUKAN bagian pesan dan tidak boleh terlihat user.
+  out = out.replace(/<\|?\/?(?:im_(?:start|end|sep)|eot_id|end_of_text)\|?>/gi, '');
+  out = out.replace(/<\/?(?:CPA_[A-Z0-9_]+|[A-Z][A-Z0-9_]{2,})>/g, '');
+  out = out.replace(/<\/?(?:answer|response|reply|output|final)>/gi, '');
 
   // 2. Hapus monolog "Here's a thinking process:" atau "Thinking Process:" di posisi mana pun
   if (/(?:Here(?:'s| is) (?:a )?thinking process:?|Thinking Process:?)/i.test(out)) {
@@ -535,6 +549,11 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/(?:Gak|Nggak)\s+bisa\s+nih,?\s*aku\s+cuma\s+bot[^.!\n]*[.!\n]?\s*/gi, '');
   out = out.replace(/\s+([.,!?])/g, '$1');
 
+  // 14b. Pastikan ada spasi setelah tanda akhir kalimat bila langsung menempel kata
+  // (mis. "lagi?Meleset jauh" -> "lagi? Meleset jauh"). Model kecil kadang menggabung
+  // dua kalimat tanpa spasi saat jawabannya dipotong/digabung.
+  out = out.replace(/([.!?])([A-ZÀ-Ý])/g, '$1 $2');
+
   // 15. Sederhanakan spasi ganda dan baris kosong berlebihan
   out = out.replace(/[ \t]{2,}/g, ' ');
   out = out.replace(/\n{3,}/g, '\n\n').trim();
@@ -693,6 +712,26 @@ export function extractStickerTag(text: string): { text: string; sticker: string
   return { text: cleaned, sticker };
 }
 
+/**
+ * Parser tag jawaban tebak-tebakan: model WAJIB menyisipkan `[[jawab:<jawaban>]]`
+ * saat melempar setup tebak-tebakan/gombalan tanya-jawab. Tag ini DIBUANG dari
+ * balasan (tidak pernah dilihat user) dan disimpan durable, sehingga model mana pun
+ * di giliran berikutnya tahu jawaban benar dan bisa menilai tebakan user secara
+ * JUJUR — bukan mengarang pembenaran demi terdengar nyambung.
+ */
+export function extractRiddleTag(text: string): { text: string; answer: string | null } {
+  if (!text) return { text: '', answer: null };
+  const re = /\[\[\s*jawab(?:an)?\s*:\s*([^\[\]]{1,120})\s*\]\]/gi;
+  let answer: string | null = null;
+  const m = re.exec(text);
+  if (m) {
+    const a = m[1].trim().replace(/\s+/g, ' ');
+    if (a) answer = a;
+  }
+  const cleaned = text.replace(re, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  return { text: cleaned, answer };
+}
+
 export function sanitizeAssistantOutput(
   text: string,
   userPrompt?: string,
@@ -700,6 +739,9 @@ export function sanitizeAssistantOutput(
   mediaReply?: boolean,
 ): string {
   let cleaned = cleanMathAndNoise(text, userPrompt);
+  // Jaring akhir: buang sisa tag kontrol/penanda internal model (mis. <CPA_DONE>)
+  // yang mungkin lolos dari pembersih mana pun.
+  cleaned = cleaned.replace(/<\/?(?:[A-Z][A-Z0-9_]{2,})>/g, '').replace(/[ \t]{2,}/g, ' ').trim();
   // Balasan untuk kiriman media (stiker/foto/video/dll): buang narasi isi kiriman
   // KECUALI user menulis pertanyaan/instruksi eksplisit di caption (ATURAN KERAS user).
   if (mediaReply && !userAskedAboutMedia(userPrompt)) {
@@ -757,7 +799,7 @@ export function splitMessageSmart(text: string, maxLen = 4000): string[] {
 }
 
 export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string = ''): string {
-  const historyText = ctx?.history?.slice(-3)?.map((h) => h.content)?.join(' ') || '';
+  const historyText = (ctx?.history?.slice(-3) ?? []).map((h) => (typeof h.content === 'string' ? stripDurableMarkers(h.content) : '')).join(' ');
   const profileText = [historyText, ctx?.summary || '', ...(ctx?.corrections || [])].join(' ');
   const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, profileText, ctx?.msgSentAt);
   const isOwnerChat = isOwnerChatKey(ctx?.chatId);
@@ -831,7 +873,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '  * Jika lawan bicara memang tertawa/bercanda (ada wkwk/haha/emoji tawa/roasting ringan), boleh ikut tertawa SEKALI saja — maksimal 1 kata tawa per pesan.',
     '  * Saat membahas hal serius, sedih, teknis, atau datar: ZERO tawa.',
     '- EKSPRESI TULISAN (mengikuti suasana chat): bentangkan huruf saat nada memang memanggil, misal "siapp", "okehh", "gasss", "makasihh", lalu boleh ditutup 1 emoji ekspresif yang pas (misal hormat saat menyanggupi tugas, api saat semangat, tangan saat tos).',
-    '- STIKER BALASAN (OPSIONAL): di AKHIR balasanmu, kamu BOLEH menyisipkan SATU tag stiker berisi 1 emoji yang mewakili emosi/gestur saat itu, dengan format: [[sticker:<emoji>]]. Emoji yang TERSEDIA (pilih dari daftar ini): 😂 🤣 😆 😅 😹 😏 🙄 😒 😠 😡 😳 😱 😲 😮 😵 😑 😐 🤨 🤔 🧐 🤫 🤐 😴 😪 😌 😔 😢 😭 😩 🥺 😿 😾 😼 🥰 😘 😍 😎 🤩 😜 🤗 🤝 🙏 👍 👎 👏 👋 🤷 🙅 🙊 😈 🚀 📢 📍 📝 🧠 💪 ❤ ✨ ⭐ 🔥 💔 🤬 🖕 👊. PANDUAN: pakai saat emosi/gesturnya jelas dan momennya pas (mis. user bercanda → 😂; menyanggupi → 👍; bingung → 🤔; kasihan → 🥺) — kira-kira 1 dari 4-6 balasan, JANGAN setiap balasan dan JANGAN saat suasana serius/sedih/teknis/formal. Emoji "keras" (🤬 🖕 👊 😈 😠) HANYA untuk konteks bercanda/roasting tongkrongan saat temanmu juga bercanda atau mengirim stiker serupa — JANGAN dipakai di percakapan serius, formal, atau dengan orang yang tidak akrab.',
+    '- STIKER BALASAN (OPSIONAL, JANGAN BERLEBIHAN): kamu BOLEH menyisipkan SATU tag stiker di AKHIR balasan untuk momen emosional singkat, format: [[sticker:<emoji>]]. Emoji TERSEDIA: 😂 🤣 😆 😅 😹 😏 🙄 😒 😠 😡 😳 😱 😲 😮 😵 😑 😐 🤨 🤔 🧐 🤫 🤐 😴 😪 😌 😔 😢 😭 😩 🥺 😿 😾 😼 🥰 😘 😍 😎 🤩 😜 🤗 🤝 🙏 👍 👎 👏 👋 🤷 🙅 🙊 😈 🚀 📢 📍 📝 🧠 💪 ❤ ✨ ⭐ 🔥 💔 🤬 🖕 👊. KAPAN PAKAI: saat temanmu tertawa/bercanda (wkwk/haha/emoji tawa) → [[sticker:😂]]; kamu baru menyanggupi sesuatu dengan semangat → [[sticker:👍]]; suasana manis/mesra → [[sticker:🥰]] atau [[sticker:😍]]; dia cerita sedih → [[sticker:🥺]]. KAPAN JANGAN PAKAI: saat menjawab pertanyaan/penjelasan teknis, memberi info, balasanmu lebih dari 2 kalimat, percakapan serius/formal, atau saat kamu baru saja memakai stiker di 2 balasan terakhir (jangan beruntun!). Stiker hanya PENGHIAS sesekali — mayoritas balasanmu tetap tanpa stiker.',
     '- ANTI-FLAT: jawaban pendek wajib tetap bernyawa — minimal bentangkan 1 kata akhiran jadi dua huruf (ohh, okee, sipp, mantapp, amann, iyaa) supaya tidak terkesan cuek/dingin. Kata pendek polos seperti "Oke," "sip," "iya." tanpa ekspresi apa pun dilarang.',
     '- Pengecualian: saat suasana serius, sedih, atau rapuh, tulis dengan tempo normal tanpa bentangan dan tanpa emoji.',
     '- Bicara setara sahabat: tanpa jargon server/IT/database, tanpa gelar diri (sebagai AI/bot), tanpa ceramah moral, tanpa template CS (menawarkan bantuan atau menu percakapan), tanpa rengekan pasrah minta maaf, dan tanpa pertanyaan pancingan klise di akhir pesan.',
@@ -846,11 +888,14 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '- FORMAT INTERAKSI DUA ARAH (SETUP DULU, TUNGGU LAWAN BICARA, BARU PUNCHLINE):',
     '  * Untuk tebak-tebakan atau gombalan format tanya-jawab:',
     '    -> ATURAN MUTLAK: HANYA LEMPARKAN SETUP / PERTANYAANNYA DULU dan ajak menebak secara segar! Setup WAJIB kalimat tanya lengkap yang berdiri sendiri (mengandung kata tanya dan diakhiri tanda tanya). DILARANG klausa gantung tanpa kata tanya yang tidak bisa dijawab! Variasikan kata pembuka setup dari pesan ke pesan agar tidak selalu diawali kata yang sama.',
+    '    -> WAJIB SISIPKAN TAG JAWABAN DI AKHIR pesan setup: [[jawab:<jawaban benar>]]. Tag ini TIDAK terlihat oleh temanmu (otomatis dibuang sistem) — fungsinya agar kamu tetap tahu jawaban benarnya walau nanti kamu lupa, sehingga penilaian tebakannya selalu jujur. Contoh: "Coba tebak, buah apa yang paling jago nyanyi? [[jawab:Apel]]". DILARANG menuliskan tag jawaban di luar format itu, dan DILARANG membocorkan isinya ke temanmu.',
+    '    -> STANDAR MUTU TEBAKAN (ATURAN KERAS): jawaban benar WAJIB berupa hal NYATA yang bisa disebutkan (benda, hewan, buah, profesi, tempat, kata). DILARANG membuat jawaban karangan/tidak ada (mis. "orang aring", "buah lilin") atau tebakan yang tidak punya jawaban sah. Logika tebakannya WAJIB bisa dijelaskan dengan 1 alasan yang MASUK AKAL dan biasanya berbasis permainan kata/plesetan/kiasan yang wajar — bukan asal tempel. SEBELUM mengirim, cek sendiri: "Apakah jawaban ini nyata dan alasannya nyambung?" Jika tidak, ganti dengan tebakan lain yang lebih waras. Lebih baik tebakan sederhana yang jelas daripada tebakan absurd yang bikin bingung.',
     '    -> DILARANG KERAS langsung membocorkan jawaban atau punchline di pesan yang sama!',
     '    -> Tunggu respon temanmu di pesan berikutnya:',
     '       1. Jika menyerah / tanya jawaban / tidak tahu ("nyerah", "gatau", "gata", "apa tuh", "apaan"): Langsung berikan punchline yang cerdas dan masuk akal, lalu SELESAI di situ tanpa pertanyaan klise.',
     '       2. Jika membalas dengan gombalan manis / jawaban cerdas / balik merayu: Akui gombalan manisnya dengan asik, apresiatif, dan tertawa akrab menggunakan susunan kata-katamu sendiri (akui gombalannya kena atau puji dia malah lebih jago). DILARANG KERAS bilang meleset jauh jika jawabannya sudah bagus dan manis!',
     '       3. Jika menebak tapi salah: Tanggapi santai/celetuk bahwa tebakannya meleset dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi atau persilakan menyerah.',
+    '       3b. ATURAN KEJUJURAN MUTLAK: DILARANG KERAS mengakui tebakan yang SALAH sebagai BENAR, dan DILARANG mengarang alasan/penjelasan palsu untuk membenarkan jawaban salah itu (mis. mengaku "orang aring matanya melek terus" padahal itu bukan jawabanmu). Sebuah tebakan hanya BENAR bila sama/bersinonim dengan jawaban benar yang sudah kamu kunci. Bila ragu atau jawaban benar tidak kamu ketahui pasti: JANGAN mengaku benar — bilang saja belum tepat secara santai, atau jujur bahwa tebakannya belum nyambung.',
     '       4. Jika menebak dengan benar: Akui secara sportif dan santai bahwa tebakannya kena/bener dengan bahasamu sendiri. SELESAI di situ tanpa menawarkan tebakan baru.',
     '- REAKSI GOMBALAN & HUMOR PEDE SANTAI:',
     '  * Jika gombalan diledek / ditolak / dikritik ga nyambung ("ga nyambung jirr", "garing", "🤢", "ih", "cringe"): Tetap santai, ramah, dan percaya diri tanpa meratap atau kasar. Balas dengan celetukan santai atau banter balik.',
@@ -871,7 +916,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '',
     'PRINSIP 4B: JANGAN MENGARANG KONTEKS (ANTI-KONFABULASI, ATURAN KERAS):',
     '- Jawab HANYA berdasarkan apa yang benar-benar dikatakan temanmu. DILARANG menciptakan konteks, kejadian, atau topik yang tidak dia sebutkan.',
-    '- Jika dia TIDAK sedang membahas kode/aplikasi/typo/bug, JANGAN PERNAH mengarang narasi teknis ("kodenya dikoreksi", "lagi ngebug", "typo", "sistem", dsb). Itu halusinasi yang bikin jawaban terasa ngawur dan tidak nyambung.',
+    '- Jika dia TIDAK sedang membahas kode/aplikasi/typo/bug, JANGAN PERNAH mengarang narasi teknis ("kodenya dikoreksi", "lagi ngebug", "typo", "sistem", "database", "terverifikasi", "akun resmi", "ngoding", dsb). Itu halusinasi yang bikin jawaban terasa ngawur dan tidak nyambung. Saat ditanya hal santai seperti "masih ingat aku siapa?", cukup jawab akrab dan manusiawi — TIDAK USAH menyebut sistem, database, verifikasi, atau proses teknis apa pun.',
     '- DILARANG memantulkan kata dari pesannya yang kamu sendiri tidak pahami hanya agar terdengar nyambung. Kalau tidak paham, jangan mengarang cerita di sekitarnya.',
     '- DILARANG mengklaim mendengar/menyimak suara atau audio (mis. "kedengeran", "suaranya jernih", "masuk suaranya", "aku dengar") KECUALI pesan terakhir temanmu memang Voice Note sungguhan (ditandai "[Pesan Suara / Voice Note]" di awal pesan). Teks seperti "tes 123", "tes", atau "testing" adalah uji coba KETIK chat biasa — BUKAN uji mikrofon dan BUKAN VN. Jangan mengarang narasi suara dari pesan teks biasa.',
     '- Jika pesannya membingungkan, kamu tidak yakin maksudnya, atau dia balik bertanya soal apa yang barusan kamu katakan: AKUI singkat dengan santai bahwa kamu tadi keliru atau belum nangkep (tanpa drama, tanpa minta maaf berlebihan), lalu jelaskan maksudmu singkat ATAU tanya balik dengan santai apa yang dia maksud. DILARANG menebak dan mengarang.',
@@ -926,6 +971,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
       `- Terapkan PRINSIP 3 (format interaksi dua arah: HANYA lemparkan 1 kalimat pertanyaan setup tebakan orisinal dan tunggu tebakan temanmu). ${
         avoidProgramming ? 'Temanmu melarang jokes programming, gunakan tema lelucon umum.' : ''
       }`,
+      '- WAJIB sertakan [[jawab:<jawaban>]] di akhir setup (tidak terlihat user), dan jawabannya WAJIB nyata serta alasannya masuk akal — bukan jawaban karangan yang tidak ada.',
     );
   }
 
@@ -942,7 +988,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
   const assistantOpenings = (ctx?.history || [])
     .filter((h) => h.role === 'assistant')
     .slice(-3)
-    .map((h) => (typeof h.content === 'string' ? h.content.trim().match(/^([A-Za-z]+)/)?.[1] || '' : '').toLowerCase())
+    .map((h) => (typeof h.content === 'string' ? stripDurableMarkers(h.content).trim().match(/^([A-Za-z]+)/)?.[1] || '' : ''))
     .filter((w) => w.length >= 2);
   const openerCounts = new Map<string, number>();
   for (const o of assistantOpenings) openerCounts.set(o, (openerCounts.get(o) || 0) + 1);
@@ -1050,8 +1096,9 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     );
   }
 
-  const lastAssistantMsg = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
-  const recentHistoryText = ctx?.history?.slice(-4)?.map((h) => (typeof h.content === 'string' ? h.content : ''))?.join(' ') || '';
+  const lastAssistantMsgRaw = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
+  const lastAssistantMsg = typeof lastAssistantMsgRaw === 'string' ? stripDurableMarkers(lastAssistantMsgRaw) : lastAssistantMsgRaw;
+  const recentHistoryText = (ctx?.history?.slice(-4) ?? []).map((h) => (typeof h.content === 'string' ? stripDurableMarkers(h.content) : '')).join(' ');
 
   const isGamingOrMabar =
     /\b(?:mabar|permabaran|main\s+bareng|login\s+game|push\s+rank|ngerank|turun\s+bintang|turu\s+game|game\s+apa|mobile\s+legends?|mlbb|pubg|free\s+fire|ff|valorant|genshin|roblox|gta\s*5?)\b/i.test(
@@ -1093,15 +1140,32 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
   // Deteksi pertanyaan tebak-tebakan atau gombalan yang masih menggantung / menunggu jawaban user.
   // Setup tanpa tanda tanya (misal "Tahu nggak kenapa pinguin selalu pakai jas hitam") tetap pending:
   // regex pertama sudah spesifik pola setup, jadi tidak perlu syarat "?" yang justru mematikan alur.
+  // Jalur kedua: bila ada jawaban TERKUNCI (penanda durable [[jawab:]]) dan balasan terakhir
+  // asisten berupa pertanyaan, ini pasti tebakan yang belum selesai — walau kata pembukanya
+  // tidak tertangkap regex (model bisa memvariasikan gaya setup).
+  const looksLikeOpenSetup =
+    typeof lastAssistantMsg === 'string' &&
+    (/\?/.test(lastAssistantMsg) || /(?:coba\s+tebak|tebak\s+(?:dong|deh)|nyerah|jawabannya)/i.test(lastAssistantMsg));
+  // Kunci jawaban hanya relevan bila balasan asisten TERAKHIR yang membawanya (bukan
+  // tebakan lama yang sudah selesai) — mencegah jawaban basi ikut disuntikkan.
+  const lastAssistantHasLockedAnswer =
+    typeof lastAssistantMsgRaw === 'string' && /\[Jawaban:/.test(lastAssistantMsgRaw);
   const isPendingRiddleOrGombal =
     !isGombalAppreciation &&
     typeof lastAssistantMsg === 'string' &&
-    /\b(?:(?:tahu|tau)\s*(?:nggak|gak|ga|kaga)?\s*(?:apa\s+)?(?:bedanya|persamaan|kenapa)|coba\s+tebak|tebak\s*(?:dong|deh|kenapa|apa)|bapak\s+kamu\s+tukang|ada\s+yang\s+tahu)\b/i.test(
-      lastAssistantMsg,
-    ) &&
     !/\b(?:tebakanku|bener\s+kan\s+tebakanku)\b/i.test(lastAssistantMsg) &&
     // Jika asisten pada pesan sebelumnya sudah membocorkan punchline (ada "soalnya", "karena"), maka ini BUKAN pending lagi
-    !/\b(?:soalnya|karena\s+kamu|karena\s+kalo|karena\s+kalau|malah\s+sering|langsung\s+full|bikin\s+hati)\b/i.test(lastAssistantMsg);
+    !/\b(?:soalnya|karena\s+kamu|karena\s+kalo|karena\s+kalau|malah\s+sering|langsung\s+full|bikin\s+hati)\b/i.test(lastAssistantMsg) &&
+    (/\b(?:(?:tahu|tau)\s*(?:nggak|gak|ga|kaga)?\s*(?:apa\s+)?(?:bedanya|persamaan|kenapa)|coba\s+tebak|tebak\s*(?:dong|deh|kenapa|apa)|bapak\s+kamu\s+tukang|ada\s+yang\s+tahu)\b/i.test(
+      lastAssistantMsg,
+    ) ||
+      // Jalur cadangan: balasan asisten TERAKHIR membawa kunci jawaban + berupa pertanyaan setup.
+      (lastAssistantHasLockedAnswer && looksLikeOpenSetup));
+
+  // Kunci jawaban tebak-tebakan/gombalan yang masih menggantung (dari penanda durable
+  // [[jawab:...]] yang disimpan saat setup dilempar). Disuntikkan EKSPLISIT ke instruksi
+  // agar model apa pun yang menjawab tahu jawaban benar → tidak mengarang pembenaran.
+  const lockedRiddleAnswer = lastAssistantHasLockedAnswer ? lastRiddleAnswer(ctx?.history) : null;
 
   if (isPendingRiddleOrGombal) {
     instructions.push(
@@ -1110,7 +1174,13 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
       '- JIKA DIA NYERAH / TANYA JAWABAN / TIDAK TAHU: Langsung berikan punchline jawaban yang masuk akal, cerdas, dan manis/lucu dengan gayamu sendiri. CUKUP JAWABAN LALU SELESAI!',
       '- JIKA DIA MEMBALAS DENGAN GOMBALAN MANIS / JAWABAN CERDAS / BALIK MERAYU: Akui gombalan manisnya dengan asik, apresiatif, dan tertawa akrab menggunakan susunan kata-katamu sendiri (akui gombalannya kena atau puji dia malah lebih jago). DILARANG KERAS bilang meleset jauh jika jawabannya sudah bagus dan manis!',
       '- JIKA TEBAKANNYA SALAH / MELESET: Beritahu bahwa tebakannya meleset secara santai dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi atau persilakan menyerah.',
-      '- JIKA TEBAKANNYA BENAR: Akui secara sportif dan santai bahwa tebakannya tepat dengan bahasamu sendiri. Selesai di situ.',
+      '- KEJUJURAN MUTLAK: DILARANG KERAS mengakui tebakan SALAH sebagai BENAR atau mengarang alasan palsu untuk membenarkannya. Bila temanmu memberi alasan/justifikasi yang keliru, jangan ikut mengamininya — cukup bilang belum tepat secara santai. Jawaban benar yang kamu kunci ada di penanda [Jawaban: ...] pada riwayat; bila tidak ada penanda itu, jangan mengklaim tebakannya benar.',
+      '- JIKA TEBAKANNYA BENAR: Akui secara sportif dan santai bahwa tebakannya tepat dengan gayamu sendiri. Selesai di situ.',
+      ...(lockedRiddleAnswer
+        ? [
+            `- JAWABAN BENAR TERKUNCI: "${lockedRiddleAnswer}". Pakai ini sebagai patokan MUTLAK saat menilai tebakan temanmu. Tebakan hanya BENAR bila sama/bersinonim dengan jawaban ini. Jangan pernah menyebut jawaban ini kecuali dia menyerah atau memintanya.`,
+          ]
+        : []),
     );
   }
 
@@ -1250,7 +1320,17 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
   const history: ChatMsg[] = [];
   for (const h of rawHistory) {
     if (h.role === 'assistant' && typeof h.content === 'string') {
-      let content = cleanMathAndNoise(h.content);
+      // Penanda stiker ("[Stiker terkirim: 😂]") hanya untuk hitung cooldown durable —
+      // JANGAN dikirim ke model (bukan pesan nyata; bisa ditiru sebagai format aneh).
+      // Penanda jawaban ("[Jawaban: ...]") JUSTRU HARUS ikut ke model: itulah kunci
+      // jawaban benar agar model giliran berikutnya menilai tebakan user secara jujur.
+      const withoutStickerMarker = h.content.replace(/\n?\[Stiker terkirim:[^\]]*\]/g, '').trim();
+      if (!withoutStickerMarker) continue; // murni penanda stiker → bukan balasan nyata
+      // [Jawaban: ...] dipertahankan (kunci jawaban tebakan) — dibersihkan hanya bila
+      // baris itu satu-satunya isi pesan (bukan balasan nyata ke user).
+      const contentNoRiddleOnly = withoutStickerMarker.replace(/\n?\[Jawaban:[^\]]*\]/g, '').trim();
+      if (!contentNoRiddleOnly) continue;
+      let content = cleanMathAndNoise(withoutStickerMarker);
       let skip = false;
 
       if (/Oke deh, kalo kamu nggak mau jadi pacar|pacar\s+fiktif/i.test(content)) skip = true;
@@ -1363,6 +1443,9 @@ export async function autoReply(
   tokens?: { prompt: number; completion: number; total: number };
   /** Emoji stiker yang dipilih model (dari tag [[sticker:x]]) — null bila tidak ada. */
   sticker?: string | null;
+  /** Jawaban benar tebakan/gombalan (dari tag [[jawab:x]]) — disimpan durable agar model
+   *  giliran berikutnya menilai tebakan user secara jujur, bukan mengarang pembenaran. */
+  riddleAnswer?: string | null;
 }> {
   const clean = userText.trim().slice(0, 32000);
   if (!clean) return { reply: '', escalate: true, via: 'empty' };
@@ -1387,7 +1470,7 @@ export async function autoReply(
   const recentOpenings = (ctx?.history ?? [])
     .filter((h) => h.role === 'assistant' && typeof h.content === 'string')
     .slice(-4)
-    .map((h) => leadingInterjection(h.content as string))
+    .map((h) => leadingInterjection(stripDurableMarkers(h.content as string)))
     .filter((w): w is string => Boolean(w));
 
   try {
@@ -1395,8 +1478,10 @@ export async function autoReply(
     // Tag stiker ([[sticker:😹]]) diparsing SEBELUM sanitizer agar emoji di dalam tag
     // tidak ikut kena aturan "maks 1 emoji" milik sanitizer.
     const firstExtract = extractStickerTag(text);
-    text = firstExtract.text;
-    let stickerEmoji = firstExtract.sticker;
+      const firstRiddle = extractRiddleTag(firstExtract.text);
+      text = firstRiddle.text;
+      let stickerEmoji = firstExtract.sticker;
+      let riddleAnswer = firstRiddle.answer;
     let reply = sanitizeAssistantOutput(text, clean, recentOpenings);
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
@@ -1413,13 +1498,15 @@ export async function autoReply(
           },
         ];
         const secondTry = await chatRetry(retryMsgs, false);
-        const secondExtract = extractStickerTag(secondTry.text);
+        const secondSticker = extractStickerTag(secondTry.text);
+        const secondExtract = extractRiddleTag(secondSticker.text);
         const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings);
         if (secondReply.split(/\s+/).filter(Boolean).length >= 4) {
           reply = secondReply;
           via = secondTry.via;
           tokens = secondTry.tokens;
-          if (!stickerEmoji && secondExtract.sticker) stickerEmoji = secondExtract.sticker;
+          if (!stickerEmoji && secondSticker.sticker) stickerEmoji = secondSticker.sticker;
+          if (!riddleAnswer && secondExtract.answer) riddleAnswer = secondExtract.answer;
         }
       } catch {
         // pertahankan reply pertama
@@ -1443,7 +1530,8 @@ export async function autoReply(
     }
 
     // Proteksi anti-loop respons identik: jika balasan persis sama dengan pesan asisten terakhir di history
-    const lastAssistantMsg = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
+    const lastAssistantMsgRaw = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
+  const lastAssistantMsg = typeof lastAssistantMsgRaw === 'string' ? stripDurableMarkers(lastAssistantMsgRaw) : lastAssistantMsgRaw;
     if (lastAssistantMsg && typeof lastAssistantMsg === 'string') {
       const normLast = lastAssistantMsg.trim().toLowerCase();
       const normReply = reply.trim().toLowerCase();
@@ -1459,9 +1547,11 @@ export async function autoReply(
           ];
           const secondTry = await chatRetry(retryMsgs, false);
           if (secondTry.text && secondTry.text.trim().toLowerCase() !== normLast) {
-            const loopExtract = extractStickerTag(secondTry.text);
+            const loopSticker = extractStickerTag(secondTry.text);
+            const loopExtract = extractRiddleTag(loopSticker.text);
             reply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings);
-            if (!stickerEmoji && loopExtract.sticker) stickerEmoji = loopExtract.sticker;
+            if (!stickerEmoji && loopSticker.sticker) stickerEmoji = loopSticker.sticker;
+            if (!riddleAnswer && loopExtract.answer) riddleAnswer = loopExtract.answer;
           }
         } catch {
           // Fallback graceful jika retry tidak tersedia
@@ -1594,14 +1684,32 @@ export async function autoReply(
 
     // Jaring keamanan terakhir: buang SELURUH sisa tag stiker dari teks balasan
     // (jalur retry/regen mana pun tidak boleh meloloskan tag mentah ke user).
-    const finalExtract = extractStickerTag(reply);
+    const finalSticker = extractStickerTag(reply);
+    const finalExtract = extractRiddleTag(finalSticker.text);
     reply = finalExtract.text;
-    if (!stickerEmoji && finalExtract.sticker) stickerEmoji = finalExtract.sticker;
+    if (!stickerEmoji && finalSticker.sticker) stickerEmoji = finalSticker.sticker;
+    if (!riddleAnswer && finalExtract.answer) riddleAnswer = finalExtract.answer;
+
+    // Guard anti-overuse (ATURAN KERAS user: "sekarang malah jadi overuser stikernya",
+    // "stiker yg sama dan tidak cocok dengan responnya"): stiker HANYA untuk reaksi emosi
+    // singkat. Balasan yang berupa pertanyaan/setup gombalan-tebakan, penjelasan, atau
+    // info TIDAK boleh ditempeli stiker — persis kasus yang dikeluhkan user.
+    if (stickerEmoji) {
+      const wordCount = reply.split(/\s+/).filter(Boolean).length;
+      const isLongReply = wordCount > 20 || reply.length > 140;
+      const isInformative = /:\s|\n[-•*]|\d+\.\s/.test(reply.trim()) && wordCount > 10;
+      // Balasan yang mengandung pertanyaan (termasuk setup tebakan/gombalan) = bukan momen emosi.
+      const hasQuestion = /\?/.test(reply);
+      if (isLongReply || isInformative || hasQuestion || isInteractiveSetupReq) {
+        stickerEmoji = null;
+      }
+    }
+
     if (!reply.trim()) {
       return { reply: '', escalate: true, via };
     }
 
-    return { reply, escalate: false, via, tokens, sticker: stickerEmoji };
+    return { reply, escalate: false, via, tokens, sticker: stickerEmoji, riddleAnswer };
   } catch {
     return { reply: '', escalate: true, via: 'failed' };
   }
@@ -1713,7 +1821,7 @@ export async function describeImage(
   const recentOpenings = (ctx?.history ?? [])
     .filter((h) => h.role === 'assistant' && typeof h.content === 'string')
     .slice(-4)
-    .map((h) => leadingInterjection(h.content as string))
+    .map((h) => leadingInterjection(stripDurableMarkers(h.content as string)))
     .filter((w): w is string => Boolean(w));
   let reply = sanitizeAssistantOutput(text, caption?.trim() || undefined, recentOpenings, true);
 
