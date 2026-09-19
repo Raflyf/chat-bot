@@ -632,12 +632,79 @@ function isAudioInput(text: string): boolean {
   return /\[(?:Pesan Suara|Voice Note|TRANSKRIP AUDIO)|Rekaman suara dari temanmu|menangkap isinya dari suara video/i.test(text);
 }
 
+/**
+ * Narasi/deskripsi isi kiriman media (ATURAN KERAS user): bot TIDAK boleh menarasikan
+ * apa yang ada di dalam stiker/foto/video/dokumen yang dikirim user ("Kucingnya malah
+ * ketawa ngakak", "Stikernya menampilkan...", "Di gambarnya ada...") — cukup reaksi
+ * natural. Guard murni PEMBERSIHAN: buang kalimat naratif, tanpa kalimat pengganti.
+ */
+const MEDIA_NARRATION_RE = new RegExp(
+  [
+    // Subjek khas stiker/gambar (hewan, karakter) + kata ekspresi — "Kucingnya malah ketawa ngakak"
+    // Daftar subjek sengaja spesifik (bukan semua kata *nya) agar tidak salah menghapus
+    // kalimat cerita user seperti "bapaknya ketawa lihat tingkahku".
+    String.raw`\b(?:kucing|anjing|monyet|bebek|ayam|tikus|hamster|kelinci|burung|panda|beruang|kodok|katak|ikan|kuda|sapi|kambing|gajah|singa|harimau|macan|serigala|rubah|penguin|pinguin|dino|dinosaurus|karakter|tokoh|maskot|boneka|mem|meme)(?:nya)?\s+(?:(?:malah|lagi|sedang|udah|sudah|masih|emang|memang|juga)\s+)?(?:ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|joget|dansa|berdiri|duduk|terbang|berlari|ngambek|marah|melotot|ngantuk|tidur)\b`,
+    // "si/sang <subjek> + ekspresi" — "Si kucing ketawa"
+    String.raw`\b(?:si|sang)\s+[a-z]+\s+(?:(?:malah|lagi|sedang|udah|sudah|masih)\s+)?(?:ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|joget|dansa|melotot|ngambek)\b`,
+    // "(gambar|foto|stiker|video|mem|meme)nya + kata tampil/berisi" (dokumen DIKECUALIKAN —
+    // user mengirim dokumen memang untuk dibaca/diringkas, itu fungsi bukan narasi).
+    String.raw`\b(?:gambar|foto|stiker|video|mem|meme|tangkapan\s+layar)(?:nya|mu)?\s*(?:ini|itu|tersebut)?\s*(?:menampilkan|memperlihatkan|menunjukkan|berisi|memuat|menggambarkan)\b`,
+    // "di (dalam) <media> (ini) ada/terlihat/tampak"
+    String.raw`\bdi\s+(?:dalam\s+)?(?:gambar|foto|stiker|video|mem|meme)(?:nya)?\s+(?:ini|itu|tersebut)?\s*(?:ada|terlihat|tampak|kelihatan|keliatan)\b`,
+  ].join('|'),
+  'i',
+);
+
+/** True bila user menulis pertanyaan/instruksi eksplisit (boleh dijawab detail). */
+export function userAskedAboutMedia(caption?: string): boolean {
+  if (!caption || !caption.trim()) return false;
+  const c = caption.trim();
+  return /\?|^(?:apa|apakah|siapa|kenapa|mengapa|gimana|bagaimana|kapan|dimana|di\s*mana|berapa|tolong|jelaskan|rangkum|ringkas|coba|baca|terjemah|arti|maksud|cek|periksa)\b/i.test(c);
+}
+
+/** Buang kalimat yang menarasikan isi kiriman media (pembersihan murni, tanpa pengganti). */
+export function stripMediaNarration(text: string): string {
+  if (!text) return '';
+  const sentences = text.split(/(?<=[.!?\n])\s+/);
+  const kept = sentences.filter((s) => s.trim() && !MEDIA_NARRATION_RE.test(s));
+  return kept
+    .join(' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * Parser tag stiker: model boleh menyisipkan `[[sticker:<emoji>]]` di balasannya
+ * untuk mengirim stiker. Mengembalikan teks bersih + emoji (hanya tag PERTAMA dipakai
+ * — maksimal 1 stiker per balasan). Tag yang tersisa selalu dibuang dari teks.
+ */
+export function extractStickerTag(text: string): { text: string; sticker: string | null } {
+  if (!text) return { text: '', sticker: null };
+  const re = /\[\[\s*sticker\s*:\s*([^\s\]]{1,8})\s*\]\]/gi;
+  let sticker: string | null = null;
+  const m = re.exec(text);
+  if (m) {
+    const candidate = m[1].trim();
+    // Hanya terima bila benar-benar emoji (bukan teks biasa)
+    if (/\p{Extended_Pictographic}/u.test(candidate)) sticker = candidate;
+  }
+  const cleaned = text.replace(re, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  return { text: cleaned, sticker };
+}
+
 export function sanitizeAssistantOutput(
   text: string,
   userPrompt?: string,
   recentOpenings?: string[],
+  mediaReply?: boolean,
 ): string {
-  const cleaned = cleanMathAndNoise(text, userPrompt);
+  let cleaned = cleanMathAndNoise(text, userPrompt);
+  // Balasan untuk kiriman media (stiker/foto/video/dll): buang narasi isi kiriman
+  // KECUALI user menulis pertanyaan/instruksi eksplisit di caption (ATURAN KERAS user).
+  if (mediaReply && !userAskedAboutMedia(userPrompt)) {
+    cleaned = stripMediaNarration(cleaned);
+  }
   return avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
 }
 
@@ -764,6 +831,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '  * Jika lawan bicara memang tertawa/bercanda (ada wkwk/haha/emoji tawa/roasting ringan), boleh ikut tertawa SEKALI saja — maksimal 1 kata tawa per pesan.',
     '  * Saat membahas hal serius, sedih, teknis, atau datar: ZERO tawa.',
     '- EKSPRESI TULISAN (mengikuti suasana chat): bentangkan huruf saat nada memang memanggil, misal "siapp", "okehh", "gasss", "makasihh", lalu boleh ditutup 1 emoji ekspresif yang pas (misal hormat saat menyanggupi tugas, api saat semangat, tangan saat tos).',
+    '- STIKER BALASAN (OPSIONAL): di AKHIR balasanmu, kamu BOLEH menyisipkan SATU tag stiker berisi 1 emoji yang mewakili emosi/gestur saat itu, dengan format: [[sticker:<emoji>]]. Contoh: user bercanda keras → [[sticker:😂]]; kamu menyanggupi tugas → [[sticker:👍]]; suasana manis → [[sticker:🥰]]; bingung → [[sticker:🤔]]; bangga/semangat → [[sticker:🔥]]; kasihan/empati → [[sticker:🥺]]. PANDUAN: pakai saat emosi/gesturnya jelas dan momennya pas (mis. user baru melontarkan candaan, kamu baru menyanggupi sesuatu, suasana akrab menghangat) — kira-kira 1 dari 4-6 balasan, JANGAN setiap balasan dan JANGAN saat suasana serius/sedih/teknis/formal. Emoji harus relevan dengan isi balasanmu. Bila ragu, jangan pakai.',
     '- ANTI-FLAT: jawaban pendek wajib tetap bernyawa — minimal bentangkan 1 kata akhiran jadi dua huruf (ohh, okee, sipp, mantapp, amann, iyaa) supaya tidak terkesan cuek/dingin. Kata pendek polos seperti "Oke," "sip," "iya." tanpa ekspresi apa pun dilarang.',
     '- Pengecualian: saat suasana serius, sedih, atau rapuh, tulis dengan tempo normal tanpa bentangan dan tanpa emoji.',
     '- Bicara setara sahabat: tanpa jargon server/IT/database, tanpa gelar diri (sebagai AI/bot), tanpa ceramah moral, tanpa template CS (menawarkan bantuan atau menu percakapan), tanpa rengekan pasrah minta maaf, dan tanpa pertanyaan pancingan klise di akhir pesan.',
@@ -810,6 +878,8 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '',
     'PRINSIP 5: KEMAMPUAN MULTIMODAL & FORMAT TAMPILAN:',
     '- Kamu terhubung ke internet real-time dan bisa membaca VN, gambar, dokumen, stiker, dan video. Jangan berdalih "tidak bisa browsing" atau "tidak punya akses internet" secara umum.',
+    '- ATURAN KERAS MEDIA (STIKER/FOTO/VIDEO/VN/DOKUMEN): DILARANG menarasikan atau mendeskripsikan isi kiriman temanmu ("Kucingnya malah ketawa ngakak", "Stikernya menampilkan...", "Di gambarnya ada...", "Videonya memperlihatkan..."). Kamu MELIHAT isinya untuk memahami suasana, tapi cukup BALAS DENGAN REAKSI NATURAL seperti manusia yang dikirimi kiriman di chat — celetukan pendek yang nyambung dengan obrolan, atau respon emosional wajar. Isi kiriman TIDAK PERNAH dibacakan kembali ke temanmu (dia yang mengirim, dia sudah tahu isinya).',
+    '- PENGECUALIAN: jika temanmu MENULIS pertanyaan/instruksi eksplisit tentang kiriman itu (mis. "ini apa?", "coba jelaskan", "rangkum dokumen ini", "teks di gambar apa?"), barulah jawab isinya secara langsung dan to-the-point.',
     '- Jika data real-time untuk topik tertentu memang belum ketemu, bilang jujur belum ketemu apa adanya (tanpa mengarang) — itu tetap jawaban yang baik.',
     '- VOICE NOTE (VN, ditandai "[Pesan Suara / Voice Note]" di awal pesan): Otomatis kamu dengar jernih. Tanggapi wajar dan percaya diri. Pesan teks biasa TIDAK PERNAH berupa audio — jangan mengaku mendengar suara darinya.',
     '- RESPON STIKER: HANYA 1 kalimat pendek santai (maksimal 5-12 kata) sesuai emosi/makna stiker di WhatsApp. DILARANG dongeng fiktif, dilarang deskripsi visual ("Stiker ini menampilkan...").',
@@ -1291,6 +1361,8 @@ export async function autoReply(
   escalate: boolean;
   via: string;
   tokens?: { prompt: number; completion: number; total: number };
+  /** Emoji stiker yang dipilih model (dari tag [[sticker:x]]) — null bila tidak ada. */
+  sticker?: string | null;
 }> {
   const clean = userText.trim().slice(0, 32000);
   if (!clean) return { reply: '', escalate: true, via: 'empty' };
@@ -1320,6 +1392,11 @@ export async function autoReply(
 
   try {
     let { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web), false);
+    // Tag stiker ([[sticker:😹]]) diparsing SEBELUM sanitizer agar emoji di dalam tag
+    // tidak ikut kena aturan "maks 1 emoji" milik sanitizer.
+    const firstExtract = extractStickerTag(text);
+    text = firstExtract.text;
+    let stickerEmoji = firstExtract.sticker;
     let reply = sanitizeAssistantOutput(text, clean, recentOpenings);
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
@@ -1493,8 +1570,12 @@ export async function autoReply(
     if (!reply.trim()) {
       try {
         const regen = await chatRetry(buildMessages(clean, ctx, web), false);
-        const regenReply = sanitizeAssistantOutput(regen.text, clean, recentOpenings);
-        if (regenReply.trim()) reply = regenReply;
+        const regenExtract = extractStickerTag(regen.text);
+        const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings);
+        if (regenReply.trim()) {
+          reply = regenReply;
+          if (!stickerEmoji && regenExtract.sticker) stickerEmoji = regenExtract.sticker;
+        }
       } catch {
         // tetap kosong
       }
@@ -1507,7 +1588,7 @@ export async function autoReply(
       return { reply: '', escalate: true, via };
     }
 
-    return { reply, escalate: false, via, tokens };
+    return { reply, escalate: false, via, tokens, sticker: stickerEmoji };
   } catch {
     return { reply: '', escalate: true, via: 'failed' };
   }
@@ -1549,13 +1630,12 @@ export async function describeImage(
       caption && caption.trim() ? `Catatan/Emoji stiker: ${caption.trim()}` : '',
       'ATURAN RESPON STIKER (MUTLAK):',
       '1. INI ADALAH STIKER CHAT WHATSAPP, BUKAN BAHAN ESSAY ATAU ANALISIS GAMBAR!',
-      '2. DILARANG KERAS MENGARANG CERITA / DONGENG KHAYALAN! (DILARANG mengarang kompetisi/tren TikTok, profesi dancer/atlet/influencer, pantai/tempat fiktif, otot, dsb). Stiker bukan bahan dongeng!',
-      '3. DILARANG KERAS MEMBUKA DENGAN KALIMAT KLISE / ROBOTIK: Dilarang "Wah, stiker seru nih!", "Stiker ini menampilkan...", "Gambar ini adalah stiker...", dsb!',
-      '4. PANJANG JAWABAN: HANYA 1 KALIMAT PENDEK SANTAI (maksimal 5-12 kata) selayaknya respon teman akrab di WhatsApp saat dikirimi stiker. DILARANG MEMBUAT 2 PARAGRAF!',
-      '   - Sesuaikan spontan dengan ekspresi/karakter stiker (ekspresi gemas jika lucu/imut, celetukan banyol jika meme/komuk, konfirmasi santai jika stiker jempol/siap, respon santai jika stiker drama/nangis). DILARANG menggunakan kalimat template hafalan!',
-      '5. TANGGAPI SEIRAMA DENGAN OBROLAN TERAKHIR:',
-      '   - Perhatikan konteks percakapan terakhir kalian.',
-      '6. ZERO ROBOT EMOJI / ZERO CRINGE EMOJI: Maksimal 1 emoji ekspresif wajar atau TANPA EMOJI sama sekali. DILARANG emoji robot, tertawa menangis 😂, atau jejak kaki 🐾.',
+      '2. DILARANG KERAS MENARASIKAN / MENDESKRIPSIKAN ISI STIKER! DILARANG menyebut apa yang ada di stiker ("Kucingnya ketawa", "Stikernya menampilkan...", "Si kucing ngakak", "Gambarnya..."). Temanmu yang mengirim stiker itu — dia SUDAH TAHU isinya. Menarasikan isinya = aneh, garing, tidak natural.',
+      '3. YANG BENAR: balas dengan REAKSI NATURAL seperti manusia dikirimi stiker — celetukan pendek yang nyambung dengan obrolan terakhir, ikut tertawa/merespons suasananya, atau komentar santai. Kamu MELIHAT stikernya untuk memahami emosi/suasana, bukan untuk dibacakan ulang.',
+      '4. DILARANG KERAS MENGARANG CERITA / DONGENG KHAYALAN! (DILARANG mengarang kompetisi/tren TikTok, profesi dancer/atlet/influencer, pantai/tempat fiktif, otot, dsb).',
+      '5. PANJANG JAWABAN: HANYA 1 KALIMAT PENDEK SANTAI (maksimal 5-12 kata). DILARANG MEMBUAT 2 PARAGRAF!',
+      '6. TANGGAPI SEIRAMA DENGAN OBROLAN TERAKHIR — perhatikan konteks percakapan terakhir kalian.',
+      '7. ZERO ROBOT EMOJI / ZERO CRINGE EMOJI: Maksimal 1 emoji ekspresif wajar atau TANPA EMOJI sama sekali. DILARANG emoji robot, tertawa menangis 😂, atau jejak kaki 🐾.',
     ].filter(Boolean).join('\n');
   } else if (isPdf) {
     promptText = caption && caption.trim()
@@ -1565,11 +1645,11 @@ export async function describeImage(
     promptText = [
       '[PENGGUNA MENGIRIM FOTO / GAMBAR TANPA CAPTION]',
       'ATURAN RESPON MUTLAK:',
-      '1. DILARANG KERAS MEMBUKA DENGAN KALIMAT ROBOTIK: "Gambar ini menampilkan...", "Foto tersebut memperlihatkan...", "Pada gambar terdapat...", "Di dalam foto ini...", dsb!',
-      '2. DILARANG OVER-REACT ATAU MEMUJI LEBAY: Dilarang "Wah gokil...", "Keren banget...", "Setup gaming mantap...". Tetap santai, wajar, bersahabat, dan manusiawi.',
-      '3. DILARANG MEMBAHAS PERIFERAL HARDWARE DI LUAR LAYAR: Jangan komentari merek laptop ASUS/Lenovo, casing HP, lampu RGB, keyboard, meja, dinding ruangan kecuali user menanyakannya.',
-      '4. DILARANG MENAMBAHKAN TAWARAN BANTUAN DI AKHIR: Dilarang "(Kalo mau cerita lebih lanjut...)" atau "(Ada yang bisa dibantu?)".',
-      '5. Tanggapi foto secara santai, manusiawi, wajar, dan seru layaknya kawan yang sedang dikirimi foto di WhatsApp (cukup 1-2 kalimat hangat).',
+      '1. DILARANG KERAS MENARASIKAN / MENDESKRIPSIKAN ISI FOTO! DILARANG "Gambar ini menampilkan...", "Foto tersebut memperlihatkan...", "Di dalam foto ini ada...", "Wah gokil...". Temanmu yang mengirim foto itu — dia SUDAH TAHU isinya. Menarasikan isinya = aneh dan tidak natural.',
+      '2. YANG BENAR: balas dengan REAKSI NATURAL seperti manusia dikirimi foto di chat — celetukan pendek yang nyambung dengan obrolan terakhir, atau komentar santai 1-2 kalimat. Kamu MELIHAT fotonya untuk memahami konteks, bukan untuk dibacakan ulang.',
+      '3. DILARANG OVER-REACT ATAU MEMUJI LEBAY: Dilarang "Wah gokil...", "Keren banget...", "Setup gaming mantap...". Tetap santai, wajar, bersahabat, dan manusiawi.',
+      '4. DILARANG MEMBAHAS PERIFERAL HARDWARE DI LUAR LAYAR: Jangan komentari merek laptop ASUS/Lenovo, casing HP, lampu RGB, keyboard, meja, dinding ruangan kecuali user menanyakannya.',
+      '5. DILARANG MENAMBAHKAN TAWARAN BANTUAN DI AKHIR: Dilarang "(Kalo mau cerita lebih lanjut...)" atau "(Ada yang bisa dibantu?)".',
       '6. Jika berupa dashboard teknis: tanggapi status atau topik yang terlihat secara tenang, proporsional, dan akurat tanpa membacakan ulang seluruh angka/layar.',
     ].join('\n');
   } else {
@@ -1615,13 +1695,14 @@ export async function describeImage(
   ];
 
   const { text, via, tokens } = await chatRetry(messages, true);
-  // Sanitasi memakai teks user asli (caption) sebagai konteks sinyal humor — bukan teks instruksi
+  // Sanitasi memakai teks user asli (caption) sebagai konteks sinyal humor — bukan teks instruksi.
+  // mediaReply=true: buang narasi isi kiriman (kecuali user bertanya eksplisit) — ATURAN KERAS user.
   const recentOpenings = (ctx?.history ?? [])
     .filter((h) => h.role === 'assistant' && typeof h.content === 'string')
     .slice(-4)
     .map((h) => leadingInterjection(h.content as string))
     .filter((w): w is string => Boolean(w));
-  let reply = sanitizeAssistantOutput(text, caption?.trim() || undefined, recentOpenings);
+  let reply = sanitizeAssistantOutput(text, caption?.trim() || undefined, recentOpenings, true);
 
   // Jika sanitasi menghabiskan balasan, bangkitkan ulang secara dinamis (teks saja, murah)
   if (!reply.trim()) {

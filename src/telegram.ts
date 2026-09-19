@@ -4,6 +4,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
+import { fetchStickerBuffer, allowStickerForChat } from './stickers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -38,6 +39,26 @@ export async function sendTelegramMessageSafe(
     if (chunks.length > 1) {
       await new Promise((r) => setTimeout(r, 120));
     }
+  }
+}
+
+/**
+ * Kirim stiker balasan bot (webp) via Telegram. Mengembalikan true bila terkirim.
+ * Bila gagal (file tidak ada / error), caller mengirim emoji sebagai teks (fallback).
+ */
+export async function sendTelegramStickerSafe(
+  bot: TelegramBot,
+  chatId: number,
+  emoji: string,
+): Promise<boolean> {
+  try {
+    const buf = await fetchStickerBuffer(emoji);
+    if (!buf) return false;
+    await bot.sendSticker(chatId, buf, {}, { filename: 'sticker.webp', contentType: 'image/webp' });
+    return true;
+  } catch (err) {
+    console.warn('[telegram] Gagal kirim stiker balasan:', err);
+    return false;
   }
 }
 
@@ -641,9 +662,17 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       }
     }
     const tStart = Date.now();
-    const { reply, escalate, via, tokens } = await autoReply(promptText, ctx, web);
+    const { reply, escalate, via, tokens, sticker } = await autoReply(promptText, ctx, web);
     const latencyMs = Date.now() - tStart;
     await sendTelegramMessageSafe(bot, chatId, reply);
+    // Stiker balasan (opsional, model yang memilih via tag) — hormati cooldown per chat.
+    if (sticker && reply.trim() && allowStickerForChat(`tg:${chatKey}`)) {
+      const sent = await sendTelegramStickerSafe(bot, chatId, sticker);
+      if (!sent) {
+        // Fallback: file stiker tak tersedia -> kirim emoji sebagai teks (konten dari model, bukan hardcode).
+        await sendTelegramMessageSafe(bot, chatId, sticker);
+      }
+    }
     if (msgId) void markMessageProcessed('telegram', msgId);
 
     // Update cache memori & simpan balasan asisten ke database secara synchronous (terjamin terekam di serverless)
