@@ -651,6 +651,13 @@ export async function searchWeb(query: string, previousContext?: string): Promis
       const pd = new Date(pubDate).getTime();
       if (!isNaN(pd) && Date.now() - pd > 7 * 24 * 3600 * 1000) return;
     }
+    // Filter tahun lawas untuk kueri berita/fresh: artikel 1990-2020 tidak pernah relevan
+    // sebagai "kabar terkini" — sumber ensiklopedia (Wikipedia/HN) sering mengembalikannya
+    // untuk kueri berita umum tanpa kata kunci spesifik.
+    if (isNewsLike || strictFreshNews) {
+      const oldYear = `${title} ${desc}`.match(/\b(?:19[89]\d|20[01]\d|2020)\b/);
+      if (oldYear) return;
+    }
     // Filter artikel sampah (zodiak/judi/lirik/sinetron) khusus kueri berita.
     if (isNewsLike && isJunkArticle(`${title} ${desc}`)) return;
     const cleanT = cleanStr(title);
@@ -963,11 +970,19 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     // 2e1. RSS MEDIA INDONESIA LANGSUNG (link artikel asli — bisa dibaca penuh).
     // Hanya untuk kueri berita: memberi isi berita nyata, bukan sekadar judul + redirect.
     if (isNewsLike) {
+      // 10 feed media Indonesia — semuanya diverifikasi live (status 200 + item > 0).
+      // Banyak feed = data berita tidak pernah kosong walau beberapa sedang down/diblokir.
       const directFeeds = [
         'https://www.antaranews.com/rss/terkini',
         'https://www.cnnindonesia.com/rss/',
         'https://www.cnbcindonesia.com/rss',
         'https://rss.tempo.co/',
+        'https://lapi.kumparan.com/v2.0/rss',
+        'https://www.sindonews.com/rss',
+        'https://www.republika.co.id/rss',
+        'https://sindikasi.okezone.com/index.php/rss/0/RSS2.0',
+        'https://katadata.co.id/rss',
+        'https://mediaindonesia.com/feed',
       ];
       for (const feed of directFeeds) {
         fetches.push(
@@ -995,6 +1010,74 @@ export async function searchWeb(query: string, previousContext?: string): Promis
         );
       }
     }
+
+    // 2e1a. FEED TOPIK KHUSUS: bila kueri menyebut topik tertentu, ambil feed khusus topik
+    // itu (jauh lebih relevan daripada feed berita umum yang bercampur semua hal).
+    const topicFeeds: Array<[RegExp, string[]]> = [
+      [/\b(?:ekonomi|bisnis|keuangan|pasar|saham|investasi|rupiah|dolar|inflasi|harga|pajak|bank|crypto|bitcoin|umkm)\b/i,
+       ['https://www.kontan.co.id/rss', 'https://www.cnbcindonesia.com/rss', 'https://katadata.co.id/rss', 'https://www.bisnis.com/rss']],
+      [/\b(?:olahraga|bola|liga|sepakbola|badminton|bulutangkis|motogp|f1|basket|timnas|transfer|klub)\b/i,
+       ['https://www.cnnindonesia.com/olahraga/rss', 'https://www.antaranews.com/rss/olahraga', 'https://www.jpnn.com/rss']],
+      [/\b(?:teknologi|teknologi|gadget|ai|startup|internet|digital|komputer|hp|smartphone)\b/i,
+       ['https://www.cnnindonesia.com/teknologi/rss', 'https://www.antaranews.com/rss/tekno', 'https://katadata.co.id/rss']],
+      [/\b(?:hiburan|film|musik|selebriti|artis|konser|drama|series|anime)\b/i,
+       ['https://www.cnnindonesia.com/hiburan/rss', 'https://www.antaranews.com/rss/hiburan']],
+      [/\b(?:kesehatan|dokter|obat|vaksin|penyakit|rumah sakit|gizi|diet)\b/i,
+       ['https://www.antaranews.com/rss/kesehatan', 'https://www.cnbcindonesia.com/rss']],
+    ];
+    for (const [re, feeds] of topicFeeds) {
+      if (!re.test(cleanQuery)) continue;
+      for (const feed of feeds.slice(0, 3)) {
+        fetches.push(
+          fetch(feed, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            signal: controller.signal,
+          })
+            .then((r) => (r.ok ? r.text() : ''))
+            .then((txt) => {
+              if (!txt) return;
+              let host = feed;
+              try { host = new URL(feed).hostname; } catch { /* */ }
+              const items = txt.match(/<item[\s>][\s\S]*?<\/item>/gi) || [];
+              for (const item of items.slice(0, 10)) {
+                const tm = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+                const lm = item.match(/<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i);
+                const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+                if (!tm) continue;
+                const link = lm ? lm[1].trim() : '';
+                if (link && isSafePublicUrl(link)) discoveredUrls.add(link);
+                // Skor TERTINGGI: feed topik khusus = paling relevan dengan pertanyaan user,
+                // harus mengalahkan isi halaman hasil deep-scrape artikel acak.
+                addSnippet(`${host} (topik)`, tm[1], '', pm ? pm[1] : '', link, 115);
+              }
+            })
+            .catch(() => {}),
+        );
+      }
+      break; // hanya satu topik yang cocok (yang pertama)
+    }
+
+    // 2e1b. BING NEWS RSS: mesin pencari berita generik (query apa pun) — RSS stabil,
+    // tidak kena blokir seperti HTML scraping, dan memberi tanggal terbit.
+    fetches.push(
+      fetch(`https://www.bing.com/news/search?q=${encodeURIComponent(primaryQ)}&format=RSS`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' },
+        signal: controller.signal,
+      })
+        .then((r) => (r.ok ? r.text() : ''))
+        .then((txt) => {
+          if (!txt) return;
+          const items = txt.match(/<item[\s>][\s\S]*?<\/item>/gi) || [];
+          for (const item of items.slice(0, 8)) {
+            const tm = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+            const dm = item.match(/<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i);
+            const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+            const lm = item.match(/<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i);
+            if (tm) addSnippet('Bing News', tm[1], dm ? dm[1] : '', pm ? pm[1] : '', lm ? lm[1] : '', 62);
+          }
+        })
+        .catch(() => {}),
+    );
 
     // 2e2. DuckDuckGo HTML (mesin cadangan bila Bing kosong / kena blokir)
     if (bingQueries.length > 0) {
@@ -1025,6 +1108,36 @@ export async function searchWeb(query: string, previousContext?: string): Promis
                 discoveredUrls.add(rawUrl);
                 addSnippet('DuckDuckGo', title, desc, '', rawUrl, 52);
               }
+            }
+          })
+          .catch(() => {}),
+      );
+    }
+
+    // 2e3. GDELT Project: indeks berita global (90+ bahasa, arsip luas) — sumber pelengkap
+    // untuk topik yang jarang diberitakan media Indonesia.
+    if (isNewsLike || strictFreshNews) {
+      fetches.push(
+        fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(primaryQ.slice(0, 80))}&mode=artlist&maxrecords=8&format=json&timespan=3d`, {
+          headers: { 'User-Agent': 'FreeAIBot/2026' },
+          signal: controller.signal,
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data: any) => {
+            const arts = data?.articles;
+            if (!Array.isArray(arts)) return;
+            for (const a of arts.slice(0, 8)) {
+              const title = a?.title || '';
+              const url = a?.url || '';
+              const seen = a?.seendate || '';
+              if (!title) continue;
+              // seendate format: YYYYMMDDTHHMMSSZ -> ISO agar recency bonus bekerja
+              let iso = '';
+              if (typeof seen === 'string' && seen.length >= 15) {
+                iso = `${seen.slice(0,4)}-${seen.slice(4,6)}-${seen.slice(6,8)}T${seen.slice(9,11)}:${seen.slice(11,13)}:${seen.slice(13,15)}Z`;
+              }
+              addSnippet('GDELT News', title, '', iso, url, 56);
+              if (url && isSafePublicUrl(url)) discoveredUrls.add(url);
             }
           })
           .catch(() => {}),
@@ -1088,9 +1201,19 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     (isNewsLike && structuredSnippets.length < 6);
   // Link redirect Google News/Bing tidak bisa dibaca langsung — dibuang dari target scrape.
   const skippedDomains = /(kbbi\.|wikipedia\.org|youtube\.com|facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com|google\.com|bing\.com|duckduckgo\.com|news\.google\.com)/i;
+  // Prioritas target deep-scrape: URL eksplisit user > halaman dari feed TOPIK > feed umum.
+  // Halaman topik dibaca lebih dulu agar isi yang relevan ikut masuk konteks.
+  const topicUrls = structuredSnippets
+    .filter((s) => s.text.includes('(topik)'))
+    .map((s) => {
+      const m = s.text.match(/\|\s*Sumber:\s*(\S+)/);
+      return m ? m[1] : '';
+    })
+    .filter((u) => u && isSafePublicUrl(u) && !alreadyScrapedUrls.has(u) && !skippedDomains.test(u));
   const scrapeTargets = shouldDeepScrape && !overBudget(7000)
     ? [
         ...Array.from(targetUrls).filter((u) => !alreadyScrapedUrls.has(u)),
+        ...topicUrls,
         ...Array.from(discoveredUrls).filter((u) => !skippedDomains.test(u) && !alreadyScrapedUrls.has(u)),
       ].slice(0, targetUrls.size > 0 ? 4 : isNewsLike ? 3 : 3)
     : [];
@@ -1109,7 +1232,9 @@ export async function searchWeb(query: string, previousContext?: string): Promis
         structuredSnippets.unshift({
           text: `[Isi Halaman Web (${host})]:\n${content.slice(0, 4000)}`,
           timestamp: Date.now() + 500_000_000,
-          score: 120,
+          // 100: di atas berita umum (60-88) tapi DI BAWAH feed topik khusus (115) —
+          // artikel acak dari feed umum tidak boleh mengubur hasil yang relevan topik.
+          score: 100,
         });
         // Ekstrak tautan markdown internal (same host) untuk pendalaman — maks 3 kandidat.
         try {
@@ -1146,13 +1271,91 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     }
   }
 
+  // FALLBACK BERLAPIS: kueri berita yang hasilnya tipis (< 4 snippet) dipulihkan bertingkat.
+  // Tujuan: data berita TIDAK PERNAH kosong — beberapa feed pasti lolos walau yang lain
+  // sedang down/diblokir. Kueri percakapan ("ada berita apa yg terbaru") kadang tidak cocok
+  // dengan indeks mesin pencari, sedangkan headline murni selalu cocok.
+  const recoverNews = async (label: string, urls: string[], score: number): Promise<void> => {
+    for (const u of urls) {
+      if (overBudget(SEARCH_BUDGET_MS - 500)) return;
+      try {
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort(), 3000);
+        try {
+          const r = await fetch(u, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            signal: ctrl.signal,
+          });
+          if (!r.ok) continue;
+          const txt = await r.text();
+          const items = txt.match(/<item[\s>][\s\S]*?<\/item>/gi) || [];
+          for (const item of items.slice(0, 12)) {
+            const tm = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+            const pm = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+            const lm = item.match(/<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i);
+            if (tm) addSnippet(label, tm[1], '', pm ? pm[1] : '', lm ? lm[1] : '', score);
+          }
+          if (structuredSnippets.length >= 4) return; // sudah cukup, berhenti
+        } finally {
+          clearTimeout(to);
+        }
+      } catch {
+        // coba sumber berikutnya
+      }
+    }
+  };
+
+  if (isNewsLike && structuredSnippets.length < 4) {
+    // Tingkat 1: Top Headlines (Google ID + Bing News) — paling cepat & paling segar.
+    await recoverNews('Google Berita', ['https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id'], 82);
+    if (structuredSnippets.length < 4) {
+      await recoverNews('Bing News', ['https://www.bing.com/news/search?q=berita+terkini&format=RSS'], 80);
+    }
+    // Tingkat 2: feed media langsung (banyak cadangan, satu pasti lolos).
+    if (structuredSnippets.length < 4) {
+      await recoverNews('Media Indonesia', [
+        'https://www.antaranews.com/rss/terkini',
+        'https://www.cnnindonesia.com/rss/',
+        'https://mediaindonesia.com/feed',
+        'https://www.jpnn.com/rss',
+      ], 75);
+    }
+    // Tingkat 3: pencarian berita generik English (jaring terakhir untuk topik global).
+    if (structuredSnippets.length < 4) {
+      await recoverNews('Google News EN', ['https://news.google.com/rss/search?q=breaking+news+today&hl=en-US&gl=US&ceid=US:en'], 70);
+    }
+  }
+
   if (structuredSnippets.length === 0) return '';
 
   // Urutkan bukti: artikel terbaca langsung di paling atas, kemudian berdasarkan recency & relevansi skor
   structuredSnippets.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp);
 
+  // RELEVANSI TOPIK: beri bonus pada snippet yang memuat kata kunci topik dari kueri user.
+  // Tanpa ini, untuk kueri seperti "berita ekonomi terbaru" hasil ekonomi tenggelam di
+  // antara berita umum (bola/politik) karena semuanya dapat recency bonus yang sama.
+  const topicWords = (cleanQuery.toLowerCase().match(/[a-z]{4,}/g) || [])
+    .filter((wd) => !/^(?:berita|kabar|terbaru|terkini|headline|news|update|info|informasi|hari|dengan|untuk|yang|tentang|apa|saja|dong|nanti|sekarang|carikan|infokan|tampilkan|berikan|coba)$/.test(wd))
+    .slice(0, 4);
+  if (topicWords.length > 0) {
+    for (const s of structuredSnippets) {
+      const hay = s.text.toLowerCase();
+      const hits = topicWords.filter((wd) => hay.includes(wd)).length;
+      if (hits > 0) s.score += hits * 18; // bonus proporsional jumlah kata topik yang cocok
+    }
+  }
+
   // Ambil lebih banyak sumber (20) agar pengetahuan lebih luas — model memilih yang relevan.
-  const selected = structuredSnippets.slice(0, 20).map((s) => s.text);
+  // JAMINAN: isi halaman hasil deep-scrape (konten artikel penuh, paling kaya) SELALU ikut
+  // masuk walau kalah skor dari feed topik — tanpa ini ia terpotong slice dan hilang
+  // (bug nyata: scrape jalan 7 halaman tapi 0 yang sampai ke konteks model).
+  const scrapedBlocks = structuredSnippets.filter((s) => s.text.startsWith('[Isi Halaman Web') || s.text.startsWith('[Halaman Terkait') || s.text.startsWith('[Isi Lengkap Halaman Web'));
+  const scrapedSet = new Set(scrapedBlocks.map((s) => s.text));
+  const others = structuredSnippets.filter((s) => !scrapedSet.has(s.text));
+  const selected = [
+    ...scrapedBlocks.slice(0, 5).map((s) => s.text),
+    ...others.slice(0, 20).map((s) => s.text),
+  ];
   const finalKnowledge = selected.join('\n\n');
 
   // Simpan hasil ke Persistent Knowledge Memory secara non-blocking.
