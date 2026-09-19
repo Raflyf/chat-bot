@@ -600,8 +600,8 @@ export async function processIncomingVideo(
   ctx?: ChatContext,
 ): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const prompt = caption && caption.trim()
-    ? `Pengguna mengirim video "${filename}". Pertanyaan / instruksi:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, santai, dan alami tanpa kalimat pembuka robotik seperti "Video ini menampilkan...".`
-    : `Pengguna mengirim video "${filename}". Tonton dan tanggapi kejadian atau suasana dalam video ini secara wajar, santai, dan seru layaknya teman yang baru saja menonton bersama. DILARANG membuka dengan "Video ini memperlihatkan...".`;
+    ? `Pengguna mengirim video "${filename}". Pertanyaan / instruksi:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, santai, dan alami. DILARANG menarasikan/mendeskripsikan isi video ("Video ini menampilkan...", "Di videonya ada...") — user yang mengirim, dia sudah tahu isinya.`
+    : `Pengguna mengirim video "${filename}" tanpa pertanyaan. DILARANG menarasikan atau mendeskripsikan isi video ("Video ini memperlihatkan...", "Di videonya ada...") — user yang mengirim, dia sudah tahu isinya. Cukup balas dengan REAKSI NATURAL seperti teman yang baru dikirimi video di chat: celetukan pendek yang nyambung dengan obrolan terakhir, ikut merespons suasananya, atau komentar santai. Kamu menonton videonya untuk memahami konteks, bukan untuk dibacakan ulang.`;
 
   const keys = config.pools.gemini;
 
@@ -646,7 +646,7 @@ export async function processIncomingVideo(
               }
             : undefined;
           if (tokens?.total) keyTokensUsed('gemini', key, tokens.total);
-          return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}`, tokens };
+          return { reply: sanitizeAssistantOutput(text, caption, undefined, true), via: `gemini/${model}`, tokens };
         }
       } catch (err) {
         console.warn(`[media] Video via Gemini [${model}] gagal:`, err);

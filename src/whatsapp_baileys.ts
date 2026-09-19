@@ -14,6 +14,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
+import { fetchStickerBuffer, allowStickerForChat } from './stickers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
@@ -46,6 +47,26 @@ export async function sendWhatsAppMessageSafe(
     if (chunks.length > 1) {
       await new Promise((r) => setTimeout(r, 200));
     }
+  }
+}
+
+/**
+ * Kirim stiker balasan bot (webp) via Baileys. Mengembalikan true bila terkirim.
+ * Bila gagal, caller mengirim emoji sebagai teks (fallback).
+ */
+export async function sendWhatsAppStickerSafe(
+  sock: WASocket,
+  jid: string,
+  emoji: string,
+): Promise<boolean> {
+  try {
+    const buf = await fetchStickerBuffer(emoji);
+    if (!buf) return false;
+    await sock.sendMessage(jid, { sticker: buf });
+    return true;
+  } catch (err) {
+    console.warn('[whatsapp] Gagal kirim stiker balasan:', err);
+    return false;
   }
 }
 
@@ -714,11 +735,19 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
     // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
     const tStart = Date.now();
-    const { reply, via, tokens } = await autoReply(text, context, webResults);
+    const { reply, via, tokens, sticker } = await autoReply(text, context, webResults);
     const latencyMs = Date.now() - tStart;
 
     // 5. Kirim balasan ke WhatsApp secepat mungkin
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+    // Stiker balasan (opsional, model yang memilih via tag) — hormati cooldown per chat.
+    if (sticker && reply.trim() && allowStickerForChat(`wa:${chatKey}`)) {
+      const sent = await sendWhatsAppStickerSafe(sock, remoteJid, sticker);
+      if (!sent) {
+        // Fallback: file stiker tak tersedia -> kirim emoji sebagai teks (konten dari model).
+        await sendWhatsAppMessageSafe(sock, remoteJid, sticker);
+      }
+    }
     if (messageId) void markMessageProcessed('whatsapp', messageId);
 
     // 6. Update cache memori & simpan balasan asisten ke database secara non-blocking

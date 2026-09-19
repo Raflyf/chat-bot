@@ -4,6 +4,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
+import { fetchStickerBuffer, allowStickerForChat } from './stickers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
@@ -140,6 +141,69 @@ export async function sendWhatsAppCloudMessageSafe(
     if (chunks.length > 1) {
       await new Promise((r) => setTimeout(r, 200));
     }
+  }
+}
+
+/**
+ * Kirim stiker balasan bot (webp) via Meta WhatsApp Cloud API.
+ * Meta mengharuskan stiker dikirim sebagai MEDIA (upload dulu), bukan link biasa.
+ * Mengembalikan true bila terkirim; false -> caller memakai fallback emoji teks.
+ */
+export async function sendWhatsAppCloudStickerSafe(to: string, emoji: string): Promise<boolean> {
+  if (!config.whatsappToken || !config.whatsappPhoneNumberId) return false;
+  try {
+    const buf = await fetchStickerBuffer(emoji);
+    if (!buf) return false;
+
+    // 1. Upload media ke Meta
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', 'image/webp');
+    form.append('file', new Blob([new Uint8Array(buf)], { type: 'image/webp' }), 'sticker.webp');
+    const upRes = await fetch(
+      `https://graph.facebook.com/v21.0/${config.whatsappPhoneNumberId}/media`,
+      {
+        method: 'POST',
+        signal: AbortSignal.timeout(config.timeoutMs),
+        headers: { Authorization: `Bearer ${config.whatsappToken}` },
+        body: form,
+      },
+    );
+    if (!upRes.ok) {
+      console.warn('[wa-cloud] Gagal upload stiker:', upRes.status);
+      return false;
+    }
+    const upData = (await upRes.json()) as { id?: string };
+    if (!upData.id) return false;
+
+    // 2. Kirim pesan stiker memakai media id
+    const sendRes = await fetch(
+      `https://graph.facebook.com/v21.0/${config.whatsappPhoneNumberId}/messages`,
+      {
+        method: 'POST',
+        signal: AbortSignal.timeout(config.timeoutMs),
+        headers: {
+          Authorization: `Bearer ${config.whatsappToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'sticker',
+          sticker: { id: upData.id },
+        }),
+      },
+    );
+    if (!sendRes.ok) {
+      const errText = await sendRes.text().catch(() => '');
+      console.warn(`[wa-cloud] Gagal kirim stiker: ${sendRes.status} ${errText.slice(0, 120)}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[wa-cloud] Stiker error:', err);
+    return false;
   }
 }
 
@@ -615,11 +679,19 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
         const tStart = Date.now();
-        const { reply, via, tokens } = await autoReply(text, context, webResults);
+        const { reply, via, tokens, sticker } = await autoReply(text, context, webResults);
         const latencyMs = Date.now() - tStart;
 
         // 5. Kirim balasan ke WhatsApp pengguna secepat mungkin
         await sendWhatsAppCloudMessageSafe(from, reply);
+        // Stiker balasan (opsional, model yang memilih via tag) — hormati cooldown per chat.
+        if (sticker && reply.trim() && allowStickerForChat(`wa:${chatKey}`)) {
+          const sent = await sendWhatsAppCloudStickerSafe(from, sticker);
+          if (!sent) {
+            // Fallback: stiker tak terkirim -> emoji sebagai teks (konten dari model).
+            await sendWhatsAppCloudMessageSafe(from, sticker);
+          }
+        }
         void markMessageProcessed('whatsapp', messageId);
 
         // 6. Update cache memori & simpan balasan asisten ke database Supabase
