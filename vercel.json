@@ -2,12 +2,6 @@
   "version": 2,
   "cleanUrls": true,
   "outputDirectory": "public",
-  "crons": [
-    {
-      "path": "/api/cron/reminders",
-      "schedule": "*/5 * * * *"
-    }
-  ],
   "functions": {
     "api/webhook.ts": {
       "maxDuration": 60
