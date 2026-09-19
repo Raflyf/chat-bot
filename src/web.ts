@@ -268,6 +268,17 @@ export function needsSearch(text: string): boolean {
     return false;
   }
 
+  // 9b. Topik teknologi/AI/gadget UMUM + kata recency → WAJIB cari data terbaru.
+  // Menangkap pertanyaan TANPA nama brand (mis. "model AI terbaru sekarang apa?",
+  // "hp terbaru 2026", "teknologi terbaru") yang sebelumnya lolos tanpa penelusuran
+  // sehingga model menjawab dari ingatan lama (basi/salah).
+  if (
+    /\b(?:ai|llm|model|teknologi|tech|gadget|hp|smartphone|ponsel|laptop|komputer|software|aplikasi|chip|chipset|android|ios|windows|browser|game)\b/i.test(qNorm) &&
+    /\b(?:terbaru|terkini|terpanas|terupdate|rilis|launch|meluncur|versi\s+baru|update|202[4-9]|203\d)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
   // 10. TRIGGER EKSPLISIT SEARCH LIVE:
   // - Permintaan gombalan, tebak-tebakan, atau humor segar
   if (/\b(?:gombal(?:an)?|gombalin|rayuan|tebak(?:an|\s*-?\s*tebakan)?|pantun)\b/i.test(qNorm)) {
@@ -560,15 +571,27 @@ export async function searchWeb(query: string, previousContext?: string): Promis
 
   const cleanQuery = query.trim();
 
+  // Deteksi kueri berita (freshness-critical). Cache web_knowledge TIDAK dipakai untuk
+  // berita: entri berita berumur 12 jam bisa berisi artikel lama — pernah kejadian berita
+  // April tampil sebagai "kabar hari ini" karena cache. Berita selalu diambil live.
+  const isNewsLike =
+    /\b(?:berita|kabar|headline|news|peristiwa|breaking|viral)\b/i.test(cleanQuery) ||
+    /^(?:ada\s+berita\s+apa|apa\s+berita\s+hari\s+ini|berita\s+apa\s+hari\s+ini)/i.test(cleanQuery.toLowerCase());
+  const strictFreshNews =
+    isNewsLike &&
+    /\b(?:hari\s*ini|terkini|terbaru|terpanas|pagi\s*ini|siang\s*ini|sore\s*ini|malam\s*ini|breaking|viral|saat\s*ini)\b/i.test(cleanQuery);
+
   // 0. Cek Persistent Knowledge Memory (Hot Cache & Supabase web_knowledge)
   // Jika fakta sudah pernah dipelajari dan masih berlaku segar, kembalikan instan (0 - 30ms)!
-  try {
-    const cached = await getKnowledge(cleanQuery);
-    if (cached && cached.knowledge && cached.knowledge.length > 50) {
-      return cached.knowledge;
+  if (!isNewsLike) {
+    try {
+      const cached = await getKnowledge(cleanQuery);
+      if (cached && cached.knowledge && cached.knowledge.length > 50) {
+        return cached.knowledge;
+      }
+    } catch {
+      // Fail-safe: jika pencarian memori gagal, lanjutkan penelusuran web live
     }
-  } catch {
-    // Fail-safe: jika pencarian memori gagal, lanjutkan penelusuran web live
   }
 
   const structuredSnippets: Array<{ text: string; timestamp: number; score: number }> = [];
@@ -586,6 +609,14 @@ export async function searchWeb(query: string, previousContext?: string): Promis
 
   const addSnippet = (source: string, title: string, desc: string, pubDate: string, link: string, baseScore: number = 20) => {
     if (!title && !desc) return;
+    // Kueri berita "hari ini/terkini": buang item yang jelas basi (> 7 hari) agar model
+    // tidak menyajikan berita lama sebagai kabar terkini.
+    if (strictFreshNews && pubDate) {
+      const pd = new Date(pubDate).getTime();
+      if (!isNaN(pd) && Date.now() - pd > 7 * 24 * 3600 * 1000) return;
+    }
+    // Filter artikel sampah (zodiak/judi/lirik/sinetron) khusus kueri berita.
+    if (isNewsLike && isJunkArticle(`${title} ${desc}`)) return;
     const cleanT = cleanStr(title);
     const key = dedupeKey(cleanT);
     if (key && seenTitles.has(key)) return;
@@ -850,11 +881,15 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     const isGeneralNews =
       /\b(?:ketinggalan\s+berita|informasi\s+terbaru|berita\s+terbaru|update\s+terbaru|kabar\s+terbaru|berita\s+hari\s+ini|headline\s+hari\s+ini|berita\s+terkini|kabar\s+terkini|news\s+today)\b/i.test(cleanQuery) ||
       /\b(?:akses\s+internet\s+realtime|akses\s+internet)\b/i.test(cleanQuery) ||
-      /^(?:berita|kabar|news|headline)\s*(?:hari\s*ini|terkini|terbaru)?$/i.test(cleanQuery.trim());
+      /^(?:berita|kabar|news|headline)\s*(?:hari\s*ini|terkini|terbaru)?$/i.test(cleanQuery.trim()) ||
+      /^(?:ada\s+berita\s+apa|apa\s+berita\s+hari\s*ini|berita\s+apa\s+hari\s*ini)/i.test(cleanQuery.trim());
 
+    // Kueri berita segar: batasi Google News ke 7 hari terakhir (when:7d) agar artikel
+    // lama tidak ikut masuk; kueri berita umum langsung memakai Top Headlines (detik ini).
+    const gNewsQuery = strictFreshNews && !isGeneralNews ? `${primaryQ} when:7d` : primaryQ;
     const gNewsUrl = isGeneralNews
       ? 'https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id'
-      : `https://news.google.com/rss/search?q=${encodeURIComponent(primaryQ)}&hl=id&gl=ID&ceid=ID:id`;
+      : `https://news.google.com/rss/search?q=${encodeURIComponent(gNewsQuery)}&hl=id&gl=ID&ceid=ID:id`;
 
     fetches.push(
       fetch(gNewsUrl, {
@@ -966,8 +1001,10 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   const selected = structuredSnippets.slice(0, 14).map((s) => s.text);
   const finalKnowledge = selected.join('\n\n');
 
-  // Simpan hasil ke Persistent Knowledge Memory secara non-blocking
-  if (finalKnowledge.length > 80) {
+  // Simpan hasil ke Persistent Knowledge Memory secara non-blocking.
+  // Kueri berita TIDAK disimpan: berita cepat basi dan entri cache-nya bisa tampil
+  // sebagai "kabar hari ini" di kueri berikutnya (penyebab berita lama muncul lagi).
+  if (!isNewsLike && finalKnowledge.length > 80) {
     const sourceUrls = Array.from(discoveredUrls).slice(0, 5);
     void saveKnowledge(cleanQuery, finalKnowledge, sourceUrls).catch(() => {});
   }

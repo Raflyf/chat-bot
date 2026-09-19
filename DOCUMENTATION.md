@@ -1,6 +1,6 @@
 # DOKUMENTASI SISTEM - FreeAIBot / AgentKit
 
-**Versi:** v0.39.0 (Anti-Overuse Stiker + Kunci Jawaban Tebakan)  
+**Versi:** v0.40.0 (Audit Prompt Universal + Anti-Berita Basi)  
 **Status Lingkungan:** Produksi Aktif 24/7 (Vercel Serverless untuk Telegram & Dashboard + Baileys Multi-Device 24/7 untuk WhatsApp + Supabase PostgreSQL)  
 **Terakhir Diperbarui:** 2026-09-19 WIB
 
@@ -213,6 +213,28 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 ---
 
 ## 5. Riwayat Versi & Kronologi Perubahan
+
+### v0.40.0 - 2026-09-19 (Audit Prompt Universal + Anti-Berita Basi)
+
+**Permintaan user:** *"coba full audit lagi untuk prompt aturan bot nya, cari kesalahan, kecacatan, ketiddak konsistenan, tunning lagi agar jawabanya lebih baik dan tetap nyambung, tidak ada jawaban yg ngasal, halu dan tidak sesuai... tunning respon bot nya untuk topik universal, misal tentang berita yg scrapping dari internet agar jawaban nya valid dan terbaru dari scrapping nya, untuk topik teknolgi, diskusi, chat santai, gombalan, tebak tebakan, pelajaran, dan lain sebagainya"*.
+
+**Metode audit:** baterai uji live 12 topik universal lewat jalur produksi (`needsSearch` → `searchWeb` → `autoReply`) + audit statis konsistensi blok prompt (44k chars) + regresi penuh.
+
+**Cacat yang ditemukan & diperbaiki:**
+
+1. **Topik teknologi/AI/gadget umum LOLOS dari pencarian** (bukti: *"model AI terbaru sekarang apa sih?"*, *"hp terbaru 2026"*, *"teknologi terbaru sekarang"* semua `needsSearch=false`) → bot menjawab dari ingatan lama. Fix: aturan baru di `needsSearch` — topik teknologi/AI/gadget + kata recency WAJIB search (tanpa perlu nama brand).
+2. **Bot mengaku sebagai model tertentu** (bukti live: *"ya... aku sendiri nih, Qwen3.8 🤙"*) → fix: larangan keras menyebut diri dengan nama model AI apa pun (owner & non-owner); saat membahas model pihak ketiga tetap boleh, tapi jangan mengaku dirinya salah satunya.
+3. **Berita basi dari cache** (bukti: *"ada berita apa hari ini?"* menjawab *"berita muncul sekitar April 2026 lalu"*) → akar: entri `web_knowledge` berumur 12 jam menyimpan artikel lama. Fix: (a) kueri berita TIDAK memakai cache, (b) hasil berita TIDAK disimpan ke cache, (c) filter item > 7 hari untuk kueri "hari ini/terkini", (d) Google News dibatasi `when:7d`, (e) filter artikel sampah (zodiak/judi/lirik) untuk kueri berita.
+4. **Rute berita umum tidak konsisten** (*"ada berita apa hari ini?"* memakai hasil pencarian biasa, bukan Top Headlines) → fix: pola ditambahkan ke deteksi berita umum → langsung Top Headlines detik ini.
+5. **Inkonsistensi prompt vs runtime stiker**: prompt bilang "2 balasan terakhir", runtime memakai 5 giliran (`STICKER_MIN_TURNS_SINCE_LAST`) → disamakan (5 balasan + frekuensi ~1 dari 8-10).
+6. **Aturan teknologi dari data internet dipertegas**: dilarang menyebut versi/produk "terbaru" dari ingatan; wajib dari data hasil scraping; jujur bila data tidak memuat.
+
+**Hasil uji ulang (kasus yang sama):**
+- *"model AI terbaru?"* → Grok 4.6 (12 Agustus 2026), penundaan Astra OpenAI (September 2026) — dari data live, bukan ingatan.
+- *"ada berita apa hari ini?"* → 5-6 berita dengan tanggal hari ini.
+- *"hp xiaomi terbaru?"* → Redmi 17 (Agustus 2026), Note 17 Pro (September 2026), Xiaomi 18 Fold diumumkan — dari data live.
+
+**Verifikasi:** `scratch/verify_v40_audit.mjs` 21/21 lolos; regresi v32 15/15, v33 11/11, v34 bersih, v38 36/36, v39 33/33; audit 2 (topik: halo, multi-turn, sains, sedih, formal, tawa, gombalan) semua jawaban nyambung dan wajar.
 
 ### v0.39.0 - 2026-09-19 (Anti-Overuse Stiker + Kunci Jawaban Tebakan)
 

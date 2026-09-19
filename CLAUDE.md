@@ -1,6 +1,6 @@
 # Arsitektur Agen & Sistem Multi-Model (CLAUDE.md)
 
-Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.39.0.
+Dokumen ini mendefinisikan arsitektur teknis, boundary sistem, protokol eksekusi, serta tata kelola agen dan alur data pada Chat Bot Multi-Platform v0.40.0.
 
 ---
 
@@ -140,6 +140,15 @@ Sistem menggunakan strategi inferensi multi-gateway terintegrasi dengan automati
    - **Label stiker:** `scripts/fix_sticker_labels.py` menyisipkan EXIF tag 0x5741 `accessibility-text` ke 221/221 stiker (WhatsApp Web menampilkan "Sticker with no label" tanpa field ini); 7 stiker statis > 100 KB direkompres.
    - **Penanda internal** (`[Stiker terkirim: …]`, `[Jawaban: …]`) tidak pernah masuk sebagai pesan model (`stripDurableMarkers`), kecuali `[Jawaban: …]` yang memang kunci jawaban.
    - **Verifikasi:** `scratch/verify_v39_sticker_overuse.mjs` 33/33; regresi v38 36/36; 3 kasus keluhan user live terbukti benar; round-trip DB terbukti.
+
+16. **Audit Prompt Universal + Anti-Berita Basi (v0.40):**
+   - **Routing pencarian diperluas:** topik teknologi/AI/gadget + kata recency (terbaru/rilis/update/2026) WAJIB search walau tanpa nama brand — sebelumnya lolos sehingga dijawab dari ingatan lama (`needsSearch`).
+   - **Larangan identitas model:** bot dilarang menyebut dirinya dengan nama model AI apa pun (Qwen/GPT/Claude/dll); saat membahas model pihak ketiga tetap boleh menyebut, tapi tidak mengaku dirinya salah satunya.
+   - **Anti-berita basi:** kueri berita tidak memakai cache `web_knowledge` (entri 12 jam bisa berisi artikel lama) dan hasilnya tidak disimpan ke cache; filter item > 7 hari untuk kueri "hari ini/terkini"; Google News `when:7d`; filter artikel sampah (zodiak/judi/lirik).
+   - **Rute berita umum konsisten:** "ada berita apa hari ini" langsung Top Headlines (detik ini).
+   - **Inkonsistensi prompt/runtime stiker disamakan** (5 giliran, ~1 dari 8-10 balasan).
+   - **Aturan data internet dipertegas:** dilarang menyebut versi/produk "terbaru" dari ingatan; wajib dari data scraping; jujur bila tidak ada data.
+   - **Verifikasi:** `scratch/verify_v40_audit.mjs` 21/21; regresi v32/v33/v34/v38/v39 semua lolos.
 
 ---
 
