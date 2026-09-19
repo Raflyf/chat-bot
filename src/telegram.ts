@@ -4,7 +4,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
-import { fetchStickerBuffer, allowStickerForChat } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji } from './stickers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -666,10 +666,11 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     const latencyMs = Date.now() - tStart;
     await sendTelegramMessageSafe(bot, chatId, reply);
     // Stiker balasan (opsional, model yang memilih via tag) — hormati cooldown per chat.
-    if (sticker && reply.trim() && allowStickerForChat(`tg:${chatKey}`)) {
+    // Hanya kirim bila emoji punya aset stiker; bila tidak, cukup teks balasannya (tanpa emoji mentah).
+    if (sticker && reply.trim() && hasStickerForEmoji(sticker) && allowStickerForChat(`tg:${chatKey}`)) {
       const sent = await sendTelegramStickerSafe(bot, chatId, sticker);
       if (!sent) {
-        // Fallback: file stiker tak tersedia -> kirim emoji sebagai teks (konten dari model, bukan hardcode).
+        // Fallback: stiker gagal terkirim -> emoji sebagai teks (konten dari model).
         await sendTelegramMessageSafe(bot, chatId, sticker);
       }
     }

@@ -831,7 +831,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '  * Jika lawan bicara memang tertawa/bercanda (ada wkwk/haha/emoji tawa/roasting ringan), boleh ikut tertawa SEKALI saja — maksimal 1 kata tawa per pesan.',
     '  * Saat membahas hal serius, sedih, teknis, atau datar: ZERO tawa.',
     '- EKSPRESI TULISAN (mengikuti suasana chat): bentangkan huruf saat nada memang memanggil, misal "siapp", "okehh", "gasss", "makasihh", lalu boleh ditutup 1 emoji ekspresif yang pas (misal hormat saat menyanggupi tugas, api saat semangat, tangan saat tos).',
-    '- STIKER BALASAN (OPSIONAL): di AKHIR balasanmu, kamu BOLEH menyisipkan SATU tag stiker berisi 1 emoji yang mewakili emosi/gestur saat itu, dengan format: [[sticker:<emoji>]]. Contoh: user bercanda keras → [[sticker:😂]]; kamu menyanggupi tugas → [[sticker:👍]]; suasana manis → [[sticker:🥰]]; bingung → [[sticker:🤔]]; bangga/semangat → [[sticker:🔥]]; kasihan/empati → [[sticker:🥺]]. PANDUAN: pakai saat emosi/gesturnya jelas dan momennya pas (mis. user baru melontarkan candaan, kamu baru menyanggupi sesuatu, suasana akrab menghangat) — kira-kira 1 dari 4-6 balasan, JANGAN setiap balasan dan JANGAN saat suasana serius/sedih/teknis/formal. Emoji harus relevan dengan isi balasanmu. Bila ragu, jangan pakai.',
+    '- STIKER BALASAN (OPSIONAL): di AKHIR balasanmu, kamu BOLEH menyisipkan SATU tag stiker berisi 1 emoji yang mewakili emosi/gestur saat itu, dengan format: [[sticker:<emoji>]]. Contoh: user bercanda keras → [[sticker:😂]]; kamu menyanggupi tugas → [[sticker:👍]]; suasana manis → [[sticker:🥰]]; bingung → [[sticker:🤔]]; bangga/semangat → [[sticker:🔥]]; kasihan/empati → [[sticker:🥺]]. PANDUAN: pakai saat emosi/gesturnya jelas dan momennya pas (mis. user baru melontarkan candaan, kamu baru menyanggupi sesuatu, suasana akrab menghangat) — kira-kira 1 dari 4-6 balasan, JANGAN setiap balasan dan JANGAN saat suasana serius/sedih/teknis/formal. Emoji harus relevan dengan isi balasanmu. Bila ragu, jangan pakai. CATATAN: stiker yang tersedia adalah kumpulan stiker kucing/karakter lucu; emoji umum seperti 😂 👍 😹 😭 🙄 🐱 ❤ 😎 🤔 🙏 😴 🐟 ✨ 🤣 😏 🤗 😱 🚀 💪 🥲 🫠 🫡 sangat cocok.',
     '- ANTI-FLAT: jawaban pendek wajib tetap bernyawa — minimal bentangkan 1 kata akhiran jadi dua huruf (ohh, okee, sipp, mantapp, amann, iyaa) supaya tidak terkesan cuek/dingin. Kata pendek polos seperti "Oke," "sip," "iya." tanpa ekspresi apa pun dilarang.',
     '- Pengecualian: saat suasana serius, sedih, atau rapuh, tulis dengan tempo normal tanpa bentangan dan tanpa emoji.',
     '- Bicara setara sahabat: tanpa jargon server/IT/database, tanpa gelar diri (sebagai AI/bot), tanpa ceramah moral, tanpa template CS (menawarkan bantuan atau menu percakapan), tanpa rengekan pasrah minta maaf, dan tanpa pertanyaan pancingan klise di akhir pesan.',
@@ -1413,11 +1413,13 @@ export async function autoReply(
           },
         ];
         const secondTry = await chatRetry(retryMsgs, false);
-        const secondReply = sanitizeAssistantOutput(secondTry.text, clean, recentOpenings);
+        const secondExtract = extractStickerTag(secondTry.text);
+        const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings);
         if (secondReply.split(/\s+/).filter(Boolean).length >= 4) {
           reply = secondReply;
           via = secondTry.via;
           tokens = secondTry.tokens;
+          if (!stickerEmoji && secondExtract.sticker) stickerEmoji = secondExtract.sticker;
         }
       } catch {
         // pertahankan reply pertama
@@ -1457,7 +1459,9 @@ export async function autoReply(
           ];
           const secondTry = await chatRetry(retryMsgs, false);
           if (secondTry.text && secondTry.text.trim().toLowerCase() !== normLast) {
-            reply = sanitizeAssistantOutput(secondTry.text, clean, recentOpenings);
+            const loopExtract = extractStickerTag(secondTry.text);
+            reply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings);
+            if (!stickerEmoji && loopExtract.sticker) stickerEmoji = loopExtract.sticker;
           }
         } catch {
           // Fallback graceful jika retry tidak tersedia
@@ -1584,6 +1588,15 @@ export async function autoReply(
         reply = stripAudioClaims(reply);
       }
     }
+    if (!reply.trim()) {
+      return { reply: '', escalate: true, via };
+    }
+
+    // Jaring keamanan terakhir: buang SELURUH sisa tag stiker dari teks balasan
+    // (jalur retry/regen mana pun tidak boleh meloloskan tag mentah ke user).
+    const finalExtract = extractStickerTag(reply);
+    reply = finalExtract.text;
+    if (!stickerEmoji && finalExtract.sticker) stickerEmoji = finalExtract.sticker;
     if (!reply.trim()) {
       return { reply: '', escalate: true, via };
     }
