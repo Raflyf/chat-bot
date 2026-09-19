@@ -14,7 +14,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
-import { fetchStickerBuffer, allowStickerForChat } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji } from './stickers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
@@ -740,11 +740,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
     // 5. Kirim balasan ke WhatsApp secepat mungkin
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
-    // Stiker balasan (opsional, model yang memilih via tag) — hormati cooldown per chat.
-    if (sticker && reply.trim() && allowStickerForChat(`wa:${chatKey}`)) {
+    // Stiker balasan (opsional) — hanya bila emoji punya aset stiker + cooldown per chat.
+    if (sticker && reply.trim() && hasStickerForEmoji(sticker) && allowStickerForChat(`wa:${chatKey}`)) {
       const sent = await sendWhatsAppStickerSafe(sock, remoteJid, sticker);
       if (!sent) {
-        // Fallback: file stiker tak tersedia -> kirim emoji sebagai teks (konten dari model).
+        // Fallback: stiker gagal terkirim -> emoji sebagai teks (konten dari model).
         await sendWhatsAppMessageSafe(sock, remoteJid, sticker);
       }
     }
