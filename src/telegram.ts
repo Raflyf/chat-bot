@@ -10,7 +10,7 @@ import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.37.0';
+const PROMPT_VERSION = 'v0.38.0';
 
 let sharedBot: TelegramBot | null = null;
 
