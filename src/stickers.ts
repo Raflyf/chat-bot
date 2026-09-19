@@ -13,7 +13,7 @@
  * - Cooldown per chat: maksimal 2 stiker per 10 menit.
  */
 
-import { STICKER_MANIFEST } from './sticker-manifest.js';
+import { STICKER_MANIFEST, EDGY_STICKER_EMOJIS } from './sticker-manifest.js';
 
 const STICKER_COOLDOWN_MS = 10 * 60 * 1000;
 const STICKER_MAX_PER_WINDOW = 2;
@@ -21,6 +21,27 @@ const STICKER_MAX_PER_WINDOW = 2;
 const recentStickerUses = new Map<string, number[]>();
 
 const EMOJI_TO_FILE: Record<string, string> = STICKER_MANIFEST;
+const EDGY_SET = new Set<string>(EDGY_STICKER_EMOJIS);
+
+/** True bila emoji termasuk "keras" (umpatan/provokasi) — hanya untuk konteks bercanda. */
+export function isEdgyStickerEmoji(emoji: string): boolean {
+  if (!emoji) return false;
+  const e = emoji.trim();
+  return EDGY_SET.has(e) || EDGY_SET.has(e.replace(/\uFE0F/g, ''));
+}
+
+/**
+ * Deteksi sinyal bercanda/roasting dari pesan user — gerbang untuk emoji "keras".
+ * Keputusan user: emoji seperti 🖕/🤬 boleh dipakai "dalam konteks bercanda, dan saat
+ * user juga memberikan stiker seperti itu saat bercanda". Guard ini murni PEMBATAS:
+ * bila tidak ada sinyal bercanda, emoji edgy TIDAK dikirim (fallback ke teks biasa).
+ */
+export function isPlayfulContext(userText?: string): boolean {
+  if (!userText) return false;
+  return /(?:wkwk+|kwkwk+|haha+|hehe+|hihi+|ngakak|kocak|lucu|garing|cringe|joke|lelucon|banyolan|lawak|candaan|bercanda|becanda|iseng|gabut|roast|ledek|tebak|gombal|rayu|anjay|gokil|buset|jir+|bjir+|troll|prank|santai|tongkrongan|becandaan|nyindir|sindir|ketawa|tertawa|ngeledek|bales dendam|baper|meme|komuk|😹|😂|🤣|😆|😅|😄|😁|😜|🤪)/i.test(
+    userText,
+  );
+}
 
 /** Nama file stiker untuk emoji (null bila emoji tidak punya aset). */
 export function stickerFileForEmoji(emoji: string): string | null {

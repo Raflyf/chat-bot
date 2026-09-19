@@ -4,7 +4,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
-import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext } from './stickers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb } from './remind.js';
@@ -684,8 +684,10 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         // 5. Kirim balasan ke WhatsApp pengguna secepat mungkin
         await sendWhatsAppCloudMessageSafe(from, reply);
-        // Stiker balasan (opsional) — hanya bila emoji punya aset stiker + cooldown per chat.
-        if (sticker && reply.trim() && hasStickerForEmoji(sticker) && allowStickerForChat(`wa:${chatKey}`)) {
+        // Stiker balasan (opsional) — hanya bila emoji punya aset + cooldown per chat.
+        // Emoji "keras" (🖕/🤬/👊) hanya saat konteks bercanda (user bercanda/roasting dulu).
+        const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text);
+        if (sticker && reply.trim() && edgyOk && hasStickerForEmoji(sticker) && allowStickerForChat(`wa:${chatKey}`)) {
           const sent = await sendWhatsAppCloudStickerSafe(from, sticker);
           if (!sent) {
             // Fallback: stiker gagal terkirim -> emoji sebagai teks (konten dari model).
