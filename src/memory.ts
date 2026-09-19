@@ -94,6 +94,8 @@ export function isResetCommand(text: string): boolean {
 export async function resetSession(chatKey: string, platform: string = 'whatsapp'): Promise<void> {
   contextCache.delete(chatKey);
   counters.delete(chatKey);
+  // Chat fixture test (mis. __verify_v32__) tidak boleh menulis checkpoint ke DB production.
+  if (/^__.*__$/.test(chatKey) || chatKey.startsWith('test_')) return;
   const c = db();
   if (c) {
     try {
