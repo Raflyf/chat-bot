@@ -228,13 +228,14 @@ Agar bot WhatsApp tetap aktif 24 jam meski laptop Anda dimatikan:
 
 **Fitur stiker balasan bot (100% dinamis, tanpa hardcode):**
 - Model memilih emoji sendiri via tag `[[sticker:<emoji>]]` di akhir balasan (dipandu prompt: ~1 dari 4-6 balasan, tidak saat serius/sedih/teknis/formal, emoji harus relevan).
-- **147 aset stiker webp** di `public/stickers/` (generated dari emoji Windows Segoe UI Emoji, ~2 MB) — nama file hex codepoint (mis. 😎 → `1f60e.webp`).
-- `src/stickers.ts`: `emojiToHex()`, `stickerPublicUrl()` (dari `VERCEL_PROJECT_PRODUCTION_URL`), `fetchStickerBuffer()` (fetch + cache in-memory), `allowStickerForChat()` (cooldown 2 stiker / 10 menit per chat).
+- **221 aset stiker webp koleksi WhatsApp milik user** di `public/stickers/` (nama `stk_NNN.webp`), dipetakan ke **120 emoji unik** via `src/sticker-manifest.ts` (hasil pelabelan vision otomatis — `scripts/label_stickers.py` memakai Cloudflare qwen3.8-27b + Groq fallback, lalu `scripts/gen_sticker_manifest.py` men-generate manifest). 12 stiker >480 KB dikompres agar aman di limit Telegram (943 KB → 28 KB).
+- `src/stickers.ts`: `stickerFileForEmoji()` (manifest lookup + normalisasi variation selector/tone), `hasStickerForEmoji()`, `stickerPublicUrl()` (dari `VERCEL_PROJECT_PRODUCTION_URL`), `fetchStickerBuffer()` (fetch + cache in-memory), `allowStickerForChat()` (cooldown 2 stiker / 10 menit per chat).
 - Pengiriman per platform: Telegram `sendSticker` (multipart buffer), WA Baileys `{ sticker: buffer }`, WA Cloud upload media (`/media`) + kirim `type: 'sticker'`.
-- **Fallback**: bila file stiker tidak tersedia atau pengiriman gagal → emoji dikirim sebagai teks (konten dari model, bukan template hardcode).
+- **Fallback**: stiker hanya dikirim bila emoji punya aset (`hasStickerForEmoji`); bila pengiriman gagal → emoji dikirim sebagai teks (konten dari model, bukan template hardcode).
+- **Tag tidak pernah bocor ke teks**: `extractStickerTag` dipanggil di semua jalur (awal, retry anti-echo, retry anti-loop, regen, dan jaring keamanan terakhir sebelum return).
 - Anti-spam level program (bukan teks balasan): maksimal 1 tag per balasan (parser ambil tag pertama), cooldown per chat, dan prompt melarang pemakaian saat suasana tidak tepat.
 
-**Verifikasi:** `scratch/verify_v38_sticker.mjs` 22/22 lolos (parser tag, guard narasi + anti-false-positive, pengecualian pertanyaan, cooldown, hex mapping). Live: apresiasi → sticker 😎 terkirim; sedih & teknis → tanpa sticker. Aset stiker live di production (HTTP 200, valid WEBP RIFF header).
+**Verifikasi:** `scratch/verify_v38_sticker.mjs` 23/23 lolos (parser tag, guard narasi + anti-false-positive, pengecualian pertanyaan, cooldown, manifest mapping). Live: apresiasi → sticker 😂/👍 terkirim; sedih & teknis → tanpa sticker; tag tidak bocor ke teks balasan. Aset stiker live di production (HTTP 200, valid WEBP RIFF header); stiker lama sudah tidak ada (404).
 
 ### v0.37.0 - 2026-09-19 (Audit Menyeluruh — Keamanan Fail-Closed, Revokasi Token, Robustness)
 
