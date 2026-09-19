@@ -9,6 +9,11 @@ export function db(): SupabaseClient | null {
   return client;
 }
 
+/** Chat key penanda test fixture (mis. __verify_v32__) — TIDAK boleh masuk DB production. */
+function isTestChatKey(chatKey: string): boolean {
+  return /^__.*__$/.test(chatKey) || chatKey.startsWith('test_');
+}
+
 /** Simpan pesan best-effort: gagal DB tidak boleh menggagalkan balasan chat. */
 export async function saveMessage(row: {
   platform: string;
@@ -25,6 +30,7 @@ export async function saveMessage(row: {
   feedback?: string;
 }): Promise<void> {
   if (!row.content || !row.content.trim()) return; // balasan kosong tidak pernah disimpan
+  if (isTestChatKey(row.chat_id)) return; // chat fixture test tidak menodai data production
   const c = db();
   if (!c) return;
   try {
