@@ -30,9 +30,19 @@ DST = os.path.join(ROOT, "public", "stickers")
 OUT = os.path.join(ROOT, "scratch", "_sticker_labels.json")
 ENV_PATH = os.path.join(ROOT, ".env")
 
-MAX_SIDE = 256  # stiker dikecilkan sebelum dikirim (hindari WAF payload besar)
+MAX_SIDE = 320  # cukup untuk membaca teks di stiker; hindari WAF payload besar
 
-PROMPT = "Emoji apa yang mewakili stiker ini? Jawab HANYA 1 emoji."
+PROMPT = (
+    "Lihat stiker ini.\n"
+    "LANGKAH 1: Baca teks/tulisan di dalam gambar stiker (bisa bahasa gaul: pakyu, dongo, xixixi, babi, dll).\n"
+    "LANGKAH 2: Pikirkan MAKNA SOSIALNYA: dalam percakapan chat, stiker ini dipakai untuk "
+    "MENGEKSPRESIKAN APA? (mis. \"pakyu\" = umpatan/provokasi, \"xixixi\" = tawa geli, "
+    "\"gagal booyah\" = kegagalan lucu, \"malas\" = kemalasan, \"babi\" = umpatan kasar).\n"
+    "LANGKAH 3: Pilih SATU emoji yang mewakili MAKNA SOSIAL itu — BUKAN objek yang digambar. "
+    "Contoh: stiker bertuliskan \"pakyu\" -> \U0001F620 (marah), bukan \U0001F91A (tangan); "
+    "stiker \"babi\" sebagai umpatan -> \U0001F92C, bukan \U0001F437.\n"
+    "Jawab HANYA JSON: {\"teks\": \"<isi teks di stiker, atau ->\", \"emoji\": \"<1 emoji>\"}"
+)
 
 EMOJI_RE = re.compile(
     "["
@@ -66,12 +76,27 @@ def small_png(path):
     return base64.b64encode(buf.getvalue()).decode()
 
 
+def parse_answer(text):
+    """Ambil (teks, emoji) dari jawaban model (JSON utama, fallback regex emoji)."""
+    t = (text or "").strip()
+    m = re.search(r"\{[\s\S]*\}", t)
+    if m:
+        try:
+            obj = json.loads(m.group(0))
+            teks = str(obj.get("teks") or "").strip()
+            emoji_raw = str(obj.get("emoji") or "").strip()
+            em = EMOJI_RE.search(emoji_raw)
+            emoji = em.group(0).strip("\uFE0F\u200D") if em else None
+            return teks, emoji
+        except Exception:
+            pass
+    em = EMOJI_RE.search(t)
+    return "", (em.group(0).strip("\uFE0F\u200D") if em else None)
+
+
 def extract_emoji(text):
-    m = EMOJI_RE.search((text or "").strip())
-    if not m:
-        return None
-    e = m.group(0).strip("\uFE0F\u200D")
-    return e or None
+    """Kompatibilitas: ambil emoji saja dari jawaban."""
+    return parse_answer(text)[1]
 
 
 def call_cf(fn, key):
@@ -95,7 +120,7 @@ def call_cf(fn, key):
     )
     with urllib.request.urlopen(req, timeout=60) as r:
         d = json.load(r)
-    return extract_emoji(d["choices"][0]["message"].get("content") or "")
+    return parse_answer(d["choices"][0]["message"].get("content") or "")
 
 
 def call_groq(fn, key):
@@ -107,7 +132,7 @@ def call_groq(fn, key):
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
         ]}],
         "temperature": 0.1,
-        "max_tokens": 30,
+        "max_tokens": 200,
         "reasoning_effort": "none",
     }).encode()
     req = urllib.request.Request(
@@ -122,7 +147,7 @@ def call_groq(fn, key):
     )
     with urllib.request.urlopen(req, timeout=60) as r:
         d = json.load(r)
-    return extract_emoji(d["choices"][0]["message"]["content"])
+    return parse_answer(d["choices"][0]["message"]["content"])
 
 
 def main():
@@ -139,12 +164,17 @@ def main():
     labels = {}
     if os.path.exists(OUT):
         try:
-            labels = {x["file"]: x["emoji"] for x in json.load(open(OUT, encoding="utf-8")) if x.get("emoji")}
+            labels = {
+                x["file"]: {"emoji": x["emoji"], "teks": x.get("teks", "")}
+                for x in json.load(open(OUT, encoding="utf-8"))
+                if x.get("emoji")
+            }
         except Exception:
             labels = {}
 
-    todo = [f for f in files if f not in labels]
-    print(f"total={len(files)} done={len(labels)} todo={len(todo)}", flush=True)
+    force = "--force" in sys.argv  # relabel semua (setelah prompt berubah)
+    todo = files if force else [f for f in files if f not in labels]
+    print(f"total={len(files)} done={len(labels)} todo={len(todo)} force={force}", flush=True)
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     cf_idx = 0
@@ -156,7 +186,7 @@ def main():
             key = cf_keys[cf_idx % len(cf_keys)]
             try:
                 got = call_cf(fn, key)
-                if got:
+                if got and got[1]:
                     break
             except Exception as e:
                 msg = str(e)[:60]
@@ -166,26 +196,34 @@ def main():
                     continue
                 break
             cf_idx += 1
-        if not got:
+        if not got or not got[1]:
             for gk in groq_keys:
                 try:
                     got = call_groq(fn, gk)
-                    if got:
+                    if got and got[1]:
                         break
                 except Exception:
                     time.sleep(2)
-        if got:
-            labels[fn] = got
+        if got and got[1]:
+            labels[fn] = {"emoji": got[1], "teks": got[0]}
         else:
             print(f"  {fn}: FAILED", flush=True)
 
         if (i + 1) % 10 == 0:
-            json.dump([{"file": k, "emoji": v} for k, v in sorted(labels.items())],
-                      open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+            json.dump(
+                [{"file": k, "emoji": v["emoji"], "teks": v["teks"]} for k, v in sorted(labels.items())],
+                open(OUT, "w", encoding="utf-8"),
+                ensure_ascii=False,
+                indent=1,
+            )
             print(f"progress: {len(labels)}/{len(files)}", flush=True)
 
-    json.dump([{"file": k, "emoji": v} for k, v in sorted(labels.items())],
-              open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    json.dump(
+        [{"file": k, "emoji": v["emoji"], "teks": v["teks"]} for k, v in sorted(labels.items())],
+        open(OUT, "w", encoding="utf-8"),
+        ensure_ascii=False,
+        indent=1,
+    )
     print(f"DONE: {len(labels)}/{len(files)}", flush=True)
 
 

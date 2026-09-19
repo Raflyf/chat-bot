@@ -4,7 +4,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
-import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext } from './stickers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -667,7 +667,9 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     await sendTelegramMessageSafe(bot, chatId, reply);
     // Stiker balasan (opsional, model yang memilih via tag) — hormati cooldown per chat.
     // Hanya kirim bila emoji punya aset stiker; bila tidak, cukup teks balasannya (tanpa emoji mentah).
-    if (sticker && reply.trim() && hasStickerForEmoji(sticker) && allowStickerForChat(`tg:${chatKey}`)) {
+    // Emoji "keras" (🖕/🤬/👊) hanya boleh saat konteks bercanda (user bercanda/roasting dulu).
+    const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text || rawText);
+    if (sticker && reply.trim() && edgyOk && hasStickerForEmoji(sticker) && allowStickerForChat(`tg:${chatKey}`)) {
       const sent = await sendTelegramStickerSafe(bot, chatId, sticker);
       if (!sent) {
         // Fallback: stiker gagal terkirim -> emoji sebagai teks (konten dari model).
