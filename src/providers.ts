@@ -870,50 +870,27 @@ function steps(): Step[] {
         }, t);
       },
     },
-    // --- TIER 2: Dahl Global (SALDO TOKEN, tanpa rate limit harian) ---
-    // DINAIKKAN dari Tier 6 ke Tier 2 berdasarkan BENCHMARK LATENSI NYATA (20 Sep):
-    //   dahl p50 234ms vs cloudflare 1668ms vs groq 351ms (groq kalah di prompt besar
-    //   karena ITPM 7.000). Dahl juga TIDAK punya batas ITPM ketat -> aman untuk
-    //   percakapan panjang. Saldo 10 key x 100M = 1 miliar token (bukan kuota harian).
+    // --- TIER 2: Cloudflare Workers AI (KEPATUHAN SEMPURNA 4/4) ---
+    // DINAIKKAN ke Tier 2 (20 Sep) berdasarkan UJI KEPATUHAN LIVE: satu-satunya
+    // provider dengan hasil SEMPURNA MENYELURUH — 4 dari 4 model patuh penuh pada
+    // aturan inti (tidak sebut diri bot, tidak bocorkan proses berpikir, tidak pakai
+    // template CS, tidak ada narasi aksi, emoji wajar, panjang wajar).
+    // Latensi terukur: glm-4.7-flash 1224ms (tercepat) s/d llama-3.3-70b 3163ms.
+    // Kapasitas: 3 key x 10.000 Neuron/hari — dipakai lebih dulu sampai habis, lalu
+    // otomatis jatuh ke tier berikutnya (guard cap sudah menangani).
     {
-      kind: 'dahl',
-      keys: config.pools.dahl,
-      models: [config.models.dahlPrimary, ...config.models.dahlBackup],
-      cap: config.dailyCap.dahl,
+      kind: 'cloudflare',
+      keys: config.pools.cloudflare,
+      models: [config.models.cfPrimary, ...config.models.cfBackup],
+      cap: config.dailyCap.cloudflare,
       maxPromptTokens: 0,
-      run: (k, m, msgs, t) => {
-        const isDeepSeek = m.toLowerCase().includes('deepseek');
-        // Tuning terbukti dari Tier 6 lama (dipertahankan saat pindah tier):
-        // thinking off + temperature/penalty luwes -> latensi ~0,23 dtk dengan output bersih.
-        //
-        // CATATAN MiniMax M2.7: model ini membocorkan blok <think>...</think> ke konten
-        // walau reasoning_effort 'none' (temuan uji kepatuhan 20 Sep). Parameter
-        // chat_template_kwargs SUDAH DIUJI dan TIDAK didukung proxy ini (output tetap
-        // memuat <think>) — jadi TIDAK dipasang agar tidak menambah kompleksitas tanpa
-        // manfaat. Pertahanan yang bekerja adalah SANITIZER (cleanMathAndNoise) yang
-        // menangani <think> tertutup MAUPUN tidak tertutup.
-        return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
-          reasoning_effort: 'none',
-          temperature: isDeepSeek ? 0.65 : 0.45,
-          frequency_penalty: isDeepSeek ? 0.1 : 0.5,
-          presence_penalty: isDeepSeek ? 0.1 : 0.0,
-        }, t);
-      },
+      run: (k, m, msgs, t) => cloudflareChat(k, m, msgs, t),
     },
-    // --- TIER 3: OpenRouter (free models) ---
-    {
-      kind: 'openrouter',
-      keys: config.pools.openrouter,
-      models: [config.models.orPrimary, ...config.models.orBackup],
-      cap: config.dailyCap.openrouter,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) =>
-        openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, {
-          // Thinking off (keputusan user): 3,5 dtk -> ~1 dtk, output tetap bersih.
-          reasoning: { effort: 'none' },
-        }, t),
-    },
-    // --- TIER 4: Groq Cloud API (LPU ultra-cepat) ---
+    // --- TIER 3: Groq Cloud API (KEPATUHAN SEMPURNA 2/2 + TERCEPAT) ---
+    // UJI KEPATUHAN LIVE: qwen3.8-27b & gpt-oss-120b = PATUH SEMPURNA, dan keduanya
+    // adalah model TERCEPAT dari seluruh pool (763-1202ms).
+    // KETERBATASAN: ITPM ketat 7.000 (429 terbukti) — untuk prompt besar provider ini
+    // otomatis DILEWATI oleh guard maxPromptTokens, jadi tidak pernah jadi bottleneck.
     {
       kind: 'groq',
       keys: config.pools.groq,
@@ -945,16 +922,54 @@ function steps(): Step[] {
         }, t);
       },
     },
-    // --- TIER 5: Cloudflare Workers AI ---
+    // --- TIER 4: Dahl Global (SALDO BESAR 1 MILIAR TOKEN — penyelamat jangka panjang) ---
+    // Diturunkan dari Tier 2 ke Tier 4 (20 Sep) setelah uji kepatuhan: modelnya kurang
+    // patuh dibanding Cloudflare/Groq (DeepSeek-V4-Flash: emoji berlebihan).
+    // KENAPA TETAP PENTING: saldo 10 key x 100M = 1 MILIAR token (bukan kuota harian),
+    // TIDAK ada rate limit ITPM ketat, dan latensi p50 ~0,23 dtk. Inilah penyelamat
+    // ketika semua kuota harian (Cloudflare/Groq/Gemini) habis.
     {
-      kind: 'cloudflare',
-      keys: config.pools.cloudflare,
-      models: [config.models.cfPrimary, ...config.models.cfBackup],
-      cap: config.dailyCap.cloudflare,
+      kind: 'dahl',
+      keys: config.pools.dahl,
+      models: [config.models.dahlPrimary, ...config.models.dahlBackup],
+      cap: config.dailyCap.dahl,
       maxPromptTokens: 0,
-      run: (k, m, msgs, t) => cloudflareChat(k, m, msgs, t),
+      run: (k, m, msgs, t) => {
+        const isDeepSeek = m.toLowerCase().includes('deepseek');
+        // Tuning terbukti: thinking off + temperature/penalty luwes -> output bersih.
+        //
+        // CATATAN MiniMax M2.7: membocorkan <think> walau reasoning_effort 'none', dan
+        // parameter chat_template_kwargs SUDAH DIUJI tidak didukung proxy ini. Karena itu
+        // MiniMax DIHAPUS dari backup teks (tetap dipakai di jalur vision). Pertahanan
+        // utama tetap SANITIZER yang menangani <think> tertutup maupun tidak tertutup.
+        return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
+          reasoning_effort: 'none',
+          temperature: isDeepSeek ? 0.65 : 0.45,
+          frequency_penalty: isDeepSeek ? 0.1 : 0.5,
+          presence_penalty: isDeepSeek ? 0.1 : 0.0,
+        }, t);
+      },
     },
-    // --- TIER 6: Google Gemini API (1M konteks) ---
+    // --- TIER 5: OpenRouter (free models — cadangan luas) ---
+    // Kuota per-key hanya 50 request :free/hari, jadi diletakkan setelah pool besar
+    // (Cloudflare/Groq/Dahl). Tetap berguna sebagai lapisan cadangan sebelum Gemini.
+    {
+      kind: 'openrouter',
+      keys: config.pools.openrouter,
+      models: [config.models.orPrimary, ...config.models.orBackup],
+      cap: config.dailyCap.openrouter,
+      maxPromptTokens: 0,
+      run: (k, m, msgs, t) =>
+        openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, {
+          // Thinking off (keputusan user): 3,5 dtk -> ~1 dtk, output tetap bersih.
+          reasoning: { effort: 'none' },
+        }, t),
+    },
+    // --- TIER 6: Google Gemini API (1M konteks — lapisan terakhir) ---
+    // UJI KEPATUHAN LIVE (dengan thinkingBudget:0 sesuai konfig produksi): gemini-3.8-flash
+    // 3506ms & gemini-3.5-flash 11210ms — keduanya PATUH SEMPURNA.
+    // Diletakkan terakhir karena: (a) hanya 1 key (1.500 RPD), (b) gemini-3.5-flash
+    // lambat (11 dtk), (c) berguna sebagai jaring terakhir dengan konteks 1M.
     {
       kind: 'gemini',
       keys: config.pools.gemini,
@@ -985,7 +1000,7 @@ function visionSteps(all: Step[]): Step[] {
 
 /**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: xKiro (Qwen 3.8 Max > Qwen 3.7 Max > Qwen 3.6 Max Preview) > Dahl (DeepSeek V4 Flash > GLM 5.3 > MiniMax M2.7) > OpenRouter (Nex N2.5 Pro > Nemotron Lightning > GLM 5.2) > Groq (Qwen 3.8 > GPT-OSS 120B) > Cloudflare (Qwen 3.8 > GLM 4.7 > GPT-OSS > Llama 3.3) > Gemini (3.8 > 3.5).
+ * - Teks umum / matematika / koding: xKiro (Qwen 3.8 Max > Qwen 3.7 Max > Qwen 3.6 Max Preview) > Cloudflare (GLM 4.7 Flash > GPT-OSS 120B > Qwen 3.8 27B > Llama 3.3 70B) > Groq (Qwen 3.8 27B > GPT-OSS 120B) > Dahl (DeepSeek V4 Flash > GLM 5.3) > OpenRouter (Nex N2.5 Pro > Nemotron Lightning > GLM 5.2) > Groq (Qwen 3.8 > GPT-OSS 120B) > Cloudflare (Qwen 3.8 > GLM 4.7 > GPT-OSS > Llama 3.3) > Gemini (3.8 > 3.5).
  *   Dahl dinaikkan ke Tier 2 (20 Sep) berdasarkan benchmark latensi nyata: p50 234ms
  *   (lebih cepat dari Groq 351ms & Cloudflare 1668ms) dan TIDAK punya batas ITPM ketat
  *   sehingga aman untuk percakapan panjang — beda dari Groq (ITPM 7.000).

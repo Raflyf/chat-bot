@@ -82,11 +82,17 @@ export const config = {
     orPrimary: 'nex-agi/nex-n2.5-pro:free',
     orBackup: ['nvidia/nemotron-3.5-lightning:free', 'z-ai/glm-5.2:free'],
     // Tier 3: Groq Cloud API (LPU Ultra-Fast Inference)
+    // UJI KEPATUHAN 20 Sep: qwen3.8-27b & gpt-oss-120b = PATUH SEMPURNA + tercepat
+    // (763-1202ms). Dua model ini adalah yang paling patuh dari SEMUA provider.
     groqPrimary: 'qwen/qwen3.8-27b',
     groqBackup: ['openai/gpt-oss-120b'],
-    // Tier 4: Cloudflare Workers AI (Qwen 3.8 → GLM 4.7 / GPT-OSS 120B / Llama 3.3 70B)
-    cfPrimary: '@cf/qwen/qwen3.8-27b',
-    cfBackup: ['@cf/zai-org/glm-4.7-flash', '@cf/openai/gpt-oss-120b', '@cf/meta/llama-3.3-70b-instruct-fp8-fast'],
+    // Tier 4: Cloudflare Workers AI
+    // UJI KEPATUHAN 20 Sep: 4/4 model PATUH SEMPURNA (satu-satunya provider dengan
+    // hasil sempurna menyeluruh). Urutan berdasarkan latensi nyata:
+    //   glm-4.7-flash 1224ms (tercepat) > gpt-oss-120b 2413ms > qwen3.8-27b 2906ms
+    //   > llama-3.3-70b 3163ms
+    cfPrimary: '@cf/zai-org/glm-4.7-flash',
+    cfBackup: ['@cf/openai/gpt-oss-120b', '@cf/qwen/qwen3.8-27b', '@cf/meta/llama-3.3-70b-instruct-fp8-fast'],
     // Model vision Cloudflare (sinkron dengan rantai vision runtime): Qwen & Gemma via
     // endpoint OpenAI-compat /ai/v1, LLaVA via endpoint native /ai/run (byte array).
     cfVision: [
@@ -101,8 +107,12 @@ export const config = {
     // tanpa token saat menerima gambar (uji live), jadi tetap primer teks saja.
     geminiVision: ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'],
     // Tier 6: Dahl Global API (1B Token Pool - latensi ~0,22s)
+    // UJI KEPATUHAN 20 Sep: DeepSeek-V4-Flash = 2164ms, hanya emoji berlebihan (sudah
+    // dibatasi sanitizer). MiniMax-M2.7 DIHAPUS dari backup teks: membocorkan <think>,
+    // 58 kata, 17 detik (instruksi user: "minimax hilangkan dari backup text, simpan
+    // di multimodal saja" — MiniMax tetap dipakai di jalur vision).
     dahlPrimary: 'deepseek-ai/DeepSeek-V4-Flash-0731',
-    dahlBackup: ['zai-org/GLM-5.3-Flash', 'MiniMaxAI/MiniMax-M2.7'],
+    dahlBackup: ['zai-org/GLM-5.3-Flash'],
     // Rantai vision eksplisit (urutan keputusan review user; seluruhnya terbukti aktif via uji live).
     // Dipakai chat({ vision: true }) untuk foto, stiker, dan gambar di dalam dokumen Word.
     visionChain: [
