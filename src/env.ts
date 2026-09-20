@@ -72,9 +72,15 @@ export const config = {
     // 'deepseek/deepseek-v4.1-flash:free' sudah DIHAPUS dari xkiro -> tiap failover
     // ke sana menghasilkan HTTP 404 dan membuang waktu rantai (temuan audit).
     xkiroBackup: ['qwen/qwen3.7-max:free', 'qwen/qwen3.6-max-preview:free'],
-    // Tier 2: OpenRouter (DeepSeek V4 Flash 0731 Free → Nex N2.5 Pro / Nemotron Lightning)
-    orPrimary: 'deepseek/deepseek-v4-flash-0731:free',
-    orBackup: ['nex-agi/nex-n2.5-pro:free', 'nvidia/nemotron-3.5-lightning:free'],
+    // Tier 2: OpenRouter (model :free).
+    // AUDIT 20 Sep 2026: 'deepseek/deepseek-v4-flash-0731:free' SUDAH TIDAK ADA di
+    // katalog OpenRouter (dicek live: 446 model, NOL model deepseek :free) -> setiap
+    // request 404 dan membuang waktu rantai. Diganti dengan model yang TERVERIFIKASI
+    // ada DAN diuji live (HTTP 200):
+    //   - nex-agi/nex-n2.5-pro:free (context 262K, sudah terbukti di produksi)
+    //   - nvidia/nemotron-3.5-lightning:free (context 1M)
+    orPrimary: 'nex-agi/nex-n2.5-pro:free',
+    orBackup: ['nvidia/nemotron-3.5-lightning:free', 'z-ai/glm-5.2:free'],
     // Tier 3: Groq Cloud API (LPU Ultra-Fast Inference)
     groqPrimary: 'qwen/qwen3.8-27b',
     groqBackup: ['openai/gpt-oss-120b'],

@@ -870,7 +870,30 @@ function steps(): Step[] {
         }, t);
       },
     },
-    // --- TIER 2: OpenRouter (free models) ---
+    // --- TIER 2: Dahl Global (SALDO TOKEN, tanpa rate limit harian) ---
+    // DINAIKKAN dari Tier 6 ke Tier 2 berdasarkan BENCHMARK LATENSI NYATA (20 Sep):
+    //   dahl p50 234ms vs cloudflare 1668ms vs groq 351ms (groq kalah di prompt besar
+    //   karena ITPM 7.000). Dahl juga TIDAK punya batas ITPM ketat -> aman untuk
+    //   percakapan panjang. Saldo 10 key x 100M = 1 miliar token (bukan kuota harian).
+    {
+      kind: 'dahl',
+      keys: config.pools.dahl,
+      models: [config.models.dahlPrimary, ...config.models.dahlBackup],
+      cap: config.dailyCap.dahl,
+      maxPromptTokens: 0,
+      run: (k, m, msgs, t) => {
+        const isDeepSeek = m.toLowerCase().includes('deepseek');
+        // Tuning terbukti dari Tier 6 lama (dipertahankan saat pindah tier):
+        // thinking off + temperature/penalty luwes -> latensi ~0,23 dtk dengan output bersih.
+        return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
+          reasoning_effort: 'none',
+          temperature: isDeepSeek ? 0.65 : 0.45,
+          frequency_penalty: isDeepSeek ? 0.1 : 0.5,
+          presence_penalty: isDeepSeek ? 0.1 : 0.0,
+        }, t);
+      },
+    },
+    // --- TIER 3: OpenRouter (free models) ---
     {
       kind: 'openrouter',
       keys: config.pools.openrouter,
@@ -883,7 +906,7 @@ function steps(): Step[] {
           reasoning: { effort: 'none' },
         }, t),
     },
-    // --- TIER 3: Groq Cloud API (LPU ultra-cepat) ---
+    // --- TIER 4: Groq Cloud API (LPU ultra-cepat) ---
     {
       kind: 'groq',
       keys: config.pools.groq,
@@ -909,7 +932,7 @@ function steps(): Step[] {
         }, t);
       },
     },
-    // --- TIER 4: Cloudflare Workers AI ---
+    // --- TIER 5: Cloudflare Workers AI ---
     {
       kind: 'cloudflare',
       keys: config.pools.cloudflare,
@@ -918,7 +941,7 @@ function steps(): Step[] {
       maxPromptTokens: 0,
       run: (k, m, msgs, t) => cloudflareChat(k, m, msgs, t),
     },
-    // --- TIER 5: Google Gemini API (1M konteks) ---
+    // --- TIER 6: Google Gemini API (1M konteks) ---
     {
       kind: 'gemini',
       keys: config.pools.gemini,
@@ -926,25 +949,6 @@ function steps(): Step[] {
       cap: config.dailyCap.gemini,
       maxPromptTokens: 0, // 1M TPM — jauh di atas kebutuhan
       run: (k, m, msgs, t) => geminiChat(k, m, msgs, t),
-    },
-    // --- TIER 6: Dahl Global API (1B token pool) ---
-    {
-      kind: 'dahl',
-      keys: config.pools.dahl,
-      models: [config.models.dahlPrimary, ...config.models.dahlBackup],
-      cap: config.dailyCap.dahl,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) => {
-        const isDeepSeek = m.toLowerCase().includes('deepseek');
-        return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
-          // Thinking off (keputusan user): ~0,25 dtk dengan output bersih.
-          // 'minimal' justru memunculkan teks berulang + karakter zero-width di model ini.
-          reasoning_effort: 'none',
-          temperature: isDeepSeek ? 0.65 : 0.45,
-          frequency_penalty: isDeepSeek ? 0.1 : 0.5,
-          presence_penalty: isDeepSeek ? 0.1 : 0.0,
-        }, t);
-      },
     },
   ];
 }
@@ -968,7 +972,10 @@ function visionSteps(all: Step[]): Step[] {
 
 /**
  * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: xKiro (Qwen 3.8 Max > MiniMax M3) > OpenRouter (DeepSeek V4 Flash > Nex N2.5 Pro > Nemotron Lightning) > Groq (Qwen 3.8 > GPT-OSS 120B) > Cloudflare (Qwen 3.8 > GLM 4.7 > GPT-OSS > Llama 3.3) > Gemini (3.8 > 3.5) > Dahl (DeepSeek V4 Flash > GLM 5.3 > MiniMax M2.7).
+ * - Teks umum / matematika / koding: xKiro (Qwen 3.8 Max > Qwen 3.7 Max > Qwen 3.6 Max Preview) > Dahl (DeepSeek V4 Flash > GLM 5.3 > MiniMax M2.7) > OpenRouter (Nex N2.5 Pro > Nemotron Lightning > GLM 5.2) > Groq (Qwen 3.8 > GPT-OSS 120B) > Cloudflare (Qwen 3.8 > GLM 4.7 > GPT-OSS > Llama 3.3) > Gemini (3.8 > 3.5).
+ *   Dahl dinaikkan ke Tier 2 (20 Sep) berdasarkan benchmark latensi nyata: p50 234ms
+ *   (lebih cepat dari Groq 351ms & Cloudflare 1668ms) dan TIDAK punya batas ITPM ketat
+ *   sehingga aman untuk percakapan panjang — beda dari Groq (ITPM 7.000).
  * - Vision / foto / stiker: rantai eksplisit `config.models.visionChain` — Groq > Cloudflare (Qwen > Gemma > Llama Vision > LLaVA) > xKiro (MiniMax M3) > Gemini (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) > xKiro (Qwen 3.8 Max > Qwen Omni Flash).
  * Failover antar-tier otomatis: bila SEMUA model dalam satu tier gagal/timeout, lanjut ke tier berikutnya.
  * Failover dalam-tier berbasis WAKTU RESPONS: model yang rata-rata lambat diturunkan prioritasnya
