@@ -161,7 +161,7 @@ export async function scrapeWebpage(url: string): Promise<string> {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         Accept: 'text/plain',
       },
-      signal: AbortSignal.timeout(2500),
+      signal: AbortSignal.timeout(4000),
     });
     if (jinaRes.ok) {
       const text = await jinaRes.text();
@@ -171,6 +171,23 @@ export async function scrapeWebpage(url: string): Promise<string> {
     }
   } catch {
     // abaikan fallback ke direct fetch
+  }
+
+  // 1b. Coba varian tanpa trailing slash (beberapa SPA Vercel membalas berbeda)
+  if (/\/$/.test(url)) {
+    try {
+      const alt = url.replace(/\/+$/, '');
+      const jr = await fetch(`https://r.jina.ai/${alt}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/plain' },
+        signal: AbortSignal.timeout(3000),
+      });
+      if (jr.ok) {
+        const t = await jr.text();
+        if (t && t.length > 80) return t.slice(0, 6000).trim();
+      }
+    } catch {
+      // lanjut
+    }
   }
 
   if (isBinaryDoc) return ''; // biner tidak bisa dibaca via direct fetch
@@ -211,7 +228,18 @@ export function needsSearch(text: string): boolean {
     return true;
   }
 
-  const qNorm = q.toLowerCase().replace(/[?!.,]/g, '').replace(/\s+/g, ' ').trim();
+  // Normalisasi awal: buang kata sisipan/filler yang MEMUTUS pola frasa.
+  // Contoh nyata yang gagal sebelum perbaikan: "carikan lagi berita yg terbaru" -> SKIP
+  // (seharusnya SEARCH), karena pola "berita terbaru" tidak cocok dengan "berita yg terbaru".
+  // Kata sisipan ini sangat lazim di chat Indonesia, jadi dibersihkan sebelum pencocokan.
+  // CATATAN: 'lagi' TIDAK dibuang di sini karena bermakna ganda ("lagi rame" = sedang,
+  // "lagi dong" = minta tambah); ia dibersihkan hanya bila berada di antara frasa kunci.
+  const qNorm = q
+    .toLowerCase()
+    .replace(/[?!.,]/g, '')
+    .replace(/\b(?:yg|yang|nih|dong|deh|sih|lah|tuh|kan|ya|kah|kok|loh)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   // 2. Sapaan murni, salam, dan ucapan terima kasih: lewati search
   if (
@@ -308,7 +336,9 @@ export function needsSearch(text: string): boolean {
   }
 
   // - Keyword recency informal & viralitas (C4)
-  if (/\b(?:lagi\s+rame|yang\s+lagi\s+viral|berita\s+heboh|ada\s+apa\s+(?:sih\s+)?sekarang|yang\s+baru\s+keluar|kabar\s+terbaru|info\s+terbaru|update\s+terkini)\b/i.test(qNorm)) {
+  // CATATAN: kata sisipan ('yang') sudah dibuang di normalisasi awal, jadi pola harus
+  // mencocokkan BENTUK TERSISA juga ("lagi viral", bukan hanya "yang lagi viral").
+  if (/\b(?:lagi\s+rame|lagi\s+viral|viral|berita\s+heboh|heboh|ada\s+apa\s+(?:sih\s+)?sekarang|yang\s+baru\s+keluar|baru\s+keluar|kabar\s+terbaru|info\s+terbaru|update\s+terkini|trending)\b/i.test(qNorm)) {
     return true;
   }
 
@@ -318,7 +348,11 @@ export function needsSearch(text: string): boolean {
   }
 
   // - Berita terarah, update produk, harga komoditas & recency terarah
+  // Frasa fleksibel: izinkan 1-2 kata sisipan antara kata benda berita dan kata recency
+  // (mis. "berita yg terbaru", "berita nih terbaru", "carikan lagi berita terbaru").
   if (
+    /\b(?:berita|kabar|info|informasi)\b[\w\s]{0,20}\b(?:terkini|terbaru|terpanas|terupdate|teranyar|update|hari\s+ini|dunia|politik|panas|nasional|viral|heboh)\b/i.test(qNorm) ||
+    /\b(?:carikan|cari|infokan|kasih|kasi|berikan|tampilkan|minta|mau)\b[\w\s]{0,25}\b(?:berita|kabar|info|informasi)\b/i.test(qNorm) ||
     /\b(?:berita\s+(?:terkini|terbaru|hari\s+ini|dunia|politik|panas|nasional)|ada\s+berita)\b/i.test(qNorm) ||
     /\b(?:kabar\s+(?:terkini|terbaru|berita|dunia|politik|pasar|terpanas)|ada\s+kabar\s+(?:apa|terbaru|tentang)|kabar\s+soal)\b/i.test(qNorm) ||
     /\b(?:info(?:rmasi)?\s+(?:terbaru|terkini|terupdate|teranyar|update|hangat|viral)|kapan\s+(?:rilis|launch|tayang|berita|kejadian|terjadi)|rilis\s+(?:terbaru|resmi|versi|baru))\b/i.test(qNorm) ||
@@ -362,6 +396,17 @@ export function needsSearch(text: string): boolean {
     return true;
   }
 
+  // - FOLLOW-UP KONTEKSTUAL: pertanyaan lanjutan tentang sesuatu yang baru dibahas
+  //   (biasanya web/halaman). Contoh nyata: user kirim link lalu tanya "coba lihat isi nya
+  //   apa aja" / "ada model free apa aja" — tanpa deteksi ini, bot menjawab dari ingatan
+  //   dan MENGARANG isi halaman (temuan produksi: isi web dikarang total).
+  if (
+    /\b(?:isi(?:nya)?|konten|halaman|web(?:nya)?|situs|website|link|url|model|fitur|daftar|list|harga|produk|layanan)\b/i.test(qNorm) &&
+    /\b(?:apa(?:\s*(?:aja|saja|itu|isinya))?|liat|lihat|cek|tengok|kasih\s+tau|jelasin|rangkum|sebutin|tunjukin|coba|tentang)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
   return false;
 }
 
@@ -397,7 +442,9 @@ export function extractCoreEntity(query: string, previousContext?: string): stri
 
   // 4. Hapus filler percakapan dan stop words menyeluruh
   const stopWords = [
-    'coba deh', 'coba', 'deh', 'dong', 'sih', 'lah', 'nih', 'tuh', 'ya', 'kan', 'kok', 'loh',
+    // 'lagi' sebagai filler ("carikan lagi berita") dibuang; frasa bermakna seperti
+    // "lagi rame" sudah ditangani di tempat lain sehingga aman dibersihkan di sini.
+    'carikan lagi', 'cari lagi', 'lagi', 'coba deh', 'coba', 'deh', 'dong', 'sih', 'lah', 'nih', 'tuh', 'ya', 'kan', 'kok', 'loh',
     'ganti topik', 'topik', 'pindah topik', 'ngomongin', 'bahas',
     'kalo', 'kalau', 'klo', 'kl', 'gimana kalau', 'bagaimana kalau',
     'lalu', 'terus', 'trus', 'kemudian', 'nah', 'jadi',
@@ -514,6 +561,10 @@ export function formulateSmartSearchQueries(query: string, previousContext?: str
     /^(?:infokan|tampilkan|berikan|cari|carikan|apa|ada)?\s*(?:berita|kabar|news|headline|peristiwa)\s*(?:hari\s*ini|terkini|terbaru|pagi\s*ini|siang\s*ini|sore\s*ini|malam\s*ini|saat\s*ini|update)?$/i.test(
       cleanRawLower,
     ) ||
+    // Frasa fleksibel dengan kata sisipan: "berita yg terbaru", "carikan lagi berita terbaru",
+    // "kasih info terbaru dong" — sebelumnya tidak dikenali sehingga tidak memakai Top Headlines.
+    /\b(?:berita|kabar|info|informasi)\b[\w\s]{0,20}\b(?:terkini|terbaru|terpanas|terupdate|update|hari\s+ini)\b/i.test(cleanRawLower) ||
+    /^(?:carikan|cari|infokan|kasih|kasi|berikan|tampilkan|minta|mau|ada)\b[\w\s]{0,30}\b(?:berita|kabar|info|informasi)\b/i.test(cleanRawLower) ||
     /^(?:berita|kabar|news|headline)\s*(?:hari\s*ini|terkini|terbaru)$/i.test(cleanRawLower) ||
     /\b(?:berita|kabar|peristiwa|headline)\s+(?:hari\s*ini|terkini|terbaru)\b/i.test(query) ||
     /\b(?:berita|kabar|news)\s+terkini\b/i.test(query) ||
@@ -588,6 +639,18 @@ export function keywords(query: string, previousContext?: string): string {
  */
 export async function searchWeb(query: string, previousContext?: string): Promise<string> {
   if (!query || typeof query !== 'string' || query.trim().length < 2) return '';
+
+  // Follow-up kontekstual: bila pesan ini TIDAK memuat URL tapi percakapan sebelumnya
+  // memuat URL, baca ulang halaman itu. Contoh nyata: user kirim link lalu tanya
+  // "coba lihat isi nya apa aja" / "ada model free apa aja" — tanpa ini bot menjawab
+  // tanpa data halaman dan cenderung mengarang.
+  const hasUrlNow = /https?:\/\//i.test(query);
+  if (!hasUrlNow && previousContext && /https?:\/\//i.test(previousContext)) {
+    const prevUrls = previousContext.match(/https?:\/\/[^\s"'<>()`]+/gi) || [];
+    if (prevUrls.length > 0) {
+      query = `${query} ${prevUrls[prevUrls.length - 1].replace(/[`'"),.;:!?]+$/, '')}`;
+    }
+  }
 
   const searchStart = Date.now();
   // Budget latensi total: balasan harus tetap gesit. Fase yang tidak kritis
@@ -690,8 +753,11 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     });
   };
 
-  // 1. Deteksi URL eksplisit atau nama domain dalam teks pengguna
-  const explicitUrls = cleanQuery.match(/https?:\/\/[^\s"'<>()]+/gi) || [];
+  // 1. Deteksi URL eksplisit atau nama domain dalam teks pengguna.
+  // PENTING: backtick & karakter markup lain dikecualikan — pesan WhatsApp sering
+  // mengirim URL terbungkus format seperti @url:`https://...` dan backtick yang ikut
+  // terbaca membuat URL tidak valid sehingga scrape selalu gagal (temuan produksi).
+  const explicitUrls = (cleanQuery.match(/https?:\/\/[^\s"'<>()`]+/gi) || []).map((u) => u.replace(/[`'"),.;:!?]+$/, ''));
   const domainMatches = cleanQuery.match(/\b([a-z0-9][a-z0-9-]{1,62}\.(?:com|org|net|id|ai|io|co|xyz|dev|app|tech|info|biz|me|online|site|store|cloud|edu|gov|cc|tv|ac\.id|co\.id|go\.id|my\.id|web\.id)(?:\/[^\s"'<>()]*)?)\b/gi) || [];
   const targetUrls = new Set<string>(explicitUrls);
   for (const d of domainMatches) {

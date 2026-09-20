@@ -1273,10 +1273,27 @@ ${ctx.summary}
   // dengan halusinasi (kejadian nyata: mengarang "berita AOL 2003-2004", "iPhone 18 rilis
   // minggu ini"). Aturan ini menutup celah tersebut.
   const needsFreshFacts =
-    /\b(?:berita|kabar|headline|news|terbaru|terkini|viral|harga|kurs|jadwal|skor|hasil|cuaca|gempa|rilis|update)\b/i.test(userPrompt) &&
-    /\b(?:hari\s*ini|terbaru|terkini|sekarang|saat\s*ini|update|kapan|berapa|rilis)\b/i.test(userPrompt);
+    (/\b(?:berita|kabar|headline|news|terbaru|terkini|viral|harga|kurs|jadwal|skor|hasil|cuaca|gempa|rilis|update)\b/i.test(userPrompt) &&
+      /\b(?:hari\s*ini|terbaru|terkini|sekarang|saat\s*ini|update|kapan|berapa|rilis)\b/i.test(userPrompt)) ||
+    // Pertanyaan tentang isi web/halaman/link yang dikirim user: WAJIB berpijak pada data
+    // hasil scrape. Tanpa ini model mengarang isi halaman (temuan produksi: "isinya ada
+    // profil kamu, proyek-proyek..." padahal tidak ada datanya).
+    /\b(?:isi(?:nya)?|konten|halaman|web(?:nya)?|situs|website|link|url)\b/i.test(userPrompt);
   const webDataThin = !web || web.trim().length < 400;
-  if (needsFreshFacts && webDataThin) {
+  // Pertanyaan tentang ISI halaman web: pengetatan khusus — model kecil sangat mudah
+  // mengarang isi situs (profil, fitur, kontak) dari nama domain saja.
+  const asksAboutWebContent = /\b(?:isi(?:nya)?|konten|halaman|web(?:nya)?|situs|website|link|url)\b/i.test(userPrompt);
+  if (asksAboutWebContent && webDataThin) {
+    instructions.push(
+      '',
+      '[ISI WEB TIDAK TERBACA - DILARANG MENGARANG (ATURAN KERAS)]:',
+      '- Temanmu bertanya tentang ISI sebuah halaman/situs/link, tetapi isi halaman itu TIDAK berhasil diambil sistem saat ini.',
+      '- DILARANG KERAS menyebutkan apa pun tentang isi halaman tersebut (fitur, produk, profil, kontak, daftar model, harga, tampilan) — kamu TIDAK punya datanya. Mengarang isi situs adalah halusinasi yang membuat jawaban salah total.',
+      '- DILARANG juga menebak dari nama domain (mis. menganggap domain berisi "portofolio" lalu mendeskripsikan isinya).',
+      '- YANG BENAR: katakan jujur dengan gayamu sendiri bahwa kamu belum berhasil membuka isi halaman itu saat ini (mis. situsnya lambat/tidak merespons saat dibuka), lalu minta dia coba kirim ulang atau tanyakan hal spesifik yang dia cari dari halaman itu.',
+    );
+  }
+  if (needsFreshFacts && webDataThin && !asksAboutWebContent) {
     instructions.push(
       '',
       '[DATA INTERNET TIDAK TERSEDIA - DILARANG MENGARANG (ATURAN KERAS)]:',
@@ -1299,6 +1316,7 @@ PEDOMAN DATA INTERNET & WAKTU BERITA:
 - Gunakan data internet di atas untuk menjawab berita, peristiwa, angka, nama, harga, atau perkembangan terkini (konteks tahun: ${nowYear}).
 - ATURAN SUMBER (KERAS): untuk pertanyaan berita/fakta terkini, jawab HANYA dari data di atas. DILARANG menambahkan berita/peristiwa/angka dari ingatanmu sendiri. Bila data di atas hanya memuat sedikit atau tidak relevan, sampaikan apa adanya yang ada di data (sebutkan tanggalnya), dan jangan mengarang sisanya.
 - PILIH YANG RELEVAN DULU: data di atas memuat banyak sumber. SEBELUM bilang "tidak ada", PERIKSA SEMUA sumber dan ambil yang paling nyambung dengan topik yang ditanyakan temanmu (mis. ditanya ekonomi → cari sumber bernuansa ekonomi/bisnis/harga/keuangan; ditanya olahraga → cari sumber olahraga). Baru katakan datanya tidak ada JIKA setelah diperiksa memang tidak ada satu pun yang relevan.
+- WAJIB BACA DETAIL HALAMAN: bila data di atas memuat "[Isi Halaman Web (...)]" atau "[Isi Lengkap Halaman Web (...)]", ITULAH isi situs yang ditanyakan temanmu — BACA dan KUTIP detail nyatanya (angka, nama fitur, daftar, harga, klaim). DILARANG menjawab "belum nemu info" atau "belum bisa baca" bila blok isi halaman itu ada di data: datanya sudah kamu pegang, sampaikan isinya secara ringkas dan konkret. Jawab kabur padahal data tersedia = jawaban buruk.
 - DILARANG MENYEBUT TAHUN LAMA SEBAGAI BERITA TERBARU: jika data memuat artikel lama (mis. 2003-2004), JANGAN menyajikannya sebagai kabar terkini — sampaikan jujur bahwa data terbaru belum ketemu.
 - WAJIB UNTUK TOPIK TEKNOLOGI/AI/GADGET: pertanyaan tentang model AI terbaru, rilis gadget, versi software, atau harga WAJIB dijawab dari data internet di atas. DILARANG menyebut nama versi/model/produk "terbaru" dari ingatanmu sendiri — ingatan bisa basi. Jika data internet tidak memuat jawabannya, katakan jujur belum ada data terbarunya (tanpa mengarang).
 - DILARANG mengklaim sesuatu sebagai "terbaru/terkini/hari ini/baru rilis" jika tidak ada dasar di data internet di atas.
