@@ -11,7 +11,7 @@ import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.57.0';
+const PROMPT_VERSION = 'v0.58.0';
 
 let sharedBot: TelegramBot | null = null;
 
@@ -296,7 +296,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       try {
         const resetCtx = await getContext(chatKey, msgSentAt);
         const { reply } = await autoReply(
-          `Konfirmasi santai 1 kalimat dengan gayamu sendiri bahwa sesi ${isGroup ? `grup (diminta ${senderName}) ` : ''}sudah di-reset dan memori bersih.`,
+          `Konfirmasi singkat 1 kalimat pendek (maksimal 12 kata) bahwa sesi ${isGroup ? `grup (diminta ${senderName}) ` : ''}sudah di-reset. Gaya santai dan wajar. DILARANG memakai metafora/kiasan panjang, DILARANG menyebut perasaan berlebihan tentang dirimu, DILARANG menambahkan kalimat motivasi atau pernyataan aneh soal hubungan kita.`,
           resetCtx,
         );
         if (reply.trim()) resetReply = reply;

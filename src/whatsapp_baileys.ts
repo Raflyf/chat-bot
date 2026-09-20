@@ -29,7 +29,7 @@ const logger = pino({ level: 'silent' });
 const sessionDir = path.resolve(process.cwd(), 'session_wa');
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.57.0';
+const PROMPT_VERSION = 'v0.58.0';
 
 /**
  * Mengirim pesan teks ke WhatsApp dengan pemecahan cerdas
@@ -621,7 +621,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     try {
       const resetCtx = await getContext(chatKey, msgSentAt);
       const dyn = await autoReply(
-        'Konfirmasi santai 1 kalimat dengan gayamu sendiri bahwa sesi sudah di-reset dan memori bersih.',
+        'Konfirmasi singkat 1 kalimat pendek (maksimal 12 kata) bahwa sesi sudah di-reset. Gaya santai dan wajar. DILARANG memakai metafora/kiasan panjang, DILARANG menyebut perasaan berlebihan tentang dirimu, DILARANG menambahkan kalimat motivasi atau pernyataan aneh soal hubungan kita.',
         resetCtx,
       );
       if (dyn.reply.trim()) reply = dyn.reply;

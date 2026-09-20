@@ -700,13 +700,18 @@ export function stripMediaNarration(text: string): string {
  */
 export function extractStickerTag(text: string): { text: string; sticker: string | null } {
   if (!text) return { text: '', sticker: null };
-  const re = /\[\[\s*sticker\s*:\s*([^\s\]]{1,8})\s*\]\]/gi;
+  // TANGKAP SEMUA VARIAN (temuan produksi 20 Sep 12:48 — model menulis "[sticker:]"
+  // dengan KURUNG SATU dan TANPA emoji, sehingga lolos ke user):
+  //   [[sticker:😂]]  [[sticker: 😂 ]]  [sticker:😂]  [sticker:]  [[sticker]]  [sticker]
+  // Terima juga ejaan Indonesia "stiker" (model kadang menulis dalam bahasa Indonesia).
+  const re = /\[\[?\s*(?:sticker|stiker)\s*(?::\s*([^\s\]]{1,8}))?\s*\]\]?/gi;
   let sticker: string | null = null;
-  const m = re.exec(text);
-  if (m) {
-    const candidate = m[1].trim();
+  let m: RegExpExecArray | null;
+  const reGlobal = new RegExp(re.source, 'gi');
+  while ((m = reGlobal.exec(text)) !== null) {
+    const candidate = (m[1] || '').trim();
     // Hanya terima bila benar-benar emoji (bukan teks biasa)
-    if (/\p{Extended_Pictographic}/u.test(candidate)) sticker = candidate;
+    if (!sticker && candidate && /\p{Extended_Pictographic}/u.test(candidate)) sticker = candidate;
   }
   const cleaned = text.replace(re, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   return { text: cleaned, sticker };
@@ -778,8 +783,14 @@ function enforceUniversalRules(text: string): string {
   //    Tidak bisa dideteksi dari output saja (butuh konteks input), jadi ditangani
   //    di jalur pemanggil yang tahu jenis pesan (mediaReply/voice guard).
 
-  // 3. Tag internal yang lolos (jaring kedua setelah cleanMathAndNoise).
-  out = out.replace(/\[\[(?:jawab|sticker):[^\]]*\]\]/gi, '');
+  // 3. Tag internal yang lolos — SEMUA varian (jaring kedua setelah cleanMathAndNoise).
+  //    Temuan produksi: "[sticker:]" (kurung satu, tanpa emoji) lolos ke user.
+  out = out.replace(/\[\[?\s*(?:jawab(?:an)?|sticker|stiker)\s*(?::[^\]]{0,120})?\s*\]\]?/gi, '');
+  // 3b. Sisa tanda baca menggantung setelah tag dibuang: " ." / " ," / ", Eh" di awal.
+  out = out.replace(/\s+([.,!?;:])/g, '$1');           // spasi sebelum tanda baca
+  out = out.replace(/(^|[.!?]\s*)[,;:]\s+/g, '$1');    // koma menggantung setelah titik
+  out = out.replace(/^\s*[,;:]\s*/, '');               // koma di awal balasan
+  out = out.replace(/\s{2,}/g, ' ');
 
   // 4. Rapikan sisa spasi/newline berlebih akibat pemotongan di atas.
   out = out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
@@ -815,7 +826,9 @@ function dedupeSentences(text: string): string {
   if (text.length > 700 || /```|\n\s*[-*\d]/.test(text)) return text;
 
   const parts = text.match(/[^.!?\n]+[.!?]*/g);
-  if (!parts || parts.length < 3) return text;
+  // Minimal 2 kalimat: duplikat pendek ("Oke deh. Oke deh.") juga harus dibuang —
+  // temuan produksi 20 Sep 12:48 pada balasan reset.
+  if (!parts || parts.length < 2) return text;
 
   const tokenize = (s: string): Set<string> =>
     new Set(
@@ -832,11 +845,13 @@ function dedupeSentences(text: string): string {
     const sentence = raw.trim();
     if (!sentence) continue;
     const tokens = tokenize(sentence);
-    if (tokens.size >= 3) {
+    // Minimal 2 token: kalimat pendek ("Oke deh.") justru yang paling sering
+    // terduplikasi (temuan produksi: "Oke deh. Oke deh.").
+    if (tokens.size >= 2) {
       // Bandingkan dengan SEMUA kalimat yang sudah disimpan (bukan hanya yang terakhir):
       // model bisa menyisipkan kalimat lain di antara dua kalimat yang mengulang.
       const isDuplicate = keptTokens.some((prev) => {
-        if (prev.size < 3) return false;
+        if (prev.size < 2) return false;
         let inter = 0;
         for (const t of tokens) if (prev.has(t)) inter++;
         // Pakai CONTAINMENT (bukan Jaccard murni): kalimat pendek yang seluruh isinya
