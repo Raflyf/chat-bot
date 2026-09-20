@@ -86,13 +86,13 @@ export const config = {
     // (763-1202ms). Dua model ini adalah yang paling patuh dari SEMUA provider.
     groqPrimary: 'qwen/qwen3.8-27b',
     groqBackup: ['openai/gpt-oss-120b'],
-    // Tier 4: Cloudflare Workers AI
-    // UJI KEPATUHAN 20 Sep: 4/4 model PATUH SEMPURNA (satu-satunya provider dengan
-    // hasil sempurna menyeluruh). Urutan berdasarkan latensi nyata:
-    //   glm-4.7-flash 1224ms (tercepat) > gpt-oss-120b 2413ms > qwen3.8-27b 2906ms
-    //   > llama-3.3-70b 3163ms
-    cfPrimary: '@cf/zai-org/glm-4.7-flash',
-    cfBackup: ['@cf/openai/gpt-oss-120b', '@cf/qwen/qwen3.8-27b', '@cf/meta/llama-3.3-70b-instruct-fp8-fast'],
+    // Tier 2: Cloudflare Workers AI
+    // UJI KEPATUHAN 20 Sep: 4/4 model PATUH SEMPURNA.
+    // PRIMARY = qwen3.8-27b (PERMINTAAN USER 20 Sep: "coba model dari cf jangan glm, pake
+    // qwen aja"). Alasan tambahan: glm-4.7-flash terbukti membuat tebakan kontradiktif
+    // ("hewan paling suka diam" -> jawaban "si Lebah") dan respons aneh ("Pertahankan!").
+    cfPrimary: '@cf/qwen/qwen3.8-27b',
+    cfBackup: ['@cf/openai/gpt-oss-120b', '@cf/zai-org/glm-4.7-flash', '@cf/meta/llama-3.3-70b-instruct-fp8-fast'],
     // Model vision Cloudflare (sinkron dengan rantai vision runtime): Qwen & Gemma via
     // endpoint OpenAI-compat /ai/v1, LLaVA via endpoint native /ai/run (byte array).
     cfVision: [
