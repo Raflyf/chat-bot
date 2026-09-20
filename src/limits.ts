@@ -171,19 +171,26 @@ export async function fetchGroqLimits(keys: string[], model: string): Promise<Ma
         if (rpd === null && tpm === null) return;
         out.set(key, {
           requestsPerDay: rpd,
-          tokensPerDay: null,
+          // TPD & RPM dari CONSOLE GROQ (sumber: console.groq.com, dikonfirmasi user).
+          // AUDIT: endpoint API Groq TIDAK menyatakan TPD di header mana pun (sudah dicek
+          // semua header terkait "day/daily/tpd" = tidak ada). Jadi angka ini bersumber
+          // dari console resmi Groq, BUKAN dari endpoint — ditandai di `source`.
+          tokensPerDay: 200000,
           tokensPerMinute: tpm,
           requestsUsedToday: null,
           tokensUsedToday: null,
           requestsRemaining: null,
           tokensRemaining: null,
+          // Label lengkap sesuai console Groq: 30 RPM • 8K TPM • 1K RPD • 200K TPD
           officialLabel:
             rpd !== null && tpm !== null
-              ? `${rpd.toLocaleString('id-ID')} RPD • ${tpm.toLocaleString('id-ID')} TPM`
+              ? `30 RPM • ${tpm.toLocaleString('id-ID')} TPM • ${rpd.toLocaleString('id-ID')} RPD • 200.000 TPD (console Groq)`
               : rpd !== null
-              ? `${rpd.toLocaleString('id-ID')} RPD`
-              : `${(tpm ?? 0).toLocaleString('id-ID')} TPM`,
-          source: 'api.groq.com header x-ratelimit-*',
+              ? `${rpd.toLocaleString('id-ID')} RPD • 200.000 TPD (console Groq)`
+              : `${(tpm ?? 0).toLocaleString('id-ID')} TPM (console Groq)`,
+          // Sumber gabungan: RPD & TPM dari header endpoint (terverifikasi), TPD dari
+          // console resmi Groq (endpoint tidak menyatakannya).
+          source: 'api.groq.com header x-ratelimit-* (RPD, TPM) + console.groq.com (TPD)',
           isLive: true,
         });
       } catch {
@@ -257,6 +264,10 @@ export async function fetchCloudflareLimits(
  */
 export function geminiDocumentedLimits(): LiveLimit {
   return {
+    // AUDIT: endpoint kuota Gemini TIDAK tersedia — sudah diuji /v1beta/models (200),
+    // /v1beta/operations (404), /v1beta/quotas (404), /v1beta/rateLimits (404), dan
+    // header response tidak memuat info rate/limit/quota sama sekali.
+    // Angka dari DOKUMENTASI RESMI Google AI (bukan endpoint) — ditandai isLive:false.
     requestsPerDay: 1500,
     tokensPerDay: null,
     tokensPerMinute: 1_000_000,
@@ -265,7 +276,7 @@ export function geminiDocumentedLimits(): LiveLimit {
     requestsRemaining: null,
     tokensRemaining: null,
     officialLabel: '1.500 RPD • 1M TPM (dokumentasi resmi Google)',
-    source: 'dokumentasi resmi Google AI (tidak ada endpoint kuota publik)',
+    source: 'dokumentasi resmi Google AI — endpoint kuota TIDAK tersedia (diuji 4 kandidat)',
     isLive: false,
   };
 }
@@ -276,15 +287,21 @@ export function geminiDocumentedLimits(): LiveLimit {
  */
 export function dahlDocumentedLimits(): LiveLimit {
   return {
-    requestsPerDay: 5000,
+    // AUDIT (dijalankan langsung ke endpoint Dahl): TIDAK ADA endpoint yang mengekspos
+    // kuota/saldo. Yang dicek: /v1/usage, /v1/me, /v1/credits, /v1/balance, /v1/account
+    // (semua HTML atau 401), header response inference (tidak ada header kuota),
+    // /v1/models (field hanya id/object/created/owned_by).
+    // Satu-satunya sumber: halaman resmi menyatakan "First 100M tokens free".
+    // RPD 5.000 TIDAK dapat diverifikasi -> dikosongkan, bukan diasumsikan.
+    requestsPerDay: null,
     tokensPerDay: 100_000_000,
     tokensPerMinute: null,
     requestsUsedToday: null,
     tokensUsedToday: null,
     requestsRemaining: null,
     tokensRemaining: null,
-    officialLabel: '100M Token gratis/key (situs resmi Dahl)',
-    source: 'inference.dahl.global (halaman resmi: "First 100M tokens free")',
+    officialLabel: '100M Token gratis/key (halaman resmi Dahl)',
+    source: 'inference.dahl.global halaman resmi "First 100M tokens free" — endpoint kuota TIDAK tersedia',
     isLive: false,
   };
 }

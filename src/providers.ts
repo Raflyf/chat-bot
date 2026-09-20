@@ -889,8 +889,12 @@ function steps(): Step[] {
       keys: config.pools.groq,
       models: [config.models.groqPrimary, ...config.models.groqBackup],
       cap: config.dailyCap.groq,
-      // ITPM terukur: 429 Groq menyebut "Limit 7000" untuk qwen3.8-27b (input token
-      // per menit). Prompt di atas ini PASTI gagal -> lewati agar tidak buang waktu.
+      // LIMIT GROQ — dua sumber, dan yang dipakai adalah yang EMPIRIS:
+      //   Console Groq menampilkan : 30 RPM | 8K TPM | 1K RPD | 200K TPD
+      //   429 dari API menyebut    : "Limit 7000" (diuji 4 ukuran prompt, konsisten)
+      // Guard memakai 7000 karena itulah ambang yang BENAR-BENAR menolak request.
+      // Memakai 8000 akan meloloskan prompt 7000-8000 token yang PASTI gagal 429.
+      // (8K di konsol kemungkinan mencakup output; batas INPUT efektif = 7.000.)
       maxPromptTokens: 7000,
       run: (k, m, msgs, t) => {
         // Pangkas pesan agar total (prompt + output 800) benar-benar di bawah limit ketat Groq 8K TPM
