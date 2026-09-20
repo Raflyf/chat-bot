@@ -1,10 +1,15 @@
 import crypto from 'crypto';
 import { config } from './env.js';
-import { isKeyAllowed, keyUsed, keyTokensUsed, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
+import { isKeyAllowed, keyUsed, keyTokensUsed, keyTokensUsedToday, keyRequestsUsedToday, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
 
 // --- CIRCUIT BREAKER & ADAPTIVE KEY ROUTING (LATENCY OPTIMIZER) ---
 const keyCooldownMap = new Map<string, number>(); // `${kind}:${keyHash}` -> timestamp cooldown
-const lastSuccessfulKeyMap = new Map<ProviderKind, string>(); // kind -> key
+// ROTASI KEY (round-robin) — keputusan user: "apikey 1 2 3 dipakai bergiliran".
+// Sebelumnya sistem memakai STICKY key (key sukses terakhir selalu diprioritaskan),
+// akibatnya key pertama dipakai terus sampai kuotanya habis sementara key lain nyaris
+// tak tersentuh (temuan nyata: key ...6386 tembus 1.004.173 token, key ...8a6b masih 0).
+// Sekarang indeks rotasi bergilir tiap panggilan sehingga pemakaian merata.
+const keyRotationIndexMap = new Map<ProviderKind, number>();
 const modelCooldownMap = new Map<string, number>(); // `${kind}:${model}` -> timestamp cooldown
 
 function keyHash(key: string): string {
@@ -12,7 +17,7 @@ function keyHash(key: string): string {
 }
 
 function recordKeySuccess(kind: ProviderKind, key: string, model: string): void {
-  lastSuccessfulKeyMap.set(kind, key);
+  // Tidak ada lagi sticky key: rotasi ditangani getOrderedKeys (round-robin).
   keyCooldownMap.delete(`${kind}:${keyHash(key)}`);
   modelCooldownMap.delete(`${kind}:${model}`);
 }
@@ -80,10 +85,24 @@ function orderModelsByLatency(kind: ProviderKind, models: string[]): string[] {
   return [...fast, ...slow];
 }
 
-function getOrderedKeys(kind: ProviderKind, keys: string[]): string[] {
+/**
+ * Urutkan key untuk satu attempt dengan ROTASI ROUND-ROBIN (keputusan user).
+ *
+ * Kenapa bukan sticky: sebelumnya key sukses terakhir selalu dipakai lagi, sehingga
+ * key #1 menghabiskan kuota hariannya sendirian (bukti dashboard xkiro: key ...6386
+ * tembus 1.004.173 token sementara key ...8a6b masih 0). Rotasi membuat beban merata
+ * sehingga tidak ada satu key yang habis lebih dulu.
+ *
+ * Aturan:
+ * 1. Key yang sedang cooldown (429/401/timeout) DIBUANG dari rotasi; kalau semua
+ *    cooldown, pakai daftar cooling sebagai fallback darurat agar tetap ada percobaan.
+ * 2. Mulai dari indeks rotasi bergilir, bukan selalu indeks 0.
+ * 3. Urutkan sisa key berdasarkan kuota harian terpakai (paling sedikit dulu) —
+ *    pengaman bila jumlah request tidak merata (mis. instance Vercel berbeda).
+ */
+export function getOrderedKeys(kind: ProviderKind, keys: string[]): string[] {
   if (keys.length <= 1) return keys;
   const now = Date.now();
-  const lastSuccess = lastSuccessfulKeyMap.get(kind);
 
   const healthy: string[] = [];
   const cooling: string[] = [];
@@ -98,13 +117,33 @@ function getOrderedKeys(kind: ProviderKind, keys: string[]): string[] {
     }
   }
 
-  // Jika key sukses terakhir ada dan sehat, tempatkan di prioritas #1 (sticky key)
-  if (lastSuccess && healthy.includes(lastSuccess)) {
-    healthy.sort((a, b) => (a === lastSuccess ? -1 : b === lastSuccess ? 1 : 0));
-  }
+  const pool = healthy.length > 0 ? healthy : cooling;
+  if (pool.length <= 1) return pool;
 
-  // Utamakan key yang sehat. Jika seluruh key sedang cooling, gunakan cooling sebagai fallback darurat
-  return healthy.length > 0 ? healthy : cooling;
+  // Titik mulai bergilir: maju satu key setiap panggilan untuk kind ini.
+  const start = (keyRotationIndexMap.get(kind) ?? 0) % pool.length;
+  keyRotationIndexMap.set(kind, start + 1);
+
+  const rotated = [...pool.slice(start), ...pool.slice(0, start)];
+
+  // Pengaman keseimbangan: dahulukan key yang paling sedikit terpakai hari ini
+  // (request sebagai metrik utama, token sebagai tie-break) agar rotasi tidak
+  // perlahan drift ke satu key ketika jumlah request tidak persis merata.
+  rotated.sort((a, b) => {
+    const reqDiff = keyUsageToday(kind, a, 'req') - keyUsageToday(kind, b, 'req');
+    if (reqDiff !== 0) return reqDiff;
+    return keyUsageToday(kind, a, 'tokens') - keyUsageToday(kind, b, 'tokens');
+  });
+  return rotated;
+}
+
+/** Pemakaian key hari ini dari cache kuota — untuk menyeimbangkan rotasi. */
+function keyUsageToday(kind: ProviderKind, key: string, metric: 'req' | 'tokens'): number {
+  try {
+    return metric === 'req' ? keyRequestsUsedToday(kind, key) : keyTokensUsedToday(kind, key);
+  } catch {
+    return 0;
+  }
 }
 
 export interface TextPart {

@@ -83,6 +83,11 @@ export function keyTokensUsedToday(kind: ProviderKind, key: string): number {
   return tokenSlot(kind, key).tokens;
 }
 
+/** Jumlah REQUEST harian key (RPD) — dipakai rotasi key agar beban merata antar key. */
+export function keyRequestsUsedToday(kind: ProviderKind, key: string): number {
+  return slot(kind, key).count;
+}
+
 const hydratedKeys = new Set<string>();
 const pendingHydrations = new Map<string, Promise<void>>();
 

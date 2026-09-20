@@ -3,13 +3,16 @@ import { autoReply, describeImage, sanitizeAssistantOutput } from './skills.js';
 import { chat, geminiThinkingConfig } from './providers.js';
 import type { ChatContext } from './memory.js';
 import { keyUsed, isKeyAllowed, keyTokensUsed } from './quota.js';
+import { getOrderedKeys } from './providers.js';
 import mammoth from 'mammoth';
 import zlib from 'node:zlib';
 
 /** Helper transkripsi via Groq Whisper API */
 async function transcribeViaGroq(buffer: Buffer, mime: string, model: string): Promise<string | null> {
-  const keys = config.pools.groq;
-  if (!keys || keys.length === 0) return null;
+  const rawKeys = config.pools.groq;
+  if (!rawKeys || rawKeys.length === 0) return null;
+  // Rotasi key (round-robin) agar beban merata — berlaku untuk SEMUA endpoint.
+  const keys = getOrderedKeys('groq', rawKeys);
 
   let ext = 'ogg';
   if (mime.includes('mp4') || mime.includes('m4a')) ext = 'm4a';
@@ -50,8 +53,9 @@ async function transcribeViaGroq(buffer: Buffer, mime: string, model: string): P
 
 /** Helper transkripsi audio via Google Gemini Multimodal API */
 async function transcribeViaGemini(buffer: Buffer, mime: string, model: string): Promise<string | null> {
-  const keys = config.pools.gemini;
-  if (!keys || keys.length === 0) return null;
+  const rawKeys = config.pools.gemini;
+  if (!rawKeys || rawKeys.length === 0) return null;
+  const keys = getOrderedKeys('gemini', rawKeys);
 
   for (const key of keys) {
     if (!(await isKeyAllowed('gemini', key, config.dailyCap.gemini))) continue;
@@ -95,8 +99,9 @@ async function transcribeViaGemini(buffer: Buffer, mime: string, model: string):
 
 /** Helper transkripsi audio via Cloudflare Workers AI Whisper (endpoint native /ai/run). */
 async function transcribeViaCloudflare(buffer: Buffer, model: string): Promise<string | null> {
-  const keys = config.pools.cloudflare;
-  if (!keys || keys.length === 0) return null;
+  const rawKeys = config.pools.cloudflare;
+  if (!rawKeys || rawKeys.length === 0) return null;
+  const keys = getOrderedKeys('cloudflare', rawKeys);
 
   for (const rawKey of keys) {
     if (!(await isKeyAllowed('cloudflare', rawKey, config.dailyCap.cloudflare))) continue;
@@ -205,8 +210,9 @@ async function processPdfViaGemini(
   prompt: string,
   model: string,
 ): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } } | null> {
-  const keys = config.pools.gemini;
-  if (!keys || keys.length === 0) return null;
+  const rawKeys = config.pools.gemini;
+  if (!rawKeys || rawKeys.length === 0) return null;
+  const keys = getOrderedKeys('gemini', rawKeys);
 
   for (const key of keys) {
     if (!(await isKeyAllowed('gemini', key, config.dailyCap.gemini))) continue;
@@ -267,8 +273,9 @@ async function processPdfViaOpenRouter(
   prompt: string,
   filename: string,
 ): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } } | null> {
-  const keys = config.pools.openrouter;
-  if (!keys || keys.length === 0) return null;
+  const rawKeys = config.pools.openrouter;
+  if (!rawKeys || rawKeys.length === 0) return null;
+  const keys = getOrderedKeys('openrouter', rawKeys);
 
   for (const key of keys) {
     if (!(await isKeyAllowed('openrouter', key, config.dailyCap.openrouter))) continue;
@@ -603,7 +610,9 @@ export async function processIncomingVideo(
     ? `Pengguna mengirim video "${filename}". Pertanyaan / instruksi:\n${caption.trim()}\n\nAturan: Jawab langsung to-the-point, santai, dan alami. DILARANG menarasikan/mendeskripsikan isi video ("Video ini menampilkan...", "Di videonya ada...") — user yang mengirim, dia sudah tahu isinya.`
     : `Pengguna mengirim video "${filename}" tanpa pertanyaan. DILARANG menarasikan atau mendeskripsikan isi video ("Video ini memperlihatkan...", "Di videonya ada...") — user yang mengirim, dia sudah tahu isinya. Cukup balas dengan REAKSI NATURAL seperti teman yang baru dikirimi video di chat: celetukan pendek yang nyambung dengan obrolan terakhir, ikut merespons suasananya, atau komentar santai. Kamu menonton videonya untuk memahami konteks, bukan untuk dibacakan ulang.`;
 
-  const keys = config.pools.gemini;
+  const rawKeys = config.pools.gemini;
+  // Rotasi key (round-robin) — berlaku untuk semua endpoint termasuk video.
+  const keys = getOrderedKeys('gemini', rawKeys);
 
   for (const model of config.models.geminiVision) {
     for (const key of keys) {
