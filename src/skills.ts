@@ -752,9 +752,37 @@ export function sanitizeAssistantOutput(
   if (mediaReply && !userAskedAboutMedia(userPrompt)) {
     cleaned = stripMediaNarration(cleaned);
   }
+  // Token protokol yang bocor dari model ("responseSip, siap.") — dibersihkan SEBELUM
+  // dedupe agar pengulangan yang ditimbulkannya ("Sip, siap." dua kali) ikut terdeteksi.
+  // Temuan produksi 20 Sep 13:53 (Dahl/DeepSeek).
+  cleaned = stripProtocolLeak(cleaned);
   cleaned = dedupeSentences(cleaned);
   cleaned = enforceUniversalRules(cleaned);
+  // Jargon teknis yang dikarang model padahal user tidak membahas kode (temuan v34).
+  cleaned = scrubInventedJargon(cleaned, userPrompt);
   return avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
+}
+
+/**
+ * Buang token protokol yang bocor dari model ke dalam teks balasan.
+ *
+ * Temuan produksi 20 Sep 13:53 (model Dahl/DeepSeek):
+ *   "Sip, siap. Lanjut aja. Ada apa? responseSip, siap."
+ * Kata kunci format (`response`, `answer`, dst.) MENEMPEL tanpa spasi ke awal kata
+ * berikutnya. Terlihat "aneh/ngawur" bagi user.
+ *
+ * Hanya dibuang saat benar-benar tampak sebagai token protokol:
+ *  - menempel diikuti huruf kapital ("responseSip"), atau
+ *  - berdiri sebagai label di awal balasan / setelah akhir kalimat ("response: ...").
+ * Kata yang sama di tengah kalimat normal ("hasil final", "jawaban benar") TIDAK disentuh.
+ */
+function stripProtocolLeak(text: string): string {
+  if (!text) return text;
+  let out = text;
+  out = out.replace(/\b(?:response|answer|reply|output|final|assistant|completion)(?=[A-Z][a-z])/g, '');
+  out = out.replace(/^\s*(?:response|answer|reply|output|completion|assistant)\s*[:=]\s*/i, '');
+  out = out.replace(/([.!?\n]\s*)(?:response|answer|reply|output|completion|assistant)\s*[:=]\s*/gi, '$1');
+  return out.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 /**
@@ -804,7 +832,55 @@ function enforceUniversalRules(text: string): string {
   // Kapitalkan ulang awal kalimat bila frasa pembuka tadi berada di awal.
   out = out.replace(/^([a-z])/, (m) => m.toUpperCase());
 
+  // 6. CATATAN META DALAM KURUNG (temuan produksi, model Dahl/DeepSeek):
+  //    "(Jawaban santai, sesuai sapaan singkat. )" — model menuliskan alasan/deskripsi
+  //    gaya jawabannya sendiri sebagai catatan. Terlihat "aneh/ngawur" bagi user dan
+  //    bukan bagian percakapan. Dua varian terbukti di produksi:
+  //      tertutup   : "(Menjawab dengan santai dan langsung ke inti. )"
+  //      TIDAK tutup: "(Mengakui kesalahan dengan santai dan sedikit humor."  <- v34
+  //    Karena itu kurung penutup dibuat OPSIONAL. Dibuang hanya bila ISI kurung memang
+  //    meta-komentar tentang cara menjawab (bukan percakapan nyata seperti "(ketawa)").
+  out = out.replace(
+    /\(\s*(?:Jawaban|Menjawab|Mengakui|Menyapa|Menyindir|Respons|Respon|Balasan|Sedikit|Agak|Terlihat|Nampak|Tampak|Sesuai|Sambil)\b[^)\n]{0,160}\)?/gi,
+    '',
+  );
+  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+
+  // 7. CATATAN META DALAM KURUNG SIKU (temuan uji live 20 Sep, model Dahl/DeepSeek):
+  //    "[note: Ini versi paling singkat dan santai sesuai permintaanmu...]" — model
+  //    menjelaskan alasannya sendiri memakai tag catatan. Sama seperti tag stiker,
+  //    ini BUKAN bagian percakapan. Dihapus SEMUA varian (note/catatan/info/keterangan).
+  out = out.replace(/\[\s*(?:note|catatan|keterangan|penjelasan|info|alasan)\s*:[^\]]{0,400}\]?/gi, '');
+  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+
   return out;
+}
+
+/**
+ * Bersihkan istilah teknis yang DIKARANG model padahal user tidak membahas kode.
+ *
+ * Temuan v34 (model Dahl/DeepSeek): user bertanya santai "ngetik apa sih kamu",
+ * bot menjawab "kamu yang ngoding aku" — istilah teknis yang terasa robotik/ngawur.
+ * Prompt sudah melarangnya, model tetap melanggar → ditegakkan di kode.
+ *
+ * Aman: hanya aktif bila USER TIDAK memakai istilah teknis tersebut (jika user memang
+ * membahas coding, balasan boleh memakai istilah itu).
+ */
+function scrubInventedJargon(text: string, userPrompt?: string): string {
+  if (!text) return text;
+  // Sinyal KONTEKS KODE yang kuat di pesan user. Kata "ngetik" TIDAK dimasukkan:
+  // user bisa menulis "ngetik apa sih kamu" (santai, artinya "sedang mengetik apa")
+  // dan itu bukan pembahasan kode — temuan nyata v34.
+  const codeContextRe = /\b(?:kode|coding|ngoding|koding|program|aplikasi|error|bug|ngebug|debug|debugging|syntax|database|dikoreksi|typo|develop(?:er)?|script|fungsi|function|variable)\b/i;
+  if (userPrompt && codeContextRe.test(userPrompt)) return text;
+  let out = text;
+  // Ganti dengan padanan sehari-hari yang maknanya sama (bukan menghapus kalimat).
+  out = out.replace(/\byang\s+ngoding(?:in)?\s+(?:aku|gue|gw|saya)\b/gi, 'yang bikin aku');
+  out = out.replace(/\bngoding(?:in)?\s+(?:aku|gue|gw|saya)\b/gi, 'bikin aku');
+  out = out.replace(/\byang\s+(?:bikin|buat)\s+kode\s+(?:aku|gue|gw|saya)\b/gi, 'yang bikin aku');
+  // Kolaps pengulangan frasa hasil penggantian: "yang bikin aku, yang bikin aku ada"
+  out = out.replace(/\byang bikin aku\b[,\s]+(?=yang bikin aku\b)/gi, '');
+  return out.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 /**
@@ -839,14 +915,26 @@ function dedupeSentences(text: string): string {
         .filter((w) => w.length > 2),
     );
 
+  // Kunci EXACT (normalisasi penuh): menangkap pengulangan kalimat pendek 1 kata
+  // seperti "Pinter!" / "Kena, ya." yang tokennya terlalu sedikit untuk containment.
+  // Temuan produksi 20 Sep 13:54 (Dahl/DeepSeek):
+  //   "Bener banget! 😂 Kena, ya. Balon emang makin diisi udara malah makin enteng.
+  //    Pinter! Kena, ya. Pinter!" — "Kena, ya." dan "Pinter!" muncul DUA KALI.
+  const exactKey = (s: string): string =>
+    s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+
   const kept: string[] = [];
   const keptTokens: Set<string>[] = [];
+  const keptExact = new Set<string>();
   for (const raw of parts) {
     const sentence = raw.trim();
     if (!sentence) continue;
+    const key = exactKey(sentence);
+    // 1. Pengulangan persis (termasuk kalimat 1 kata) -> buang. Minimal 2 karakter
+    //    agar seruan super pendek ("Eh!") tidak dianggap duplikat bila berdiri sendiri.
+    if (key.length >= 2 && keptExact.has(key)) continue;
     const tokens = tokenize(sentence);
-    // Minimal 2 token: kalimat pendek ("Oke deh.") justru yang paling sering
-    // terduplikasi (temuan produksi: "Oke deh. Oke deh.").
+    // 2. Kemiripan tinggi antar kalimat lebih panjang (>=2 token), pakai containment.
     if (tokens.size >= 2) {
       // Bandingkan dengan SEMUA kalimat yang sudah disimpan (bukan hanya yang terakhir):
       // model bisa menyisipkan kalimat lain di antara dua kalimat yang mengulang.
@@ -865,6 +953,7 @@ function dedupeSentences(text: string): string {
     }
     kept.push(sentence);
     keptTokens.push(tokens);
+    if (key.length >= 2) keptExact.add(key);
   }
   return kept.join(' ').replace(/\s{2,}/g, ' ').trim();
 }
@@ -1880,6 +1969,27 @@ export async function autoReply(
     }
     if (!reply.trim()) {
       return { reply: '', escalate: true, via };
+    }
+
+    // GUARD BATAS KATA (generik, bukan hardcode): bila instruksi runtime meminta
+    // "maksimal N kata" / "maks N kata" dan model melampauinya (sering terjadi —
+    // temuan uji live 20 Sep: balasan reset 31 kata padahal diminta maks 12),
+    // potong ke N kata pada batas kalimat terdekat. Aturan prompt saja tidak cukup
+    // karena model bisa berganti tiap pesan (failover), jadi ditegakkan di kode.
+    const wordLimitMatch = clean.match(/\bmaks(?:imal)?\s*(\d{1,3})\s*kata\b/i);
+    if (wordLimitMatch) {
+      const limit = Math.min(Number(wordLimitMatch[1]) || 0, 120);
+      const words = reply.split(/\s+/).filter(Boolean);
+      if (limit > 0 && words.length > limit) {
+        // Potong pada batas KALIMAT terdekat di bawah limit agar tidak terpotong di tengah.
+        const trimmed = reply.slice(0, Math.max(40, reply.length * (limit / words.length) + 40));
+        const sentenceEnd = Math.max(trimmed.lastIndexOf('. '), trimmed.lastIndexOf('! '), trimmed.lastIndexOf('? '), trimmed.lastIndexOf('\n'));
+        const cut = sentenceEnd > 20 ? reply.slice(0, sentenceEnd + 1) : words.slice(0, limit).join(' ');
+        if (cut.trim().split(/\s+/).filter(Boolean).length >= 2) {
+          console.warn(`[skills] Balasan ${words.length} kata melebihi batas ${limit} — dipotong.`);
+          reply = cut.trim();
+        }
+      }
     }
 
     // Jaring keamanan terakhir: buang SELURUH sisa tag stiker dari teks balasan
