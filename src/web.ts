@@ -165,7 +165,17 @@ export async function scrapeWebpage(url: string): Promise<string> {
     });
     if (jinaRes.ok) {
       const text = await jinaRes.text();
-      if (text && text.length > 80) {
+      // Deteksi halaman challenge/anti-bot yang dikembalikan sebagai "sukses".
+      // Jina mengembalikan 200 dengan body Cloudflare "Just a moment..." / captcha untuk
+      // sebagian situs; body itu BUKAN isi halaman, jadi harus ditolak agar direct fetch
+      // (yang sering berhasil) tetap dijalankan. Tanpa cek ini, bot "berhasil" membaca
+      // halaman challenge lalu menyimpulkan isi situs tidak terbaca (temuan produksi:
+      // GitHub, docs.anthropic.com, dan SPA Vercel semuanya 0 chars padahal direct OK).
+      const isChallenge =
+        /just a moment|attention required|cf-browser-verification|enable javascript and cookies|checking your browser|access denied|are you a robot|captcha/i.test(
+          text.slice(0, 1500),
+        );
+      if (!isChallenge && text && text.length > 80) {
         return text.slice(0, 6000).trim();
       }
     }
@@ -199,18 +209,51 @@ export async function scrapeWebpage(url: string): Promise<string> {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 FreeAIBot/2026',
         Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
       },
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(2500),
     });
     if (res.ok) {
       const raw = await res.text();
       const parsed = extractFitMarkdownContent(raw);
       if (parsed && parsed.length > 80) return parsed;
+      // SPA (React/Vue/Next): HTML awal hanya shell kosong + metadata. Ambil metadata
+      // yang ADA (title, description, og:*) agar bot tetap punya fakta halaman —
+      // lebih baik daripada 0 karakter yang memaksa bot bilang "tidak terbaca".
+      const meta = extractSpaMetadata(raw);
+      if (meta && meta.length > 40) return meta;
     }
   } catch {
     // gagal scrape
   }
 
   return '';
+}
+
+/**
+ * Ambil metadata halaman SPA yang tidak bisa dirender tanpa JavaScript.
+ * SPA (Vercel/Next/React) mengirim shell kosong, tetapi <title>, meta description,
+ * og:title/og:description/og:site_name hampir selalu terisi dan cukup untuk menjawab
+ * pertanyaan dasar "ini web apa" secara faktual tanpa mengarang.
+ */
+export function extractSpaMetadata(html: string): string {
+  if (!html || typeof html !== 'string') return '';
+  const pick = (re: RegExp): string => {
+    const m = html.match(re);
+    return m && m[1] ? cleanStr(m[1]).slice(0, 300) : '';
+  };
+  const title = pick(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const desc = pick(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)
+    || pick(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
+  const ogTitle = pick(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i);
+  const ogDesc = pick(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i);
+  const ogSite = pick(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i);
+  const parts: string[] = [];
+  const mainTitle = ogTitle || title;
+  if (mainTitle) parts.push(`Judul halaman: ${mainTitle}`);
+  if (ogSite) parts.push(`Nama situs: ${ogSite}`);
+  const mainDesc = ogDesc || desc;
+  if (mainDesc) parts.push(`Deskripsi halaman: ${mainDesc}`);
+  if (parts.length === 0) return '';
+  return `[Metadata Halaman (isi JS tidak dirender)]:\n${parts.join('\n')}`;
 }
 
 /** Tentukan apakah kueri memerlukan penelusuran internet live */
