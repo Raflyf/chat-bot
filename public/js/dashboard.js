@@ -563,7 +563,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const totalCalls = data.summary.totalCallsPeriod ?? data.summary.totalCallsToday ?? 0;
       const totalTokens = data.summary.totalTokensPeriod ?? 0;
       document.getElementById("kpi-calls-today").textContent = totalCalls.toLocaleString() + " calls";
-      document.getElementById("kpi-total-keys").textContent = `${formatTokens(totalTokens)} Token \u2022 ${data.summary.totalKeys} Keys Terpantau`;
+      document.getElementById("kpi-total-keys").textContent = `${formatTokens(totalTokens)} \u2022 ${data.summary.totalKeys} Keys Terpantau`;
 
       document.getElementById("kpi-title-model").textContent = `Model Terpopuler (${rangeLabel})`;
       const topModel = data.modelsBreakdown && data.modelsBreakdown.length > 0
@@ -1034,7 +1034,14 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             // Baris kedua: info TOKEN bila provider punya batas token (xKiro/Dahl/Groq).
             // Inilah yang membuat dashboard jujur: key ...6386 tampil "112/500 calls (22%)"
             // SEKALIGUS "1.004.173 / 1.000.000 token (100%)" — tidak lagi menyesatkan.
+            // Limit diambil dari endpoint provider (v0.49) — ditandai "live" atau "dokumentasi".
             let tokenLine = "";
+            if (k.officialLimitLabel) {
+              const srcTag = k.limitIsLive
+                ? '<span style="color: #34d399;"> • limit live dari endpoint</span>'
+                : '<span style="color: #fbbf24;"> • limit dari dokumentasi resmi</span>';
+              tokenLine += `<div style="font-size: 0.66rem; color: var(--text-dim); margin-top: 2px;">Batas resmi: ${escapeHtml(k.officialLimitLabel)}${srcTag}</div>`;
+            }
             if (hasTokenCap) {
               const tokenPct = k.tokenPercent || 0;
               const tokenColor = tokenPct >= 100 ? "#fb7185" : tokenPct >= 80 ? "#fbbf24" : "#34d399";
@@ -1064,6 +1071,12 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
         const usedValue = p.usedPeriod ?? p.usedToday ?? 0;
         const capInfo = p.totalCap > 0 ? `Cap: ${p.totalCap.toLocaleString()} calls` : "Uncapped";
+        // Konteks token pada header kartu: provider yang dibatasi TOKEN (xKiro/Dahl/Groq)
+        // tidak boleh hanya menampilkan calls — pengguna perlu tahu batas mana yang mengikat.
+        const hasTokenContext = (p.totalTokenCap || 0) > 0 && (p.totalTokensUsed || 0) > 0;
+        const tokenContextHtml = hasTokenContext
+          ? `<div style="font-size: 0.68rem; color: ${p.tokenPercent >= 100 ? "#fb7185" : p.tokenPercent >= 80 ? "#fbbf24" : "var(--text-dim)"}; font-weight: 600; margin-top: 2px;">${formatTokens(p.totalTokensUsed)} / ${formatTokens(p.totalTokenCap)} (${p.tokenPercent}%)${p.cappedKeys > 0 ? ` &bull; ${p.cappedKeys} key habis` : ""}</div>`
+          : "";
         const providerLiveBadge = p.isLiveSynced
           ? `<span class="badge" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8; font-size: 0.68rem; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.25); padding: 2px 7px; border-radius: 9999px; margin-left: 6px;">● Live Remote Sync</span>`
           : "";
@@ -1079,6 +1092,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             <div class="provider-summary-stat">
               <div class="provider-usage-text">${usedValue.toLocaleString()} Calls</div>
               <div class="provider-cap-text">${p.keyCount} Keys &bull; ${capInfo}</div>
+              ${tokenContextHtml}
             </div>
           </div>
           <div class="keys-list">
@@ -1277,7 +1291,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${bindingPct}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCapRpd.toLocaleString("id-ID")} RPD &bull; 8K TPM &bull; 200K TPD (Free Tier resmi)${k.isRealTokenData ? '' : ' &bull; <span style="color:#fbbf24;">estimasi</span>'}</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCapRpd.toLocaleString("id-ID")} RPD &bull; 8K TPM &bull; 200K TPD (Free Tier resmi)${!k.isRealTokenData && tokensUsed > 0 ? ' &bull; <span style="color:#fbbf24;">estimasi</span>' : ''}</div>
                 </td>
                 <td>
                   <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${Math.max(0, tpdCap - tokensUsed).toLocaleString("id-ID")}</div>
@@ -1290,7 +1304,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
               </tr>
             `);
           } else if (p.kind === "cloudflare") {
-            const keyCap = p.cap || 300;
+            // Cap per-key dari payload (120), bukan konstanta 300 yang tidak sinkron
+            // dengan angka "0 / 120 calls" pada baris key (temuan audit dashboard).
+            const keyCap = p.capPerKey || p.cap || 120;
             const keyUsed = k.used || 0;
             const keyRemaining = Math.max(0, keyCap - keyUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((keyUsed / keyCap) * 100)) : 0;
@@ -1316,7 +1332,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} RPD (~10K Neurons) &bull; Bot Monitored</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} RPD (~10K Neuron/hari) &bull; Bot Monitored</div>
                 </td>
                 <td>
                   <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
@@ -1446,7 +1462,22 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         }
 
         let mechanismText = "Kuota Token Harian";
-        let limitOfficial = `${formatTokens(p.tokenCapPerKey)}/hari/key`;
+        // Limit resmi per-key. xKiro TIDAK seragam (key1 1jt, key2/3 500k) — tampilkan
+        // rentang nyata, bukan satu angka yang menyesatkan (temuan: tertulis "5M
+        // Token/hari/key" padahal limit asli 1jt & 500k).
+        const perKeyCaps = Array.isArray(p.tokenCapPerKeyList) ? p.tokenCapPerKeyList.filter((c) => c > 0) : [];
+        let limitOfficial;
+        if (perKeyCaps.length > 0) {
+          const minCap = Math.min(...perKeyCaps);
+          const maxCap = Math.max(...perKeyCaps);
+          // formatTokens sudah memuat kata "Token"; buang agar tidak "1M Token-500K Token".
+          const fmtNum = (n) => formatTokens(n).replace(/\s*Token$/, "");
+          limitOfficial = minCap === maxCap
+            ? `${fmtNum(minCap)} Token/hari/key`
+            : `${fmtNum(minCap)}-${fmtNum(maxCap)} Token/hari/key`;
+        } else {
+          limitOfficial = `${formatTokens(p.tokenCapPerKey)}/hari/key`;
+        }
         if (p.kind === "dahl") {
           mechanismText = "Pool Saldo Token (1B)";
           limitOfficial = "100M Token/key (~5K RPD)";
@@ -1488,7 +1519,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             <span class="tp-badge-cycle">${escapeHtml(p.resetCycle || "-")}</span>
           </td>
           <td>
-            <div style="font-weight: 700; color: var(--text-main);">${usedCalls.toLocaleString()} Calls &bull; ${formatTokens(tokensUsed)} Token</div>
+            <div style="font-weight: 700; color: var(--text-main);">${usedCalls.toLocaleString()} Calls &bull; ${formatTokens(tokensUsed)}</div>
             ${(p.totalTokenCap > 0 && p.totalTokensRemaining !== undefined)
               ? `<div style="font-size: 0.72rem; color: #34d399; margin-top: 2px;">Sisa ${formatTokens(p.totalTokensRemaining)} dari ${formatTokens(p.totalTokenCap)}${p.cappedKeys > 0 ? ` &bull; <span style="color:#fb7185;font-weight:700;">${p.cappedKeys} key habis</span>` : ''}</div>`
               : ""}

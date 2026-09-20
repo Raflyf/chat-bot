@@ -3,6 +3,15 @@ import crypto from 'crypto';
 import { config } from '../src/env.js';
 import { db } from '../src/db.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
+import {
+  fetchXkiroLimits,
+  fetchOpenRouterLimits,
+  fetchGroqLimits,
+  fetchCloudflareLimits,
+  geminiDocumentedLimits,
+  dahlDocumentedLimits,
+  type LiveLimit,
+} from '../src/limits.js';
 
 function detectMessageType(content: string): 'voice' | 'document' | 'image' | 'sticker' | 'video' | 'text' {
   // Tanpa kurung tutup agar varian grup ("[Voice Note dari X]: ...") ikut terdeteksi
@@ -148,6 +157,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let userMsgs: Array<{ content: string }> = [];
     let waMonthlyMsgs: Array<{ chat_id: string; created_at: string }> = [];
 
+    // Batas kuota LIVE dari endpoint resmi tiap provider (v0.49).
+    // Angka hardcode di .env TERBUKTI SALAH untuk beberapa provider — OpenRouter
+    // sebenarnya 50 req/hari (bukan 180), Cloudflare 1200 req/300 detik (bukan 120 RPD),
+    // Groq 8000 TPM (bukan 200K TPD). Sumber kebenaran = endpoint provider.
+    const limitsPromise = (async (): Promise<Map<string, Map<string, LiveLimit>>> => {
+      const result = new Map<string, Map<string, LiveLimit>>();
+      const [xk, or, gq, cf] = await Promise.all([
+        fetchXkiroLimits(config.pools.xkiro).catch(() => new Map<string, LiveLimit>()),
+        fetchOpenRouterLimits(config.pools.openrouter).catch(() => new Map<string, LiveLimit>()),
+        fetchGroqLimits(config.pools.groq, config.models.groqPrimary).catch(() => new Map<string, LiveLimit>()),
+        fetchCloudflareLimits(config.pools.cloudflare, config.cloudflareAccountId).catch(() => new Map<string, LiveLimit>()),
+      ]);
+      result.set('xkiro', xk);
+      result.set('openrouter', or);
+      result.set('groq', gq);
+      result.set('cloudflare', cf);
+      // Gemini & Dahl: tidak ada endpoint kuota publik -> pakai dokumentasi resmi,
+      // ditandai isLive:false agar dashboard jujur soal sumbernya.
+      const gm = new Map<string, LiveLimit>();
+      for (const k of config.pools.gemini) gm.set(k, geminiDocumentedLimits());
+      result.set('gemini', gm);
+      const dh = new Map<string, LiveLimit>();
+      for (const k of config.pools.dahl) dh.set(k, dahlDocumentedLimits());
+      result.set('dahl', dh);
+      return result;
+    })();
+
     const liveFetchPromise = Promise.all([
       Promise.all(xkiroLivePromises),
       Promise.all(orLivePromises),
@@ -172,6 +208,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     let xkiroLiveResults: XkiroLiveItem[] = [];
     let orLiveResults: OrLiveItem[] = [];
+    let liveLimitsMap = new Map<string, Map<string, LiveLimit>>();
 
     if (c) {
       // Ambil tokens_used juga agar TPD riil bisa ditampilkan (bukan estimasi calls × rata-rata)
@@ -249,6 +286,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         waMonthlyMsgsRes,
         allTimeAssistantRes,
         liveResults,
+        liveLimits,
       ] = await Promise.all([
         quotaQuery,
         c.from('messages').select('*', { count: 'exact', head: true }),
@@ -264,6 +302,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         fetchPagedRange<{ chat_id: string | null; created_at: string }>(buildWaMonthlyQuery, 1000, 15000),
         c.from('messages').select('via').eq('role', 'assistant').order('id', { ascending: false }).limit(300),
         liveFetchPromise,
+        limitsPromise,
       ]);
 
       quotasData = (dbQuotaRes.data as any) || [];
@@ -277,10 +316,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
       xkiroLiveResults = liveResults[0];
       orLiveResults = liveResults[1];
+      liveLimitsMap = liveLimits;
     } else {
       const [xk, or] = await liveFetchPromise;
       xkiroLiveResults = xk;
       orLiveResults = or;
+      liveLimitsMap = await limitsPromise;
     }
 
     const xkiroSyncMap = new Map<string, {
@@ -494,7 +535,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         tokenCapPerKey: config.dailyTokenCap.xkiro || 5000000,
         tokenCapPerKeyList: config.dailyTokenCapPerKey.xkiro,
         tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '5.000.000 Token/hari (~500 RPD)',
+        // Label dibangun dari cap per-key NYATA (key1 1jt, key2/3 500k) — bukan angka
+        // seragam 5jt yang tidak pernah cocok dengan dashboard penyedia (temuan user).
+        tokenLimitLabel: (() => {
+          const caps = config.dailyTokenCapPerKey.xkiro.filter((c) => c > 0);
+          if (caps.length === 0) return '500.000 Token/hari/key (per-key, sesuai dashboard xKiro)';
+          const min = Math.min(...caps);
+          const max = Math.max(...caps);
+          const fmt = (n: number) => n.toLocaleString('id-ID');
+          return min === max
+            ? `${fmt(min)} Token/hari/key`
+            : `${fmt(min)}-${fmt(max)} Token/hari/key (bervariasi per key)`;
+        })(),
         resetCycle: 'Harian (00:00 UTC)',
         contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.xkiroPrimary,
@@ -614,12 +666,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         poolUsed += used;
         totalCallsPeriod += used;
 
-        // Cap token untuk KEY INI. Bila provider mengonfigurasi daftar cap per-key
-        // (mis. xKiro: key1 1jt, key2/3 500k), pakai nilai indeks ini — bukan cap
-        // seragam yang membuat bar/status key salah (temuan produksi: key ...6386
-        // sudah 1.004.173 token tapi dashboard menampilkan 112/500 calls = 22%).
-        const perKeyTokenCap =
-          p.tokenCapPerKeyList.length > keyIdx ? p.tokenCapPerKeyList[keyIdx] : 0;
+        // Limit LIVE dari endpoint provider (v0.49) — sumber kebenaran utama.
+        // .env hanya dipakai sebagai fallback bila endpoint tidak menyatakan limit.
+        const liveLimit = liveLimitsMap.get(p.kind)?.get(k) ?? null;
+        // Cap token untuk KEY INI. Prioritas: (1) endpoint live, (2) daftar cap per-key
+        // di .env, (3) cap seragam provider. Endpoint menang karena .env terbukti salah
+        // (mis. xKiro key1 sebenarnya 1jt, OpenRouter 50/hari bukan 180).
+        // Bila endpoint memberi data limit (isLive) tetapi TIDAK menyatakan TPD,
+        // jangan pakai angka .env sebagai fakta — itu klaim tanpa dasar. Contoh: Groq
+        // header hanya menyebut 1000 RPD + 8000 TPM (per menit), bukan TPD.
+        const endpointAuthoritative = liveLimit?.isLive === true;
+        const perKeyTokenCap = endpointAuthoritative
+          ? (liveLimit?.tokensPerDay ?? 0)
+          : (p.tokenCapPerKeyList.length > keyIdx ? p.tokenCapPerKeyList[keyIdx] : 0);
+        // RPD live per key (OpenRouter: free_model_daily_requests; Groq: header).
+        const liveRpdCap = liveLimit?.requestsPerDay ?? 0;
 
         const xkLive = p.kind === 'xkiro' ? xkiroSyncMap.get(k) : null;
         const orLive = p.kind === 'openrouter' ? orSyncMap.get(k) : null;
@@ -630,17 +691,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           (tokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (tokenQuotaMap.get(`${p.kind}:${suffix}`) || 0);
         const isRealTokenData = realTokensForKey > 0;
 
-        let tokensUsed = isRealTokenData
+        // Pemakaian dari endpoint live lebih akurat daripada catatan internal bot
+        // (mencakup pemakaian dari IDE/terminal/alat lain di akun yang sama).
+        let tokensUsed = liveLimit?.tokensUsedToday ?? (isRealTokenData
           ? realTokensForKey
           : used > 0
           ? Math.round(used * providerAvgTokens)
-          : 0;
-        // Cap token efektif key ini: pakai cap per-key bila ada (dikalikan jumlah hari
-        // untuk rentang multi-hari; Dahl adalah saldo pool sehingga tidak dikalikan).
-        let tokenCap = perKeyTokenCap > 0
-          ? (p.kind === 'dahl' ? perKeyTokenCap : daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
-          : effectiveTokenCapPerKey;
-        let remainingTokens: number | null = tokenCap > 0 ? Math.max(0, tokenCap - tokensUsed) : null;
+          : 0);
+        // Pemakaian request dari endpoint (mis. OpenRouter free_model_daily_requests.used).
+        const liveCallsUsed = liveLimit?.requestsUsedToday ?? null;
+        const effectiveCallsUsed = liveCallsUsed !== null ? liveCallsUsed : used;
+        // Cap token efektif key ini.
+        // Bila endpoint LIVE menyatakan limit dan TIDAK menyebut TPD (contoh: Groq
+        // hanya 1000 RPD + 8000 TPM), maka TIDAK ADA batas token harian — jangan
+        // jatuh ke angka .env yang tidak didukung endpoint (itu klaim palsu).
+        let tokenCap: number;
+        if (endpointAuthoritative) {
+          tokenCap = perKeyTokenCap > 0
+            ? (p.kind === 'dahl' ? perKeyTokenCap : daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
+            : 0;
+        } else {
+          tokenCap = perKeyTokenCap > 0
+            ? (p.kind === 'dahl' ? perKeyTokenCap : daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
+            : effectiveTokenCapPerKey;
+        }
+        // Sisa dari endpoint bila tersedia (paling akurat — sudah memperhitungkan
+        // pemakaian dari semua aplikasi di akun yang sama).
+        let remainingTokens: number | null =
+          liveLimit?.tokensRemaining ?? (tokenCap > 0 ? Math.max(0, tokenCap - tokensUsed) : null);
         let tokenPercent = tokenCap > 0 ? Math.min(100, Math.round((tokensUsed / tokenCap) * 100)) : 0;
 
         if (xkLive) {
@@ -651,7 +729,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           tokenPercent = tokenCap > 0 ? Math.min(100, Math.round((tokensUsed / tokenCap) * 100)) : 0;
         }
 
-        const percent = effectiveCapPerKey > 0 ? Math.min(100, Math.round((used / effectiveCapPerKey) * 100)) : 0;
+        // Cap RPD efektif: endpoint live menang; kalau tidak ada, pakai .env.
+        const callCap = liveRpdCap > 0 ? (daysCount > 0 ? liveRpdCap * daysCount : liveRpdCap) : effectiveCapPerKey;
+        const percent = callCap > 0 ? Math.min(100, Math.round((used / callCap) * 100)) : 0;
         // Status key mempertimbangkan RPD DAN TPD — mana yang lebih dulu tercapai.
         const bindingPercent = Math.max(percent, tokenPercent);
         const status = bindingPercent >= 100 ? 'capped' : bindingPercent >= 80 ? 'warning' : 'healthy';
@@ -662,10 +742,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
         return {
           suffix,
-          used,
-          cap: effectiveCapPerKey,
-          remaining: effectiveCapPerKey > 0 ? Math.max(0, effectiveCapPerKey - used) : null,
+          used: effectiveCallsUsed,
+          dbUsed: used,
+          cap: callCap,
+          remaining: callCap > 0 ? Math.max(0, callCap - effectiveCallsUsed) : null,
           percent,
+          // Sumber limit: endpoint live atau fallback dokumentasi/.env — dashboard
+          // menampilkan ini agar pengguna tahu seberapa valid angkanya.
+          limitSource: liveLimit?.source ?? 'konfigurasi .env',
+          limitIsLive: liveLimit?.isLive ?? false,
+          officialLimitLabel: liveLimit?.officialLabel ?? null,
+          tokensPerMinute: liveLimit?.tokensPerMinute ?? null,
           bindingPercent,
           bindingMetric,
           tokensUsed,
@@ -678,7 +765,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           contextWindow: p.contextWindow,
           avgTokensPerChat: providerAvgTokens,
           status,
-          isLiveSynced: !!xkLive || !!orLive,
+          // "Live synced" = ada data langsung dari endpoint provider — baik pemakaian
+          // (xKiro/OpenRouter) maupun batas kuota (Groq/Cloudflare via header). Sebelumnya
+          // hanya xKiro & OpenRouter yang ditandai, sehingga Groq/Cloudflare tampak
+          // "tidak tersinkron" padahal limitnya diambil live dari header respons.
+          isLiveSynced: !!xkLive || !!orLive || (liveLimit?.isLive ?? false),
           liveUserName: xkLive?.userName ?? null,
           liveUserEmail: xkLive?.userEmail ?? null,
           liveRemainingTokens: remainingTokens,
@@ -720,6 +811,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       const poolTokensRemaining = keysDetail.reduce((acc, kd) => acc + (kd.liveRemainingTokens ?? kd.remaining ?? 0), 0);
       const poolCappedKeys = keysDetail.filter((kd) => kd.status === 'capped').length;
 
+      // Label limit pool: prioritaskan label resmi dari endpoint (mis. Groq
+      // "1.000 RPD • 8.000 TPM", Cloudflare "Rate limit 1.200 req/5 menit"), karena
+      // label statis di .env terbukti salah (200K TPD Groq, 120 RPD Cloudflare).
+      const firstLiveLimit = keysDetail.map((kd) => kd.officialLimitLabel).find((l) => l) ?? null;
+      const poolTokenLimitLabel = firstLiveLimit ?? p.tokenLimitLabel;
+
       return {
         kind: p.kind,
         displayName: p.displayName,
@@ -728,7 +825,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         allModels: p.allModels,
         contextWindow: p.contextWindow,
         tokenLimitType: p.tokenLimitType,
-        tokenLimitLabel: p.tokenLimitLabel,
+        tokenLimitLabel: poolTokenLimitLabel,
+        limitSourceLive: keysDetail.some((kd) => kd.limitIsLive),
         resetCycle: p.resetCycle,
         keyCount: p.keys.length,
         capPerKey: effectiveCapPerKey,
