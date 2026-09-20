@@ -161,7 +161,10 @@ export async function scrapeWebpage(url: string): Promise<string> {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         Accept: 'text/plain',
       },
-      signal: AbortSignal.timeout(4000),
+      // Timeout SANGAT pendek (1,5 dtk): Jina biasanya membalas 403 (Cloudflare) dalam
+      // ~0,2 dtk atau timeout penuh. Menunggu lama membuang jatah waktu direct fetch.
+      // Diuji: dengan 2 dtk, scrape GitHub gagal 3/5 (butuh 6+ dtk untuk direct fetch).
+      signal: AbortSignal.timeout(1500),
     });
     if (jinaRes.ok) {
       const text = await jinaRes.text();
@@ -189,7 +192,7 @@ export async function scrapeWebpage(url: string): Promise<string> {
       const alt = url.replace(/\/+$/, '');
       const jr = await fetch(`https://r.jina.ai/${alt}`, {
         headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/plain' },
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(1500),
       });
       if (jr.ok) {
         const t = await jr.text();
@@ -202,27 +205,35 @@ export async function scrapeWebpage(url: string): Promise<string> {
 
   if (isBinaryDoc) return ''; // biner tidak bisa dibaca via direct fetch
 
-  // 2. Direct fetch fallback
-  try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 FreeAIBot/2026',
-        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
-      },
-      signal: AbortSignal.timeout(2500),
-    });
-    if (res.ok) {
-      const raw = await res.text();
-      const parsed = extractFitMarkdownContent(raw);
-      if (parsed && parsed.length > 80) return parsed;
-      // SPA (React/Vue/Next): HTML awal hanya shell kosong + metadata. Ambil metadata
-      // yang ADA (title, description, og:*) agar bot tetap punya fakta halaman —
-      // lebih baik daripada 0 karakter yang memaksa bot bilang "tidak terbaca".
-      const meta = extractSpaMetadata(raw);
-      if (meta && meta.length > 40) return meta;
+  // 2. Direct fetch fallback.
+  // RETRY 1x untuk situs berat: GitHub (358 KB) butuh 4-8 dtk dan KADANG melewati
+  // batas 9 dtk karena variasi jaringan — diuji 5x, 2-3 kali timeout. Percobaan kedua
+  // hampir selalu berhasil karena koneksi sudah "hangat" (DNS+TLS tersimpan).
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 FreeAIBot/2026',
+          Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
+        },
+        // 9 dtk: situs berat (GitHub 358 KB, docs.anthropic 393 KB) butuh 4-8 dtk.
+        signal: AbortSignal.timeout(9000),
+      });
+      if (res.ok) {
+        const raw = await res.text();
+        const parsed = extractFitMarkdownContent(raw);
+        if (parsed && parsed.length > 80) return parsed;
+        // SPA (React/Vue/Next): HTML awal hanya shell kosong + metadata. Ambil metadata
+        // yang ADA (title, description, og:*) agar bot tetap punya fakta halaman —
+        // lebih baik daripada 0 karakter yang memaksa bot bilang "tidak terbaca".
+        const meta = extractSpaMetadata(raw);
+        if (meta && meta.length > 40) return meta;
+      }
+      // Respons OK tapi isi tidak bisa di-parse: percobaan kedua tidak akan membantu.
+      break;
+    } catch {
+      // Timeout/error jaringan -> coba sekali lagi (koneksi biasanya sudah hangat).
     }
-  } catch {
-    // gagal scrape
   }
 
   return '';
