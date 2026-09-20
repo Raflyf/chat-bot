@@ -885,6 +885,13 @@ function steps(): Step[] {
         const isDeepSeek = m.toLowerCase().includes('deepseek');
         // Tuning terbukti dari Tier 6 lama (dipertahankan saat pindah tier):
         // thinking off + temperature/penalty luwes -> latensi ~0,23 dtk dengan output bersih.
+        //
+        // CATATAN MiniMax M2.7: model ini membocorkan blok <think>...</think> ke konten
+        // walau reasoning_effort 'none' (temuan uji kepatuhan 20 Sep). Parameter
+        // chat_template_kwargs SUDAH DIUJI dan TIDAK didukung proxy ini (output tetap
+        // memuat <think>) — jadi TIDAK dipasang agar tidak menambah kompleksitas tanpa
+        // manfaat. Pertahanan yang bekerja adalah SANITIZER (cleanMathAndNoise) yang
+        // menangani <think> tertutup MAUPUN tidak tertutup.
         return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
           reasoning_effort: 'none',
           temperature: isDeepSeek ? 0.65 : 0.45,

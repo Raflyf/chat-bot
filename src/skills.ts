@@ -58,7 +58,35 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
     if (match && match.index !== undefined && match.index > 0) {
       out = out.slice(match.index).trim();
     } else {
-      out = out.replace(/<(?:think|thought)>[\s\S]*$/gi, '').trim();
+      // TIDAK ada batas terstruktur. JANGAN buang seluruh sisa teks — jawaban asli
+      // sering berada SETELAH uraian berpikir tanpa pemisah baris baru.
+      //
+      // Temuan uji kepatuhan 20 Sep (MiniMax M2.7): output
+      //   "<think>The user is greeting me casually in Indonesian, asking what I am
+      //    doing. I need to respond as a friend would. Halo juga! Lagi santai nih..."
+      // Guard lama membuang SEMUA teks setelah <think> -> balasan jadi KOSONG dan bot
+      // tidak membalas apa pun.
+      //
+      // Strategi: cari titik transisi dari uraian berpikir (biasanya meta-komentar
+      // Inggris) ke jawaban nyata (kalimat sapaan/respons percakapan).
+      const afterTag = out.replace(/<(?:think|thought)>/gi, '').trim();
+      const replyStart = afterTag.search(
+        /(?:^|[.!?]\s+)((?:Halo|Hai|Hei|Hoy|Oke|Okee|Okey|Wah|Wahh|Iya|Iyaa|Eh|Ehh|Boleh|Siap|Siapp|Santai|Hmm|Hmmm|Yap|Yes|Tentu|Maaf|Terima|Makasih|Nah|Loh|Lah|Duh|Aduh|Wkwk|Haha|Hehe|Xixi|Sayang|Cinta|Mantap|Keren|Bagus|Betul|Bener|Bukan|Belum|Jangan|Bisa|Ada|Gimana|Kenapa|Apa|Kamu|Aku)\b[^.!?]{2,})/i,
+      );
+      if (replyStart > 0) {
+        // Ambil dari huruf pertama kata sapaan (lewati pemisah titik/spasi sebelumnya).
+        const sliceAt = afterTag.slice(replyStart).search(/[A-Za-z]/);
+        out = afterTag.slice(replyStart + Math.max(0, sliceAt)).trim();
+      } else {
+        // Tidak ada penanda jawaban: buang hanya KALIMAT meta-komentar berbahasa Inggris
+        // (ciri uraian berpikir), sisakan kalimat yang tampak seperti respons nyata.
+        const sentences = afterTag.split(/(?<=[.!?])\s+/);
+        const isEnglishMeta = (s: string): boolean =>
+          /\b(?:the|this|user|greet|casual|respond|respond|need|should|would|must|is|are|asking|means|about|think|analyze|message|reply|friend|tone|style)\b/i.test(s) &&
+          !/\b(?:aku|kamu|lagi|gimana|nih|ya|udah|nggak|gak|banget|santai|halo|hai|oke|bisa|mau|ada)\b/i.test(s);
+        const kept = sentences.filter((s) => s.trim() && !isEnglishMeta(s.trim()));
+        out = kept.join(' ').trim() || afterTag.trim();
+      }
     }
   }
 
@@ -66,6 +94,11 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // <END>, <|im_end|>, <answer>). Model kecil kadang menyalin token kontrol pipeline
   // ke output; token ini BUKAN bagian pesan dan tidak boleh terlihat user.
   out = out.replace(/<\|?\/?(?:im_(?:start|end|sep)|eot_id|end_of_text)\|?>/gi, '');
+  // Token kontrol end-of-sequence model mentah: </s>, <s>, </s>, <|endoftext|>, </assistant>.
+  // Temuan produksi 20 Sep 19:39 (Dahl/DeepSeek): "😄 </s>Wkwk iya, tadi salah kasih tebakan..."
+  // Token ini BUKAN bagian pesan — membocorkannya membuat balasan terlihat rusak/ngawur.
+  out = out.replace(/<\/?s>|<\|endoftext\|>|<\|end\|>|<\|start\|>/gi, '');
+  out = out.replace(/<\/?(?:assistant|system|human|bot|ai)>/gi, '');
   out = out.replace(/<\/?(?:CPA_[A-Z0-9_]+|[A-Z][A-Z0-9_]{2,})>/g, '');
   out = out.replace(/<\/?(?:answer|response|reply|output|final)>/gi, '');
 
@@ -893,6 +926,10 @@ function enforceUniversalRules(text: string): string {
   out = out.replace(/\s+([.,!?;:])/g, '$1');           // spasi sebelum tanda baca
   out = out.replace(/(^|[.!?]\s*)[,;:]\s+/g, '$1');    // koma menggantung setelah titik
   out = out.replace(/^\s*[,;:]\s*/, '');               // koma di awal balasan
+  // Fragmen kutipan/markup menggantung di akhir balasan. Temuan produksi 20 Sep 19:38
+  // (balasan reset): 'Sesi udah di-reset, siap lanjut lagi. " saja.' — sisa potongan
+  // yang tidak bermakna. Buang fragmen pendek berisi kutipan/tanda baca nyasar di akhir.
+  out = out.replace(/\s*["'`«»]+\s*(?:saja|aja|doang)?\s*[.!?]*\s*$/gi, '').trim();
   out = out.replace(/\s{2,}/g, ' ');
 
   // 4. Rapikan sisa spasi/newline berlebih akibat pemotongan di atas.
@@ -1949,6 +1986,88 @@ export async function autoReply(
         if (head.split(/\s+/).filter(Boolean).length >= 4) {
           console.warn(`[skills] Balasan memuat ${questionCount} tebakan bertumpuk — dipotong ke setup pertama.`);
           reply = head;
+        }
+      }
+    }
+
+    // GUARD SELF-CORRECTION & PUNCHLINE LEAK (temuan produksi 20 Sep 19:38, Dahl/DeepSeek):
+    //   "Coba tebak, kalau lagi tidur terus tiba-tiba turun hujan, apa yang pertama kali
+    //    kamu lakukan?eh, bukan. Yang benar: langsung bangun dan cari payung. Hmm, kayaknya
+    //    aku yang malah bingung sendiri. 😅 Ganti yang lebih simpel: buah apa yang paling
+    //    jago nyanyi?"
+    // Model mengoreksi diri SENDIRI, MEMBOCORKAN jawaban di tengah, lalu mengganti dengan
+    // setup baru — semua dalam SATU pesan. Hanya ada 2 tanda tanya sehingga guard
+    // anti-tumpukan (>=3) tidak menangkapnya. Ini yang membuat user bilang "lah ga jelas".
+    if (isInteractiveSetupReq) {
+      // Deteksi koreksi diri (perluas 20 Sep: model memakai banyak varian kata).
+      const selfCorrection =
+        /\b(?:eh,?\s*(?:bukan|salah|keliru|ga|gak|nggak|engga)|bukan\s+(?:itu|begitu|deh|sih)|yang\s+benar\s*:|maksudku\s*:|maksud\s+(?:aku|saya)\s*:|salah,?\s*(?:deh|nih|maksudnya|yang\s+benar)|keliru|ralat|koreksi|oh\s+salah|aduh\s+salah|bukan\s+yang\s+itu|(?:lupa|bingung)\s+(?:deh|nih)?\s*(?:,|\s)\s*(?:maksud|yang))\b/i;
+      const reSetup = /\b(?:ganti\s+(?:yang|ke|dengan)|coba\s+yang\s+lain|yang\s+ini\s+lebih|nih\s+ganti|oke\s+ganti|kayaknya\s+aku\s+yang|aku\s+yang\s+malah|bikin\s+(?:yang\s+)?(?:baru|lain))/i;
+      if (selfCorrection.test(reply) || reSetup.test(reply)) {
+        const lastQ = reply.lastIndexOf('?');
+        if (lastQ > 10) {
+          const before = reply.slice(0, lastQ);
+          const bStart = Math.max(
+            before.lastIndexOf('. '),
+            before.lastIndexOf('? '),
+            before.lastIndexOf('! '),
+            before.lastIndexOf('\n'),
+          );
+          let finalSetup = reply
+            .slice(bStart + 1, lastQ + 1)
+            .trim()
+            // Buang frasa meta di awal setup terakhir ("Ganti yang lebih simpel:", "Ganti:")
+            .replace(/^(?:ganti\s+(?:yang\s+)?(?:lebih\s+)?\w*\s*[:,-]?\s*|coba\s+yang\s+lain\s*[:,-]?\s*|nih\s+ganti\s*[:,-]?\s*)/i, '')
+            // Buang emoji/tanda baca nyasar di awal.
+            .replace(/^[\s\p{Extended_Pictographic}.,!?;:-]+/u, '')
+            .trim();
+          if (finalSetup && finalSetup.split(/\s+/).filter(Boolean).length >= 4) {
+            // Kapitalkan awal kalimat.
+            finalSetup = finalSetup.replace(/^([a-z])/, (m) => m.toUpperCase());
+            console.warn('[skills] Self-correction/punchline leak pada setup — regenerasi setup bersih.');
+            // REGENERASI (lebih baik daripada sekadar memotong): minta model menulis ULANG
+            // satu setup bersih + tag kunci jawaban, sehingga jawaban untuk setup final
+            // tetap terkunci dan bisa dinilai jujur di giliran berikutnya. Pemotongan murni
+            // akan menghilangkan kunci jawaban (user menebak benar pun akan ditolak).
+            let resolved = false;
+            try {
+              const fixMsgs: ChatMsg[] = [
+                ...buildMessages(clean, ctx, web),
+                {
+                  role: 'user',
+                  content:
+                    'Balasanmu barusan kacau: kamu mengoreksi diri sendiri, membocorkan jawaban di tengah, lalu mengganti tebakan — semua dalam satu pesan. Tulis ULANG dengan BERSIH: HANYA SATU setup tebak-tebakan (satu kalimat tanya lengkap), TANPA mengoreksi diri, TANPA menyebut jawabannya, dan WAJIB sertakan tag [[jawab:<jawaban>]] di akhir.',
+                },
+              ];
+              const fix = await chatRetry(fixMsgs, false);
+              const fixSticker = extractStickerTag(fix.text);
+              const fixExtract = extractRiddleTag(fixSticker.text);
+              const fixReply = sanitizeAssistantOutput(fixExtract.text, clean, recentOpenings);
+              // Terima hanya bila hasilnya bersih: satu setup, tanpa koreksi diri, tanpa bocor.
+              const fixQ = (fixReply.match(/\?/g) || []).length;
+              if (
+                fixReply.trim() &&
+                fixQ >= 1 &&
+                fixQ <= 2 &&
+                !selfCorrection.test(fixReply) &&
+                !reSetup.test(fixReply)
+              ) {
+                reply = fixReply;
+                riddleAnswer = fixExtract.answer || null;
+                if (!stickerEmoji && fixSticker.sticker) stickerEmoji = fixSticker.sticker;
+                resolved = true;
+              }
+            } catch {
+              // jatuh ke pemotongan murni di bawah
+            }
+            if (!resolved) {
+              reply = finalSetup;
+              // Kunci jawaban lama (untuk setup yang DIBATALKAN) tidak lagi cocok ->
+              // kosongkan agar giliran berikutnya tidak menilai dengan jawaban salah.
+              // (Lebih baik "belum ada kunci" yang jujur daripada jawaban yang keliru.)
+              riddleAnswer = null;
+            }
+          }
         }
       }
     }
