@@ -1923,10 +1923,17 @@ export async function autoReply(
 export async function dynamicNotice(instruction: string, ctx?: ChatContext): Promise<string> {
   try {
     const { reply } = await autoReply(instruction, ctx);
-    return reply.trim();
+    const trimmed = reply.trim();
+    if (trimmed) return trimmed;
   } catch {
-    return '';
+    // lanjut ke fallback di bawah
   }
+  // FALLBACK TERAKHIR saat SEMUA model mati: beri tahu singkat bahwa ada gangguan.
+  // Ini BUKAN template jawaban percakapan (bukan isi balasan bot) — hanya pemberitahuan
+  // teknis, seperti halaman error yang informatif. Tanpa ini user tidak menerima apa pun
+  // dan mengira bot mati total (temuan: balasan kosong "BOT (failed):" di produksi).
+  // Dikirim HANYA ketika benar-benar tidak ada model yang bisa merespon.
+  return 'Lagi ada gangguan koneksi sebentar. Coba kirim ulang ya.';
 }
 
 /** Respon gambar / media visual / dokumen secara alami via model vision. */
