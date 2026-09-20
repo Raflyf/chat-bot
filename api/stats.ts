@@ -476,6 +476,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       keys: string[];
       cap: number;
       tokenCapPerKey: number;
+      /** Cap token per-key bila tiap key berbeda (mis. xKiro key1 1jt vs key2/3 500k). */
+      tokenCapPerKeyList: number[];
       tokenLimitType: 'daily_cap' | 'requests_tpm' | 'monthly_credits';
       tokenLimitLabel: string;
       resetCycle: string;
@@ -490,6 +492,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         keys: config.pools.xkiro,
         cap: config.dailyCap.xkiro,
         tokenCapPerKey: config.dailyTokenCap.xkiro || 5000000,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.xkiro,
         tokenLimitType: 'daily_cap',
         tokenLimitLabel: '5.000.000 Token/hari (~500 RPD)',
         resetCycle: 'Harian (00:00 UTC)',
@@ -504,6 +507,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         keys: config.pools.openrouter,
         cap: config.dailyCap.openrouter,
         tokenCapPerKey: config.dailyTokenCap.openrouter,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.openrouter,
         tokenLimitType: 'requests_tpm',
         tokenLimitLabel: 'Bebas Kuota Harian (Model :free • Rate Limit 50-1.000 RPD)',
         resetCycle: 'Harian (00:00 UTC)',
@@ -518,6 +522,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         keys: config.pools.groq,
         cap: config.dailyCap.groq,
         tokenCapPerKey: config.dailyTokenCap.groq,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.groq,
         tokenLimitType: 'daily_cap',
         tokenLimitLabel: '1.000 RPD/key • 8K TPM • 200K TPD (Free Tier resmi)',
         resetCycle: 'Harian (00:00 UTC)',
@@ -532,6 +537,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         keys: config.pools.cloudflare,
         cap: config.dailyCap.cloudflare,
         tokenCapPerKey: config.dailyTokenCap.cloudflare,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.cloudflare,
         tokenLimitType: 'daily_cap',
         tokenLimitLabel: '10.000 Neuron/hari (~100-300 RPD Free Tier)',
         resetCycle: 'Harian (00:00 UTC)',
@@ -546,6 +552,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         keys: config.pools.gemini,
         cap: config.dailyCap.gemini,
         tokenCapPerKey: config.dailyTokenCap.gemini,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.gemini,
         tokenLimitType: 'requests_tpm',
         tokenLimitLabel: '1.500 RPD/key • 1M TPM Tier (Bebas Kuota Token Harian)',
         resetCycle: 'Harian (00:00 PT / 14:00 WIB)',
@@ -560,6 +567,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         keys: config.pools.dahl,
         cap: config.dailyCap.dahl,
         tokenCapPerKey: 100000000,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.dahl,
         tokenLimitType: 'daily_cap',
         tokenLimitLabel: '1 Miliar Token Pool (100M/key • 5.000 RPD)',
         resetCycle: 'Token Balance (1B Pool)',
@@ -598,13 +606,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       const legacyCalls = Math.max(0, pStats.totalCalls - pStats.callsWithRealTokens);
       const providerComputedTokens = pStats.realTokens + (legacyCalls * providerAvgTokens);
 
-      const keysDetail = p.keys.map((k) => {
+      const keysDetail = p.keys.map((k, keyIdx) => {
         const suffix = k.slice(-4);
         const hash12 = crypto.createHash('sha256').update(k).digest('hex').slice(0, 12);
         // Mendukung pencocokan hash12 (standar src/quota.ts) dan suffix 4-karakter (riwayat legacy)
         const used = (quotaMap.get(`${p.kind}:${hash12}`) || 0) + (quotaMap.get(`${p.kind}:${suffix}`) || 0);
         poolUsed += used;
         totalCallsPeriod += used;
+
+        // Cap token untuk KEY INI. Bila provider mengonfigurasi daftar cap per-key
+        // (mis. xKiro: key1 1jt, key2/3 500k), pakai nilai indeks ini — bukan cap
+        // seragam yang membuat bar/status key salah (temuan produksi: key ...6386
+        // sudah 1.004.173 token tapi dashboard menampilkan 112/500 calls = 22%).
+        const perKeyTokenCap =
+          p.tokenCapPerKeyList.length > keyIdx ? p.tokenCapPerKeyList[keyIdx] : 0;
 
         const xkLive = p.kind === 'xkiro' ? xkiroSyncMap.get(k) : null;
         const orLive = p.kind === 'openrouter' ? orSyncMap.get(k) : null;
@@ -620,9 +635,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           : used > 0
           ? Math.round(used * providerAvgTokens)
           : 0;
-        let tokenCap = effectiveTokenCapPerKey;
-        let remainingTokens: number | null = effectiveTokenCapPerKey > 0 ? Math.max(0, effectiveTokenCapPerKey - tokensUsed) : null;
-        let tokenPercent = effectiveTokenCapPerKey > 0 ? Math.min(100, Math.round((tokensUsed / effectiveTokenCapPerKey) * 100)) : 0;
+        // Cap token efektif key ini: pakai cap per-key bila ada (dikalikan jumlah hari
+        // untuk rentang multi-hari; Dahl adalah saldo pool sehingga tidak dikalikan).
+        let tokenCap = perKeyTokenCap > 0
+          ? (p.kind === 'dahl' ? perKeyTokenCap : daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
+          : effectiveTokenCapPerKey;
+        let remainingTokens: number | null = tokenCap > 0 ? Math.max(0, tokenCap - tokensUsed) : null;
+        let tokenPercent = tokenCap > 0 ? Math.min(100, Math.round((tokensUsed / tokenCap) * 100)) : 0;
 
         if (xkLive) {
           // Menggunakan data sinkronisasi langsung dari web server xKiro (global di semua apps)
@@ -636,6 +655,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         // Status key mempertimbangkan RPD DAN TPD — mana yang lebih dulu tercapai.
         const bindingPercent = Math.max(percent, tokenPercent);
         const status = bindingPercent >= 100 ? 'capped' : bindingPercent >= 80 ? 'warning' : 'healthy';
+        // Metrik yang MENGIKAT (binding) dipakai untuk progress bar & label agar visual
+        // konsisten dengan status. Tanpa ini bar bisa 22% (calls) padahal badge CAPPED
+        // (token 100%) — sumber kebingungan di dashboard (temuan user).
+        const bindingMetric: 'tokens' | 'calls' = tokenPercent >= percent ? 'tokens' : 'calls';
 
         return {
           suffix,
@@ -643,6 +666,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           cap: effectiveCapPerKey,
           remaining: effectiveCapPerKey > 0 ? Math.max(0, effectiveCapPerKey - used) : null,
           percent,
+          bindingPercent,
+          bindingMetric,
           tokensUsed,
           tokenCap,
           tokenPercent,
@@ -664,13 +689,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       });
 
       const totalPoolCap = effectiveCapPerKey * p.keys.length;
-      const totalTokenPoolCap = effectiveTokenCapPerKey * p.keys.length;
+      // Total cap token pool = JUMLAH cap tiap key (bukan cap seragam x jumlah key).
+      // Untuk xKiro ini 1jt + 500k + 500k = 2jt (sebelumnya salah: 500k x 3 = 1,5jt).
+      const totalTokenPoolCap = keysDetail.reduce((acc, kd) => {
+        const capForRange = p.kind === 'dahl' ? kd.tokenCap : kd.tokenCap;
+        return acc + (capForRange > 0 ? capForRange : 0);
+      }, 0);
       const poolPercent = totalPoolCap > 0 ? Math.min(100, Math.round((poolUsed / totalPoolCap) * 100)) : 0;
       
       const isAnyLiveSynced = keysDetail.some((kd) => kd.isLiveSynced);
       const anyRealTokenData = keysDetail.some((kd) => kd.isRealTokenData);
       let poolTokensUsed = 0;
       if (p.kind === 'xkiro' && isAnyLiveSynced) {
+        // xKiro: pakai data live dari API (akurat, global semua app) untuk tiap key.
         for (const kd of keysDetail) {
           poolTokensUsed += kd.tokensUsed;
         }
@@ -685,6 +716,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           : keysDetail.reduce((acc, kd) => acc + kd.tokensUsed, 0);
       }
       const poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolTokensUsed / totalTokenPoolCap) * 100)) : 0;
+      // Sisa token pool = jumlah sisa tiap key (menghormati cap per-key & data live).
+      const poolTokensRemaining = keysDetail.reduce((acc, kd) => acc + (kd.liveRemainingTokens ?? kd.remaining ?? 0), 0);
+      const poolCappedKeys = keysDetail.filter((kd) => kd.status === 'capped').length;
 
       return {
         kind: p.kind,
@@ -703,8 +737,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         usedPeriod: poolUsed,
         percent: poolPercent,
         tokenCapPerKey: effectiveTokenCapPerKey,
+        tokenCapPerKeyList: p.tokenCapPerKeyList,
         totalTokenCap: totalTokenPoolCap,
         totalTokensUsed: poolTokensUsed,
+        totalTokensRemaining: poolTokensRemaining,
+        cappedKeys: poolCappedKeys,
         tokenPercent: poolTokenPercent,
         avgTokensPerChat: providerAvgTokens,
         realUsageCalls: pStats.callsWithRealTokens,

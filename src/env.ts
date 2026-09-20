@@ -34,6 +34,19 @@ function num(name: string, fallback: number): number {
   return Number.isFinite(v) && v > 0 ? v : fallback;
 }
 
+/**
+ * Daftar angka dari env (mis. "1000000,500000,500000").
+ * Dipakai untuk cap token PER-KEY ketika tiap key punya limit berbeda — kasus nyata
+ * xKiro: key #1 limit 1.000.000 token/hari sedangkan key #2/#3 hanya 500.000.
+ * Satu nilai tunggal untuk semua key membuat guard memblokir key #1 di 500K
+ * (padahal kuotanya masih 500K lagi) atau membiarkan key #2/#3 lewat batas.
+ */
+function numList(name: string): number[] {
+  return csv(name)
+    .map((s) => Number(s))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
 export const config = {
   telegramToken: cleanStr('TELEGRAM_BOT_TOKEN'),
   ownerChatId: cleanStr('OWNER_CHAT_ID'),
@@ -177,6 +190,18 @@ export const config = {
     cloudflare: numAllowZero('DAILY_TOKEN_CAP_CLOUDFLARE', 0),
     openrouter: numAllowZero('DAILY_TOKEN_CAP_OPENROUTER', 0),
     xkiro: numAllowZero('DAILY_TOKEN_CAP_XKIRO', 0),
+  },
+  // Cap token PER-KEY (urut sama dengan urutan key di pool). Dipakai bila tiap key
+  // punya limit BERBEDA — kasus nyata xKiro: key #1 limit 1.000.000 token/hari
+  // sementara key #2/#3 hanya 500.000. Format env: "1000000,500000,500000".
+  // Bila kosong, semua key memakai dailyTokenCap[kind].
+  dailyTokenCapPerKey: {
+    dahl: numList('DAILY_TOKEN_CAP_PER_KEY_DAHL'),
+    groq: numList('DAILY_TOKEN_CAP_PER_KEY_GROQ'),
+    gemini: numList('DAILY_TOKEN_CAP_PER_KEY_GEMINI'),
+    cloudflare: numList('DAILY_TOKEN_CAP_PER_KEY_CLOUDFLARE'),
+    openrouter: numList('DAILY_TOKEN_CAP_PER_KEY_OPENROUTER'),
+    xkiro: numList('DAILY_TOKEN_CAP_PER_KEY_XKIRO'),
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',

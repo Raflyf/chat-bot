@@ -1005,7 +1005,15 @@ export async function chat(
         // seluruh rantai failover — tanpa ini satu error DB melempar keluar dari chat() (audit H2).
         let keyAllowed = true;
         try {
-          keyAllowed = await isKeyAllowed(step.kind, key, step.cap, config.dailyTokenCap[step.kind] || 0);
+          // Cap token per-key bila dikonfigurasi (limit tiap key bisa berbeda — kasus xKiro:
+          // key #1 1jt token vs key #2/#3 500k). Fallback ke cap seragam provider.
+          const perKeyCaps = config.dailyTokenCapPerKey[step.kind] || [];
+          const keyIndex = step.keys.indexOf(key);
+          const keyTokenCap =
+            keyIndex >= 0 && keyIndex < perKeyCaps.length
+              ? perKeyCaps[keyIndex]
+              : config.dailyTokenCap[step.kind] || 0;
+          keyAllowed = await isKeyAllowed(step.kind, key, step.cap, keyTokenCap);
         } catch (quotaErr) {
           console.warn(`[providers] Gagal cek kuota key ${step.kind} (${String((quotaErr as Error)?.message ?? quotaErr).slice(0, 80)}). Lanjut tanpa guard kuota.`);
           keyAllowed = true;

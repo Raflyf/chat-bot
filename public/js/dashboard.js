@@ -1016,13 +1016,33 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           keysHtml = `<div style="color: var(--text-dim); font-size: 0.8rem; padding: 0.5rem 0;">Tidak ada key dengan status ${currentKeyStatusFilter}.</div>`;
         } else {
           filteredKeys.forEach(k => {
+            // Metrik BINDING: mana yang lebih dulu habis (RPD calls vs TPD token).
+            // Bar & warna memakai metrik binding agar konsisten dengan badge status —
+            // sebelumnya bar bisa 22% (calls) padahal key sudah CAPPED karena token 100%.
+            const hasTokenCap = (k.tokenCap || 0) > 0 && (k.tokensUsed || 0) > 0;
+            const bindingPct = typeof k.bindingPercent === "number" ? k.bindingPercent : Math.max(k.percent || 0, k.tokenPercent || 0);
+            const bindingIsToken = (k.bindingMetric === "tokens") || (!k.bindingMetric && (k.tokenPercent || 0) > (k.percent || 0));
+
             let progressColor = "progress-emerald";
-            if (k.status === "capped" || k.percent >= 100) progressColor = "progress-rose";
-            else if (k.status === "warning" || k.percent >= 80) progressColor = "progress-amber";
+            if (k.status === "capped" || bindingPct >= 100) progressColor = "progress-rose";
+            else if (k.status === "warning" || bindingPct >= 80) progressColor = "progress-amber";
 
             const statusLabel = k.status === "capped" ? "Capped" : k.status === "warning" ? "Waspada" : "Optimal";
             const cleanSuffix = k.suffix.startsWith("...") ? k.suffix : "..." + k.suffix;
             const capLabel = k.cap > 0 ? `${k.used.toLocaleString()} / ${k.cap.toLocaleString()} calls (${k.percent}%)` : `${k.used.toLocaleString()} calls`;
+
+            // Baris kedua: info TOKEN bila provider punya batas token (xKiro/Dahl/Groq).
+            // Inilah yang membuat dashboard jujur: key ...6386 tampil "112/500 calls (22%)"
+            // SEKALIGUS "1.004.173 / 1.000.000 token (100%)" — tidak lagi menyesatkan.
+            let tokenLine = "";
+            if (hasTokenCap) {
+              const tokenPct = k.tokenPercent || 0;
+              const tokenColor = tokenPct >= 100 ? "#fb7185" : tokenPct >= 80 ? "#fbbf24" : "#34d399";
+              tokenLine = `<div class="key-token-line" style="font-size: 0.7rem; font-family: var(--font-mono); color: var(--text-dim); margin-top: 3px;">
+                <span style="color: ${tokenColor}; font-weight: 700;">${(k.tokensUsed || 0).toLocaleString("id-ID")} / ${(k.tokenCap || 0).toLocaleString("id-ID")} token (${tokenPct}%)</span>
+                ${bindingIsToken ? '<span style="color: #fb7185; font-weight: 700;"> &bull; BATAS TOKEN</span>' : ""}
+              </div>`;
+            }
 
             keysHtml += `
               <div class="key-row">
@@ -1034,8 +1054,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                   <span class="key-stats">${capLabel}</span>
                 </div>
                 <div class="progress-bar-bg">
-                  <div class="progress-bar-fill ${progressColor}" style="width: ${Math.min(100, k.percent || 0)}%"></div>
+                  <div class="progress-bar-fill ${progressColor}" style="width: ${Math.min(100, bindingPct)}%"></div>
                 </div>
+                ${tokenLine}
               </div>
             `;
           });
@@ -1139,6 +1160,11 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             const keyUsed = k.tokensUsed || 0;
             const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);
             const pct = k.tokenPercent || 0;
+            // Status dari token (metrik binding untuk xKiro): key yang token hariannya
+            // sudah habis WAJIB tampil CAPPED, bukan "OPTIMAL" — temuan user: key
+            // ...6386 sudah 1.004.173/1.000.000 token tapi badge masih OPTIMAL.
+            const xkStatusClass = pct >= 100 ? "status-capped" : pct >= 80 ? "status-warning" : "status-healthy";
+            const xkStatusText = pct >= 100 ? "LIMIT TOKEN" : pct >= 80 ? "WASPADAI" : "OPTIMAL";
 
             grandTotalTokenCap += keyCap;
             grandTotalTokenUsed += keyUsed;
@@ -1170,11 +1196,15 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 </td>
                 <td style="text-align: right;">
                   <span class="badge-live-sync" style="margin-bottom: 4px;">● Live Synced</span>
-                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                  <div><span class="key-badge-status ${xkStatusClass}">${xkStatusText}</span></div>
                 </td>
               </tr>
             `);
           } else if (p.kind === "openrouter") {
+            // OpenRouter /auth/key mengembalikan `usage` = TOTAL kumulatif akun dan
+            // `usage_daily` = pemakaian HARI INI. Dashboard lama memberi label
+            // "Penggunaan Hari Ini" pada angka TOTAL -> menyesatkan (temuan user:
+            // $0.06142 tampil sebagai pemakaian hari ini padahal usage_daily = $0).
             const usageUsd = Number(k.liveUsageUsd || 0);
             const dailyUsd = Number(k.liveUsageDailyUsd || 0);
             totalOrUsageUsd += usageUsd;
@@ -1190,8 +1220,8 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                   <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">openrouter.ai/keys</div>
                 </td>
                 <td>
-                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">$${usageUsd.toFixed(5)} USD</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Daily Usage: $${dailyUsd.toFixed(5)} &bull; Free Model Route</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">$${dailyUsd.toFixed(5)} USD</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Pemakaian Hari Ini &bull; Total Akun: $${usageUsd.toFixed(5)} &bull; Free Model Route</div>
                 </td>
                 <td>
                   <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Free Tier Active</div>
@@ -1400,12 +1430,17 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const usedCalls = p.usedPeriod ?? p.usedToday ?? 0;
         const tokensUsed = p.totalTokensUsed ?? (usedCalls * (p.avgTokensPerChat || 0));
 
+        // Status provider memakai metrik BINDING (mana yang lebih dulu habis).
+        // xKiro dibatasi token harian: 1.592.109/2.000.000 token = 80% padahal calls
+        // hanya 192/1.500 = 13%. Memakai p.percent saja membuat status salah "Optimal".
+        const providerBindingPct = Math.max(p.percent || 0, p.tokenPercent || 0);
+
         let statusBadgeClass = "status-healthy";
         let statusText = "Optimal";
-        if (p.percent >= 100) {
+        if (providerBindingPct >= 100) {
           statusBadgeClass = "status-capped";
           statusText = "Capped";
-        } else if (p.percent >= 80) {
+        } else if (providerBindingPct >= 80) {
           statusBadgeClass = "status-warning";
           statusText = "Waspada";
         }
@@ -1454,6 +1489,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           </td>
           <td>
             <div style="font-weight: 700; color: var(--text-main);">${usedCalls.toLocaleString()} Calls &bull; ${formatTokens(tokensUsed)} Token</div>
+            ${(p.totalTokenCap > 0 && p.totalTokensRemaining !== undefined)
+              ? `<div style="font-size: 0.72rem; color: #34d399; margin-top: 2px;">Sisa ${formatTokens(p.totalTokensRemaining)} dari ${formatTokens(p.totalTokenCap)}${p.cappedKeys > 0 ? ` &bull; <span style="color:#fb7185;font-weight:700;">${p.cappedKeys} key habis</span>` : ''}</div>`
+              : ""}
             ${syncSubtext}
           </td>
           <td style="text-align: right;">
