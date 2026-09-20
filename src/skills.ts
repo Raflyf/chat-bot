@@ -1635,6 +1635,25 @@ export async function autoReply(
 
     // Proteksi program: jika user meminta tebak-tebakan atau gombalan dan model membocorkan punchline langsung di pesan yang sama
     const isInteractiveSetupReq = /\b(?:tebak(?:an|\s*-?\s*tebakan)?|teka\s*-?\s*teki|tebak\s+tebakan|gombal(?:an|in)?|rayu(?:an)?|ngerayu)\b/i.test(clean);
+
+    // GUARD ANTI-TUMPUKAN TEBAKAN: bila balasan memuat BANYAK setup tebak-tebakan
+    // (≥3 tanda tanya yang masing-masing berupa teka-teki), potong hanya yang PERTAMA.
+    // Bukti produksi: model Dahl menulis 10+ tebakan dalam satu pesan ("Oke aku kasih
+    // yang agak susah dikit... Nah yang ini lumayan menantang...") padahal aturan
+    // prompt sudah bilang HANYA 1 setup — prompt saja tidak cukup, perlu guard program.
+    if (isInteractiveSetupReq) {
+      const questionCount = (reply.match(/\?/g) || []).length;
+      if (questionCount >= 3) {
+        // Ambil sampai tanda tanya PERTAMA (setup #1), buang sisanya.
+        const firstQ = reply.indexOf('?');
+        const head = reply.slice(0, firstQ + 1).trim();
+        // Guard anti-fragmen: hanya pakai bila hasilnya kalimat utuh yang layak (>=4 kata).
+        if (head.split(/\s+/).filter(Boolean).length >= 4) {
+          console.warn(`[skills] Balasan memuat ${questionCount} tebakan bertumpuk — dipotong ke setup pertama.`);
+          reply = head;
+        }
+      }
+    }
     if (isInteractiveSetupReq) {
       // Ada tanda tanya diikuti punchline (Karena / Soalnya / Jawabannya / Biar / Kalau / Kalo)
       const riddleMatch = reply.match(
