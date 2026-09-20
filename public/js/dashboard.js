@@ -736,9 +736,17 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           name: "Nemotron 3.5 Lightning Free",
           provider: "OPENROUTER",
           tagClass: "tag-openrouter",
-          capabilities: ["Fast Text"],
-          desc: "Prioritas #3 Tier 2 - Model kecepatan tinggi OpenRouter Cloud jalur model :free",
+          capabilities: ["Text", "Reasoning", "Fast"],
+          desc: "Cadangan OpenRouter - model ringan berkecepatan tinggi dari NVIDIA",
           matchKeys: ["openrouter/nvidia/nemotron-3.5-lightning:free", "nvidia/nemotron-3.5-lightning:free", "nemotron-3.5-lightning"],
+        },
+        {
+          name: "GLM 5.2 Free",
+          provider: "OPENROUTER",
+          tagClass: "tag-openrouter",
+          capabilities: ["Text", "Reasoning", "Backup"],
+          desc: "Cadangan OpenRouter - model GLM dari Z.AI untuk failover lapis terakhir Tier 2",
+          matchKeys: ["openrouter/z-ai/glm-5.2:free", "z-ai/glm-5.2:free", "glm-5.2"],
         },
 
         // --- Tier 3: Groq Cloud API (LPU Inference Engine, Teks) ---

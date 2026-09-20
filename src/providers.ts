@@ -916,9 +916,15 @@ function steps(): Step[] {
       //   Console Groq menampilkan : 30 RPM | 8K TPM | 1K RPD | 200K TPD
       //   429 dari API menyebut    : "Limit 7000" (diuji 4 ukuran prompt, konsisten)
       // Guard memakai 7000 karena itulah ambang yang BENAR-BENAR menolak request.
-      // Memakai 8000 akan meloloskan prompt 7000-8000 token yang PASTI gagal 429.
-      // (8K di konsol kemungkinan mencakup output; batas INPUT efektif = 7.000.)
-      maxPromptTokens: 7000,
+      //
+      // EFISIENSI TOKEN (instruksi user: Groq harus tetap terpakai bila model lain mati):
+      // nilai ini diperiksa SEBELUM trim, jadi diset LEBIH TINGGI dari batas efektif
+      // (6.800) agar percakapan dengan riwayat panjang TIDAK dilewati — trim di `run`
+      // yang akan memangkasnya sampai muat. Tanpa ini Groq selalu dilewati begitu
+      // riwayat obrolan sedikit menumpuk, padahal setelah dipangkas masih muat.
+      // 1.4x dari 6.800 = 9.520: cukup longgar untuk riwayat wajar, tetap menolak
+      // prompt yang benar-benar raksasa (yang tidak bisa diselamatkan trim).
+      maxPromptTokens: 9500,
       run: (k, m, msgs, t) => {
         // Pangkas pesan agar total (prompt + output 800) benar-benar di bawah limit ketat Groq 8K TPM
         // (6.800 + 800 = 7.600, menyisakan margin 400 token agar tidak mudah kena 429).

@@ -748,7 +748,52 @@ export function sanitizeAssistantOutput(
     cleaned = stripMediaNarration(cleaned);
   }
   cleaned = dedupeSentences(cleaned);
+  cleaned = enforceUniversalRules(cleaned);
   return avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
+}
+
+/**
+ * Penegak aturan UNIVERSAL — berlaku untuk SEMUA model, termasuk yang tidak patuh prompt.
+ *
+ * Latar belakang (instruksi user): "setiap model bot berganti respon dari model nya itu
+ * jadi beda juga settingan dan tunningannya, ada yg nurut dan ada yg tidak nurut terhadap
+ * prompt dan aturan yg dimasuka". Karena failover memakai model berbeda tiap pesan,
+ * kepatuhan tidak bisa diandalkan — aturan kritis harus DITEGAKKAN di kode.
+ *
+ * Setiap penegakan di sini berasal dari pelanggaran yang SUDAH TERBUKTI di produksi.
+ */
+function enforceUniversalRules(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  let out = text;
+
+  // 1. Narasi akting / arahan panggung dalam tanda bintang — DILARANG (PRINSIP 4).
+  //    Terbukti muncul di beberapa model (kebiasaan roleplay).
+  out = out.replace(/\*\s*\[[^\]]{0,120}\]\s*\*/g, '');          // *[tiba-tiba suara jadi serius]*
+  out = out.replace(/\*\s*\([^)]{0,120}\)\s*\*/g, '');            // *(menghela napas)*
+  out = out.replace(/\*\*\s*\([^)]{0,120}\)\s*\*\*/g, '');      // **(tersenyum)**
+  // Kalimat narasi gerakan tunggal: *menyentuh tanganmu* (tanpa [ atau ()
+  out = out.replace(/\*[a-z][^*\n]{0,80}\*/gi, '');
+
+  // 2. Klaim mendengar audio saat input bukan voice note — DILARANG (PRINSIP 4B).
+  //    Tidak bisa dideteksi dari output saja (butuh konteks input), jadi ditangani
+  //    di jalur pemanggil yang tahu jenis pesan (mediaReply/voice guard).
+
+  // 3. Tag internal yang lolos (jaring kedua setelah cleanMathAndNoise).
+  out = out.replace(/\[\[(?:jawab|sticker):[^\]]*\]\]/gi, '');
+
+  // 4. Rapikan sisa spasi/newline berlebih akibat pemotongan di atas.
+  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+
+  // 5. Pembuka robotik yang dilarang (berlaku semua model).
+  //    Hanya buang FRASA pembukanya — sisa kalimat tetap utuh agar konteks tidak hilang.
+  out = out.replace(
+    /\b(?:Gambar ini menampilkan|Foto ini menampilkan|Stiker ini menampilkan|Di dalam gambar ini (?:ada|terlihat)|Di dalam foto ini (?:ada|terlihat)|Di gambarnya (?:ada|terlihat)|Pada gambar ini (?:ada|terlihat))\s*/gi,
+    '',
+  );
+  // Kapitalkan ulang awal kalimat bila frasa pembuka tadi berada di awal.
+  out = out.replace(/^([a-z])/, (m) => m.toUpperCase());
+
+  return out;
 }
 
 /**
@@ -1229,19 +1274,20 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
   const lockedRiddleAnswer = lastAssistantHasLockedAnswer ? lastRiddleAnswer(ctx?.history) : null;
 
   if (isPendingRiddleOrGombal) {
+    // Ringkas: seluruh perilaku sudah ada di PRINSIP 3 (satu sumber kebenaran).
+    // Blok ini HANYA menambah informasi yang tidak ada di sana: kunci jawaban terkunci.
+    // Sebelumnya blok ini mengulang 3 baris PRINSIP 3 kata-per-kata — pemborosan token
+    // dan membuat model bingung karena menerima instruksi ganda dengan kata berbeda.
     instructions.push(
       '',
-      '[SITUASI KHUSUS - RESPON TEBAKAN / GOMBALAN SEBELUMNYA]: Terapkan PRINSIP 3 untuk kelanjutan alur dua arah:',
-      '- JIKA DIA NYERAH / TANYA JAWABAN / TIDAK TAHU: Langsung berikan punchline jawaban yang masuk akal, cerdas, dan manis/lucu dengan gayamu sendiri. CUKUP JAWABAN LALU SELESAI!',
-      '- JIKA DIA MEMBALAS DENGAN GOMBALAN MANIS / JAWABAN CERDAS / BALIK MERAYU: Akui gombalan manisnya dengan asik, apresiatif, dan tertawa akrab menggunakan susunan kata-katamu sendiri (akui gombalannya kena atau puji dia malah lebih jago). DILARANG KERAS bilang meleset jauh jika jawabannya sudah bagus dan manis!',
-      '- JIKA TEBAKANNYA SALAH / MELESET: Beritahu bahwa tebakannya meleset secara santai dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi ATAU persilakan menyerah. DILARANG KERAS mengganti tebakan dengan yang baru di tengah permainan — SELESAIKAN dulu tebakan yang sedang berjalan (sampai user menebak benar, menyerah, atau minta ganti secara eksplisit). JANGAN mengomentari kualitas tebakan user dengan kata seperti "kurang nyambung" lalu menyodorkan tebakan lain.',
-      '- KEJUJURAN MUTLAK: DILARANG KERAS mengakui tebakan SALAH sebagai BENAR atau mengarang alasan palsu untuk membenarkannya. Bila temanmu memberi alasan/justifikasi yang keliru, jangan ikut mengamininya — cukup bilang belum tepat secara santai. Jawaban benar yang kamu kunci ada di penanda [Jawaban: ...] pada riwayat; bila tidak ada penanda itu, jangan mengklaim tebakannya benar.',
-      '- JIKA TEBAKANNYA BENAR: Akui secara sportif dan santai bahwa tebakannya tepat dengan gayamu sendiri. Selesai di situ.',
+      '[KONTEKS AKTIF - TEBAKAN/GOMBALAN MASIH BERJALAN]: Ikuti PRINSIP 3 (alur dua arah). Permainan ini BELUM selesai — jangan menggantinya dengan tebakan baru kecuali dia memintanya eksplisit.',
       ...(lockedRiddleAnswer
         ? [
-            `- JAWABAN BENAR TERKUNCI: "${lockedRiddleAnswer}". Pakai ini sebagai patokan MUTLAK saat menilai tebakan temanmu. Tebakan hanya BENAR bila sama/bersinonim dengan jawaban ini. Jangan pernah menyebut jawaban ini kecuali dia menyerah atau memintanya.`,
+            `- JAWABAN BENAR TERKUNCI: "${lockedRiddleAnswer}". Pakai sebagai patokan MUTLAK menilai tebakan (BENAR hanya bila sama/bersinonim). Jangan sebutkan kecuali dia menyerah atau memintanya. DILARANG mengaku tebakan salah sebagai benar.`,
           ]
-        : []),
+        : [
+            '- Tidak ada kunci jawaban tersimpan untuk tebakan ini: JANGAN mengklaim tebakannya benar; cukup bilang belum tepat secara santai.',
+          ]),
     );
   }
 
