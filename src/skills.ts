@@ -1106,6 +1106,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '       2. Jika membalas dengan gombalan manis / jawaban cerdas / balik merayu: Akui gombalan manisnya dengan asik, apresiatif, dan tertawa akrab menggunakan susunan kata-katamu sendiri (akui gombalannya kena atau puji dia malah lebih jago). DILARANG KERAS bilang meleset jauh jika jawabannya sudah bagus dan manis!',
     '       3. Jika menebak tapi salah: Tanggapi santai/celetuk bahwa tebakannya meleset dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi ATAU persilakan menyerah. DILARANG KERAS mengganti tebakan itu dengan tebakan baru di tengah permainan — permainan harus DISELESAIKAN dulu (user menebak benar, menyerah, atau minta ganti secara eksplisit). Jangan menilai tebakan user sebagai "kurang nyambung" lalu langsung menyodorkan tebakan lain.',
     '       3b. ATURAN KEJUJURAN MUTLAK: DILARANG KERAS mengakui tebakan yang SALAH sebagai BENAR, dan DILARANG mengarang alasan/penjelasan palsu untuk membenarkan jawaban salah itu (mis. mengaku "orang aring matanya melek terus" padahal itu bukan jawabanmu). Sebuah tebakan hanya BENAR bila sama/bersinonim dengan jawaban benar yang sudah kamu kunci. Bila ragu atau jawaban benar tidak kamu ketahui pasti: JANGAN mengaku benar — bilang saja belum tepat secara santai, atau jujur bahwa tebakannya belum nyambung.',
+    '       3c. ATURAN HINT/PETUNJUK (ATURAN KERAS): bila kamu memberi petunjuk, petunjuk itu WAJIB konsisten dengan jawaban benar yang terkunci — DILARANG mengarang petunjuk baru yang bertentangan atau mengarah ke benda/hewan lain (mis. jawabannya "katak" tapi kamu bilang "dekat dengan sesuatu yang keluar dari mulut" — itu petunjuk palsu yang bikin permainan rusak). Bila tidak ada kunci jawaban yang kamu ketahui pasti, JANGAN memberi petunjuk spesifik apa pun: cukup bilang belum tepat dan tawari lanjut menebak atau menyerah. Lebih baik tanpa petunjuk daripada petunjuk palsu.',
     '       4. Jika menebak dengan benar: Akui secara sportif dan santai bahwa tebakannya kena/bener dengan bahasamu sendiri. SELESAI di situ tanpa menawarkan tebakan baru.',
     '- REAKSI GOMBALAN & HUMOR PEDE SANTAI:',
     '  * Jika gombalan diledek / ditolak / dikritik ga nyambung ("ga nyambung jirr", "garing", "🤢", "ih", "cringe"): Tetap santai, ramah, dan percaya diri tanpa meratap atau kasar. Balas dengan celetukan santai atau banter balik.',
@@ -1356,10 +1357,30 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
   const looksLikeOpenSetup =
     typeof lastAssistantMsg === 'string' &&
     (/\?/.test(lastAssistantMsg) || /(?:coba\s+tebak|tebak\s+(?:dong|deh)|nyerah|jawabannya)/i.test(lastAssistantMsg));
+  // PERMAINAN MASIH BERJALAN walau balasan asisten terakhir hanya berisi PENILAIAN
+  // "belum tepat" (baris itu tidak membawa marker jawaban).
+  //
+  // Temuan produksi 20 Sep 17:40 (chat wa_...3323) — rantai kunci jawaban PUTUS:
+  //   10:39:29 setup "hewan apa yang paling suka membantu orang?"  -> feedback: riddle:Katak
+  //   10:39:57 MiniMax "Belum tepat nih. Coba lagi atau menyerah?"  -> feedback: NULL
+  //   10:40:32 nex memberi HINT NGAWUR "namanya dekat ... yang keluar dari mulut"
+  //            (tidak nyambung dengan Katak) karena kunci jawaban TIDAK tersuntik
+  //   10:40:59 nemotron MENERIMA jawaban SALAH: "lintah? -> Bener! Kena."
+  // Karena itu permainan harus dianggap berjalan selama balasan terakhir berupa
+  // penilaian tebakan — bukan hanya bila pesan terakhir kebetulan membawa marker.
+  const looksLikeOngoingRiddleFeedback =
+    typeof lastAssistantMsg === 'string' &&
+    /\b(?:belum\s+(?:tepat|benar|bener|nyambung)|masih\s+meleset|meleset|coba\s+lagi\s+atau|(?:menyerah|nyerah)\s*\?)/i.test(
+      lastAssistantMsg,
+    );
   // Kunci jawaban hanya relevan bila balasan asisten TERAKHIR yang membawanya (bukan
-  // tebakan lama yang sudah selesai) — mencegah jawaban basi ikut disuntikkan.
+  // tebakan lama yang sudah selesai) — ATAU permainan masih berjalan (lihat di atas).
+  // `lastRiddleAnswer` mencari mundur di riwayat, jadi kunci dari baris SETUP tetap
+  // ditemukan meski baris penilaian di antaranya tidak membawa marker.
+  const historyRiddleAnswer = lastRiddleAnswer(ctx?.history);
   const lastAssistantHasLockedAnswer =
-    typeof lastAssistantMsgRaw === 'string' && /\[Jawaban:/.test(lastAssistantMsgRaw);
+    (typeof lastAssistantMsgRaw === 'string' && /\[Jawaban:/.test(lastAssistantMsgRaw)) ||
+    (looksLikeOngoingRiddleFeedback && !!historyRiddleAnswer);
   const isPendingRiddleOrGombal =
     !isGombalAppreciation &&
     typeof lastAssistantMsg === 'string' &&
@@ -1370,12 +1391,14 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
       lastAssistantMsg,
     ) ||
       // Jalur cadangan: balasan asisten TERAKHIR membawa kunci jawaban + berupa pertanyaan setup.
-      (lastAssistantHasLockedAnswer && looksLikeOpenSetup));
+      (lastAssistantHasLockedAnswer && looksLikeOpenSetup) ||
+      // Jalur ketiga: permainan masih berjalan (balasan terakhir = penilaian belum tepat).
+      looksLikeOngoingRiddleFeedback);
 
   // Kunci jawaban tebak-tebakan/gombalan yang masih menggantung (dari penanda durable
   // [[jawab:...]] yang disimpan saat setup dilempar). Disuntikkan EKSPLISIT ke instruksi
   // agar model apa pun yang menjawab tahu jawaban benar → tidak mengarang pembenaran.
-  const lockedRiddleAnswer = lastAssistantHasLockedAnswer ? lastRiddleAnswer(ctx?.history) : null;
+  const lockedRiddleAnswer = lastAssistantHasLockedAnswer ? historyRiddleAnswer : null;
 
   if (isPendingRiddleOrGombal) {
     // Ringkas: seluruh perilaku sudah ada di PRINSIP 3 (satu sumber kebenaran).
@@ -2017,6 +2040,72 @@ export async function autoReply(
 
     if (!reply.trim()) {
       return { reply: '', escalate: true, via };
+    }
+
+    // GUARD PENILAIAN JUJUR (temuan produksi 20 Sep 17:40, chat wa_...3323):
+    //   setup "hewan apa yang paling suka membantu orang?" (kunci: Katak)
+    //   user menebak "lintah?" -> model menjawab "Bener! Kena. Lintah emang ..."
+    //   = jawaban SALAH diterima sebagai BENAR (halu), merusak permainan.
+    //
+    // Penegakan di KODE, bukan hanya prompt (failover = model berganti tiap pesan).
+    // Toleran: hanya menolak bila tebakan user JELAS TIDAK ADA hubungannya dengan kunci.
+    {
+      // Kunci jawaban dari riwayat durable (marker riddle ada di baris SETUP, dan
+      // lastRiddleAnswer mencari mundur — jadi tetap ditemukan walau baris penilaian
+      // di antaranya tidak membawa marker).
+      const histRiddle = riddleAnswer ?? lastRiddleAnswer(ctx?.history);
+      const lastAssistantRaw = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
+      const lastAssistant = typeof lastAssistantRaw === 'string' ? stripDurableMarkers(lastAssistantRaw) : '';
+      const riddleOngoing =
+        /\b(?:belum\s+(?:tepat|benar|bener|nyambung)|masih\s+meleset|meleset|coba\s+lagi\s+atau|(?:menyerah|nyerah)\s*\?)/i.test(lastAssistant) ||
+        (/\?/.test(lastAssistant) && /(?:coba\s+tebak|tebak\s*(?:dong|deh|apa)|nyerah|jawabannya)/i.test(lastAssistant));
+      const claimsCorrect =
+        /\b(?:bener|benar|tepat|kena|pinter|hebat|mantap|yes|yap|betul)\b/i.test(reply) &&
+        !/\b(?:belum|bukan|salah|meleset|nyerah|menyerah)\b/i.test(reply);
+      if (histRiddle && riddleOngoing && clean && reply.trim() && claimsCorrect) {
+        const norm = (s: string): string[] =>
+          s
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+            .split(/\s+/)
+            .filter((w) => w.length > 2);
+        const guess = norm(clean);
+        const key = norm(histRiddle);
+        // Kecocokan kata persis, atau awalan >=4 huruf (toleransi variasi akhiran).
+        const related = key.some((k) =>
+          guess.some(
+            (g) => g === k || (k.length >= 4 && g.length >= 4 && (g.startsWith(k.slice(0, 4)) || k.startsWith(g.slice(0, 4)))),
+          ),
+        );
+        if (!related) {
+          console.warn(
+            `[skills] Penilaian halu: user menebak "${clean.trim().slice(0, 40)}" tapi kunci "${histRiddle}" — minta penilaian ulang.`,
+          );
+          try {
+            const reMsgs: ChatMsg[] = [
+              ...buildMessages(clean, ctx, web),
+              {
+                role: 'user',
+                content: `Koreksi: jawabanmu barusan salah menilai. Jawaban BENAR dari tebakan ini adalah "${histRiddle}", sedangkan temanmu menebak "${clean.trim().slice(0, 60)}" — itu BUKAN jawaban yang benar. Ralat dengan 1-2 kalimat santai: bilang belum tepat (tanpa menyebutkan jawaban benar), lalu tawari lanjut menebak atau menyerah. JANGAN mengaku tebakannya benar.`,
+              },
+            ];
+            const re = await chatRetry(reMsgs, false);
+            const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
+            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings);
+            if (reReply.trim()) {
+              // Buang klaim "benar" yang masih tersisa (pembersihan murni, tanpa teks statis).
+              const cleaned2 = reReply
+                .split(/(?<=[.!?])\s+|\n+/)
+                .filter((s) => s.trim() && !/\b(?:bener|benar|tepat|kena|pinter)\b/i.test(s))
+                .join(' ')
+                .trim();
+              reply = cleaned2 || reReply;
+            }
+          } catch {
+            // Guard best-effort: bila regen gagal, balasan asli dibiarkan.
+          }
+        }
+      }
     }
 
     return { reply, escalate: false, via, tokens, sticker: stickerEmoji, riddleAnswer };
