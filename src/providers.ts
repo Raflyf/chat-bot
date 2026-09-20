@@ -833,6 +833,17 @@ interface Step {
   keys: string[];
   models: string[];
   cap: number;
+  /**
+   * Batas token prompt per menit (ITPM) provider. Bila prompt melebihi angka ini,
+   * request DIJAMIN kena 429 dan membuang waktu rantai — jadi provider dilewati.
+   *
+   * Kenapa penting: Groq Free Tier membatasi INPUT token per menit (ITPM) ~7.000-8.000
+   * untuk model qwen3.8-27b. Sementara konteks bot bisa >8.000 token (terbukti di DB:
+   * 15 dari 15 pemakaian terbesar melebihi 8.000 token). Tanpa guard ini, setiap percakapan
+   * panjang yang jatuh ke Groq PASTI gagal — user melihat bot "tidak merespon".
+   * 0 = tidak ada batas yang diketahui.
+   */
+  maxPromptTokens: number;
   /** `t` = sisa anggaran waktu (ms) untuk attempt ini, agar satu model yang menggantung tidak menghabiskan seluruh deadline rantai. */
   run: (key: string, model: string, messages: ChatMsg[], t: number) => Promise<ProviderResult>;
 }
@@ -845,6 +856,7 @@ function steps(): Step[] {
       keys: config.pools.xkiro,
       models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
       cap: config.dailyCap.xkiro,
+      maxPromptTokens: 0, // tidak ada batas ITPM ketat yang diketahui
       run: (k, m, msgs, t) => {
         const isDeepSeek = m.toLowerCase().includes('deepseek');
         return openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
@@ -864,6 +876,7 @@ function steps(): Step[] {
       keys: config.pools.openrouter,
       models: [config.models.orPrimary, ...config.models.orBackup],
       cap: config.dailyCap.openrouter,
+      maxPromptTokens: 0,
       run: (k, m, msgs, t) =>
         openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, {
           // Thinking off (keputusan user): 3,5 dtk -> ~1 dtk, output tetap bersih.
@@ -876,6 +889,9 @@ function steps(): Step[] {
       keys: config.pools.groq,
       models: [config.models.groqPrimary, ...config.models.groqBackup],
       cap: config.dailyCap.groq,
+      // ITPM terukur: 429 Groq menyebut "Limit 7000" untuk qwen3.8-27b (input token
+      // per menit). Prompt di atas ini PASTI gagal -> lewati agar tidak buang waktu.
+      maxPromptTokens: 7000,
       run: (k, m, msgs, t) => {
         // Pangkas pesan agar total (prompt + output 800) benar-benar di bawah limit ketat Groq 8K TPM
         // (6.800 + 800 = 7.600, menyisakan margin 400 token agar tidak mudah kena 429).
@@ -895,6 +911,7 @@ function steps(): Step[] {
       keys: config.pools.cloudflare,
       models: [config.models.cfPrimary, ...config.models.cfBackup],
       cap: config.dailyCap.cloudflare,
+      maxPromptTokens: 0,
       run: (k, m, msgs, t) => cloudflareChat(k, m, msgs, t),
     },
     // --- TIER 5: Google Gemini API (1M konteks) ---
@@ -903,6 +920,7 @@ function steps(): Step[] {
       keys: config.pools.gemini,
       models: [config.models.geminiPrimary, ...config.models.geminiBackup],
       cap: config.dailyCap.gemini,
+      maxPromptTokens: 0, // 1M TPM — jauh di atas kebutuhan
       run: (k, m, msgs, t) => geminiChat(k, m, msgs, t),
     },
     // --- TIER 6: Dahl Global API (1B token pool) ---
@@ -911,6 +929,7 @@ function steps(): Step[] {
       keys: config.pools.dahl,
       models: [config.models.dahlPrimary, ...config.models.dahlBackup],
       cap: config.dailyCap.dahl,
+      maxPromptTokens: 0,
       run: (k, m, msgs, t) => {
         const isDeepSeek = m.toLowerCase().includes('deepseek');
         return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
@@ -965,6 +984,26 @@ export async function chat(
 
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
+
+  // Estimasi token prompt (≈4 karakter/token untuk teks campuran Indonesia+Inggris).
+  // Dipakai untuk melewati provider yang batas ITPM-nya pasti terlampaui — tanpa guard
+  // ini, percakapan panjang yang jatuh ke Groq SELALU gagal 429 dan membuang waktu rantai
+  // (temuan user: "penggunaan token ada yg sampai lebih dari 8k, gimna kalo model dari
+  // groq yg menangani? pasti tidak akan ada yg merespon, karna rate limit groq 8k/menit").
+  const estimatePromptTokens = (msgs: ChatMsg[]): number => {
+    let chars = 0;
+    for (const m of msgs) {
+      if (typeof m.content === 'string') chars += m.content.length;
+      else if (Array.isArray(m.content)) {
+        for (const part of m.content) {
+          if (part && part.type === 'text' && typeof part.text === 'string') chars += part.text.length;
+          else if (part && part.type === 'image_url') chars += 4000; // gambar ≈ 4000 token
+        }
+      }
+    }
+    return Math.ceil(chars / 4);
+  };
+  const promptTokensEstimate = estimatePromptTokens(messages);
   // Untuk vision: rantai eksplisit dari config.models.visionChain (urutan mutlak sesuai
   // keputusan review user, tidak disusun ulang oleh pengurutan latensi).
   const orderedSteps = needVision ? visionSteps(allSteps) : allSteps;
@@ -980,6 +1019,17 @@ export async function chat(
   for (const allowCoolingPass of [false, true]) {
   for (const step of orderedSteps) {
     if (Date.now() >= deadline - 1500) break;
+    // Guard ITPM: lewati provider yang batas token-per-menitnya pasti terlampaui.
+    // Ini mencegah request yang DIJAMIN 429 (mis. Groq 7.000 ITPM vs prompt 9.000 token)
+    // sehingga rantai tidak membuang waktu dan langsung mencoba provider yang sanggup.
+    if (step.maxPromptTokens > 0 && promptTokensEstimate > step.maxPromptTokens) {
+      if (!allowCoolingPass) {
+        console.warn(
+          `[providers] Lewati ${step.kind}: prompt ~${promptTokensEstimate} token melebihi batas ITPM ${step.maxPromptTokens}.`,
+        );
+      }
+      continue;
+    }
     // Urutkan model dalam tier ini berdasarkan latensi terukur (gesit di depan, lambat di belakang).
     // Rantai vision dibiarkan apa adanya karena tiap step hanya berisi satu model.
     const models = needVision ? step.models : orderModelsByLatency(step.kind, step.models);

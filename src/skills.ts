@@ -747,7 +747,66 @@ export function sanitizeAssistantOutput(
   if (mediaReply && !userAskedAboutMedia(userPrompt)) {
     cleaned = stripMediaNarration(cleaned);
   }
+  cleaned = dedupeSentences(cleaned);
   return avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
+}
+
+/**
+ * Buang kalimat yang terduplikasi dalam SATU balasan.
+ *
+ * Model kadang mengulang penilaian yang sama dua kali dalam satu pesan — contoh nyata
+ * (produksi 20 Sep 10:22): "Bukan, ayam juga belum tepat, masih meleset. Coba lagi atau
+ * bilang "nyerah" kalau sudah menyerah. Bukann, ayam belum tepat. Tebakan tadi juga
+ * kurang nyambung, jadi kita ganti: hewan apa yang selalu membawa rumah ke mana pun?"
+ *
+ * Cara kerja: bandingkan tiap kalimat dengan kalimat sebelumnya memakai kemiripan
+ * kata (Jaccard). Bila ≥60% mirip, kalimat kedua dibuang. Hanya berlaku untuk balasan
+ * multi-kalimat pendek (< 6 kalimat) agar tidak membuang konten panjang yang sah.
+ */
+function dedupeSentences(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  // Jangan sentuh balasan panjang (penjelasan teknis bisa punya kalimat mirip yang sah)
+  // atau yang memuat blok kode / daftar.
+  if (text.length > 700 || /```|\n\s*[-*\d]/.test(text)) return text;
+
+  const parts = text.match(/[^.!?\n]+[.!?]*/g);
+  if (!parts || parts.length < 3) return text;
+
+  const tokenize = (s: string): Set<string> =>
+    new Set(
+      s
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 2),
+    );
+
+  const kept: string[] = [];
+  const keptTokens: Set<string>[] = [];
+  for (const raw of parts) {
+    const sentence = raw.trim();
+    if (!sentence) continue;
+    const tokens = tokenize(sentence);
+    if (tokens.size >= 3) {
+      // Bandingkan dengan SEMUA kalimat yang sudah disimpan (bukan hanya yang terakhir):
+      // model bisa menyisipkan kalimat lain di antara dua kalimat yang mengulang.
+      const isDuplicate = keptTokens.some((prev) => {
+        if (prev.size < 3) return false;
+        let inter = 0;
+        for (const t of tokens) if (prev.has(t)) inter++;
+        // Pakai CONTAINMENT (bukan Jaccard murni): kalimat pendek yang seluruh isinya
+        // sudah terkandung di kalimat lain tetap terdeteksi meski panjangnya berbeda.
+        // Contoh nyata: "Bukann, ayam belum tepat." (4 token) vs "Bukan, ayam juga belum
+        // tepat, masih meleset." (7 token) -> Jaccard 0,375 (gagal) tapi containment 0,75.
+        const containment = inter / Math.min(tokens.size, prev.size);
+        return containment >= 0.7;
+      });
+      if (isDuplicate) continue;
+    }
+    kept.push(sentence);
+    keptTokens.push(tokens);
+  }
+  return kept.join(' ').replace(/\s{2,}/g, ' ').trim();
 }
 
 /**
@@ -896,7 +955,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
     '    -> Tunggu respon temanmu di pesan berikutnya:',
     '       1. Jika menyerah / tanya jawaban / tidak tahu ("nyerah", "gatau", "gata", "apa tuh", "apaan"): Langsung berikan punchline yang cerdas dan masuk akal, lalu SELESAI di situ tanpa pertanyaan klise.',
     '       2. Jika membalas dengan gombalan manis / jawaban cerdas / balik merayu: Akui gombalan manisnya dengan asik, apresiatif, dan tertawa akrab menggunakan susunan kata-katamu sendiri (akui gombalannya kena atau puji dia malah lebih jago). DILARANG KERAS bilang meleset jauh jika jawabannya sudah bagus dan manis!',
-    '       3. Jika menebak tapi salah: Tanggapi santai/celetuk bahwa tebakannya meleset dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi atau persilakan menyerah.',
+    '       3. Jika menebak tapi salah: Tanggapi santai/celetuk bahwa tebakannya meleset dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi ATAU persilakan menyerah. DILARANG KERAS mengganti tebakan itu dengan tebakan baru di tengah permainan — permainan harus DISELESAIKAN dulu (user menebak benar, menyerah, atau minta ganti secara eksplisit). Jangan menilai tebakan user sebagai "kurang nyambung" lalu langsung menyodorkan tebakan lain.',
     '       3b. ATURAN KEJUJURAN MUTLAK: DILARANG KERAS mengakui tebakan yang SALAH sebagai BENAR, dan DILARANG mengarang alasan/penjelasan palsu untuk membenarkan jawaban salah itu (mis. mengaku "orang aring matanya melek terus" padahal itu bukan jawabanmu). Sebuah tebakan hanya BENAR bila sama/bersinonim dengan jawaban benar yang sudah kamu kunci. Bila ragu atau jawaban benar tidak kamu ketahui pasti: JANGAN mengaku benar — bilang saja belum tepat secara santai, atau jujur bahwa tebakannya belum nyambung.',
     '       4. Jika menebak dengan benar: Akui secara sportif dan santai bahwa tebakannya kena/bener dengan bahasamu sendiri. SELESAI di situ tanpa menawarkan tebakan baru.',
     '- REAKSI GOMBALAN & HUMOR PEDE SANTAI:',
@@ -1175,7 +1234,7 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
       '[SITUASI KHUSUS - RESPON TEBAKAN / GOMBALAN SEBELUMNYA]: Terapkan PRINSIP 3 untuk kelanjutan alur dua arah:',
       '- JIKA DIA NYERAH / TANYA JAWABAN / TIDAK TAHU: Langsung berikan punchline jawaban yang masuk akal, cerdas, dan manis/lucu dengan gayamu sendiri. CUKUP JAWABAN LALU SELESAI!',
       '- JIKA DIA MEMBALAS DENGAN GOMBALAN MANIS / JAWABAN CERDAS / BALIK MERAYU: Akui gombalan manisnya dengan asik, apresiatif, dan tertawa akrab menggunakan susunan kata-katamu sendiri (akui gombalannya kena atau puji dia malah lebih jago). DILARANG KERAS bilang meleset jauh jika jawabannya sudah bagus dan manis!',
-      '- JIKA TEBAKANNYA SALAH / MELESET: Beritahu bahwa tebakannya meleset secara santai dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi atau persilakan menyerah.',
+      '- JIKA TEBAKANNYA SALAH / MELESET: Beritahu bahwa tebakannya meleset secara santai dengan bahasamu sendiri. DILARANG membocorkan jawaban aslinya! Tantang tebak lagi ATAU persilakan menyerah. DILARANG KERAS mengganti tebakan dengan yang baru di tengah permainan — SELESAIKAN dulu tebakan yang sedang berjalan (sampai user menebak benar, menyerah, atau minta ganti secara eksplisit). JANGAN mengomentari kualitas tebakan user dengan kata seperti "kurang nyambung" lalu menyodorkan tebakan lain.',
       '- KEJUJURAN MUTLAK: DILARANG KERAS mengakui tebakan SALAH sebagai BENAR atau mengarang alasan palsu untuk membenarkannya. Bila temanmu memberi alasan/justifikasi yang keliru, jangan ikut mengamininya — cukup bilang belum tepat secara santai. Jawaban benar yang kamu kunci ada di penanda [Jawaban: ...] pada riwayat; bila tidak ada penanda itu, jangan mengklaim tebakannya benar.',
       '- JIKA TEBAKANNYA BENAR: Akui secara sportif dan santai bahwa tebakannya tepat dengan gayamu sendiri. Selesai di situ.',
       ...(lockedRiddleAnswer
@@ -1189,10 +1248,23 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
   // Deteksi komplain gombalan atau permintaan ganti gombalan.
   // WAJIB ada konteks gombalan/lelucon di riwayat — kata "apasi/ngaco/garing" saja tidak cukup
   // (mencegah instruksi "berikan rayuan baru" muncul di tengah obrolan marah/curhat).
+  // PENTING: instruksi "berikan tebakan/gombalan BARU" HANYA boleh muncul bila user
+  // EKSPLISIT meminta ganti. Sebelumnya kata tunggal "kurang" sudah cukup memicunya —
+  // dan kata itu sering datang dari penilaian BOT SENDIRI terhadap tebakan user
+  // ("tebakan tadi juga kurang nyambung"), sehingga bot mengganti tebakannya di tengah
+  // permainan padahal user masih asik menebak (temuan produksi 20 Sep 10:22).
+  // Aturan baru: harus berupa PERMINTAAN GANTI yang jelas, dan TIDAK boleh aktif saat
+  // ada tebakan yang masih menggantung (isPendingRiddleOrGombal) — permainan berjalan
+  // harus diselesaikan dulu, bukan diganti.
+  const isExplicitChangeRequest =
+    /^(?:ganti|coba\s+lagi|yang\s+lain|yg\s+lain|coba\s+yg\s+lain|lagi\s+dong|ganti\s+dong|minta\s+lagi|kasih\s+lagi|kasih\s+yang\s+lain)[!.\s]*$/i.test(userPrompt.trim()) ||
+    /\b(?:ga\s+nyambung|gak\s+nyambung|ngaco|garing|cringe|apasi|apasih|aneh\s+banget|🤢|🤮|geli)\b/i.test(userPrompt);
   const isGombalComplaintOrChange =
     wasRecentGombalOrJoke &&
-    (/^(?:ganti|coba\s+lagi|yang\s+lain|yg\s+lain|coba\s+yg\s+lain|kurang|lagi\s+dong|ganti\s+dong|minta\s+lagi)[!.\s]*$/i.test(userPrompt.trim()) ||
-      /\b(?:ga\s+nyambung|gak\s+nyambung|ngaco|garing|cringe|apasi|apasih|aneh\s+banget|🤢|🤮|geli)\b/i.test(userPrompt));
+    isExplicitChangeRequest &&
+    // "kurang" TIDAK lagi berdiri sendiri sebagai pemicu — hanya bila jelas menilai
+    // gombalan/tebakannya (mis. "kurang lucu", "kurang nyambung").
+    !/^kurang[!.\s]*$/i.test(userPrompt.trim());
 
   if (isGombalComplaintOrChange && !isPendingRiddleOrGombal && !isGombalAppreciation && !annoyActive) {
     instructions.push(
@@ -1429,6 +1501,10 @@ function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): C
   }
 
   // Deduplikasi respons asisten di riwayat percakapan agar tidak memicu few-shot repetition loop
+  // Guard anti-duplikasi KALIMAT dalam satu balasan: model kadang mengulang penilaian
+  // yang sama dua kali (temuan produksi: "Bukan, ayam juga belum tepat, masih meleset...
+  // Bukann, ayam belum tepat. Tebakan tadi juga kurang nyambung..."). Kalimat kedua yang
+  // ≥70% mirip dengan kalimat pertama dibuang agar balasan tidak terasa diulang.
   // PRINSIP: jika duplikat ditemukan, DROP dari history (jangan replace dengan kalimat template hardcoded)
   const seenAssistantTexts = new Set<string>();
   const deduped: ChatMsg[] = [];

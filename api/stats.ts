@@ -209,6 +209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let xkiroLiveResults: XkiroLiveItem[] = [];
     let orLiveResults: OrLiveItem[] = [];
     let liveLimitsMap = new Map<string, Map<string, LiveLimit>>();
+    let todayQuotasData: Array<{ kind: string; key_suffix: string; used: number; tokens_used?: number }> = [];
 
     if (c) {
       // Ambil tokens_used juga agar TPD riil bisa ditampilkan (bukan estimasi calls × rata-rata)
@@ -220,6 +221,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           quotaQuery = quotaQuery.gte('day', startDayStr);
         }
       }
+
+      // Kuota HARI INI (terpisah) — dipakai untuk persentase/status saat rentang bukan
+      // "hari ini", karena kuota provider bersifat HARIAN (reset 00:00 UTC).
+      const todayQuotaQuery = range === 'today'
+        ? null
+        : c.from('provider_quota').select('kind, key_suffix, used, tokens_used').eq('day', todayStr);
 
       let waPeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'whatsapp');
       let telePeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'telegram');
@@ -287,7 +294,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         allTimeAssistantRes,
         liveResults,
         liveLimits,
-      ] = await Promise.all([
+        dbTodayQuotaRes,
+        ] = await Promise.all([
         quotaQuery,
         c.from('messages').select('*', { count: 'exact', head: true }),
         waPeriodQuery,
@@ -303,6 +311,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         c.from('messages').select('via').eq('role', 'assistant').order('id', { ascending: false }).limit(300),
         liveFetchPromise,
         limitsPromise,
+        todayQuotaQuery ? todayQuotaQuery : Promise.resolve({ data: null }),
       ]);
 
       quotasData = (dbQuotaRes.data as any) || [];
@@ -317,6 +326,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       xkiroLiveResults = liveResults[0];
       orLiveResults = liveResults[1];
       liveLimitsMap = liveLimits;
+      todayQuotasData = ((dbTodayQuotaRes as any)?.data as any[]) || [];
     } else {
       const [xk, or] = await liveFetchPromise;
       xkiroLiveResults = xk;
@@ -345,6 +355,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }>();
     for (const r of orLiveResults) {
       if (r) orSyncMap.set(r.key, r);
+    }
+
+    // Map kuota HARI INI (dipakai untuk persentase/status saat rentang bukan "hari ini").
+    const todayQuotaMap = new Map<string, number>();
+    const todayTokenQuotaMap = new Map<string, number>();
+    for (const q of todayQuotasData ?? []) {
+      const key = `${q.kind}:${q.key_suffix}`;
+      todayQuotaMap.set(key, (todayQuotaMap.get(key) || 0) + (q.used || 0));
+      todayTokenQuotaMap.set(key, (todayTokenQuotaMap.get(key) || 0) + (Number(q.tokens_used) || 0));
     }
 
     const quotaMap = new Map<string, number>();
@@ -637,7 +656,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       totalPoolKeys += p.keys.length;
       let poolUsed = 0;
 
-      const effectiveCapPerKey = daysCount > 0 ? p.cap * daysCount : 0;
+      // Cap efektif: untuk rentang "Semua" (daysCount=0) kita TETAP memakai cap HARIAN
+      // sebagai acuan bar/status — karena kuota provider memang harian (reset 00:00 UTC).
+      // Sebelumnya daysCount=0 membuat cap 0 -> dashboard menampilkan "Uncapped" padahal
+      // key punya limit harian dan sebagian sudah CAPPED (temuan user: "ketika filter hari
+      // jadi dipilih semua, matriks penggunaan pool api key jadi begini").
+      const effectiveCapPerKey = daysCount > 0 ? p.cap * daysCount : p.cap;
       // Saldo token Dahl adalah pool 1B (bukan kuota harian), jadi TIDAK dikali jumlah hari —
       // sisa saldo tetap sama berapa pun rentang tanggal yang dipilih.
       const effectiveTokenCapPerKey =
@@ -719,7 +743,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         // pemakaian dari semua aplikasi di akun yang sama).
         let remainingTokens: number | null =
           liveLimit?.tokensRemaining ?? (tokenCap > 0 ? Math.max(0, tokenCap - tokensUsed) : null);
-        let tokenPercent = tokenCap > 0 ? Math.min(100, Math.round((tokensUsed / tokenCap) * 100)) : 0;
+        // Token percent: sama — pakai data HARIAN. Saat rentang "Semua", xKiro tetap
+        // memakai live (sudah harian); provider lain pakai DB harian bila tersedia.
+        const tokensForPercent = daysCount > 0 || liveLimit?.tokensUsedToday != null
+          ? tokensUsed
+          : (todayTokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayTokenQuotaMap.get(`${p.kind}:${suffix}`) || 0) || tokensUsed;
+        let tokenPercent = tokenCap > 0 ? Math.min(100, Math.round((tokensForPercent / tokenCap) * 100)) : 0;
 
         if (xkLive) {
           // Menggunakan data sinkronisasi langsung dari web server xKiro (global di semua apps)
@@ -730,8 +759,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         }
 
         // Cap RPD efektif: endpoint live menang; kalau tidak ada, pakai .env.
-        const callCap = liveRpdCap > 0 ? (daysCount > 0 ? liveRpdCap * daysCount : liveRpdCap) : effectiveCapPerKey;
-        const percent = callCap > 0 ? Math.min(100, Math.round((used / callCap) * 100)) : 0;
+        // Untuk rentang "Semua", cap tetap HARIAN (kuota provider harian) — bukan cap
+        // dikali jumlah hari, karena akumulasi sepanjang waktu selalu melampaui kuota harian
+        // dan membuat semua key tampak CAPPED 100%.
+        const callCap = liveRpdCap > 0 ? liveRpdCap : (daysCount > 0 ? p.cap * daysCount : p.cap);
+        // Persentase/status SELALU mencerminkan kuota HARIAN (provider reset harian).
+        // Untuk rentang "Semua": pakai pemakaian HARI INI dari DB (todayQuotaMap), bukan
+        // akumulasi — akumulasi selalu melampaui kuota harian dan membuat semua key
+        // tampak CAPPED 100% (temuan user pada filter "Semua").
+        const todayUsedForKey = (todayQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayQuotaMap.get(`${p.kind}:${suffix}`) || 0);
+        // Pemakaian HARIAN key ini — SELALU dipakai untuk baris key, karena cap provider
+        // bersifat harian. Akumulasi periode dikirim terpisah sebagai `usedPeriod`.
+        const dailyCallsUsed = liveCallsUsed ?? (daysCount > 0 ? effectiveCallsUsed : todayUsedForKey);
+        const percent = callCap > 0 ? Math.min(100, Math.round((dailyCallsUsed / callCap) * 100)) : 0;
         // Status key mempertimbangkan RPD DAN TPD — mana yang lebih dulu tercapai.
         const bindingPercent = Math.max(percent, tokenPercent);
         const status = bindingPercent >= 100 ? 'capped' : bindingPercent >= 80 ? 'warning' : 'healthy';
@@ -742,7 +782,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
         return {
           suffix,
-          used: effectiveCallsUsed,
+          used: dailyCallsUsed,
+          usedPeriod: effectiveCallsUsed,
           dbUsed: used,
           cap: callCap,
           remaining: callCap > 0 ? Math.max(0, callCap - effectiveCallsUsed) : null,
@@ -807,6 +848,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           : keysDetail.reduce((acc, kd) => acc + kd.tokensUsed, 0);
       }
       const poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolTokensUsed / totalTokenPoolCap) * 100)) : 0;
+      // Pemakaian HARIAN pool — agar header kartu bisa menampilkan konteks cap harian
+      // tanpa mencampur akumulasi periode (temuan: "1728/1500" menyesatkan).
+      const poolUsedToday = keysDetail.reduce((acc, kd) => acc + (kd.used || 0), 0);
       // Sisa token pool = jumlah sisa tiap key (menghormati cap per-key & data live).
       const poolTokensRemaining = keysDetail.reduce((acc, kd) => acc + (kd.liveRemainingTokens ?? kd.remaining ?? 0), 0);
       const poolCappedKeys = keysDetail.filter((kd) => kd.status === 'capped').length;
@@ -831,8 +875,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         keyCount: p.keys.length,
         capPerKey: effectiveCapPerKey,
         totalCap: totalPoolCap,
-        usedToday: poolUsed,
+        usedToday: poolUsedToday,
         usedPeriod: poolUsed,
+        usedTodayDaily: poolUsedToday,
         percent: poolPercent,
         tokenCapPerKey: effectiveTokenCapPerKey,
         tokenCapPerKeyList: p.tokenCapPerKeyList,

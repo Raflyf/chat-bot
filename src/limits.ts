@@ -147,8 +147,23 @@ export async function fetchGroqLimits(keys: string[], model: string): Promise<Ma
           signal: AbortSignal.timeout(15000),
         });
         // Header rate limit tersedia bahkan saat 429 — itulah sumber otoritatifnya.
-        const rpd = numOrNull(res.headers.get('x-ratelimit-limit-requests'));
-        const tpm = numOrNull(res.headers.get('x-ratelimit-limit-tokens'));
+        let rpd = numOrNull(res.headers.get('x-ratelimit-limit-requests'));
+        let tpm = numOrNull(res.headers.get('x-ratelimit-limit-tokens'));
+        // Saat 429, pesan error menyebut limit ITPM ASLI model (lebih akurat dari header).
+        // Contoh: "on input tokens per minute (ITPM): Limit 7000, Used 4690".
+        if (res.status === 429) {
+          try {
+            const errBody = (await res.json()) as { error?: { message?: string } };
+            const msg = errBody.error?.message ?? '';
+            const itpm = msg.match(/Limit\s+(\d{3,})/i);
+            if (itpm) {
+              tpm = Number(itpm[1]);
+              rpd = null; // limit yang berlaku adalah ITPM, bukan RPD
+            }
+          } catch {
+            // abaikan
+          }
+        }
         // PENTING: header `x-ratelimit-remaining-*` Groq merujuk JENDELA PENDEK
         // (per menit), BUKAN sisa harian. Memakainya sebagai "sisa harian" menghasilkan
         // angka palsu (temuan: sisa tampil 39.930 padahal kuota harian masih penuh).

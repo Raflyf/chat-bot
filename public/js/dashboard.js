@@ -628,19 +628,50 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         countMap.set(rawName, m.count || 0);
       });
 
+      /**
+       * Hitung pemakaian model dari data DB.
+       *
+       * PENTING — bug lama: pencocokan dua arah (`name.includes(key) || key.includes(name)`)
+       * terlalu longgar. Dengan data nyata hanya 3 entri (9x qwen3.8-max, 1x nex, 1x reset),
+       * SEMUA kartu menampilkan "9x" karena key pendek seperti "qwen3.8-max" dianggap cocok
+       * dengan nama model apa pun yang mengandungnya — termasuk yang tidak berhubungan.
+       *
+       * Aturan baru: cocokkan dari key PALING SPESIFIK (terpanjang) dan utamakan kecocokan
+       * penuh nama model (setelah normalisasi namespace provider). Kecocokan longgar hanya
+       * dipakai bila tidak ada kecocokan spesifik sama sekali.
+       */
       function getCount(matchKeys) {
-        for (const k of matchKeys) {
-          const lower = k.toLowerCase();
-          for (const [name, cnt] of countMap.entries()) {
-            if (name.includes(lower) || lower.includes(name)) {
-              return cnt;
-            }
+        // Normalisasi: buang prefiks provider + suffix ":free" agar "xkiro/qwen/qwen3.8-max:free"
+        // setara dengan "qwen/qwen3.8-max".
+        const norm = (s) => String(s).toLowerCase()
+          .replace(/^(xkiro|openrouter|groq|cloudflare|gemini|dahl)\//, '')
+          .replace(/^@cf\//, '')
+          .replace(/:free$/, '')
+          .trim();
+        const normEntries = [...countMap.entries()].map(([n, c]) => [norm(n), c]);
+
+        // Urutkan key dari terpanjang (paling spesifik) ke terpendek.
+        const sortedKeys = [...matchKeys].map((k) => k.toLowerCase()).sort((a, b) => b.length - a.length);
+
+        for (const key of sortedKeys) {
+          const nk = norm(key);
+          // 1) Kecocokan PERSIS (paling akurat) — mis. "qwen/qwen3.8-max" === "qwen/qwen3.8-max".
+          const exact = normEntries.find(([n]) => n === nk);
+          if (exact) return exact[1];
+          // 2) Kecocokan penuh nama model terhadap key (name mengandung key) — hanya bila
+          //    key cukup spesifik (>= 12 char) agar tidak menyerap model lain.
+          if (nk.length >= 12) {
+            const hit = normEntries.find(([n]) => n.includes(nk));
+            if (hit) return hit[1];
           }
         }
         return 0;
       }
 
-      // Katalog model router multi-tier (urutan sinkron 100% dengan rantai failover runtime sistem v0.35)
+      // Katalog model router multi-tier.
+      // SINKRONISASI: setiap entri wajib punya `matchKeys` yang merujuk model NYATA di
+      // config sistem (src/env.ts). Diverifikasi otomatis oleh
+      // scratch/verify_v50_model_catalog.mjs — jangan tambah entri tanpa model di config.
       const catalog = [
         // --- Tier 1: xKiro Gateway (Primer Teks Runtime) ---
         {
@@ -668,12 +699,20 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["xkiro/qwen/qwen3.8-omni-flash:free", "qwen/qwen3.8-omni-flash:free", "qwen3.8-omni-flash"],
         },
         {
-          name: "DeepSeek V4.1 Flash Free",
+          name: "Qwen 3.7 Max Free",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
-          capabilities: ["Text", "Reasoning", "Arsip"],
-          desc: "Slot arsip Tier 1 - Diaktifkan otomatis begitu DeepSeek V4.1 Flash free kembali muncul di endpoint xKiro",
-          matchKeys: ["xkiro/deepseek/deepseek-v4.1-flash:free", "deepseek/deepseek-v4.1-flash:free", "deepseek-v4.1-flash"],
+          capabilities: ["Text", "Reasoning", "Backup"],
+          desc: "Cadangan #1 Tier 1 xKiro - dipakai otomatis saat Qwen 3.8 Max tidak merespon (failover dalam-tier)",
+          matchKeys: ["xkiro/qwen/qwen3.7-max:free", "qwen/qwen3.7-max:free", "qwen3.7-max"],
+        },
+        {
+          name: "Qwen 3.6 Max Preview Free",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          capabilities: ["Text", "Reasoning", "Backup"],
+          desc: "Cadangan #2 Tier 1 xKiro - lapis terakhir failover Tier 1 sebelum pindah ke OpenRouter",
+          matchKeys: ["xkiro/qwen/qwen3.6-max-preview:free", "qwen/qwen3.6-max-preview:free", "qwen3.6-max-preview"],
         },
 
         // --- Tier 2: OpenRouter AI (Free Models) ---
@@ -1069,7 +1108,12 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           });
         }
 
-        const usedValue = p.usedPeriod ?? p.usedToday ?? 0;
+        // Angka utama = pemakaian HARIAN (cap provider bersifat harian). Saat rentang
+        // bukan "hari ini", akumulasi periode ditampilkan sebagai info sekunder agar
+        // tidak tertukar dengan kuota harian (temuan user pada filter "Semua").
+        const usedValue = p.usedTodayDaily ?? p.usedToday ?? p.usedPeriod ?? 0;
+        const usedPeriodValue = p.usedPeriod ?? usedValue;
+        const showPeriodInfo = usedPeriodValue > usedValue;
         const capInfo = p.totalCap > 0 ? `Cap: ${p.totalCap.toLocaleString()} calls` : "Uncapped";
         // Konteks token pada header kartu: provider yang dibatasi TOKEN (xKiro/Dahl/Groq)
         // tidak boleh hanya menampilkan calls — pengguna perlu tahu batas mana yang mengikat.
@@ -1092,6 +1136,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             <div class="provider-summary-stat">
               <div class="provider-usage-text">${usedValue.toLocaleString()} Calls</div>
               <div class="provider-cap-text">${p.keyCount} Keys &bull; ${capInfo}</div>
+              ${showPeriodInfo ? `<div style="font-size: 0.66rem; color: var(--text-dim); margin-top: 1px;">Hari ini • ${usedPeriodValue.toLocaleString()} total periode</div>` : ""}
               ${tokenContextHtml}
             </div>
           </div>
