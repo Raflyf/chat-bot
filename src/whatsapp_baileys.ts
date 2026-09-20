@@ -29,7 +29,7 @@ const logger = pino({ level: 'silent' });
 const sessionDir = path.resolve(process.cwd(), 'session_wa');
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
-const PROMPT_VERSION = 'v0.62.0';
+const PROMPT_VERSION = 'v0.63.0';
 
 /**
  * Mengirim pesan teks ke WhatsApp dengan pemecahan cerdas

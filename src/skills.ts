@@ -101,6 +101,81 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   }
   out = out.replace(/^\s*---\s*\n/g, '');
 
+  // 2b. MONOLOG BERPIKIR INTERNAL (temuan produksi 10 Sep, diperkuat 20 Sep).
+  //     Model reasoning kadang membocorkan proses berpikirnya ke user. Varian yang
+  //     TERBUKTI lolos dari guard lama: "Let me think step by step:", "reasoning:",
+  //     "Thinking Process:" (tanpa isi terstruktur), dan sisa butir thinking
+  //     ("1. - Given equations 2. Final: x = 5").
+  //
+  //     Pendekatan generik: bila teks memuat penanda monolog berpikir, buang SELURUH
+  //     bagian sebelum jawaban nyata. Bila tidak ditemukan batas yang jelas, buang
+  //     baris penanda + butir-butir berpikir yang mengikutinya.
+  const thinkMarker =
+    /(?:Here(?:'s| is) (?:a )?thinking process|Thinking Process|Let me think(?: step by step)?|Reasoning:|(?:^|\n)\s*(?:Analyze|Analysis|Breakdown|Determine|Draft|Final Answer|Response)\s*:)/i;
+  if (thinkMarker.test(out)) {
+    // Batas jawaban nyata: baris yang dimulai dengan kalimat pembuka jawaban wajar.
+    const answerBoundary =
+      /\n(?=(?:```|#{1,4}\s+|Berikut|Fungsi|Untuk|Solusi|Jawaban|Langkah|Tentu|Mari|Dalam|Kita|Halo|Implementasi|Jadi|Kesimpulan|Diketahui|Perhitungan|Hasil|Nilai|Jawabannya))/i;
+    const m = out.match(answerBoundary);
+    if (m && m.index !== undefined && m.index > 0) {
+      out = out.slice(m.index).trim();
+    } else {
+      // Tidak ada batas jelas: buang baris penanda monolog + butir-butir berpikir yang
+      // mengikutinya sampai akhir bagian berpikir (baris kosong ganda atau teks bebas).
+      out = out
+        .replace(
+          /(?:Here(?:'s| is) (?:a )?thinking process|Thinking Process|Let me think(?: step by step)?|Reasoning:)\s*:?\s*/gi,
+          '',
+        )
+        .replace(/^\s*(?:(?:\d+\.|\*|-)\s+\*{0,2}(?:Analyze|Identify|Extract|Solve|Check|Verify|Think|Approach|Breakdown|Determine|Draft|Final Answer|Response)[^\n]*\n?)+/gim, '')
+        .replace(/^\s*(?:\d+\.\s+[^\n]{0,120}\n?){2,}/gm, '')
+        .trim();
+      // Sisa fragmen berpikir: baris pendek yang berupa instruksi analisis diri
+      // ("Analyze the input", "Given equations", "Find: x") — hanya dibuang di sini,
+      // yaitu ketika teks TERBUKTI memuat monolog berpikir (tidak menyentuh jawaban sah).
+      out = out
+        .replace(
+          /^\s*(?:Analyze|Analysis|Identify|Extract|Solve|Check|Verify|Think|Approach|Breakdown|Determine|Draft|Given|Find|Input|Step|Steps)\b[^\n]{0,80}$/gim,
+          '',
+        )
+        .replace(/^\s*[-*]\s*[^\n]{0,60}$/gm, '')
+        .trim();
+      // Bila masih ada "Final Answer: X" / "Jawaban Akhir: X", ambil isinya saja —
+      // itulah jawaban nyata yang model maksudkan.
+      const finalMatch = out.match(/(?:Final Answer|Jawaban Akhir)\s*:\s*([\s\S]+)$/i);
+      if (finalMatch) {
+        out = finalMatch[1].trim();
+      } else if (out.length <= 300) {
+        // Hanya untuk sisa yang PENDEK (fragmen berpikir): ambil baris terakhir
+        // non-kosong, karena jawaban biasanya di akhir setelah proses berpikir.
+        // Ambang 300 char mencegah perusakan jawaban panjang yang sah.
+        const tail = out.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+        if (tail.length > 1 && tail[tail.length - 1].length >= 2) out = tail[tail.length - 1];
+      }
+    }
+  }
+
+  // 2c. Sisa butir "**Analyze User Input:**" tanpa penanda monolog di atasnya,
+  //     termasuk bentuk bold satu baris tanpa nomor ("**Analyze User Input:**").
+  //     Bold dinormalkan lebih dulu agar "**Final Answer:**" juga tertangkap.
+  out = out.replace(/\*\*(Final Answer|Jawaban Akhir|Analyze|Analysis|Breakdown|Determine|Draft|Response)\s*:?\s*\*\*/gi, '$1:');
+  out = out.replace(
+    /^\s*(?:(?:\d+\.|\*|-)?\s*\*{0,2}(?:Analyze|Identify|Extract|Solve|Check|Verify|Think|Approach|Breakdown|Determine|Draft|Final Answer|Response)(?:\s+(?:User\s+Input|the\s+input|Input|Problem|Question|Task))?\s*:?\*{0,2}\s*\n?)+/gim,
+    '',
+  );
+  // Butir daftar pendek tepat setelah blok berpikir ("- Given equations", "- Find: x³ + y³")
+  out = out.replace(/^\s*[-*]\s*(?:Given|Find|Input|Step|Note)\b[^\n]{0,80}\n?/gim, '');
+  // Bila ada "Final Answer:"/"Jawaban Akhir:", ambil HANYA isi setelahnya (jawaban nyata).
+  {
+    const fm = out.match(/(?:Final Answer|Jawaban Akhir)\s*:\s*([\s\S]+)$/i);
+    if (fm && fm[1].trim()) {
+      out = fm[1].trim();
+    } else {
+      out = out.replace(/^\s*(?:Final Answer|Jawaban Akhir)\s*:\s*/gim, '');
+    }
+  }
+  out = out.trim();
+
   // D4: Hapus echo system-prompt, nama spec sheet, dan tag perintah sistem internal yang bocor
   out = out.replace(/^\[(?:PERINTAH SISTEM|PEDOMAN|ATURAN|MEMORI|DATA INTERNET)[^\]]*\]\s*[:\n]?/gim, '');
   out = out.replace(/^###?\s*\d+\.\s*(?:IDENTITAS|PRINSIP|ATURAN|PEDOMAN|GAYA BAHASA|KEMAMPUAN)[^\n]*/gim, '');
@@ -1311,6 +1386,56 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
   const lastAssistantMsg = typeof lastAssistantMsgRaw === 'string' ? stripDurableMarkers(lastAssistantMsgRaw) : lastAssistantMsgRaw;
   const recentHistoryText = (ctx?.history?.slice(-4) ?? []).map((h) => (typeof h.content === 'string' ? stripDurableMarkers(h.content) : '')).join(' ');
 
+  // ── KONTINUITAS PERCAKAPAN UNIVERSAL (semua topik, bukan hanya tebak-tebakan) ──
+  //
+  // Instruksi user: "terapkan untuk semua topik... ketika saat percakapan lalu model AI nya
+  // berganti jangan sampai respon bot nya ngawur dan ga jelas karna perbedaan model AI yg
+  // merespon". Karena failover mengganti model SETIAP pesan, model yang menjawab sekarang
+  // tidak "mengingat" apa pun dari model sebelumnya — ia hanya melihat riwayat teks.
+  //
+  // Temuan produksi (chat wa_...3323, 20 Sep): user sudah bercerita spesifik ("saya bilang
+  // saya di cianjur") tapi bot membalas "Ada yang bisa dibantu?" — seolah percakapan baru
+  // dimulai. Kasus lain: user kesal "kamu bodoh terus ngulang chat mulu gajelas" lalu bot
+  // menjawab "Mau bahas apa nih?" (amnesia total). Ini terjadi saat model berganti.
+  //
+  // Solusi: suntikkan RINGKASAN TOPIK YANG SEDANG BERJALAN secara eksplisit, dibangun dari
+  // riwayat nyata (bukan template), sehingga model apa pun langsung tahu konteksnya.
+  const lastUserMsg = [...(ctx?.history ?? [])].reverse().find((h) => h.role === 'user');
+  const lastAssistantText = typeof lastAssistantMsg === 'string' ? lastAssistantMsg : '';
+
+  // Deteksi apakah percakapan sedang berjalan (ada pertukaran nyata, bukan baru dibuka).
+  const meaningfulTurns = (ctx?.history ?? []).filter(
+    (h) => typeof h.content === 'string' && stripDurableMarkers(h.content).trim().length > 0,
+  ).length;
+  const conversationOngoing = meaningfulTurns >= 4; // minimal 2 pasang user-bot
+
+  // Apakah balasan asisten terakhir berupa PERTANYAAN (menunggu jawaban user)?
+  // Jika ya, user sekarang sedang MENJAWAB pertanyaan itu — bukan memulai topik baru.
+  const lastAssistantWasQuestion = !!lastAssistantText && /\?/.test(lastAssistantText);
+
+  if (conversationOngoing) {
+    // Ambil inti topik: 2 pesan user terakhir (apa yang dia bicarakan) — dipotong pendek
+    // agar hemat token. Ini RINGKASAN FAKTA, bukan kalimat yang boleh diparrot model.
+    const userTurns = (ctx?.history ?? [])
+      .filter((h) => h.role === 'user' && typeof h.content === 'string')
+      .slice(-3)
+      .map((h) => stripDurableMarkers(h.content as string).replace(/\s+/g, ' ').trim().slice(0, 90))
+      .filter(Boolean);
+    const topicLine = userTurns.length ? userTurns.join(' | ') : '';
+
+    instructions.push(
+      '',
+      '[KONTINUITAS PERCAKAPAN - ATURAN KERAS (SEMUA TOPIK)]:',
+      '- Percakapan ini SUDAH BERJALAN. Kamu adalah kelanjutan dari dirimu sendiri — DILARANG bersikap seperti baru pertama kali mengobrol.',
+      '- DILARANG KERAS membalas dengan pembuka amnesia: "ada yang bisa dibantu?", "mau bahas apa?", "ada apa nih?", "siap, lanjut aja", atau sapaan pembuka ulang. Itu membuatmu terlihat lupa dan bodoh.',
+      lastAssistantWasQuestion
+        ? '- Pesanmu sebelumnya berupa PERTANYAAN. Pesan temanmu sekarang kemungkinan besar adalah JAWABAN atas pertanyaan itu — tanggapi JAWABANNYA secara langsung dan nyambung, jangan mengalihkan topik atau bertanya balik hal yang tidak berhubungan.'
+        : '- Lanjutkan alur yang sedang berjalan: tanggapi langsung apa yang dia bicarakan, jangan mengulang pertanyaan yang sudah dijawabnya.',
+      topicLine ? `- Yang sedang kalian bicarakan (fakta riwayat, JANGAN dibacakan mentah): ${topicLine}` : '',
+      '- DILARANG mengulang isi balasanmu sendiri yang sebelumnya dengan kata berbeda (mis. sudah bilang "belum ada info resmi" lalu mengulang hal yang sama dengan kalimat lain). Bila topik yang sama ditanya lagi, berikan SUDUT BARU atau akui singkat lalu lanjut — jangan mengulang penjelasan yang sama.',
+    );
+  }
+
   const isGamingOrMabar =
     /\b(?:mabar|permabaran|main\s+bareng|login\s+game|push\s+rank|ngerank|turun\s+bintang|turu\s+game|game\s+apa|mobile\s+legends?|mlbb|pubg|free\s+fire|ff|valorant|genshin|roblox|gta\s*5?)\b/i.test(
       userPrompt,
@@ -1847,26 +1972,88 @@ export async function autoReply(
     if (lastAssistantMsg && typeof lastAssistantMsg === 'string') {
       const normLast = lastAssistantMsg.trim().toLowerCase();
       const normReply = reply.trim().toLowerCase();
-      if (normLast.length > 20 && normLast === normReply) {
+      // Dua tingkat deteksi:
+      //  (a) PERSIS sama (guard lama) — paling jelas.
+      //  (b) SANGAT MIRIP (kemiripan token >=70%) — temuan produksi 20 Sep: bot mengulang
+      //      isi yang sama dengan kata berbeda ("udah aku cek lagi" vs "udah aku telusuri
+      //      lagi"), 18 kejadian di 1000 pesan. Guard lama hanya menangkap kasus (a).
+      const tokensOf = (s: string): Set<string> =>
+        new Set(s.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4));
+      const tLast = tokensOf(normLast);
+      const tReply = tokensOf(normReply);
+      let inter = 0;
+      for (const t of tReply) if (tLast.has(t)) inter++;
+      const similarity = tLast.size && tReply.size ? inter / Math.min(tLast.size, tReply.size) : 0;
+      const isDuplicate =
+        (normLast.length > 20 && normLast === normReply) ||
+        (normLast.length > 40 && normReply.length > 40 && similarity >= 0.7);
+      if (isDuplicate) {
         try {
           const retryMsgs: ChatMsg[] = [
             ...buildMessages(clean, ctx, web),
             {
               role: 'user',
               content:
-                'Tolong buatkan respon atau jawaban baru yang berbeda dan segar secara spontan, jangan mengulang persis balasan sebelumnya!',
+                'Balasanmu barusan mengulang isi balasanmu sendiri sebelumnya. Berikan respons BARU yang berbeda: lanjutkan alur percakapan dari sudut lain, jangan mengulang penjelasan/penilaian yang sama dengan kata berbeda.',
             },
           ];
           const secondTry = await chatRetry(retryMsgs, false);
           if (secondTry.text && secondTry.text.trim().toLowerCase() !== normLast) {
             const loopSticker = extractStickerTag(secondTry.text);
             const loopExtract = extractRiddleTag(loopSticker.text);
-            reply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings);
-            if (!stickerEmoji && loopSticker.sticker) stickerEmoji = loopSticker.sticker;
-            if (!riddleAnswer && loopExtract.answer) riddleAnswer = loopExtract.answer;
+            const loopReply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings);
+            // Terima hanya bila hasil retry benar-benar BERBEDA (bukan mengulang lagi).
+            const tLoop = tokensOf(loopReply.toLowerCase());
+            let inter2 = 0;
+            for (const t of tLoop) if (tLast.has(t)) inter2++;
+            const sim2 = tLast.size && tLoop.size ? inter2 / Math.min(tLast.size, tLoop.size) : 0;
+            if (loopReply.trim() && sim2 < 0.7) {
+              reply = loopReply;
+              if (!stickerEmoji && loopSticker.sticker) stickerEmoji = loopSticker.sticker;
+              if (!riddleAnswer && loopExtract.answer) riddleAnswer = loopExtract.answer;
+            }
           }
         } catch {
           // Fallback graceful jika retry tidak tersedia
+        }
+      }
+    }
+
+    // GUARD ANTI-AMNESIA (temuan produksi 20 Sep, chat wa_...3323):
+    // Saat model berganti di tengah percakapan, model baru kadang membalas seolah obrolan
+    // baru dimulai ("Ada yang bisa dibantu?", "Mau bahas apa nih?", "Siap, lanjut aja")
+    // padahal user baru saja bercerita hal spesifik. Terbukti dari data mentah:
+    //   user: "saya bilang saya di cianjur" -> bot: "...Ada yang bisa dibantu?"
+    //   user: "cape ah kamu bodoh terus ngulang chat mulu gajelas" -> bot: "Mau bahas apa nih?"
+    // Penegakan di KODE karena prompt saja tidak cukup (model berganti tiap pesan).
+    {
+      const ongoing = (ctx?.history ?? []).filter(
+        (h) => typeof h.content === 'string' && stripDurableMarkers(h.content).trim().length > 0,
+      ).length >= 4;
+      const amnesiaRe =
+        /^(?:.{0,24}?)(?:ada\s+yang\s+bisa\s+(?:aku\s+)?bantu|ada\s+yang\s+bisa\s+dibantu|mau\s+bahas\s+apa|mau\s+ngobrol\s+(?:apa|soal\s+apa)|ada\s+apa\s+nih|siap[,\s]+lanjut\s+aja|oke[,\s]+lanjut\s+aja|ada\s+yang\s+ingin\s+kamu\s+bicarakan|gimana\??\s*$|mau\s+ngapain)\b/i;
+      const replyWords = reply.split(/\s+/).filter(Boolean).length;
+      // Hanya aktif bila: percakapan berjalan + balasan pendek (bukan penjelasan panjang
+      // yang kebetulan memuat frasa itu) + balasan memang didominasi frasa amnesia.
+      if (ongoing && replyWords <= 25 && amnesiaRe.test(reply.trim())) {
+        console.warn('[skills] Balasan amnesia terdeteksi di tengah percakapan — minta lanjutkan konteks.');
+        try {
+          const fixMsgs: ChatMsg[] = [
+            ...buildMessages(clean, ctx, web),
+            {
+              role: 'user',
+              content:
+                'Balasanmu barusan seperti mengulang pembuka obrolan padahal percakapan ini SUDAH BERJALAN. Lanjutkan alur yang sedang berjalan: tanggapi langsung apa yang baru dia katakan, jangan menawarkan bantuan atau menanyakan mau bahas apa.',
+            },
+          ];
+          const fix = await chatRetry(fixMsgs, false);
+          const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings);
+          const fixWords = fixReply.split(/\s+/).filter(Boolean).length;
+          if (fixReply.trim() && fixWords <= 30 && !amnesiaRe.test(fixReply.trim())) {
+            reply = fixReply;
+          }
+        } catch {
+          // best-effort
         }
       }
     }
