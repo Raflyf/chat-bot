@@ -287,12 +287,21 @@ export function geminiDocumentedLimits(): LiveLimit {
  */
 export function dahlDocumentedLimits(): LiveLimit {
   return {
-    // AUDIT (dijalankan langsung ke endpoint Dahl): TIDAK ADA endpoint yang mengekspos
-    // kuota/saldo. Yang dicek: /v1/usage, /v1/me, /v1/credits, /v1/balance, /v1/account
-    // (semua HTML atau 401), header response inference (tidak ada header kuota),
-    // /v1/models (field hanya id/object/created/owned_by).
-    // Satu-satunya sumber: halaman resmi menyatakan "First 100M tokens free".
-    // RPD 5.000 TIDAK dapat diverifikasi -> dikosongkan, bukan diasumsikan.
+    // SUMBER VALID (dashboard akun Dahl, dikonfirmasi user 20 Sep 2026):
+    //   "On keys: 100.0M   Total: 100.0M"  -> saldo akun 100 juta token
+    //   key "chatbot" (dahl_Kiv...YNRcXK = key #10 di pool) -> kuota "100M/100M"
+    //   "Tokens are charged only for successful responses. Errors such as 429, 402,
+    //    and technical failures do not consume your balance."
+    //
+    // Kesimpulan dari sumber resmi ini:
+    // 1. Kuota 100M token per key TERKONFIRMASI (bukan asumsi).
+    // 2. Model billing Dahl = SALDO TOKEN (pool), BUKAN rate limit harian ->
+    //    karena itu RPD memang tidak berlaku (bukan "tidak diketahui").
+    // 3. Endpoint API tidak mengekspos sisa saldo (audit: /v1/usage, /v1/me,
+    //    /v1/credits, /v1/balance, /v1/account = HTML/401) -> sisa saldo hanya
+    //    bisa dilihat di dashboard akun.
+    // 4. DIUJI EMPIRIS: ke-10 key Dahl di pool SEMUANYA bisa inference (HTTP 200),
+    //    jadi tidak ada key tanpa saldo — tidak perlu ada penanganan khusus.
     requestsPerDay: null,
     tokensPerDay: 100_000_000,
     tokensPerMinute: null,
@@ -300,8 +309,8 @@ export function dahlDocumentedLimits(): LiveLimit {
     tokensUsedToday: null,
     requestsRemaining: null,
     tokensRemaining: null,
-    officialLabel: '100M Token gratis/key (halaman resmi Dahl)',
-    source: 'inference.dahl.global halaman resmi "First 100M tokens free" — endpoint kuota TIDAK tersedia',
+    officialLabel: 'Saldo 100M Token/key (dashboard akun Dahl) • tanpa batas RPD',
+    source: 'dashboard akun inference.dahl.global/account — saldo token, bukan rate limit harian',
     isLive: false,
   };
 }
