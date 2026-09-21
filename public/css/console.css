@@ -52,6 +52,16 @@
           "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
 
   color-scheme: light;
+
+  /* Warna penyedia: penanda data, konsisten dengan landing page. */
+  --p-xkiro: #0a6fd8;
+  --p-cloudflare: #b85f0a;
+  --p-groq: #c93a20;
+  --p-openrouter: #6d4ac4;
+  --p-dahl: #0f766e;
+  --p-gemini: #9a6a00;
+
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 [data-theme="dark"] {
@@ -77,6 +87,13 @@
   --glass-edge:       0.14;
 
   color-scheme: dark;
+
+  --p-xkiro: #4da3ff;
+  --p-cloudflare: #f6821f;
+  --p-groq: #f55036;
+  --p-openrouter: #a78bfa;
+  --p-dahl: #2dd4bf;
+  --p-gemini: #fbbf24;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -821,6 +838,10 @@ td:nth-child(1) { font-variant-numeric: normal; }
   display: grid;
   place-items: center;
   padding: var(--s4);
+  /* Di layar pendek kartu bisa lebih tinggi dari viewport: area modal digulir,
+     bukan dipotong, supaya keypad dan tombol tetap terjangkau. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: color-mix(in srgb, #000 42%, transparent);
   -webkit-backdrop-filter: blur(6px);
           backdrop-filter: blur(6px);
@@ -889,6 +910,21 @@ td:nth-child(1) { font-variant-numeric: normal; }
   color: var(--ok);
   border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
 }
+/* Input PIN asli: disembunyikan karena tampilannya digantikan .pin-boxes.
+   Tetap ada di DOM supaya dashboard.js dan keyboard ponsel bekerja. */
+.pin-input-field.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  min-height: 0;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}
+
 .pin-input-field, .form-input {
   width: 100%;
   min-height: 46px;
@@ -996,6 +1032,309 @@ header.header-scrolled .nav-inner {
   border: 0;
 }
 
+/* ---- Kartu pool: daftar kunci yang panjang dibuat bisa digulir ----
+   Provider dengan banyak kunci (Dahl 10) tidak lagi memanjangkan halaman. */
+.keys-list-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 26%, transparent) transparent;
+  /* Petunjuk halus bahwa masih ada isi di bawah. */
+  mask-image: linear-gradient(180deg, #000 calc(100% - 22px), transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 22px), transparent 100%);
+}
+.keys-list-scroll::-webkit-scrollbar { width: 8px; }
+.keys-list-scroll::-webkit-scrollbar-track { background: transparent; }
+.keys-list-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.keys-list-scroll::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text) 34%, transparent); background-clip: content-box; }
+
+.keys-toggle {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; min-height: 44px;
+  margin-top: 4px;
+  border: 1px solid var(--separator);
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text-secondary);
+  font: inherit; font-size: 13px; font-weight: 550;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+.keys-toggle:hover { background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text); border-color: var(--separator-strong); }
+.keys-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.keys-toggle svg { transition: transform 0.24s var(--ease); }
+.keys-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+/* Titik warna penyedia di judul kartu: penanda yang sama dengan landing page. */
+.provider-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  flex: none;
+  background: var(--provider-color, var(--accent));
+}
+.provider-card[data-provider="xkiro"]      { --provider-color: var(--p-xkiro); }
+.provider-card[data-provider="cloudflare"] { --provider-color: var(--p-cloudflare); }
+.provider-card[data-provider="groq"]       { --provider-color: var(--p-groq); }
+.provider-card[data-provider="openrouter"] { --provider-color: var(--p-openrouter); }
+.provider-card[data-provider="dahl"]       { --provider-color: var(--p-dahl); }
+.provider-card[data-provider="gemini"]     { --provider-color: var(--p-gemini); }
+
+/* Garis aksen tipis di tepi atas kartu, memakai warna penyedia. */
+.provider-card { position: relative; overflow: hidden; }
+.provider-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--provider-color, var(--accent));
+  opacity: 0.7;
+}
+
+.provider-last-used {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 3px;
+}
+
+/* ---- Gerak: masuk sekali, hover halus, tanpa loop ---- */
+@media (prefers-reduced-motion: no-preference) {
+  .provider-card {
+    animation: card-in 0.42s var(--ease) both;
+    transition: border-color 0.2s ease, transform 0.2s var(--ease);
+  }
+  .provider-card:hover { transform: translateY(-2px); border-color: var(--separator-strong); }
+  @keyframes card-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .kpi-card {
+    animation: card-in 0.42s var(--ease) both;
+    transition: border-color 0.2s ease, transform 0.2s var(--ease);
+  }
+  .kpi-card:hover { transform: translateY(-2px); border-color: var(--separator-strong); }
+
+  .provider-card:nth-child(1) { animation-delay: 0.02s; }
+  .provider-card:nth-child(2) { animation-delay: 0.06s; }
+  .provider-card:nth-child(3) { animation-delay: 0.1s; }
+  .provider-card:nth-child(4) { animation-delay: 0.14s; }
+  .provider-card:nth-child(5) { animation-delay: 0.18s; }
+  .provider-card:nth-child(6) { animation-delay: 0.22s; }
+
+  .kpi-card:nth-child(1) { animation-delay: 0.02s; }
+  .kpi-card:nth-child(2) { animation-delay: 0.06s; }
+  .kpi-card:nth-child(3) { animation-delay: 0.1s; }
+  .kpi-card:nth-child(4) { animation-delay: 0.14s; }
+
+  /* Baris tabel masuk berurutan supaya mata bisa mengikuti. */
+  tbody tr { animation: row-in 0.34s var(--ease) both; }
+  @keyframes row-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* Kartu model di matriks. */
+  .model-matrix-card {
+    transition: transform 0.2s var(--ease), border-color 0.2s ease;
+  }
+  .model-matrix-card:hover { transform: translateY(-2px); border-color: var(--separator-strong); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ============================================================================
+   Gerbang PIN.
+   Kartu kecil di tengah layar kosong terasa belum jadi: ditambahkan latar
+   bertingkat, kotak digit sungguhan, dan keypad angka supaya terbaca sebagai
+   halaman PIN, bukan form login generik.
+   ========================================================================== */
+
+.modal-overlay {
+  background:
+    radial-gradient(60% 50% at 50% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+    color-mix(in srgb, #000 58%, transparent);
+}
+[data-theme="light"] .modal-overlay {
+  background:
+    radial-gradient(60% 50% at 50% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+    color-mix(in srgb, #1c1c1e 34%, transparent);
+}
+
+.auth-card {
+  max-width: 420px;
+  padding: var(--s5) var(--s5) var(--s4);
+  gap: var(--s3);
+  text-align: center;
+  animation: auth-in 0.42s var(--ease) both;
+}
+@keyframes auth-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Tombol kembali ke beranda: di luar kartu secara visual, tetap di dalam alur. */
+.auth-top-nav { display: flex; justify-content: center; margin-bottom: calc(var(--s2) * -1); }
+.auth-back-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 44px; padding: 0 12px;
+  font-size: 14px; color: var(--text-secondary);
+  border-radius: var(--r-control);
+  transition: color 0.16s ease, background-color 0.16s ease;
+}
+.auth-back-link:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+
+.auth-shield-icon {
+  width: 46px; height: 46px;
+  margin-inline: auto;
+  border-radius: 13px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.auth-title { font-size: 20px; font-weight: 650; letter-spacing: -0.018em; margin: 0 0 3px; }
+.auth-subtitle { font-size: 14.5px; line-height: 1.55; color: var(--text-secondary); margin: 0; }
+
+/* Kotak digit PIN. Ini pengganti visual input teks biasa. */
+.pin-boxes {
+  display: flex; justify-content: center; gap: 10px;
+  margin: var(--s2) 0 0;
+  cursor: text;
+}
+.pin-box {
+  width: clamp(34px, 10vw, 44px); height: clamp(42px, 9.5vh, 50px);
+  display: grid; place-items: center;
+  border-radius: 12px;
+  border: 1.5px solid var(--separator);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  font-size: 24px; font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+  transition: border-color 0.18s ease, background-color 0.18s ease,
+              transform 0.18s var(--ease), box-shadow 0.18s ease;
+}
+.pin-box.filled {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: pin-pop 0.22s var(--ease);
+}
+@keyframes pin-pop {
+  0% { transform: scale(0.9); }
+  60% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+/* Kotak yang sedang menunggu isi: satu-satunya yang punya penanda fokus. */
+.pin-box.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* Keypad angka. Di ponsel ini yang utama; di desktop tetap bisa diklik. */
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: var(--s2);
+}
+.pin-key {
+  min-height: clamp(44px, 8.5vh, 50px);
+  border: 1px solid var(--separator);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text);
+  font: inherit; font-size: 20px; font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  display: grid; place-items: center;
+  transition: background-color 0.14s ease, transform 0.14s var(--ease), border-color 0.14s ease;
+}
+.pin-key:hover { background: color-mix(in srgb, var(--text) 10%, transparent); border-color: var(--separator-strong); }
+.pin-key:active { transform: scale(0.95); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.pin-key:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pin-key-fn { font-size: 13px; font-weight: 550; color: var(--text-secondary); }
+
+.btn-block { width: 100%; }
+
+/* Sisa percobaan: informasi keamanan, jadi ditaruh sebagai baris yang terbaca. */
+.pin-attempts {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 10px 14px;
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.pin-attempts.low {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+.pin-attempts.empty {
+  background: color-mix(in srgb, var(--stop) 14%, transparent);
+  color: var(--stop);
+}
+
+.auth-foot { display: flex; justify-content: center; }
+.auth-link-btn {
+  border: 0; background: transparent;
+  color: var(--accent);
+  font: inherit; font-size: 13.5px; font-weight: 500;
+  cursor: pointer; padding: 6px 10px;
+  min-height: 44px;
+  border-radius: var(--r-control);
+  transition: background-color 0.16s ease;
+}
+.auth-link-btn:hover { background: var(--accent-soft); }
+.auth-link-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Tombol kirim saat PIN belum cukup panjang: harus terlihat belum bisa ditekan,
+   supaya tidak mengundang percobaan yang pasti gagal. */
+.btn:disabled, .btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+.btn-primary:disabled { background: color-mix(in srgb, var(--accent-solid) 55%, var(--surface)); }
+
+/* Kotak digit tidak aktif: border dinaikkan supaya barisnya terbaca sebagai
+   8 slot, bukan ruang kosong. */
+.pin-box { border-color: color-mix(in srgb, var(--text) 24%, transparent); }
+.pin-box.active { border-color: var(--accent); }
+
+/* Layar pendek (laptop kecil, ponsel lanskap): kartu PIN dipadatkan supaya
+   keypad dan tombol tetap terlihat tanpa menggulir. */
+@media (max-height: 780px) {
+  .auth-card { padding: var(--s4) var(--s5) var(--s4); gap: var(--s2); }
+  .auth-shield-icon { width: 40px; height: 40px; border-radius: 11px; }
+  .auth-shield-icon svg { width: 19px; height: 19px; }
+  .auth-title { font-size: 18px; }
+  .auth-subtitle { font-size: 13.5px; }
+  .pin-box { height: 42px; }
+  .pin-key { min-height: 44px; font-size: 18px; }
+  .pin-keypad { gap: 6px; }
+  .pin-attempts { padding: 7px 12px; font-size: 12.5px; }
+  .auth-card { gap: 6px; }
+  .auth-back-link { min-height: 34px; }
+  .auth-foot { display: none; }
+}
+@media (max-height: 640px) {
+  .auth-shield-icon { display: none; }
+  .auth-subtitle { display: none; }
+  .pin-box { height: 38px; }
+  .pin-key { min-height: 44px; }
+}
+
 /* ---- Responsif: ponsel, tablet, desktop ---- */
 @media (max-width: 1024px) {
   .smart-gateway-banner { grid-template-columns: minmax(0, 1fr); }
@@ -1036,7 +1375,19 @@ header.header-scrolled .nav-inner {
   -webkit-overflow-scrolling: touch;
 }
   th, td { padding: 9px 10px; }
-  .auth-card { padding: var(--s4); }
+  .auth-card { padding: var(--s5) var(--s3) var(--s4); max-width: 100%; }
+  .auth-shield-icon { width: 46px; height: 46px; border-radius: 13px; }
+  .auth-title { font-size: 19px; }
+  .pin-boxes { gap: 7px; }
+  .pin-box { width: 38px; height: 48px; font-size: 20px; border-radius: 11px; }
+  .pin-keypad { gap: 7px; }
+  .pin-key { min-height: 48px; font-size: 18px; border-radius: 11px; }
+  .modal-overlay { padding: var(--s3); }
+}
+@media (max-width: 400px) {
+  .pin-boxes { gap: 5px; }
+  .pin-box { width: clamp(28px, 8.2vw, 34px); height: 44px; font-size: 17px; border-radius: 10px; }
+  .pin-key { min-height: 46px; }
 }
 @media (max-width: 420px) {
   .status-pill { padding: 0 9px; }

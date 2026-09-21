@@ -453,6 +453,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
     }
 
+    // Kapan tiap provider terakhir kali menjawab. Diambil dari 300 balasan terbaru
+    // (tanpa batas rentang) supaya provider yang belum dipakai hari ini tetap punya
+    // konteks: "terakhir 20 Sep" jauh lebih jujur daripada "0" tanpa keterangan.
+    const lastUsedByProvider: Record<string, string> = {};
+    for (const m of allTimeAssistantMsgs ?? []) {
+      const rawModel = (m as any).via || '';
+      const model = rawModel.split('#')[0].trim();
+      const provKind = extractProviderKind(model);
+      if (!provKind) continue;
+      const at = (m as any).created_at;
+      if (!at) continue;
+      if (!lastUsedByProvider[provKind] || at > lastUsedByProvider[provKind]) {
+        lastUsedByProvider[provKind] = at;
+      }
+    }
+
     const overallAvgTokens = grandTotalCallsWithRealTokens > 0
       ? Math.round(grandTotalRealTokens / grandTotalCallsWithRealTokens)
       : 2500;
@@ -893,6 +909,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         realUsageCalls: pStats.callsWithRealTokens,
         realTokensUsed: pStats.realTokens,
         isLiveSynced: isAnyLiveSynced,
+        lastUsedAt: lastUsedByProvider[p.kind] || null,
         keys: keysDetail,
       };
     });

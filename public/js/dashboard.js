@@ -118,6 +118,20 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     // =========================================================================
     // NATIVE PIN SUBMISSION (KEYBOARD-DRIVEN)
     // =========================================================================
+    // Sisa percobaan: tulis ke span di dalam baris, dan warnai sesuai sisa.
+    // Dipakai dashboard.js supaya ikon di baris itu tidak terhapus.
+    function setAttemptsText(text, remaining) {
+      const span = document.getElementById("attempts-text");
+      if (span) span.textContent = text;
+      const box = document.getElementById("attempts-label");
+      if (!box) return;
+      box.classList.remove("low", "empty");
+      if (typeof remaining === "number") {
+        if (remaining <= 0) box.classList.add("empty");
+        else if (remaining <= 2) box.classList.add("low");
+      }
+    }
+
     async function handlePinSubmit(e) {
       if (e) e.preventDefault();
       const pinField = document.getElementById("pin-input");
@@ -170,10 +184,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           alertEl.textContent = data.message || "Master PIN salah.";
 
           if (data.remaining_attempts !== undefined) {
-            document.getElementById("attempts-label").textContent = `Sisa percobaan: ${data.remaining_attempts} kali`;
+            setAttemptsText(`Sisa percobaan: ${data.remaining_attempts} kali`, data.remaining_attempts);
           }
           if (data.is_locked) {
-            document.getElementById("attempts-label").textContent = "Sistem Terkunci 1 Menit. Gunakan Reset via Email.";
+            setAttemptsText("Terkunci 1 menit. Pakai reset lewat email.", 0);
           }
         }
       } catch (err) {
@@ -417,9 +431,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             const alertEl = document.getElementById("auth-alert");
             alertEl.className = "auth-alert auth-alert-error show";
             alertEl.textContent = "Akses sedang terkunci karena batas percobaan terlampaui. Tunggu 1 menit atau gunakan Reset via Email.";
-            document.getElementById("attempts-label").textContent = "Sistem Terkunci";
+            setAttemptsText("Terkunci. Tunggu sebentar.", 0);
           } else if (data.remaining_attempts !== undefined) {
-            document.getElementById("attempts-label").textContent = `Sisa percobaan: ${data.remaining_attempts} kali`;
+            setAttemptsText(`Sisa percobaan: ${data.remaining_attempts} kali`, data.remaining_attempts);
           }
         }
       } catch (_) {}
@@ -1073,17 +1087,49 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const tokenContextHtml = hasTokenContext
           ? `<div style="font-size: 0.68rem; color: ${p.tokenPercent >= 100 ? "#fb7185" : p.tokenPercent >= 80 ? "#fbbf24" : "var(--text-dim)"}; font-weight: 600; margin-top: 2px;">${formatTokens(p.totalTokensUsed)} / ${formatTokens(p.totalTokenCap)} (${p.tokenPercent}%)${p.cappedKeys > 0 ? ` &bull; ${p.cappedKeys} key habis` : ""}</div>`
           : "";
+        // Kalau hari ini belum ada pemakaian tapi provider ini pernah dipakai,
+        // sebutkan kapan. Tanpa ini, "0" terbaca seperti data rusak.
+        const lastUsedLabel = (() => {
+          if (usedValue > 0 || !p.lastUsedAt) return "";
+          const d = new Date(p.lastUsedAt);
+          if (isNaN(d.getTime())) return "";
+          const now = new Date();
+          const sameYear = d.getFullYear() === now.getFullYear();
+          const fmt = d.toLocaleDateString("id-ID", sameYear
+            ? { day: "numeric", month: "short" }
+            : { day: "numeric", month: "short", year: "numeric" });
+          const jam = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+          return `<div class="provider-last-used">Terakhir dipakai ${escapeHtml(fmt)}, ${escapeHtml(jam)}</div>`;
+        })();
+
         const providerLiveBadge = p.isLiveSynced
           ? `<span class="badge" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8; font-size: 0.68rem; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.25); padding: 2px 7px; border-radius: 9999px; margin-left: 6px;">● Live Remote Sync</span>`
           : "";
+
+        // Kalau kuncinya banyak (Dahl 10), daftar dibatasi tingginya dan bisa digulir
+        // supaya kartu tidak memanjang ke bawah. Tombol lipat membuka daftar penuh.
+        const collapsible = filteredKeys.length > 4;
+        const listClass = collapsible ? "keys-list keys-list-scroll" : "keys-list";
+        const toggleHtml = collapsible
+          ? `<button type="button" class="keys-toggle" data-toggle-keys aria-expanded="false">
+               <span>Lihat semua ${filteredKeys.length} kunci</span>
+               <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5L7 9.5l4-4"/></svg>
+             </button>`
+          : "";
+
+        // Warna penyedia sebagai penanda: penyedia yang sama selalu dikenali
+        // dari warnanya, di kartu ini maupun di halaman lain.
+        card.dataset.provider = p.kind;
 
         card.innerHTML = `
           <div class="provider-header">
             <div>
               <div class="provider-name" style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+                <span class="provider-dot" aria-hidden="true"></span>
                 <span>${escapeHtml(p.displayName)}</span>
                 ${providerLiveBadge}
               </div>
+              ${lastUsedLabel}
             </div>
             <div class="provider-summary-stat">
               <div class="provider-usage-text">${usedValue.toLocaleString()} Calls</div>
@@ -1092,11 +1138,26 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
               ${tokenContextHtml}
             </div>
           </div>
-          <div class="keys-list">
+          <div class="${listClass}">
             ${keysHtml}
           </div>
+          ${toggleHtml}
         `;
         poolGrid.appendChild(card);
+
+        // Tombol lipat: buka/tutup daftar kunci penuh.
+        const toggleBtn = card.querySelector("[data-toggle-keys]");
+        if (toggleBtn) {
+          toggleBtn.addEventListener("click", () => {
+            const list = card.querySelector(".keys-list");
+            const expanded = toggleBtn.getAttribute("aria-expanded") === "true";
+            const next = !expanded;
+            toggleBtn.setAttribute("aria-expanded", next ? "true" : "false");
+            list.classList.toggle("keys-list-scroll", !next);
+            const label = toggleBtn.querySelector("span");
+            if (label) label.textContent = next ? "Ringkas daftar kunci" : `Lihat semua ${filteredKeys.length} kunci`;
+          });
+        }
       });
     }
 
