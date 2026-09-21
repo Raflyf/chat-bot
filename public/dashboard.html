@@ -40,26 +40,18 @@
     <div id="auth-alert" class="auth-alert auth-alert-error" role="status" aria-live="polite"></div>
 
     <form id="pin-form" class="auth-form">
-      <!-- Input asli: menyimpan nilainya untuk dashboard.js dan memunculkan
-           keyboard di ponsel. Tampilannya disembunyikan, diganti kotak digit
-           yang dirender pin-ui.js supaya terlihat seperti halaman PIN. -->
       <input
         type="password"
         id="pin-input"
-        class="pin-input-field sr-only"
+        class="pin-input-field"
         placeholder="Masukkan PIN"
         maxlength="8"
         inputmode="numeric"
+        autofocus
         autocomplete="current-password"
         aria-label="Master PIN"
       >
-
-      <div class="pin-boxes" id="pin-boxes" aria-hidden="true"></div>
-
-      <!-- Keypad tepat di bawah kotak digit: keduanya satu kesatuan alat input. -->
-      <div class="pin-keypad" id="pin-keypad" role="group" aria-label="Tombol angka"></div>
-
-      <button type="submit" class="btn btn-primary btn-block" id="btn-submit-pin" disabled>
+      <button type="submit" class="btn btn-primary btn-block" id="btn-submit-pin">
         <span>Buka konsol</span>
       </button>
     </form>
@@ -148,7 +140,7 @@
         <div class="brand-info">
           <div class="brand-title-wrap">
             <h1 id="bot-name">Konsol FreeAIBot</h1>
-            <span class="brand-badge-version">v0.71</span>
+            <span class="brand-badge-version">v0.72</span>
           </div>
           <div class="brand-sub-wrap">
             <span class="pulse-dot-mini" aria-hidden="true"></span>
@@ -515,7 +507,6 @@
 </div>
 
 <script src="/js/console-theme.js"></script>
-<script src="/js/pin-ui.js"></script>
 <script src="/js/dashboard.js"></script>
 </body>
 </html>

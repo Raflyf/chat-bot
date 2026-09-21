@@ -351,36 +351,6 @@ h2 {
 .cap h3 { margin: 0 0 6px; font-size: 16.5px; font-weight: 620; letter-spacing: -0.01em; }
 .cap p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--text-secondary); }
 
-/* ---- Rantai: warna penyedia sebagai penanda ---- */
-.chain-list {
-  border: 1px solid var(--separator);
-  border-radius: var(--r-panel);
-  overflow: hidden;
-  background: var(--surface);
-}
-.chain-row {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr) auto;
-  gap: var(--s4);
-  align-items: center;
-  padding: var(--s4) var(--s5);
-  border-bottom: 1px solid var(--separator);
-  transition: background-color 0.2s ease;
-}
-.chain-row:last-child { border-bottom: 0; }
-.chain-row:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
-.chain-name { display: flex; align-items: center; gap: 9px; font-size: 15.5px; font-weight: 600; margin: 0 0 2px; }
-.chain-swatch { width: 9px; height: 9px; border-radius: 50%; background: var(--pc); flex: none; }
-.chain-note { margin: 0; font-size: 13.5px; color: var(--text-secondary); }
-.rank {
-  font-size: 12px; font-weight: 600;
-  color: var(--text-secondary);
-  padding: 4px 10px; border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 7%, transparent);
-  text-align: center;
-}
-.chain-meta { font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-
 /* ---- Langkah: tiga, sesuai proses nyatanya ---- */
 .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s5); }
 .step { padding-top: var(--s4); border-top: 2px solid var(--separator-strong); }
@@ -504,7 +474,6 @@ footer { padding-block: var(--s6) var(--s7); }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .facts li:nth-child(odd) { padding-left: 0; border-left: 0; }
   .caps { grid-template-columns: minmax(0, 1fr); }
-  .chain-row { grid-template-columns: minmax(0, 1fr); gap: var(--s2); padding: var(--s4); }
   .rank { justify-self: start; }
   .brand-sub { display: none; }
   .bubble { max-width: 100%; }
@@ -545,7 +514,6 @@ footer { padding-block: var(--s6) var(--s7); }
 
       <nav class="site-nav" id="siteNav" aria-label="Navigasi utama">
         <a href="#kemampuan">Kemampuan</a>
-        <a href="#penyedia">Penyedia</a>
         <a href="/dashboard.html">Konsol</a>
       </nav>
 
@@ -696,65 +664,7 @@ footer { padding-block: var(--s6) var(--s7); }
     </div>
   </section>
 
-  <section id="penyedia">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <h2>Enam penyedia, satu per satu</h2>
-        <p>Kalau satu kehabisan kuota, bot pindah ke penyedia berikutnya tanpa kamu sadari.</p>
-      </div>
-
-      <div class="chain-list reveal">
-        <div class="chain-row">
-          <span class="rank">Tingkat 1</span>
-          <div>
-            <p class="chain-name"><span class="chain-swatch" style="--pc: var(--p-xkiro)" aria-hidden="true"></span>xKiro Gateway</p>
-            <p class="chain-note">Model Qwen, dipakai paling awal.</p>
-          </div>
-          <span class="chain-meta">3 kunci</span>
-        </div>
-        <div class="chain-row">
-          <span class="rank">Tingkat 2</span>
-          <div>
-            <p class="chain-name"><span class="chain-swatch" style="--pc: var(--p-cloudflare)" aria-hidden="true"></span>Cloudflare Workers AI</p>
-            <p class="chain-note">Qwen 27B, dengan Nemotron dan GPT-OSS sebagai cadangan.</p>
-          </div>
-          <span class="chain-meta">3 akun</span>
-        </div>
-        <div class="chain-row">
-          <span class="rank">Tingkat 3</span>
-          <div>
-            <p class="chain-name"><span class="chain-swatch" style="--pc: var(--p-groq)" aria-hidden="true"></span>Groq Cloud</p>
-            <p class="chain-note">Paling cepat dari 89 model yang diuji.</p>
-          </div>
-          <span class="chain-meta">5 kunci</span>
-        </div>
-        <div class="chain-row">
-          <span class="rank">Tingkat 4</span>
-          <div>
-            <p class="chain-name"><span class="chain-swatch" style="--pc: var(--p-openrouter)" aria-hidden="true"></span>OpenRouter</p>
-            <p class="chain-note">Dua model gratis pilihan.</p>
-          </div>
-          <span class="chain-meta">5 kunci</span>
-        </div>
-        <div class="chain-row">
-          <span class="rank">Tingkat 5</span>
-          <div>
-            <p class="chain-name"><span class="chain-swatch" style="--pc: var(--p-dahl)" aria-hidden="true"></span>Dahl Global</p>
-            <p class="chain-note">Saldo token besar, dipakai saat kuota harian penyedia lain habis.</p>
-          </div>
-          <span class="chain-meta">10 kunci</span>
-        </div>
-        <div class="chain-row">
-          <span class="rank">Tingkat 6</span>
-          <div>
-            <p class="chain-name"><span class="chain-swatch" style="--pc: var(--p-gemini)" aria-hidden="true"></span>Google Gemini</p>
-            <p class="chain-note">Lapis terakhir sekaligus pembaca dokumen.</p>
-          </div>
-          <span class="chain-meta">1 kunci</span>
-        </div>
-      </div>
-    </div>
-  </section>
+  
 
   <section>
     <div class="wrap">
@@ -798,7 +708,7 @@ footer { padding-block: var(--s6) var(--s7); }
 <footer>
   <div class="wrap">
     <div class="footer-inner">
-      <span>FreeAIBot &middot; versi v0.71</span>
+      <span>FreeAIBot &middot; versi v0.72</span>
       <span class="footer-links">
         <a href="/privacy.html">Kebijakan privasi</a>
         <a href="/dashboard.html">Konsol</a>
