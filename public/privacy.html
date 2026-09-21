@@ -1,93 +1,86 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id" data-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Policy - FreeAIBot</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="shortcut icon" href="/favicon.svg">
-  <link rel="apple-touch-icon" href="/favicon.svg">
-  <style>
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #09090b;
-      color: #e4e4e7;
-      line-height: 1.6;
-      margin: 0;
-      padding: 2rem 1rem;
-    }
-    .container {
-      max-width: 720px;
-      margin: 0 auto;
-      background: #18181b;
-      border: 1px solid #27272a;
-      border-radius: 12px;
-      padding: 2.5rem;
-    }
-    h1 {
-      color: #fafafa;
-      font-size: 1.8rem;
-      margin-top: 0;
-      border-bottom: 1px solid #27272a;
-      padding-bottom: 0.75rem;
-    }
-    h2 {
-      color: #fafafa;
-      font-size: 1.25rem;
-      margin-top: 1.5rem;
-    }
-    p, li {
-      color: #a1a1aa;
-      font-size: 0.95rem;
-    }
-    ul {
-      padding-left: 1.25rem;
-    }
-    .footer {
-      margin-top: 2rem;
-      font-size: 0.85rem;
-      color: #71717a;
-      border-top: 1px solid #27272a;
-      padding-top: 1rem;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Kebijakan privasi FreeAIBot</title>
+<meta name="description" content="Cara FreeAIBot menangani pesan, identitas pengguna, dan data percakapan di WhatsApp serta Telegram." />
+<meta name="theme-color" content="#000000" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.svg" />
+<link rel="apple-touch-icon" href="/favicon.svg" />
+<link rel="stylesheet" href="/css/console.css" />
+<script src="/js/theme-pre.js"></script>
+<style>
+/* Halaman ini hanya dokumen teks: satu kolom sempit, tanpa panel dekoratif. */
+.doc-page { max-width: 720px; margin-inline: auto; padding-block: var(--s6); }
+.doc-page h1 { font-size: clamp(26px, 4vw, 34px); line-height: 1.2; margin: 0 0 var(--s2); }
+.doc-page h2 { font-size: 18px; line-height: 1.35; margin: var(--s5) 0 var(--s2); }
+.doc-page p, .doc-page li { font-size: 15px; line-height: 1.65; color: var(--text-secondary); }
+.doc-page strong { color: var(--text); font-weight: 600; }
+.doc-page ul { margin: 0 0 var(--s3); padding-left: 20px; }
+.doc-page li { margin-bottom: 6px; }
+.doc-meta { font-size: 13px; color: var(--text-secondary); margin: 0 0 var(--s5); }
+.doc-rule { height: 1px; background: var(--separator); border: 0; margin: var(--s5) 0; }
+.doc-back { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; color: var(--accent); text-decoration: none; }
+.doc-back:hover { text-decoration: underline; }
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>Privacy Policy</h1>
-    <p>Last updated: September 10, 2026</p>
-    
-    <h2>1. Overview</h2>
-    <p>FreeAIBot ("we", "our", or "the service") is an automated artificial intelligence assistant accessible via messaging platforms including Telegram and WhatsApp. This Privacy Policy outlines how user data and messages are handled when interacting with our bot.</p>
 
-    <h2>2. Information We Collect</h2>
-    <p>When you send messages to FreeAIBot, we process:</p>
-    <ul>
-      <li><strong>Message Content:</strong> Text queries and media you send to receive answers from the AI assistant.</li>
-      <li><strong>Identifiers:</strong> Your platform user ID or phone number to maintain session state and conversation memory.</li>
-      <li><strong>Timestamps:</strong> Times of interaction for rate limiting and service stability.</li>
-    </ul>
+<main class="container doc-page">
+  <a class="doc-back" href="/">&larr; Kembali ke halaman utama</a>
 
-    <h2>3. How We Use Information</h2>
-    <p>Information collected is used strictly to:</p>
-    <ul>
-      <li>Generate responses to your queries using artificial intelligence models.</li>
-      <li>Maintain conversational context for ongoing discussions.</li>
-      <li>Prevent spam, abuse, and maintain service security.</li>
-    </ul>
+  <h1>Kebijakan privasi</h1>
+  <p class="doc-meta">Terakhir diperbarui 10 September 2026</p>
 
-    <h2>4. Data Sharing and Retention</h2>
-    <p>We do not sell, rent, or trade your personal data to third parties. Data is processed through secure serverless functions and trusted AI providers solely to complete your requested actions.</p>
+  <h2>1. Ringkasan</h2>
+  <p>
+    FreeAIBot adalah asisten AI otomatis yang diakses lewat Telegram dan WhatsApp. Kebijakan ini
+    menjelaskan bagaimana pesan dan data pengguna diperlakukan saat berinteraksi dengan bot.
+  </p>
 
-    <h2>5. User Rights and Data Deletion</h2>
-    <p>Users have the right to request deletion of their conversation history and stored session data at any time by contacting the bot administrator or issuing a reset command.</p>
+  <h2>2. Data yang diproses</h2>
+  <p>Saat kamu mengirim pesan ke FreeAIBot, sistem memproses:</p>
+  <ul>
+    <li><strong>Isi pesan.</strong> Teks dan media yang kamu kirim, dipakai untuk menyusun jawaban.</li>
+    <li><strong>Identitas platform.</strong> ID pengguna Telegram atau nomor WhatsApp, dipakai untuk menjaga sesi dan ingatan percakapan.</li>
+    <li><strong>Waktu interaksi.</strong> Dipakai untuk membatasi laju permintaan dan menjaga kestabilan layanan.</li>
+  </ul>
 
-    <h2>6. Contact Us</h2>
-    <p>If you have any questions regarding this Privacy Policy, you may contact the developer via the official repository or support channel.</p>
+  <h2>3. Cara data dipakai</h2>
+  <p>Data yang terkumpul hanya dipakai untuk:</p>
+  <ul>
+    <li>Menyusun jawaban atas pertanyaanmu memakai model AI.</li>
+    <li>Menjaga konteks percakapan agar jawaban tetap nyambung.</li>
+    <li>Mencegah spam dan penyalahgunaan, serta menjaga keamanan layanan.</li>
+  </ul>
 
-    <div class="footer">
-      &copy; 2026 FreeAIBot. All rights reserved.
-    </div>
-  </div>
+  <h2>4. Berbagi dan penyimpanan data</h2>
+  <p>
+    Data pribadimu tidak dijual, disewakan, atau diperdagangkan. Data diproses lewat fungsi serverless
+    dan penyedia model AI tepercaya, semata-mata untuk menjalankan permintaanmu. Riwayat percakapan
+    disimpan di basis data Supabase PostgreSQL milik pemilik bot.
+  </p>
+
+  <h2>5. Hak pengguna dan penghapusan data</h2>
+  <p>
+    Kamu berhak meminta penghapusan riwayat percakapan dan data sesi kapan saja. Caranya dengan
+    menghubungi admin bot atau memakai perintah reset di percakapan.
+  </p>
+
+  <h2>6. Kontak</h2>
+  <p>
+    Pertanyaan soal kebijakan ini bisa disampaikan lewat repositori resmi proyek atau kanal dukungan
+    yang tertera di halaman utama.
+  </p>
+
+  <hr class="doc-rule">
+  <p style="font-size:13px;color:var(--text-secondary);margin:0">
+    FreeAIBot berjalan di Vercel Serverless dengan basis data Supabase PostgreSQL.
+  </p>
+</main>
+
+<script src="/js/doc-theme.js"></script>
 </body>
 </html>

@@ -1,2826 +1,509 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FreeAIBot - Unified Monitoring &amp; Dataset Console</title>
-  <meta name="description" content="Dashboard monitoring real-time penggunaan chatbot, pool API Key, model AI, kuota harian, serta dataset evaluasi percakapan.">
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="shortcut icon" href="/favicon.svg">
-  <link rel="apple-touch-icon" href="/favicon.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-  <script src="/js/dashboard-pre.js"></script>
-  <style>
-    /* Anti-Flicker / Anti-FOUC Authentication Guards */
-    html.not-authenticated #main-content,
-    html.not-authenticated header {
-      display: none !important;
-    }
-    html.not-authenticated #auth-modal {
-      display: flex !important;
-      opacity: 1 !important;
-    }
-    html.authenticated #auth-modal {
-      display: none !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-
-    :root {
-      --bg-base: #090d16;
-      --bg-surface: #111827;
-      --bg-card: #162032;
-      --bg-card-hover: #1c2940;
-      --border-subtle: #24344d;
-      --border-focus: #38bdf8;
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --accent-blue: #38bdf8;
-      --accent-purple: #a855f7;
-      --accent-emerald: #10b981;
-      --accent-amber: #f59e0b;
-      --accent-rose: #f43f5e;
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      background-color: var(--bg-base);
-      color: var(--text-main);
-      font-family: var(--font-sans);
-      min-height: 100vh;
-      line-height: 1.5;
-      padding: 0 0 2rem 0;
-      overflow-x: clip;
-    }
-
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 0 1.5rem;
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 1.75rem;
-    }
-
-    /* Top Navigation - Ultra-Sleek Frosted Glass & Ambient Glow (Edge-to-Edge Full Width) */
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-      width: 100%;
-      background: rgba(11, 17, 32, 0.82);
-      backdrop-filter: blur(20px) saturate(180%);
-      -webkit-backdrop-filter: blur(20px) saturate(180%);
-      border-top: none;
-      border-left: none;
-      border-right: none;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 0;
-      box-shadow: 0 8px 30px -6px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-      transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
-      will-change: transform, opacity;
-      margin: 0 0 1.25rem 0;
-    }
-
-    .nav-inner {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 0.6rem 1.5rem;
-      width: 100%;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    header::after {
-      content: '';
-      position: absolute;
-      bottom: -1px;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, 
-        transparent 0%, 
-        rgba(56, 189, 248, 0) 8%, 
-        rgba(56, 189, 248, 0.35) 30%, 
-        rgba(168, 85, 247, 0.35) 70%, 
-        rgba(56, 189, 248, 0) 92%, 
-        transparent 100%
-      );
-      pointer-events: none;
-      opacity: 0.75;
-      transition: opacity 0.3s ease;
-    }
-
-    header.header-hidden {
-      transform: translateY(-100%);
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    header.header-scrolled {
-      background: rgba(8, 12, 22, 0.94);
-      border-bottom-color: rgba(56, 189, 248, 0.2);
-      box-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.75), 0 2px 14px rgba(56, 189, 248, 0.08);
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      header, .nav-back-btn, .brand-icon, .nav-btn-control, .pulse-dot {
-        transition: none !important;
-        animation: none !important;
-      }
-    }
-
-    .nav-brand-group {
-      display: flex;
-      align-items: center;
-      gap: 0.85rem;
-      flex-shrink: 0;
-      white-space: nowrap;
-    }
-
-    .nav-back-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.45rem;
-      padding: 0.38rem 0.85rem;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 9999px;
-      color: #cbd5e1;
-      font-size: 0.8rem;
-      font-weight: 500;
-      text-decoration: none;
-      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .nav-back-btn:hover {
-      background: rgba(56, 189, 248, 0.08);
-      border-color: rgba(56, 189, 248, 0.35);
-      color: #38bdf8;
-      box-shadow: 0 0 16px rgba(56, 189, 248, 0.2);
-      transform: translateX(-1px);
-    }
-
-    .nav-back-btn:active {
-      transform: scale(0.96);
-    }
-
-    .nav-back-arrow {
-      font-size: 0.95rem;
-      line-height: 1;
-      transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .nav-back-btn:hover .nav-back-arrow {
-      transform: translateX(-2px);
-    }
-
-    .nav-divider {
-      width: 1px;
-      height: 24px;
-      background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.12), transparent);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      text-decoration: none;
-      color: var(--text-main);
-    }
-
-    .brand-icon {
-      position: relative;
-      width: 36px;
-      height: 36px;
-      background: linear-gradient(135deg, #0284c7 0%, #2563eb 50%, #7c3aed 100%);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 0.95rem;
-      color: #fff;
-      box-shadow: 0 0 16px rgba(37, 99, 235, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.35);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
-      flex-shrink: 0;
-    }
-
-    .brand:hover .brand-icon {
-      transform: scale(1.05) rotate(-2deg);
-      box-shadow: 0 0 24px rgba(56, 189, 248, 0.55), inset 0 1px 1px rgba(255, 255, 255, 0.5);
-    }
-
-    .brand-title-wrap {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .brand-info h1 {
-      font-size: 1.05rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: #f8fafc;
-      margin: 0;
-      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-      line-height: 1.2;
-    }
-
-    .brand-badge-version {
-      font-size: 0.65rem;
-      font-family: var(--font-mono);
-      font-weight: 700;
-      color: #38bdf8;
-      background: rgba(56, 189, 248, 0.12);
-      border: 1px solid rgba(56, 189, 248, 0.25);
-      padding: 0.08rem 0.42rem;
-      border-radius: 9999px;
-      letter-spacing: 0.02em;
-    }
-
-    .brand-sub-wrap {
-      display: flex;
-      align-items: center;
-      gap: 0.35rem;
-      margin-top: 2px;
-    }
-
-    .pulse-dot-mini {
-      width: 6px;
-      height: 6px;
-      background: #10b981;
-      border-radius: 50%;
-      box-shadow: 0 0 6px #10b981;
-      animation: pulse 2s infinite;
-      flex-shrink: 0;
-    }
-
-    .brand-info p {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      margin: 0;
-      font-family: var(--font-mono);
-      line-height: 1.2;
-    }
-
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 0.65rem;
-      flex-shrink: 0;
-      flex-wrap: nowrap;
-    }
-
-    /* Status Pill Upgraded */
-    .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.36rem 0.8rem;
-      background: rgba(16, 185, 129, 0.08);
-      border: 1px solid rgba(16, 185, 129, 0.25);
-      border-radius: 9999px;
-      font-size: 0.76rem;
-      font-weight: 600;
-      color: #34d399;
-      letter-spacing: 0.01em;
-      box-shadow: 0 0 14px rgba(16, 185, 129, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-      transition: all 0.25s ease;
-      user-select: none;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .status-text-short {
-      display: none;
-    }
-
-    .status-pill:hover {
-      border-color: rgba(16, 185, 129, 0.45);
-      box-shadow: 0 0 18px rgba(16, 185, 129, 0.25);
-    }
-
-    .pulse-dot {
-      position: relative;
-      width: 7px;
-      height: 7px;
-      background: #10b981;
-      border-radius: 50%;
-      box-shadow: 0 0 8px #10b981;
-      flex-shrink: 0;
-    }
-
-    /* Indikator loading tombol refresh (dipakai via classList, bukan innerHTML) */
-    #btn-refresh-icon.spinning {
-      display: inline-block;
-      animation: spin 0.9s linear infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    .pulse-dot::before {
-      content: '';
-      position: absolute;
-      inset: -3px;
-      border-radius: 50%;
-      background: rgba(16, 185, 129, 0.45);
-      animation: pulse-ring 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
-    }
-
-    @keyframes pulse-ring {
-      0% { transform: scale(0.7); opacity: 0.8; }
-      50% { transform: scale(1.6); opacity: 0; }
-      100% { transform: scale(0.7); opacity: 0; }
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(0.85); }
-    }
-
-    /* Actions Command Segment */
-    .nav-control-group {
-      display: flex;
-      align-items: center;
-      gap: 0.3rem;
-      background: rgba(255, 255, 255, 0.03);
-      padding: 3px;
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
-      flex-shrink: 0;
-    }
-
-    .nav-btn-control {
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.45rem;
-      padding: 0.38rem 0.8rem !important;
-      font-size: 0.8rem !important;
-      font-weight: 600;
-      border-radius: 9px !important;
-      border: 1px solid transparent !important;
-      background: transparent !important;
-      color: #94a3b8 !important;
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
-      user-select: none;
-      white-space: nowrap;
-    }
-
-    .nav-btn-control:hover {
-      color: #f1f5f9 !important;
-      background: rgba(255, 255, 255, 0.07) !important;
-      border-color: rgba(255, 255, 255, 0.12) !important;
-      transform: translateY(-1px);
-    }
-
-    .nav-btn-control:active {
-      transform: scale(0.96) translateY(0);
-    }
-
-    /* Auto refresh active state */
-    .nav-btn-control#btn-auto.active {
-      background: rgba(14, 165, 233, 0.14) !important;
-      border-color: rgba(56, 189, 248, 0.35) !important;
-      color: #38bdf8 !important;
-      box-shadow: 0 0 14px rgba(56, 189, 248, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
-    }
-
-    /* Segarkan icon animation */
-    .nav-btn-control#btn-manual-refresh:hover #btn-refresh-icon {
-      transform: rotate(180deg);
-      color: #38bdf8;
-    }
-
-    #btn-refresh-icon {
-      display: inline-block;
-      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s ease;
-      font-size: 0.95rem;
-      line-height: 1;
-    }
-
-    /* Lock Logout button */
-    .nav-btn-control#btn-logout {
-      color: #f87171 !important;
-      border-color: rgba(239, 68, 68, 0.2) !important;
-      background: rgba(239, 68, 68, 0.06) !important;
-    }
-
-    .nav-btn-control#btn-logout:hover {
-      background: rgba(239, 68, 68, 0.18) !important;
-      border-color: rgba(239, 68, 68, 0.45) !important;
-      color: #fecaca !important;
-      box-shadow: 0 0 16px rgba(239, 68, 68, 0.3) !important;
-      transform: translateY(-1px);
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.5rem 1rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 10px;
-      color: var(--text-main);
-      font-size: 0.85rem;
-      font-weight: 600;
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-
-    .btn:hover {
-      background: var(--bg-card-hover);
-      border-color: var(--border-focus);
-    }
-
-    .btn.active {
-      background: rgba(56, 189, 248, 0.15);
-      border-color: var(--accent-blue);
-      color: var(--accent-blue);
-    }
-
-    .btn-danger {
-      border-color: rgba(244, 63, 94, 0.4);
-      color: #fda4af;
-    }
-    .btn-danger:hover {
-      background: rgba(244, 63, 94, 0.15);
-      border-color: var(--accent-rose);
-      color: var(--accent-rose);
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, #0284c7, #2563eb);
-      border: none;
-      color: #fff;
-    }
-    .btn-primary:hover {
-      background: linear-gradient(135deg, #0369a1, #1d4ed8);
-    }
-
-    .btn-today {
-      background: rgba(16, 185, 129, 0.12);
-      border-color: rgba(16, 185, 129, 0.4);
-      color: #34d399;
-    }
-    .btn-today:hover {
-      background: rgba(16, 185, 129, 0.22);
-      border-color: #10b981;
-      color: #6ee7b7;
-      box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
-    }
-
-    /* KPI Summary Cards */
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-      gap: 1.25rem;
-    }
-
-    .kpi-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.25rem 1.5rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .kpi-card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
-    }
-
-    .kpi-title {
-      font-size: 0.825rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-    }
-
-    .kpi-value {
-      font-size: 2rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      color: var(--text-main);
-    }
-
-    .kpi-subtext {
-      font-size: 0.825rem;
-      color: var(--text-dim);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 0.15rem 0.55rem;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-weight: 700;
-    }
-
-    .badge-wa {
-      background: rgba(37, 211, 102, 0.15);
-      color: #25d366;
-      border: 1px solid rgba(37, 211, 102, 0.3);
-    }
-
-    .badge-tele {
-      background: rgba(34, 158, 217, 0.15);
-      color: #38bdf8;
-      border: 1px solid rgba(34, 158, 217, 0.3);
-    }
-
-    /* Pool Matrix Section */
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-    }
-
-    .section-title {
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: var(--text-main);
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-    }
-
-    .pool-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-      gap: 1.25rem;
-    }
-
-    .provider-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-
-    .provider-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid var(--border-subtle);
-      padding-bottom: 0.75rem;
-    }
-
-    .provider-name {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--text-main);
-    }
-
-    .provider-models {
-      font-size: 0.75rem;
-      color: var(--text-dim);
-      margin-top: 0.15rem;
-    }
-
-    .provider-summary-stat {
-      text-align: right;
-    }
-
-    .provider-usage-text {
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: var(--accent-blue);
-    }
-
-    .provider-cap-text {
-      font-size: 0.75rem;
-      color: var(--text-dim);
-    }
-
-    .keys-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.55rem;
-      max-height: 250px;
-      overflow-y: auto;
-      padding-right: 0.35rem;
-      scrollbar-width: thin;
-      scrollbar-color: rgba(56, 189, 248, 0.35) transparent;
-    }
-
-    .keys-list::-webkit-scrollbar {
-      width: 5px;
-    }
-
-    .keys-list::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .keys-list::-webkit-scrollbar-thumb {
-      background: rgba(56, 189, 248, 0.25);
-      border-radius: 9999px;
-    }
-
-    .keys-list::-webkit-scrollbar-thumb:hover {
-      background: rgba(56, 189, 248, 0.5);
-    }
-
-    .key-row {
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-      background: var(--bg-card);
-      padding: 0.75rem 0.9rem;
-      border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.04);
-      transition: border-color 0.2s;
-    }
-
-    .key-row:hover {
-      border-color: rgba(56, 189, 248, 0.25);
-    }
-
-    .key-info-line {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.8rem;
-      flex-wrap: nowrap;
-    }
-
-    .key-identity {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-      min-width: 0;
-      flex: 1 1 auto;
-      overflow: hidden;
-    }
-
-    .key-label {
-      font-family: var(--font-mono);
-      color: #38bdf8;
-      font-weight: 700;
-      font-size: 0.82rem;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      min-width: 0;
-    }
-
-    .key-badge-status {
-      font-size: 0.65rem;
-      font-weight: 700;
-      padding: 1px 5px;
-      border-radius: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .status-healthy {
-      background: rgba(16, 185, 129, 0.12);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.25);
-    }
-
-    .status-warning {
-      background: rgba(245, 158, 11, 0.12);
-      color: #fbbf24;
-      border: 1px solid rgba(245, 158, 11, 0.25);
-    }
-
-    .status-capped {
-      background: rgba(244, 63, 94, 0.15);
-      color: #fb7185;
-      border: 1px solid rgba(244, 63, 94, 0.3);
-    }
-
-    .key-stats {
-      font-weight: 700;
-      color: var(--text-main);
-      font-size: 0.78rem;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .progress-bar-bg {
-      width: 100%;
-      height: 6px;
-      background: #1e293b;
-      border-radius: 9999px;
-      overflow: hidden;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      border-radius: 9999px;
-      transition: width 0.4s ease;
-    }
-
-    .progress-emerald { background: linear-gradient(90deg, #10b981, #059669); }
-    .progress-amber { background: linear-gradient(90deg, #f59e0b, #d97706); }
-    .progress-rose { background: linear-gradient(90deg, #f43f5e, #e11d48); }
-    .progress-cyan { background: linear-gradient(90deg, #06b6d4, #0284c7); }
-
-    /* =========================================================================
-       SECTION: DEDICATED LIVE UPSTREAM QUOTA & TOKEN CARD TABLE (NEW)
-       ========================================================================= */
-    .live-upstream-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.5rem;
-      margin-top: 1.75rem;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-    }
-
-    .live-upstream-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-bottom: 1.25rem;
-      border-bottom: 1px solid var(--border-subtle);
-      padding-bottom: 1rem;
-    }
-
-    .live-stats-ribbon {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
-      gap: 0.85rem;
-      margin-bottom: 1.25rem;
-    }
-
-    .live-stat-box {
-      background: rgba(15, 23, 42, 0.55);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 10px;
-      padding: 0.85rem 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
-    }
-
-    .live-stat-label {
-      font-size: 0.72rem;
-      color: var(--text-dim);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .live-stat-val {
-      font-size: 1.2rem;
-      font-weight: 700;
-      font-family: var(--font-mono);
-      color: var(--text-main);
-    }
-
-    .live-stat-sub {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-    }
-
-    .badge-live-sync {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      font-size: 0.7rem;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 9999px;
-      background: rgba(16, 185, 129, 0.15);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      white-space: nowrap;
-    }
-
-    .badge-bot-sync {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      font-size: 0.7rem;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 9999px;
-      background: rgba(148, 163, 184, 0.12);
-      color: #94a3b8;
-      border: 1px solid rgba(148, 163, 184, 0.25);
-      white-space: nowrap;
-    }
-
-    /* =========================================================================
-       SECTION: DEDICATED TOKEN QUOTA & CONTEXT MONITORING PANEL (SEPARATE)
-       ========================================================================= */
-    .token-matrix-section {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.5rem;
-      margin-top: 1.75rem;
-    }
-
-    .token-matrix-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-bottom: 1.25rem;
-      border-bottom: 1px solid var(--border-subtle);
-      padding-bottom: 0.85rem;
-    }
-
-    .token-table-container {
-      overflow-x: auto;
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      background: var(--bg-card);
-    }
-
-    .token-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.82rem;
-      text-align: left;
-    }
-
-    .token-table th {
-      background: rgba(15, 23, 42, 0.85);
-      color: var(--text-dim);
-      font-weight: 600;
-      padding: 0.85rem 1.1rem;
-      border-bottom: 1px solid var(--border-subtle);
-      white-space: nowrap;
-    }
-
-    .token-table td {
-      padding: 0.95rem 1.1rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-      vertical-align: middle;
-    }
-
-    .token-table tr:last-child td {
-      border-bottom: none;
-    }
-
-    .token-table tr:hover td {
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    .tp-badge-cycle {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
-      font-size: 0.72rem;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 6px;
-      background: rgba(148, 163, 184, 0.1);
-      color: #94a3b8;
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      white-space: nowrap;
-    }
-
-    .tp-badge-context {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      font-size: 0.72rem;
-      font-weight: 700;
-      padding: 3px 9px;
-      border-radius: 9999px;
-      background: rgba(56, 189, 248, 0.12);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.25);
-      white-space: nowrap;
-    }
-
-    /* Model Analytics & Media Grid */
-    .dual-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.25rem;
-    }
-
-    @media (max-width: 900px) {
-      .dual-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .panel-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.25rem 1.5rem;
-    }
-
-    .models-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.85rem;
-      margin-top: 1rem;
-    }
-
-    .model-item {
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-    }
-
-    .model-label-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.85rem;
-    }
-
-    .model-name {
-      font-weight: 600;
-      color: var(--text-main);
-      font-family: var(--font-mono);
-    }
-
-    .model-count {
-      color: var(--text-muted);
-      font-size: 0.8rem;
-    }
-
-    .media-badges-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-      gap: 0.85rem;
-      margin-top: 1rem;
-    }
-
-    .media-box {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 12px;
-      padding: 1rem;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
-    }
-
-    .media-box-count {
-      font-size: 1.5rem;
-      font-weight: 800;
-      color: var(--accent-blue);
-    }
-
-    .media-box-label {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      font-weight: 600;
-    }
-
-    /* Table Sections */
-    .activity-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.25rem 1.5rem;
-      overflow: hidden;
-    }
-
-    .table-container {
-      overflow-x: auto;
-      margin-top: 1rem;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.825rem;
-      text-align: left;
-    }
-
-    th {
-      padding: 0.75rem 1rem;
-      background: var(--bg-card);
-      color: var(--text-muted);
-      font-weight: 600;
-      border-bottom: 1px solid var(--border-subtle);
-      white-space: nowrap;
-    }
-
-    td {
-      padding: 0.85rem 1rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      color: var(--text-main);
-      vertical-align: top;
-    }
-
-    tr:hover td {
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    .role-badge {
-      display: inline-block;
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.7rem;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .role-user { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); }
-    .role-bot { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); }
-
-    .type-badge {
-      display: inline-block;
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.7rem;
-      font-weight: 600;
-      font-family: var(--font-mono);
-    }
-
-    .type-voice { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
-    .type-document { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
-    .type-image { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
-    .type-sticker { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); }
-    .type-video { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); }
-    .type-text { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
-
-    .model-tag {
-      font-family: var(--font-mono);
-      font-size: 0.725rem;
-      color: var(--text-dim);
-    }
-
-    .msg-preview {
-      max-width: 380px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: var(--text-muted);
-    }
-
-    /* Dataset Pair Styling */
-    .dataset-prompt {
-      max-width: 100%;
-      font-weight: 500;
-      color: #e2e8f0;
-      word-break: break-word;
-      line-height: 1.5;
-      max-height: 220px;
-      overflow-y: auto;
-      padding-right: 6px;
-    }
-
-    .dataset-reply {
-      max-width: 100%;
-      color: #94a3b8;
-      word-break: break-word;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      max-height: 220px;
-      overflow-y: auto;
-      padding-right: 6px;
-    }
-
-    /* Custom scrollbar ramping & elegan untuk prompt & jawaban dataset */
-    .dataset-prompt::-webkit-scrollbar,
-    .dataset-reply::-webkit-scrollbar {
-      width: 5px;
-    }
-
-    .dataset-prompt::-webkit-scrollbar-track,
-    .dataset-reply::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.02);
-      border-radius: 4px;
-    }
-
-    .dataset-prompt::-webkit-scrollbar-thumb,
-    .dataset-reply::-webkit-scrollbar-thumb {
-      background: rgba(56, 189, 248, 0.25);
-      border-radius: 4px;
-    }
-
-    .dataset-prompt::-webkit-scrollbar-thumb:hover,
-    .dataset-reply::-webkit-scrollbar-thumb:hover {
-      background: rgba(56, 189, 248, 0.5);
-    }
-
-    /* Pagination Component */
-    .pagination-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-      padding-top: 1rem;
-      margin-top: 0.75rem;
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .pagination-info {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      font-family: var(--font-sans);
-    }
-
-    .pagination-controls {
-      display: flex;
-      gap: 0.35rem;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .pagination-btn {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      color: var(--text-main);
-      padding: 0.35rem 0.65rem;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      min-width: 32px;
-      text-align: center;
-      font-family: inherit;
-    }
-
-    .pagination-btn:hover:not(:disabled) {
-      border-color: var(--accent-blue);
-      color: #fff;
-      background: rgba(56, 189, 248, 0.1);
-    }
-
-    .pagination-btn.active {
-      background: var(--accent-blue);
-      border-color: var(--accent-blue);
-      color: #0f172a;
-      font-weight: 700;
-      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
-    }
-
-    .pagination-btn:disabled {
-      opacity: 0.35;
-      cursor: not-allowed;
-    }
-
-    .pagination-ellipsis {
-      color: var(--text-dim);
-      padding: 0 0.25rem;
-      font-size: 0.8rem;
-    }
-
-    .search-input {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      padding: 0.45rem 0.85rem;
-      color: var(--text-main);
-      font-size: 0.825rem;
-      font-family: inherit;
-      min-width: 220px;
-    }
-
-    .search-input:focus {
-      outline: none;
-      border-color: var(--accent-blue);
-    }
-
-    .filter-select {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      padding: 0.45rem 0.75rem;
-      color: var(--text-main);
-      font-size: 0.825rem;
-      font-family: inherit;
-      cursor: pointer;
-    }
-
-    /* Filter Bar Component */
-    .filter-dashboard-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 14px;
-      padding: 0.85rem 1.25rem;
-      margin-bottom: 1.5rem;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-    }
-
-    .filter-group-wrap {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-      min-width: 0;
-      max-width: 100%;
-    }
-
-    .filter-title-label {
-      font-size: 0.775rem;
-      font-weight: 700;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .pill-filter-group {
-      display: inline-flex;
-      background: var(--bg-base);
-      border: 1px solid var(--border-subtle);
-      border-radius: 9999px;
-      padding: 3px;
-      gap: 2px;
-      flex-wrap: wrap;
-      min-width: 0;
-      max-width: 100%;
-    }
-
-    .pool-filter-controls {
-      display: flex;
-      gap: 0.5rem;
-      align-items: center;
-      flex-wrap: wrap;
-      min-width: 0;
-      max-width: 100%;
-    }
-
-    .pill-filter-btn {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      padding: 0.35rem 0.85rem;
-      border-radius: 9999px;
-      font-size: 0.775rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-
-    .pill-filter-btn:hover {
-      color: var(--text-main);
-      background: rgba(255, 255, 255, 0.05);
-    }
-
-    .pill-filter-btn.active {
-      background: linear-gradient(135deg, #0284c7, #2563eb);
-      color: #fff;
-      box-shadow: 0 0 12px rgba(37, 99, 235, 0.4);
-    }
-
-    .filter-badge-active {
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--accent-blue);
-      background: rgba(56, 189, 248, 0.12);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      padding: 0.15rem 0.5rem;
-      border-radius: 6px;
-      margin-left: 0.4rem;
-    }
-
-    /* ==========================================================================
-       AUTHENTICATION GATEWAY MODAL (SLEEK KEYBOARD INPUT - NO ON-SCREEN NUMPAD)
-       ========================================================================== */
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(9, 13, 22, 0.94);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      z-index: 99999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
-      opacity: 1;
-      transition: opacity 0.25s ease;
-    }
-
-    .modal-overlay.hidden {
-      display: none;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .auth-card {
-      width: 100%;
-      max-width: 400px;
-      background: #0f172a;
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      border-radius: 20px;
-      padding: 2.25rem 2rem;
-      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(56, 189, 248, 0.12);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      gap: 1.25rem;
-      position: relative;
-    }
-
-    .auth-top-nav {
-      position: absolute;
-      top: 1.25rem;
-      left: 1.25rem;
-    }
-
-    .auth-back-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.35rem 0.75rem;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 9999px;
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-decoration: none;
-      transition: all 0.2s ease;
-    }
-
-    .auth-back-link:hover {
-      background: rgba(255, 255, 255, 0.12);
-      color: #fff;
-    }
-
-    .auth-shield-icon {
-      width: 60px;
-      height: 60px;
-      background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(168, 85, 247, 0.15));
-      border: 1.5px solid rgba(56, 189, 248, 0.4);
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.6rem;
-      color: var(--accent-blue);
-      box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
-      margin-top: 0.5rem;
-    }
-
-    .auth-title {
-      font-size: 1.35rem;
-      font-weight: 800;
-      color: var(--text-main);
-      letter-spacing: -0.02em;
-    }
-
-    .auth-subtitle {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      line-height: 1.45;
-    }
-
-    .auth-form {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-
-    .pin-input-field {
-      width: 100%;
-      height: 52px;
-      background: #1e293b;
-      border: 1.5px solid var(--border-subtle);
-      border-radius: 12px;
-      padding: 0 1rem;
-      color: #fff;
-      font-size: 1.75rem;
-      font-weight: 800;
-      text-align: center;
-      letter-spacing: 0.4em;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-
-    .pin-input-field:focus {
-      outline: none;
-      border-color: var(--accent-blue);
-      box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
-    }
-
-    .pin-input-field::placeholder {
-      font-size: 1.1rem;
-      letter-spacing: normal;
-      color: var(--text-dim);
-      font-weight: 500;
-    }
-
-    .auth-alert {
-      width: 100%;
-      padding: 0.75rem 1rem;
-      border-radius: 10px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      text-align: left;
-      display: none;
-    }
-
-    .auth-alert.show {
-      display: block;
-    }
-
-    .auth-alert-error {
-      background: rgba(244, 63, 94, 0.12);
-      border: 1px solid rgba(244, 63, 94, 0.35);
-      color: #fda4af;
-    }
-
-    .auth-alert-success {
-      background: rgba(16, 185, 129, 0.12);
-      border: 1px solid rgba(16, 185, 129, 0.35);
-      color: #6ee7b7;
-    }
-
-    .auth-link-btn {
-      background: none;
-      border: none;
-      color: var(--accent-blue);
-      font-size: 0.825rem;
-      cursor: pointer;
-      font-weight: 600;
-      text-decoration: underline;
-      padding: 0.25rem;
-      font-family: inherit;
-    }
-
-    .auth-link-btn:hover {
-      color: #7dd3fc;
-    }
-
-    /* Reset Modal Form */
-    .reset-form {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      text-align: left;
-    }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
-    }
-
-    .form-label {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-muted);
-    }
-
-    .form-input {
-      background: #1e293b;
-      border: 1.5px solid var(--border-subtle);
-      border-radius: 10px;
-      padding: 0.65rem 0.95rem;
-      color: var(--text-main);
-      font-size: 0.95rem;
-      font-family: inherit;
-    }
-
-    .form-input:focus {
-      outline: none;
-      border-color: var(--accent-blue);
-      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
-    }
-
-    .shake {
-      animation: shake 0.35s ease-in-out;
-    }
-
-    @keyframes shake {
-      0%, 100% { transform: translateX(0); }
-      20%, 60% { transform: translateX(-8px); }
-      40%, 80% { transform: translateX(8px); }
-    }
-
-    footer {
-      text-align: center;
-      padding: 1.5rem 0;
-      color: var(--text-dim);
-      font-size: 0.8rem;
-      border-top: 1px solid var(--border-subtle);
-      margin-top: 1rem;
-    }
-
-    /* ==========================================================================
-       MATRIKS MODEL AI & MONITORING INFERENSI STYLING (MATCHING SCREENSHOT)
-       ========================================================================== */
-    .matrix-section {
-      background: #0b1120;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 16px;
-      padding: 1.5rem;
-      margin-bottom: 1.5rem;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-      position: relative;
-    }
-
-    .matrix-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-bottom: 1.25rem;
-    }
-
-    .matrix-title-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
-    }
-
-    .matrix-title-with-icon {
-      display: flex;
-      align-items: center;
-      gap: 0.65rem;
-    }
-
-    .matrix-icon-svg {
-      width: 22px;
-      height: 22px;
-      color: #38bdf8;
-      filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.6));
-      flex-shrink: 0;
-    }
-
-    .matrix-main-title {
-      font-size: 1.2rem;
-      font-weight: 800;
-      color: #f8fafc;
-      letter-spacing: -0.02em;
-    }
-
-    .matrix-subtitle {
-      font-size: 0.82rem;
-      color: #94a3b8;
-    }
-
-    .matrix-header-controls {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-    }
-
-    .matrix-total-badge {
-      background: rgba(6, 182, 212, 0.12);
-      border: 1px solid rgba(6, 182, 212, 0.4);
-      color: #38bdf8;
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      font-weight: 700;
-      padding: 0.35rem 0.85rem;
-      border-radius: 9999px;
-      box-shadow: 0 0 15px rgba(6, 182, 212, 0.15);
-    }
-
-    .matrix-time-filters {
-      display: inline-flex;
-      background: #0f172a;
-      padding: 3px;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .matrix-filter-pill {
-      background: transparent;
-      border: none;
-      color: #94a3b8;
-      font-size: 0.78rem;
-      font-weight: 600;
-      padding: 0.35rem 0.75rem;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .matrix-filter-pill:hover {
-      color: #f1f5f9;
-    }
-
-    .matrix-filter-pill.active {
-      background: #0284c7;
-      color: #ffffff;
-      font-weight: 700;
-      box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4);
-    }
-
-    /* SMART AUTO GATEWAY HERO BANNER */
-    .smart-gateway-banner {
-      background: radial-gradient(ellipse at top left, rgba(14, 116, 144, 0.25), rgba(15, 23, 42, 0.9) 65%), #0f172a;
-      border: 1px solid rgba(56, 189, 248, 0.2);
-      border-radius: 12px;
-      padding: 1.25rem 1.5rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1.25rem;
-      margin-bottom: 1.5rem;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .smart-gateway-banner::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      background: radial-gradient(circle at 90% 10%, rgba(56, 189, 248, 0.06), transparent 50%);
-      pointer-events: none;
-    }
-
-    .gateway-info-col {
-      max-width: 800px;
-      z-index: 1;
-    }
-
-    .gateway-badges-row {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 0.45rem;
-      flex-wrap: wrap;
-    }
-
-    .gateway-badge-green {
-      background: rgba(16, 185, 129, 0.18);
-      border: 1px solid rgba(16, 185, 129, 0.5);
-      color: #34d399;
-      font-family: var(--font-mono);
-      font-size: 0.68rem;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-      padding: 2px 8px;
-      border-radius: 4px;
-    }
-
-    .gateway-badge-sub {
-      color: #94a3b8;
-      font-size: 0.74rem;
-      font-weight: 500;
-    }
-
-    .gateway-title {
-      font-size: 1.15rem;
-      font-weight: 800;
-      color: #ffffff;
-      margin-bottom: 0.35rem;
-      letter-spacing: -0.01em;
-    }
-
-    .gateway-desc {
-      font-size: 0.82rem;
-      color: #cbd5e1;
-      line-height: 1.45;
-    }
-
-    .gateway-stat-box {
-      background: rgba(11, 17, 32, 0.85);
-      border: 1px solid rgba(56, 189, 248, 0.25);
-      border-radius: 10px;
-      padding: 0.85rem 1.5rem;
-      text-align: center;
-      min-width: 170px;
-      z-index: 1;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-    }
-
-    .gateway-stat-label {
-      font-family: var(--font-mono);
-      font-size: 0.65rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      color: #64748b;
-      margin-bottom: 0.2rem;
-    }
-
-    .gateway-stat-value {
-      font-family: var(--font-mono);
-      font-size: 1.85rem;
-      font-weight: 800;
-      color: #38bdf8;
-      letter-spacing: -0.02em;
-      text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
-    }
-
-    /* 4-COLUMN RESPONSIVE MODEL GRID */
-    .matrix-cards-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1rem;
-    }
-
-    @media (max-width: 1200px) {
-      .matrix-cards-grid {
-        grid-template-columns: repeat(3, 1fr);
-      }
-    }
-
-    @media (max-width: 850px) {
-      .matrix-cards-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
-
-    @media (max-width: 560px) {
-      .matrix-cards-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .model-matrix-card {
-      background: #0f172a;
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      border-radius: 12px;
-      padding: 1.1rem 1.1rem 0.9rem 1.1rem;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      transition: all 0.2s ease;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .model-matrix-card:hover {
-      transform: translateY(-2px);
-      border-color: rgba(56, 189, 248, 0.35);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-    }
-
-    .model-matrix-card.card-active {
-      border: 1.5px solid #06b6d4;
-      background: radial-gradient(ellipse at top right, rgba(6, 182, 212, 0.12), #0f172a 75%);
-      box-shadow: 0 0 25px rgba(6, 182, 212, 0.2), inset 0 0 15px rgba(6, 182, 212, 0.05);
-    }
-
-    .card-top-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 0.65rem;
-    }
-
-    .card-num-group {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-    }
-
-    .card-number {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      font-weight: 700;
-      color: #64748b;
-    }
-
-    .badge-active-live {
-      background: rgba(6, 182, 212, 0.15);
-      border: 1px solid rgba(6, 182, 212, 0.45);
-      color: #22d3ee;
-      font-size: 0.64rem;
-      font-weight: 800;
-      padding: 1px 7px;
-      border-radius: 9999px;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .pulse-dot-cyan {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: #22d3ee;
-      box-shadow: 0 0 6px #22d3ee;
-    }
-
-    .tag-provider {
-      font-family: var(--font-mono);
-      font-size: 0.65rem;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 4px;
-      letter-spacing: 0.02em;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .tag-dahl {
-      background: rgba(6, 182, 212, 0.15);
-      color: #22d3ee;
-      border: 1px solid rgba(6, 182, 212, 0.35);
-    }
-
-    .tag-groq {
-      background: rgba(249, 115, 22, 0.15);
-      color: #fb923c;
-      border: 1px solid rgba(249, 115, 22, 0.35);
-    }
-
-    .tag-gemini {
-      background: rgba(59, 130, 246, 0.15);
-      color: #60a5fa;
-      border: 1px solid rgba(59, 130, 246, 0.35);
-    }
-
-    .tag-cloudflare {
-      background: rgba(243, 128, 32, 0.15);
-      color: #f38020;
-      border: 1px solid rgba(243, 128, 32, 0.35);
-    }
-
-    .tag-openrouter {
-      background: rgba(16, 185, 129, 0.15);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.35);
-    }
-
-    .tag-xkiro {
-      background: rgba(56, 189, 248, 0.15);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.35);
-    }
-
-    .tag-cap {
-      font-family: var(--font-mono);
-      font-size: 0.62rem;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 4px;
-      letter-spacing: 0.02em;
-      white-space: nowrap;
-    }
-
-    .tag-cap-vision {
-      background: rgba(168, 85, 247, 0.15);
-      color: #c084fc;
-      border: 1px solid rgba(168, 85, 247, 0.35);
-    }
-
-    .tag-cap-voice {
-      background: rgba(236, 72, 153, 0.15);
-      color: #f472b6;
-      border: 1px solid rgba(236, 72, 153, 0.35);
-    }
-
-    .tag-cap-code {
-      background: rgba(234, 179, 8, 0.15);
-      color: #facc15;
-      border: 1px solid rgba(234, 179, 8, 0.35);
-    }
-
-    .tag-cap-text {
-      background: rgba(148, 163, 184, 0.12);
-      color: #94a3b8;
-      border: 1px solid rgba(148, 163, 184, 0.25);
-    }
-
-    .card-caps-row {
-      display: flex;
-      gap: 4px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin: 0.35rem 0 0.45rem 0;
-    }
-
-    .card-model-name {
-      font-size: 0.92rem;
-      font-weight: 700;
-      color: #f1f5f9;
-      line-height: 1.35;
-      margin-bottom: 0.35rem;
-    }
-
-    .card-model-desc {
-      font-size: 0.75rem;
-      color: #94a3b8;
-      line-height: 1.4;
-      min-height: 2.4rem;
-    }
-
-    .card-footer-row {
-      margin-top: 0.85rem;
-      padding-top: 0.65rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .card-footer-label {
-      font-size: 0.72rem;
-      color: #64748b;
-    }
-
-    .card-footer-count {
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: #f8fafc;
-    }
-
-    /* =========================================================================
-       RESPONSIVE DESIGN & MOBILE OPTIMIZATIONS (WCAG 2.2 / TOUCH FRIENDLY)
-       ========================================================================= */
-    @media (max-width: 1024px) {
-      .header-actions {
-        gap: 0.4rem;
-      }
-    }
-
-    @media (max-width: 768px) {
-      .smart-gateway-banner {
-        padding: 1.15rem;
-        flex-direction: column;
-        align-items: stretch;
-      }
-      .gateway-info-col {
-        max-width: 100%;
-      }
-      .filter-group-wrap {
-        width: 100%;
-        min-width: 0;
-      }
-      .pool-section-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.85rem;
-      }
-      .pool-filter-controls {
-        width: 100%;
-        max-width: 100%;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.6rem;
-      }
-      .pool-filter-controls .pill-filter-group {
-        width: 100%;
-        max-width: 100%;
-        min-width: 0;
-        overflow-x: auto;
-        flex-wrap: nowrap;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-      }
-      .pool-filter-controls .filter-select {
-        width: 100%;
-        max-width: 100%;
-        flex: none;
-      }
-      .pill-filter-group {
-        width: 100%;
-        max-width: 100%;
-        min-width: 0;
-        overflow-x: auto;
-        flex-wrap: nowrap;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-      }
-      .pill-filter-group::-webkit-scrollbar {
-        display: none;
-      }
-      .pill-filter-btn {
-        white-space: nowrap;
-        flex-shrink: 0;
-      }
-      .matrix-time-filters {
-        overflow-x: auto;
-        max-width: 100%;
-        flex-wrap: nowrap;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-      }
-      .matrix-time-filters::-webkit-scrollbar {
-        display: none;
-      }
-      .matrix-filter-pill {
-        white-space: nowrap;
-        flex-shrink: 0;
-      }
-      #dataset-section .section-header > div:last-child {
-        width: 100%;
-      }
-      .search-input {
-        min-width: 0;
-        width: 100%;
-        flex: 1 1 100%;
-      }
-      .filter-select {
-        flex: 1 1 calc(50% - 0.5rem);
-        min-width: 120px;
-      }
-    }
-
-    @media (max-width: 640px) {
-      body {
-        padding: 0 0 1.5rem 0;
-      }
-      .container {
-        padding: 0 0.75rem;
-        gap: 1.25rem;
-      }
-      header {
-        margin-bottom: 1rem;
-      }
-      .nav-inner {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        row-gap: 0.6rem;
-        column-gap: 0.5rem;
-        align-items: center;
-        padding: 0.65rem 0.85rem;
-      }
-      .nav-brand-group {
-        grid-column: 1 / 2;
-        grid-row: 1 / 2;
-        width: auto;
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
-        justify-content: flex-start;
-        min-width: 0;
-      }
-      .nav-brand-group .brand {
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
-        min-width: 0;
-      }
-      .brand-icon {
-        width: 36px;
-        height: 36px;
-        font-size: 0.95rem;
-        border-radius: 10px;
-        flex-shrink: 0;
-      }
-      .brand-title-wrap {
-        display: flex;
-        align-items: center;
-        gap: 0.35rem;
-        min-width: 0;
-      }
-      .brand-title-wrap h1 {
-        font-size: 1.05rem;
-        white-space: nowrap;
-      }
-      .brand-info p {
-        display: none;
-      }
-      .nav-back-btn {
-        padding: 0.35rem 0.65rem;
-        flex-shrink: 0;
-      }
-      .nav-divider {
-        display: block;
-        height: 18px;
-        flex-shrink: 0;
-      }
-      .header-actions {
-        display: contents;
-      }
-      .status-pill {
-        grid-column: 2 / 3;
-        grid-row: 1 / 2;
-        justify-self: end;
-        padding: 0.32rem 0.65rem;
-        font-size: 0.74rem;
-        white-space: nowrap;
-        border-radius: 9999px;
-        flex-shrink: 0;
-      }
-      .status-text-full {
-        display: inline !important;
-      }
-      .status-text-short {
-        display: none !important;
-      }
-      .nav-control-group {
-        grid-column: 1 / -1;
-        grid-row: 2 / 3;
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 0.4rem;
-        width: 100%;
-      }
-      .nav-btn-control {
-        width: 100%;
-        justify-content: center;
-        padding: 0.42rem 0.5rem !important;
-        font-size: 0.75rem !important;
-        white-space: nowrap;
-      }
-      .filter-dashboard-bar {
-        padding: 0.75rem 0.85rem;
-        gap: 0.75rem;
-      }
-      .panel-card,
-      .activity-card,
-      .live-upstream-card,
-      .token-matrix-section {
-        padding: 1.1rem 0.85rem;
-        border-radius: 14px;
-      }
-      .kpi-card {
-        padding: 1rem 1.15rem;
-      }
-      .kpi-value {
-        font-size: 1.75rem;
-      }
-      .token-table th,
-      .token-table td,
-      table th,
-      table td {
-        padding: 0.7rem 0.75rem;
-      }
-      .token-table-container,
-      .table-container {
-        -webkit-overflow-scrolling: touch;
-      }
-    }
-
-    @media (max-width: 480px) {
-      .brand-icon {
-        width: 32px;
-        height: 32px;
-        font-size: 0.88rem;
-        border-radius: 8px;
-      }
-      .brand-title-wrap h1 {
-        font-size: 0.96rem;
-      }
-      .brand-badge-version {
-        display: none;
-      }
-      .nav-back-btn {
-        padding: 0.32rem 0.55rem;
-        gap: 0.25rem;
-      }
-      .nav-back-btn span:not(.nav-back-arrow) {
-        display: none;
-      }
-      .status-pill {
-        padding: 0.28rem 0.52rem;
-        font-size: 0.7rem;
-      }
-      .nav-control-group {
-        gap: 0.3rem;
-      }
-      .nav-btn-control {
-        padding: 0.38rem 0.35rem !important;
-        font-size: 0.72rem !important;
-        gap: 0.2rem;
-      }
-      .modal-overlay {
-        padding: 0.75rem;
-      }
-      .auth-card {
-        padding: 1.75rem 1.15rem;
-        border-radius: 16px;
-      }
-      .pin-input-field {
-        font-size: 1.35rem;
-        padding: 0.65rem;
-      }
-      .filter-select {
-        flex: 1 1 100%;
-      }
-      #dataset-section .btn {
-        flex: 1 1 calc(50% - 0.35rem);
-        justify-content: center;
-      }
-      .provider-card {
-        padding: 1rem 0.9rem;
-        gap: 0.85rem;
-      }
-      .provider-name {
-        font-size: 0.95rem;
-      }
-      .provider-usage-text {
-        font-size: 1rem;
-      }
-      .provider-cap-text {
-        font-size: 0.68rem;
-      }
-      .key-row {
-        padding: 0.65rem 0.75rem;
-      }
-      .key-stats {
-        font-size: 0.73rem;
-      }
-      .pagination-bar {
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-      }
-      .pagination-controls {
-        justify-content: center;
-      }
-    }
-
-    @media (max-width: 380px) {
-      .status-text-full {
-        display: none !important;
-      }
-      .status-text-short {
-        display: inline !important;
-      }
-      .brand-title-wrap h1 {
-        font-size: 0.88rem;
-      }
-      .nav-inner {
-        padding: 0.55rem 0.65rem;
-      }
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Konsol FreeAIBot: kuota, model, dan riwayat percakapan</title>
+<meta name="description" content="Konsol pemantauan FreeAIBot: sisa kuota tiap kunci API, model yang aktif, pemakaian token, dan riwayat percakapan." />
+<meta name="theme-color" content="#000000" />
+<meta name="robots" content="noindex, nofollow" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.svg" />
+<link rel="apple-touch-icon" href="/favicon.svg" />
+<link rel="stylesheet" href="/css/console.css" />
+<script src="/js/theme-pre.js"></script>
+<script src="/js/dashboard-pre.js"></script>
 </head>
 <body>
 
-  <!-- ========================================================================
-       MODAL 1: PIN LOGIN GATEWAY (KEYBOARD DRIVEN - NO MANUAL BUTTONS)
-       ======================================================================== -->
-  <div id="auth-modal" class="modal-overlay hidden">
-    <div class="auth-card" id="pin-card">
-      <div class="auth-top-nav">
-        <a href="/" class="auth-back-link" id="link-home-auth" title="Kembali ke Landing Page">
-          <span>&larr; Beranda</span>
-        </a>
+<!-- ==========================================================================
+     Gerbang PIN. Modal adalah layer kontrol, jadi boleh memakai glass.
+     ========================================================================== -->
+<div id="auth-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+  <div class="auth-card" id="pin-card">
+    <div class="auth-top-nav">
+      <a href="/" class="auth-back-link" id="link-home-auth" title="Kembali ke halaman utama">&larr; Beranda</a>
+    </div>
+
+    <div class="auth-shield-icon" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 2.2l6.6 2.8v5.6c0 4-2.8 7.3-6.6 8.6-3.8-1.3-6.6-4.6-6.6-8.6V5L11 2.2z"/>
+        <path d="M8.1 11.2l2.1 2.1 3.7-4"/>
+      </svg>
+    </div>
+
+    <div>
+      <h2 class="auth-title" id="auth-title">Gerbang keamanan admin</h2>
+      <p class="auth-subtitle">Masukkan Master PIN untuk membuka konsol pemantauan.</p>
+    </div>
+
+    <div id="auth-alert" class="auth-alert auth-alert-error" role="status" aria-live="polite"></div>
+
+    <form id="pin-form" class="auth-form">
+      <input
+        type="password"
+        id="pin-input"
+        class="pin-input-field"
+        placeholder="Masukkan PIN"
+        maxlength="8"
+        autofocus
+        autocomplete="current-password"
+        aria-label="Master PIN"
+      >
+      <button type="submit" class="btn btn-primary" id="btn-submit-pin">
+        <span>Buka konsol</span>
+      </button>
+    </form>
+
+    <div style="font-size:13px;color:var(--text-secondary)" id="attempts-label">
+      Sisa percobaan: 5 kali
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <button type="button" class="auth-link-btn" id="btn-open-reset">Lupa PIN, reset lewat email</button>
+      <span style="font-size:12px;color:var(--text-tertiary)">Dilindungi SHA-256</span>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     Modal reset PIN lewat OTP email. Juga layer kontrol.
+     ========================================================================== -->
+<div id="reset-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="reset-title">
+  <div class="auth-card">
+    <div class="auth-shield-icon" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2.6" y="4.8" width="16.8" height="12.4" rx="2.4"/>
+        <path d="M2.6 7l8.4 5.6L19.4 7"/>
+      </svg>
+    </div>
+    <div>
+      <h2 class="auth-title" id="reset-title">Reset Master PIN</h2>
+      <p class="auth-subtitle">
+        Kode verifikasi dikirim ke email admin:
+        <span id="reset-target-email" style="color:var(--accent);font-weight:600">raf***@gmail.com</span>
+      </p>
+    </div>
+
+    <div id="reset-alert" class="auth-alert" role="status" aria-live="polite"></div>
+
+    <div id="reset-step-1" class="reset-form">
+      <p style="font-size:14px;color:var(--text-secondary);margin:0">
+        Sistem mengirim kode 6 digit ke email admin. Kode berlaku 10 menit.
+      </p>
+      <button type="button" class="btn btn-primary" id="btn-send-otp">Kirim kode ke email</button>
+      <button type="button" class="btn" id="btn-cancel-reset">Batal, kembali ke login</button>
+    </div>
+
+    <div id="reset-step-2" class="reset-form" style="display:none">
+      <div class="form-group">
+        <label class="form-label" for="input-otp">Kode OTP, 6 digit</label>
+        <input type="text" id="input-otp" class="form-input" placeholder="123456" maxlength="6"
+               inputmode="numeric" autocomplete="one-time-code"
+               style="letter-spacing:5px;text-align:center;font-weight:600">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="input-new-pin">Master PIN baru, 4 sampai 8 digit</label>
+        <input type="password" id="input-new-pin" class="form-input" placeholder="PIN baru" maxlength="8" inputmode="numeric" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="input-confirm-pin">Ulangi PIN baru</label>
+        <input type="password" id="input-confirm-pin" class="form-input" placeholder="Ulangi PIN baru" maxlength="8" inputmode="numeric" autocomplete="new-password">
       </div>
 
-      <div class="auth-shield-icon">&#128274;</div>
-      <div>
-        <h2 class="auth-title">Admin Security Gateway</h2>
-        <p class="auth-subtitle">Masukkan Master PIN untuk membuka panel monitoring &amp; evaluasi.</p>
-      </div>
+      <button type="button" class="btn btn-primary" id="btn-submit-reset">Simpan PIN baru</button>
 
-      <!-- Alert Status -->
-      <div id="auth-alert" class="auth-alert auth-alert-error"></div>
-
-      <!-- Native PIN Form (Keyboard / Touch / Numpad Supported) -->
-      <form id="pin-form" class="auth-form">
-        <input
-          type="password"
-          id="pin-input"
-          class="pin-input-field"
-          placeholder="Masukkan PIN"
-          maxlength="8"
-          autofocus
-          autocomplete="current-password"
-        >
-
-        <button type="submit" class="btn btn-primary" id="btn-submit-pin" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
-          <span>Buka Dashboard</span>
-          <span>&rarr;</span>
-        </button>
-      </form>
-
-      <div style="font-size: 0.775rem; color: var(--text-dim);" id="attempts-label">
-        Sisa percobaan: 5 kali
-      </div>
-
-      <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; margin-top: 0.25rem;">
-        <button class="auth-link-btn" id="btn-open-reset">Lupa PIN? Reset via Email</button>
-        <span style="font-size: 0.75rem; color: var(--text-dim);">SHA-256 Protected</span>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <button type="button" class="auth-link-btn" id="btn-resend-otp" disabled>Kirim ulang OTP</button>
+        <button type="button" class="auth-link-btn" id="btn-back-reset">Kembali</button>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- ========================================================================
-       MODAL 2: RESET MASTER PIN VIA EMAIL OTP
-       ======================================================================== -->
-  <div id="reset-modal" class="modal-overlay hidden">
-    <div class="auth-card" style="max-width: 440px;">
-      <div class="auth-shield-icon" style="color: var(--accent-purple);">&#9993;</div>
-      <div>
-        <h2 class="auth-title">Reset Master PIN Keamanan</h2>
-        <p class="auth-subtitle">Verifikasi OTP dikirim ke email admin: <span id="reset-target-email" style="color: var(--accent-blue); font-weight: 600;">raf***@gmail.com</span></p>
+<!-- ==========================================================================
+     Header. Layer kontrol, jadi memakai glass.
+     ========================================================================== -->
+<header id="site-header">
+  <div class="nav-inner">
+    <div class="nav-brand-group">
+      <a href="/" class="nav-back-btn" id="link-home-header" title="Kembali ke halaman utama">
+        <span class="nav-back-arrow" aria-hidden="true">&larr;</span>
+        <span>Beranda</span>
+      </a>
+      <div class="nav-divider" aria-hidden="true"></div>
+      <a href="/dashboard.html" class="brand">
+        <div class="brand-icon" aria-hidden="true"><span>AI</span></div>
+        <div class="brand-info">
+          <div class="brand-title-wrap">
+            <h1 id="bot-name">Konsol FreeAIBot</h1>
+            <span class="brand-badge-version">v0.70</span>
+          </div>
+          <div class="brand-sub-wrap">
+            <span class="pulse-dot-mini" aria-hidden="true"></span>
+            <p id="server-time">Menyambungkan ke server...</p>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <div class="header-actions">
+      <div class="status-pill" title="Status mesin bot dan konektivitas">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <span class="status-text-full">Sistem aktif</span>
+        <span class="status-text-short">Aktif</span>
       </div>
 
-      <div id="reset-alert" class="auth-alert"></div>
+      <div class="nav-control-group">
+        <button type="button" class="btn nav-btn-control active" id="btn-auto" aria-pressed="true" title="Nyalakan atau matikan muat ulang otomatis tiap 15 detik">
+          <span>Otomatis 15 detik</span>
+        </button>
+        <button type="button" class="btn nav-btn-control" id="btn-manual-refresh" title="Muat ulang metrik sekarang">
+          <span id="btn-refresh-icon" aria-hidden="true">&#x21bb;</span>
+          <span>Segarkan</span>
+        </button>
+        <button type="button" class="btn nav-btn-control" id="btn-theme-toggle" title="Ganti tema terang atau gelap">
+          <span id="theme-icon" aria-hidden="true">Terang</span>
+        </button>
+        <button type="button" class="btn btn-danger nav-btn-control" id="btn-logout" title="Kunci konsol dan akhiri sesi">
+          <span>Kunci keluar</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</header>
 
-      <!-- Step 1: Request OTP -->
-      <div id="reset-step-1" class="reset-form">
-        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-          Sistem akan mengirimkan kode 6-digit ke email admin. Kode berlaku selama 10 menit.
+<div class="container" id="main-content">
+  <section class="filter-dashboard-bar" aria-label="Filter tampilan">
+    <div class="filter-group-wrap">
+      <span class="filter-title-label">Rentang waktu</span>
+      <div class="pill-filter-group" id="time-filter-pills" role="group" aria-label="Rentang waktu">
+        <button type="button" class="pill-filter-btn active" data-range="today">Hari ini</button>
+        <button type="button" class="pill-filter-btn" data-range="7d">7 hari</button>
+        <button type="button" class="pill-filter-btn" data-range="14d">14 hari</button>
+        <button type="button" class="pill-filter-btn" data-range="30d">30 hari</button>
+        <button type="button" class="pill-filter-btn" data-range="all">Semua</button>
+      </div>
+    </div>
+
+    <div class="filter-group-wrap">
+      <span class="filter-title-label">Platform</span>
+      <div class="pill-filter-group" id="platform-filter-pills" role="group" aria-label="Platform">
+        <button type="button" class="pill-filter-btn active" data-platform="all">Semua</button>
+        <button type="button" class="pill-filter-btn" data-platform="whatsapp">WhatsApp</button>
+        <button type="button" class="pill-filter-btn" data-platform="telegram">Telegram</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="kpi-grid" aria-label="Ringkasan utama">
+    <div class="kpi-card">
+      <div class="kpi-title" id="kpi-title-msgs">Pesan hari ini</div>
+      <div class="kpi-value" id="kpi-today-msgs">-</div>
+      <div class="kpi-subtext">
+        <span class="badge badge-wa" id="kpi-wa">- WA</span>
+        <span class="badge badge-tele" id="kpi-tele">- Tele</span>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-title">Total pesan sepanjang waktu</div>
+      <div class="kpi-value" id="kpi-total-msgs">-</div>
+      <div class="kpi-subtext">Tersimpan di Supabase PostgreSQL</div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-title" id="kpi-title-calls">Panggilan API penyedia, hari ini</div>
+      <div class="kpi-value" id="kpi-calls-today">-</div>
+      <div class="kpi-subtext" id="kpi-total-keys">- kunci terpantau</div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-title" id="kpi-title-model">Model paling sering dipakai hari ini</div>
+      <div class="kpi-value" id="kpi-top-model" style="font-size:20px;word-break:break-word">-</div>
+      <div class="kpi-subtext">Distribusi beban otomatis</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="pool-section-title">
+    <div class="section-header pool-section-header">
+      <div>
+        <h2 class="section-title" id="pool-section-title">Pemakaian pool API key</h2>
+        <span style="font-size:13px;color:var(--text-secondary)" id="pool-reset-label">Reset harian 00:00 UTC</span>
+      </div>
+      <div class="pool-filter-controls">
+        <div class="pill-filter-group" id="provider-filter-pills" role="group" aria-label="Penyedia">
+          <button type="button" class="pill-filter-btn active" data-provider="all">Semua penyedia</button>
+          <button type="button" class="pill-filter-btn" data-provider="xkiro">xKiro</button>
+          <button type="button" class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
+          <button type="button" class="pill-filter-btn" data-provider="groq">Groq</button>
+          <button type="button" class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
+          <button type="button" class="pill-filter-btn" data-provider="dahl">Dahl</button>
+          <button type="button" class="pill-filter-btn" data-provider="gemini">Gemini</button>
+        </div>
+        <select id="key-status-filter" class="filter-select" aria-label="Filter status kunci">
+          <option value="all">Semua status</option>
+          <option value="healthy">Sehat, di bawah 80 persen</option>
+          <option value="warning">Waspada, 80 persen ke atas</option>
+          <option value="capped">Limit habis</option>
+        </select>
+      </div>
+    </div>
+    <div class="pool-grid" id="pool-grid">
+      <!-- Diisi oleh renderPool -->
+    </div>
+  </section>
+
+  <section class="live-upstream-card" id="live-upstream-section" aria-labelledby="upstream-title">
+    <div class="live-upstream-header">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+          <h2 class="section-title" id="upstream-title" style="margin:0">Sisa kuota dan pemakaian token upstream</h2>
+          <span class="badge-live-sync"><span class="pulse-dot-mini" aria-hidden="true"></span> Sinkron langsung</span>
+        </div>
+        <span style="font-size:13px;color:var(--text-secondary)">
+          Angka diambil dari server penyedia resmi. Mencakup pemakaian dari bot, IDE, dan terminal yang memakai kunci yang sama.
+        </span>
+      </div>
+    </div>
+
+    <div class="live-stats-ribbon">
+      <div class="live-stat-box">
+        <span class="live-stat-label">Total batas kuota harian</span>
+        <span class="live-stat-val" id="upstream-total-cap">0</span>
+        <span class="live-stat-sub" id="upstream-total-cap-sub">Seluruh penyedia terdaftar</span>
+      </div>
+      <div class="live-stat-box">
+        <span class="live-stat-label">Token terpakai hari ini</span>
+        <span class="live-stat-val" id="upstream-total-used">0</span>
+        <span class="live-stat-sub" id="upstream-total-used-sub">Akumulasi global</span>
+      </div>
+      <div class="live-stat-box">
+        <span class="live-stat-label">Sisa kuota bersih</span>
+        <span class="live-stat-val" id="upstream-total-remaining">0</span>
+        <span class="live-stat-sub" id="upstream-remaining-pct">Menunggu data</span>
+      </div>
+      <div class="live-stat-box">
+        <span class="live-stat-label">Kunci dan pool terhubung</span>
+        <span class="live-stat-val" id="upstream-openrouter-status">0 kunci</span>
+        <span class="live-stat-sub" id="upstream-openrouter-sub">Menunggu data</span>
+      </div>
+      <div class="live-stat-box" title="WhatsApp Cloud API memberi 1.000 sesi percakapan gratis per bulan. Satu sesi adalah jendela 24 jam per pengguna.">
+        <span class="live-stat-label">Sesi WhatsApp Cloud</span>
+        <span class="live-stat-val" id="upstream-wa-sessions">0 / 1.000</span>
+        <span class="live-stat-sub" id="upstream-wa-sessions-sub">Sisa sesi gratis bulan ini</span>
+      </div>
+    </div>
+
+    <div class="token-table-container">
+      <table class="token-table">
+        <caption class="sr-only">Pemakaian token dan sisa kuota tiap kunci API per penyedia</caption>
+        <thead>
+          <tr>
+            <th scope="col" style="min-width:180px">Penyedia dan kunci</th>
+            <th scope="col" style="min-width:200px">Akun terdaftar</th>
+            <th scope="col" style="min-width:200px">Pemakaian hari ini</th>
+            <th scope="col" style="min-width:180px">Sisa kuota hari ini</th>
+            <th scope="col" style="min-width:110px;text-align:right">Validasi</th>
+          </tr>
+        </thead>
+        <tbody id="live-upstream-tbody">
+          <!-- Diisi oleh renderLiveUpstreamTable -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="token-matrix-section" id="token-matrix-section" aria-labelledby="token-matrix-title">
+    <div class="token-matrix-header">
+      <div>
+        <h2 class="section-title" id="token-matrix-title" style="margin-bottom:4px">Batas token dan siklus reset tiap penyedia</h2>
+        <span style="font-size:13px;color:var(--text-secondary)">
+          Batas resmi, mekanisme limitasi, dan jadwal reset. Setiap angka menyebut asalnya.
+        </span>
+      </div>
+    </div>
+    <div class="token-table-container">
+      <table class="token-table">
+        <caption class="sr-only">Batas token resmi dan siklus reset tiap penyedia</caption>
+        <thead>
+          <tr>
+            <th scope="col" style="min-width:180px">Penyedia</th>
+            <th scope="col" style="min-width:150px">Mekanisme limit</th>
+            <th scope="col" style="min-width:160px">Batas resmi</th>
+            <th scope="col" style="min-width:150px">Siklus reset</th>
+            <th scope="col" style="min-width:180px">Panggilan dan token</th>
+            <th scope="col" style="min-width:90px;text-align:right">Status</th>
+          </tr>
+        </thead>
+        <tbody id="token-matrix-tbody">
+          <!-- Diisi oleh renderTokenMatrix -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="matrix-section" id="ai-model-matrix-section" aria-labelledby="matrix-title">
+    <div class="matrix-header">
+      <div class="matrix-title-group">
+        <div class="matrix-title-with-icon">
+          <svg class="matrix-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2.5" y="2.5" width="19" height="19" rx="4"/>
+            <path d="M7.5 2.5v19M16.5 2.5v19M2.5 9h19M2.5 15h19"/>
+          </svg>
+          <h2 class="matrix-main-title" id="matrix-title">Model AI dan pemantauan inferensi</h2>
+        </div>
+        <p class="matrix-subtitle">Kesehatan, latensi rata-rata, dan jumlah eksekusi tiap model di rantai enam tingkat.</p>
+      </div>
+
+      <div class="matrix-header-controls">
+        <div class="matrix-total-badge">
+          Total inferensi <span id="matrix-total-inferensi">0x</span>
+        </div>
+        <div class="matrix-time-filters" id="matrix-time-filters" role="group" aria-label="Rentang waktu matriks model">
+          <button type="button" class="matrix-filter-pill active" data-range="today">Hari ini</button>
+          <button type="button" class="matrix-filter-pill" data-range="7d">7 hari</button>
+          <button type="button" class="matrix-filter-pill" data-range="30d">30 hari</button>
+          <button type="button" class="matrix-filter-pill" data-range="all">Semua</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="smart-gateway-banner">
+      <div class="gateway-info-col">
+        <div class="gateway-badges-row">
+          <span class="gateway-badge-green">Router otomatis</span>
+          <span class="gateway-badge-sub">Pembagian beban dan perpindahan otomatis</span>
+        </div>
+        <h3 class="gateway-title">Router yang memilih model menurut kuota dan kecepatan</h3>
+        <p class="gateway-desc">
+          Setiap pesan masuk dicoba ke model utama tiap tingkat. Kalau kuotanya habis atau tidak merespons,
+          sistem pindah ke cadangan tanpa perlu kamu ubah apa pun.
         </p>
-        <button class="btn btn-primary" id="btn-send-otp" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
-          Kirim Kode OTP ke Email
-        </button>
-        <button class="btn" id="btn-cancel-reset" style="justify-content: center;">
-          Batal &amp; Kembali ke Login
-        </button>
       </div>
-
-      <!-- Step 2: Verify OTP & New PIN -->
-      <div id="reset-step-2" class="reset-form" style="display: none;">
-        <div class="form-group">
-          <label class="form-label" for="input-otp">Kode OTP (6 Digit)</label>
-          <input type="text" id="input-otp" class="form-input" placeholder="Contoh: 123456" maxlength="6" style="letter-spacing: 4px; font-family: var(--font-mono); font-weight: 700; text-align: center;">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="input-new-pin">Master PIN Baru (4-8 Digit)</label>
-          <input type="password" id="input-new-pin" class="form-input" placeholder="Masukkan angka PIN baru" maxlength="8">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="input-confirm-pin">Konfirmasi PIN Baru</label>
-          <input type="password" id="input-confirm-pin" class="form-input" placeholder="Ulangi angka PIN baru" maxlength="8">
-        </div>
-
-        <button class="btn btn-primary" id="btn-submit-reset" style="justify-content: center; padding: 0.75rem; font-size: 0.95rem;">
-          Verifikasi &amp; Simpan PIN Baru
-        </button>
-
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
-          <button class="auth-link-btn" id="btn-resend-otp" disabled>Kirim Ulang OTP (60s)</button>
-          <button class="auth-link-btn" id="btn-back-reset">Kembali</button>
-        </div>
+      <div class="gateway-stat-box">
+        <div class="gateway-stat-label">Total resolusi router</div>
+        <div class="gateway-stat-value" id="gateway-total-resolusi">0x</div>
       </div>
     </div>
-  </div>
 
-  <!-- ========================================================================
-       MAIN DASHBOARD INTERFACE
-       ======================================================================== -->
-  <!-- Top Navigation Bar - Full Width Edge-to-Edge -->
-  <header>
-    <div class="nav-inner">
-      <div class="nav-brand-group">
-        <a href="/" class="nav-back-btn" id="link-home-header" title="Kembali ke Landing Page Utama">
-          <span class="nav-back-arrow">&larr;</span>
-          <span>Beranda</span>
-        </a>
-        <div class="nav-divider" aria-hidden="true"></div>
-        <a href="/dashboard.html" class="brand">
-          <div class="brand-icon">
-            <span>AI</span>
-          </div>
-          <div class="brand-info">
-            <div class="brand-title-wrap">
-              <h1 id="bot-name">FreeAIBot Console</h1>
-              <span class="brand-badge-version">v0.66</span>
-            </div>
-            <div class="brand-sub-wrap">
-              <span class="pulse-dot-mini"></span>
-              <p id="server-time">Memuat sinkronisasi sistem...</p>
-            </div>
-          </div>
-        </a>
-      </div>
-      <div class="header-actions">
-        <div class="status-pill" title="Status Engine Bot &amp; Konektivitas">
-          <span class="pulse-dot"></span>
-          <span class="status-text-full">Sistem Aktif</span>
-          <span class="status-text-short">Aktif</span>
-        </div>
-        <div class="nav-control-group">
-          <button class="btn nav-btn-control active" id="btn-auto" title="Nyalakan / Matikan Auto Refresh 15 detik">
-            <span>Auto: 15s</span>
-          </button>
-          <button class="btn nav-btn-control" id="btn-manual-refresh" title="Muat Ulang Metrik Sekarang">
-            <span id="btn-refresh-icon">&#x21bb;</span>
-            <span>Segarkan</span>
-          </button>
-          <button class="btn btn-danger nav-btn-control" id="btn-logout" title="Kunci Dashboard &amp; Akhiri Sesi">
-            <span style="font-size: 0.8rem; margin-right: 2px;">&#128274;</span>
-            <span>Kunci Keluar</span>
-          </button>
-        </div>
+    <div class="matrix-cards-grid" id="matrix-cards-grid">
+      <div style="grid-column:1/-1;text-align:center;color:var(--text-secondary);padding:24px">
+        Memuat matriks model...
       </div>
     </div>
-  </header>
+  </section>
 
-  <div class="container" id="main-content">
-    <!-- Global Dashboard Filters -->
-    <section class="filter-dashboard-bar">
-      <div class="filter-group-wrap">
-        <span class="filter-title-label">Rentang Waktu:</span>
-        <div class="pill-filter-group" id="time-filter-pills">
-          <button class="pill-filter-btn active" data-range="today">Hari Ini</button>
-          <button class="pill-filter-btn" data-range="7d">7 Hari</button>
-          <button class="pill-filter-btn" data-range="14d">14 Hari</button>
-          <button class="pill-filter-btn" data-range="30d">30 Hari</button>
-          <button class="pill-filter-btn" data-range="all">Semua</button>
-        </div>
+  <section class="activity-card" aria-labelledby="media-section-title" style="margin-bottom:24px">
+    <div class="section-header">
+      <div>
+        <h2 class="section-title" id="media-section-title">Jenis pesan yang diproses hari ini</h2>
+        <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0">
+          Volume pesan menurut jenisnya: teks, pesan suara, gambar, stiker, dokumen, dan video.
+        </p>
       </div>
+    </div>
+    <div class="media-badges-grid">
+      <div class="media-box">
+        <div class="media-box-count" id="media-text">0</div>
+        <div class="media-box-label">Teks</div>
+      </div>
+      <div class="media-box">
+        <div class="media-box-count" id="media-voice">0</div>
+        <div class="media-box-label">Pesan suara</div>
+      </div>
+      <div class="media-box">
+        <div class="media-box-count" id="media-image">0</div>
+        <div class="media-box-label">Gambar</div>
+      </div>
+      <div class="media-box">
+        <div class="media-box-count" id="media-sticker">0</div>
+        <div class="media-box-label">Stiker</div>
+      </div>
+      <div class="media-box">
+        <div class="media-box-count" id="media-doc">0</div>
+        <div class="media-box-label">Dokumen</div>
+      </div>
+      <div class="media-box">
+        <div class="media-box-count" id="media-video">0</div>
+        <div class="media-box-label">Video</div>
+      </div>
+    </div>
+  </section>
 
-      <div class="filter-group-wrap">
-        <span class="filter-title-label">Platform:</span>
-        <div class="pill-filter-group" id="platform-filter-pills">
-          <button class="pill-filter-btn active" data-platform="all">Semua</button>
-          <button class="pill-filter-btn" data-platform="whatsapp">WhatsApp</button>
-          <button class="pill-filter-btn" data-platform="telegram">Telegram</button>
-        </div>
+  <section class="activity-card" id="dataset-section" aria-labelledby="dataset-title">
+    <div class="section-header" style="flex-wrap:wrap;gap:12px">
+      <div>
+        <h2 class="section-title" id="dataset-title">Riwayat percakapan dan dataset evaluasi</h2>
+        <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0">
+          Pasangan pertanyaan pengguna dan balasan bot. Dipakai untuk menilai kualitas jawaban dan menyiapkan data latih.
+        </p>
       </div>
-    </section>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="search" id="dataset-search" class="search-input" placeholder="Cari pertanyaan atau jawaban" aria-label="Cari di riwayat percakapan">
+        <select id="dataset-range-filter" class="filter-select" aria-label="Rentang waktu riwayat">
+          <option value="today">Hari ini</option>
+          <option value="all" selected>Semua waktu</option>
+          <option value="7d">7 hari terakhir</option>
+          <option value="14d">14 hari terakhir</option>
+          <option value="30d">30 hari terakhir</option>
+        </select>
+        <select id="dataset-platform-filter" class="filter-select" aria-label="Filter platform">
+          <option value="">Semua platform</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="telegram">Telegram</option>
+        </select>
+        <select id="dataset-model-filter" class="filter-select" aria-label="Filter model">
+          <option value="">Semua model</option>
+          <option value="xkiro">xKiro</option>
+          <option value="cloudflare">Cloudflare</option>
+          <option value="groq">Groq</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="dahl">Dahl Global</option>
+          <option value="gemini">Gemini</option>
+        </select>
+        <button type="button" class="btn btn-today" id="btn-download-csv" title="Unduh data percakapan sebagai CSV sesuai filter yang aktif">
+          <span>Unduh CSV</span>
+        </button>
+        <button type="button" class="btn btn-primary" id="btn-download-jsonl" title="Unduh data percakapan sebagai JSONL untuk pelatihan model">
+          <span>Unduh JSONL</span>
+        </button>
+      </div>
+    </div>
 
-    <!-- Top KPI Cards -->
-    <section class="kpi-grid">
-      <div class="kpi-card">
-        <div class="kpi-title" id="kpi-title-msgs">Pesan Hari Ini</div>
-        <div class="kpi-value" id="kpi-today-msgs">-</div>
-        <div class="kpi-subtext">
-          <span class="badge badge-wa" id="kpi-wa">- WA</span>
-          <span class="badge badge-tele" id="kpi-tele">- Tele</span>
-        </div>
-      </div>
+    <div class="table-container">
+      <table>
+        <caption class="sr-only">Riwayat pasangan pertanyaan pengguna dan balasan bot</caption>
+        <thead>
+          <tr>
+            <th scope="col" style="width:130px">Waktu dan platform</th>
+            <th scope="col" style="width:140px">Chat dan model</th>
+            <th scope="col" style="width:130px">Token</th>
+            <th scope="col" style="min-width:180px">Pertanyaan pengguna</th>
+            <th scope="col" style="min-width:280px">Balasan bot</th>
+            <th scope="col" style="width:70px;text-align:right">Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="dataset-tbody">
+          <tr>
+            <td colspan="6" style="text-align:center;color:var(--text-secondary);padding:24px">Memuat riwayat percakapan...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-      <div class="kpi-card">
-        <div class="kpi-title">Total Pesan All-Time</div>
-        <div class="kpi-value" id="kpi-total-msgs">-</div>
-        <div class="kpi-subtext">Tersimpan di Supabase PostgreSQL</div>
-      </div>
+    <div class="pagination-bar" id="dataset-pagination-bar">
+      <div class="pagination-info" id="dataset-pagination-info">Memuat data...</div>
+      <div class="pagination-controls" id="dataset-pagination-controls"></div>
+    </div>
+  </section>
 
-      <div class="kpi-card">
-        <div class="kpi-title" id="kpi-title-calls">Panggilan API Provider (Hari Ini)</div>
-        <div class="kpi-value" id="kpi-calls-today">-</div>
-        <div class="kpi-subtext" id="kpi-total-keys">- Keys Aktif Terpantau</div>
-      </div>
+  <footer>
+    Konsol pemantauan FreeAIBot. Berjalan di Vercel Serverless dengan basis data Supabase PostgreSQL.
+  </footer>
+</div>
 
-      <div class="kpi-card">
-        <div class="kpi-title" id="kpi-title-model">Model Terpopuler Hari Ini</div>
-        <div class="kpi-value" id="kpi-top-model" style="font-size: 1.25rem; word-break: break-all;">-</div>
-        <div class="kpi-subtext">Distribusi Beban Otomatis</div>
-      </div>
-    </section>
-
-    <!-- Pool API Key Matrix -->
-    <section>
-      <div class="section-header pool-section-header">
-        <div>
-          <h2 class="section-title" id="pool-section-title">Matriks Penggunaan Pool API Key</h2>
-          <span style="font-size: 0.8rem; color: var(--text-muted);" id="pool-reset-label">Reset Harian 00:00 UTC</span>
-        </div>
-        <div class="pool-filter-controls">
-          <div class="pill-filter-group" id="provider-filter-pills">
-            <button class="pill-filter-btn active" data-provider="all">Semua Provider</button>
-            <button class="pill-filter-btn" data-provider="xkiro">xKiro</button>
-            <button class="pill-filter-btn" data-provider="groq">Groq</button>
-            <button class="pill-filter-btn" data-provider="gemini">Gemini</button>
-            <button class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
-            <button class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
-            <button class="pill-filter-btn" data-provider="dahl">Dahl</button>
-          </div>
-          <select id="key-status-filter" class="filter-select">
-            <option value="all">Semua Status Key</option>
-            <option value="healthy">Sehat (&lt;80%)</option>
-            <option value="warning">Waspada (&ge;80%)</option>
-            <option value="capped">Limit Habis (Capped)</option>
-          </select>
-        </div>
-      </div>
-      <div class="pool-grid" id="pool-grid">
-        <!-- Dimuat dinamis -->
-      </div>
-    </section>
-
-    <!-- ========================================================================
-         SECTION: DEDICATED LIVE UPSTREAM QUOTA & TOKEN CARD TABLE (NEW)
-         ======================================================================== -->
-    <section class="live-upstream-card" id="live-upstream-section">
-      <div class="live-upstream-header">
-        <div>
-          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.35rem;">
-            <h2 class="section-title" style="margin-bottom: 0;">Monitoring Sisa Kuota &amp; Token Upstream</h2>
-            <span class="badge-live-sync">● Live Remote Sync</span>
-          </div>
-          <span style="font-size: 0.8rem; color: var(--text-muted);">
-            Tabel pelacak sisa kuota dan penggunaan token riil langsung dari server penyedia resmi &bull; Mencakup seluruh penggunaan di WhatsApp Bot, Cursor, IDE, &amp; Terminal
-          </span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span style="font-size: 0.74rem; color: #94a3b8; font-family: var(--font-mono); background: rgba(15, 23, 42, 0.6); padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.05);">Sinkronisasi: Tiap 10 Detik</span>
-        </div>
-      </div>
-
-      <!-- Mini KPI Summary Ribbon (Universal across all providers) -->
-      <div class="live-stats-ribbon">
-        <div class="live-stat-box">
-          <span class="live-stat-label">Total Limit Kuota Harian (Universal)</span>
-          <span class="live-stat-val" id="upstream-total-cap" style="color: #38bdf8;">0</span>
-          <span class="live-stat-sub" id="upstream-total-cap-sub">Seluruh Provider Terdaftar</span>
-        </div>
-        <div class="live-stat-box">
-          <span class="live-stat-label">Total Token Terpakai Hari Ini</span>
-          <span class="live-stat-val" id="upstream-total-used" style="color: #fbbf24;">0</span>
-          <span class="live-stat-sub" id="upstream-total-used-sub">Akumulasi Global (Bot + IDE)</span>
-        </div>
-        <div class="live-stat-box">
-          <span class="live-stat-label">Total Sisa Kuota Bersih (Universal)</span>
-          <span class="live-stat-val" id="upstream-total-remaining" style="color: #34d399;">0</span>
-          <span class="live-stat-sub" id="upstream-remaining-pct">100% Kuota Tersedia</span>
-        </div>
-        <div class="live-stat-box">
-          <span class="live-stat-label">Total Kunci &amp; Pool Terhubung</span>
-          <span class="live-stat-val" id="upstream-openrouter-status" style="color: #a855f7;">0 Kunci</span>
-          <span class="live-stat-sub" id="upstream-openrouter-sub">7 Provider AI Aktif</span>
-        </div>
-        <div class="live-stat-box" style="border-color: rgba(37, 211, 102, 0.25);" title="Meta WhatsApp Business API: 1.000 Sesi Percakapan Gratis per Bulan. 1 sesi = jendela 24 jam per user (chat tanpa batas selama 24 jam dihitung 1 sesi).">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="live-stat-label">Sesi WhatsApp (Meta Cloud)</span>
-            <span style="font-size: 0.65rem; color: #25d366; font-weight: 700; font-family: var(--font-mono); background: rgba(37, 211, 102, 0.12); padding: 1px 5px; border-radius: 4px;">Free Tier</span>
-          </div>
-          <span class="live-stat-val" id="upstream-wa-sessions" style="color: #25d366;">0 / 1.000</span>
-          <span class="live-stat-sub" id="upstream-wa-sessions-sub">Sisa 1.000 Sesi Gratis (Bulan Ini)</span>
-        </div>
-      </div>
-
-      <!-- Dedicated Upstream Token Table (Pruned to 5 Essential Columns) -->
-      <div class="token-table-container">
-        <table class="token-table">
-          <thead>
-            <tr>
-              <th style="min-width: 180px;">Provider &amp; Kunci API</th>
-              <th style="min-width: 200px;">Akun Terdaftar</th>
-              <th style="min-width: 200px;">Penggunaan Hari Ini</th>
-              <th style="min-width: 180px;">Sisa Kuota Hari Ini</th>
-              <th style="min-width: 110px; text-align: right;">Status Validasi</th>
-            </tr>
-          </thead>
-          <tbody id="live-upstream-tbody">
-            <!-- Dimuat dinamis oleh renderLiveUpstreamTable -->
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- ========================================================================
-         SECTION: DEDICATED TOKEN QUOTA & CONTEXT LIMIT TABLE (SEPARATED)
-         ======================================================================== -->
-    <section class="token-matrix-section" id="token-matrix-section">
-      <div class="token-matrix-header">
-        <div>
-          <h2 class="section-title" style="margin-bottom: 0.25rem;">Matriks Kuota Token &amp; Siklus Limit Provider</h2>
-          <span style="font-size: 0.8rem; color: var(--text-muted);">
-            Batas token resmi, mekanisme limitasi, dan jadwal reset per provider (Divalidasi Real-Time)
-          </span>
-        </div>
-      </div>
-      <div class="token-table-container">
-        <table class="token-table">
-          <thead>
-            <tr>
-              <th style="min-width: 180px;">Provider</th>
-              <th style="min-width: 150px;">Mekanisme Limit</th>
-              <th style="min-width: 160px;">Batas Kuota Resmi</th>
-              <th style="min-width: 150px;">Siklus Reset</th>
-              <th style="min-width: 180px;">Panggilan &amp; Token Terpakai</th>
-              <th style="min-width: 90px; text-align: right;">Status Pool</th>
-            </tr>
-          </thead>
-          <tbody id="token-matrix-tbody">
-            <!-- Dimuat dinamis oleh renderTokenMatrix -->
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- ========================================================================
-         SECTION: MATRIKS MODEL AI & MONITORING INFERENSI (SMART CASCADES)
-         ======================================================================== -->
-    <section class="matrix-section" id="ai-model-matrix-section">
-      <!-- Header Bar -->
-      <div class="matrix-header">
-        <div class="matrix-title-group">
-          <div class="matrix-title-with-icon">
-            <svg class="matrix-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="2" width="20" height="20" rx="4" ry="4"></rect>
-              <line x1="8" y1="2" x2="8" y2="22"></line>
-              <line x1="16" y1="2" x2="16" y2="22"></line>
-              <line x1="2" y1="8" x2="22" y2="8"></line>
-              <line x1="2" y1="16" x2="22" y2="16"></line>
-              <circle cx="12" cy="12" r="2" fill="currentColor"></circle>
-            </svg>
-            <h2 class="matrix-main-title">Matriks Model AI &amp; Monitoring Inferensi</h2>
-          </div>
-          <p class="matrix-subtitle">Status kesehatan, latensi rata-rata, dan statistik eksekusi router multi-tier.</p>
-        </div>
-
-        <div class="matrix-header-controls">
-          <div class="matrix-total-badge">
-            Total Inferensi: <span id="matrix-total-inferensi">0x</span>
-          </div>
-          <div class="matrix-time-filters" id="matrix-time-filters">
-            <button class="matrix-filter-pill active" data-range="today">Hari Ini</button>
-            <button class="matrix-filter-pill" data-range="7d">7 Hari</button>
-            <button class="matrix-filter-pill" data-range="30d">30 Hari</button>
-            <button class="matrix-filter-pill" data-range="all">Semua</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Auto Gateway Router (Smart Cascades) Hero Box -->
-      <div class="smart-gateway-banner">
-        <div class="gateway-info-col">
-          <div class="gateway-badges-row">
-            <span class="gateway-badge-green">SMART AUTO GATEWAY</span>
-            <span class="gateway-badge-sub">Automatic Load-Balancing &amp; Failover</span>
-          </div>
-          <h3 class="gateway-title">Auto Gateway Router (Smart Cascades)</h3>
-          <p class="gateway-desc">
-            Routing otomatis cerdas yang mendeteksi latensi, kuota, dan kapabilitas kueri pengguna untuk mengarahkan ke model AI terbaik secara real-time.
-          </p>
-        </div>
-        <div class="gateway-stat-box">
-          <div class="gateway-stat-label">TOTAL RESOLUSI ROUTER</div>
-          <div class="gateway-stat-value" id="gateway-total-resolusi">0x</div>
-        </div>
-      </div>
-
-      <!-- 4-Column Grid Model Cards -->
-      <div class="matrix-cards-grid" id="matrix-cards-grid">
-        <div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 2rem;">
-          Memuat matriks model inferensi...
-        </div>
-      </div>
-    </section>
-
-    <!-- Pemrosesan Tipe Media (Hari Ini) -->
-    <section class="activity-card" style="margin-bottom: 1.5rem;">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title" id="media-section-title">Pemrosesan Tipe Media (Hari Ini)</h2>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-            Volume pesan berdasarkan jenis konten: pesan suara (Voice Note), visual vision, dokumen, stiker, dan teks.
-          </p>
-        </div>
-      </div>
-      <div class="media-badges-grid" style="margin-top: 1rem;">
-        <div class="media-box">
-          <div class="media-box-count" id="media-text">0</div>
-          <div class="media-box-label">Chat Teks</div>
-        </div>
-        <div class="media-box">
-          <div class="media-box-count" id="media-voice" style="color: var(--accent-rose);">0</div>
-          <div class="media-box-label">Voice Note (VN)</div>
-        </div>
-        <div class="media-box">
-          <div class="media-box-count" id="media-image" style="color: var(--accent-emerald);">0</div>
-          <div class="media-box-label">Foto / Vision</div>
-        </div>
-        <div class="media-box">
-          <div class="media-box-count" id="media-sticker" style="color: var(--accent-purple);">0</div>
-          <div class="media-box-label">Stiker</div>
-        </div>
-        <div class="media-box">
-          <div class="media-box-count" id="media-doc" style="color: var(--accent-amber);">0</div>
-          <div class="media-box-label">Dokumen (PDF/Word)</div>
-        </div>
-        <div class="media-box">
-          <div class="media-box-count" id="media-video">0</div>
-          <div class="media-box-label">Video</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION: EVALUASI PERCAKAPAN & DATASET TRAINING AI -->
-    <section class="activity-card" id="dataset-section">
-      <div class="section-header" style="flex-wrap: wrap; gap: 0.75rem;">
-        <div>
-          <h2 class="section-title">Evaluasi &amp; Dataset Training AI (Fine-Tuning / Audit)</h2>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-            Pasangan pertanyaan user dan balasan chatbot yang tersimpan untuk evaluasi kualitas dan training model.
-          </p>
-        </div>
-        <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
-          <input type="text" id="dataset-search" class="search-input" placeholder="Cari pertanyaan / jawaban...">
-          <select id="dataset-range-filter" class="filter-select">
-            <option value="today">Hari Ini Saja (WIB)</option>
-            <option value="all" selected>Semua Waktu</option>
-            <option value="7d">7 Hari Terakhir</option>
-            <option value="14d">14 Hari Terakhir</option>
-            <option value="30d">30 Hari Terakhir</option>
-          </select>
-          <select id="dataset-platform-filter" class="filter-select">
-            <option value="">Semua Platform</option>
-            <option value="whatsapp">WhatsApp</option>
-            <option value="telegram">Telegram</option>
-          </select>
-          <select id="dataset-model-filter" class="filter-select">
-            <option value="">Semua Model</option>
-            <option value="xkiro">xKiro</option>
-            <option value="groq">Groq</option>
-            <option value="gemini">Gemini</option>
-            <option value="cloudflare">Cloudflare</option>
-            <option value="openrouter">OpenRouter</option>
-            <option value="dahl">Dahl Global</option>
-          </select>
-          <button class="btn btn-today" id="btn-download-csv" title="Unduh CSV data percakapan sesuai filter dropdown aktif (Waktu, Platform, Model, dan Pencarian)">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.35rem; vertical-align: -2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            <span>Unduh CSV</span>
-          </button>
-          <button class="btn btn-primary" id="btn-download-jsonl" title="Unduh format JSONL untuk Fine-Tuning LLM sesuai filter dropdown aktif">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.35rem; vertical-align: -2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            <span>Unduh JSONL</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 125px; white-space: nowrap;">Waktu &amp; Platform</th>
-              <th style="width: 130px; white-space: nowrap;">Chat ID &amp; Model</th>
-              <th style="width: 140px; white-space: nowrap;">Konsumsi Token</th>
-              <th style="width: 25%; min-width: 180px;">Pertanyaan Pengguna (Prompt)</th>
-              <th style="min-width: 300px;">Jawaban Chatbot (Completion)</th>
-              <th style="width: 70px; text-align: right;">Aksi</th>
-            </tr>
-          </thead>
-          <tbody id="dataset-tbody">
-            <tr>
-              <td colspan="6" style="text-align: center; color: var(--text-dim); padding: 2rem;">Memuat dataset evaluasi...</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- PAGINATION BAR -->
-      <div class="pagination-bar" id="dataset-pagination-bar">
-        <div class="pagination-info" id="dataset-pagination-info">
-          Memuat data percakapan...
-        </div>
-        <div class="pagination-controls" id="dataset-pagination-controls"></div>
-      </div>
-    </section>
-
-    <footer>
-      FreeAIBot Unified Monitoring Console &bull; Menggunakan Supabase Engine &amp; Vercel Serverless
-    </footer>
-  </div>
-
-  <!-- ========================================================================
-       JAVASCRIPT LOGIC: AUTHENTICATION, DATASET, & MONITORING
-       ======================================================================== -->
-  <script src="/js/dashboard.js"></script>
+<script src="/js/console-theme.js"></script>
+<script src="/js/dashboard.js"></script>
 </body>
 </html>

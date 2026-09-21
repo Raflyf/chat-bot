@@ -1,728 +1,840 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FreeAiBot - Asisten AI Pribadi WhatsApp &amp; Telegram 24/7</title>
-  <meta name="description" content="Asisten AI cerdas multi-platform untuk WhatsApp dan Telegram. Mendukung pemrosesan teks, Voice Note Whisper, dokumen PDF/Word, analisis gambar vision, serta memori persisten.">
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="shortcut icon" href="/favicon.svg">
-  <link rel="apple-touch-icon" href="/favicon.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <script src="/js/home.js"></script>
-  <style>
-    :root {
-      --bg-base: #090d16;
-      --bg-surface: #111827;
-      --bg-card: #162032;
-      --bg-card-hover: #1c2940;
-      --border-subtle: #24344d;
-      --border-focus: #38bdf8;
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --accent-blue: #38bdf8;
-      --accent-purple: #a855f7;
-      --accent-emerald: #10b981;
-      --accent-amber: #f59e0b;
-      --accent-rose: #f43f5e;
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-    }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>FreeAIBot: bot WhatsApp dan Telegram dengan enam tingkat cadangan</title>
+<meta name="description" content="FreeAIBot membalas chat WhatsApp dan Telegram otomatis lewat rantai enam penyedia AI, dengan pemantauan kuota tiap kunci API di satu konsol." />
+<meta name="theme-color" content="#000000" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.svg" />
+<link rel="apple-touch-icon" href="/favicon.svg" />
+<script src="/js/theme-pre.js"></script>
+<script src="/js/home.js"></script>
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+<style>
+/* ============================================================================
+   FreeAIBot, halaman utama.
+   Arah desain ada di DESIGN.md: Liquid Glass ala iOS 26, mengikuti Apple HIG.
+   Aturan HIG yang dipegang: glass HANYA untuk layer kontrol (header, tombol,
+   panel ringkas). Konten memakai permukaan padat, tidak ada glass di atas glass.
+   Palet: 2 core (permukaan, teks) + 1 aksen (systemBlue). Tidak ada gradien
+   biru ke ungu, tidak ada glow dekoratif, tidak ada ikon dari library generik.
+   ============================================================================ */
 
-    body {
-      background-color: var(--bg-base);
-      color: var(--text-main);
-      font-family: var(--font-sans);
-      min-height: 100vh;
-      line-height: 1.6;
-      overflow-x: hidden;
-      display: flex;
-      flex-direction: column;
-    }
+:root {
+  --surface:          #f2f2f7;
+  --surface-raised:   #ffffff;
+  --surface-sunken:   #e5e5ea;
+  --text:             #1c1c1e;
+  --text-secondary:   rgba(60, 60, 67, 0.78);
+  --separator:        rgba(60, 60, 67, 0.16);
+  --accent:           #0064cd;
+  --accent-solid:     #0064cd;
+  --accent-ink:       #ffffff;
+  --accent-soft:      rgba(0, 100, 205, 0.1);
+  --ok:               #1d7a34;
+  --warn:             #9a4a00;
+  --stop:             #b3261e;
 
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 1.5rem;
-      width: 100%;
-    }
+  --glass-tint:       255 255 255;
+  --glass-fill:       0.66;
+  --glass-edge:       0.55;
+  --glass-blur:       20px;
+  --glass-saturate:   180%;
 
-    /* Top Navigation Bar - Ultra-Sleek Frosted Glass & Ambient Glow */
-    header {
-      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-      background: rgba(11, 17, 32, 0.82);
-      backdrop-filter: blur(20px) saturate(180%);
-      -webkit-backdrop-filter: blur(20px) saturate(180%);
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      transition: background-color 0.25s ease, border-color 0.25s ease;
-    }
+  --r-control: 10px;
+  --r-panel:   18px;
+  --r-sheet:   24px;
 
-    header::after {
-      content: '';
-      position: absolute;
-      bottom: -1px;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, 
-        transparent 0%, 
-        rgba(56, 189, 248, 0) 8%, 
-        rgba(56, 189, 248, 0.35) 30%, 
-        rgba(168, 85, 247, 0.35) 70%, 
-        rgba(56, 189, 248, 0) 92%, 
-        transparent 100%
-      );
-      pointer-events: none;
-      opacity: 0.75;
-    }
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px;
 
-    .nav-inner {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 0;
-    }
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+          "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+}
 
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 0.85rem;
-      text-decoration: none;
-      color: var(--text-main);
-    }
+[data-theme="dark"] {
+  --surface:          #000000;
+  --surface-raised:   #1c1c1e;
+  --surface-sunken:   #2c2c2e;
+  --text:             #f5f5f7;
+  --text-secondary:   rgba(235, 235, 245, 0.62);
+  --separator:        rgba(235, 235, 245, 0.16);
+  --accent:           #0a84ff;
+  --accent-solid:     #0071e3;
+  --accent-soft:      rgba(10, 132, 255, 0.16);
+  --ok:               #30d158;
+  --warn:             #ff9f0a;
+  --stop:             #ff453a;
 
-    .brand-icon {
-      width: 40px;
-      height: 40px;
-      background: linear-gradient(135deg, #2563eb, #7c3aed);
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 1.15rem;
-      color: #fff;
-      box-shadow: 0 0 16px rgba(59, 130, 246, 0.4);
-    }
+  --glass-fill:       0.10;
+  --glass-edge:       0.14;
+}
 
-    .brand-text h1 {
-      font-size: 1.15rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.2;
-    }
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
-    .brand-text p {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
 
-    .nav-actions {
-      display: flex;
-      align-items: center;
-      gap: 0.85rem;
-    }
+/* Latar atmosfer: dua bidang warna redup supaya glass punya sesuatu untuk
+   dibiaskan. Tanpa ini, blur di halaman rata tidak terlihat sama sekali.
+   Warnanya dari aksen dan status, bukan pasangan biru ke ungu. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -10% -10% auto -10%;
+  height: 78vh;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(58% 46% at 16% 10%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 72%),
+    radial-gradient(46% 40% at 86% 2%, color-mix(in srgb, var(--warn) 16%, transparent), transparent 74%);
+}
+[data-theme="light"] body::before { opacity: 0.6; }
 
-    .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.35rem 0.85rem;
-      background: rgba(16, 185, 129, 0.12);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      border-radius: 9999px;
-      font-size: 0.775rem;
-      font-weight: 600;
-      color: var(--accent-emerald);
-    }
+.wrap { width: min(1120px, 100% - 40px); margin-inline: auto; position: relative; z-index: 1; }
 
-    .pulse-dot {
-      width: 8px;
-      height: 8px;
-      background: var(--accent-emerald);
-      border-radius: 50%;
-      box-shadow: 0 0 8px var(--accent-emerald);
-      animation: pulse 2s infinite;
-    }
+/* Glass. Hanya dipasang pada elemen layer kontrol. */
+.glass {
+  background:
+    linear-gradient(180deg,
+      rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.92)),
+      rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.52)));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid rgb(255 255 255 / var(--glass-edge));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.30),
+    0 12px 34px rgb(0 0 0 / 0.12);
+}
+[data-theme="light"] .glass {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    0 10px 30px rgb(0 0 0 / 0.08);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: color-mix(in srgb, var(--surface-raised) 94%, transparent); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+    background: var(--surface-raised);
+  }
+}
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(0.85); }
-    }
+/* Header, layer kontrol */
+.site-header { position: sticky; top: 0; z-index: 40; padding-block: 10px; }
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: 9px 12px;
+  border-radius: var(--r-sheet);
+}
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; min-height: 44px; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+.brand-name { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.brand-sub { font-size: 12px; color: var(--text-secondary); }
 
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.55rem 1.1rem;
-      border-radius: 10px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
+.site-nav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.site-nav a {
+  display: inline-flex; align-items: center;
+  min-height: 44px; padding: 0 12px;
+  border-radius: var(--r-control);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 15px; font-weight: 500;
+  transition: color 0.16s ease, background-color 0.16s ease;
+}
+.site-nav a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 
-    .nav-dashboard-link {
-      background: rgba(56, 189, 248, 0.12);
-      border: 1px solid rgba(56, 189, 248, 0.35);
-      color: var(--accent-blue);
-      display: inline-flex;
-      align-items: center;
-      gap: 0.45rem;
-      padding: 0.45rem 0.95rem;
-      border-radius: 10px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      text-decoration: none;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      white-space: nowrap;
-    }
+.icon-btn {
+  display: inline-grid; place-items: center;
+  width: 44px; height: 44px;
+  border: 0; border-radius: var(--r-control);
+  background: transparent; color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.16s ease, background-color 0.16s ease;
+}
+.icon-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-    .nav-dashboard-link:hover {
-      background: rgba(56, 189, 248, 0.22);
-      border-color: var(--accent-blue);
-      box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
-      transform: translateY(-1px);
-    }
+/* Ikon tema: yang tampil adalah tujuan klik berikutnya.
+   Diatur lewat CSS karena atribut hidden tidak berlaku pada elemen SVG. */
+#iconSun, #iconMoon { display: none; }
+[data-theme="dark"] #iconSun { display: block; }
+[data-theme="light"] #iconMoon { display: block; }
+.nav-toggle { display: none; }
 
-    .nav-dash-short {
-      display: none;
-    }
+h1 {
+  font-size: clamp(30px, 5.6vw, 50px);
+  line-height: 1.12;
+  letter-spacing: -0.024em;
+  font-weight: 700;
+  margin: 0 0 var(--s4);
+  max-width: 19ch;
+}
+h2 {
+  font-size: clamp(23px, 3.4vw, 32px);
+  line-height: 1.14;
+  letter-spacing: -0.019em;
+  font-weight: 650;
+  margin: 0 0 var(--s3);
+}
+h3 { font-size: 17px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; }
+.lede {
+  font-size: clamp(17px, 2.1vw, 20px);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0 0 var(--s5);
+  max-width: 56ch;
+}
+p { margin: 0 0 var(--s3); }
+.muted { color: var(--text-secondary); }
+.small { font-size: 14px; }
+a.inline { color: var(--accent); text-decoration: none; }
+a.inline:hover { text-decoration: underline; }
 
-    .btn-hero-dash {
-      background: rgba(56, 189, 248, 0.08);
-      border: 1px solid rgba(56, 189, 248, 0.35);
-      color: #38bdf8;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 0 20px;
+  border: 0; border-radius: var(--r-control);
+  font: inherit; font-size: 16px; font-weight: 600;
+  text-decoration: none; cursor: pointer;
+  transition: filter 0.14s ease, background-color 0.14s ease, transform 0.14s ease;
+}
+.btn:active { transform: scale(0.985); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.btn-primary { background: var(--accent-solid); color: var(--accent-ink); }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-quiet { background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text); }
+.btn-quiet:hover { background: color-mix(in srgb, var(--text) 14%, transparent); }
 
-    .btn-hero-dash:hover {
-      background: rgba(56, 189, 248, 0.18);
-      border-color: #38bdf8;
-      color: #7dd3fc;
-      box-shadow: 0 0 20px rgba(56, 189, 248, 0.28);
-      transform: translateY(-1px);
-    }
+/* Hero */
+.hero { padding-block: var(--s7) var(--s6); }
+.hero-grid {
+  display: grid;
+  gap: var(--s6) var(--s7);
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  align-items: start;
+}
+.hero-actions { display: flex; flex-wrap: wrap; gap: var(--s3); margin-bottom: var(--s5); }
 
-    .btn-primary {
-      background: linear-gradient(135deg, #0284c7, #2563eb);
-      color: #fff;
-      border: none;
-      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
-    }
+.facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s4);
+  margin: 0; padding: 0; list-style: none;
+  border-top: 1px solid var(--separator);
+  padding-top: var(--s4);
+}
+.facts li { padding-left: var(--s3); border-left: 1px solid var(--separator); }
+.facts li:first-child { padding-left: 0; border-left: 0; }
+.facts li { display: flex; flex-direction: column; gap: 1px; }
+.fact-label { font-size: 12px; color: var(--text-secondary); }
+.fact-value {
+  font-size: 22px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.012em;
+}
 
-    .btn-primary:hover {
-      background: linear-gradient(135deg, #0369a1, #1d4ed8);
-      transform: translateY(-1px);
-    }
+/* Panel pratinjau percakapan. Ini konten, jadi permukaan padat, bukan glass. */
+.chat {
+  background: var(--surface-raised);
+  border: 1px solid var(--separator);
+  border-radius: var(--r-panel);
+  padding: var(--s4);
+  display: flex; flex-direction: column; gap: var(--s3);
+}
+.chat-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--separator);
+}
+.avatar {
+  width: 36px; height: 36px; flex: none;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 15px; font-weight: 600;
+}
+.chat-head .who { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.chat-head .who b { font-size: 15px; font-weight: 600; }
+.chat-head .who span { font-size: 12px; color: var(--text-secondary); }
+.bubble {
+  max-width: 90%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 15px;
+  line-height: 1.45;
+  margin: 0;
+}
+.bubble.in { align-self: flex-start; background: var(--surface-sunken); border-bottom-left-radius: 6px; }
+.bubble.out { align-self: flex-end; background: var(--accent-solid); color: var(--accent-ink); border-bottom-right-radius: 6px; }
+.chat-meta {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--text-secondary);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--separator);
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.dot.stop { background: var(--stop); }
 
-    .btn-wa {
-      background: #25d366;
-      color: #0b2e13;
-      border: none;
-      font-weight: 700;
-    }
+section { padding-block: var(--s6); }
+.section-head { margin-bottom: var(--s5); max-width: 62ch; }
 
-    .btn-wa:hover {
-      background: #22bf5b;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 15px rgba(37, 211, 102, 0.35);
-    }
+/* Rantai penyedia: daftar berjenjang. Bukan grid kartu seragam, karena tiap
+   tingkat memang beda peran dan beda ukuran pool-nya. */
+.chain {
+  border: 1px solid var(--separator);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+.chain-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s4);
+  border-bottom: 1px solid var(--separator);
+}
+.chain-row:last-child { border-bottom: 0; }
+.chain-row:hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.rank {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.chain-name { font-size: 16px; font-weight: 600; margin: 0 0 2px; }
+.chain-note { font-size: 14px; color: var(--text-secondary); margin: 0; }
+.chain-meta {
+  font-size: 13px; color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; text-align: right;
+}
 
-    .btn-tele {
-      background: #229ed9;
-      color: #fff;
-      border: none;
-      font-weight: 700;
-    }
+/* Kapabilitas: dua kolom teks dengan garis pemisah, bukan enam kartu ikon. */
+.cap-grid {
+  display: grid;
+  gap: var(--s5) var(--s6);
+  grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr));
+}
+.cap { border-top: 1px solid var(--separator); padding-top: var(--s3); }
+.cap p { margin: 0; font-size: 15px; color: var(--text-secondary); }
 
-    .btn-tele:hover {
-      background: #1e8dbf;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 15px rgba(34, 158, 217, 0.35);
-    }
+/* Konsol: pratinjau tabel. Konten, permukaan padat. */
+.table-shell {
+  border: 1px solid var(--separator);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+caption {
+  text-align: left;
+  padding: var(--s4) var(--s4) var(--s2);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+th, td {
+  padding: 11px var(--s4);
+  text-align: left;
+  border-bottom: 1px solid var(--separator);
+  white-space: nowrap;
+}
+th {
+  font-size: 12px; font-weight: 600;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
-    .btn-icon {
-      flex-shrink: 0;
-    }
+.tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+  border: 1px solid transparent;
+}
+.tag.ok   { color: var(--ok);   background: color-mix(in srgb, var(--ok) 14%, transparent);   border-color: color-mix(in srgb, var(--ok) 34%, transparent); }
+.tag.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); border-color: color-mix(in srgb, var(--warn) 34%, transparent); }
+.tag.stop { color: var(--stop); background: color-mix(in srgb, var(--stop) 14%, transparent); border-color: color-mix(in srgb, var(--stop) 34%, transparent); }
 
-    .btn-arrow {
-      transition: transform 0.2s ease;
-    }
+/* Langkah pakai: empat langkah nyata, bukan tiga langkah template. */
+.steps {
+  display: grid;
+  gap: var(--s4) var(--s5);
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  counter-reset: step;
+}
+.step { padding-top: var(--s3); border-top: 2px solid var(--accent); }
+.step::before {
+  counter-increment: step;
+  content: "Langkah " counter(step);
+  display: block;
+  font-size: 12px; font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.step p { margin: 0; font-size: 15px; color: var(--text-secondary); }
 
-    .btn:hover .btn-arrow {
-      transform: translateX(3px);
-    }
+/* CTA penutup, layer kontrol, boleh glass. */
+.cta {
+  border-radius: var(--r-sheet);
+  padding: var(--s6);
+  display: grid;
+  gap: var(--s4);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.cta h2 { margin-bottom: var(--s2); }
+.cta p { margin: 0; color: var(--text-secondary); max-width: 54ch; }
 
-    /* Hero Section */
-    .hero {
-      padding: 4.5rem 0 3.5rem;
-      text-align: center;
-      position: relative;
-    }
+.site-footer {
+  padding-block: var(--s5) var(--s6);
+  border-top: 1px solid var(--separator);
+  margin-top: var(--s6);
+}
+.footer-inner {
+  display: flex; flex-wrap: wrap;
+  gap: var(--s3) var(--s5);
+  align-items: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.footer-inner a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  min-height: 44px;
+  display: inline-flex; align-items: center;
+}
+.footer-inner a:hover { color: var(--text); text-decoration: underline; }
+.footer-spacer { margin-left: auto; }
 
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.35rem 1rem;
-      background: rgba(168, 85, 247, 0.12);
-      border: 1px solid rgba(168, 85, 247, 0.35);
-      border-radius: 9999px;
-      color: #c084fc;
-      font-size: 0.8rem;
-      font-weight: 600;
-      margin-bottom: 1.5rem;
-      font-family: var(--font-mono);
-    }
+/* Gerak: satu orkestrasi masuk, lalu berhenti. Tidak ada loop, tidak ada float. */
+@media (prefers-reduced-motion: no-preference) {
+  .rise { animation: rise 0.52s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .rise-2 { animation-delay: 0.07s; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
 
-    .hero-title {
-      font-size: 2.75rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      line-height: 1.2;
-      max-width: 820px;
-      margin: 0 auto 1.25rem;
-      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .hero-subtitle {
-      font-size: 1.05rem;
-      color: var(--text-muted);
-      max-width: 680px;
-      margin: 0 auto 2.25rem;
-      line-height: 1.6;
-    }
-
-    .hero-cta-group {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-
-    /* Feature Grid */
-    .features-section {
-      padding: 3.5rem 0;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .section-title-wrap {
-      text-align: center;
-      margin-bottom: 2.5rem;
-    }
-
-    .section-title {
-      font-size: 1.85rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      margin-bottom: 0.5rem;
-    }
-
-    .section-subtitle {
-      font-size: 0.95rem;
-      color: var(--text-muted);
-    }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-      gap: 1.5rem;
-    }
-
-    .feature-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 1.75rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      transition: all 0.25s ease;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .feature-card:hover {
-      border-color: var(--border-focus);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
-    }
-
-    .feature-card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
-      opacity: 0;
-      transition: opacity 0.25s ease;
-    }
-
-    .feature-card:hover::before {
-      opacity: 1;
-    }
-
-    .feature-icon-box {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.25rem;
-      font-weight: 700;
-      margin-bottom: 0.35rem;
-    }
-
-    .f-blue { background: rgba(56, 189, 248, 0.12); color: var(--accent-blue); border: 1px solid rgba(56, 189, 248, 0.25); }
-    .f-emerald { background: rgba(16, 185, 129, 0.12); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.25); }
-    .f-rose { background: rgba(244, 63, 94, 0.12); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.25); }
-    .f-amber { background: rgba(245, 158, 11, 0.12); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.25); }
-    .f-purple { background: rgba(168, 85, 247, 0.12); color: var(--accent-purple); border: 1px solid rgba(168, 85, 247, 0.25); }
-
-    .feature-title {
-      font-size: 1.15rem;
-      font-weight: 700;
-    }
-
-    .feature-desc {
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      line-height: 1.55;
-    }
-
-    /* Dashboard Teaser Card */
-    .dashboard-teaser {
-      background: linear-gradient(135deg, #111827 0%, #162032 100%);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      border-radius: 20px;
-      padding: 2.5rem;
-      margin: 2rem 0 4rem;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1.5rem;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-    }
-
-    .teaser-text h3 {
-      font-size: 1.5rem;
-      font-weight: 800;
-      margin-bottom: 0.5rem;
-      color: var(--text-main);
-    }
-
-    .teaser-text p {
-      font-size: 0.9rem;
-      color: var(--text-muted);
-      max-width: 620px;
-    }
-
-    footer {
-      margin-top: auto;
-      border-top: 1px solid var(--border-subtle);
-      padding: 2rem 0;
-      text-align: center;
-      color: var(--text-dim);
-      font-size: 0.825rem;
-    }
-
-    /* Responsive Breakpoints & Device Adaptation */
-    @media (max-width: 768px) {
-      .hero {
-        padding: 3.25rem 0 2.25rem;
-      }
-      .hero-title {
-        font-size: clamp(1.75rem, 5vw + 0.5rem, 2.25rem);
-      }
-      .hero-subtitle {
-        font-size: 0.95rem;
-        margin-bottom: 1.75rem;
-      }
-      .features-section {
-        padding: 2.5rem 0;
-      }
-      .section-title {
-        font-size: 1.5rem;
-      }
-      .dashboard-teaser {
-        padding: 1.75rem 1.25rem;
-        margin: 1.5rem 0 2.5rem;
-        flex-direction: column;
-        align-items: stretch;
-      }
-      .dashboard-teaser > div:last-child {
-        width: 100%;
-      }
-      .dashboard-teaser .btn-primary {
-        width: 100%;
-        justify-content: center;
-      }
-    }
-
-    @media (max-width: 580px) {
-      .container {
-        padding: 0 1rem;
-      }
-      .nav-inner {
-        padding: 0.65rem 0;
-        gap: 0.5rem;
-      }
-      .brand-icon {
-        width: 34px;
-        height: 34px;
-        font-size: 0.95rem;
-        border-radius: 10px;
-      }
-      .brand-text h1 {
-        font-size: 1.05rem;
-      }
-      .brand-text p {
-        display: none;
-      }
-      .nav-actions {
-        gap: 0.45rem;
-      }
-      .status-pill {
-        padding: 0.28rem 0.55rem;
-        font-size: 0.72rem;
-        gap: 0.35rem;
-      }
-      .nav-dashboard-link {
-        padding: 0.38rem 0.7rem;
-        font-size: 0.78rem;
-        gap: 0.3rem;
-      }
-      .nav-dash-full {
-        display: none;
-      }
-      .nav-dash-short {
-        display: inline;
-      }
-      .nav-dash-arrow {
-        display: none;
-      }
-      .hero-badge {
-        font-size: 0.68rem;
-        padding: 0.3rem 0.75rem;
-        letter-spacing: 0.02em;
-      }
-      .hero-cta-group {
-        flex-direction: column;
-        width: 100%;
-        gap: 0.75rem;
-      }
-      .hero-cta-group .btn {
-        width: 100%;
-        justify-content: center;
-        text-align: center;
-        padding: 0.85rem 1.15rem !important;
-        font-size: 0.92rem !important;
-        border-radius: 12px;
-      }
-      .feature-card {
-        padding: 1.35rem 1.15rem;
-      }
-      .section-title-wrap {
-        margin-bottom: 1.75rem;
-      }
-    }
-
-    @media (max-width: 400px) {
-      .status-pill span:not(.pulse-dot) {
-        display: none;
-      }
-      .status-pill {
-        padding: 0.4rem;
-        border-radius: 50%;
-      }
-      .hero-title {
-        font-size: 1.65rem;
-      }
-      .nav-dashboard-link {
-        padding: 0.35rem 0.6rem;
-        font-size: 0.75rem;
-      }
-    }
-  </style>
+/* Tiga keadaan lebar: desktop, tablet, ponsel. */
+@media (max-width: 1024px) {
+  .hero-grid { grid-template-columns: minmax(0, 1fr); }
+  .cta { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  body { font-size: 16px; }
+  .wrap { width: min(1120px, 100% - 28px); }
+  section { padding-block: var(--s5); }
+  .hero { padding-block: var(--s6) var(--s5); }
+  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .facts li { padding-left: var(--s3); }
+  .facts li:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .site-nav { display: none; }
+  .nav-toggle { display: inline-grid; }
+  .site-nav.open {
+    display: flex;
+    position: absolute;
+    left: 14px; right: 14px;
+    top: calc(100% + 6px);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 8px;
+    border-radius: var(--r-panel);
+    background: var(--surface-raised);
+    border: 1px solid var(--separator);
+    box-shadow: 0 18px 40px rgb(0 0 0 / 0.22);
+  }
+  .site-nav.open a { justify-content: flex-start; }
+  .chain-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .chain-meta { text-align: left; }
+  .cta { padding: var(--s5); }
+  .bubble { max-width: 100%; }
+}
+</style>
 </head>
 <body>
 
-  <!-- Top Navigation -->
-  <header>
-    <div class="container nav-inner">
-      <a href="/" class="brand">
-        <div class="brand-icon">AI</div>
-        <div class="brand-text">
-          <h1>FreeAiBot</h1>
-          <p>Personal AI Assistant</p>
-        </div>
+<!-- Tanda merek: kisi 3x3 dengan tiga sel terisi, menggambarkan tiga tingkat
+     yang siap mengambil alih ketika tingkat sebelumnya kehabisan kuota.
+     Digambar langsung, bukan diambil dari library ikon. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <symbol id="mark" viewBox="0 0 32 32">
+    <rect width="32" height="32" rx="8" fill="currentColor"/>
+    <g fill="#fff">
+      <rect x="7" y="7" width="5" height="5" rx="1.4"/>
+      <rect x="13.5" y="7" width="5" height="5" rx="1.4" opacity=".4"/>
+      <rect x="20" y="7" width="5" height="5" rx="1.4" opacity=".4"/>
+      <rect x="7" y="13.5" width="5" height="5" rx="1.4" opacity=".4"/>
+      <rect x="13.5" y="13.5" width="5" height="5" rx="1.4"/>
+      <rect x="20" y="13.5" width="5" height="5" rx="1.4" opacity=".4"/>
+      <rect x="7" y="20" width="5" height="5" rx="1.4" opacity=".4"/>
+      <rect x="13.5" y="20" width="5" height="5" rx="1.4" opacity=".4"/>
+      <rect x="20" y="20" width="5" height="5" rx="1.4"/>
+    </g>
+  </symbol>
+</svg>
+
+<header class="site-header">
+  <div class="wrap">
+    <div class="bar glass">
+      <a class="brand" href="/" aria-label="FreeAIBot, halaman utama">
+        <svg width="32" height="32" aria-hidden="true" style="color: var(--accent)"><use href="#mark"/></svg>
+        <span class="brand-text">
+          <span class="brand-name">FreeAIBot</span>
+          <span class="brand-sub">WhatsApp &amp; Telegram</span>
+        </span>
       </a>
-      <div class="nav-actions">
-        <div class="status-pill" title="Status Engine Bot &amp; Konektivitas">
-          <span class="pulse-dot"></span>
-          <span>Online 24/7</span>
-        </div>
-        <a href="/dashboard.html" class="nav-dashboard-link" title="Buka Monitoring Dashboard">
-          <span class="nav-dash-full">Monitoring Dashboard</span>
-          <span class="nav-dash-short">Dashboard</span>
-          <span class="nav-dash-arrow">&rarr;</span>
-        </a>
-      </div>
-    </div>
-  </header>
 
-  <!-- Hero Section -->
+      <button class="icon-btn nav-toggle" id="navToggle" aria-expanded="false" aria-controls="siteNav" aria-label="Buka menu navigasi">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <path d="M3 6h14M3 10h14M3 14h14"/>
+        </svg>
+      </button>
+
+      <nav class="site-nav" id="siteNav" aria-label="Navigasi utama">
+        <a href="#rantai">Rantai model</a>
+        <a href="#kapabilitas">Kapabilitas</a>
+        <a href="#cara">Cara pakai</a>
+        <a href="/dashboard.html">Konsol</a>
+      </nav>
+
+      <button class="icon-btn" id="themeToggle" aria-label="Ganti tema terang atau gelap">
+        <svg id="iconSun" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+          <circle cx="10" cy="10" r="3.6"/>
+          <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.6 4.6L6 6M14 14l1.4 1.4M15.4 4.6L14 6M6 14l-1.4 1.4"/>
+        </svg>
+        <svg id="iconMoon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" hidden>
+          <path d="M16 12.4A6.8 6.8 0 0 1 7.6 4a7 7 0 1 0 8.4 8.4Z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+
   <section class="hero">
-    <div class="container">
-      <div class="hero-badge">
-        <span>SISTEM PRODUKSI &bull; MULTI-PLATFORM VERIFIED</span>
+    <div class="wrap hero-grid">
+      <div class="rise">
+        <h1>Bot yang tetap membalas walau satu penyedia AI tumbang.</h1>
+        <p class="lede">
+          FreeAIBot mencoba enam penyedia AI secara berurutan. Kalau satu kehabisan kuota,
+          penyedia berikutnya mengambil alih. Kamu memantau semuanya dari satu konsol,
+          lengkap dengan sisa kuota tiap kunci API.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/dashboard.html">Buka konsol pemantauan</a>
+          <a class="btn btn-quiet" href="#cara">Lihat cara pakainya</a>
+        </div>
+
+        <ul class="facts">
+          <li>
+            <span class="fact-label">Tingkat cadangan</span>
+            <span class="fact-value">6</span>
+          </li>
+          <li>
+            <span class="fact-label">Kunci API</span>
+            <span class="fact-value">27</span>
+          </li>
+          <li>
+            <span class="fact-label">Model teks siap pakai</span>
+            <span class="fact-value">13</span>
+          </li>
+          <li>
+            <span class="fact-label">Stiker terpasang</span>
+            <span class="fact-value">221</span>
+          </li>
+        </ul>
+        <p class="small muted" style="margin-top:var(--s3)">
+          Angka ini dibaca dari konfigurasi yang sedang berjalan, bukan perkiraan.
+          Jumlah pesan yang sudah diproses hanya terlihat setelah masuk ke konsol,
+          karena data itu tidak dibuka ke publik.
+        </p>
       </div>
-      <h2 class="hero-title">
-        Asisten AI Cerdas, Multimodal, &amp; Siap 24 Jam Nonstop
-      </h2>
-      <p class="hero-subtitle">
-        Terhubung langsung ke nomor WhatsApp dan Telegram dengan pemrosesan Voice Note Whisper, dokumen PDF &amp; Word, analisis gambar, serta memori percakapan persisten.
+
+      <div class="chat rise rise-2">
+        <div class="chat-head">
+          <span class="avatar" aria-hidden="true">N</span>
+          <span class="who">
+            <b>Nara</b>
+            <span>Nama bot di percakapan</span>
+          </span>
+        </div>
+        <p class="bubble in">berapa derajat sekarang di cianjur?</p>
+        <p class="bubble out">Sekitar 26 derajat, terasa kayak 27. Mendung, angin pelan.</p>
+        <p class="bubble in">coba cek lagi dong</p>
+        <p class="bubble out">Masih 26. Kelembapan 55 persen, jadi agak gerah.</p>
+        <div class="chat-meta">
+          <span class="dot" aria-hidden="true"></span>
+          <span>Dijawab tingkat 3, 370 milidetik</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="rantai">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Enam tingkat, dicoba berurutan</h2>
+        <p class="muted">
+          Tiap tingkat berisi satu penyedia. Bot mencoba model utama, lalu cadangannya,
+          baru turun ke tingkat berikutnya. Urutannya bukan tebakan: tiap penyedia diuji
+          dulu untuk kepatuhan dan kecepatan, lalu yang paling patuh ditaruh lebih dulu.
+        </p>
+      </div>
+
+      <div class="chain">
+        <div class="chain-row">
+          <span class="rank">Tingkat 1</span>
+          <div>
+            <p class="chain-name">xKiro Gateway</p>
+            <p class="chain-note">Hanya model Qwen. Dikunci di sini atas permintaan pemilik.</p>
+          </div>
+          <span class="chain-meta">3 kunci</span>
+        </div>
+        <div class="chain-row">
+          <span class="rank">Tingkat 2</span>
+          <div>
+            <p class="chain-name">Cloudflare Workers AI</p>
+            <p class="chain-note">Qwen 3.8 27B sebagai utama, Nemotron dan GPT-OSS 20B sebagai cadangan.</p>
+          </div>
+          <span class="chain-meta">3 akun</span>
+        </div>
+        <div class="chain-row">
+          <span class="rank">Tingkat 3</span>
+          <div>
+            <p class="chain-name">Groq Cloud</p>
+            <p class="chain-note">Paling cepat dari 89 model yang diuji: 370 milidetik.</p>
+          </div>
+          <span class="chain-meta">5 kunci</span>
+        </div>
+        <div class="chain-row">
+          <span class="rank">Tingkat 4</span>
+          <div>
+            <p class="chain-name">OpenRouter</p>
+            <p class="chain-note">Nex N2.5 Mini sebagai utama, Ling 3.0 Flash Fin sebagai cadangan.</p>
+          </div>
+          <span class="chain-meta">5 kunci</span>
+        </div>
+        <div class="chain-row">
+          <span class="rank">Tingkat 5</span>
+          <div>
+            <p class="chain-name">Dahl Global</p>
+            <p class="chain-note">Saldo satu miliar token. Dipakai ketika kuota harian penyedia lain habis.</p>
+          </div>
+          <span class="chain-meta">10 kunci</span>
+        </div>
+        <div class="chain-row">
+          <span class="rank">Tingkat 6</span>
+          <div>
+            <p class="chain-name">Google Gemini</p>
+            <p class="chain-note">Jaring terakhir. Konteks satu juta token, juga menangani dokumen dan video.</p>
+          </div>
+          <span class="chain-meta">1 kunci</span>
+        </div>
+      </div>
+
+      <p class="small muted" style="margin-top:var(--s4)">
+        Daftar ini mengikuti konfigurasi yang sedang berjalan. Untuk melihat penyedia mana
+        yang menangani percakapan saat ini, buka <a class="inline" href="/dashboard.html">konsol</a>.
       </p>
+    </div>
+  </section>
 
-      <div class="hero-cta-group">
-        <a href="https://wa.me/6283874640066" target="_blank" rel="noopener noreferrer" class="btn btn-wa">
-          <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86.174.086.275.072.376-.044.101-.116.433-.506.549-.68.116-.173.231-.145.39-.086s1.011.477 1.184.564.289.13.332.203c.043.072.043.419-.101.824z"/>
-          </svg>
-          <span>Mulai Chat di WhatsApp</span>
-        </a>
-        <a href="https://t.me/chatkita_bot" target="_blank" rel="noopener noreferrer" class="btn btn-tele" title="Mulai Chat dengan FreeAiBot (@chatkita_bot)">
-          <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.52 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
-          </svg>
-          <span>Mulai Chat di Telegram (@chatkita_bot)</span>
-        </a>
-        <a href="/dashboard.html" class="btn btn-hero-dash" title="Buka Monitoring Console &amp; Evaluasi Dataset">
-          <svg class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="3" y1="9" x2="21" y2="9"></line>
-            <line x1="9" y1="21" x2="9" y2="9"></line>
-          </svg>
-          <span>Buka Monitoring &amp; Dataset Console</span>
-          <span class="btn-arrow">&rarr;</span>
-        </a>
+  <section id="kapabilitas">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Yang bisa dia tangani</h2>
+        <p class="muted">Semuanya sudah dipakai di percakapan nyata, bukan daftar rencana.</p>
+      </div>
+
+      <div class="cap-grid">
+        <div class="cap">
+          <h3>Pesan suara</h3>
+          <p>Rekaman suara ditranskripsi lebih dulu, lalu dijawab seperti pesan biasa. Tiga penyedia cadangan menjaga proses ini tetap jalan.</p>
+        </div>
+        <div class="cap">
+          <h3>Gambar dan stiker</h3>
+          <p>Tulisan di dalam stiker dibaca lebih dulu. Kalau tidak ada tulisan, barulah gambar dan maksudnya yang ditafsirkan.</p>
+        </div>
+        <div class="cap">
+          <h3>Dokumen dan tautan</h3>
+          <p>PDF, Word, dan halaman web diambil isinya. Bot mengutip angka dan nama yang benar-benar ada di sumbernya, bukan dari ingatan.</p>
+        </div>
+        <div class="cap">
+          <h3>Cuaca dan berita</h3>
+          <p>Suhu diambil dari API cuaca, berita dari belasan kanal resmi. Kalau data tidak turun, bot mengatakannya terus terang.</p>
+        </div>
+        <div class="cap">
+          <h3>Tebakan dan gombalan</h3>
+          <p>Kunci jawaban disimpan, jadi tebakan yang benar diakui dan yang salah tidak dibenarkan. Permintaan menyerah pun dituruti.</p>
+        </div>
+        <div class="cap">
+          <h3>Ingatan percakapan</h3>
+          <p>Meski model yang menjawab berganti tiap pesan, rangkaian obrolan tetap nyambung. Tidak ada sapaan ulang di tengah cerita.</p>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- Features Grid Section -->
-  <section class="features-section">
-    <div class="container">
-      <div class="section-title-wrap">
-        <h3 class="section-title">Kapabilitas Lengkap Tanpa Batas</h3>
-        <p class="section-subtitle">Didukung tumpukan 6 tier provider tangguh (xKiro, OpenRouter, Groq, Cloudflare, Gemini, Dahl) dengan otomatisasi failover.</p>
+  <section id="konsol">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Konsol memperlihatkan pemakaian yang sebenarnya</h2>
+        <p class="muted">
+          Setiap angka di konsol berasal dari endpoint penyedia atau basis data bot sendiri.
+          Tabel di bawah memperlihatkan susunannya, memakai nama penyedia dan model yang benar.
+        </p>
       </div>
 
-      <div class="features-grid">
-        <!-- Feature 1: Voice Note -->
-        <div class="feature-card">
-          <div class="feature-icon-box f-rose">VN</div>
-          <h4 class="feature-title">Transkripsi Voice Note Sub-Detik</h4>
-          <p class="feature-desc">
-            Kirimkan rekaman suara VN di WhatsApp atau Telegram. Model Whisper menerjemahkan suara ke teks secara instan (~500ms) dan AI menjawab pertanyaannya secara alami.
-          </p>
-        </div>
-
-        <!-- Feature 2: PDF & Word -->
-        <div class="feature-card">
-          <div class="feature-icon-box f-amber">DOC</div>
-          <h4 class="feature-title">Analisis Dokumen PDF &amp; Word</h4>
-          <p class="feature-desc">
-            Unggah file `.pdf` atau `.docx`. AI membaca isi tabel, bagan, bab, serta kode sumber hingga puluhan halaman untuk dirangkum, dianalisis, atau dievaluasi.
-          </p>
-        </div>
-
-        <!-- Feature 3: Vision & Multimodal -->
-        <div class="feature-card">
-          <div class="feature-icon-box f-emerald">VIS</div>
-          <h4 class="feature-title">Analisis Foto &amp; Stiker Kontekstual</h4>
-          <p class="feature-desc">
-            Dianalisis oleh rantai model vision multi-provider. Mampu membaca foto tugas, diagram alir, grafik, tangkapan layar, hingga memahami ekspresi stiker WhatsApp.
-          </p>
-        </div>
-
-        <!-- Feature 4: Memory -->
-        <div class="feature-card">
-          <div class="feature-icon-box f-purple">MEM</div>
-          <h4 class="feature-title">Memori Persisten &amp; Distilasi</h4>
-          <p class="feature-desc">
-            Didukung basis data Supabase PostgreSQL dengan Row Level Security. Bot mengingat konteks percakapan lampau dan preferensi gaya bicara penggunanya.
-          </p>
-        </div>
-
-        <!-- Feature 5: 6-Tier Failover -->
-        <div class="feature-card">
-          <div class="feature-icon-box f-blue">AI</div>
-          <h4 class="feature-title">Rantai Failover 6 Tier</h4>
-          <p class="feature-desc">
-            Jika satu model terkena rate limit, sistem otomatis mengalihkan panggilan ke provider berikutnya (xKiro &rarr; OpenRouter &rarr; Groq &rarr; Cloudflare &rarr; Gemini &rarr; Dahl) dalam hitungan milidetik.
-          </p>
-        </div>
-
-        <!-- Feature 6: Zero-Template -->
-        <div class="feature-card">
-          <div class="feature-icon-box f-emerald">BOT</div>
-          <h4 class="feature-title">Interaksi Nyata Tanpa Template</h4>
-          <p class="feature-desc">
-            Bebas dari sapaan klise robotik dan format kaku. Berinteraksi secara luwes layaknya teman karib sekaligus partner diskusi cerdas dan berwawasan luas.
-          </p>
+      <div class="table-shell">
+        <div class="table-scroll">
+          <table>
+            <caption>Susunan tingkat dan model utama. Angka pemakaian hanya tampil di konsol setelah masuk.</caption>
+            <thead>
+              <tr>
+                <th scope="col">Tingkat</th>
+                <th scope="col">Penyedia</th>
+                <th scope="col">Model utama</th>
+                <th scope="col" class="num">Kunci</th>
+                <th scope="col">Peran</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="num">1</td>
+                <td>xKiro Gateway</td>
+                <td>qwen/qwen3.8-max</td>
+                <td class="num">3</td>
+                <td><span class="tag ok"><span class="dot" aria-hidden="true"></span>Utama</span></td>
+              </tr>
+              <tr>
+                <td class="num">2</td>
+                <td>Cloudflare Workers AI</td>
+                <td>@cf/qwen/qwen3.8-27b</td>
+                <td class="num">3</td>
+                <td><span class="tag ok"><span class="dot" aria-hidden="true"></span>Utama</span></td>
+              </tr>
+              <tr>
+                <td class="num">3</td>
+                <td>Groq Cloud</td>
+                <td>qwen/qwen3.8-27b</td>
+                <td class="num">5</td>
+                <td><span class="tag warn"><span class="dot warn" aria-hidden="true"></span>Batas per menit</span></td>
+              </tr>
+              <tr>
+                <td class="num">4</td>
+                <td>OpenRouter</td>
+                <td>nex-agi/nex-n2.5-mini</td>
+                <td class="num">5</td>
+                <td><span class="tag ok"><span class="dot" aria-hidden="true"></span>Utama</span></td>
+              </tr>
+              <tr>
+                <td class="num">5</td>
+                <td>Dahl Global</td>
+                <td>deepseek-v4-flash</td>
+                <td class="num">10</td>
+                <td><span class="tag ok"><span class="dot" aria-hidden="true"></span>Cadangan besar</span></td>
+              </tr>
+              <tr>
+                <td class="num">6</td>
+                <td>Google Gemini</td>
+                <td>gemini-3.8-flash</td>
+                <td class="num">1</td>
+                <td><span class="tag stop"><span class="dot stop" aria-hidden="true"></span>Jaring terakhir</span></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <!-- Dashboard Teaser Section -->
-      <div class="dashboard-teaser">
-        <div class="teaser-text">
-          <h3>Monitoring Konsol &amp; Dataset Training AI</h3>
-          <p>
-            Pantau status penggunaan seluruh pool API Key, statistik kuota harian, traffic percakapan, serta unduh riwayat pasangan chat dalam format JSONL/CSV untuk fine-tuning model AI.
-          </p>
+      <div class="hero-actions" style="margin-top:var(--s5)">
+        <a class="btn btn-primary" href="/dashboard.html">Masuk ke konsol</a>
+        <a class="btn btn-quiet" href="/privacy.html">Baca kebijakan privasi</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="cara">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Cara memakainya</h2>
+        <p class="muted">Empat langkah, dari pesan pertama sampai memantau pemakaian.</p>
+      </div>
+
+      <div class="steps">
+        <div class="step">
+          <h3>Kirim pesan pertama</h3>
+          <p>Chat nomor WhatsApp atau bot Telegram yang sudah tersambung. Tidak ada perintah khusus untuk memulai.</p>
         </div>
+        <div class="step">
+          <h3>Ngobrol seperti biasa</h3>
+          <p>Tanya cuaca, minta tebakan, kirim foto atau dokumen. Bot menyesuaikan gaya balasannya dengan gaya bahasamu.</p>
+        </div>
+        <div class="step">
+          <h3>Pantau lewat konsol</h3>
+          <p>Konsol menampilkan kuota tiap kunci API, model yang sedang aktif, dan riwayat percakapan.</p>
+        </div>
+        <div class="step">
+          <h3>Biarkan perpindahan terjadi</h3>
+          <p>Kalau satu penyedia mendekati batasnya, bot pindah sendiri ke tingkat berikutnya. Tidak ada yang perlu kamu ubah.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="cta glass">
         <div>
-          <a href="/dashboard.html" class="btn btn-primary" style="padding: 0.85rem 1.6rem; font-size: 0.95rem;">
-            <span>Akses Dashboard Admin</span>
-            <span>&rarr;</span>
-          </a>
+          <h2>Lihat datanya sebelum percaya</h2>
+          <p>Konsol menampilkan sisa kuota, model aktif, dan riwayat percakapan. Semua angka di sana bisa kamu telusuri asalnya.</p>
         </div>
+        <a class="btn btn-primary" href="/dashboard.html">Buka konsol</a>
       </div>
     </div>
   </section>
 
-  <!-- Footer -->
-  <footer>
-    <div class="container">
-      FreeAiBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.69
-    </div>
-  </footer>
+</main>
 
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <span>FreeAIBot &middot; versi v0.70</span>
+    <a href="/privacy.html">Kebijakan privasi</a>
+    <a href="/dashboard.html">Konsol pemantauan</a>
+    <span class="footer-spacer" id="deviceClock"></span>
+  </div>
+</footer>
+
+<script src="/js/theme.js" defer></script>
 </body>
 </html>
