@@ -1138,12 +1138,14 @@ export async function searchWeb(query: string, previousContext?: string): Promis
        ['https://www.kontan.co.id/rss', 'https://www.cnbcindonesia.com/rss', 'https://katadata.co.id/rss', 'https://www.bisnis.com/rss']],
       [/\b(?:olahraga|bola|liga|sepakbola|badminton|bulutangkis|motogp|f1|basket|timnas|transfer|klub)\b/i,
        ['https://www.cnnindonesia.com/olahraga/rss', 'https://www.antaranews.com/rss/olahraga', 'https://www.jpnn.com/rss']],
-      [/\b(?:teknologi|teknologi|gadget|ai|startup|internet|digital|komputer|hp|smartphone)\b/i,
-       ['https://www.cnnindonesia.com/teknologi/rss', 'https://www.antaranews.com/rss/tekno', 'https://katadata.co.id/rss']],
+      // FIX 21 Sep: feed ketiga sebelumnya `katadata.co.id/rss` = feed UMUM (finansial/wisata),
+      // sehingga "hp terbaru 2026" dijawab artikel bursa & wisata. Diganti feed teknologi murni.
+      [/\b(?:teknologi|gadget|ai|startup|internet|digital|komputer|hp|smartphone|ponsel|laptop|chip|chipset|android|ios)\b/i,
+       ['https://www.cnnindonesia.com/teknologi/rss', 'https://www.antaranews.com/rss/tekno', 'https://www.cnbcindonesia.com/tech/rss']],
       [/\b(?:hiburan|film|musik|selebriti|artis|konser|drama|series|anime)\b/i,
        ['https://www.cnnindonesia.com/hiburan/rss', 'https://www.antaranews.com/rss/hiburan']],
       [/\b(?:kesehatan|dokter|obat|vaksin|penyakit|rumah sakit|gizi|diet)\b/i,
-       ['https://www.antaranews.com/rss/kesehatan', 'https://www.cnbcindonesia.com/rss']],
+       ['https://www.antaranews.com/rss/kesehatan', 'https://www.cnnindonesia.com/gaya-hidup/rss']],
     ];
     for (const [re, feeds] of topicFeeds) {
       if (!re.test(cleanQuery)) continue;

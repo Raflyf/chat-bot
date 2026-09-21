@@ -2107,16 +2107,21 @@ export async function autoReply(
       //  (b) SANGAT MIRIP (kemiripan token >=70%) — temuan produksi 20 Sep: bot mengulang
       //      isi yang sama dengan kata berbeda ("udah aku cek lagi" vs "udah aku telusuri
       //      lagi"), 18 kejadian di 1000 pesan. Guard lama hanya menangkap kasus (a).
+      // FIX 21 Sep 11:23 (kasus wa_...3323): kalimat "mau lanjut nebak lagi atau nyerah aja?"
+      // (39 karakter) terkirim TIGA KALI berturut-turut. Gate lama `length > 40` membuat
+      // kalimat pendek lolos, dan filter token >=4 huruf membuang kata kunci seperti
+      // "lagi"/"mau"/"nebak" sehingga kemiripan dihitung rendah. Ambang diturunkan ke 30
+      // karakter dan filter token ke >=3 huruf (kata 1-2 huruf memang terlalu umum).
       const tokensOf = (s: string): Set<string> =>
-        new Set(s.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4));
+        new Set(s.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3));
       const tLast = tokensOf(normLast);
       const tReply = tokensOf(normReply);
       let inter = 0;
       for (const t of tReply) if (tLast.has(t)) inter++;
       const similarity = tLast.size && tReply.size ? inter / Math.min(tLast.size, tReply.size) : 0;
       const isDuplicate =
-        (normLast.length > 20 && normLast === normReply) ||
-        (normLast.length > 40 && normReply.length > 40 && similarity >= 0.7);
+        (normLast.length > 15 && normLast === normReply) ||
+        (normLast.length > 30 && normReply.length > 30 && similarity >= 0.7);
       if (isDuplicate) {
         try {
           const retryMsgs: ChatMsg[] = [
@@ -2373,19 +2378,29 @@ export async function autoReply(
       const histRiddle = riddleAnswer ?? lastRiddleAnswer(ctx?.history);
       const lastAssistantRaw = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
       const lastAssistant = typeof lastAssistantRaw === 'string' ? stripDurableMarkers(lastAssistantRaw) : '';
+      // FIX 21 Sep: varian "Mau nebak lagi atau nyerah aja?" / "mau lanjut nebak lagi atau
+      // nyerah aja?" tidak tertangkap pola lama (`nyerah\s*?` butuh tepat di akhir kalimat).
+      // Tambahkan bentuk umum "lanjut/nebak lagi" + "nyerah" di mana pun dalam kalimat.
       const riddleOngoing =
         /\b(?:belum\s+(?:tepat|benar|bener|nyambung)|masih\s+meleset|meleset|coba\s+lagi\s+atau|(?:menyerah|nyerah)\s*\?)/i.test(lastAssistant) ||
-        (/\?/.test(lastAssistant) && /(?:coba\s+tebak|tebak\s*(?:dong|deh|apa)|nyerah|jawabannya)/i.test(lastAssistant));
+        /(?:nebak|lanjut\s+nebak|tebak)\s+lagi[^.!?\n]*\bnyerah\b/i.test(lastAssistant) ||
+        (/\?/.test(lastAssistant) && /(?:coba\s+tebak|tebak\s*(?:dong|deh|apa)|nyerah|jawabannya|nebak\s+lagi)/i.test(lastAssistant));
       const claimsCorrect =
-        /\b(?:bener|benar|tepat|kena|pinter|hebat|mantap|yes|yap|betul)\b/i.test(reply) &&
+        /\b(?:bener|benar|tepat|kena|pinter|hebat|mantap|yes|yap|betul|yoi|jago|hoki|asik|keren|itu\s+dia)\b/i.test(reply) &&
         !/\b(?:belum|bukan|salah|meleset|nyerah|menyerah)\b/i.test(reply);
-      if (histRiddle && riddleOngoing && clean && reply.trim() && claimsCorrect) {
+      // Gate luar TANPA claimsCorrect: guard harus jalan untuk dua arah kesalahan —
+      // (a) mengklaim BENAR padahal salah, dan (b) menolak/mendiamkan padahal BENAR.
+      if (histRiddle && riddleOngoing && clean && reply.trim()) {
+        // FIX 21 Sep: filter `> 2` membuang kata 2 huruf sehingga kunci pendek seperti
+        // "Es" menjadi array KOSONG -> `key.some(...)` selalu false -> tebakan "es" (BENAR)
+        // ditolak "Belum tepat". Turunkan ke >= 2 huruf; kata 1 huruf tetap dibuang
+        // (terlalu umum: "a", "e", "i" tidak bermakna sebagai jawaban).
         const norm = (s: string): string[] =>
           s
             .toLowerCase()
             .replace(/[^\p{L}\p{N}\s]/gu, ' ')
             .split(/\s+/)
-            .filter((w) => w.length > 2);
+            .filter((w) => w.length >= 2);
         const guess = norm(clean);
         const key = norm(histRiddle);
         // Kecocokan kata persis, atau awalan >=4 huruf (toleransi variasi akhiran).
@@ -2394,7 +2409,37 @@ export async function autoReply(
             (g) => g === k || (k.length >= 4 && g.length >= 4 && (g.startsWith(k.slice(0, 4)) || k.startsWith(g.slice(0, 4)))),
           ),
         );
-        if (!related) {
+        // FIX 21 Sep 11:23 (kasus wa_...3323, kunci "Es"):
+        //   user "es batu?" (BENAR) -> bot "mau lanjut nebak lagi atau nyerah aja?" (TANPA penilaian)
+        //   user "es?"      (BENAR) -> bot "Belum tepat nihh"  <- FALSE REJECT
+        // Guard lama HANYA menangkap arah sebaliknya (klaim benar padahal salah) karena
+        // seluruh blok ini di-gate `claimsCorrect`. Arah "menolak/mendiamkan padahal BENAR"
+        // belum tertangkap sama sekali -> ditangani di sini (gate luar sudah dibuka).
+        //
+        // Catatan: `!claimsCorrect` mencakup DUA cacat sekaligus — (a) menolak eksplisit
+        // ("Belum tepat"), dan (b) tidak menilai sama sekali ("mau lanjut nebak lagi?").
+        // Keduanya sama-sama menyesatkan user ketika tebakannya BENAR.
+        if (related && !claimsCorrect) {
+          console.warn(
+            `[skills] Penolakan salah: tebakan "${clean.trim().slice(0, 40)}" COCOK kunci "${histRiddle}" tapi ditolak — minta penilaian ulang.`,
+          );
+          try {
+            const reMsgs: ChatMsg[] = [
+              ...buildMessages(clean, ctx, web),
+              {
+                role: 'user',
+                content: `Koreksi: temanmu menebak "${clean.trim().slice(0, 60)}" dan itu BENAR (jawaban terkunci: "${histRiddle}"). Terima tebakannya dengan gembira dan natural, lalu tutup permainan dengan santai. DILARANG bilang belum tepat/meleset/bukan.`,
+              },
+            ];
+            const re = await chatRetry(reMsgs, false);
+            const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
+            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings);
+            if (reReply.trim()) reply = reReply;
+          } catch {
+            // Best-effort: bila regen gagal, balasan asli dibiarkan.
+          }
+        }
+        if (claimsCorrect && !related) {
           console.warn(
             `[skills] Penilaian halu: user menebak "${clean.trim().slice(0, 40)}" tapi kunci "${histRiddle}" — minta penilaian ulang.`,
           );
