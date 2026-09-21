@@ -401,6 +401,19 @@ export function needsSearch(text: string): boolean {
     return true;
   }
 
+  // - CUACA TANPA KATA "cuaca" (temuan produksi 21 Sep 13:21, chat wa_...3323):
+  //   user: "berapa derajat sekarang" -> needsSearch FALSE -> bot menjawab
+  //   "nggak punya akses data cuaca real-time" padahal scraping tersedia.
+  //   Orang bertanya cuaca dengan banyak cara: "berapa derajat", "suhu", "hujan gak",
+  //   "panas gak", "dingin gak", "mendung gak". Semua harus memicu penelusuran.
+  if (
+    /\b(?:berapa\s+derajat|suhu(?:nya)?|temperatur)\b/i.test(qNorm) ||
+    /\b(?:hujan|panas|dingin|mendung|gerah|adem|cerah|berawan|mendung)\b[\w\s]{0,12}\b(?:gak|ga|nggak|tidak|kah|apa)\b/i.test(qNorm) ||
+    /\b(?:bakal|mau|akan|kok)\s+(?:hujan|panas|dingin|gerah)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
   // - Berita terarah, update produk, harga komoditas & recency terarah
   // Frasa fleksibel: izinkan 1-2 kata sisipan antara kata benda berita dan kata recency
   // (mis. "berita yg terbaru", "berita nih terbaru", "carikan lagi berita terbaru").
@@ -1045,6 +1058,62 @@ export async function searchWeb(query: string, previousContext?: string): Promis
         };
         fetches.push(scrapeWithFallback());
         break;
+      }
+    }
+
+    // 2d2. SUMBER CUACA NYATA (temuan produksi 21 Sep 13:21, chat wa_...3323):
+    //   user: "berapa derajat sekarang" -> bot: "aku nggak punya akses data cuaca real-time".
+    //   Padahal ada API cuaca publik gratis tanpa key. wttr.in terverifikasi live:
+    //   "Cianjur: 26°C 55% ↓8km/h". Data INI yang harus dipakai model, bukan artikel berita
+    //   (berita cuaca hanya peringatan BMKG, bukan suhu aktual).
+    // Nama kota diambil dari kueri atau dari memori lokasi user (ctx.corrections).
+    {
+      const weatherIntent =
+        /\b(?:cuaca|suhu|temperatur|berapa\s+derajat|hujan|panas|dingin|gerah|mendung|cerah|berawan)\b/i.test(cleanQuery);
+      if (weatherIntent) {
+        // Ekstrak kota: pola "di <kota>", "cuaca <kota>", atau kueri apa adanya.
+        let city = '';
+        const mDi = cleanQuery.match(/\b(?:di|untuk|kota|daerah)\s+([A-Za-z][A-Za-z\s.'-]{2,28}?)(?:\s*(?:hari ini|sekarang|dong|nih|ya|\?|$))/i);
+        const mCuaca = cleanQuery.match(/\b(?:cuaca|suhu)\s+([A-Za-z][A-Za-z\s.'-]{2,28}?)(?:\s*(?:hari ini|sekarang|dong|nih|ya|\?|$))/i);
+        if (mCuaca) city = mCuaca[1].trim();
+        else if (mDi) city = mDi[1].trim();
+        // Buang kata umum yang bukan nama kota.
+        city = city.replace(/\b(?:hari ini|sekarang|dong|nih|ya|sih|deh|kak|bang)\b/gi, '').trim();
+        const weatherTargets = city ? [city] : [];
+        // Bila kota tidak disebut, coba lokasi dari riwayat percakapan (user menyebut "saya di X").
+        if (weatherTargets.length === 0 && typeof previousContext === 'string') {
+          const mLoc = previousContext.match(/\b(?:aku|saya|gue|gw)\s+(?:di|lagi\s+di)\s+([A-Z][A-Za-z\s.'-]{2,24})/);
+          if (mLoc) weatherTargets.push(mLoc[1].trim());
+        }
+        for (const target of weatherTargets.slice(0, 2)) {
+          fetches.push(
+            fetch(`https://wttr.in/${encodeURIComponent(target)}?format=j1`, {
+              headers: { 'User-Agent': 'curl/8.0' },
+              signal: controller.signal,
+            })
+              .then((r) => (r.ok ? r.json() : null))
+              .then((j) => {
+                const cur = j?.current_condition?.[0];
+                if (!cur) return;
+                const desc = cur.weatherDesc?.[0]?.value || '';
+                const lines = [
+                  `[DATA CUACA REAL-TIME (wttr.in) - ${target}]:`,
+                  `Suhu: ${cur.temp_C}°C (terasa seperti ${cur.FeelsLikeC}°C)`,
+                  `Kondisi: ${desc}`,
+                  `Kelembapan: ${cur.humidity}%`,
+                  `Angin: ${cur.windspeedKmph} km/jam`,
+                  `Waktu observasi: ${cur.observation_time}`,
+                  `Catatan: ini data cuaca AKTUAL dari API cuaca, bukan artikel berita. Gunakan angka ini untuk menjawab suhu/keadaan cuaca sekarang.`,
+                ];
+                structuredSnippets.unshift({
+                  text: lines.join('\n'),
+                  timestamp: Date.now() + 3_000_000_000,
+                  score: 120,
+                });
+              })
+              .catch(() => { /* cuaca opsional: kegagalan tidak boleh menghentikan rantai */ }),
+          );
+        }
       }
     }
 

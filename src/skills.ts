@@ -770,7 +770,10 @@ const MEDIA_NARRATION_RE = new RegExp(
     // Subjek khas stiker/gambar (hewan, karakter) + kata ekspresi — "Kucingnya malah ketawa ngakak"
     // Daftar subjek sengaja spesifik (bukan semua kata *nya) agar tidak salah menghapus
     // kalimat cerita user seperti "bapaknya ketawa lihat tingkahku".
-    String.raw`\b(?:kucing|anjing|monyet|bebek|ayam|tikus|hamster|kelinci|burung|panda|beruang|kodok|katak|ikan|kuda|sapi|kambing|gajah|singa|harimau|macan|serigala|rubah|penguin|pinguin|dino|dinosaurus|karakter|tokoh|maskot|boneka|mem|meme)(?:nya)?\s+(?:(?:malah|lagi|sedang|udah|sudah|masih|emang|memang|juga)\s+)?(?:ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|joget|dansa|berdiri|duduk|terbang|berlari|ngambek|marah|melotot|ngantuk|tidur)\b`,
+    // FIX 21 Sep 13:24: "Kucingnya lucu banget!" LOLOS guard lama karena daftar ekspresi
+    // hanya berisi VERBA (ketawa, nangis, ...). Menyebut subjek media + SIFAT
+    // ("kucingnya lucu/imut/gemes") juga narasi isi kiriman -> kata sifat ditambahkan.
+    String.raw`\b(?:kucing|anjing|monyet|bebek|ayam|tikus|hamster|kelinci|burung|panda|beruang|kodok|katak|ikan|kuda|sapi|kambing|gajah|singa|harimau|macan|serigala|rubah|penguin|pinguin|dino|dinosaurus|karakter|tokoh|maskot|boneka|mem|meme)(?:nya)?\s+(?:(?:malah|lagi|sedang|udah|sudah|masih|emang|memang|juga|tuh|itu|ini)\s+)?(?:ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|joget|dansa|berdiri|duduk|terbang|berlari|ngambek|marah|melotot|ngantuk|tidur|lucu|imut|gemes|nggemes|menggemaskan|keren|gokil|aneh|jelek|bagus)\b`,
     // "si/sang <subjek> + ekspresi" — "Si kucing ketawa"
     String.raw`\b(?:si|sang)\s+[a-z]+\s+(?:(?:malah|lagi|sedang|udah|sudah|masih)\s+)?(?:ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|joget|dansa|melotot|ngambek)\b`,
     // "(gambar|foto|stiker|video|mem|meme)nya + kata tampil/berisi" (dokumen DIKECUALIKAN —
@@ -2602,13 +2605,20 @@ export async function describeImage(
       '[PENGGUNA MENGIRIM STIKER EKSPRESI DI WHATSAPP/TELEGRAM]',
       caption && caption.trim() ? `Catatan/Emoji stiker: ${caption.trim()}` : '',
       'ATURAN RESPON STIKER (MUTLAK):',
-      '1. INI ADALAH STIKER CHAT WHATSAPP, BUKAN BAHAN ESSAY ATAU ANALISIS GAMBAR!',
-      '2. DILARANG KERAS MENARASIKAN / MENDESKRIPSIKAN ISI STIKER! DILARANG menyebut apa yang ada di stiker ("Kucingnya ketawa", "Stikernya menampilkan...", "Si kucing ngakak", "Gambarnya..."). Temanmu yang mengirim stiker itu — dia SUDAH TAHU isinya. Menarasikan isinya = aneh, garing, tidak natural.',
-      '3. YANG BENAR: balas dengan REAKSI NATURAL seperti manusia dikirimi stiker — celetukan pendek yang nyambung dengan obrolan terakhir, ikut tertawa/merespons suasananya, atau komentar santai. Kamu MELIHAT stikernya untuk memahami emosi/suasana, bukan untuk dibacakan ulang.',
-      '4. DILARANG KERAS MENGARANG CERITA / DONGENG KHAYALAN! (DILARANG mengarang kompetisi/tren TikTok, profesi dancer/atlet/influencer, pantai/tempat fiktif, otot, dsb).',
-      '5. PANJANG JAWABAN: HANYA 1 KALIMAT PENDEK SANTAI (maksimal 5-12 kata). DILARANG MEMBUAT 2 PARAGRAF!',
-      '6. TANGGAPI SEIRAMA DENGAN OBROLAN TERAKHIR — perhatikan konteks percakapan terakhir kalian.',
-      '7. ZERO ROBOT EMOJI / ZERO CRINGE EMOJI: Maksimal 1 emoji ekspresif wajar atau TANPA EMOJI sama sekali. DILARANG emoji robot, tertawa menangis 😂, atau jejak kaki 🐾.',
+      // PRIORITAS 1 (permintaan user 21 Sep 13:24): BACA TEKS DI STIKER.
+      // Temuan nyata: stiker berisi tulisan "DONGO / Sejak Lahir" (sindiran ke bot yang
+      // tidak bisa cek cuaca) dijawab "Wahahaha, lucu banget!" — salah total karena model
+      // hanya melihat gambarnya, bukan tulisannya.
+      '1. LANGKAH PERTAMA — BACA TEKS/NULISAN DI STIKER: banyak stiker memuat tulisan. Jika ada teks, ITULAH makna utama stiker dan wajib jadi dasar balasanmu. Contoh: stiker bertulisan "DONGO Sejak Lahir" = sindiran/ejekan (dongo = bodoh), bukan lelucon lucu — balas dengan menyadari sindirannya secara santai/self-deprecating, BUKAN tertawa "lucu banget".',
+      '2. JIKA TIDAK ADA TEKS: barulah dasarkan balasan pada GAMBAR dan KONSEP stiker (emosi/maksud yang tergambar: sindiran, kesal, kaget, sedih, lucu, dll).',
+      '3. INI ADALAH STIKER CHAT, BUKAN BAHAN ESSAY ATAU ANALISIS GAMBAR!',
+      '4. DILARANG KERAS MENARASIKAN / MENDESKRIPSIKAN ISI STIKER sebagai laporan ("Stikernya menampilkan tulisan...", "Kucingnya ketawa", "Gambarnya..."). Tanggapi MAKNANYA, jangan laporkan isinya. Temanmu yang mengirim stiker itu — dia SUDAH TAHU isinya.',
+      '5. TANGGAPI SESUAI MAKNA: stiker sindiran/ejekan -> respons sadar-diri yang santai (jangan tertawa); stiker lucu -> boleh ikut tertawa; stiker kesal -> akui dengan tenang. JANGAN tertawa bila stiker jelas menyindir.',
+      '6. YANG BENAR: balas dengan REAKSI NATURAL seperti manusia dikirimi stiker — celetukan pendek yang nyambung dengan obrolan terakhir.',
+      '7. DILARANG KERAS MENGARANG CERITA / DONGENG KHAYALAN! (DILARANG mengarang kompetisi/tren TikTok, profesi dancer/atlet/influencer, pantai/tempat fiktif, otot, dsb).',
+      '8. PANJANG JAWABAN: HANYA 1 KALIMAT PENDEK SANTAI (maksimal 5-12 kata). DILARANG MEMBUAT 2 PARAGRAF!',
+      '9. TANGGAPI SEIRAMA DENGAN OBROLAN TERAKHIR — perhatikan konteks percakapan terakhir kalian.',
+      '10. ZERO ROBOT EMOJI / ZERO CRINGE EMOJI: Maksimal 1 emoji ekspresif wajar atau TANPA EMOJI sama sekali. DILARANG emoji robot, tertawa menangis 😂, atau jejak kaki 🐾.',
     ].filter(Boolean).join('\n');
   } else if (isPdf) {
     promptText = caption && caption.trim()
@@ -2687,7 +2697,22 @@ export async function describeImage(
         ctx,
         null,
       );
-      if (regen.reply.trim()) reply = regen.reply;
+      const regenText = String(regen.reply || '').trim();
+      // FIX 21 Sep 13:24: hasil regen TIDAK boleh lewat stripMediaNarration lagi.
+      // Regen sudah diinstruksikan eksplisit sebagai reaksi (bukan narasi); menerapkan
+      // guard yang sama dua kali membuat balasan sah ikut terpotong jadi KOSONG
+      // (temuan uji: stiker sintetis -> bot tidak membalas apa pun).
+      if (regenText && !MEDIA_NARRATION_RE.test(regenText)) {
+        reply = regenText;
+      } else if (regenText) {
+        // Narasi terdeteksi: buang hanya kalimat naratifnya, sisakan reaksi bila ada.
+        const kept = regenText
+          .split(/(?<=[.!?\n])\s+/)
+          .filter((s) => s.trim() && !MEDIA_NARRATION_RE.test(s))
+          .join(' ')
+          .trim();
+        if (kept) reply = kept;
+      }
     } catch {
       // abaikan, fallback di bawah
     }
