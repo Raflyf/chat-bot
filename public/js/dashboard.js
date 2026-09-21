@@ -673,7 +673,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // config sistem (src/env.ts). Diverifikasi otomatis oleh
       // scratch/verify_v50_model_catalog.mjs — jangan tambah entri tanpa model di config.
       const catalog = [
-        // --- Tier 1: xKiro Gateway (Primer Teks Runtime) ---
+        // --- Tier 1: xKiro Gateway (Primer Teks Runtime, TERKUNCI Qwen saja) ---
         {
           name: "Qwen 3.8 Max Free",
           provider: "XKIRO",
@@ -683,79 +683,77 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["xkiro/qwen/qwen3.8-max:free", "qwen/qwen3.8-max:free", "qwen3.8-max"],
         },
         {
-          name: "MiniMax M3 Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Deep Reasoning", "Multimodal"],
-          desc: "Vision prioritas #4 rantai multimodal xKiro (GPQA 93,0) - khusus jalur gambar, bukan cadangan teks",
-          matchKeys: ["xkiro/minimax/minimax-m3:free", "minimax/minimax-m3:free", "minimax-m3"],
-        },
-        {
           name: "Qwen 3.8 Omni Flash Free",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Vision", "Multimodal", "Fast"],
-          desc: "Vision prioritas #10 - Model omni xKiro jalur gambar cadangan terakhir rantai multimodal",
+          desc: "Vision prioritas #9 - Model omni xKiro jalur gambar cadangan (uji live: BENAR gambar biru/kuning 7,7s)",
           matchKeys: ["xkiro/qwen/qwen3.8-omni-flash:free", "qwen/qwen3.8-omni-flash:free", "qwen3.8-omni-flash"],
-        },
-        {
-          name: "Qwen 3.7 Max Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Text", "Reasoning", "Backup"],
-          desc: "Cadangan #1 Tier 1 xKiro - dipakai otomatis saat Qwen 3.8 Max tidak merespon (failover dalam-tier)",
-          matchKeys: ["xkiro/qwen/qwen3.7-max:free", "qwen/qwen3.7-max:free", "qwen3.7-max"],
         },
         {
           name: "Qwen 3.6 Max Preview Free",
           provider: "XKIRO",
           tagClass: "tag-xkiro",
           capabilities: ["Text", "Reasoning", "Backup"],
-          desc: "Cadangan #2 Tier 1 xKiro - lapis terakhir failover Tier 1 sebelum pindah ke OpenRouter",
+          desc: "Cadangan #1 Tier 1 xKiro - uji lanjutan 3/3 lolos (0 pelanggaran), latensi 3,6s; dipercepat sebagai backup utama",
           matchKeys: ["xkiro/qwen/qwen3.6-max-preview:free", "qwen/qwen3.6-max-preview:free", "qwen3.6-max-preview"],
         },
-
-        // --- Tier 2: OpenRouter AI (Free Models) ---
         {
-          name: "DeepSeek V4 Flash 0731 Free",
-          provider: "OPENROUTER",
-          tagClass: "tag-openrouter",
-          capabilities: ["Text", "Reasoning", "PDF Parser"],
-          desc: "Prioritas #1 Tier 2 - Primer teks OpenRouter (GPQA 90,8) jalur model :free; parser PDF cadangan (plugin file-parser)",
-          matchKeys: ["openrouter/deepseek/deepseek-v4-flash-0731:free", "deepseek/deepseek-v4-flash-0731:free", "deepseek-v4-flash-0731"],
-        },
-        {
-          name: "Nex N2.5 Pro Free",
-          provider: "OPENROUTER",
-          tagClass: "tag-openrouter",
-          capabilities: ["Text", "Reasoning"],
-          desc: "Prioritas #2 Tier 2 - Cadangan router SOTA OpenRouter jalur model :free",
-          matchKeys: ["openrouter/nex-agi/nex-n2.5-pro:free", "nex-agi/nex-n2.5-pro:free", "nex-n2.5-pro"],
-        },
-        {
-          name: "Nemotron 3.5 Lightning Free",
-          provider: "OPENROUTER",
-          tagClass: "tag-openrouter",
-          capabilities: ["Text", "Reasoning", "Fast"],
-          desc: "Cadangan OpenRouter - model ringan berkecepatan tinggi dari NVIDIA",
-          matchKeys: ["openrouter/nvidia/nemotron-3.5-lightning:free", "nvidia/nemotron-3.5-lightning:free", "nemotron-3.5-lightning"],
-        },
-        {
-          name: "GLM 5.2 Free",
-          provider: "OPENROUTER",
-          tagClass: "tag-openrouter",
+          name: "Qwen 3.7 Max Free",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
           capabilities: ["Text", "Reasoning", "Backup"],
-          desc: "Cadangan OpenRouter - model GLM dari Z.AI untuk failover lapis terakhir Tier 2",
-          matchKeys: ["openrouter/z-ai/glm-5.2:free", "z-ai/glm-5.2:free", "glm-5.2"],
+          desc: "Cadangan #2 Tier 1 xKiro - uji lanjutan 3/3 lolos (0 pelanggaran), latensi 3,0s",
+          matchKeys: ["xkiro/qwen/qwen3.7-max:free", "qwen/qwen3.7-max:free", "qwen3.7-max"],
         },
-
-        // --- Tier 3: Groq Cloud API (LPU Inference Engine, Teks) ---
+        // --- Tier 2: Cloudflare Workers AI (Qwen 3.8 27B) ---
+        {
+          name: "Qwen 3.8 27B (CF)",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["Text", "Reasoning", "Vision"],
+          desc: "Prioritas #1 Tier 2 - Primer teks Cloudflare Workers AI; uji lanjutan P2 & P4 lolos (P3 gagal: jawab 12 jam utk soal 6 jam - dicatat sebagai kelemahan yang diterima)",
+          matchKeys: ["cloudflare/@cf/qwen/qwen3.8-27b", "@cf/qwen/qwen3.8-27b", "cf/qwen/qwen3.8-27b"],
+        },
+        {
+          name: "Nemotron 3 120B A12B (CF)",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["Text", "Reasoning", "Fast"],
+          desc: "Cadangan #1 Tier 2 - uji lanjutan 3/3 lolos (0 pelanggaran), 891ms = tercepat di CF setelah primary",
+          matchKeys: ["cloudflare/@cf/nvidia/nemotron-3-120b-a12b", "@cf/nvidia/nemotron-3-120b-a12b", "nemotron-3-120b"],
+        },
+        {
+          name: "GPT-OSS 20B (CF)",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["Text", "Reasoning"],
+          desc: "Cadangan #2 Tier 2 - uji lanjutan 3/3 lolos (0 pelanggaran), 1227ms",
+          matchKeys: ["cloudflare/@cf/openai/gpt-oss-20b", "@cf/openai/gpt-oss-20b", "gpt-oss-20b"],
+        },
+        {
+          name: "Llama 4 Scout 17B (CF)",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["Vision", "Multimodal", "Fast"],
+          desc: "Vision prioritas #2 - uji gambar 2 blok BENAR dalam 716ms = TERCEPAT di seluruh rantai vision Cloudflare",
+          matchKeys: ["cloudflare/@cf/meta/llama-4-scout-17b-16e-instruct", "@cf/meta/llama-4-scout-17b-16e-instruct", "llama-4-scout"],
+        },
+        {
+          name: "Mistral Small 3.1 24B (CF)",
+          provider: "CLOUDFLARE",
+          tagClass: "tag-cloudflare",
+          capabilities: ["Vision", "Multimodal"],
+          desc: "Vision prioritas #3 - uji gambar 2 blok BENAR dalam 2151ms",
+          matchKeys: ["cloudflare/@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/mistralai/mistral-small-3.1-24b-instruct", "mistral-small-3.1"],
+        },
+        // --- Tier 3: Groq Cloud API (LPU Inference Engine) ---
         {
           name: "Qwen 3.8 27B",
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Text", "Reasoning", "Vision", "LPU Speed"],
-          desc: "Prioritas #1 Tier 3 - Respons kilat ~284 tok/s LPU; vision prioritas #1 rantai multimodal (token pertama ~408ms)",
+          desc: "Prioritas #1 Tier 3 - 370ms = TERCEPAT dari seluruh 89 model yang diuji (uji lanjutan 3/3 lolos, 0 pelanggaran); vision prioritas #1 rantai multimodal",
           matchKeys: ["groq/qwen/qwen3.8-27b", "groq/qwen3.8", "qwen/qwen3.8-27b", "qwen3.8-27b"],
         },
         {
@@ -774,64 +772,44 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           desc: "Transkripsi Voice Note audio sub-detik ~500ms",
           matchKeys: ["whisper-large-v3-turbo", "whisper-large-v3", "whisper", "groq/whisper"],
         },
-
-        // --- Tier 4: Cloudflare Workers AI ---
+        // --- Tier 4: OpenRouter AI (Free Models) ---
         {
-          name: "Qwen 3.8 27B (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Text", "Reasoning", "Vision"],
-          desc: "Prioritas #1 Tier 4 - Primer teks Cloudflare Workers AI; vision prioritas #2 rantai multimodal (token pertama ~429ms)",
-          matchKeys: ["cloudflare/@cf/qwen/qwen3.8-27b", "@cf/qwen/qwen3.8-27b", "cf/qwen/qwen3.8-27b"],
+          name: "Nex N2.5 Mini Free",
+          provider: "OPENROUTER",
+          tagClass: "tag-openrouter",
+          capabilities: ["Text", "Reasoning", "Fast"],
+          desc: "Prioritas #1 Tier 4 - Primer teks OpenRouter; uji lanjutan 3/3 lolos (0 pelanggaran), 506ms = TERCEPAT di katalog OpenRouter",
+          matchKeys: ["openrouter/nex-agi/nex-n2.5-mini:free", "nex-agi/nex-n2.5-mini:free", "nex-n2.5-mini"],
         },
         {
-          name: "GLM 4.7 Flash (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Text", "Fast"],
-          desc: "Prioritas #2 Tier 4 - Cadangan gesit GLM 4.7 Flash di Workers AI",
-          matchKeys: ["cloudflare/@cf/zai-org/glm-4.7-flash", "@cf/zai-org/glm-4.7-flash", "glm-4.7-flash"],
+          name: "Ling 3.0 Flash Fin Free",
+          provider: "OPENROUTER",
+          tagClass: "tag-openrouter",
+          capabilities: ["Text", "Reasoning", "Finance"],
+          desc: "Cadangan #1 Tier 4 - uji lanjutan 3/3 lolos (0 pelanggaran), 1041ms; spesialis domain finansial",
+          matchKeys: ["openrouter/inclusionai/ling-3.0-flash-fin:free", "inclusionai/ling-3.0-flash-fin:free", "ling-3.0-flash-fin"],
         },
+        // Catatan: parser PDF OpenRouter (plugin file-parser) tetap aktif di kode media.ts
+        // tetapi BUKAN model katalog -- model :free deepseek-v4-flash-0731 sudah tidak ada.
+        // --- Tier 5: Dahl Global API (1 Miliar Token Pool) ---
         {
-          name: "GPT-OSS 120B (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Text", "Reasoning"],
-          desc: "Prioritas #3 Tier 4 - Penalaran GPT-OSS 120B di Workers AI",
-          matchKeys: ["cloudflare/@cf/openai/gpt-oss-120b", "@cf/openai/gpt-oss-120b"],
+          name: "DeepSeek V4 Flash 0731",
+          provider: "DAHL",
+          tagClass: "tag-dahl",
+          capabilities: ["Fast Reasoning", "Text", "Code"],
+          desc: "Prioritas #1 Tier 5 - SOTA Reasoning kilat & 1 Miliar Token Pool; uji lanjutan: sempat 429 saat concurrency penuh (dicatat)",
+          matchKeys: ["dahl/deepseek-ai/deepseek-v4-flash-0731", "deepseek-ai/deepseek-v4-flash-0731"],
         },
-        {
-          name: "Llama 3.3 70B FP8 Fast (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Text", "Fast"],
-          desc: "Prioritas #4 Tier 4 - Cadangan cepat Llama 3.3 70B FP8 di Workers AI",
-          matchKeys: ["cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "llama-3.3-70b"],
-        },
-        {
-          name: "Gemma 4 26B A4B (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Vision", "Multimodal"],
-          desc: "Vision prioritas #3 - Model Gemma multimodal via endpoint OpenAI-compat Workers AI",
-          matchKeys: ["cloudflare/@cf/google/gemma-4-26b-a4b-it", "@cf/google/gemma-4-26b-a4b-it", "gemma-4-26b-a4b"],
-        },
-        {
-          name: "LLaVA 1.5 7B (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Vision", "OCR"],
-          desc: "Vision prioritas #5 - Endpoint native /ai/run (respons field description)",
-          matchKeys: ["cloudflare/@cf/llava-hf/llava-1.5-7b-hf", "@cf/llava-hf/llava-1.5-7b-hf", "llava-1.5-7b"],
-        },
-
-        // --- Tier 5: Google Gemini API ---
+        // CATATAN: GLM-5.3-Flash & MiniMax-M2.7 DIHAPUS dari katalog 21 Sep -- uji lanjutan
+        // membuktikan keduanya tidak layak (GLM: KOSONG 27,6 dtk; MiniMax: bocorkan <think>).
+        // Dahl kini 1 model teks; bila gagal, rantai langsung failover ke Gemini.
+        // --- Tier 6: Google Gemini API (1M Konteks) ---
         {
           name: "Gemini 3.8 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
           capabilities: ["Text", "Reasoning", "PDF & Video"],
-          desc: "Prioritas #1 Tier 5 - Primer teks & dokumen/video native (1M konteks); dikecualikan dari rantai foto karena hang saat menerima gambar",
+          desc: "Prioritas #1 Tier 6 - Primer teks & dokumen/video native (1M konteks); dikecualikan dari rantai foto karena hang saat menerima gambar",
           matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
         },
         {
@@ -843,14 +821,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["gemini/gemini-3.6-flash", "gemini-3.6-flash"],
         },
         {
-          name: "Gemini 3.5 Flash Lite",
-          provider: "GEMINI",
-          tagClass: "tag-gemini",
-          capabilities: ["Vision", "PDF & Video", "Audio VN", "Fast"],
-          desc: "Vision prioritas #7 - Vision native ringan & cepat (token pertama ~1,4s)",
-          matchKeys: ["gemini/gemini-3.5-flash-lite", "gemini-3.5-flash-lite"],
-        },
-        {
           name: "Gemini 2.5 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
@@ -859,38 +829,12 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           matchKeys: ["gemini/gemini-2.5-flash", "gemini-2.5-flash"],
         },
         {
-          name: "Gemini 3.5 Flash",
+          name: "Gemini 3.1 Flash Lite",
           provider: "GEMINI",
           tagClass: "tag-gemini",
-          capabilities: ["Text", "Reasoning", "PDF & Video"],
-          desc: "Prioritas #2 Tier 5 - Cadangan teks & dokumen/video native (1M konteks)",
-          matchKeys: ["gemini/gemini-3.5-flash", "gemini-3.5-flash"],
-        },
-
-        // --- Tier 6: Dahl Global API (1 Miliar Token Pool) ---
-        {
-          name: "DeepSeek V4 Flash 0731",
-          provider: "DAHL",
-          tagClass: "tag-dahl",
-          capabilities: ["Fast Reasoning", "Text", "Code"],
-          desc: "Prioritas #1 Tier 6 - SOTA Reasoning kilat & 1 Miliar Token Pool",
-          matchKeys: ["dahl/deepseek-ai/deepseek-v4-flash-0731", "deepseek-ai/deepseek-v4-flash-0731"],
-        },
-        {
-          name: "GLM 5.3 Flash",
-          provider: "DAHL",
-          tagClass: "tag-dahl",
-          capabilities: ["Text", "Reasoning"],
-          desc: "Prioritas #2 Tier 6 - Cadangan GLM 5.3 Flash via Dahl Global",
-          matchKeys: ["dahl/zai-org/glm-5.3-flash", "zai-org/glm-5.3-flash", "glm-5.3-flash"],
-        },
-        {
-          name: "MiniMax M2.7",
-          provider: "DAHL",
-          tagClass: "tag-dahl",
-          capabilities: ["Deep Reasoning", "Auto-Stripped Think"],
-          desc: "Prioritas #3 Tier 6 - Model penalaran mendalam MiniMax dengan think-tag stripper",
-          matchKeys: ["dahl/minimaxai/minimax-m2.7", "minimaxai/minimax-m2.7", "minimax-m2.7"],
+          capabilities: ["Vision", "PDF & Video", "Audio VN", "Fast"],
+          desc: "Cadangan #1 Tier 6 + vision prioritas #5 - uji 3/3 lolos, 1106ms teks / 1213ms gambar / 3429ms PDF",
+          matchKeys: ["gemini/gemini-3.1-flash-lite", "gemini-3.1-flash-lite"],
         },
       ];
 

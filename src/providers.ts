@@ -922,37 +922,10 @@ function steps(): Step[] {
         }, t);
       },
     },
-    // --- TIER 4: Dahl Global (SALDO BESAR 1 MILIAR TOKEN — penyelamat jangka panjang) ---
-    // Diturunkan dari Tier 2 ke Tier 4 (20 Sep) setelah uji kepatuhan: modelnya kurang
-    // patuh dibanding Cloudflare/Groq (DeepSeek-V4-Flash: emoji berlebihan).
-    // KENAPA TETAP PENTING: saldo 10 key x 100M = 1 MILIAR token (bukan kuota harian),
-    // TIDAK ada rate limit ITPM ketat, dan latensi p50 ~0,23 dtk. Inilah penyelamat
-    // ketika semua kuota harian (Cloudflare/Groq/Gemini) habis.
-    {
-      kind: 'dahl',
-      keys: config.pools.dahl,
-      models: [config.models.dahlPrimary, ...config.models.dahlBackup],
-      cap: config.dailyCap.dahl,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) => {
-        const isDeepSeek = m.toLowerCase().includes('deepseek');
-        // Tuning terbukti: thinking off + temperature/penalty luwes -> output bersih.
-        //
-        // CATATAN MiniMax M2.7: membocorkan <think> walau reasoning_effort 'none', dan
-        // parameter chat_template_kwargs SUDAH DIUJI tidak didukung proxy ini. Karena itu
-        // MiniMax DIHAPUS dari backup teks (tetap dipakai di jalur vision). Pertahanan
-        // utama tetap SANITIZER yang menangani <think> tertutup maupun tidak tertutup.
-        return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
-          reasoning_effort: 'none',
-          temperature: isDeepSeek ? 0.65 : 0.45,
-          frequency_penalty: isDeepSeek ? 0.1 : 0.5,
-          presence_penalty: isDeepSeek ? 0.1 : 0.0,
-        }, t);
-      },
-    },
-    // --- TIER 5: OpenRouter (free models — cadangan luas) ---
-    // Kuota per-key hanya 50 request :free/hari, jadi diletakkan setelah pool besar
-    // (Cloudflare/Groq/Dahl). Tetap berguna sebagai lapisan cadangan sebelum Gemini.
+    // --- TIER 4: OpenRouter (free models — cadangan luas) ---
+    // INSTRUKSI USER (21 Sep): primary = nex-agi/nex-n2.5-mini:free (uji: 3/3 lolos,
+    // 506ms = tercepat di katalog OR). Backup: ling-3.0-flash-fin (1041ms, 3/3 lolos).
+    // Kuota per-key 50 request :free/hari -> lapisan cadangan sebelum Dahl & Gemini.
     {
       kind: 'openrouter',
       keys: config.pools.openrouter,
@@ -964,6 +937,32 @@ function steps(): Step[] {
           // Thinking off (keputusan user): 3,5 dtk -> ~1 dtk, output tetap bersih.
           reasoning: { effort: 'none' },
         }, t),
+    },
+    // --- TIER 5: Dahl Global (SALDO BESAR 1 MILIAR TOKEN — penyelamat jangka panjang) ---
+    // INSTRUKSI USER (21 Sep): primary = deepseek-ai/DeepSeek-V4-Flash-0731.
+    // KENAPA PENTING: saldo 10 key x 100M = 1 MILIAR token (bukan kuota harian),
+    // TIDAK ada rate limit ITPM ketat, latensi p50 ~0,23 dtk. Penyelamat ketika semua
+    // kuota harian (Cloudflare/Groq/Gemini) habis.
+    // BACKUP = KOSONG (bukan kelalaian): uji lanjutan 21 Sep membuktikan 2 model lain Dahl
+    // TIDAK LAYAK — GLM-5.3-Flash membalas KOSONG selama 27,6 dtk, MiniMax-M2.7
+    // membocorkan <think>. Lebih baik failover langsung ke Gemini daripada membuang
+    // waktu rantai ke backup yang terbukti rusak.
+    {
+      kind: 'dahl',
+      keys: config.pools.dahl,
+      models: [config.models.dahlPrimary, ...config.models.dahlBackup],
+      cap: config.dailyCap.dahl,
+      maxPromptTokens: 0,
+      run: (k, m, msgs, t) => {
+        const isDeepSeek = m.toLowerCase().includes('deepseek');
+        // Tuning terbukti: thinking off + temperature/penalty luwes -> output bersih.
+        return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
+          reasoning_effort: 'none',
+          temperature: isDeepSeek ? 0.65 : 0.45,
+          frequency_penalty: isDeepSeek ? 0.1 : 0.5,
+          presence_penalty: isDeepSeek ? 0.1 : 0.0,
+        }, t);
+      },
     },
     // --- TIER 6: Google Gemini API (1M konteks — lapisan terakhir) ---
     // UJI KEPATUHAN LIVE (dengan thinkingBudget:0 sesuai konfig produksi): gemini-3.8-flash

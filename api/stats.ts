@@ -459,28 +459,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const totalComputedTokensPeriod = grandTotalRealTokens + (Math.max(0, totalModelCalls - grandTotalCallsWithRealTokens) * overallAvgTokens);
 
     // Daftar model aktif sistem untuk memfilter histori DB lama yang sudah didepresiasi
-    // Urutan komentar mengikuti rantai failover teks runtime: xKiro > OpenRouter > Groq > Cloudflare > Gemini > Dahl
+    // Urutan mengikuti rantai failover teks runtime v0.67: xKiro > Cloudflare > Groq >
+    // OpenRouter > Dahl > Gemini (sesuai instruksi user 21 Sep).
     const activeSystemModels = [
-      // Tier 1: xKiro (Qwen 3.8 Max, MiniMax M3)
+      // Tier 1: xKiro (Qwen saja - instruksi user)
       config.models.xkiroPrimary,
       ...config.models.xkiroBackup,
-      // Tier 2: OpenRouter
-      config.models.orPrimary,
-      ...config.models.orBackup,
-      // Tier 3: Groq
-      config.models.groqPrimary,
-      ...config.models.groqBackup,
-      // Tier 4: Cloudflare Workers AI (teks + seluruh model vision)
+      // Tier 2: Cloudflare Workers AI (teks + seluruh model vision)
       config.models.cfPrimary,
       ...config.models.cfBackup,
       ...config.models.cfVision,
-      // Tier 5: Gemini (teks + model vision khusus)
+      // Tier 3: Groq
+      config.models.groqPrimary,
+      ...config.models.groqBackup,
+      // Tier 4: OpenRouter
+      config.models.orPrimary,
+      ...config.models.orBackup,
+      // Tier 5: Dahl Global
+      config.models.dahlPrimary,
+      ...config.models.dahlBackup,
+      // Tier 6: Gemini (teks + model vision khusus)
       config.models.geminiPrimary,
       ...config.models.geminiBackup,
       ...config.models.geminiVision,
-      // Tier 6: Dahl Global
-      config.models.dahlPrimary,
-      ...config.models.dahlBackup,
       // Rantai vision eksplisit (model yang bisa muncul sebagai `via`)
       ...config.models.visionChain.map((v) => v.model),
       'whisper-large-v3-turbo',
@@ -610,11 +611,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         tokenCapPerKey: config.dailyTokenCap.cloudflare,
         tokenCapPerKeyList: config.dailyTokenCapPerKey.cloudflare,
         tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '10.000 Neuron/hari (~100-300 RPD Free Tier)',
+        tokenLimitLabel: '10.000 Neuron/hari/key (Free Tier resmi)',
         resetCycle: 'Harian (00:00 UTC)',
         contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.cfPrimary,
         backupModel: config.models.cfBackup.join(' / '),
+        // cfVision sudah tercakup lewat cfBackup (llama-4-scout, mistral-small) + primary,
+        // tapi tetap disertakan agar model vision yang muncul sebagai `via` dikenali aktif.
         allModels: [config.models.cfPrimary, ...config.models.cfBackup, ...config.models.cfVision],
       },
       {

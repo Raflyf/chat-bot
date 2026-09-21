@@ -71,7 +71,13 @@ export const config = {
     // Backup WAJIB ada di katalog gateway (diverifikasi live). Model lama
     // 'deepseek/deepseek-v4.1-flash:free' sudah DIHAPUS dari xkiro -> tiap failover
     // ke sana menghasilkan HTTP 404 dan membuang waktu rantai (temuan audit).
-    xkiroBackup: ['qwen/qwen3.7-max:free', 'qwen/qwen3.6-max-preview:free'],
+    //
+    // INSTRUKSI USER (21 Sep): "untuk model dari xkiro itu cukup dari qwen saja,
+    // jangan masukan minimax atau mistral" -> seluruh backup adalah Qwen.
+    // UJI LANJUTAN 21 Sep (3 prompt berbeda): ketiga Qwen lolos SEMUA (P2 kepatuhan,
+    // P3 kepintaran, P4 gaya) dengan 0 pelanggaran. Latensi: 3.6-max 3629ms <
+    // 3.7-max 4012ms < 3.8-max 4972ms -> yang lebih gesit didahulukan sebagai backup.
+    xkiroBackup: ['qwen/qwen3.6-max-preview:free', 'qwen/qwen3.7-max:free'],
     // Tier 2: OpenRouter (model :free).
     // AUDIT 20 Sep 2026: 'deepseek/deepseek-v4-flash-0731:free' SUDAH TIDAK ADA di
     // katalog OpenRouter (dicek live: 446 model, NOL model deepseek :free) -> setiap
@@ -79,11 +85,19 @@ export const config = {
     // ada DAN diuji live (HTTP 200):
     //   - nex-agi/nex-n2.5-pro:free (context 262K, sudah terbukti di produksi)
     //   - nvidia/nemotron-3.5-lightning:free (context 1M)
-    orPrimary: 'nex-agi/nex-n2.5-pro:free',
-    orBackup: ['nvidia/nemotron-3.5-lightning:free', 'z-ai/glm-5.2:free'],
+    // INSTRUKSI USER (21 Sep): primary = nex-agi/nex-n2.5-mini:free.
+    // UJI LANJUTAN 21 Sep: nex-n2.5-mini lolos 3/3 prompt (P2/P3/P4), 0 pelanggaran,
+    // latensi 506ms = TERCEPAT di seluruh katalog OpenRouter.
+    // nex-n2.5-pro DITURUNKAN ke backup: 18,4 detik (terlambat) di uji v1.
+    // Backup dipilih dari hasil uji: ling-3.0-flash-fin (1041ms, 3/3 lolos) --
+    // hanya 1 backup (user: "cukup 1, maksimal 2 bila masih layak").
+    orPrimary: 'nex-agi/nex-n2.5-mini:free',
+    orBackup: ['inclusionai/ling-3.0-flash-fin:free'],
     // Tier 3: Groq Cloud API (LPU Ultra-Fast Inference)
     // UJI KEPATUHAN 20 Sep: qwen3.8-27b & gpt-oss-120b = PATUH SEMPURNA + tercepat
     // (763-1202ms). Dua model ini adalah yang paling patuh dari SEMUA provider.
+    // UJI LANJUTAN 21 Sep: groq/qwen3.8-27b lolos 3/3 prompt, 0 pelanggaran, 370ms =
+    // TERCEPAT dari seluruh 89 model yang diuji. gpt-oss-120b juga 3/3 (878ms).
     groqPrimary: 'qwen/qwen3.8-27b',
     groqBackup: ['openai/gpt-oss-120b'],
     // Tier 2: Cloudflare Workers AI
@@ -91,39 +105,68 @@ export const config = {
     // PRIMARY = qwen3.8-27b (PERMINTAAN USER 20 Sep: "coba model dari cf jangan glm, pake
     // qwen aja"). Alasan tambahan: glm-4.7-flash terbukti membuat tebakan kontradiktif
     // ("hewan paling suka diam" -> jawaban "si Lebah") dan respons aneh ("Pertahankan!").
+    // INSTRUKSI USER (21 Sep): primary = @cf/qwen/qwen3.8-27b (bukan glm lagi).
+    // UJI LANJUTAN 21 Sep: cf/qwen3.8-27b lolos P2 & P4, tapi GAGAL P3 (menjawab "12 jam"
+    // untuk soal yang jawabannya 6) -- dicatat sebagai kelemahan yang diterima karena
+    // user menetapkannya sebagai primary.
+    // BACKUP dipilih dari yang lolos 3/3 + tercepat (user: maksimal 2):
+    //   @cf/nvidia/nemotron-3-120b-a12b (891ms, 3/3) -- tercepat & lolos penuh
+    //   @cf/openai/gpt-oss-20b (1227ms, 3/3)
     cfPrimary: '@cf/qwen/qwen3.8-27b',
-    cfBackup: ['@cf/openai/gpt-oss-120b', '@cf/zai-org/glm-4.7-flash', '@cf/meta/llama-3.3-70b-instruct-fp8-fast'],
+    cfBackup: ['@cf/nvidia/nemotron-3-120b-a12b', '@cf/openai/gpt-oss-20b'],
     // Model vision Cloudflare (sinkron dengan rantai vision runtime): Qwen & Gemma via
     // endpoint OpenAI-compat /ai/v1, LLaVA via endpoint native /ai/run (byte array).
     cfVision: [
+      '@cf/meta/llama-4-scout-17b-16e-instruct',
+      '@cf/mistralai/mistral-small-3.1-24b-instruct',
       '@cf/qwen/qwen3.8-27b',
-      '@cf/google/gemma-4-26b-a4b-it',
-      '@cf/llava-hf/llava-1.5-7b-hf',
     ],
     // Tier 5: Google Gemini API (1M Konteks)
+    // INSTRUKSI USER (21 Sep): primary = gemini-3.8-flash.
+    // UJI LANJUTAN 21 Sep: gemini-3.8-flash lolos P2 & P4, GAGAL P3 (jawaban kosong).
+    // BACKUP: gemini-3.1-flash-lite (1106ms, 3/3 lolos) -- jauh lebih cepat dari
+    // 3.5-flash (9714ms) dan lolos penuh. Hanya 1 backup (user: cukup 1).
     geminiPrimary: 'gemini-3.8-flash',
-    geminiBackup: ['gemini-3.5-flash'],
+    geminiBackup: ['gemini-3.1-flash-lite'],
     // Model Gemini khusus jalur VISION. gemini-3.8-flash dikecualikan: terbukti hang ~60s
     // tanpa token saat menerima gambar (uji live), jadi tetap primer teks saja.
-    geminiVision: ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'],
+    // DIROMBAK 21 Sep: 3.1-flash-lite terbukti BENAR+TERCEPAT (1213ms gambar, 3429ms PDF);
+    // 3.5-flash-lite DIBUANG (HTTP 400 "invalid argument" saat gambar/PDF).
+    // Urutan: cepat -> lambat (3.6-flash terakhir karena 12,5 dtk).
+    geminiVision: ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.6-flash'],
     // Tier 6: Dahl Global API (1B Token Pool - latensi ~0,22s)
     // UJI KEPATUHAN 20 Sep: DeepSeek-V4-Flash = 2164ms, hanya emoji berlebihan (sudah
     // dibatasi sanitizer). MiniMax-M2.7 DIHAPUS dari backup teks: membocorkan <think>,
     // 58 kata, 17 detik (instruksi user: "minimax hilangkan dari backup text, simpan
     // di multimodal saja" — MiniMax tetap dipakai di jalur vision).
+    // UJI LANJUTAN 21 Sep (2 prompt berbeda):
+    //   deepseek-ai/DeepSeek-V4-Flash-0731 -> 1536ms, v1 bersih (empati+helpful), tapi
+    //     GAGAL P2/P3/P4 saat concurrency penuh (HTTP 429 "concurrency capacity").
+    //   zai-org/GLM-5.3-Flash   -> KOSONG 27,6 DETIK (tidak layak jadi backup).
+    //   MiniMaxAI/MiniMax-M2.7  -> 5993ms tapi MEMBOCORKAN <think> (tidak layak).
+    // KEPUTUSAN: Dahl hanya 1 model teks (DeepSeek). Bila gagal, failover LANGSUNG ke
+    // tier berikutnya (Gemini) -- lebih baik daripada membuang waktu ke backup yang
+    // terbukti kosong/bocor. MiniMax tetap dipakai di jalur VISION.
     dahlPrimary: 'deepseek-ai/DeepSeek-V4-Flash-0731',
-    dahlBackup: ['zai-org/GLM-5.3-Flash'],
-    // Rantai vision eksplisit (urutan keputusan review user; seluruhnya terbukti aktif via uji live).
+    dahlBackup: [],
+    // Rantai vision eksplisit. DIROMBAK 21 Sep berdasarkan UJI GAMBAR NYATA (2 blok
+    // biru/kuning): model yang terbukti BENAR + cepat didahulukan, yang membalas KOSONG
+    // atau error 400 DIBUANG (bukan ditebak):
+    //   BENAR  : groq/qwen3.8-27b, cf/llama-4-scout (716ms!), cf/mistral-small-3.1,
+    //            cf/qwen3.8-27b, gemini-3.1-flash-lite (1213ms), gemini-2.5-flash,
+    //            gemini-3.6-flash, xkiro qwen3.8-max, xkiro qwen3.8-omni-flash
+    //   DIBUANG: @cf/google/gemma-4-26b-a4b-it (KOSONG), @cf/llava-1.5-7b (KOSONG),
+    //            @cf/meta/llama-3.2-11b-vision (HTTP 400 "unable to add image"),
+    //            gemini-3.5-flash-lite (HTTP 400 invalid argument), minimax-m3 (tidak lolos)
     // Dipakai chat({ vision: true }) untuk foto, stiker, dan gambar di dalam dokumen Word.
     visionChain: [
       { kind: 'groq', model: 'qwen/qwen3.8-27b' },
+      { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
+      { kind: 'cloudflare', model: '@cf/mistralai/mistral-small-3.1-24b-instruct' },
       { kind: 'cloudflare', model: '@cf/qwen/qwen3.8-27b' },
-      { kind: 'cloudflare', model: '@cf/google/gemma-4-26b-a4b-it' },
-      { kind: 'xkiro', model: 'minimax/minimax-m3:free' },
-      { kind: 'cloudflare', model: '@cf/llava-hf/llava-1.5-7b-hf' },
-      { kind: 'gemini', model: 'gemini-3.6-flash' },
-      { kind: 'gemini', model: 'gemini-3.5-flash-lite' },
+      { kind: 'gemini', model: 'gemini-3.1-flash-lite' },
       { kind: 'gemini', model: 'gemini-2.5-flash' },
+      { kind: 'gemini', model: 'gemini-3.6-flash' },
       { kind: 'xkiro', model: 'qwen/qwen3.8-max:free' },
       { kind: 'xkiro', model: 'qwen/qwen3.8-omni-flash:free' },
     ] as Array<{

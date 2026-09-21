@@ -852,6 +852,12 @@ export function sanitizeAssistantOutput(
   mediaReply?: boolean,
 ): string {
   let cleaned = cleanMathAndNoise(text, userPrompt);
+  // Huruf KAPITAL pertama kata terduplikasi (temuan live 21 Sep: "HHalo! Lagi siap bantu..."
+  // dari xKiro qwen3.8-max). Model kadang mengetik huruf pertama dua kali; terlihat seperti
+  // typo bagi user. HANYA huruf kapital -> "HHalo" jadi "Halo", sementara kata berhuruf
+  // kecil yang memang berawalan dobel (llama, aamiin) TIDAK tersentuh. Singkatan seperti
+  // "OK"/"AI"/"PT" juga aman karena tidak ada huruf kecil setelah dobel pertama.
+  cleaned = cleaned.replace(/\b([A-Z])\1(?=[a-z])/g, '$1');
   // Jaring akhir: buang sisa tag kontrol/penanda internal model (mis. <CPA_DONE>)
   // yang mungkin lolos dari pembersih mana pun.
   cleaned = cleaned.replace(/<\/?(?:[A-Z][A-Z0-9_]{2,})>/g, '').replace(/[ \t]{2,}/g, ' ').trim();
