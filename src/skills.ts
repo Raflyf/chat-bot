@@ -956,8 +956,23 @@ function enforceUniversalRules(text: string): string {
   out = out.replace(/\*\s*\[[^\]]{0,120}\]\s*\*/g, '');          // *[tiba-tiba suara jadi serius]*
   out = out.replace(/\*\s*\([^)]{0,120}\)\s*\*/g, '');            // *(menghela napas)*
   out = out.replace(/\*\*\s*\([^)]{0,120}\)\s*\*\*/g, '');      // **(tersenyum)**
-  // Kalimat narasi gerakan tunggal: *menyentuh tanganmu* (tanpa [ atau ()
-  out = out.replace(/\*[a-z][^*\n]{0,80}\*/gi, '');
+  // Kalimat narasi gerakan tunggal: *menyentuh tanganmu* (tanpa [ atau ().
+  //
+  // BUG YANG DIPERBAIKI (temuan audit v0.79, direproduksi nyata):
+  // versi sebelumnya `\*[a-z][^*\n]{0,80}\*` menghapus SEMUA teks di antara asterisk
+  // TANPA memeriksa apakah isinya narasi akting. Akibatnya kata bermakna ikut hilang:
+  //   "*penting* banget"        -> "Banget"     (kata "penting" HILANG)
+  //   "**penting**"             -> ""           (seluruh balasan HILANG)
+  //   "Ini *rahasia* lho"       -> "Ini lho"    (kata "rahasia" HILANG)
+  //   "Coba baca *buku* itu"    -> "Coba baca itu"
+  // Ini merusak makna balasan bot pada percakapan biasa (penekanan dengan asterisk
+  // adalah gaya umum di WhatsApp). Sekarang hanya dibuang bila isinya BENAR-BENAR
+  // narasi akting/gerakan (kata kerja orang pertama + kata tubuh/ekspresi), dan
+  // maksimal 40 karakter (narasi akting pendek; penekanan kata bisa lebih panjang).
+  out = out.replace(
+    /\*(?=[^*\n]{0,40}\*)(?=[^*\n]*(?:senyum|tersenyum|tertawa|tertawa|menatap|memandang|menghela|mengedip|melirik|mengangguk|menggeleng|merangkul|memegang|menyentuh|mengusap|berbisik|menghela|napas|duduk|berdiri|melompat|tersipu|terkejut|kaget|sedih|marah|takut|malu|bingung|goyang|ketawa|nangis|menangis|melambai|menunjuk|tersenyum)[^*\n]*\*)[^*\n]{0,40}\*/gi,
+    '',
+  );
 
   // 2. Klaim mendengar audio saat input bukan voice note — DILARANG (PRINSIP 4B).
   //    Tidak bisa dideteksi dari output saja (butuh konteks input), jadi ditangani

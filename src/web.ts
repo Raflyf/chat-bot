@@ -38,6 +38,57 @@ export function isSafePublicUrl(urlString: string): boolean {
       ) {
         return false;
       }
+
+      // BUG KEAMANAN YANG DIPERBAIKI (temuan audit v0.79, direproduksi nyata):
+      // versi sebelumnya LANGSUNG `return true` untuk semua host IPv6 lain. Akibatnya
+      // alamat IPv4 yang DIBUNGKUS format IPv6-mapped LOLOS total:
+      //   http://[::ffff:127.0.0.1]/                  -> localhost (harus BLOCK)
+      //   http://[::ffff:169.254.169.254]/latest/meta-data/ -> metadata cloud AWS/GCP
+      //   http://[::ffff:10.0.0.5]/                   -> jaringan privat
+      // Ini SSRF nyata: bot bisa dipaksa membaca endpoint internal / kredensial cloud
+      // lewat URL yang dikirim user. Sekarang alamat IPv4-mapped diekstrak lalu diperiksa
+      // dengan aturan IPv4 yang sama.
+      const mapped = host.match(/^(?:::ffff:|::)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
+      if (mapped) {
+        const m4 = mapped[1].match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+        if (m4) {
+          const a = parseInt(m4[1], 10);
+          const b = parseInt(m4[2], 10);
+          if (a === 10 || a === 127 || a === 0 || a >= 224) return false;
+          if (a === 169 && b === 254) return false;
+          if (a === 172 && b >= 16 && b <= 31) return false;
+          if (a === 192 && b === 168) return false;
+        }
+      }
+
+      // Bentuk IPv6 HEKSADESIMAL dari alamat privat.
+      //
+      // PENTING: Node menormalkan hostname IPv6 menjadi hex, jadi
+      //   http://[::ffff:127.0.0.1]/         -> hostname "[::ffff:7f00:1]"
+      //   http://[0:0:0:0:0:ffff:7f00:1]/    -> hostname "[::ffff:7f00:1]" (sama!)
+      // Pencocokan literal "127.0.0.1" karena itu TIDAK PERNAH cocok. Solusinya: dekode
+      // 32 bit terakhir menjadi oktet IPv4 lalu periksa dengan aturan yang sama.
+      const parts = host.split(':');
+      const lastTwo = parts.slice(-2);
+      if (lastTwo.length === 2 && /^[0-9a-f]{1,4}$/i.test(lastTwo[0]) && /^[0-9a-f]{1,4}$/i.test(lastTwo[1])) {
+        const hi = parseInt(lastTwo[0], 16);
+        const lo = parseInt(lastTwo[1], 16);
+        const a = (hi >> 8) & 0xff;
+        const b = hi & 0xff;
+        const c = (lo >> 8) & 0xff;
+        const d = lo & 0xff;
+        // Hanya periksa bila bagian di ATAS dua grup terakhir seluruhnya nol/ffff
+        // (artinya alamat ini memang IPv4-mapped/kompatibel, bukan IPv6 asli).
+        const head = parts.slice(0, -2).filter((x) => x !== '' && x !== '0' && x.toLowerCase() !== 'ffff');
+        if (head.length === 0) {
+          if (a === 10 || a === 127 || a === 0 || a >= 224) return false;
+          if (a === 169 && b === 254) return false;
+          if (a === 172 && b >= 16 && b <= 31) return false;
+          if (a === 192 && b === 168) return false;
+          if (a === 0 && b === 0 && c === 0 && d === 0) return false;
+        }
+      }
+
       return true;
     }
 
