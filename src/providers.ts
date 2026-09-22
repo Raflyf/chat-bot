@@ -835,16 +835,27 @@ export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: 
   // Salinan dangkal; pesan terakhir diganti objek baru bila perlu dipangkas.
   const out: ChatMsg[] = messages.slice();
   const systemMsg = out[0];
-  const lastIdx = out.length - 1;
+  const lastMsg = out[out.length - 1];
 
   // TAHAP 1: buang riwayat tertua satu per satu (cara lama).
+  //
+  // BUG YANG DIPERBAIKI (temuan audit v0.79, reproduksi nyata): versi sebelumnya memakai
+  // `out.splice(1, lastIdx - 1, ...history)` dengan `lastIdx = out.length - 1`. Ketika
+  // riwayat dihabiskan (history.length === 0), splice menghapus SEMUA elemen indeks 1
+  // sampai lastIdx-1 — termasuk pesan terakhir — sehingga `out[lastIdx]` menjadi
+  // `undefined` dan tahap 2 CRASH dengan "Cannot read properties of undefined (reading
+  // 'content')". Kasus ini nyata: request multimodal (gambar) + prompt besar + riwayat
+  // sedikit, yaitu persis jalur describeImage/processIncomingSticker.
+  // Perbaikan: bangun array BARU secara eksplisit, jangan splice dengan indeks yang bisa
+  // menunjuk elemen yang sudah tidak ada.
   if (out.length > 2) {
-    const history = out.slice(1, lastIdx);
+    const history = out.slice(1, -1);
     while (history.length > 0 && totalTokens > maxBudgetTokens) {
       history.shift();
-      totalTokens = estimateTokens([systemMsg, ...history, out[lastIdx]]);
+      totalTokens = estimateTokens([systemMsg, ...history, lastMsg]);
     }
-    out.splice(1, lastIdx - 1, ...history);
+    out.length = 0;
+    out.push(systemMsg, ...history, lastMsg);
   }
 
   // TAHAP 2 (BUG LAMA): riwayat kosong tapi prompt masih melebihi anggaran — biasanya
@@ -855,10 +866,13 @@ export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: 
   // dari BELAKANG (konteks web ada di bawah, pertanyaan user ada di atas) sehingga
   // pertanyaannya tetap utuh.
   if (totalTokens > maxBudgetTokens) {
-    const last = out[lastIdx];
-    if (typeof last.content === 'string') {
+    const last = out[out.length - 1];
+    // Guard tipe: content bisa ARRAY (multimodal: teks + gambar). Hanya string yang
+    // bisa dipangkas; untuk array, bagian gambar TIDAK boleh dibuang (tanpa gambar
+    // pertanyaannya tidak bisa dijawab), jadi dilewati saja.
+    if (last && typeof last.content === 'string') {
       const systemChars = typeof systemMsg.content === 'string' ? systemMsg.content.length : 0;
-      const otherChars = out.slice(1, lastIdx).reduce(
+      const otherChars = out.slice(1, -1).reduce(
         (a, m) => a + (typeof m.content === 'string' ? m.content.length : 0), 0);
       // Sisakan ruang untuk penanda pangkas (~60 char) agar hasil akhir benar-benar
       // di bawah anggaran — tanpa ini hasilnya 6.818 token (18 di atas 6.800).
@@ -869,7 +883,7 @@ export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: 
         // Potong di batas baris/kalimat terakhir agar tidak memotong di tengah kata.
         const cut = Math.max(head.lastIndexOf('\n'), head.lastIndexOf('. '), head.lastIndexOf(' '));
         const kept = cut > budgetChars * 0.6 ? head.slice(0, cut) : head;
-        out[lastIdx] = { ...last, content: kept + MARKER };
+        out[out.length - 1] = { ...last, content: kept + MARKER };
       }
     }
   }
