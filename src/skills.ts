@@ -1097,7 +1097,48 @@ function dedupeSentences(text: string): string {
   // atau yang memuat blok kode / daftar.
   if (text.length > 700 || /```|\n\s*[-*\d]/.test(text)) return text;
 
-  const parts = text.match(/[^.!?\n]+[.!?]*/g);
+  // LINDUNGI URL/DOMAIN/EMAIL SEBELUM PEMECAHAN KALIMAT (temuan produksi v0.79.7).
+  //
+  // Bug nyata yang dilaporkan user:
+  //   in : "coba cek di jurnal.stmikamcik.ac.id atau e-journal.stmik-amikbandung.id deh."
+  //   out: "coba cek di jurnal. stmikamcik. ac. id atau e-journal. stmik-amikbandung. id deh."
+  // URL jadi TIDAK BISA DIKLIK karena titik pada domain dianggap akhir kalimat.
+  //
+  // Akar: regex pemecah `/[^.!?\n]+[.!?]*/g` memecah pada SETIAP titik, termasuk titik
+  // di dalam domain/URL. Setelah dipecah, potongan digabung ulang dengan spasi.
+  //
+  // Solusi: ganti sementara URL/domain/email dengan penanda bebas-titik, jalankan dedupe,
+  // lalu kembalikan. Penanda memakai karakter yang tidak mungkin muncul di teks model.
+  const protectedParts: string[] = [];
+  const protect = (raw: string): string => {
+    const idx = protectedParts.length;
+    protectedParts.push(raw);
+    // \u0001 + nomor + \u0001 — tidak mengandung titik, tidak akan dipecah regex.
+    return `\u0001${idx}\u0001`;
+  };
+  let shielded = text
+    // Nama paket/versi dengan titik (Node.js, Vue.js, Express.js, v1.2.3) — temuan
+    // lanjutan dari uji: "Node.js" -> "Node. js" dan "22.11.0" -> "22.11. 0".
+    .replace(/\b[A-Za-z][\w-]*\.(?:js|ts|py|go|rs|io|ai|sh|md|json|css|html)\b/gi, (m) => protect(m))
+    // Versi bertitik (v1.2.3 / 22.11.0 / 3.8.27) — 2+ segmen angka.
+    .replace(/\bv?\d+(?:\.\d+){2,}\b/g, (m) => protect(m))
+    // Alamat IP (IPv4) — semua segmen angka bertitik.
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, (m) => protect(m))
+    // Angka desimal & singkatan umum (temuan lanjutan: "5.5" -> "5. 5").
+    // Titik di antara DIGIT bukan akhir kalimat.
+    .replace(/\b\d+\.\d+\b/g, (m) => protect(m))
+    // URL lengkap dengan skema (http/https) — termasuk query & fragmen.
+    .replace(/\bhttps?:\/\/[^\s<>"')\]]+/gi, (m) => protect(m))
+    // Email
+    .replace(/\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g, (m) => protect(m))
+    // Domain polos (minimal 2 titik TLD, mis. jurnal.stmikamcik.ac.id) + opsional path.
+    // TLD 2-24 huruf agar tidak menangkap singkatan biasa.
+    .replace(
+      /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){2,}[a-z]{2,24}(?:\/[^\s<>"')\]]*)?/gi,
+      (m) => protect(m),
+    );
+
+  const parts = shielded.match(/[^.!?\n]+[.!?]*/g);
   // Minimal 2 kalimat: duplikat pendek ("Oke deh. Oke deh.") juga harus dibuang —
   // temuan produksi 20 Sep 12:48 pada balasan reset.
   if (!parts || parts.length < 2) return text;
@@ -1164,12 +1205,14 @@ function dedupeSentences(text: string): string {
       continue;
     }
     // Cek pemisah asli antara kalimat ke-i-1 dan ke-i pada teks sumber.
-    const prevEnd = text.indexOf(kept[i - 1]);
-    const curStart = text.indexOf(kept[i], prevEnd + kept[i - 1].length);
-    const gap = prevEnd >= 0 && curStart > prevEnd ? text.slice(prevEnd + kept[i - 1].length, curStart) : ' ';
+    const prevEnd = shielded.indexOf(kept[i - 1]);
+    const curStart = shielded.indexOf(kept[i], prevEnd + kept[i - 1].length);
+    const gap = prevEnd >= 0 && curStart > prevEnd ? shielded.slice(prevEnd + kept[i - 1].length, curStart) : ' ';
     result += (/\n\s*\n/.test(gap) ? '\n\n' : ' ') + kept[i];
   }
-  return result.replace(/[ \t]{2,}/g, ' ').trim();
+  // Kembalikan URL/domain/email yang dilindungi di awal.
+  const restored = result.replace(/\u0001(\d+)\u0001/g, (_m, idx) => protectedParts[Number(idx)] ?? '');
+  return restored.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 /**
@@ -1978,9 +2021,10 @@ function wait(ms: number): Promise<void> {
 async function chatRetry(
   messages: ChatMsg[],
   vision: boolean,
+  cacheScope?: string,
 ): Promise<{ text: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   try {
-    return await chat(messages, { vision });
+    return await chat(messages, { vision, cacheScope });
   } catch (err) {
     const msg = String((err as Error)?.message ?? err);
     // Hanya retry untuk kegagalan transien (rate-limit/timeout). Error deterministik
@@ -1989,7 +2033,7 @@ async function chatRetry(
     const transient = /RATE_LIMITED|TIMEOUT|NO_FIRST_TOKEN|STREAM_IDLE|PROVIDER_5\d\d|EMPTY_RESPONSE|ALL_PROVIDERS_FAILED/.test(msg);
     if (!transient) throw err;
     await wait(1500);
-    return await chat(messages, { vision });
+    return await chat(messages, { vision, cacheScope });
   }
 }
 
@@ -2220,7 +2264,7 @@ export async function autoReply(
     .filter((w): w is string => Boolean(w));
 
   try {
-    let { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false);
+    let { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false, ctx?.chatId);
     // Tag stiker ([[sticker:😹]]) diparsing SEBELUM sanitizer agar emoji di dalam tag
     // tidak ikut kena aturan "maks 1 emoji" milik sanitizer.
     const firstExtract = extractStickerTag(text);
@@ -2243,7 +2287,7 @@ export async function autoReply(
             content: 'Jawab dengan minimal 1 kalimat lengkap 5-12 kata yang nyambung dengan pesanku.',
           },
         ];
-        const secondTry = await chatRetry(retryMsgs, false);
+        const secondTry = await chatRetry(retryMsgs, false, ctx?.chatId);
         const secondSticker = extractStickerTag(secondTry.text);
         const secondExtract = extractRiddleTag(secondSticker.text);
         const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings);
@@ -2384,7 +2428,7 @@ export async function autoReply(
                     'Balasanmu barusan kacau: kamu mengoreksi diri sendiri, membocorkan jawaban di tengah, lalu mengganti tebakan — semua dalam satu pesan. Tulis ULANG dengan BERSIH: HANYA SATU setup tebak-tebakan (satu kalimat tanya lengkap), TANPA mengoreksi diri, TANPA menyebut jawabannya, dan WAJIB sertakan tag [[jawab:<jawaban>]] di akhir.',
                 },
               ];
-              const fix = await chatRetry(fixMsgs, false);
+              const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
               const fixSticker = extractStickerTag(fix.text);
               const fixExtract = extractRiddleTag(fixSticker.text);
               const fixReply = sanitizeAssistantOutput(fixExtract.text, clean, recentOpenings);
@@ -2466,7 +2510,7 @@ export async function autoReply(
                 'Balasanmu barusan mengulang isi balasanmu sendiri sebelumnya. Berikan respons BARU yang berbeda: lanjutkan alur percakapan dari sudut lain, jangan mengulang penjelasan/penilaian yang sama dengan kata berbeda.',
             },
           ];
-          const secondTry = await chatRetry(retryMsgs, false);
+          const secondTry = await chatRetry(retryMsgs, false, ctx?.chatId);
           if (secondTry.text && secondTry.text.trim().toLowerCase() !== normLast) {
             const loopSticker = extractStickerTag(secondTry.text);
             const loopExtract = extractRiddleTag(loopSticker.text);
@@ -2515,7 +2559,7 @@ export async function autoReply(
                 'Balasanmu barusan seperti mengulang pembuka obrolan padahal percakapan ini SUDAH BERJALAN. Lanjutkan alur yang sedang berjalan: tanggapi langsung apa yang baru dia katakan, jangan menawarkan bantuan atau menanyakan mau bahas apa.',
             },
           ];
-          const fix = await chatRetry(fixMsgs, false);
+          const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
           const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings);
           const fixWords = fixReply.split(/\s+/).filter(Boolean).length;
           if (fixReply.trim() && fixWords <= 30 && !amnesiaRe.test(fixReply.trim())) {
@@ -2542,7 +2586,7 @@ export async function autoReply(
               content: 'Ralat dengan 1 celetukan santai gayamu sendiri: tegaskan dia bukan Rafly dan jangan mengalah.',
             },
           ];
-          const fix = await chatRetry(fixMsgs, false);
+          const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
           const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings);
           if (fixReply.trim() && !surrenderRe.test(fixReply)) {
             reply = fixReply;
@@ -2578,7 +2622,7 @@ export async function autoReply(
               'Kamu barusan salah: KAMU BUKAN developer/pencipta siapa pun — kamu bot yang DIBUAT oleh Rafly. Ralat singkat dengan gayamu sendiri, tegaskan Rafly-lah developernya dan kamu produknya.',
           },
         ];
-        const fix = await chatRetry(fixMsgs, false);
+        const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
         const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings);
         if (fixReply.trim() && !selfDevClaimRe.test(fixReply) && !selfDevClaimRe2.test(fixReply)) {
           reply = fixReply;
@@ -2613,7 +2657,7 @@ export async function autoReply(
               'Kamu barusan salah: pesan temanmu adalah TEKS BIASA, bukan voice note / rekaman suara, jadi kamu tidak mendengar audio apa pun. Ralat dengan 1 kalimat pendek santai memakai gayamu sendiri sebagai balasan teks biasa. DILARANG menyebut suara/audio/kedengeran.',
           },
         ];
-        const fix = await chatRetry(fixMsgs, false);
+        const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
         const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings);
         if (fixReply.trim() && !hasAudioClaim(fixReply)) {
           reply = fixReply;
@@ -2631,7 +2675,7 @@ export async function autoReply(
     // tidak mengirim pesan) dan eskalasi ke owner diaktifkan.
     if (!reply.trim()) {
       try {
-        const regen = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false);
+        const regen = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false, ctx?.chatId);
         const regenExtract = extractStickerTag(regen.text);
         const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings);
         if (regenReply.trim()) {
@@ -2765,7 +2809,7 @@ export async function autoReply(
                 content: `Koreksi: temanmu menebak "${clean.trim().slice(0, 60)}" dan itu BENAR (jawaban terkunci: "${histRiddle}"). Terima tebakannya dengan gembira dan natural, lalu tutup permainan dengan santai. DILARANG bilang belum tepat/meleset/bukan.`,
               },
             ];
-            const re = await chatRetry(reMsgs, false);
+            const re = await chatRetry(reMsgs, false, ctx?.chatId);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
             const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings);
             if (reReply.trim()) reply = reReply;
@@ -2785,7 +2829,7 @@ export async function autoReply(
                 content: `Koreksi: jawabanmu barusan salah menilai. Jawaban BENAR dari tebakan ini adalah "${histRiddle}", sedangkan temanmu menebak "${clean.trim().slice(0, 60)}" — itu BUKAN jawaban yang benar. Ralat dengan 1-2 kalimat santai: bilang belum tepat (tanpa menyebutkan jawaban benar), lalu tawari lanjut menebak atau menyerah. JANGAN mengaku tebakannya benar.`,
               },
             ];
-            const re = await chatRetry(reMsgs, false);
+            const re = await chatRetry(reMsgs, false, ctx?.chatId);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
             const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings);
             if (reReply.trim()) {
@@ -3008,7 +3052,7 @@ export async function describeImage(
     { role: 'user', content: parts },
   ];
 
-  const { text, via, tokens } = await chatRetry(messages, true);
+  const { text, via, tokens } = await chatRetry(messages, true, ctx?.chatId);
   // Sanitasi memakai teks user asli (caption) sebagai konteks sinyal humor — bukan teks instruksi.
   // mediaReply=true: buang narasi isi kiriman (kecuali user bertanya eksplisit) — ATURAN KERAS user.
   const recentOpenings = (ctx?.history ?? [])

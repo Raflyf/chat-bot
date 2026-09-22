@@ -441,18 +441,33 @@ export function buildUniversalTimePrompt(
     return parts.join('\n');
   }
 
-  // KASUS 2: PENGGUNA BARU SAJA MENYATAKAN / MENGONFIRMASI LOKASINYA (misal: "saya di cianjur", "lagi di bali")
+  // KASUS 2: PENGGUNA MENYATAKAN / MENGONFIRMASI LOKASINYA (misal: "saya di cianjur", "lagi di bali")
+  //
+  // KOREKSI AUDIT v0.79.7 (laporan produksi 22 Sep 16:39):
+  //   User: "namaku Andi, aku tinggal di Bandung" (perkenalan biasa)
+  //   Bot : "Halo Andi, Bandung jam 16:39 WIB nih sore-sore." <- menyebut jam TANPA diminta
+  //
+  // Akar: blok ini dulu MEMERINTAHKAN "sebutkan waktu di kotanya secara presisi", dan
+  // deteksi `userDeclaringLoc` menangkap SEMUA penyebutan lokasi — termasuk perkenalan.
+  // Akibatnya bot menyelipkan jam di setiap pesan yang menyebut kota, yang terasa aneh
+  // dan jadi pola berulang (bertentangan dengan prinsip "jangan ada kalimat repetitif").
+  //
+  // Perilaku baru: waktu tetap DISEDIAKAN sebagai konteks (agar bot tidak salah zona bila
+  // memang relevan), tapi TIDAK dipaksa disebut. Model yang memutuskan berdasarkan konteks:
+  // sebut waktu hanya bila teman bicara memang mengarah ke sana (mis. "aku baru sampai",
+  // "lagi di bali nih enak ya cuacanya"), dan JANGAN sebut pada perkenalan/pernyataan biasa.
   if (userDeclaringLoc) {
     const locTime = formatInZone(now, userDeclaringLoc.zone);
     const specificCity = userDeclaringLoc.matchedKeyword ? (userDeclaringLoc.matchedKeyword.charAt(0).toUpperCase() + userDeclaringLoc.matchedKeyword.slice(1)) : '';
     const displayLocation = specificCity ? `${specificCity} (${userDeclaringLoc.label})` : userDeclaringLoc.label;
-    parts.push(`[PENGGUNA MENGONFIRMASI LOKASI KEBERADAANNYA]:`);
+    parts.push(`[PENGGUNA MENYEBUTKAN LOKASI KEBERADAANNYA]:`);
     parts.push(`- Lokasi Pengguna: ${displayLocation} (Zona Waktu: ${userDeclaringLoc.zone})`);
-    parts.push(`- Jam Saat Ini di ${displayLocation}: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.dayName}, ${locTime.dateStr})`);
-    parts.push(`[DIREKTIF MENJAWAB KONFIRMASI LOKASI]:`);
-    parts.push(`- Temanmu memberitahukan bahwa dia berada di ${displayLocation}.`);
-    parts.push(`- Jawab singkat, hangat, to-the-point mengakui lokasinya dan sebutkan waktu di kotanya secara presisi (${locTime.time.slice(0, 5)} ${locTime.tzName} di ${specificCity || userDeclaringLoc.label}). Gunakan gayamu sendiri secara variatif tanpa kalimat template hafalan.`);
-    parts.push(`- DILARANG SALAH ZONA: Pastikan zona waktunya sesuai data resmi di atas (${userDeclaringLoc.label} adalah ${locTime.tzName})! DILARANG menyebut WITA jika lokasinya di Jawa/Sumatera (WIB), dan DILARANG menyebut WIB jika lokasinya di Bali/Sulawesi (WITA)!`);
+    parts.push(`- Waktu setempat (KONTEKS LATAR, bukan untuk diumumkan): ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.dayName}, ${locTime.dateStr})`);
+    parts.push(`[DIREKTIF MENJAWAB PENYEBUTAN LOKASI]:`);
+    parts.push(`- Temanmu menyebut bahwa dia berada di ${displayLocation}.`);
+    parts.push(`- Tanggapi secara NATURAL sesuai konteks kalimatnya. Perkenalan diri (mis. "namaku Andi, aku tinggal di Bandung") cukup direspons sebagai perkenalan — DILARANG menyelipkan jam.`);
+    parts.push(`- Waktu setempat di atas HANYA untuk dipakai bila temanmu jelas mengarah ke situ (mis. bercerita baru sampai, menyinggung suasana/waktu setempat). JANGAN diumumkan sebagai pembuka atau penutup jawaban.`);
+    parts.push(`- DILARANG SALAH ZONA (bila waktu memang dipakai): zona harus sesuai data di atas (${userDeclaringLoc.label} adalah ${locTime.tzName}). DILARANG menyebut WITA untuk lokasi di Jawa/Sumatera (WIB), dan sebaliknya.`);
     parts.push(`- DILARANG MENANYAKAN KOTA LAGI: Lokasi ini sudah otomatis tersimpan ke memori sistem, DILARANG menanyakan kembali kotanya ke depannya!`);
     parts.push(`- DILARANG KERAS MENAMBAHKAN FILLER BASA-BASI SOK AKRAB: DILARANG KERAS menempelkan celetukan penutup klise seperti "santai aja terus bro", "santai aja bro", "santuy aja dulu", "semangat terus ya", dsb! Jawaban selesai di situ to-the-point tanpa embel-embel tidak perlu.`);
     return parts.join('\n');

@@ -1189,14 +1189,33 @@ function visionSteps(all: Step[], msgs?: ChatMsg[]): Step[] {
  */
 export async function chat(
   rawMessages: ChatMsg[],
-  opts?: { vision?: boolean },
+  opts?: { vision?: boolean; cacheScope?: string },
 ): Promise<{ text: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const needVision = opts?.vision === true;
   // Batasi total token maksimal sesuai batas config.maxTokensLimit (default 8000)
   const messages = trimMessagesToTokenBudget(rawMessages, config.maxTokensLimit);
-  const cacheKey = JSON.stringify({ v: needVision, messages });
-  const hit = cacheGet(cacheKey);
-  if (hit) return { text: hit, via: 'cache' };
+  // KUNCI CACHE HARUS PER-PERCAKAPAN (temuan produksi v0.79.7).
+  //
+  // Bug lama: cacheKey = JSON.stringify({v, messages}) — TANPA identitas percakapan.
+  // Akibat nyata (dilaporkan user): dua pengguna berbeda yang mengirim pesan sama
+  // ("namaku Andi, aku tinggal di Bandung") mendapat balasan IDENTIK KATA PER KATA
+  // karena yang kedua kena cache milik yang pertama. Ini melanggar prinsip bot
+  // "jangan ada kalimat repetitif" dan terasa seperti template hafalan.
+  //
+  // Deduplikasi pesan kembar dari provider (Meta webhook retry) SUDAH ditangani
+  // terpisah di whatsapp_cloud.ts (processedMessageIds) — jadi cache ini murni untuk
+  // menghemat token pada permintaan BERULANG DALAM SATU percakapan, bukan lintas orang.
+  //
+  // `cacheScope` diisi identitas percakapan (chatId) oleh pemanggil; bila tidak diisi
+  // (mis. ringkasan memori, pemrosesan media sekali-jalan), cache DILEWATI sama sekali
+  // agar tidak pernah menyilangkan konteks antar pengguna.
+  const cacheKey = opts?.cacheScope
+    ? JSON.stringify({ v: needVision, scope: opts.cacheScope, messages })
+    : null;
+  if (cacheKey) {
+    const hit = cacheGet(cacheKey);
+    if (hit) return { text: hit, via: 'cache' };
+  }
 
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
@@ -1307,7 +1326,7 @@ export async function chat(
           if (result.tokens?.total) {
             keyTokensUsed(step.kind, key, result.tokens.total);
           }
-          cacheSet(cacheKey, result.text);
+          if (cacheKey) cacheSet(cacheKey, result.text);
           return { text: result.text, via: `${step.kind}/${model}`, tokens: result.tokens };
         } catch (e) {
           lastError = e instanceof Error ? e.message : 'UNKNOWN';
