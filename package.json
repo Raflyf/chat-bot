@@ -1,6 +1,6 @@
 {
   "name": "agentkit",
-  "version": "0.73.0",
+  "version": "0.74.0",
   "description": "AgentKit Universal Multi-Modal AI Assistant - Production Telegram & WhatsApp",
   "type": "module",
   "license": "MIT",

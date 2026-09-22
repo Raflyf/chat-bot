@@ -5,7 +5,9 @@ import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timez
 import { sanitizeKnowledgeText } from './knowledge.js';
 import { stripStickerMarker } from './stickers.js';
 import { stripRiddleMarker, lastRiddleAnswer } from './markers.js';
-import { pickRiddle, findRiddleByAnswer, RIDDLE_BANK_QUESTIONS } from './riddles.js';
+import { getOrGrowMemory, needsGrowth, growMemory } from './bot_growth.js';
+import { markMemoryUsed, isMemoryRelevant } from './bot_memory.js';
+import { RIDDLE_SEED, GOMBAL_SEED } from './riddles.js';
 
 /** Buang SEMUA penanda internal durable (stiker + kunci jawaban) dari teks riwayat. */
 function stripDurableMarkers(text: string): string {
@@ -1160,7 +1162,22 @@ export function splitMessageSmart(text: string, maxLen = 4000): string[] {
   return chunks;
 }
 
-export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt: string = ''): string {
+/** Item memori yang sudah dipilih di autoReply, dipakai systemPrompt (fungsi sinkron). */
+export interface PickedMemory {
+  kind: 'riddle' | 'gombal';
+  key: string | null;
+  question: string;
+  answer: string;
+  explanation?: string;
+  fromSeed: boolean;
+}
+
+export function systemPrompt(
+  ctx?: ChatContext,
+  web?: string | null,
+  userPrompt: string = '',
+  picked?: PickedMemory | null,
+): string {
   const historyText = (ctx?.history?.slice(-3) ?? []).map((h) => (typeof h.content === 'string' ? stripDurableMarkers(h.content) : '')).join(' ');
   const profileText = [historyText, ctx?.summary || '', ...(ctx?.corrections || [])].join(' ');
   const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, profileText, ctx?.msgSentAt);
@@ -1326,33 +1343,63 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
   const stopGombal = /\b(?:jangan|gausah|ga\s*usah|gak\s*usah|nggak\s*usah|stop|berhenti|udahan|skip)\s+(?:nge?)?gombal/i.test(userPrompt);
   const isGombalRequest = !stopGombal && /\b(?:gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu|buaya\s+darat)\b/i.test(userPrompt);
   if (isGombalRequest) {
+    // Gombalan diambil dari MEMORI (dipilih di autoReply, dioper lewat `picked`),
+    // bukan dikarang model — dengan alasan yang sama seperti tebak-tebakan.
+    const gPicked = picked && picked.kind === 'gombal'
+      ? { q: picked.question, a: picked.answer, why: picked.explanation || '' }
+      : (() => {
+          const s = GOMBAL_SEED[Math.floor(Math.random() * GOMBAL_SEED.length)];
+          return { q: s.q, a: s.a, why: s.why };
+        })();
+
     instructions.push(
       '',
-      '[SITUASI KHUSUS - PERMINTAAN GOMBALAN]: Terapkan PRINSIP 3 (format interaksi dua arah: HANYA lemparkan 1 kalimat pertanyaan pembuka rayuan/tebakan yang manis dan masuk akal logikanya). DILARANG membocorkan jawaban di pesan pembuka ini! Tunggu respon temanmu di pesan berikutnya.',
+      '[SITUASI KHUSUS - PERMINTAAN GOMBALAN]:',
+      '- Terapkan PRINSIP 3 (format interaksi dua arah: HANYA lemparkan 1 kalimat pertanyaan pembuka rayuan, lalu tunggu jawaban temanmu).',
+      `- PAKAI GOMBALAN INI PERSIS, JANGAN MENGARANG SENDIRI: "${gPicked.q}"`,
+      `- Kunci jawabannya: "${gPicked.a}".`,
+      '- WAJIB sertakan [[jawab:' + gPicked.a + ']] di akhir pembuka (tidak terlihat user).',
+      '- DILARANG membocorkan jawaban di pesan pembuka ini. Tunggu respon temanmu di pesan berikutnya.',
+      '- DILARANG mengganti atau mengarang gombalan lain.',
     );
   }
+
+  // Pilihan tebak-tebakan/gombalan dari memori, dioper oleh autoReply.
+  const picked0 = picked ?? null;
 
   const isJokeRequest = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu)\b/i.test(userPrompt);
   if (isJokeRequest) {
     const avoidProgramming = /\b(?:jangan\s+(?:jokes?\s+)?programming|bukan\s+programming|jokes?\s+umum|jangan\s+koding)\b/i.test(userPrompt);
-    // Tebak-tebakan diambil dari bank tebak-tebakan asli (src/riddles.ts), BUKAN
-    // dikarang model. Temuan produksi 21 Sep 20:00: model mengarang "Hewan apa yang
-    // kalau diinjak malah jadi lebih tinggi?" dengan jawaban "gajah", lalu mengakui
-    // sendiri teka-tekinya "agak maksa". Model bahasa memang lemah membuat teka-teki
-    // baru karena humornya bergantung pada plesetan kata yang spesifik.
+    // Tebak-tebakan diambil dari MEMORI BOT (dipilih di autoReply, dioper lewat
+    // `picked`). Memori itu tumbuh sendiri: kalau stoknya kosong, bot mencari dari
+    // internet lalu menyimpannya — lihat src/bot_growth.ts.
+    //
+    // Kenapa tidak diserahkan ke model: temuan produksi 21 Sep 20:00, model mengarang
+    // "Hewan apa yang kalau diinjak malah jadi lebih tinggi?" dengan jawaban "gajah",
+    // lalu mengakui sendiri teka-tekinya "agak maksa". Model bahasa memang lemah
+    // membuat teka-teki baru karena humornya bergantung plesetan kata yang spesifik.
     const usedRiddleAnswers = (ctx?.history || [])
       .map((h) => (typeof h.content === 'string' ? h.content.match(/\[Jawaban:\s*([^\]]+)\]/)?.[1] : null))
       .filter((v): v is string => !!v);
-    const picked = pickRiddle({
-      usedAnswers: usedRiddleAnswers,
-      topicHint: avoidProgramming ? 'umum' : userPrompt,
-    });
+
+    const picked = picked0 && picked0.kind === 'riddle'
+      ? { q: picked0.question, a: picked0.answer, why: picked0.explanation || '' }
+      : (() => {
+          const pool = RIDDLE_SEED.filter((s) => !usedRiddleAnswers.includes(s.a));
+          const s = (pool.length > 0 ? pool : RIDDLE_SEED)[
+            Math.floor(Math.random() * (pool.length > 0 ? pool.length : RIDDLE_SEED.length))
+          ];
+          return { q: s.q, a: s.a, why: s.why };
+        })();
+
     instructions.push(
       '',
       '[SITUASI KHUSUS - TEBAK-TEBAKAN]:',
       '- Terapkan PRINSIP 3 (format interaksi dua arah: HANYA lemparkan 1 kalimat pertanyaan setup tebakan, lalu tunggu tebakan temanmu).',
       `- PAKAI TEBAK-TEBAKAN INI PERSIS, JANGAN MENGARANG SENDIRI: "${picked.q}"`,
-      `- Kunci jawabannya: "${picked.a}" (${picked.why}).`,
+      picked.why
+        ? `- Kunci jawabannya: "${picked.a}" (${picked.why}).`
+        : `- Kunci jawabannya: "${picked.a}".`,
       '- WAJIB sertakan [[jawab:' + picked.a + ']] di akhir setup (tidak terlihat user).',
       '- DILARANG KERAS mengganti, memodifikasi, atau mengarang tebak-tebakan lain. Kalau kamu mengarang, hasilnya jadi teka-teki tidak nyambung dan pengguna malas bermain.',
       '- Sampaikan pertanyaannya dengan gayamu sendiri (boleh ditambah pembuka singkat), tapi inti pertanyaannya harus sama persis.',
@@ -1821,8 +1868,13 @@ async function chatRetry(
   }
 }
 
-function buildMessages(clean: string, ctx?: ChatContext, web?: string | null): ChatMsg[] {
-  const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt(ctx, web, clean) }];
+function buildMessages(
+  clean: string,
+  ctx?: ChatContext,
+  web?: string | null,
+  picked?: PickedMemory | null,
+): ChatMsg[] {
+  const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt(ctx, web, clean, picked) }];
   const rawHistory = [...(ctx?.history.slice(-15) ?? [])];
 
   // Sanitasi riwayat percakapan asisten sebelum disuntikkan ke konteks model
@@ -1966,6 +2018,59 @@ export async function autoReply(
   const clean = userText.trim().slice(0, 32000);
   if (!clean) return { reply: '', escalate: true, via: 'empty' };
 
+  // ==========================================================================
+  // MEMORI BOT: pilih tebak-tebakan / gombalan dari memori (yang tumbuh sendiri).
+  //
+  // Diambil DI SINI, bukan di systemPrompt, karena systemPrompt fungsi sinkron
+  // sedangkan pengambilan memori butuh menunggu database (dan kadang pencarian
+  // internet kalau stok kosong).
+  //
+  // Penjaga anti-bocor: `isMemoryRelevant` memastikan memori hanya diambil saat
+  // topiknya memang berkaitan. Percakapan biasa (tanya cuaca, cerita, dsb) tidak
+  // menyentuh memori sama sekali.
+  // ==========================================================================
+  let pickedForTurn: PickedMemory | null = null;
+  {
+    const wantsRiddle = isMemoryRelevant('riddle', clean);
+    const wantsGombal = !wantsRiddle && isMemoryRelevant('gombal', clean);
+    const kind = wantsRiddle ? 'riddle' : wantsGombal ? 'gombal' : null;
+
+    if (kind) {
+      const usedAnswers = (ctx?.history || [])
+        .map((h) => (typeof h.content === 'string' ? h.content.match(/\[Jawaban:\s*([^\]]+)\]/)?.[1] : null))
+        .filter((v): v is string => !!v);
+
+      // Isi ulang stok di latar belakang kalau menipis; jangan tahan balasan ini.
+      void needsGrowth(kind, kind === 'riddle' ? 6 : 4)
+        .then((need) => {
+          if (need) void growMemory(kind).catch(() => {});
+        })
+        .catch(() => {});
+
+      const item = await getOrGrowMemory(kind, { excludeAnswers: usedAnswers });
+      if (item) {
+        pickedForTurn = {
+          kind,
+          key: item.key,
+          question: item.question,
+          answer: item.answer,
+          explanation: item.explanation,
+          fromSeed: false,
+        };
+        // Tandai sudah dipakai supaya rotasi berikutnya memilih yang lain.
+        void markMemoryUsed(item.key).catch(() => {});
+        console.log(`[skills] ${kind} diambil dari memori bot: "${item.question.slice(0, 60)}"`);
+      } else {
+        // Memori kosong dan pencarian gagal: pakai benih darurat.
+        const seed = kind === 'riddle' ? RIDDLE_SEED : GOMBAL_SEED;
+        const pool = seed.filter((s) => !usedAnswers.includes(s.a));
+        const s = (pool.length > 0 ? pool : seed)[Math.floor(Math.random() * (pool.length > 0 ? pool.length : seed.length))];
+        pickedForTurn = { kind, key: null, question: s.q, answer: s.a, explanation: s.why, fromSeed: true };
+        console.warn(`[skills] Memori ${kind} kosong — memakai benih darurat. Pertumbuhan akan mengisi ulang.`);
+      }
+    }
+  }
+
   // Otomatis deteksi deklarasi lokasi tempat tinggal / keberadaan pengguna dan simpan ke memori permanen
   if (ctx?.chatId) {
     const locMatch = detectUserLocationDeclaration(clean);
@@ -1990,7 +2095,7 @@ export async function autoReply(
     .filter((w): w is string => Boolean(w));
 
   try {
-    let { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web), false);
+    let { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false);
     // Tag stiker ([[sticker:😹]]) diparsing SEBELUM sanitizer agar emoji di dalam tag
     // tidak ikut kena aturan "maks 1 emoji" milik sanitizer.
     const firstExtract = extractStickerTag(text);
@@ -2007,7 +2112,7 @@ export async function autoReply(
     if (replyWords < 4 && cleanWords >= 2 && !isShortGreeting) {
       try {
         const retryMsgs: ChatMsg[] = [
-          ...buildMessages(clean, ctx, web),
+          ...buildMessages(clean, ctx, web, pickedForTurn),
           {
             role: 'user',
             content: 'Jawab dengan minimal 1 kalimat lengkap 5-12 kata yang nyambung dengan pesanku.',
@@ -2062,41 +2167,46 @@ export async function autoReply(
     // berarti model mengarang — ganti seluruh setup dengan pertanyaan asli dari bank
     // beserta kunci jawabannya, supaya permainan tetap jalan dan penilaian tetap jujur.
     if (isInteractiveSetupReq) {
-      // Cari entri bank yang PALING mirip, bukan yang pertama cocok. Bug yang
-      // diperbaiki: "burung apa yang ditakuti pengendara motor?" (jawaban Kutilang)
-      // skornya 0,5 juga terhadap "kutu apa yang menakutkan?" (jawaban Kutukan) yang
-      // letaknya lebih awal di bank — dengan `find`, kunci jawabannya jadi tertukar.
-      let best = null;
-      let bestScore = 0;
-      for (const r of RIDDLE_BANK_QUESTIONS) {
-        const s = similarityScore(reply.toLowerCase(), r.q.toLowerCase());
-        if (s > bestScore) {
-          bestScore = s;
-          best = r;
-        }
-      }
+      // Acuan pencocokan adalah MEMORI BOT, bukan konstanta di kode. Kunci jawaban
+      // yang dipakai untuk menilai tebakan WAJIB berasal dari memori (atau benih
+      // darurat) — bukan dari tag [[jawab:]] buatan model. Ini yang menjamin
+      // pertanyaan dan jawaban selalu sepasang.
+      //
+      // Model tetap bisa mengarang (terutama model cadangan), jadi kalau pertanyaan
+      // yang dilempar tidak cocok dengan apa pun yang kita kirim di prompt, seluruh
+      // setup diganti dengan item dari memori.
+      const promptRiddleQ = (pickedForTurn?.question || '').toLowerCase();
+      const promptRiddleA = pickedForTurn?.answer || '';
+      const matchScore = promptRiddleQ ? similarityScore(reply.toLowerCase(), promptRiddleQ) : 0;
 
-      if (best && bestScore >= 0.5) {
-        // Pertanyaan cocok dengan bank. Kunci jawaban WAJIB diambil dari bank —
-        // bukan dari tag [[jawab:]] buatan model — supaya pertanyaan dan jawaban
-        // dijamin sepasang. Model tetap menulis tag, tapi tag itu diabaikan.
-        if (riddleAnswer && riddleAnswer.toLowerCase().trim() !== best.a.toLowerCase().trim()) {
+      if (promptRiddleA && matchScore >= 0.5) {
+        // Pertanyaan cocok dengan yang kita kirim. Pakai kunci dari memori.
+        if (riddleAnswer && riddleAnswer.toLowerCase().trim() !== promptRiddleA.toLowerCase().trim()) {
           console.warn(
-            `[skills] Kunci jawaban dari model ("${riddleAnswer}") tidak cocok dengan bank ("${best.a}") — dipakai milik bank.`
+            `[skills] Kunci jawaban dari model ("${riddleAnswer}") tidak cocok dengan memori ("${promptRiddleA}") — dipakai milik memori.`
           );
         }
-        riddleAnswer = best.a;
+        riddleAnswer = promptRiddleA;
       } else {
-        // Tidak ada yang cocok: model mengarang. Ganti dengan tebak-tebakan asli.
+        // Tidak cocok: model mengarang. Ambil pengganti dari memori.
         const usedAnswers = (ctx?.history || [])
           .map((h) => (typeof h.content === 'string' ? h.content.match(/\[Jawaban:\s*([^\]]+)\]/)?.[1] : null))
           .filter((v): v is string => !!v);
-        const replacement = pickRiddle({ usedAnswers });
-        console.warn(
-          `[skills] Setup tebakan tidak cocok dengan bank (karangan, skor terbaik ${bestScore.toFixed(2)}) — diganti: "${replacement.q}"`
-        );
-        reply = replacement.q;
-        riddleAnswer = replacement.a;
+        const replacement = await getOrGrowMemory('riddle', { excludeAnswers: usedAnswers });
+        if (replacement) {
+          console.warn(
+            `[skills] Setup tebakan tidak cocok dengan memori (skor ${matchScore.toFixed(2)}) — diganti: "${replacement.question}"`
+          );
+          reply = replacement.question;
+          riddleAnswer = replacement.answer;
+          void markMemoryUsed(replacement.key).catch(() => {});
+        } else {
+          // Memori kosong dan pencarian gagal: pakai benih darurat.
+          const s = RIDDLE_SEED[Math.floor(Math.random() * RIDDLE_SEED.length)];
+          console.warn(`[skills] Memori kosong — setup diganti dengan benih darurat: "${s.q}"`);
+          reply = s.q;
+          riddleAnswer = s.a;
+        }
       }
     }
 
@@ -2142,7 +2252,7 @@ export async function autoReply(
             let resolved = false;
             try {
               const fixMsgs: ChatMsg[] = [
-                ...buildMessages(clean, ctx, web),
+                ...buildMessages(clean, ctx, web, pickedForTurn),
                 {
                   role: 'user',
                   content:
@@ -2224,7 +2334,7 @@ export async function autoReply(
       if (isDuplicate) {
         try {
           const retryMsgs: ChatMsg[] = [
-            ...buildMessages(clean, ctx, web),
+            ...buildMessages(clean, ctx, web, pickedForTurn),
             {
               role: 'user',
               content:
@@ -2273,7 +2383,7 @@ export async function autoReply(
         console.warn('[skills] Balasan amnesia terdeteksi di tengah percakapan — minta lanjutkan konteks.');
         try {
           const fixMsgs: ChatMsg[] = [
-            ...buildMessages(clean, ctx, web),
+            ...buildMessages(clean, ctx, web, pickedForTurn),
             {
               role: 'user',
               content:
@@ -2301,7 +2411,7 @@ export async function autoReply(
       if (surrenderRe.test(reply)) {
         try {
           const fixMsgs: ChatMsg[] = [
-            ...buildMessages(clean, ctx, web),
+            ...buildMessages(clean, ctx, web, pickedForTurn),
             {
               role: 'user',
               content: 'Ralat dengan 1 celetukan santai gayamu sendiri: tegaskan dia bukan Rafly dan jangan mengalah.',
@@ -2336,7 +2446,7 @@ export async function autoReply(
     if (selfDevClaimRe.test(reply) || selfDevClaimRe2.test(reply)) {
       try {
         const fixMsgs: ChatMsg[] = [
-          ...buildMessages(clean, ctx, web),
+          ...buildMessages(clean, ctx, web, pickedForTurn),
           {
             role: 'user',
             content:
@@ -2371,7 +2481,7 @@ export async function autoReply(
     if (!audioContextOk && hasAudioClaim(reply)) {
       try {
         const fixMsgs: ChatMsg[] = [
-          ...buildMessages(clean, ctx, web),
+          ...buildMessages(clean, ctx, web, pickedForTurn),
           {
             role: 'user',
             content:
@@ -2396,7 +2506,7 @@ export async function autoReply(
     // tidak mengirim pesan) dan eskalasi ke owner diaktifkan.
     if (!reply.trim()) {
       try {
-        const regen = await chatRetry(buildMessages(clean, ctx, web), false);
+        const regen = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false);
         const regenExtract = extractStickerTag(regen.text);
         const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings);
         if (regenReply.trim()) {
@@ -2524,7 +2634,7 @@ export async function autoReply(
           );
           try {
             const reMsgs: ChatMsg[] = [
-              ...buildMessages(clean, ctx, web),
+              ...buildMessages(clean, ctx, web, pickedForTurn),
               {
                 role: 'user',
                 content: `Koreksi: temanmu menebak "${clean.trim().slice(0, 60)}" dan itu BENAR (jawaban terkunci: "${histRiddle}"). Terima tebakannya dengan gembira dan natural, lalu tutup permainan dengan santai. DILARANG bilang belum tepat/meleset/bukan.`,
@@ -2544,7 +2654,7 @@ export async function autoReply(
           );
           try {
             const reMsgs: ChatMsg[] = [
-              ...buildMessages(clean, ctx, web),
+              ...buildMessages(clean, ctx, web, pickedForTurn),
               {
                 role: 'user',
                 content: `Koreksi: jawabanmu barusan salah menilai. Jawaban BENAR dari tebakan ini adalah "${histRiddle}", sedangkan temanmu menebak "${clean.trim().slice(0, 60)}" — itu BUKAN jawaban yang benar. Ralat dengan 1-2 kalimat santai: bilang belum tepat (tanpa menyebutkan jawaban benar), lalu tawari lanjut menebak atau menyerah. JANGAN mengaku tebakannya benar.`,
