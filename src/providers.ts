@@ -585,7 +585,28 @@ async function openAiChat(
   try {
     // Jalur utama: streaming dua-fase (token pertama = cepat, fase jawaban = longgar).
     // Vision butuh waktu lebih lama sebelum token pertama (analisis gambar), jadi diberi kelonggaran.
-    const firstTokenMs = hasImage ? config.visionFirstTokenMs : Math.min(connectMs, config.firstTokenTimeoutMs);
+    //
+    // GUARD TOKEN PERTAMA ADAPTIF (temuan audit v0.79 — uji 8 key xKiro):
+    // waktu token pertama bergantung pada UKURAN PROMPT, bukan hanya kesehatan key.
+    // Diukur nyata: prompt pendek ("Halo") = 1,7-3,1 detik untuk SEMUA 8 key, tetapi
+    // prompt produksi (~19K char ≈ 4.750 token) = 5,7-10,0 detik. Guard tetap 5.500ms
+    // membuat request normal sering dianggap "tidak merespon" padahal model sedang
+    // memproses (prefill prompt besar) -> failover percuma + latensi naik.
+    // Rumus: basis 5.500ms + 1ms per 4 token prompt di atas 3.000 token (maks +6.000ms).
+    // Prompt kecil tidak terpengaruh; prompt besar dapat ruang prefill yang wajar.
+    const promptChars = messages.reduce((acc, m) => {
+      if (typeof m.content === 'string') return acc + m.content.length;
+      if (Array.isArray(m.content)) {
+        return acc + m.content.reduce((a, p) => a + (p?.type === 'text' && typeof p.text === 'string' ? p.text.length : 0), 0);
+      }
+      return acc;
+    }, 0);
+    const promptTokens = Math.ceil(promptChars / 4);
+    const adaptiveFirstTokenMs =
+      config.firstTokenTimeoutMs + (promptTokens > 3000 ? Math.min(6000, Math.floor((promptTokens - 3000) / 4)) : 0);
+    const firstTokenMs = hasImage
+      ? config.visionFirstTokenMs
+      : Math.min(connectMs + 6000, adaptiveFirstTokenMs);
     const result = await streamSse(`${baseUrl}/chat/completions`, headers, body, {
       firstTokenMs,
       idleMs: config.streamIdleTimeoutMs,
@@ -1241,6 +1262,10 @@ export async function chat(
       let anyKeyAttempted = false;
       let allKeysFailedWithServerError = true;
       let modelUnresponsive = false;
+      // Pelacak key lambat untuk model ini (temuan audit v0.79): NO_FIRST_TOKEN di satu
+      // key tidak boleh mematikan seluruh model — key lain mungkin sehat & cepat.
+      let slowKeyCount = 0;
+      const keysForModel = candidateKeys;
 
       for (const key of candidateKeys) {
         if (modelUnresponsive) break;
@@ -1290,13 +1315,38 @@ export async function chat(
           console.warn(`[providers] Kegagalan key pada ${step.kind}/${model} (key: ${key.slice(0, 10)}...): ${lastError}. Mencoba key berikutnya...`);
 
           // FASE 1 timeout: model TIDAK merespon sama sekali dalam batas singkat.
-          // Ini masalah model/provider (bukan key) → failover LANGSUNG ke model berikutnya,
-          // tanpa mencoba key lain untuk model yang sama (menghindari tunggu berulang).
+          //
+          // KOREKSI AUDIT v0.79 (temuan uji key xKiro): perilaku LAMA adalah failover
+          // langsung ke model berikutnya TANPA mencoba key lain, lalu meng-cooldown
+          // SELURUH MODEL selama 3 menit. Terbukti SALAH untuk provider dengan antrian
+          // per-key: uji 8 key xKiro menunjukkan 3 key butuh 5,7-10,0 detik token pertama
+          // sementara 5 key lain hanya 1,6-5,0 detik. Jadi NO_FIRST_TOKEN di satu key
+          // BUKAN berarti modelnya rusak — key lain mungkin sehat dan cepat.
+          // Dampak lama: satu key lambat mematikan tier xKiro (Tier 1) selama 3 menit
+          // dan memaksa request turun ke tier bawah yang lebih terbatas.
+          //
+          // Perilaku BARU: cooldown KEY yang lambat (2 menit) dan COBA KEY BERIKUTNYA
+          // untuk model yang sama. Bila SEMUA key untuk model ini lambat, barulah
+          // model dianggap tidak responsif dan failover ke model berikutnya.
           if (lastError === ERR_NO_FIRST_TOKEN) {
-            console.warn(`[providers] Model ${step.kind}/${model} tidak merespon (fase-1 ${config.firstTokenTimeoutMs}ms). Failover cepat ke model berikutnya.`);
-            recordModelFailure(step.kind, model, 3 * 60_000);
-            modelUnresponsive = true;
-            break;
+            console.warn(
+              `[providers] Key lambat pada ${step.kind}/${model} (fase-1 ${config.firstTokenTimeoutMs}ms habis). Cooldown key ini, coba key lain untuk model yang sama.`,
+            );
+            // recordKeyFailure sudah dipanggil di atas; pastikan key ini beristirahat
+            // cukup lama (bukan 60 detik) karena antrian provider bisa panjang.
+            keyCooldownMap.set(`${step.kind}:${keyHash(key)}`, Date.now() + 120_000);
+            slowKeyCount++;
+            // Bila SEMUA key untuk model ini sudah dicoba dan tetap lambat, baru
+            // anggap model tidak responsif (failover ke model berikutnya).
+            if (slowKeyCount >= keysForModel.length) {
+              console.warn(
+                `[providers] Semua ${keysForModel.length} key ${step.kind}/${model} lambat. Failover ke model berikutnya.`,
+              );
+              recordModelFailure(step.kind, model, 3 * 60_000);
+              modelUnresponsive = true;
+              break;
+            }
+            continue;
           }
           // FASE 2 timeout: model SUDAH merespon tapi berhenti di tengah jawaban.
           // Juga masalah model → lompat ke model berikutnya (jawaban parsial tidak bisa dikirim).
