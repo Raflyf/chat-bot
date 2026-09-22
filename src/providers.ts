@@ -986,12 +986,34 @@ function steps(): Step[] {
  * oleh pengurutan latensi. Setiap entri menjadi satu step berisi satu model saja,
  * memakai pool key dan adapter provider aslinya.
  */
-function visionSteps(all: Step[]): Step[] {
+function visionSteps(all: Step[], msgs?: ChatMsg[]): Step[] {
   const byKind = new Map(all.map((s) => [s.kind, s]));
   const out: Step[] = [];
+
+  // Format gambar yang dikirim di request ini (dari data URL: data:image/webp;base64,...).
+  // Dipakai untuk MELEWATI provider yang menolak format tersebut.
+  let imgMime = '';
+  if (msgs) {
+    for (const m of msgs) {
+      if (Array.isArray(m.content)) {
+        for (const part of m.content) {
+          const url = part && part.type === 'image_url' ? part.image_url?.url ?? '' : '';
+          const match = /^data:(image\/[a-z0-9.+-]+);base64,/i.exec(url);
+          if (match) { imgMime = match[1].toLowerCase(); break; }
+        }
+      }
+      if (imgMime) break;
+    }
+  }
+
   for (const entry of config.models.visionChain) {
     const base = byKind.get(entry.kind);
     if (!base) continue;
+    // Groq menolak WebP dengan HTTP 400 "invalid image data" (uji 22 Sep: setiap stiker
+    // .webp gagal di Groq dan membuang ~3 detik sebelum failover). Stiker WhatsApp &
+    // Telegram berformat WebP, jadi Groq dilewati untuk format itu — Cloudflare, Gemini,
+    // dan xKiro menerimanya dengan baik.
+    if (imgMime === 'image/webp' && entry.kind === 'groq') continue;
     out.push({ ...base, models: [entry.model] });
   }
   return out;
@@ -1044,7 +1066,7 @@ export async function chat(
   const promptTokensEstimate = estimatePromptTokens(messages);
   // Untuk vision: rantai eksplisit dari config.models.visionChain (urutan mutlak sesuai
   // keputusan review user, tidak disusun ulang oleh pengurutan latensi).
-  const orderedSteps = needVision ? visionSteps(allSteps) : allSteps;
+  const orderedSteps = needVision ? visionSteps(allSteps, messages) : allSteps;
 
   // Anggaran waktu TOTAL seluruh rantai failover: pagar agar satu model yang menggantung
   // tidak menghabiskan jatah serverless. Sisa anggaran diteruskan ke tiap attempt (`t`).

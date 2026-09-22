@@ -168,6 +168,23 @@ export const config = {
       { kind: 'gemini', model: 'gemini-2.5-flash' },
       { kind: 'gemini', model: 'gemini-3.6-flash' },
       { kind: 'xkiro', model: 'qwen/qwen3.8-max:free' },
+      // Dua model multimodal xKiro lain yang TERBUKTI bekerja saat uji 22 Sep (gambar
+      // stiker nyata, semua terbaca benar). Ditaruh setelah qwen3.8-max karena keduanya
+      // lebih lambat pada gambar BARU (qwen3-vl-plus 5.293ms, qwen3.5-omni-flash 10.153ms,
+      // sedangkan qwen3.8-max 4.269-6.486ms) — tapi tetap berguna sebagai lapisan
+      // tambahan sebelum jaring terakhir, karena kuotanya terpisah per kunci.
+      { kind: 'xkiro', model: 'qwen/qwen3-vl-plus:free' },
+      { kind: 'xkiro', model: 'qwen/qwen3.5-omni-flash:free' },
+      // xKiro Qwen 3.8 Omni Flash (model multimodal terbaru xKiro). DIUJI 22 Sep dengan
+      // 10 stiker nyata dan hasilnya TIDAK ANDAL, jadi sengaja ditaruh PALING AKHIR:
+      //   - 2/5 berhasil pada gambar baru (60% timeout 90 dtk); pembanding xKiro
+      //     qwen3.8-max 5/5 berhasil pada gambar yang sama.
+      //   - Saat berhasil pun lebih lambat: rata-rata 13.967ms vs qwen3.8-max 6.324ms.
+      //   - Kesan pertama "90ms" menipu: itu gambar yang SAMA dikirim berulang sehingga
+      //     kena cache. Pada gambar baru, cold start-nya 9-17 dtk atau timeout.
+      // Tetap dipasang sebagai jaring terakhir (bukan dibuang) karena model ini BENAR
+      // saat berhasil ("Ipin dari Upin & Ipin", "anak kucing menangis") dan tidak
+      // memakai kuota provider lain. Catatan: model ini TIDAK punya batas token ketat.
       { kind: 'xkiro', model: 'qwen/qwen3.8-omni-flash:free' },
     ] as Array<{
       kind: 'dahl' | 'groq' | 'gemini' | 'cloudflare' | 'openrouter' | 'xkiro';
