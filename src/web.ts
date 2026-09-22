@@ -61,31 +61,58 @@ export function isSafePublicUrl(urlString: string): boolean {
         }
       }
 
-      // Bentuk IPv6 HEKSADESIMAL dari alamat privat.
+      // Bentuk IPv6 yang MEMBUNGKUS alamat IPv4 — semua varian yang bisa dipakai untuk
+      // melewati pemeriksaan IPv4 (temuan audit v0.79; NAT64 & 6to4 ditemukan auditor
+      // dan diverifikasi masih lolos sebelum perbaikan ini):
+      //   ::ffff:0:0/96  (IPv4-mapped)     -> ::ffff:127.0.0.1
+      //   ::/96          (IPv4-compatible) -> ::127.0.0.1
+      //   64:ff9b::/96   (NAT64)           -> 64:ff9b::7f00:1
+      //   64:ff9b:1::/48 (NAT64 lokal)     -> 64:ff9b:1::7f00:1
+      //   2002::/16      (6to4)            -> 2002:7f00:1::  (IPv4 ada di 2 grup pertama)
       //
-      // PENTING: Node menormalkan hostname IPv6 menjadi hex, jadi
-      //   http://[::ffff:127.0.0.1]/         -> hostname "[::ffff:7f00:1]"
-      //   http://[0:0:0:0:0:ffff:7f00:1]/    -> hostname "[::ffff:7f00:1]" (sama!)
-      // Pencocokan literal "127.0.0.1" karena itu TIDAK PERNAH cocok. Solusinya: dekode
-      // 32 bit terakhir menjadi oktet IPv4 lalu periksa dengan aturan yang sama.
-      const parts = host.split(':');
+      // PENTING: Node menormalkan hostname IPv6 menjadi heksadesimal, jadi
+      //   http://[::ffff:127.0.0.1]/      -> hostname "[::ffff:7f00:1]"
+      //   http://[0:0:0:0:0:ffff:7f00:1]/ -> hostname "[::ffff:7f00:1]" (sama)
+      // Pencocokan literal "127.0.0.1" TIDAK PERNAH cocok. Solusi: dekode grup hex
+      // menjadi oktet IPv4 lalu periksa dengan aturan IPv4 yang sama.
+      const isPrivateV4 = (a: number, b: number): boolean => {
+        if (a === 10 || a === 127 || a === 0 || a >= 224) return true;
+        if (a === 169 && b === 254) return true;   // metadata cloud (AWS/GCP/Azure)
+        if (a === 172 && b >= 16 && b <= 31) return true;
+        if (a === 192 && b === 168) return true;
+        if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10
+        return false;
+      };
+      const decodeHexPair = (hiHex: string, loHex: string): [number, number, number, number] => {
+        const hi = parseInt(hiHex, 16);
+        const lo = parseInt(loHex, 16);
+        return [(hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff, lo & 0xff];
+      };
+
+      const parts = host.split(':').filter((x) => x !== '');
+      const lowerHost = host.toLowerCase();
+
+      // (a) 6to4 (2002::/16): IPv4 asli ada di DUA GRUP PERTAMA.
+      if (/^2002:/.test(lowerHost) && parts.length >= 3) {
+        const [a, b] = decodeHexPair(parts[1] || '0', parts[2] || '0');
+        if (isPrivateV4(a, b)) return false;
+      }
+
+      // (b) NAT64 (64:ff9b::/96 dan 64:ff9b:1::/48): IPv4 ada di DUA GRUP TERAKHIR.
+      if (/^64:ff9b:/.test(lowerHost) && parts.length >= 2) {
+        const [a, b] = decodeHexPair(parts[parts.length - 2], parts[parts.length - 1]);
+        if (isPrivateV4(a, b)) return false;
+      }
+
+      // (c) IPv4-mapped / compatible (::ffff:x, ::x): IPv4 ada di dua grup terakhir,
+      //     dan seluruh grup di atasnya nol/ffff.
       const lastTwo = parts.slice(-2);
       if (lastTwo.length === 2 && /^[0-9a-f]{1,4}$/i.test(lastTwo[0]) && /^[0-9a-f]{1,4}$/i.test(lastTwo[1])) {
-        const hi = parseInt(lastTwo[0], 16);
-        const lo = parseInt(lastTwo[1], 16);
-        const a = (hi >> 8) & 0xff;
-        const b = hi & 0xff;
-        const c = (lo >> 8) & 0xff;
-        const d = lo & 0xff;
-        // Hanya periksa bila bagian di ATAS dua grup terakhir seluruhnya nol/ffff
-        // (artinya alamat ini memang IPv4-mapped/kompatibel, bukan IPv6 asli).
-        const head = parts.slice(0, -2).filter((x) => x !== '' && x !== '0' && x.toLowerCase() !== 'ffff');
+        const head = parts.slice(0, -2).filter((x) => x !== '0' && x.toLowerCase() !== 'ffff');
         if (head.length === 0) {
-          if (a === 10 || a === 127 || a === 0 || a >= 224) return false;
-          if (a === 169 && b === 254) return false;
-          if (a === 172 && b >= 16 && b <= 31) return false;
-          if (a === 192 && b === 168) return false;
-          if (a === 0 && b === 0 && c === 0 && d === 0) return false;
+          const [a, b, c, d] = decodeHexPair(lastTwo[0], lastTwo[1]);
+          if (isPrivateV4(a, b)) return false;
+          if (a === 0 && b === 0 && c === 0 && d === 0) return false; // alamat tak tentu
         }
       }
 
