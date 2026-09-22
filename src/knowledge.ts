@@ -126,12 +126,21 @@ export async function getKnowledge(query: string): Promise<{ knowledge: string; 
     return { knowledge: sanitizeKnowledgeText(hot.knowledge), sourceUrls: hot.sourceUrls };
   }
 
-  // 1b. Cek token prefix/overlap di hot cache
+  // 1b. Cek hot cache — HANYA kecocokan EKSAK.
+  //
+  // BUG YANG DIPERBAIKI (temuan audit v0.79, direproduksi):
+  // versi sebelumnya memakai `k.startsWith(entityKey) || entityKey.startsWith(k)` —
+  // pencocokan PREFIX DUA ARAH. Akibatnya kueri yang hanya berbagi awalan dianggap sama
+  // dan bot menyajikan fakta topik lain dengan yakin:
+  //   simpan "harga"            -> tanya "harga minyak goreng naik hari ini" = HIT SALAH
+  //   simpan "harga beras premium kualitas satu" -> tanya "harga" = HIT SALAH
+  // Ini membuat bot menjawab dengan data lama yang tidak relevan TANPA menyentuh web,
+  // dan sulit terdeteksi karena jawabannya terdengar percaya diri.
+  // Sekarang hanya kecocokan eksak yang diterima (kunci sudah dinormalisasi oleh
+  // normalizeEntityKey, jadi kueri yang benar-benar sama tetap terlayani dari cache).
   for (const [k, entry] of hotKnowledgeCache.entries()) {
-    if (entry.expiresAt > now) {
-      if (k === entityKey || k.startsWith(entityKey) || entityKey.startsWith(k)) {
-        return { knowledge: sanitizeKnowledgeText(entry.knowledge), sourceUrls: entry.sourceUrls };
-      }
+    if (entry.expiresAt > now && k === entityKey) {
+      return { knowledge: sanitizeKnowledgeText(entry.knowledge), sourceUrls: entry.sourceUrls };
     }
   }
 
@@ -143,7 +152,8 @@ export async function getKnowledge(query: string): Promise<{ knowledge: string; 
     const { data, error } = await c
       .from('web_knowledge')
       .select('knowledge, expires_at, source_urls, category')
-      .or(`entity_key.eq.${entityKey},entity_key.ilike.${entityKey}%`)
+      // Hanya kecocokan EKSAK — prefix-match menyebabkan kolisi topik (lihat catatan 1b).
+      .eq('entity_key', entityKey)
       .gt('expires_at', new Date(now).toISOString())
       .limit(1)
       .maybeSingle();

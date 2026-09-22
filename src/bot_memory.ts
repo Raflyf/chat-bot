@@ -386,8 +386,26 @@ export function extractQAFromText(text: string, limit = 60): MemoryItem[] {
     if (question.split(/\s+/).length > 26) continue;         // pertanyaan terlalu panjang
     // Pertanyaan harus berupa kalimat tanya yang masuk akal (ada kata tanya).
     if (!/\b(?:apa|siapa|kapan|dimana|di\s*mana|kenapa|mengapa|bagaimana|berapa|apakah|bisakah|bolehkah|mana|yang)\b/i.test(question)) continue;
-    // Buang pertanyaan yang terpotong di tengah kata (huruf kecil di awal tanpa spasi).
-    if (/^[a-z]{1,4}\s/.test(question)) continue;
+    // Buang pertanyaan yang TERPOTONG di tengah kata.
+    //
+    // BUG YANG DIPERBAIKI (temuan audit v0.79, direproduksi): versi sebelumnya memakai
+    // `/^[a-z]{1,4}\s/` yang membuang SEMUA pertanyaan yang dimulai kata huruf kecil
+    // pendek. Padahal kata tanya Indonesia yang PALING UMUM justru pendek: "apa", "ikan",
+    // "kutu", "kota". Terbukti 3 dari 6 sampel hilang:
+    //   "ikan apa yang suka berhenti? Jawaban: Ikan pause"  -> DIBUANG (padahal valid)
+    //   "apa yang paling manis di dunia? ..."               -> DIBUANG (padahal valid)
+    //   "kutu apa yang menakutkan? Jawab: Kutukan"          -> DIBUANG (padahal valid)
+    // Banyak halaman web menulis daftar tebak-tebakan dengan huruf kecil, jadi ini
+    // memangkas hasil panen growMemory secara besar.
+    // Perbaikan: deteksi potongan kata yang SEBENARNYA, yaitu huruf kecil menempel tanpa
+    // spasi ke huruf kapital (mis. "na yang paling pintar" -> "naYang"? tidak; pola nyata
+    // adalah awal kata terpotong seperti "ngan apa"). Kriteria baru: buang hanya bila
+    // token pertama BUKAN kata yang berdiri sendiri — dicek dengan kamus kata tanya &
+    // awalan umum, bukan panjang karakter.
+    const firstToken = question.split(/\s+/)[0].toLowerCase();
+    const validOpeners = /^(?:apa|apakah|siapa|kapan|dimana|kenapa|mengapa|bagaimana|berapa|mana|yang|ikan|kutu|kota|hewan|buah|benda|orang|binatang|sayur|warna|angka|huruf|pohon|makanan|minuman|profesi|tempat|kata|apa|apa|di|ke|dari|kalau|jika|bila|mas|mbak|pak|bu|adik|kakak)$/;
+    const looksTruncated = /^[a-z]{1,3}$/.test(firstToken) && !validOpeners.test(firstToken);
+    if (looksTruncated) continue;
 
     const norm = answer.toLowerCase().trim();
     if (seen.has(norm)) continue;

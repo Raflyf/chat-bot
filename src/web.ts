@@ -1183,19 +1183,54 @@ export async function searchWeb(query: string, previousContext?: string): Promis
       const weatherIntent =
         /\b(?:cuaca|suhu|temperatur|berapa\s+derajat|hujan|panas|dingin|gerah|mendung|cerah|berawan)\b/i.test(cleanQuery);
       if (weatherIntent) {
-        // Ekstrak kota: pola "di <kota>", "cuaca <kota>", atau kueri apa adanya.
-        let city = '';
-        const mDi = cleanQuery.match(/\b(?:di|untuk|kota|daerah)\s+([A-Za-z][A-Za-z\s.'-]{2,28}?)(?:\s*(?:hari ini|sekarang|dong|nih|ya|\?|$))/i);
-        const mCuaca = cleanQuery.match(/\b(?:cuaca|suhu)\s+([A-Za-z][A-Za-z\s.'-]{2,28}?)(?:\s*(?:hari ini|sekarang|dong|nih|ya|\?|$))/i);
-        if (mCuaca) city = mCuaca[1].trim();
-        else if (mDi) city = mDi[1].trim();
-        // Buang kata umum yang bukan nama kota.
-        city = city.replace(/\b(?:hari ini|sekarang|dong|nih|ya|sih|deh|kak|bang)\b/gi, '').trim();
+        // Ekstrak kota untuk data cuaca.
+        //
+        // BUG YANG DIPERBAIKI (temuan audit v0.79, direproduksi):
+        //  (a) "cuaca di jakarta hari ini" -> city = "di jakarta" (prefix "di" tidak dibuang)
+        //      sehingga wttr.in diberi nama kota salah dan respons kosong/gagal;
+        //  (b) "suhu surabaya sekarang" -> city = "suraba" (lazy-match berhenti sebelum
+        //      "ya" karena "ya" ada di lookahead) -> nama kota terpotong;
+        //  (c) fallback riwayat CASE-SENSITIVE: hanya "saya di Cianjur" (huruf kapital)
+        //      yang cocok, sedangkan "saya di cianjur" (mayoritas chat) tidak.
+        // Perbaikan: buang prefix arah/kata umum SETELAH capture, buang lookahead kata
+        // pengisi yang menyesatkan, dan buat fallback case-insensitive dengan normalisasi
+        // kapitalisasi nama kota (Title Case).
+        const toTitle = (s: string): string =>
+          s
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((w) => (w.length > 2 ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w.toUpperCase()))
+            .join(' ');
+
+        // Pola 1: "cuaca/suhu [di] <kota>" — prefix opsional "di/untuk/kota/daerah".
+        // Lookahead hanya kata pengisi PENUH (bukan sufiks huruf) supaya nama kota tidak
+        // terpotong: "suhu surabaya sekarang" -> "surabaya", bukan "suraba".
+        const mWeather = cleanQuery.match(
+          /\b(?:cuaca|suhu|temperatur)\s+(?:di\s+|untuk\s+|kota\s+|daerah\s+)?([A-Za-z][A-Za-z.'-]{2,25})(?:\s+(?:hari\s+ini|sekarang|dong|nih|ya|sih|deh|kak|bang))?/i,
+        );
+        // Pola 2: "<kota> [hari ini/sekarang]" bila pola 1 tidak ada.
+        const mDi = cleanQuery.match(
+          /\b(?:di|untuk|kota|daerah)\s+([A-Za-z][A-Za-z.'-]{2,25})(?:\s+(?:hari\s+ini|sekarang|dong|nih|ya|sih|deh))?/i,
+        );
+        // Pola 3: "berapa derajat <kota>"
+        const mDerajat = cleanQuery.match(
+          /\bberapa\s+derajat\s+(?:di\s+)?([A-Za-z][A-Za-z.'-]{2,25})/i,
+        );
+        let city = (mWeather?.[1] || mDerajat?.[1] || mDi?.[1] || '').trim();
+        // Buang kata umum yang tersisa (jangan sampai jadi bagian nama kota).
+        city = city
+          .replace(/\b(?:hari\s*ini|sekarang|dong|nih|ya|sih|deh|kak|bang|berapa|derajat)\b/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        city = city ? toTitle(city) : '';
         const weatherTargets = city ? [city] : [];
-        // Bila kota tidak disebut, coba lokasi dari riwayat percakapan (user menyebut "saya di X").
+        // Bila kota tidak disebut, coba lokasi dari riwayat percakapan ("saya di X").
+        // Case-insensitive (temuan c) + dukung kata pengisi setelah nama kota.
         if (weatherTargets.length === 0 && typeof previousContext === 'string') {
-          const mLoc = previousContext.match(/\b(?:aku|saya|gue|gw)\s+(?:di|lagi\s+di)\s+([A-Z][A-Za-z\s.'-]{2,24})/);
-          if (mLoc) weatherTargets.push(mLoc[1].trim());
+          const mLoc = previousContext.match(
+            /\b(?:aku|saya|gue|gw)\s+(?:tinggal\s+)?(?:di|lagi\s+di)\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
+          );
+          if (mLoc) weatherTargets.push(toTitle(mLoc[1].trim()));
         }
         for (const target of weatherTargets.slice(0, 2)) {
           fetches.push(
@@ -1719,6 +1754,12 @@ export async function searchWeb(query: string, previousContext?: string): Promis
       const hits = topicWords.filter((wd) => hay.includes(wd)).length;
       if (hits > 0) s.score += hits * 18; // bonus proporsional jumlah kata topik yang cocok
     }
+    // BUG YANG DIPERBAIKI (temuan audit v0.79): bonus di atas ditambahkan SETELAH
+    // `structuredSnippets.sort()` di atas, dan TIDAK ADA sort ulang setelahnya —
+    // sehingga seluruh mekanisme "RELEVANSI TOPIK" ini adalah KODE MATI (skor berubah
+    // tapi urutan array tidak). Akibatnya hasil pencarian topik umum tetap bisa
+    // menenggelamkan sumber yang lebih relevan. Sekarang diurutkan ulang setelah bonus.
+    structuredSnippets.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp);
   }
 
   // Ambil lebih banyak sumber (20) agar pengetahuan lebih luas — model memilih yang relevan.

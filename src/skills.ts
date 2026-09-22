@@ -669,12 +669,27 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/[ \t]{2,}/g, ' ');
   out = out.replace(/\n{3,}/g, '\n\n').trim();
 
-  // 16. Normalisasi newline berlebihan pada percakapan santai
-  // Jika obrolan santai (< 400 karakter) dipecah enter/newline tanpa format list atau kode, satukan menjadi paragraf mengalir
+  // 16. Normalisasi newline berlebihan pada percakapan santai.
+  //
+  // BUG YANG DIPERBAIKI (temuan audit v0.79, direproduksi):
+  // versi sebelumnya menyatukan SEMUA baris bila balasan < 400 char & <= 3 baris,
+  // TANPA membedakan "baris terpecah tak sengaja" dari "PARAGRAF YANG SENGAJA dibuat
+  // model". Akibatnya jeda paragraf hilang:
+  //   "Kabar baik buat kamu.\n\nBanyak yang bilang ini susah." -> satu baris.
+  // Ini bertentangan dengan aturan prompt "nyaman dibaca cepat di HP" dan menghapus
+  // penekanan yang disengaja. Perbaikan: HANYA satukan bila pemisahnya baris TUNGGAL
+  // (\n) — pemisah paragraf ganda (\n\n) dipertahankan karena itu memang sengaja.
   if (!out.includes('```') && !out.includes('|') && out.length < 400) {
     const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const hasListOrHeading = lines.some((l) => /^[-*•\d+>]|\*.*?\*:\s*$/.test(l));
-    if (!hasListOrHeading && lines.length > 1 && lines.length <= 3 && lines.every((l) => l.length < 160)) {
+    const hasParagraphBreak = /\n\s*\n/.test(out);
+    if (
+      !hasListOrHeading &&
+      !hasParagraphBreak &&
+      lines.length > 1 &&
+      lines.length <= 3 &&
+      lines.every((l) => l.length < 160)
+    ) {
       out = lines.join(' ');
     }
   }
@@ -872,7 +887,13 @@ function similarityScore(a: string, b: string): number {
  */
 export function extractRiddleTag(text: string): { text: string; answer: string | null } {
   if (!text) return { text: '', answer: null };
-  const re = /\[\[\s*jawab(?:an)?\s*:\s*([^\[\]]{1,120})\s*\]\]/gi;
+  // BUG YANG DIPERBAIKI (temuan audit v0.79): regex lama WAJIB kurung ganda (`[[jawab:X]]`),
+  // sedangkan pembersih tag di enforceUniversalRules menerima kurung tunggal (`[jawab:X]`).
+  // Akibatnya model yang menulis satu kurung kehilangan kunci jawaban: tag-nya DIBERSIHKAN
+  // dari teks (jadi user tidak melihat), tapi riddleAnswer = null -> giliran berikutnya
+  // permainan dinilai TANPA kunci, dan tebakan benar user bisa ditolak.
+  // Sekarang kedua varian diterima (sama seperti pembersihnya).
+  const re = /\[\[?\s*jawab(?:an)?\s*:\s*([^\[\]]{1,120})\s*\]\]?/gi;
   let answer: string | null = null;
   const m = re.exec(text);
   if (m) {
@@ -989,7 +1010,11 @@ function enforceUniversalRules(text: string): string {
   // (balasan reset): 'Sesi udah di-reset, siap lanjut lagi. " saja.' — sisa potongan
   // yang tidak bermakna. Buang fragmen pendek berisi kutipan/tanda baca nyasar di akhir.
   out = out.replace(/\s*["'`«»]+\s*(?:saja|aja|doang)?\s*[.!?]*\s*$/gi, '').trim();
-  out = out.replace(/\s{2,}/g, ' ');
+  // BUG YANG DIPERBAIKI (temuan audit v0.79): `\s{2,}` mencakup NEWLINE, sehingga
+  // semua jeda paragraf (\n\n) diganti spasi dan balasan jadi satu blok. Terbukti:
+  //   "Kabar baik buat kamu.\n\nBanyak yang bilang ini susah." -> satu baris.
+  // Diganti [ \t]{2,} yang hanya merapikan spasi/tab horizontal, bukan baris baru.
+  out = out.replace(/[ \t]{2,}/g, ' ');
 
   // 4. Rapikan sisa spasi/newline berlebih akibat pemotongan di atas.
   out = out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
@@ -1015,14 +1040,14 @@ function enforceUniversalRules(text: string): string {
     /\(\s*(?:Jawaban|Menjawab|Mengakui|Menyapa|Menyindir|Respons|Respon|Balasan|Sedikit|Agak|Terlihat|Nampak|Tampak|Sesuai|Sambil)\b[^)\n]{0,160}\)?/gi,
     '',
   );
-  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim();
 
   // 7. CATATAN META DALAM KURUNG SIKU (temuan uji live 20 Sep, model Dahl/DeepSeek):
   //    "[note: Ini versi paling singkat dan santai sesuai permintaanmu...]" — model
   //    menjelaskan alasannya sendiri memakai tag catatan. Sama seperti tag stiker,
   //    ini BUKAN bagian percakapan. Dihapus SEMUA varian (note/catatan/info/keterangan).
   out = out.replace(/\[\s*(?:note|catatan|keterangan|penjelasan|info|alasan)\s*:[^\]]{0,400}\]?/gi, '');
-  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim();
 
   return out;
 }
@@ -1126,7 +1151,25 @@ function dedupeSentences(text: string): string {
     keptTokens.push(tokens);
     if (key.length >= 2) keptExact.add(key);
   }
-  return kept.join(' ').replace(/\s{2,}/g, ' ').trim();
+  // BUG YANG DIPERBAIKI (temuan audit v0.79): `kept.join(' ')` meratakan SELURUH
+  // paragraf menjadi satu blok, menghapus jeda yang disengaja model. Terbukti:
+  //   "Kabar baik buat kamu.\n\nBanyak yang bilang ini susah." -> satu baris.
+  // Ini bertentangan dengan aturan prompt "nyaman dibaca cepat di HP".
+  // Perbaikan: gabungkan ulang dengan spasi DALAM paragraf, tapi pertahankan
+  // pemisah paragraf (\n\n) pada boundary aslinya.
+  let result = '';
+  for (let i = 0; i < kept.length; i++) {
+    if (i === 0) {
+      result = kept[i];
+      continue;
+    }
+    // Cek pemisah asli antara kalimat ke-i-1 dan ke-i pada teks sumber.
+    const prevEnd = text.indexOf(kept[i - 1]);
+    const curStart = text.indexOf(kept[i], prevEnd + kept[i - 1].length);
+    const gap = prevEnd >= 0 && curStart > prevEnd ? text.slice(prevEnd + kept[i - 1].length, curStart) : ' ';
+    result += (/\n\s*\n/.test(gap) ? '\n\n' : ' ') + kept[i];
+  }
+  return result.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 /**
@@ -2779,7 +2822,7 @@ export async function autoReply(
             /\b(?:mau\s+ganti\s+topik|ganti\s+topik\s+atau|atau\s+main\s+lagi|mau\s+main\s+lagi|mau\s+bahas\s+apa|ada\s+lagi\s+yang\s+mau|mau\s+(?:aku\s+)?(?:tebakan|gombalan)\s+lagi)\b/i;
           const parts = reply.split(/(?<=[.!?])\s+|\n+/);
           const kept = parts.filter((s) => s.trim() && !nudgeRe.test(s) && !menuRe.test(s));
-          const cleanedReply = kept.join(' ').replace(/\s{2,}/g, ' ').trim();
+          const cleanedReply = kept.join(' ').replace(/[ \t]{2,}/g, ' ').trim();
           // Pakai versi bersih hanya bila masih bermakna (tidak jadi kosong/aneh).
           if (cleanedReply && cleanedReply.split(/\s+/).filter(Boolean).length >= 3) {
             reply = cleanedReply;
@@ -2788,7 +2831,7 @@ export async function autoReply(
             reply = reply
               .replace(/\b(?:jangan\s+(?:nyerah|menyerah)\s*(?:dulu|dong|deh)?[,.!]?\s*)/gi, '')
               .replace(/\s*[^.!?\n]*\b(?:mau\s+ganti\s+topik|atau\s+main\s+lagi|mau\s+main\s+lagi)\b[^.!?\n]*[.!?]?\s*/gi, ' ')
-              .replace(/\s{2,}/g, ' ')
+              .replace(/[ \t]{2,}/g, ' ')
               .trim();
           }
           // PANJANG: temuan E2E 20 Sep — saat user menyerah, model menjawab 60+ kata
@@ -2829,7 +2872,7 @@ export async function autoReply(
         const cleaned3 = reply
           .replace(/^(?:Pertahankan|Semangat|Bagus|Lanjut|Mantap|Good|Nice)\s*!\s*/i, '')
           .replace(/\b(?:Pertahankan|Semangat terus)\s*!/gi, '')
-          .replace(/\s{2,}/g, ' ')
+          .replace(/[ \t]{2,}/g, ' ')
           .trim();
         // Hanya pakai bila hasilnya tidak kosong — jangan sampai balasan jadi hampa.
         if (cleaned3.split(/\s+/).filter(Boolean).length >= 2) reply = cleaned3;
