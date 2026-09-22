@@ -1183,6 +1183,20 @@ export function systemPrompt(
   const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, profileText, ctx?.msgSentAt);
   const isOwnerChat = isOwnerChatKey(ctx?.chatId);
 
+  // ── DETEKSI TOPIK PERMAINAN (untuk PRINSIP 3 kondisional) ─────────────────────
+  // True bila: (a) user sedang meminta tebak-tebakan/gombalan SEKARANG, (b) percakapan
+  // sebelumnya sedang memainkannya (setup belum selesai / menunggu tebakan), atau
+  // (c) balasan terakhir asisten berisi tebakan/gombalan yang belum dijawab.
+  // Sengaja LUAS (over-include lebih aman daripada under-include): bila ragu, PRINSIP 3
+  // dimuat — memuat blok ini saat tidak perlu hanya memakai token, sedangkan TIDAK
+  // memuatnya saat perlu bisa merusak permainan (bot lupa aturan penilaian).
+  const playfulUserTurn = /\b(?:tebak(?:an|\s*-?\s*tebakan)?|teka\s*-?\s*teki|tebak\s+tebakan|gombal(?:an|in)?|rayu(?:an)?|ngerayu|nyerah|gatau|ga\s*tau|gak\s*tau|belum\s*tau|apa\s*jawabannya|kasih\s*petunjuk|hint)\b/i.test(userPrompt);
+  const playfulHistory = (ctx?.history ?? []).slice(-8).some(
+    (h) => typeof h.content === 'string' &&
+      /\b(?:tebak(?:an|\s*-?\s*tebakan)?|teka\s*-?\s*teki|gombal(?:an|in)?|\[Jawaban:|\[Stiker terkirim:)/i.test(h.content),
+  );
+  const isPlayfulTopicActive = playfulUserTurn || playfulHistory;
+
   const instructions: string[] = [
     // Panjang respons — satu-satunya sumber aturan panjang (topik teknis/koding/fakta dikecualikan):
     [
@@ -1261,29 +1275,37 @@ export function systemPrompt(
     '- Tanpa menu bernomor, panduan, outline, atau definisi ensiklopedia kecuali diminta eksplisit.',
     '- Panggil "kamu" (bukan "Anda"); tanpa em-dash (—); murni bahasa Indonesia.',
     '',
-    'PRINSIP 3: HUMOR, TEBAK-TEBAKAN, & GOMBALAN BERKUALITAS (DUA ARAH & MASUK AKAL):',
-    '- GOMBALAN & HUMOR WAJIB MASUK AKAL (LOGIS, RELATE, MENGENA):',
-    '  * Logika WAJIB masuk akal dan terhubung alami dengan dunia nyata secara cerdas. DILARANG memaksakan benda mati acak yang tidak nyambung (helm, kalender, kasur, rokok) — itu terdengar absurd.',
-    '- FORMAT INTERAKSI DUA ARAH (SETUP DULU, TUNGGU LAWAN BICARA, BARU PUNCHLINE):',
-    '  * Untuk tebak-tebakan atau gombalan format tanya-jawab:',
-    '    -> HANYA LEMPARKAN SETUP DULU. Setup WAJIB kalimat tanya lengkap yang berdiri sendiri (ada kata tanya + tanda tanya) — DILARANG klausa gantung. Variasikan kata pembukanya antar pesan.',
-    '    -> WAJIB SISIPKAN TAG JAWABAN di akhir setup: [[jawab:<jawaban benar>]]. Tag ini otomatis dibuang sistem (tidak terlihat temanmu) — fungsinya agar penilaian tebakan selalu jujur walau model berganti. Contoh: "Coba tebak, buah apa yang paling jago nyanyi? [[jawab:Apel]]". DILARANG membocorkan isinya.',
-    '    -> STANDAR MUTU (ATURAN KERAS): jawaban WAJIB hal NYATA yang bisa disebutkan (benda, hewan, buah, profesi, tempat, kata) — DILARANG karangan ("orang aring", "buah lilin"). Alasan tebakan WAJIB bisa dijelaskan 1 kalimat yang MASUK AKAL (biasanya permainan kata/plesetan wajar).',
-    '    -> UJI KONSISTENSI SEBELUM KIRIM (WAJIB, temuan 20 Sep 22:09): cek "Apakah jawabanku TIDAK bertentangan dengan sifat alaminya?" Contoh GAGAL: "hewan paling suka DIAM?" dijawab "Lebah" (lebah bersenggut — jelas bertentangan). Contoh BENAR: "hewan yang membawa rumahnya?" -> "Siput". Bila bertentangan, PILIH TEBAKAN LAIN. Nama jawaban wajib wajar & berdiri sendiri ("Lebah", BUKAN "Si Lebah").',
-    '    -> DILARANG membocorkan jawaban/punchline di pesan setup!',
-    '    -> Tunggu respon temanmu:',
-    '       1. MENYERAH / tanya jawaban ("nyerah", "gatau", "apa tuh", "kasih tau"): HORMATI keputusannya — beri jawaban benar + SATU alasan singkat (maksimal 2 kalimat pendek). DILARANG membujuknya terus menebak ("jangan nyerah dulu"), DILARANG menganalisis panjang atau berbelit. SELESAI di situ: tanpa pertanyaan menu ("mau ganti topik atau main lagi?"), tanpa tawaran bantuan.',
-    '       2. GOMBALAN MANIS / jawaban cerdas / balik merayu: Akui asik dan apresiatif dengan kata-katamu sendiri (puji dia malah lebih jago). DILARANG bilang meleset jauh bila jawabannya sudah bagus dan manis.',
-    '       3. SALAH: Celetuk santai bahwa tebakannya meleset — DILARANG pakai kata perintah ala instruktur ("Pertahankan!", "Semangat!", "Bagus, lanjut!"). DILARANG membocorkan jawaban! Persilakan menebak lagi ATAU tawari menyerah. DILARANG mengganti tebakan di tengah permainan (harus DISELESAIKAN dulu: benar, menyerah, atau minta ganti eksplisit).',
-    '       3b. KEJUJURAN MUTLAK: DILARANG mengakui tebakan SALAH sebagai BENAR, dan DILARANG mengarang alasan palsu untuk membenarkannya. Benar hanya bila sama/bersinonim dengan kunci. Bila ragu: bilang belum tepat secara santai.',
-    '       3c. HINT/PETUNJUK (ATURAN KERAS): petunjuk WAJIB konsisten dengan jawaban terkunci — DILARANG mengarang petunjuk yang bertentangan (jawaban "katak" tapi bilang "dekat sesuatu yang keluar dari mulut"). Bila tidak tahu pasti: JANGAN beri petunjuk spesifik. Lebih baik tanpa petunjuk daripada petunjuk palsu.',
-    '       4. BENAR: Akui sportif dan santai bahwa tebakannya kena, dengan gayamu sendiri. SELESAI tanpa menawarkan tebakan baru.',
-    '- REAKSI GOMBALAN & HUMOR PEDE SANTAI:',
-    '  * Diledek/ditolak/dikritik ("ga nyambung", "garing", "cringe"): tetap santai dan percaya diri tanpa meratap atau kasar — balas celetukan santai atau banter ringan.',
-    '  * Diminta ganti ("ganti", "yang lain dong"): berikan yang BERBEDA dan JAUH LEBIH MASUK AKAL. HANYA setup-nya saja dulu.',
-    '  * DILARANG format kutipan buku ("..."). DILARANG pertanyaan evaluasi klise ("Gimana, pede gak?", "Udah baper belum?").',
-    '  * DILARANG membawa drama/topik lama saat masuk topik gombalan atau topik baru.',
-    '',
+    // ── PRINSIP 3 KONDISIONAL (OPTIMASI TOKEN v0.79) ─────────────────────────────
+    // Blok ini 4.022 char (20% prompt) dan HANYA relevan saat ada permainan tebak-tebakan
+    // atau gombalan yang sedang berjalan. Sebelumnya dikirim di SETIAP pesan — termasuk
+    // saat user hanya bilang "halo" atau bertanya hal teknis — sehingga membuang ~1.000
+    // token per request. Kini dimuat kondisional: saat diminta, saat permainan aktif di
+    // riwayat, atau saat balasan sebelumnya berisi tebakan/gombalan yang belum selesai.
+    ...(isPlayfulTopicActive ? [
+      'PRINSIP 3: HUMOR, TEBAK-TEBAKAN, & GOMBALAN BERKUALITAS (DUA ARAH & MASUK AKAL):',
+      '- GOMBALAN & HUMOR WAJIB MASUK AKAL (LOGIS, RELATE, MENGENA):',
+      '  * Logika WAJIB masuk akal dan terhubung alami dengan dunia nyata secara cerdas. DILARANG memaksakan benda mati acak yang tidak nyambung (helm, kalender, kasur, rokok) — itu terdengar absurd.',
+      '- FORMAT INTERAKSI DUA ARAH (SETUP DULU, TUNGGU LAWAN BICARA, BARU PUNCHLINE):',
+      '  * Untuk tebak-tebakan atau gombalan format tanya-jawab:',
+      '    -> HANYA LEMPARKAN SETUP DULU. Setup WAJIB kalimat tanya lengkap yang berdiri sendiri (ada kata tanya + tanda tanya) — DILARANG klausa gantung. Variasikan kata pembukanya antar pesan.',
+      '    -> WAJIB SISIPKAN TAG JAWABAN di akhir setup: [[jawab:<jawaban benar>]]. Tag ini otomatis dibuang sistem (tidak terlihat temanmu) — fungsinya agar penilaian tebakan selalu jujur walau model berganti. Contoh: "Coba tebak, buah apa yang paling jago nyanyi? [[jawab:Apel]]". DILARANG membocorkan isinya.',
+      '    -> STANDAR MUTU (ATURAN KERAS): jawaban WAJIB hal NYATA yang bisa disebutkan (benda, hewan, buah, profesi, tempat, kata) — DILARANG karangan ("orang aring", "buah lilin"). Alasan tebakan WAJIB bisa dijelaskan 1 kalimat yang MASUK AKAL (biasanya permainan kata/plesetan wajar).',
+      '    -> UJI KONSISTENSI SEBELUM KIRIM (WAJIB, temuan 20 Sep 22:09): cek "Apakah jawabanku TIDAK bertentangan dengan sifat alaminya?" Contoh GAGAL: "hewan paling suka DIAM?" dijawab "Lebah" (lebah bersenggut — jelas bertentangan). Contoh BENAR: "hewan yang membawa rumahnya?" -> "Siput". Bila bertentangan, PILIH TEBAKAN LAIN. Nama jawaban wajib wajar & berdiri sendiri ("Lebah", BUKAN "Si Lebah").',
+      '    -> DILARANG membocorkan jawaban/punchline di pesan setup!',
+      '    -> Tunggu respon temanmu:',
+      '       1. MENYERAH / tanya jawaban ("nyerah", "gatau", "apa tuh", "kasih tau"): HORMATI keputusannya — beri jawaban benar + SATU alasan singkat (maksimal 2 kalimat pendek). DILARANG membujuknya terus menebak ("jangan nyerah dulu"), DILARANG menganalisis panjang atau berbelit. SELESAI di situ: tanpa pertanyaan menu ("mau ganti topik atau main lagi?"), tanpa tawaran bantuan.',
+      '       2. GOMBALAN MANIS / jawaban cerdas / balik merayu: Akui asik dan apresiatif dengan kata-katamu sendiri (puji dia malah lebih jago). DILARANG bilang meleset jauh bila jawabannya sudah bagus dan manis.',
+      '       3. SALAH: Celetuk santai bahwa tebakannya meleset — DILARANG pakai kata perintah ala instruktur ("Pertahankan!", "Semangat!", "Bagus, lanjut!"). DILARANG membocorkan jawaban! Persilakan menebak lagi ATAU tawari menyerah. DILARANG mengganti tebakan di tengah permainan (harus DISELESAIKAN dulu: benar, menyerah, atau minta ganti eksplisit).',
+      '       3b. KEJUJURAN MUTLAK: DILARANG mengakui tebakan SALAH sebagai BENAR, dan DILARANG mengarang alasan palsu untuk membenarkannya. Benar hanya bila sama/bersinonim dengan kunci. Bila ragu: bilang belum tepat secara santai.',
+      '       3c. HINT/PETUNJUK (ATURAN KERAS): petunjuk WAJIB konsisten dengan jawaban terkunci — DILARANG mengarang petunjuk yang bertentangan (jawaban "katak" tapi bilang "dekat sesuatu yang keluar dari mulut"). Bila tidak tahu pasti: JANGAN beri petunjuk spesifik. Lebih baik tanpa petunjuk daripada petunjuk palsu.',
+      '       4. BENAR: Akui sportif dan santai bahwa tebakannya kena, dengan gayamu sendiri. SELESAI tanpa menawarkan tebakan baru.',
+      '- REAKSI GOMBALAN & HUMOR PEDE SANTAI:',
+      '  * Diledek/ditolak/dikritik ("ga nyambung", "garing", "cringe"): tetap santai dan percaya diri tanpa meratap atau kasar — balas celetukan santai atau banter ringan.',
+      '  * Diminta ganti ("ganti", "yang lain dong"): berikan yang BERBEDA dan JAUH LEBIH MASUK AKAL. HANYA setup-nya saja dulu.',
+      '  * DILARANG format kutipan buku ("..."). DILARANG pertanyaan evaluasi klise ("Gimana, pede gak?", "Udah baper belum?").',
+      '  * DILARANG membawa drama/topik lama saat masuk topik gombalan atau topik baru.',
+      '',
+    ] : []),
     'PRINSIP 4: JUJUR PADA FAKTA, HANGAT PADA SELERA, DAN TETAP DI DUNIA NYATA:',
     '- Fakta/sains/koding/matematika yang salah tetap dikoreksi santai dan bersahabat dengan bahasamu sendiri — tidak ikut-ikutan salah demi menyenangkan.',
     '- Matematika KABATAKU/PEMDAS; jangan mengarang typo yang tidak dikatakan user; 9:0 tidak terdefinisi.',
@@ -1561,12 +1583,47 @@ export function systemPrompt(
   if (conversationOngoing) {
     // Ambil inti topik: 2 pesan user terakhir (apa yang dia bicarakan) — dipotong pendek
     // agar hemat token. Ini RINGKASAN FAKTA, bukan kalimat yang boleh diparrot model.
+    // BUG YANG DIPERBAIKI (audit v0.79): sebelumnya hanya 3 pesan user terakhir yang
+    // diringkas, dan panjangnya dipotong 90 karakter. Akibatnya FAKTA PENTING yang
+    // disebut beberapa giliran lalu HILANG dari konteks — terbukti saat audit: user
+    // menyebut "aku tinggal di Cianjur" (giliran 3), lalu ditanya "aku tadi bilang
+    // tinggal dimana?" (giliran 4) dan bot menjawab "kamu belum pernah bilang" —
+    // padahal `buildMessages` mengirim 15 pesan riwayat. Ringkasan yang terlalu sempit
+    // inilah yang membuat model mengabaikan fakta yang sebenarnya ADA di riwayatnya.
+    // Sekarang: 8 pesan user terakhir, potong 140 karakter (lebih banyak fakta masuk).
     const userTurns = (ctx?.history ?? [])
       .filter((h) => h.role === 'user' && typeof h.content === 'string')
-      .slice(-3)
-      .map((h) => stripDurableMarkers(h.content as string).replace(/\s+/g, ' ').trim().slice(0, 90))
+      .slice(-8)
+      .map((h) => stripDurableMarkers(h.content as string).replace(/\s+/g, ' ').trim().slice(0, 140))
       .filter(Boolean);
     const topicLine = userTurns.length ? userTurns.join(' | ') : '';
+
+    // FAKTA PERSONAL yang disebut user (nama, lokasi, pekerjaan, preferensi). Diekstrak
+    // dengan pola eksplisit supaya fakta ini SELALU ikut ke prompt, tidak bergantung pada
+    // ringkasan yang bisa terpotong. Inilah yang mencegah bot "lupa" saat model berganti.
+    const allUserText = (ctx?.history ?? [])
+      .filter((h) => h.role === 'user' && typeof h.content === 'string')
+      .map((h) => stripDurableMarkers(h.content as string))
+      .join(' \n ');
+    const personalFacts: string[] = [];
+    const factPatterns: Array<[RegExp, string]> = [
+      [/\b(?:nama(?:ku| saya| aku)?|panggil(?:an)?(?:ku| saya)?)\s*(?:adalah|itu|:)?\s*([A-Z][a-zA-Z]{2,20})\b/i, 'nama'],
+      [/\b(?:aku|saya|gue|gw)\s+(?:tinggal|domisili|mukim)\s+(?:di|dalam)?\s*([A-Z][a-zA-Z]{3,25})\b/i, 'tinggal di'],
+      [/\b(?:aku|saya|gue|gw)\s+(?:dari|asal)\s+([A-Z][a-zA-Z]{3,25})\b/i, 'berasal dari'],
+      [/\b(?:umur|usia)(?:ku| saya)?\s*(?:adalah|itu|:)?\s*(\d{1,2})\b/i, 'umur'],
+      [/\b(?:aku|saya|gue|gw)\s+(?:kerja|bekerja)\s+(?:di|sebagai)\s+([\w\s]{3,30})/i, 'pekerjaan'],
+      [/\b(?:aku|saya|gue|gw)\s+(?:suka|senang|hobi)\s+([\w\s]{3,30})/i, 'kesukaan'],
+    ];
+    for (const [re, label] of factPatterns) {
+      const m = allUserText.match(re);
+      if (m && m[1]) {
+        const val = m[1].replace(/\s+/g, ' ').trim();
+        if (val.length >= 2 && !personalFacts.some((f) => f.includes(val))) {
+          personalFacts.push(`${label}: ${val}`);
+        }
+      }
+    }
+    const factsLine = personalFacts.length ? personalFacts.join(' | ') : '';
 
     instructions.push(
       '',
@@ -1577,6 +1634,7 @@ export function systemPrompt(
         ? '- Pesanmu sebelumnya berupa PERTANYAAN. Pesan temanmu sekarang kemungkinan besar adalah JAWABAN atas pertanyaan itu — tanggapi JAWABANNYA secara langsung dan nyambung, jangan mengalihkan topik atau bertanya balik hal yang tidak berhubungan.'
         : '- Lanjutkan alur yang sedang berjalan: tanggapi langsung apa yang dia bicarakan, jangan mengulang pertanyaan yang sudah dijawabnya.',
       topicLine ? `- Yang sedang kalian bicarakan (fakta riwayat, JANGAN dibacakan mentah): ${topicLine}` : '',
+      factsLine ? `- FAKTA TENTANG TEMANMU yang sudah dia sebutkan (WAJIB diingat & dipakai; DILARANG bilang dia belum pernah bilang): ${factsLine}` : '',
       '- DILARANG mengulang isi balasanmu sendiri yang sebelumnya dengan kata berbeda (mis. sudah bilang "belum ada info resmi" lalu mengulang hal yang sama dengan kalimat lain). Bila topik yang sama ditanya lagi, berikan SUDUT BARU atau akui singkat lalu lanjut — jangan mengulang penjelasan yang sama.',
     );
   }

@@ -26,6 +26,19 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   const kh = `${kind}:${keyHash(key)}`;
   const msg = err instanceof Error ? err.message : String(err);
 
+  // RATE LIMIT PERMANEN (concurrency capacity / akun gratis tidak diutamakan).
+  // Temuan audit v0.79: Dahl membalas 429 "This model is at concurrency capacity.
+  // Paid accounts are admitted first" untuk SEMUA model & SEMUA kunci, termasuk via
+  // proxy — jadi ini bukan rate limit sementara yang pulih dalam 60 detik, melainkan
+  // pembatasan akun gratis yang bisa berhari-hari. Cooldown 60 detik membuat setiap
+  // request yang jatuh ke tier ini membuang 10 kunci x ~250ms = 2,5 detik PERCUMA
+  // sebelum lanjut ke tier berikutnya.
+  // Perbaikan: cooldown 6 jam untuk pola ini supaya tier dilewati, bukan diulang.
+  if (/concurrency capacity|Paid accounts are admitted first|insufficient_quota|Insufficient wallet balance/i.test(msg)) {
+    keyCooldownMap.set(kh, Date.now() + 6 * 60 * 60_000);
+    return;
+  }
+
   // Jika rate limited (429), cooldown 60s
   if (msg === 'RATE_LIMITED' || (err as { code?: string })?.code === 'RATE_LIMITED' || msg.includes('429')) {
     keyCooldownMap.set(kh, Date.now() + 60_000);
@@ -794,7 +807,7 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[], total
  * Mempertahankan pesan sistem (index 0) dan pesan user terkini (terakhir) 100% utuh.
  */
 export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: number = 8000): ChatMsg[] {
-  if (messages.length <= 2) return messages;
+  if (messages.length === 0) return messages;
 
   const estimateTokens = (msgs: ChatMsg[]) => {
     let chars = 0;
@@ -804,6 +817,10 @@ export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: 
       } else if (Array.isArray(m.content)) {
         for (const part of m.content) {
           if (part.type === 'text') chars += part.text.length;
+          // Gambar ≈ 4.000 token = 13.200 char pada rasio 3,3. Tanpa ini, request
+          // bergambar dianggap kecil sehingga trim tidak jalan dan provider ber-ITPM
+          // ketat (Groq) langsung 429.
+          else if (part.type === 'image_url') chars += 13200;
         }
       }
     }
@@ -815,17 +832,49 @@ export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: 
   let totalTokens = estimateTokens(messages);
   if (totalTokens <= maxBudgetTokens) return messages;
 
-  const systemMsg = messages[0];
-  const lastUserMsg = messages[messages.length - 1];
-  const history = messages.slice(1, -1);
+  // Salinan dangkal; pesan terakhir diganti objek baru bila perlu dipangkas.
+  const out: ChatMsg[] = messages.slice();
+  const systemMsg = out[0];
+  const lastIdx = out.length - 1;
 
-  // Buang riwayat tertua satu per satu hingga estimasi token muat di bawah budget
-  while (history.length > 0 && totalTokens > maxBudgetTokens) {
-    history.shift();
-    totalTokens = estimateTokens([systemMsg, ...history, lastUserMsg]);
+  // TAHAP 1: buang riwayat tertua satu per satu (cara lama).
+  if (out.length > 2) {
+    const history = out.slice(1, lastIdx);
+    while (history.length > 0 && totalTokens > maxBudgetTokens) {
+      history.shift();
+      totalTokens = estimateTokens([systemMsg, ...history, out[lastIdx]]);
+    }
+    out.splice(1, lastIdx - 1, ...history);
   }
 
-  return [systemMsg, ...history, lastUserMsg];
+  // TAHAP 2 (BUG LAMA): riwayat kosong tapi prompt masih melebihi anggaran — biasanya
+  // karena pesan user terakhir memuat KONTEKS WEB hasil scraping (bisa 10.000+ karakter).
+  // Sebelum ini, fungsi hanya membuang riwayat sehingga prompt ber-konteks-web TETAP
+  // melewati batas ITPM provider (Groq 6.800 efektif) dan request dijamin 429 — Groq
+  // jadi tidak pernah terpakai untuk kueri berita. Sekarang isi pesan terakhir dipangkas
+  // dari BELAKANG (konteks web ada di bawah, pertanyaan user ada di atas) sehingga
+  // pertanyaannya tetap utuh.
+  if (totalTokens > maxBudgetTokens) {
+    const last = out[lastIdx];
+    if (typeof last.content === 'string') {
+      const systemChars = typeof systemMsg.content === 'string' ? systemMsg.content.length : 0;
+      const otherChars = out.slice(1, lastIdx).reduce(
+        (a, m) => a + (typeof m.content === 'string' ? m.content.length : 0), 0);
+      // Sisakan ruang untuk penanda pangkas (~60 char) agar hasil akhir benar-benar
+      // di bawah anggaran — tanpa ini hasilnya 6.818 token (18 di atas 6.800).
+      const MARKER = '\n\n[...konteks dipangkas agar muat batas token provider...]';
+      const budgetChars = Math.floor(maxBudgetTokens * 3.3) - systemChars - otherChars - MARKER.length;
+      if (budgetChars > 200 && last.content.length > budgetChars) {
+        const head = last.content.slice(0, budgetChars);
+        // Potong di batas baris/kalimat terakhir agar tidak memotong di tengah kata.
+        const cut = Math.max(head.lastIndexOf('\n'), head.lastIndexOf('. '), head.lastIndexOf(' '));
+        const kept = cut > budgetChars * 0.6 ? head.slice(0, cut) : head;
+        out[lastIdx] = { ...last, content: kept + MARKER };
+      }
+    }
+  }
+
+  return out;
 }
 
 interface Step {
@@ -901,14 +950,20 @@ function steps(): Step[] {
       //   429 dari API menyebut    : "Limit 7000" (diuji 4 ukuran prompt, konsisten)
       // Guard memakai 7000 karena itulah ambang yang BENAR-BENAR menolak request.
       //
-      // EFISIENSI TOKEN (instruksi user: Groq harus tetap terpakai bila model lain mati):
-      // nilai ini diperiksa SEBELUM trim, jadi diset LEBIH TINGGI dari batas efektif
-      // (6.800) agar percakapan dengan riwayat panjang TIDAK dilewati — trim di `run`
-      // yang akan memangkasnya sampai muat. Tanpa ini Groq selalu dilewati begitu
-      // riwayat obrolan sedikit menumpuk, padahal setelah dipangkas masih muat.
-      // 1.4x dari 6.800 = 9.520: cukup longgar untuk riwayat wajar, tetap menolak
-      // prompt yang benar-benar raksasa (yang tidak bisa diselamatkan trim).
-      maxPromptTokens: 9500,
+      // Guard TPM Groq (audit v0.79): batas nyata TPM Groq Free = 8.000 token
+      // (input + output dalam satu request). Output dijatah 800 token, jadi anggaran
+      // input maksimum = 8.000 - 800 - 400 (margin 429) = 6.800.
+      //
+      // Sebelumnya nilai ini 9.500 (1,4x dari batas efektif) dengan alasan "trim di run
+      // akan memangkas". Itu KELIRU untuk dua kasus nyata yang terbukti saat audit:
+      //   (a) prompt sistem saja sudah ~5.754 token dan TIDAK bisa dipangkas trim;
+      //   (b) pesan user dengan konteks web hasil scraping bisa 7.500+ token, dan trim
+      //       lama hanya membuang riwayat — bukan isi pesan terakhir — sehingga prompt
+      //       tetap melebihi batas dan request DIJAMIN 429.
+      // Setelah trim diperbaiki (tahap 2 memangkas isi pesan terakhir), anggaran 6.800
+      // kini benar-benar bisa dicapai. Guard diset sama dengan anggaran trim supaya
+      // provider hanya dilewati bila prompt memang tidak bisa diselamatkan.
+      maxPromptTokens: 6800,
       run: (k, m, msgs, t) => {
         // Pangkas pesan agar total (prompt + output 800) benar-benar di bawah limit ketat Groq 8K TPM
         // (6.800 + 800 = 7.600, menyisakan margin 400 token agar tidak mudah kena 429).
