@@ -1117,26 +1117,37 @@ function dedupeSentences(text: string): string {
     return `\u0001${idx}\u0001`;
   };
   let shielded = text
-    // Nama paket/versi dengan titik (Node.js, Vue.js, Express.js, v1.2.3) — temuan
-    // lanjutan dari uji: "Node.js" -> "Node. js" dan "22.11.0" -> "22.11. 0".
-    .replace(/\b[A-Za-z][\w-]*\.(?:js|ts|py|go|rs|io|ai|sh|md|json|css|html)\b/gi, (m) => protect(m))
-    // Versi bertitik (v1.2.3 / 22.11.0 / 3.8.27) — 2+ segmen angka.
-    .replace(/\bv?\d+(?:\.\d+){2,}\b/g, (m) => protect(m))
-    // Alamat IP (IPv4) — semua segmen angka bertitik.
-    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, (m) => protect(m))
-    // Angka desimal & singkatan umum (temuan lanjutan: "5.5" -> "5. 5").
-    // Titik di antara DIGIT bukan akhir kalimat.
-    .replace(/\b\d+\.\d+\b/g, (m) => protect(m))
-    // URL lengkap dengan skema (http/https) — termasuk query & fragmen.
+    // ---------------------------------------------------------------------
+    // URUTAN PENTING (temuan v0.79.8): pola URL/DOMAIN harus jalan SEBELUM pola
+    // nama-file. Versi sebelumnya menaruh nama-file lebih dulu, dan `\.go` mencuri
+    // bagian domain: "garuda.kemdikbud.go.id" -> protect("kemdikbud.go") -> sisa ".id"
+    // tetap dipecah jadi spasi. Domain harus utuh lebih dulu, baru nama file.
+    // ---------------------------------------------------------------------
+    // 1. URL lengkap dengan skema (http/https) — termasuk query & fragmen.
     .replace(/\bhttps?:\/\/[^\s<>"')\]]+/gi, (m) => protect(m))
-    // Email
+    // 2. Email
     .replace(/\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g, (m) => protect(m))
-    // Domain polos (minimal 2 titik TLD, mis. jurnal.stmikamcik.ac.id) + opsional path.
-    // TLD 2-24 huruf agar tidak menangkap singkatan biasa.
+    // 3. Domain: TLD yang dikenal (termasuk domain 2 bagian seperti doaj.org) —
+    //    temuan nyata dari balasan bot: "cek DOAJ (doaj. org)".
+    .replace(
+      /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|net|org|edu|gov|mil|int|io|ai|id|co|ac|sch|go|or|web|app|dev|info|biz|xyz|me|tv|cc|site|online|store|blog|news|tech|cloud)(?:\.[a-z]{2,24})?(?:\/[^\s<>"')\]]*)?/gi,
+      (m) => protect(m),
+    )
+    // 4. Domain dengan TLD tak dikenal (minimal 2 titik) — jaring pengaman.
     .replace(
       /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){2,}[a-z]{2,24}(?:\/[^\s<>"')\]]*)?/gi,
       (m) => protect(m),
-    );
+    )
+    // 5. Nama paket/file dengan titik (Node.js, app.js, index.html) — SETELAH domain,
+    //    dan tanpa ekstensi yang juga TLD populer (go/io/ai/id) agar tidak mencuri
+    //    bagian domain.
+    .replace(/\b[A-Za-z][\w-]*\.(?:js|ts|py|rs|sh|md|json|css|html|yml|yaml|toml|sql)\b/gi, (m) => protect(m))
+    // 6. Versi bertitik (v1.2.3 / 22.11.0 / 3.8.27) — 2+ segmen angka.
+    .replace(/\bv?\d+(?:\.\d+){2,}\b/g, (m) => protect(m))
+    // 7. Alamat IP (IPv4) — semua segmen angka bertitik.
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, (m) => protect(m))
+    // 8. Angka desimal ("5.5" -> "5. 5"): titik di antara DIGIT bukan akhir kalimat.
+    .replace(/\b\d+\.\d+\b/g, (m) => protect(m));
 
   const parts = shielded.match(/[^.!?\n]+[.!?]*/g);
   // Minimal 2 kalimat: duplikat pendek ("Oke deh. Oke deh.") juga harus dibuang —
