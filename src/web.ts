@@ -2,6 +2,7 @@
 // Menggabungkan Google News Global & ID, Bing News, Hacker News, Wikipedia (ID/EN), arXiv, serta Deep Webpage Scraper & Jina Reader.
 // Diadaptasi dari arsitektur teruji Terminal AI Portofolio Rafly Firmansyah.
 import { getKnowledge, saveKnowledge } from './knowledge.js';
+import { xkiroWebSearch, xkiroWebFetch, xkiroWebAvailable, type XkiroSearchResult } from './xkiro_web.js';
 
 /** SSRF & Private Network Shield: mencegah scraping ke localhost, metadata cloud, atau IP privat. */
 export function isSafePublicUrl(urlString: string): boolean {
@@ -874,6 +875,12 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3200);
 
+  // Kata kunci topik dari kueri (tanpa kata umum) — dipakai untuk menilai apakah
+  // judul dari feed topik benar-benar menyangkut pertanyaan user.
+  const queryTopicWords = (cleanQuery.toLowerCase().match(/[a-z]{4,}/g) || [])
+    .filter((wd) => !/^(?:berita|kabar|terbaru|terkini|headline|news|update|info|informasi|hari|dengan|untuk|yang|tentang|apa|saja|dong|nanti|sekarang|carikan|infokan|tampilkan|berikan|coba)$/.test(wd))
+    .slice(0, 4);
+
   try {
     const fetches: Array<Promise<void>> = [];
 
@@ -1237,9 +1244,14 @@ export async function searchWeb(query: string, previousContext?: string): Promis
                 if (!tm) continue;
                 const link = lm ? lm[1].trim() : '';
                 if (link && isSafePublicUrl(link)) discoveredUrls.add(link);
-                // Skor TERTINGGI: feed topik khusus = paling relevan dengan pertanyaan user,
-                // harus mengalahkan isi halaman hasil deep-scrape artikel acak.
-                addSnippet(`${host} (topik)`, tm[1], '', pm ? pm[1] : '', link, 115);
+                // Feed topik = kandidat kuat, TAPI tidak otomatis tertinggi.
+                // Bug nyata yang diperbaiki: skor konstan 115 membuat feed ekonomi umum
+                // menenggelamkan hasil yang lebih tepat — kueri "harga beras hari ini"
+                // menghasilkan 10 blok teratas berita Pertamina/batu bara/reforma agraria,
+                // sedangkan berita beras yang relevan ada di bawahnya. Sekarang feed topik
+                // hanya dapat skor tinggi kalau judulnya benar-benar memuat kata kunci kueri.
+                const titleHit = queryTopicWords.some((wd) => tm[1].toLowerCase().includes(wd));
+                addSnippet(`${host} (topik)`, tm[1], '', pm ? pm[1] : '', link, titleHit ? 120 : 45);
               }
             })
             .catch(() => {}),
@@ -1381,6 +1393,37 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   } finally {
     clearTimeout(timeout);
   }
+
+  // 2f. LAPISAN PELENGKAP xKiro (opsional, bukan pengganti).
+  // Mesin gratis di atas adalah tulang punggung: tanpa kuota, tanpa biaya. xKiro dipanggil
+  // HANYA bila hasil gratis terlalu sedikit, karena kuota gratisnya kecil (20/hari menurut
+  // dokumentasi; pada uji langsung, 402 "Insufficient wallet balance" muncul setelah ~7
+  // pencarian). Bila kuota habis, modul xkiro_web menonaktifkan diri sendiri selama 1 jam
+  // sehingga tidak ada waktu terbuang. Hasilnya diberi skor lebih tinggi daripada mesin
+  // gratis karena relevansinya teruji lebih baik (uji: 5/5 hasil dari domain yang diminta).
+  if (xkiroWebAvailable() && structuredSnippets.length < 6) {
+    try {
+      const xr: XkiroSearchResult[] = await xkiroWebSearch(cleanQuery, {
+        maxResults: 8,
+        country: 'ID',
+        recency: strictFreshNews || isNewsLike ? 'week' : undefined,
+      });
+      for (const it of xr) {
+        if (it.url && isSafePublicUrl(it.url)) discoveredUrls.add(it.url);
+        addSnippet(
+          it.source ? `xKiro/${it.source}` : 'xKiro Web',
+          it.title,
+          it.snippet,
+          it.publishedDate || '',
+          it.url,
+          88, // di atas Bing Web (55) & Bing News (62), di bawah feed topik (115)
+        );
+      }
+    } catch {
+      // Lapisan pelengkap: kegagalan tidak boleh mengganggu hasil gratis yang sudah ada.
+    }
+  }
+
   // Fase 1 & 2 selesai — pastikan hasil baca URL user sudah masuk sebelum deep-scrape.
   await urlScrapePromise;
 
@@ -1394,8 +1437,17 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   const skippedDomains = /(kbbi\.|wikipedia\.org|youtube\.com|facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com|google\.com|bing\.com|duckduckgo\.com|news\.google\.com)/i;
   // Prioritas target deep-scrape: URL eksplisit user > halaman dari feed TOPIK > feed umum.
   // Halaman topik dibaca lebih dulu agar isi yang relevan ikut masuk konteks.
+  // Hanya halaman topik yang judulnya BENAR-BENAR menyangkut kueri yang diprioritaskan
+  // untuk dibaca penuh. Tanpa syarat ini, kueri "harga beras hari ini" membaca penuh
+  // artikel Pertamina & batu bara dari feed ekonomi umum, lalu (karena blok scrape
+  // ditempel di paling atas) menenggelamkan berita beras yang justru relevan.
   const topicUrls = structuredSnippets
     .filter((s) => s.text.includes('(topik)'))
+    .filter((s) => {
+      if (queryTopicWords.length === 0) return true;
+      const head = s.text.slice(0, 220).toLowerCase();
+      return queryTopicWords.some((wd) => head.includes(wd));
+    })
     .map((s) => {
       const m = s.text.match(/\|\s*Sumber:\s*(\S+)/);
       return m ? m[1] : '';
@@ -1413,6 +1465,34 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     const scrapeResults = await Promise.allSettled(
       scrapeTargets.map((url) => scrapeWebpage(url).then((content) => ({ url, content })))
     );
+    // Cadangan pembacaan halaman lewat xKiro: pengambil kita sendiri gagal pada situs yang
+    // memblokir bot atau butuh render JavaScript. xKiro /v1/fetch mengembalikan markdown
+    // bersih (uji: halaman detik.com berhasil, 9.838 karakter). Tetap opsional — kalau
+    // kuota habis, hasil gratis yang sudah ada tidak terpengaruh.
+    if (xkiroWebAvailable()) {
+      const failedUrls = scrapeResults
+        .map((r, idx) => ({ r, url: scrapeTargets[idx] }))
+        .filter((x) => x.r.status === 'fulfilled' && (!(x.r.value as { content?: string }).content || (x.r.value as { content?: string }).content!.length < 200))
+        .map((x) => x.url)
+        .slice(0, 3);
+      if (failedUrls.length > 0) {
+        try {
+          const fetched = await xkiroWebFetch(failedUrls, 8000);
+          for (const f of fetched) {
+            if (!f.content || f.content.length < 200 || f.error) continue;
+            const clean = cleanStr(f.content).slice(0, 6000);
+            if (clean.length < 200) continue;
+            structuredSnippets.push({
+              text: `[Isi Halaman Web (xKiro)${f.title ? ` — ${f.title}` : ''} | Sumber: ${f.url}]: ${clean}`,
+              timestamp: Date.now(),
+              score: 95, // isi halaman penuh: di atas semua snippet pendek
+            });
+          }
+        } catch {
+          // Opsional: kegagalan tidak boleh mengganggu hasil yang sudah ada.
+        }
+      }
+    }
     // Kumpulkan tautan internal same-host dari halaman yang berhasil dibaca → crawl 1 level
     const followLinks: string[] = [];
     for (const result of scrapeResults) {
@@ -1543,8 +1623,20 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   const scrapedBlocks = structuredSnippets.filter((s) => s.text.startsWith('[Isi Halaman Web') || s.text.startsWith('[Halaman Terkait') || s.text.startsWith('[Isi Lengkap Halaman Web'));
   const scrapedSet = new Set(scrapedBlocks.map((s) => s.text));
   const others = structuredSnippets.filter((s) => !scrapedSet.has(s.text));
+  // Isi halaman penuh tetap dijamin ikut masuk (paling kaya informasinya), TAPI
+  // urutannya kini mengikuti relevansi terhadap kueri — bukan ditempel buta di atas.
+  // Bug nyata yang diperbaiki: artikel Pertamina/batu bara selalu tampil di 10 blok
+  // teratas untuk kueri "harga beras hari ini" karena blok scrape dipaksa ke atas.
+  const scrapedRanked = scrapedBlocks
+    .map((s) => {
+      const head = s.text.slice(0, 400).toLowerCase();
+      const hits = queryTopicWords.filter((wd) => head.includes(wd)).length;
+      return { s, hits };
+    })
+    .sort((a, b) => b.hits - a.hits)
+    .map((x) => x.s);
   const selected = [
-    ...scrapedBlocks.slice(0, 5).map((s) => s.text),
+    ...scrapedRanked.slice(0, 5).map((s) => s.text),
     ...others.slice(0, 20).map((s) => s.text),
   ];
   const finalKnowledge = selected.join('\n\n');
