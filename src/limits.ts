@@ -46,7 +46,7 @@ function numOrNull(v: unknown): number | null {
  * xKiro Gateway: GET /v1/usage per key.
  * Mengembalikan limit & pemakaian PER-KEY (tiap key bisa berbeda limitnya).
  */
-export async function fetchXkiroLimits(keys: string[]): Promise<Map<string, LiveLimit>> {
+async function fetchXkiroLimitsUncached(keys: string[]): Promise<Map<string, LiveLimit>> {
   const out = new Map<string, LiveLimit>();
   await Promise.all(
     keys.map(async (key) => {
@@ -87,7 +87,7 @@ export async function fetchXkiroLimits(keys: string[]): Promise<Map<string, Live
  * Field penting: `free_model_daily_requests` = { used, limit, remaining } untuk model :free.
  * Ini batas NYATA untuk rute gratis (bukan angka RPD generik).
  */
-export async function fetchOpenRouterLimits(keys: string[]): Promise<Map<string, LiveLimit>> {
+async function fetchOpenRouterLimitsUncached(keys: string[]): Promise<Map<string, LiveLimit>> {
   const out = new Map<string, LiveLimit>();
   await Promise.all(
     keys.map(async (key) => {
@@ -135,7 +135,7 @@ export async function fetchOpenRouterLimits(keys: string[]): Promise<Map<string,
  * Header menyatakan `x-ratelimit-limit-requests` (RPD) dan `x-ratelimit-limit-tokens`
  * (TPM — token per MENIT, bukan per hari). Ini penting: label lama "200K TPD" salah konsep.
  */
-export async function fetchGroqLimits(keys: string[], model: string): Promise<Map<string, LiveLimit>> {
+async function fetchGroqLimitsUncached(keys: string[], model: string): Promise<Map<string, LiveLimit>> {
   const out = new Map<string, LiveLimit>();
   await Promise.all(
     keys.map(async (key) => {
@@ -206,7 +206,7 @@ export async function fetchGroqLimits(keys: string[], model: string): Promise<Ma
  * Format: `"default";q=1200;w=300` -> q = kuota, w = jendela dalam DETIK.
  * Ini rate limit per jendela waktu, BUKAN kuota harian — label lama "120 RPD" salah.
  */
-export async function fetchCloudflareLimits(
+async function fetchCloudflareLimitsUncached(
   keys: string[],
   accountId: string,
 ): Promise<Map<string, LiveLimit>> {
@@ -313,4 +313,82 @@ export function dahlDocumentedLimits(): LiveLimit {
     source: 'dashboard akun inference.dahl.global/account — saldo token, bukan rate limit harian',
     isLive: false,
   };
+}
+
+// ============================================================================
+// CACHE HASIL PROBE LIMIT (temuan audit v0.79 — F3)
+// ============================================================================
+//
+// MASALAH YANG DIPERBAIKI: `fetchGroqLimits` mengirim CHAT COMPLETION NYATA
+// (`messages: [{role:'user',content:'hi'}]`, max_tokens 1) ke setiap key Groq untuk
+// membaca header rate limit. `api/stats.ts` memanggilnya TANPA CACHE setiap kali
+// dashboard di-refresh (setiap 15 detik), sehingga:
+//   - 5 key Groq x 4 refresh/menit = 20 request/menit terbuang ke kuota Groq
+//   - dashboard dibuka 10 menit = 200 request terbuang -> RPD Groq (1.000/key)
+//     habis lebih cepat dari perkiraan guard -> bot kena 429 lebih awal.
+// Ini bertentangan langsung dengan tujuan "optimasi token agar Groq tetap terpakai".
+// Tiga probe lain (xKiro/OpenRouter/Cloudflare) memakai endpoint read-only sehingga
+// tidak membakar kuota, tapi tetap di-cache agar latensi dashboard turun.
+//
+// TTL: Groq 30 menit (mahal — membakar kuota nyata), lainnya 5 menit (gratis).
+// Cache in-memory per instance serverless; instance dingin probe sekali lagi, yang
+// tetap jauh lebih hemat daripada probe tiap refresh dashboard.
+const LIMIT_CACHE_TTL_MS: Record<string, number> = {
+  groq: 30 * 60 * 1000,
+  xkiro: 5 * 60 * 1000,
+  openrouter: 5 * 60 * 1000,
+  cloudflare: 5 * 60 * 1000,
+};
+
+interface LimitCacheEntry {
+  at: number;
+  data: Map<string, LiveLimit>;
+}
+
+const limitCache = new Map<string, LimitCacheEntry>();
+
+/** Ambil dari cache bila masih segar; `probe` dijalankan hanya saat cache kosong/basi. */
+async function withLimitCache(
+  kind: string,
+  cacheKey: string,
+  probe: () => Promise<Map<string, LiveLimit>>,
+): Promise<Map<string, LiveLimit>> {
+  const ttl = LIMIT_CACHE_TTL_MS[kind] ?? 5 * 60 * 1000;
+  const hit = limitCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < ttl) return hit.data;
+  const data = await probe();
+  // Simpan hanya bila probe mengembalikan isi — kegagalan sementara jangan di-cache
+  // (kalau tidak, dashboard menampilkan "tidak diketahui" selama TTL penuh).
+  if (data.size > 0) limitCache.set(cacheKey, { at: Date.now(), data });
+  return data;
+}
+
+/** Bersihkan cache (untuk pengujian / saat key berubah). */
+export function clearLimitCache(): void {
+  limitCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Pembungkus publik: tiap fungsi probe WAJIB lewat cache (temuan F3).
+// Signature dipertahankan agar pemanggil (api/stats.ts) tidak perlu diubah.
+// ---------------------------------------------------------------------------
+export async function fetchXkiroLimits(keys: string[]): Promise<Map<string, LiveLimit>> {
+  return withLimitCache('xkiro', `xkiro:${keys.length}`, () => fetchXkiroLimitsUncached(keys));
+}
+
+export async function fetchOpenRouterLimits(keys: string[]): Promise<Map<string, LiveLimit>> {
+  return withLimitCache('openrouter', `openrouter:${keys.length}`, () => fetchOpenRouterLimitsUncached(keys));
+}
+
+export async function fetchGroqLimits(keys: string[], model: string): Promise<Map<string, LiveLimit>> {
+  return withLimitCache('groq', `groq:${keys.length}:${model}`, () => fetchGroqLimitsUncached(keys, model));
+}
+
+export async function fetchCloudflareLimits(
+  keys: string[],
+  accountId: string,
+): Promise<Map<string, LiveLimit>> {
+  return withLimitCache('cloudflare', `cloudflare:${keys.length}:${accountId}`, () =>
+    fetchCloudflareLimitsUncached(keys, accountId),
+  );
 }

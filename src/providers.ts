@@ -139,14 +139,32 @@ export function getOrderedKeys(kind: ProviderKind, keys: string[]): string[] {
 
   const rotated = [...pool.slice(start), ...pool.slice(0, start)];
 
-  // Pengaman keseimbangan: dahulukan key yang paling sedikit terpakai hari ini
-  // (request sebagai metrik utama, token sebagai tie-break) agar rotasi tidak
-  // perlahan drift ke satu key ketika jumlah request tidak persis merata.
+  // KESEIMBANGAN + ROTASI (diklarifikasi audit v0.79 — F7).
+  // Sort di bawah mengurutkan key paling sedikit terpakai hari ini; karena sort
+  // JavaScript STABIL, urutan rotasi di atas TETAP dipertahankan di antara key yang
+  // pemakaiannya sama. Jadi rotasi berperan sebagai tie-breaker, bukan dibuang.
+  // Komentar lama ("maju satu key setiap panggilan") menyesatkan seolah rotasi selalu
+  // menentukan urutan — padahal key dengan pemakaian lebih sedikit memang sengaja
+  // didahulukan (itu tujuan keseimbangan kuota).
   rotated.sort((a, b) => {
     const reqDiff = keyUsageToday(kind, a, 'req') - keyUsageToday(kind, b, 'req');
     if (reqDiff !== 0) return reqDiff;
     return keyUsageToday(kind, a, 'tokens') - keyUsageToday(kind, b, 'tokens');
   });
+
+  // Pangkas map agar tidak tumbuh tanpa batas di instance serverless berumur panjang
+  // (temuan F7): hapus cooldown yang sudah kedaluwarsa > 1 jam lalu dan index rotasi
+  // yang sudah tidak relevan. Dijalankan probabilistik (1/64 panggilan) agar murah.
+  if ((keyRotationIndexMap.get(kind) ?? 0) % 64 === 0) {
+    const cutoff = now - 60 * 60 * 1000;
+    for (const [k, until] of keyCooldownMap) {
+      if (until < cutoff) keyCooldownMap.delete(k);
+    }
+    for (const [k, until] of modelCooldownMap) {
+      if (until < cutoff) modelCooldownMap.delete(k);
+    }
+  }
+
   return rotated;
 }
 
@@ -455,14 +473,33 @@ async function streamSse(
 
 /** Ekstraksi delta format OpenAI-compatible (content + reasoning sebagai sinyal aktif). */
 function openAiDelta(json: unknown): StreamDelta {
-  const j = json as { choices?: Array<{ delta?: { content?: string | null; reasoning?: string | null } }> };
+  const j = json as {
+    choices?: Array<{
+      delta?: {
+        content?: string | null;
+        /** Gaya OpenAI/xKiro: {"reasoning": "..."} */
+        reasoning?: string | null;
+        /** Gaya DeepSeek/GLM/Dahl: {"reasoning_content": "..."} (temuan audit F6) */
+        reasoning_content?: string | null;
+        /** Beberapa gateway memakai ini. */
+        thinking?: string | null;
+      };
+    }>;
+  };
   const delta = j.choices?.[0]?.delta;
   if (!delta) return {};
   const out: StreamDelta = {};
   if (typeof delta.content === 'string' && delta.content.length > 0) out.text = delta.content;
   // Reasoning tersembunyi (thinking model) juga bukti model AKTIF — reset idle timer
   // agar model reasoning panjang tidak salah dianggap hang.
-  if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) out.active = true;
+  //
+  // KOREKSI AUDIT v0.79 (F6): sebelumnya HANYA `delta.reasoning` yang dikenali. Model
+  // gaya DeepSeek/GLM (dipakai Dahl T5 & beberapa model xKiro) mengirim
+  // `delta.reasoning_content`, sehingga token reasoning mereka TIDAK dianggap sinyal
+  // aktif -> timer fase-1 (4-5,5 dtk) habis -> failover PREMATUR padahal model sedang
+  // bekerja. Ini membuang tier yang sebenarnya sehat.
+  const reasoningText = delta.reasoning ?? delta.reasoning_content ?? delta.thinking;
+  if (typeof reasoningText === 'string' && reasoningText.length > 0) out.active = true;
   return out;
 }
 
@@ -531,9 +568,9 @@ async function openAiChat(
     model,
     messages,
     max_tokens: maxTokensOverride ?? config.maxOutputTokens,
-    temperature: 0.7,
-    presence_penalty: 0.5,
-    frequency_penalty: 0.3,
+    // Default = parameter bersama (F5). Tier yang butuh nilai lain mengirim
+    // extraBody eksplisit; lihat BASE_GEN di atas.
+    ...BASE_GEN,
     ...extraBody,
     stream: true,
     stream_options: { include_usage: true },
@@ -771,7 +808,7 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[], total
     contents,
     generationConfig: {
       maxOutputTokens: config.maxOutputTokens,
-      temperature: 0.7,
+      temperature: BASE_GEN.temperature,
       // Thinking off / effort minimal (keputusan user) — jawaban langsung tanpa "berpikir" panjang.
       ...geminiThinkingConfig(model),
     },
@@ -911,6 +948,41 @@ interface Step {
   run: (key: string, model: string, messages: ChatMsg[], t: number) => Promise<ProviderResult>;
 }
 
+// ============================================================================
+// PARAMETER GENERASI BERSAMA (temuan audit v0.79 — F5)
+// ============================================================================
+//
+// MASALAH YANG DIPERBAIKI: setiap tier punya temperature/penalty sendiri sehingga
+// prompt yang SAMA menghasilkan gaya & panjang berbeda tergantung model mana yang
+// menang failover:
+//   xKiro       temperature 0.35, presence 0.0, frequency 0.0
+//   Cloudflare  temperature 0.70, presence 0.5, frequency 0.3
+//   Groq        temperature 0.45, presence 0.0, frequency 0.4
+//   OpenRouter  temperature 0.70, presence 0.5, frequency 0.3
+//   Dahl        temperature 0.45, presence 0.0, frequency 0.5
+//   Gemini      temperature 0.70
+// Selain itu max_tokens berbeda: 2500 (xKiro/Cloudflare/OpenRouter/Gemini) vs 800
+// (Groq/Dahl) — jawaban panjang TERPOTONG saat jatuh ke Dahl (Tier 5, penyelamat
+// utama), tapi utuh di tier lain. Ini akar keluhan "respon tidak konsisten saat
+// pindah model di tengah percakapan".
+//
+// SOLUSI: satu tabel parameter dasar dipakai SEMUA tier. Override hanya bila provider
+// memang membutuhkan (Groq/Dahl: max_tokens 800 karena ITPM ketat — didokumentasikan).
+// Nilai dipilih dari yang TERBUKTI paling stabil di uji lapangan:
+//   temperature 0.45 — cukup hidup untuk obrolan, tidak liar untuk fakta
+//   presence 0.0 / frequency 0.15 — mengurangi pengulangan tanpa mengubah nada
+const BASE_GEN = {
+  temperature: 0.45,
+  presence_penalty: 0.0,
+  frequency_penalty: 0.15,
+} as const;
+
+/** Parameter dasar untuk provider ber-ITPM ketat (output dibatasi 800 token). */
+const BASE_GEN_TIGHT = {
+  ...BASE_GEN,
+  maxTokens: 800,
+} as const;
+
 function steps(): Step[] {
   return [
     // --- TIER 1: xKiro Gateway (primer teks) ---
@@ -921,15 +993,12 @@ function steps(): Step[] {
       cap: config.dailyCap.xkiro,
       maxPromptTokens: 0, // tidak ada batas ITPM ketat yang diketahui
       run: (k, m, msgs, t) => {
-        const isDeepSeek = m.toLowerCase().includes('deepseek');
         return openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
           // Effort reasoning MINIMAL (keputusan user). Hasil uji: 'none' membuat
           // MiniMax M3 (kini khusus rantai multimodal) membalas KOSONG, jadi 'minimal' yang dipakai.
           reasoning: { effort: 'minimal' },
-          // Sampling luwes agar output DeepSeek mengalir alami & dinamis
-          temperature: isDeepSeek ? 0.65 : 0.35,
-          presence_penalty: isDeepSeek ? 0.1 : 0.0,
-          frequency_penalty: isDeepSeek ? 0.1 : 0.0,
+          // Parameter bersama (F5) — konsisten dengan tier lain.
+          ...BASE_GEN,
         }, t);
       },
     },
@@ -982,12 +1051,12 @@ function steps(): Step[] {
         // Pangkas pesan agar total (prompt + output 800) benar-benar di bawah limit ketat Groq 8K TPM
         // (6.800 + 800 = 7.600, menyisakan margin 400 token agar tidak mudah kena 429).
         const groqMsgs = trimMessagesToTokenBudget(msgs, 6800);
-        return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, 800, {
+        return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, BASE_GEN_TIGHT.maxTokens, {
           reasoning_effort: 'none',
-          // Jinakkan sampling Qwen kecil: suhu + repetisi rendah agar tahan prompt panjang
-          temperature: 0.45,
-          presence_penalty: 0.0,
-          frequency_penalty: 0.4,
+          // Parameter bersama (F5). frequency sedikit lebih tinggi dari tier lain
+          // karena Qwen kecil mudah mengulang — didokumentasikan, bukan angka liar.
+          ...BASE_GEN,
+          frequency_penalty: 0.3,
         }, t);
       },
     },
@@ -1023,13 +1092,10 @@ function steps(): Step[] {
       cap: config.dailyCap.dahl,
       maxPromptTokens: 0,
       run: (k, m, msgs, t) => {
-        const isDeepSeek = m.toLowerCase().includes('deepseek');
-        // Tuning terbukti: thinking off + temperature/penalty luwes -> output bersih.
-        return openAiChat(config.dahlProxyUrl, k, m, msgs, 800, {
+        return openAiChat(config.dahlProxyUrl, k, m, msgs, BASE_GEN_TIGHT.maxTokens, {
           reasoning_effort: 'none',
-          temperature: isDeepSeek ? 0.65 : 0.45,
-          frequency_penalty: isDeepSeek ? 0.1 : 0.5,
-          presence_penalty: isDeepSeek ? 0.1 : 0.0,
+          // Parameter bersama (F5).
+          ...BASE_GEN,
         }, t);
       },
     },

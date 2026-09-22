@@ -252,8 +252,12 @@ export const config = {
     groq: num('DAILY_CAP_GROQ', 1000),
     // Selaras limit resmi platform: Gemini Free Tier 1.500 RPD/key
     gemini: num('DAILY_CAP_GEMINI', 1500),
-    cloudflare: num('DAILY_CAP_CLOUDFLARE', 300),
-    openrouter: num('DAILY_CAP_OPENROUTER', 180),
+    // KOREKSI AUDIT v0.79 (F8): default diselaraskan dengan angka yang TERBUKTI dari
+    // endpoint (limits.ts). Sebelumnya cloudflare 300 & openrouter 180 — OpenRouter
+    // sebenarnya 50 req/hari untuk model :free (3,6x lebih ketat!), jadi deploy tanpa
+    // .env akan menabrak 429 jauh sebelum guard memblokir.
+    cloudflare: num('DAILY_CAP_CLOUDFLARE', 120),
+    openrouter: num('DAILY_CAP_OPENROUTER', 50),
     xkiro: num('DAILY_CAP_XKIRO', 500),
   },
   // Batas TOKEN per hari (TPD) per key. 0 = tidak dibatasi.

@@ -1236,9 +1236,18 @@ export function systemPrompt(
   userPrompt: string = '',
   picked?: PickedMemory | null,
 ): string {
+  // GUARD (audit v0.79): pemanggil JS/API bisa mengirim `null` (bukan undefined) untuk
+  // userPromptText — default parameter `= ''` TIDAK menangkap null, sehingga `.trim()` di
+  // bawah melempar "Cannot read properties of null". Jalur nyata yang bisa mengirim null:
+  // pemrosesan media tanpa teks (stiker/gambar tanpa caption). Diganti di sini agar
+  // seluruh fungsi aman, bukan hanya titik pemakaiannya.
+  const userPromptText = typeof userPrompt === 'string' ? userPrompt : '';
+  // Guard yang sama untuk `web`: pemanggil JS bisa mengirim objek/angka (bukan string|null).
+  // Tanpa ini, `webText.trim()` di bawah melempar TypeError dan seluruh balasan gagal.
+  const webText: string | null = typeof web === 'string' ? web : null;
   const historyText = (ctx?.history?.slice(-3) ?? []).map((h) => (typeof h.content === 'string' ? stripDurableMarkers(h.content) : '')).join(' ');
   const profileText = [historyText, ctx?.summary || '', ...(ctx?.corrections || [])].join(' ');
-  const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPrompt, profileText, ctx?.msgSentAt);
+  const timeContext = buildUniversalTimePrompt(new Date(), ctx?.chatId, userPromptText, profileText, ctx?.msgSentAt);
   const isOwnerChat = isOwnerChatKey(ctx?.chatId);
 
   // ── DETEKSI TOPIK PERMAINAN (untuk PRINSIP 3 kondisional) ─────────────────────
@@ -1248,7 +1257,7 @@ export function systemPrompt(
   // Sengaja LUAS (over-include lebih aman daripada under-include): bila ragu, PRINSIP 3
   // dimuat — memuat blok ini saat tidak perlu hanya memakai token, sedangkan TIDAK
   // memuatnya saat perlu bisa merusak permainan (bot lupa aturan penilaian).
-  const playfulUserTurn = /\b(?:tebak(?:an|\s*-?\s*tebakan)?|teka\s*-?\s*teki|tebak\s+tebakan|gombal(?:an|in)?|rayu(?:an)?|ngerayu|nyerah|gatau|ga\s*tau|gak\s*tau|belum\s*tau|apa\s*jawabannya|kasih\s*petunjuk|hint)\b/i.test(userPrompt);
+  const playfulUserTurn = /\b(?:tebak(?:an|\s*-?\s*tebakan)?|teka\s*-?\s*teki|tebak\s+tebakan|gombal(?:an|in)?|rayu(?:an)?|ngerayu|nyerah|gatau|ga\s*tau|gak\s*tau|belum\s*tau|apa\s*jawabannya|kasih\s*petunjuk|hint)\b/i.test(userPromptText);
   const playfulHistory = (ctx?.history ?? []).slice(-8).some(
     (h) => typeof h.content === 'string' &&
       /\b(?:tebak(?:an|\s*-?\s*tebakan)?|teka\s*-?\s*teki|gombal(?:an|in)?|\[Jawaban:|\[Stiker terkirim:)/i.test(h.content),
@@ -1401,11 +1410,11 @@ export function systemPrompt(
     '- PENGGUNAAN EMOJI (MINIMAL & SESUAI KONTEKS): Emoji TIDAK 100% dilarang, namun gunakan seminimal mungkin (maksimal 1 emoji wajar yang pas) HANYA jika situasi dan konteks chat memang tepat untuk menghidupkan ekspresi/emosi. Jangan diobral di setiap pesan, dan dilarang emoji robot (🤖). Sampaikan esensi jawaban secara padat dan bernas.',
   ];
 
-  const isSwitchToGombal = /\b(?:ganti\s+(?:ke\s+)?gombal(?:an)?|gombalin|mau\s+gombal(?:an)?|coba\s+gombal(?:an)?|minta\s+gombal(?:an)?)\b/i.test(userPrompt);
+  const isSwitchToGombal = /\b(?:ganti\s+(?:ke\s+)?gombal(?:an)?|gombalin|mau\s+gombal(?:an)?|coba\s+gombal(?:an)?|minta\s+gombal(?:an)?)\b/i.test(userPromptText);
   // Perintah berhenti peran/sandiwara: frasa kuat, ATAU kata pendek yang jelas imperatif.
   // Kata umum seperti "selesai"/"cukup" hanya dianggap stop bila pesannya singkat
   // (mencegah "tugasnya belum selesai" disalahartikan minta berhenti peran).
-  const promptTrimmed = userPrompt.trim();
+  const promptTrimmed = userPromptText.trim();
   const promptIsShort = promptTrimmed.split(/\s+/).filter(Boolean).length <= 4;
   const stopRoleplayMatch =
     !isSwitchToGombal &&
@@ -1420,8 +1429,8 @@ export function systemPrompt(
 
   // Permintaan gombalan: kecualikan permintaan BERHENTI gombal ("jangan gombal", "stop gombal")
   // agar bot tidak justru melempar gombalan baru saat diminta berhenti.
-  const stopGombal = /\b(?:jangan|gausah|ga\s*usah|gak\s*usah|nggak\s*usah|stop|berhenti|udahan|skip)\s+(?:nge?)?gombal/i.test(userPrompt);
-  const isGombalRequest = !stopGombal && /\b(?:gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu|buaya\s+darat)\b/i.test(userPrompt);
+  const stopGombal = /\b(?:jangan|gausah|ga\s*usah|gak\s*usah|nggak\s*usah|stop|berhenti|udahan|skip)\s+(?:nge?)?gombal/i.test(userPromptText);
+  const isGombalRequest = !stopGombal && /\b(?:gombal(?:an)?|gombalin|rayu(?:an)?|ngerayu|buaya\s+darat)\b/i.test(userPromptText);
   if (isGombalRequest) {
     // Gombalan diambil dari MEMORI (dipilih di autoReply, dioper lewat `picked`),
     // bukan dikarang model — dengan alasan yang sama seperti tebak-tebakan.
@@ -1447,9 +1456,9 @@ export function systemPrompt(
   // Pilihan tebak-tebakan/gombalan dari memori, dioper oleh autoReply.
   const picked0 = picked ?? null;
 
-  const isJokeRequest = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu)\b/i.test(userPrompt);
+  const isJokeRequest = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu)\b/i.test(userPromptText);
   if (isJokeRequest) {
-    const avoidProgramming = /\b(?:jangan\s+(?:jokes?\s+)?programming|bukan\s+programming|jokes?\s+umum|jangan\s+koding)\b/i.test(userPrompt);
+    const avoidProgramming = /\b(?:jangan\s+(?:jokes?\s+)?programming|bukan\s+programming|jokes?\s+umum|jangan\s+koding)\b/i.test(userPromptText);
     // Tebak-tebakan diambil dari MEMORI BOT (dipilih di autoReply, dioper lewat
     // `picked`). Memori itu tumbuh sendiri: kalau stoknya kosong, bot mencari dari
     // internet lalu menyimpannya — lihat src/bot_growth.ts.
@@ -1486,7 +1495,7 @@ export function systemPrompt(
     );
   }
 
-  const isLaughter = /^(?:(?:anjg+|anjir+|bjir+|gokil+|buset+)?\s*(?:ngakak+|wkwk+|haha+|wkwkwk+|ngakak\s+brutal)\s*[😭🤣😂]*|[😭🤣😂\s]+)$/i.test(userPrompt.trim());
+  const isLaughter = /^(?:(?:anjg+|anjir+|bjir+|gokil+|buset+)?\s*(?:ngakak+|wkwk+|haha+|wkwkwk+|ngakak\s+brutal)\s*[😭🤣😂]*|[😭🤣😂\s]+)$/i.test(userPromptText.trim());
   if (isLaughter) {
     instructions.push(
       '',
@@ -1523,9 +1532,9 @@ export function systemPrompt(
   // Hitung sinyal kesal dari riwayat + pesan saat ini (pesan hangat tidak dihitung kesal)
   const annoyCount =
     recentUserMsgs.filter((m) => annoyRe.test(m) && !warmRe.test(m)).length +
-    (annoyRe.test(userPrompt) && !warmRe.test(userPrompt) ? 1 : 0);
+    (annoyRe.test(userPromptText) && !warmRe.test(userPromptText) ? 1 : 0);
   const warmCount = recentUserMsgs.filter((m) => warmRe.test(m)).length;
-  const sadRecent = recentUserMsgs.slice(-2).some((m) => sadRe.test(m)) || sadRe.test(userPrompt);
+  const sadRecent = recentUserMsgs.slice(-2).some((m) => sadRe.test(m)) || sadRe.test(userPromptText);
   // annoyActive = trajektori kesal beruntun (2+ pesan); dipakai juga oleh guard komplain gombalan
   const annoyActive = annoyCount >= 2;
   if (annoyActive) {
@@ -1549,8 +1558,8 @@ export function systemPrompt(
   // Hanya aktif bila pesannya memang datar dan suasana tidak sedang kesal/rapuh.
   const neutralInfoRe =
     /\b(?:(?:aku|gue|gw)\s+(?:baru|barusan|abis|habis|udah|sudah)|baru(?:an)?\s+(?:saja\s+)?(?:aku\s+)?(?:beli|selesai|kelar|nonton|makan)|abis\s+(?:aku\s+)?(?:makan|mandi|nonton|main)|habis\s+(?:aku\s+)?(?:makan|mandi|nonton|main)|udah\s+(?:aku\s+)?(?:makan|mandi|selesai|kelar)|barusan\s+(?:aku\s+)?)\b/i;
-  const hasStrongEmotion = /[!]|\p{Extended_Pictographic}|wkwk+|haha+|anjir|bjir|banget|parah|gila/iu.test(userPrompt);
-  if (neutralInfoRe.test(userPrompt) && !hasStrongEmotion && !sadRecent && !annoyActive) {
+  const hasStrongEmotion = /[!]|\p{Extended_Pictographic}|wkwk+|haha+|anjir|bjir|banget|parah|gila/iu.test(userPromptText);
+  if (neutralInfoRe.test(userPromptText) && !hasStrongEmotion && !sadRecent && !annoyActive) {
     instructions.push(
       '',
       '[INFO NETRAL: dia cuma berbagi kabar ringan tanpa emosi kuat. Balas 1 komentar wajar 4-10 kata yang nyambung. Cukup kata pengakuan pembuka yang dibentangkan ringan (okee, sipp, ohh, iyaa) supaya tidak dingin — kata isi/kesimpulan ditulis normal. DILARANG membuka dengan "Wah/Wih mantap" atau sorakan, dilarang menyimpulkan rasa/kualitas yang tidak dia sebut (jangan bilang "enak", "seru", "keren" kalau dia tidak mengatakannya), dilarang doa/pujian berlebihan, tanpa pertanyaan balik basa-basi, tanpa menawarkan bantuan.]',
@@ -1558,14 +1567,14 @@ export function systemPrompt(
   }
 
   // Intensitas pesan saat ini: sambut energi tinggi sebentar, beri ruang saat energi rendah.
-  const lettersOnly = (userPrompt.match(/[A-Za-z]/g) || []).length;
-  const capsCount = (userPrompt.match(/[A-Z]/g) || []).length;
-  const emojiCountNow = (userPrompt.match(/\p{Extended_Pictographic}/gu) || []).length;
+  const lettersOnly = (userPromptText.match(/[A-Za-z]/g) || []).length;
+  const capsCount = (userPromptText.match(/[A-Z]/g) || []).length;
+  const emojiCountNow = (userPromptText.match(/\p{Extended_Pictographic}/gu) || []).length;
   const highIntensity =
     (lettersOnly > 6 && capsCount / Math.max(1, lettersOnly) > 0.6) ||
-    /([A-Za-z])\1{3,}/.test(userPrompt) ||
+    /([A-Za-z])\1{3,}/.test(userPromptText) ||
     emojiCountNow >= 3;
-  const userWordCount = userPrompt.trim().split(/\s+/).filter(Boolean).length;
+  const userWordCount = userPromptText.trim().split(/\s+/).filter(Boolean).length;
   const prevUserMsg = [...(ctx?.history || [])]
     .reverse()
     .find((h) => h.role === 'user' && typeof h.content === 'string');
@@ -1573,7 +1582,7 @@ export function systemPrompt(
     typeof prevUserMsg?.content === 'string' &&
     prevUserMsg.content.trim().split(/\s+/).filter(Boolean).length <= 3;
   const lowEnergy =
-    userWordCount <= 3 && !/(wkwk+|haha+|hehe+|🤣|😂)/i.test(userPrompt) && emojiCountNow === 0 && prevUserShort;
+    userWordCount <= 3 && !/(wkwk+|haha+|hehe+|🤣|😂)/i.test(userPromptText) && emojiCountNow === 0 && prevUserShort;
   if (highIntensity) {
     instructions.push(
       '',
@@ -1587,20 +1596,20 @@ export function systemPrompt(
   }
 
   // Cermin bahasa: ikuti register lawan bicara secara ringan.
-  if (/\b(?:atuh|euy|teuing|kumaha|nuhun|punten|nyaho)\b/i.test(userPrompt)) {
+  if (/\b(?:atuh|euy|teuing|kumaha|nuhun|punten|nyaho)\b/i.test(userPromptText)) {
     instructions.push(
       '',
       '[BAHASA: dia memakai sentuhan Sunda. Selipkan aksen Sunda alami sepertinya, jangan full Sunda kaku.]',
     );
   } else if (
-    /\b(?:mohon|dengan\s+hormat|dimohon|saudara|yang\s+terhormat)\b/i.test(userPrompt) &&
-    !/(wkwk|jir|anjir|\bdong\b|\bnih\b)/i.test(userPrompt)
+    /\b(?:mohon|dengan\s+hormat|dimohon|saudara|yang\s+terhormat)\b/i.test(userPromptText) &&
+    !/(wkwk|jir|anjir|\bdong\b|\bnih\b)/i.test(userPromptText)
   ) {
     instructions.push('', '[BAHASA: dia bicara formal. Rapikan bahasamu dan kurangi slang.]');
   }
 
   // Mode serius: user minta nada serius secara eksplisit -> turunkan candaan, jawab dengan tempo normal.
-  if (/\b(?:serius\s*(?:dikit|dulu|dong|aja|nih|deh)|jangan\s+bercanda|gak\s+usaha?\s+becanda|no\s+joke|stop\s+becanda)\b/i.test(userPrompt)) {
+  if (/\b(?:serius\s*(?:dikit|dulu|dong|aja|nih|deh)|jangan\s+bercanda|gak\s+usaha?\s+becanda|no\s+joke|stop\s+becanda)\b/i.test(userPromptText)) {
     instructions.push(
       '',
       '[MODE SERIUS: dia minta nada serius. Tanggapi dengan tempo normal tanpa bentangan huruf, tanpa candaan, tanpa emoji — tetap hangat dan manusiawi.]',
@@ -1699,10 +1708,10 @@ export function systemPrompt(
 
   const isGamingOrMabar =
     /\b(?:mabar|permabaran|main\s+bareng|login\s+game|push\s+rank|ngerank|turun\s+bintang|turu\s+game|game\s+apa|mobile\s+legends?|mlbb|pubg|free\s+fire|ff|valorant|genshin|roblox|gta\s*5?)\b/i.test(
-      userPrompt,
+      userPromptText,
     ) ||
     (/(?:mabar|permabaran|game|main)/i.test(recentHistoryText) &&
-      /\b(?:cemen|loginn?|gass?|hayu|kuy|ayo|payah|cupu)\b/i.test(userPrompt));
+      /\b(?:cemen|loginn?|gass?|hayu|kuy|ayo|payah|cupu)\b/i.test(userPromptText));
 
   if (isGamingOrMabar) {
     instructions.push(
@@ -1719,11 +1728,11 @@ export function systemPrompt(
   const wasRecentGombalOrJoke =
     /(?:gombal|rayu|tebak|bedanya|bikin\s+hati|deg-degan|jantung|wifi|kopi|charger|pacar|jodoh|sayang|naksir|perokok|garing|maps|nyasar)/i.test(
       recentHistoryText,
-    ) || /\b(?:gombal|rayu|tebakan)\b/i.test(userPrompt);
+    ) || /\b(?:gombal|rayu|tebakan)\b/i.test(userPromptText);
 
   const isGombalAppreciation =
     wasRecentGombalOrJoke &&
-    /\b(?:anjai+|bole\s*lah|boleh\s*lah|boleh\s*juga|cakep|asik|keren|baper|kena\s*banget|bisa\s*aja|bisa\s*ae|mantap|salting|lucu\s*juga|masuk\s*akal|not\s*bad)\b/i.test(userPrompt);
+    /\b(?:anjai+|bole\s*lah|boleh\s*lah|boleh\s*juga|cakep|asik|keren|baper|kena\s*banget|bisa\s*aja|bisa\s*ae|mantap|salting|lucu\s*juga|masuk\s*akal|not\s*bad)\b/i.test(userPromptText);
 
   if (isGombalAppreciation) {
     instructions.push(
@@ -1816,14 +1825,14 @@ export function systemPrompt(
   // ada tebakan yang masih menggantung (isPendingRiddleOrGombal) — permainan berjalan
   // harus diselesaikan dulu, bukan diganti.
   const isExplicitChangeRequest =
-    /^(?:ganti|coba\s+lagi|yang\s+lain|yg\s+lain|coba\s+yg\s+lain|lagi\s+dong|ganti\s+dong|minta\s+lagi|kasih\s+lagi|kasih\s+yang\s+lain)[!.\s]*$/i.test(userPrompt.trim()) ||
-    /\b(?:ga\s+nyambung|gak\s+nyambung|ngaco|garing|cringe|apasi|apasih|aneh\s+banget|🤢|🤮|geli)\b/i.test(userPrompt);
+    /^(?:ganti|coba\s+lagi|yang\s+lain|yg\s+lain|coba\s+yg\s+lain|lagi\s+dong|ganti\s+dong|minta\s+lagi|kasih\s+lagi|kasih\s+yang\s+lain)[!.\s]*$/i.test(userPromptText.trim()) ||
+    /\b(?:ga\s+nyambung|gak\s+nyambung|ngaco|garing|cringe|apasi|apasih|aneh\s+banget|🤢|🤮|geli)\b/i.test(userPromptText);
   const isGombalComplaintOrChange =
     wasRecentGombalOrJoke &&
     isExplicitChangeRequest &&
     // "kurang" TIDAK lagi berdiri sendiri sebagai pemicu — hanya bila jelas menilai
     // gombalan/tebakannya (mis. "kurang lucu", "kurang nyambung").
-    !/^kurang[!.\s]*$/i.test(userPrompt.trim());
+    !/^kurang[!.\s]*$/i.test(userPromptText.trim());
 
   if (isGombalComplaintOrChange && !isPendingRiddleOrGombal && !isGombalAppreciation && !annoyActive) {
     instructions.push(
@@ -1832,7 +1841,7 @@ export function systemPrompt(
     );
   }
 
-  const isGreetingOnly = /^(?:halo+|hai+|hey+|hei+|oy+|woy+|p+|pagi+|siang+|sore+|malem+|malam+|assalamualaikum|tes|test|ping)[!.\s]*$/i.test(userPrompt.trim());
+  const isGreetingOnly = /^(?:halo+|hai+|hey+|hei+|oy+|woy+|p+|pagi+|siang+|sore+|malem+|malam+|assalamualaikum|tes|test|ping)[!.\s]*$/i.test(userPromptText.trim());
   if (isGreetingOnly) {
     instructions.push(
       '',
@@ -1840,7 +1849,7 @@ export function systemPrompt(
     );
   }
 
-  const isGabutOrBored = /^(?:gabut|bosen|bosan|mager|lagi\s+gabut|lagi\s+bosen)[!.\s]*$/i.test(userPrompt.trim());
+  const isGabutOrBored = /^(?:gabut|bosen|bosan|mager|lagi\s+gabut|lagi\s+bosen)[!.\s]*$/i.test(userPromptText.trim());
   if (isGabutOrBored) {
     instructions.push(
       '',
@@ -1848,7 +1857,7 @@ export function systemPrompt(
     );
   }
 
-  const isUserUnsure = /^(?:ih\s+)?(?:ga\s*tau|gak\s*tau|ngga\s*tau|nggak\s*tau|kaga\s*tau|kurang\s*tau|mana\s*saya\s*tau|entah|gata)[!.\s]*$/i.test(userPrompt.trim());
+  const isUserUnsure = /^(?:ih\s+)?(?:ga\s*tau|gak\s*tau|ngga\s*tau|nggak\s*tau|kaga\s*tau|kurang\s*tau|mana\s*saya\s*tau|entah|gata)[!.\s]*$/i.test(userPromptText.trim());
   if (isUserUnsure && !isPendingRiddleOrGombal) {
     instructions.push(
       '',
@@ -1860,10 +1869,10 @@ export function systemPrompt(
   // Cegah model mengarang konteks baru (konfabulasi) demi terdengar nyambung.
   const isUserConfusedOrFlagged =
     /^(?:hah+|haa?|apaan|apa\s+sih|maksud(?:nya|lu|mu)?|mksd|ngetik\s+apa|lagi\s+ngetik|ngomong\s+apa|bilang\s+apa|kok\s+bisa|emang(?:nya)?|hmm+)[\s?!.]*$/i.test(
-      userPrompt.trim(),
+      userPromptText.trim(),
     ) ||
     /\b(?:ngetik\s+apa|ngomong\s+apa|maksud(?:nya|lu|mu)\s+apa|apa\s+sih\s+kamu|kamu\s+ngomong\s+apa|salah\s+ngomong|salah\s+bilang|ngaco|ngawur|gajelas|ga\s*jelas|ga\s*nyambung|gak\s*nyambung|ga\s*nangkep|gak\s*nangkep)\b/i.test(
-      userPrompt,
+      userPromptText,
     );
   if (isUserConfusedOrFlagged && !annoyActive && !isPendingRiddleOrGombal) {
     instructions.push(
@@ -1904,16 +1913,16 @@ ${ctx.summary}
   // dengan halusinasi (kejadian nyata: mengarang "berita AOL 2003-2004", "iPhone 18 rilis
   // minggu ini"). Aturan ini menutup celah tersebut.
   const needsFreshFacts =
-    (/\b(?:berita|kabar|headline|news|terbaru|terkini|viral|harga|kurs|jadwal|skor|hasil|cuaca|gempa|rilis|update)\b/i.test(userPrompt) &&
-      /\b(?:hari\s*ini|terbaru|terkini|sekarang|saat\s*ini|update|kapan|berapa|rilis)\b/i.test(userPrompt)) ||
+    (/\b(?:berita|kabar|headline|news|terbaru|terkini|viral|harga|kurs|jadwal|skor|hasil|cuaca|gempa|rilis|update)\b/i.test(userPromptText) &&
+      /\b(?:hari\s*ini|terbaru|terkini|sekarang|saat\s*ini|update|kapan|berapa|rilis)\b/i.test(userPromptText)) ||
     // Pertanyaan tentang isi web/halaman/link yang dikirim user: WAJIB berpijak pada data
     // hasil scrape. Tanpa ini model mengarang isi halaman (temuan produksi: "isinya ada
     // profil kamu, proyek-proyek..." padahal tidak ada datanya).
-    /\b(?:isi(?:nya)?|konten|halaman|web(?:nya)?|situs|website|link|url)\b/i.test(userPrompt);
-  const webDataThin = !web || web.trim().length < 400;
+    /\b(?:isi(?:nya)?|konten|halaman|web(?:nya)?|situs|website|link|url)\b/i.test(userPromptText);
+  const webDataThin = !webText || webText.trim().length < 400;
   // Pertanyaan tentang ISI halaman web: pengetatan khusus — model kecil sangat mudah
   // mengarang isi situs (profil, fitur, kontak) dari nama domain saja.
-  const asksAboutWebContent = /\b(?:isi(?:nya)?|konten|halaman|web(?:nya)?|situs|website|link|url)\b/i.test(userPrompt);
+  const asksAboutWebContent = /\b(?:isi(?:nya)?|konten|halaman|web(?:nya)?|situs|website|link|url)\b/i.test(userPromptText);
   if (asksAboutWebContent && webDataThin) {
     instructions.push(
       '',
@@ -1935,8 +1944,8 @@ ${ctx.summary}
     );
   }
 
-  if (web) {
-    const sanitizedWeb = sanitizeKnowledgeText(web);
+  if (webText) {
+    const sanitizedWeb = sanitizeKnowledgeText(webText);
     const nowYear = new Date().getFullYear();
     instructions.push(
       '',

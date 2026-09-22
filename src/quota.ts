@@ -245,8 +245,14 @@ export function keyTokensUsed(kind: ProviderKind, key: string, tokens: number): 
   const ts = tokenSlot(kind, key);
   // Laporan token riil pertama menggantikan estimasi hidrasi legacy (bukan ditambahkan
   // di atasnya) agar estimasi berlebih tidak ikut terakumulasi (audit v19).
+  //
+  // KOREKSI AUDIT v0.79 (temuan F4): penggantian ini TIDAK BOLEH MENURUNKAN penghitung.
+  // Kasus nyata: hidrasi memberi estimasi 25.000 token, lalu laporan riil pertama hanya
+  // 3.000 token -> penghitung turun dari 25.000 ke 3.000, sehingga pemakaian hari itu
+  // under-count dan key bisa melewati DAILY_TOKEN_CAP_GROQ (200K) tanpa diblokir guard
+  // -> 429 upstream yang seharusnya dicegah. Penghitung harian harus MONOTON NAIK.
   if (ts.estimated) {
-    ts.tokens = amount;
+    ts.tokens = Math.max(ts.tokens, amount);
     ts.estimated = false;
   } else {
     ts.tokens += amount;
