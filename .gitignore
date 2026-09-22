@@ -16,3 +16,7 @@ dataset/*.csv
 .vercel
 .env*
 !.env.example
+
+# Temp probe dari subagent audit
+tmp_*.mts
+tmp_*.mjs
