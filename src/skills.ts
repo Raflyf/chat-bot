@@ -5,6 +5,7 @@ import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timez
 import { sanitizeKnowledgeText } from './knowledge.js';
 import { stripStickerMarker } from './stickers.js';
 import { stripRiddleMarker, lastRiddleAnswer } from './markers.js';
+import { pickRiddle, findRiddleByAnswer, RIDDLE_BANK_QUESTIONS } from './riddles.js';
 
 /** Buang SEMUA penanda internal durable (stiker + kunci jawaban) dari teks riwayat. */
 function stripDurableMarkers(text: string): string {
@@ -829,6 +830,38 @@ export function extractStickerTag(text: string): { text: string; sticker: string
 }
 
 /**
+ * Kemiripan dua teks berdasarkan containment token (irisan / jumlah token terkecil).
+ * Dipakai guard tebakan karangan untuk mencocokkan pertanyaan model dengan bank.
+ * Containment, bukan Jaccard: kalimat model boleh lebih panjang dari bank (ada
+ * pembuka seperti "Siap, ini soalnya:") dan tetap harus terdeteksi cocok.
+ */
+function similarityScore(a: string, b: string): number {
+  // Kata umum teka-teki dibuang dulu. Tanpa ini, dua teka-teki berbeda yang
+  // sama-sama dibuka "hewan apa yang" akan dianggap mirip, padahal isinya beda.
+  const STOP = new Set([
+    'apa', 'yang', 'kalau', 'kalo', 'itu', 'ini', 'bisa', 'paling', 'suka', 'dan',
+    'atau', 'dari', 'buat', 'untuk', 'sama', 'dengan', 'tapi', 'nggak', 'gak',
+    'ada', 'punya', 'hewan', 'binatang', 'benda', 'siapa', 'mana', 'kenapa',
+    'malah', 'jadi', 'juga', 'sudah', 'udah', 'akan', 'sedang', 'lagi', 'kamu',
+    'aku', 'dia', 'kita', 'mereka', 'dalam', 'pada', 'oleh', 'saat', 'waktu',
+  ]);
+  const tokenize = (s: string) =>
+    new Set(
+      s
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length >= 3 && !STOP.has(w)),
+    );
+  const ta = tokenize(a);
+  const tb = tokenize(b);
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter++;
+  return inter / Math.min(ta.size, tb.size);
+}
+
+/**
  * Parser tag jawaban tebak-tebakan: model WAJIB menyisipkan `[[jawab:<jawaban>]]`
  * saat melempar setup tebak-tebakan/gombalan tanya-jawab. Tag ini DIBUANG dari
  * balasan (tidak pernah dilihat user) dan disimpan durable, sehingga model mana pun
@@ -1302,13 +1335,27 @@ export function systemPrompt(ctx?: ChatContext, web?: string | null, userPrompt:
   const isJokeRequest = /\b(?:jokes?|lelucon|tebak(?:an|\s*-?\s*tebakan)?|banyolan|ngelawak|lawak(?:an)?|candaan|cerita\s+lucu)\b/i.test(userPrompt);
   if (isJokeRequest) {
     const avoidProgramming = /\b(?:jangan\s+(?:jokes?\s+)?programming|bukan\s+programming|jokes?\s+umum|jangan\s+koding)\b/i.test(userPrompt);
+    // Tebak-tebakan diambil dari bank tebak-tebakan asli (src/riddles.ts), BUKAN
+    // dikarang model. Temuan produksi 21 Sep 20:00: model mengarang "Hewan apa yang
+    // kalau diinjak malah jadi lebih tinggi?" dengan jawaban "gajah", lalu mengakui
+    // sendiri teka-tekinya "agak maksa". Model bahasa memang lemah membuat teka-teki
+    // baru karena humornya bergantung pada plesetan kata yang spesifik.
+    const usedRiddleAnswers = (ctx?.history || [])
+      .map((h) => (typeof h.content === 'string' ? h.content.match(/\[Jawaban:\s*([^\]]+)\]/)?.[1] : null))
+      .filter((v): v is string => !!v);
+    const picked = pickRiddle({
+      usedAnswers: usedRiddleAnswers,
+      topicHint: avoidProgramming ? 'umum' : userPrompt,
+    });
     instructions.push(
       '',
       '[SITUASI KHUSUS - TEBAK-TEBAKAN]:',
-      `- Terapkan PRINSIP 3 (format interaksi dua arah: HANYA lemparkan 1 kalimat pertanyaan setup tebakan orisinal dan tunggu tebakan temanmu). ${
-        avoidProgramming ? 'Temanmu melarang jokes programming, gunakan tema lelucon umum.' : ''
-      }`,
-      '- WAJIB sertakan [[jawab:<jawaban>]] di akhir setup (tidak terlihat user), dan jawabannya WAJIB nyata serta alasannya masuk akal — bukan jawaban karangan yang tidak ada.',
+      '- Terapkan PRINSIP 3 (format interaksi dua arah: HANYA lemparkan 1 kalimat pertanyaan setup tebakan, lalu tunggu tebakan temanmu).',
+      `- PAKAI TEBAK-TEBAKAN INI PERSIS, JANGAN MENGARANG SENDIRI: "${picked.q}"`,
+      `- Kunci jawabannya: "${picked.a}" (${picked.why}).`,
+      '- WAJIB sertakan [[jawab:' + picked.a + ']] di akhir setup (tidak terlihat user).',
+      '- DILARANG KERAS mengganti, memodifikasi, atau mengarang tebak-tebakan lain. Kalau kamu mengarang, hasilnya jadi teka-teki tidak nyambung dan pengguna malas bermain.',
+      '- Sampaikan pertanyaannya dengan gayamu sendiri (boleh ditambah pembuka singkat), tapi inti pertanyaannya harus sama persis.',
     );
   }
 
@@ -2001,6 +2048,55 @@ export async function autoReply(
           console.warn(`[skills] Balasan memuat ${questionCount} tebakan bertumpuk — dipotong ke setup pertama.`);
           reply = head;
         }
+      }
+    }
+
+    // GUARD TEBAKAN KARANGAN (temuan produksi 21 Sep 20:00, cf/qwen3.8-27b):
+    //   Bot: "Hewan apa yang kalau diinjak malah jadi lebih tinggi?"
+    //   User: "nyerahh" -> Bot: "Jawabannya gajah... tapi ini teka-teki yang agak
+    //   maksa sih" — model mengakui sendiri teka-tekinya tidak masuk akal.
+    //
+    // Prompt sudah menyuruh memakai bank tebak-tebakan, tapi model tetap bisa
+    // mengarang (terutama model cadangan). Guard ini memeriksa: apakah pertanyaan
+    // yang dilempar cocok dengan salah satu pertanyaan di bank? Kalau TIDAK cocok,
+    // berarti model mengarang — ganti seluruh setup dengan pertanyaan asli dari bank
+    // beserta kunci jawabannya, supaya permainan tetap jalan dan penilaian tetap jujur.
+    if (isInteractiveSetupReq) {
+      // Cari entri bank yang PALING mirip, bukan yang pertama cocok. Bug yang
+      // diperbaiki: "burung apa yang ditakuti pengendara motor?" (jawaban Kutilang)
+      // skornya 0,5 juga terhadap "kutu apa yang menakutkan?" (jawaban Kutukan) yang
+      // letaknya lebih awal di bank — dengan `find`, kunci jawabannya jadi tertukar.
+      let best = null;
+      let bestScore = 0;
+      for (const r of RIDDLE_BANK_QUESTIONS) {
+        const s = similarityScore(reply.toLowerCase(), r.q.toLowerCase());
+        if (s > bestScore) {
+          bestScore = s;
+          best = r;
+        }
+      }
+
+      if (best && bestScore >= 0.5) {
+        // Pertanyaan cocok dengan bank. Kunci jawaban WAJIB diambil dari bank —
+        // bukan dari tag [[jawab:]] buatan model — supaya pertanyaan dan jawaban
+        // dijamin sepasang. Model tetap menulis tag, tapi tag itu diabaikan.
+        if (riddleAnswer && riddleAnswer.toLowerCase().trim() !== best.a.toLowerCase().trim()) {
+          console.warn(
+            `[skills] Kunci jawaban dari model ("${riddleAnswer}") tidak cocok dengan bank ("${best.a}") — dipakai milik bank.`
+          );
+        }
+        riddleAnswer = best.a;
+      } else {
+        // Tidak ada yang cocok: model mengarang. Ganti dengan tebak-tebakan asli.
+        const usedAnswers = (ctx?.history || [])
+          .map((h) => (typeof h.content === 'string' ? h.content.match(/\[Jawaban:\s*([^\]]+)\]/)?.[1] : null))
+          .filter((v): v is string => !!v);
+        const replacement = pickRiddle({ usedAnswers });
+        console.warn(
+          `[skills] Setup tebakan tidak cocok dengan bank (karangan, skor terbaik ${bestScore.toFixed(2)}) — diganti: "${replacement.q}"`
+        );
+        reply = replacement.q;
+        riddleAnswer = replacement.a;
       }
     }
 
