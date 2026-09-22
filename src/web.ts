@@ -884,9 +884,54 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   try {
     const fetches: Array<Promise<void>> = [];
 
-    // 2a. Bing Web Search (Relevansi Akurat tanpa sortby=Date yang merusak indeks)
+    // 2a. Bing Web Search — RSS DULU, scrape HTML sebagai cadangan.
+    //
+    // ROMBAK v0.76 (akar bug "Bing Web HTML rusak"):
+    // Versi lama hanya men-scrape HTML dan parser-nya mencari pola `<h2...><a href=...>`.
+    // Bing mengubah markup: sekarang `<h2 class=""><a target="_blank" href="...">` —
+    // TANPA spasi setelah `<h2`, sehingga `/<h2[^>]*><a/` tidak pernah cocok. Akibatnya
+    // title & link SELALU kosong dan yang tersisa hanya deskripsi generik dari halaman
+    // hasil ("Why Am I Itching All Over My Body?" untuk kueri harga beras) — hasil sampah
+    // yang terlihat seperti "Bing rusak", padahal parser-nya yang buta.
+    //
+    // Perbaikan berlapis:
+    // (1) Bing menyediakan RSS untuk pencarian WEB (`&format=rss`) — sama seperti RSS News
+    //     yang selama ini stabil. Diuji: 10 item, judul + link + deskripsi lengkap, dan
+    //     relevan untuk empat kueri uji (harga beras, resep rendang, jadwal timnas,
+    //     tebak tebakan). RSS ini sekarang jalur utama.
+    // (2) Scrape HTML tetap ada sebagai cadangan (RSS bisa berubah sewaktu-waktu), tapi
+    //     dengan parser yang diperkuat: pola h2→a yang longgar + fallback judul dari
+    //     `<div class="tptt">` (host) & deskripsi dari `<p class="b_lineclamp...">`.
     const bingQueries = [primaryQ, secondaryQ].filter((q, i, arr) => arr.indexOf(q) === i).slice(0, 2);
     for (const bq of bingQueries) {
+      // (1) Jalur utama: RSS pencarian web.
+      fetches.push(
+        fetch(`https://www.bing.com/search?q=${encodeURIComponent(bq)}&format=rss`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36' },
+          signal: controller.signal,
+        })
+          .then((r) => (r.ok ? r.text() : ''))
+          .then((txt) => {
+            if (!txt) return;
+            const items = txt.match(/<item[\s>][\s\S]*?<\/item>/gi) || [];
+            for (const item of items.slice(0, 8)) {
+              const tm = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+              const dm = item.match(/<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i);
+              const lm = item.match(/<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i);
+              if (!tm) continue;
+              const link = lm ? lm[1].trim() : '';
+              if (link && isSafePublicUrl(link) && !/(bing\.com|microsoft\.com|msn\.com)/i.test(link)) {
+                discoveredUrls.add(link);
+              }
+              // Skor 58: sedikit di bawah Bing News (62) — berita lebih segar untuk kueri
+              // berita, sedangkan hasil web lebih baik untuk topik umum.
+              addSnippet('Bing Web', tm[1].replace(/<[^>]*>/g, '').trim(), dm ? dm[1].replace(/<[^>]*>/g, '').trim() : '', '', link, 58);
+            }
+          })
+          .catch(() => {}),
+      );
+
+      // (2) Cadangan: scrape HTML dengan parser yang diperkuat.
       fetches.push(
         fetch(`https://www.bing.com/search?q=${encodeURIComponent(bq)}&setlang=en`, {
           headers: {
@@ -901,7 +946,11 @@ export async function searchWeb(query: string, previousContext?: string): Promis
             const items = html.split('<li class="b_algo"');
             for (let i = 1; i < Math.min(items.length, 8); i++) {
               const chunk = items[i];
-              const linkMatch = chunk.match(/<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+              // Pola h2→a yang LONGGAAR: Bing memakai `<h2 class="">` tanpa spasi, dan
+              // urutan atribut (target/href) bisa berubah. Ambil href & isi apa pun.
+              const linkMatch = chunk.match(/<h2[^>]*>[\s\S]{0,80}?<a[^>]*?href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+              // Judul cadangan: teks setelah tptt (nama host) tidak dipakai sebagai judul,
+              // tetapi deskripsi b_lineclamp selalu ada dan berguna.
               const descMatch = chunk.match(/<div class="b_caption">[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i)
                 || chunk.match(/<p class="b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/i)
                 || chunk.match(/<p[^>]*>([\s\S]{20,300}?)<\/p>/i);
@@ -919,10 +968,15 @@ export async function searchWeb(query: string, previousContext?: string): Promis
                 }
               }
 
-              if (title || desc) addSnippet('Bing Web', title, desc, '', directUrl, 55);
+              // Hanya masukkan bila ada judul ATAU deskripsi bermakna; deskripsi generik
+              // ("Global web icon", "Web", nama host) dibuang agar tidak jadi sampah.
+              const junk = /^(?:global web icon|web|images|videos|maps|news|shopping|more|lihat semua|all)$/i.test(title.trim());
+              if ((title && !junk) || desc.length > 40) {
+                addSnippet('Bing Web (html)', title, desc, '', directUrl, 50);
+              }
             }
 
-            // Fallback parser jika b_algo tidak ditemukan
+            // Fallback parser jika b_algo tidak ditemukan (markup Bing berubah lagi).
             if (items.length <= 1) {
               const linkMatches = html.matchAll(/<a[^>]+href="([^"]+)"[^>]*>([^<]{10,120})<\/a>/gi);
               let count = 0;
