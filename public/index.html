@@ -5,718 +5,556 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>FreeAIBot: asisten AI di WhatsApp dan Telegram</title>
 <meta name="description" content="Asisten AI yang membalas di WhatsApp dan Telegram. Enam penyedia AI dicoba berurutan, jadi pesanmu tetap dijawab." />
-<meta name="theme-color" content="#000000" />
+<meta name="theme-color" content="#020814" />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://free-chatbot-ai.vercel.app/" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="FreeAIBot" />
+<meta property="og:title" content="FreeAIBot: asisten AI di WhatsApp dan Telegram" />
+<meta property="og:description" content="Kirim pesan seperti biasa. Di belakangnya enam penyedia AI dicoba berurutan supaya pesanmu tetap dijawab." />
+<meta property="og:url" content="https://free-chatbot-ai.vercel.app/" />
+<meta property="og:image" content="https://free-chatbot-ai.vercel.app/favicon.svg" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="FreeAIBot: asisten AI di WhatsApp dan Telegram" />
+<meta name="twitter:description" content="Kirim pesan seperti biasa. Enam penyedia AI dicoba berurutan supaya pesanmu tetap dijawab." />
+
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="shortcut icon" href="/favicon.svg" />
 <link rel="apple-touch-icon" href="/favicon.svg" />
+
+<!-- Font: Exo 2 (geometris, sudut tegas) sesuai DESIGN.md -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&display=swap" />
+
+<link rel="stylesheet" href="/css/landing.css" />
 <script src="/js/theme-pre.js"></script>
 <script src="/js/home.js"></script>
-
-<style>
-/* ============================================================================
-   FreeAIBot, halaman utama.
-   Arah: DESIGN.md. Glass hanya di header, konten di permukaan datar.
-   Warna penyedia dipakai sebagai penanda data: penyedia yang sama selalu
-   dikenali dari warnanya, di sini maupun di konsol.
-   ========================================================================== */
-
-:root {
-  --bg:               #000000;
-  --surface:          #1c1c1e;
-  --surface-raised:   #2c2c2e;
-  --separator:        rgb(255 255 255 / 0.12);
-  --separator-strong: rgb(255 255 255 / 0.2);
-  --text:             #f5f5f7;
-  --text-secondary:   rgba(235, 235, 245, 0.66);
-  --text-tertiary:    rgba(235, 235, 245, 0.5);
-  --accent:           #0a84ff;
-  --accent-solid:     #0071e3;
-  --accent-soft:      rgb(10 132 255 / 0.16);
-  --accent-ink:       #ffffff;
-  --ok:               #30d158;
-  --glass-tint:       28 28 30;
-  --glass-fill:       0.62;
-  --glass-blur:       20px;
-  --glass-saturate:   1.8;
-  --glass-edge:       0.16;
-
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-          "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
-
-  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
-  --r-control: 10px; --r-panel: 18px; --r-hero: 24px;
-  --ease: cubic-bezier(0.32, 0.72, 0, 1);
-
-  /* Warna penyedia: penanda data, dipakai konsisten dengan konsol. */
-  --p-xkiro: #4da3ff;
-  --p-cloudflare: #f6821f;
-  --p-groq: #f55036;
-  --p-openrouter: #a78bfa;
-  --p-dahl: #2dd4bf;
-  --p-gemini: #fbbf24;
-}
-
-[data-theme="light"] {
-  --bg:               #f2f2f7;
-  --surface:          #ffffff;
-  --surface-raised:   #f2f2f7;
-  --separator:        rgb(60 60 67 / 0.16);
-  --separator-strong: rgb(60 60 67 / 0.26);
-  --text:             #1c1c1e;
-  --text-secondary:   rgba(60, 60, 67, 0.78);
-  --text-tertiary:    rgba(60, 60, 67, 0.62);
-  --accent:           #0064cd;
-  --accent-solid:     #0064cd;
-  --accent-soft:      rgb(0 100 205 / 0.1);
-  --ok:               #1d7a34;
-  --glass-tint:       255 255 255;
-  --glass-fill:       0.72;
-  --glass-edge:       0.5;
-  --p-xkiro: #0a6fd8;
-  --p-cloudflare: #b85f0a;
-  --p-groq: #c93a20;
-  --p-openrouter: #6d4ac4;
-  --p-dahl: #0f766e;
-  --p-gemini: #9a6a00;
-}
-
-*, *::before, *::after { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 17px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
-}
-
-a { color: inherit; text-decoration: none; }
-
-/* Latar atmosfer: dua bidang warna redup supaya glass punya sesuatu untuk
-   dibiaskan. Warnanya dari aksen dan warna penyedia, bukan biru ke ungu. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: -10% -10% auto -10%;
-  height: 70vh;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(52% 42% at 18% 8%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 72%),
-    radial-gradient(44% 38% at 84% 4%, color-mix(in srgb, var(--p-dahl) 15%, transparent), transparent 74%);
-}
-[data-theme="light"] body::before { opacity: 0.5; }
-
-.wrap { width: min(1080px, 100% - 40px); margin-inline: auto; position: relative; z-index: 1; }
-
-/* ---- Header: satu-satunya glass di halaman ini ---- */
-.site-header { position: sticky; top: 0; z-index: 50; padding: 10px 0; }
-.bar {
-  display: flex; align-items: center; gap: var(--s3);
-  padding: 8px 10px 8px 14px;
-  border-radius: 999px;
-}
-.glass {
-  background: linear-gradient(180deg,
-    rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.94)),
-    rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.6)));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid rgb(255 255 255 / var(--glass-edge));
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.22),
-    0 10px 30px rgb(0 0 0 / 0.12);
-}
-
-.brand { display: flex; align-items: center; gap: 10px; min-height: 44px; }
-.brand-mark { width: 30px; height: 30px; color: var(--accent); flex: none; }
-.brand-text { display: flex; flex-direction: column; line-height: 1.15; }
-.brand-name { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
-.brand-sub { font-size: 11px; color: var(--text-secondary); }
-
-.site-nav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
-.site-nav a {
-  display: inline-flex; align-items: center;
-  min-height: 44px; padding: 0 13px;
-  border-radius: 999px;
-  font-size: 14px;
-  color: var(--text-secondary);
-  transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
-}
-.site-nav a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 9%, transparent); }
-
-.icon-btn {
-  display: inline-grid; place-items: center;
-  width: 44px; height: 44px;
-  border: 0; border-radius: 999px;
-  background: transparent; color: var(--text-secondary);
-  cursor: pointer;
-  transition: color 0.16s ease, background-color 0.16s ease, transform 0.16s var(--ease);
-}
-.icon-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 9%, transparent); }
-.icon-btn:active { transform: scale(0.94); }
-.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.nav-toggle { display: none; }
-
-/* Ikon tema: yang tampil adalah tujuan klik berikutnya.
-   Diatur lewat CSS karena atribut hidden tidak berlaku pada elemen SVG. */
-#iconSun, #iconMoon { display: none; }
-[data-theme="dark"] #iconSun { display: block; }
-[data-theme="light"] #iconMoon { display: block; }
-
-/* ---- Hero ---- */
-.hero { padding-block: var(--s7) var(--s6); }
-.hero-grid {
-  display: grid;
-  gap: var(--s6) var(--s7);
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  align-items: center;
-}
-
-h1 {
-  font-size: clamp(32px, 5vw, 52px);
-  line-height: 1.1;
-  letter-spacing: -0.026em;
-  font-weight: 700;
-  margin: 0 0 var(--s4);
-  max-width: 17ch;
-}
-.lede {
-  font-size: 18px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  margin: 0 0 var(--s5);
-  max-width: 44ch;
-}
-
-.hero-actions { display: flex; flex-wrap: wrap; gap: var(--s3); margin-bottom: var(--s6); }
-
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 48px; padding: 0 22px;
-  border-radius: var(--r-control);
-  border: 1px solid transparent;
-  font: inherit; font-size: 15px; font-weight: 550;
-  cursor: pointer;
-  transition: transform 0.16s var(--ease), background-color 0.16s ease,
-              border-color 0.16s ease, box-shadow 0.16s ease;
-}
-.btn:active { transform: translateY(1px) scale(0.99); }
-.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.btn-primary {
-  background: var(--accent-solid);
-  color: var(--accent-ink);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent-solid) 34%, transparent);
-}
-.btn-primary:hover {
-  background: color-mix(in srgb, var(--accent-solid) 88%, white);
-  box-shadow: 0 10px 26px color-mix(in srgb, var(--accent-solid) 42%, transparent);
-}
-.btn-quiet {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--text);
-  border-color: var(--separator);
-}
-.btn-quiet:hover { background: color-mix(in srgb, var(--text) 13%, transparent); border-color: var(--separator-strong); }
-
-.facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s3) var(--s5);
-  margin: 0; padding: var(--s4) 0 0; list-style: none;
-  border-top: 1px solid var(--separator);
-}
-.facts li {
-  display: flex; align-items: center; gap: 9px;
-  font-size: 14.5px;
-  color: var(--text-secondary);
-}
-.fact-ico { color: var(--ok); flex: none; }
-
-/* ---- Kartu percakapan: contoh nyata, bukan hiasan ---- */
-.chat {
-  background: var(--surface);
-  border: 1px solid var(--separator);
-  border-radius: var(--r-hero);
-  padding: var(--s4);
-  display: flex; flex-direction: column; gap: var(--s3);
-  box-shadow: 0 24px 60px rgb(0 0 0 / 0.22);
-}
-.chat-head { display: flex; align-items: center; gap: 10px; padding-bottom: var(--s3); border-bottom: 1px solid var(--separator); }
-.avatar {
-  width: 34px; height: 34px; flex: none;
-  display: grid; place-items: center;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 14px; font-weight: 650;
-}
-.who { display: flex; flex-direction: column; line-height: 1.2; }
-.who b { font-size: 15px; font-weight: 600; }
-.who span { font-size: 12px; color: var(--text-secondary); }
-
-.bubble {
-  max-width: 86%;
-  margin: 0;
-  padding: 10px 14px;
-  border-radius: 16px;
-  font-size: 15px;
-  line-height: 1.45;
-}
-.bubble.in {
-  align-self: flex-start;
-  background: var(--surface-raised);
-  border-bottom-left-radius: 6px;
-}
-.bubble.out {
-  align-self: flex-end;
-  background: var(--accent-solid);
-  color: var(--accent-ink);
-  border-bottom-right-radius: 6px;
-}
-
-/* Indikator mengetik: menandakan bot sedang menyusun balasan. */
-.typing { display: inline-flex; gap: 4px; align-items: center; }
-.typing i {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: currentColor; opacity: 0.5;
-  animation: typing-dot 1.2s ease-in-out infinite;
-}
-.typing i:nth-child(2) { animation-delay: 0.18s; }
-.typing i:nth-child(3) { animation-delay: 0.36s; }
-@keyframes typing-dot {
-  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-3px); }
-}
-
-.chat-meta {
-  display: flex; align-items: center; gap: 7px;
-  padding-top: var(--s3);
-  border-top: 1px solid var(--separator);
-  font-size: 12.5px;
-  color: var(--text-secondary);
-}
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
-
-/* ---- Bagian umum ---- */
-section { padding-block: var(--s7); }
-.section-head { max-width: 60ch; margin-bottom: var(--s6); }
-h2 {
-  font-size: clamp(24px, 3.2vw, 34px);
-  line-height: 1.18;
-  letter-spacing: -0.02em;
-  font-weight: 680;
-  margin: 0 0 var(--s3);
-}
-.section-head p { font-size: 16.5px; line-height: 1.6; color: var(--text-secondary); margin: 0; }
-
-/* ---- Kemampuan: kartu dengan warna fungsional per topik ---- */
-.caps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--s4);
-}
-.cap {
-  position: relative;
-  padding: var(--s5);
-  border-radius: var(--r-panel);
-  background: var(--surface);
-  border: 1px solid var(--separator);
-  overflow: hidden;
-  transition: transform 0.24s var(--ease), border-color 0.24s ease;
-}
-.cap::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(70% 60% at 50% 0%, color-mix(in srgb, var(--cap-color) 18%, transparent), transparent 70%);
-  opacity: 0;
-  transition: opacity 0.28s ease;
-  pointer-events: none;
-}
-.cap:hover { transform: translateY(-3px); border-color: var(--separator-strong); }
-.cap:hover::after { opacity: 1; }
-.cap-ico {
-  width: 38px; height: 38px;
-  display: grid; place-items: center;
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--cap-color) 18%, transparent);
-  color: var(--cap-color);
-  margin-bottom: var(--s3);
-}
-.cap h3 { margin: 0 0 6px; font-size: 16.5px; font-weight: 620; letter-spacing: -0.01em; }
-.cap p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--text-secondary); }
-
-/* ---- Langkah: tiga, sesuai proses nyatanya ---- */
-.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s5); }
-.step { padding-top: var(--s4); border-top: 2px solid var(--separator-strong); }
-.step-num { font-size: 12px; font-weight: 650; color: var(--accent); letter-spacing: 0.04em; }
-.step h3 { margin: 6px 0 6px; font-size: 17px; font-weight: 620; }
-.step p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--text-secondary); }
-
-/* ---- Ajakan terakhir ---- */
-.cta {
-  text-align: center;
-  padding: var(--s7) var(--s5);
-  border-radius: var(--r-hero);
-  border: 1px solid var(--separator);
-  background: var(--surface);
-}
-.cta h2 { margin-bottom: var(--s3); }
-.cta p { margin: 0 auto var(--s5); max-width: 44ch; color: var(--text-secondary); font-size: 16px; }
-
-footer { padding-block: var(--s6) var(--s7); }
-.footer-inner {
-  display: flex; flex-wrap: wrap; gap: var(--s3) var(--s5);
-  align-items: center; justify-content: space-between;
-  padding-top: var(--s4);
-  border-top: 1px solid var(--separator);
-  font-size: 13.5px;
-  color: var(--text-secondary);
-}
-.footer-links { display: flex; flex-wrap: wrap; gap: var(--s4); }
-.footer-links a { display: inline-flex; align-items: center; min-height: 44px; transition: color 0.16s ease; }
-.footer-links a:hover { color: var(--text); }
-
-/* ---- Gerak: masuk sekali saat muncul, lalu diam ----
-   Bagian yang muncul saat digulir memakai animasi berbasis-scroll CSS, bukan
-   JavaScript. Alasannya: kalau JS gagal dimuat, konten tetap terlihat. Dengan
-   pendekatan opacity:0 + observer, kegagalan JS berarti halaman kosong. */
-@media (prefers-reduced-motion: no-preference) {
-  .rise { animation: rise 0.7s var(--ease) both; }
-  .rise-2 { animation-delay: 0.1s; }
-  .rise-3 { animation-delay: 0.2s; }
-  @keyframes rise {
-    from { opacity: 0; transform: translateY(16px); }
-    to { opacity: 1; transform: none; }
-  }
-}
-
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .reveal {
-      animation: reveal-in linear both;
-      animation-timeline: view();
-      animation-range: entry 8% cover 22%;
-    }
-    @keyframes reveal-in {
-      from { opacity: 0; transform: translateY(16px); }
-      to { opacity: 1; transform: none; }
-    }
-  }
-}
-/* Tanpa dukungan animation-timeline, bagian ini cukup tampil apa adanya. */
-@supports not (animation-timeline: view()) {
-  .reveal { opacity: 1; }
-}
-
-  /* Gelembung masuk satu per satu, seperti percakapan sungguhan. */
-  .bubble { opacity: 0; animation: bubble-in 0.5s var(--ease) forwards; }
-  .bubble:nth-of-type(1) { animation-delay: 0.25s; }
-  .bubble:nth-of-type(2) { animation-delay: 0.7s; }
-  .bubble:nth-of-type(3) { animation-delay: 1.15s; }
-  .bubble:nth-of-type(4) { animation-delay: 1.6s; }
-  @keyframes bubble-in {
-    from { opacity: 0; transform: translateY(8px) scale(0.98); }
-    to { opacity: 1; transform: none; }
-  }
-}
-
-/* ---- Hormati preferensi pengguna ---- */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
-  .rise, .reveal, .bubble { opacity: 1 !important; transform: none !important; }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .glass {
-    -webkit-backdrop-filter: none;
-            backdrop-filter: none;
-    background: var(--surface);
-  }
-}
-
-/* ---- Ponsel ---- */
-@media (max-width: 900px) {
-  .hero-grid { grid-template-columns: minmax(0, 1fr); gap: var(--s6); }
-  .caps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .steps { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
-}
-@media (max-width: 720px) {
-  body { font-size: 16px; }
-  .wrap { width: min(1080px, 100% - 28px); }
-  section { padding-block: var(--s6); }
-  .hero { padding-block: var(--s6) var(--s5); }
-  .site-nav { display: none; }
-  .nav-toggle { display: inline-grid; }
-  .site-nav.open {
-    display: flex;
-    position: absolute;
-    left: 14px; right: 14px;
-    top: calc(100% + 6px);
-    flex-direction: column;
-    align-items: stretch;
-    gap: 2px;
-    padding: 8px;
-    border-radius: var(--r-panel);
-    background: var(--surface);
-    border: 1px solid var(--separator);
-    box-shadow: 0 18px 40px rgb(0 0 0 / 0.24);
-  }
-  .site-nav.open a { padding: 12px 14px; }
-  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .facts li:nth-child(odd) { padding-left: 0; border-left: 0; }
-  .caps { grid-template-columns: minmax(0, 1fr); }
-  .rank { justify-self: start; }
-  .brand-sub { display: none; }
-  .bubble { max-width: 100%; }
-}
-</style>
 </head>
 <body>
 
-<!-- Tanda merek: empat batang bertumpuk, tingkat teratas paling pekat.
-     Menggambarkan rantai penyedia. Digambar langsung, bukan dari library. -->
+<!-- Penanda merek: empat batang bertumpuk, makin ke bawah makin redup.
+     Menggambarkan rantai penyedia yang sama dipakai di seluruh halaman. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <symbol id="mark" viewBox="0 0 32 32">
     <g fill="currentColor">
-      <rect x="5" y="5" width="22" height="3.4" rx="1.7"/>
-      <rect x="5" y="10.4" width="22" height="3.4" rx="1.7" opacity="0.78"/>
-      <rect x="5" y="15.8" width="22" height="3.4" rx="1.7" opacity="0.58"/>
-      <rect x="5" y="21.2" width="22" height="3.4" rx="1.7" opacity="0.4"/>
+      <rect x="6" y="5" width="20" height="3.2" rx="1.6" />
+      <rect x="6" y="10.2" width="20" height="3.2" rx="1.6" opacity="0.76" />
+      <rect x="6" y="15.4" width="20" height="3.2" rx="1.6" opacity="0.54" />
+      <rect x="6" y="20.6" width="20" height="3.2" rx="1.6" opacity="0.34" />
     </g>
   </symbol>
 </svg>
 
 <header class="site-header">
   <div class="wrap">
-    <div class="bar glass">
+    <nav class="site-nav" aria-label="Navigasi utama">
       <a class="brand" href="/" aria-label="FreeAIBot, halaman utama">
-        <svg class="brand-mark" aria-hidden="true"><use href="#mark"/></svg>
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="17" height="17" viewBox="0 0 32 32"><use href="#mark" /></svg>
+        </span>
         <span class="brand-text">
           <span class="brand-name">FreeAIBot</span>
-          <span class="brand-sub">WhatsApp &amp; Telegram</span>
+          <span class="brand-sub" data-i18n="brand.sub">WhatsApp &amp; Telegram</span>
         </span>
       </a>
 
-      <button class="icon-btn nav-toggle" id="navToggle" aria-expanded="false" aria-controls="siteNav" aria-label="Buka menu navigasi">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-          <path d="M3 6h14M3 10h14M3 14h14"/>
+      <button class="icon-btn nav-toggle" id="navToggle" aria-expanded="false" aria-controls="siteNav" aria-label="Buka menu navigasi" data-i18n-aria="nav.menu">
+        <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <path d="M3 6h14M3 10h14M3 14h14" />
         </svg>
       </button>
 
-      <nav class="site-nav" id="siteNav" aria-label="Navigasi utama">
-        <a href="#kemampuan">Kemampuan</a>
-        <a href="/dashboard.html">Konsol</a>
-      </nav>
+      <div class="nav-links" id="siteNav">
+        <a href="#kemampuan" data-i18n="nav.capabilities">Kemampuan</a>
+        <a href="#status" data-i18n="nav.status">Status sistem</a>
+        <a href="/dashboard.html" data-i18n="nav.console">Konsol</a>
+      </div>
 
-      <button class="icon-btn" id="themeToggle" aria-label="Ganti tema terang atau gelap">
-        <svg id="iconSun" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-          <circle cx="10" cy="10" r="3.6"/>
-          <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.6 4.6L6 6M14 14l1.4 1.4M15.4 4.6L14 6M6 14l-1.4 1.4"/>
-        </svg>
-        <svg id="iconMoon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-          <path d="M16 12.4A6.8 6.8 0 0 1 7.6 4a7 7 0 1 0 8.4 8.4Z"/>
-        </svg>
-      </button>
-    </div>
+      <div class="nav-actions">
+        <button class="lang-toggle" id="langToggle" aria-label="Ganti bahasa halaman" title="Ganti bahasa">
+          <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <circle cx="10" cy="10" r="7.2" />
+            <path d="M2.8 10h14.4M10 2.8c2 2.2 3 4.6 3 7.2s-1 5-3 7.2c-2-2.2-3-4.6-3-7.2s1-5 3-7.2z" />
+          </svg>
+          <span id="langLabel">ID</span>
+        </button>
+
+        <button class="icon-btn" id="themeToggle" aria-label="Ganti tema terang atau gelap">
+          <svg id="iconSun" viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+            <circle cx="10" cy="10" r="3.6" />
+            <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.6 4.6L6 6M14 14l1.4 1.4M15.4 4.6L14 6M6 14l-1.4 1.4" />
+          </svg>
+          <svg id="iconMoon" viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+            <path d="M16 12.4A6.8 6.8 0 0 1 7.6 4a7 7 0 1 0 8.4 8.4Z" />
+          </svg>
+        </button>
+      </div>
+    </nav>
   </div>
 </header>
 
 <main>
 
+  <!-- ======================================================================
+       HERO: teks kiri, panel rantai penyedia kanan (split-screen).
+       ====================================================================== -->
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="rise">
-        <h1>Asisten AI yang selalu ada di chat-mu.</h1>
-        <p class="lede">
-          Kirim pesan seperti biasa di WhatsApp atau Telegram. Di belakangnya, enam penyedia AI
-          dicoba berurutan supaya pesanmu tetap dijawab.
+        <h1>
+          <span data-i18n="hero.title.a">Asisten AI yang</span>
+          <span class="accent" data-i18n="hero.title.b">selalu siaga</span>
+          <span class="no-break" data-i18n="hero.title.c">di chat-mu.</span>
+        </h1>
+        <p class="hero-lead" data-i18n="hero.lead">
+          Kirim pesan seperti biasa di WhatsApp atau Telegram. Di belakangnya enam penyedia AI
+          dicoba berurutan, jadi pesanmu tetap dijawab walau satu penyedia sedang penuh.
         </p>
+
         <div class="hero-actions">
-          <a class="btn btn-primary" href="/dashboard.html">Buka konsol</a>
-          <a class="btn btn-quiet" href="#kemampuan">Lihat kemampuannya</a>
+          <a class="btn btn-primary" href="/dashboard.html" data-i18n="hero.cta.primary">Buka konsol pemantauan</a>
+          <a class="btn btn-ghost" href="#kemampuan" data-i18n="hero.cta.secondary">Lihat yang bisa ditangani</a>
         </div>
 
-        <ul class="facts">
-          <li>
-            <svg class="fact-ico" width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10 2.5l6 2.6v4.4c0 3.6-2.5 6.6-6 7.7-3.5-1.1-6-4.1-6-7.7V5.1l6-2.6z"/>
+        <!-- Angka diisi dari /api/public-stats. Bila gagal, tetap tanda pisah,
+             bukan angka karangan. -->
+        <ul class="hero-facts">
+          <li class="hero-fact">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+              <path d="M3 5.5h14v9H3z" /><path d="M3 8.5h14" />
             </svg>
-            <span>Gratis dipakai</span>
+            <span><b id="stat-messages" data-i18n-pending="1">&ndash;</b> <span data-i18n="fact.messages">pesan tersimpan</span></span>
           </li>
-          <li>
-            <svg class="fact-ico" width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10 3.5l2 4.2 4.5.6-3.3 3.1.8 4.5-4-2.2-4 2.2.8-4.5L3.5 8.3l4.5-.6z"/>
+          <li class="hero-fact">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+              <path d="M10 3l6 2.6v4.4c0 3.6-2.5 6.6-6 7.7-3.5-1.1-6-4.1-6-7.7V5.6z" />
             </svg>
-            <span>Tanpa daftar akun</span>
+            <span><b id="stat-keys" data-i18n-pending="1">&ndash;</b> <span data-i18n="fact.keys">kunci API aktif</span></span>
           </li>
-          <li>
-            <svg class="fact-ico" width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10 3v10M6.5 9.5L10 13l3.5-3.5M4 16.5h12"/>
+          <li class="hero-fact">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+              <circle cx="10" cy="10" r="7" /><path d="M6.5 10.5l2.2 2.2 4.6-5" />
             </svg>
-            <span>Balasan dalam detik</span>
+            <span><b id="stat-models" data-i18n-pending="1">&ndash;</b> <span data-i18n="fact.models">model terpakai</span></span>
           </li>
-          <li>
-            <svg class="fact-ico" width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="10" cy="10" r="7"/><path d="M7 10.5l2 2 4-4.5"/>
+          <li class="hero-fact">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+              <circle cx="10" cy="10" r="7" /><path d="M10 6.5v4l2.5 2" />
             </svg>
-            <span>6 penyedia cadangan</span>
+            <span><b id="stat-chats" data-i18n-pending="1">&ndash;</b> <span data-i18n="fact.chats">percakapan</span></span>
           </li>
         </ul>
       </div>
 
-      <div class="chat rise rise-2" aria-label="Contoh percakapan">
-        <div class="chat-head">
-          <span class="avatar" aria-hidden="true">N</span>
-          <span class="who">
-            <b>Nara</b>
-            <span>Asisten AI di WhatsApp</span>
-          </span>
+      <!-- Panel rantai: menggambarkan cara kerja sistem yang sebenarnya.
+           Enam tingkat, masing-masing dengan perannya. -->
+      <div class="hero-visual rise rise-2">
+        <div class="hero-visual-head">
+          <span class="live-dot" aria-hidden="true"></span>
+          <strong data-i18n="chain.title">Rantai penyedia</strong>
+          <span data-i18n="chain.sub">dipakai berurutan</span>
         </div>
-        <p class="bubble in">berapa derajat sekarang di cianjur?</p>
-        <p class="bubble out">Sekitar 26 derajat, terasa kayak 27. Mendung, angin pelan.</p>
-        <p class="bubble in">coba cek lagi dong</p>
-        <p class="bubble out">Masih 26. Kelembapan 55 persen, jadi agak gerah.</p>
-        <div class="chat-meta">
-          <span class="dot" aria-hidden="true"></span>
-          <span>Dijawab penyedia ke-3, 370 milidetik</span>
+
+        <div class="chain">
+          <div class="chain-node">
+            <span class="chain-node-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M10 2.5l6.5 3v5c0 3.4-2.7 6.3-6.5 7.5-3.8-1.2-6.5-4.1-6.5-7.5v-5z" /></svg>
+            </span>
+            <span>
+              <span class="chain-node-name">xKiro Gateway</span>
+              <span class="chain-node-role" data-i18n="chain.1.role">Delapan kunci, dipakai bergiliran</span>
+            </span>
+            <span class="chain-node-state" data-i18n="chain.primary">Utama</span>
+          </div>
+
+          <div class="chain-node is-standby">
+            <span class="chain-node-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M6 15.5a3.5 3.5 0 0 1-.4-7A4.6 4.6 0 0 1 14.4 8a3.7 3.7 0 0 1-.3 7.5z" /></svg>
+            </span>
+            <span>
+              <span class="chain-node-name">Cloudflare Workers AI</span>
+              <span class="chain-node-role" data-i18n="chain.2.role">Termasuk model untuk gambar</span>
+            </span>
+            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
+          </div>
+
+          <div class="chain-node is-standby">
+            <span class="chain-node-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M4 13l3.5-3.5 3 3L16 6.5" /><path d="M4 16.5h12" /></svg>
+            </span>
+            <span>
+              <span class="chain-node-name">Groq</span>
+              <span class="chain-node-role" data-i18n="chain.3.role">Cepat, kuota per menit ketat</span>
+            </span>
+            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
+          </div>
+
+          <div class="chain-node is-standby">
+            <span class="chain-node-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><circle cx="10" cy="10" r="3" /><path d="M10 3v2M10 15v2M3 10h2M15 10h2" /></svg>
+            </span>
+            <span>
+              <span class="chain-node-name">OpenRouter</span>
+              <span class="chain-node-role" data-i18n="chain.4.role">Cadangan luas, model gratis</span>
+            </span>
+            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
+          </div>
+
+          <div class="chain-node is-standby">
+            <span class="chain-node-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h12v8H4z" /><path d="M7 10h6" /></svg>
+            </span>
+            <span>
+              <span class="chain-node-name">Dahl Global</span>
+              <span class="chain-node-role" data-i18n="chain.5.role">Sepuluh kunci, saldo token besar</span>
+            </span>
+            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
+          </div>
+
+          <div class="chain-node is-standby">
+            <span class="chain-node-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M10 3.5l2 4.2 4.5.6-3.3 3.1.8 4.5-4-2.2-4 2.2.8-4.5L3.5 8.3l4.5-.6z" /></svg>
+            </span>
+            <span>
+              <span class="chain-node-name">Google Gemini</span>
+              <span class="chain-node-role" data-i18n="chain.6.role">Lapisan terakhir, konteks 1 juta token</span>
+            </span>
+            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
+          </div>
+        </div>
+
+        <p class="hero-visual-foot" data-i18n="chain.foot">
+          Kalau satu tingkat penuh atau tidak merespons, sistem pindah ke tingkat berikutnya
+          tanpa kamu perlu mengubah apa pun.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================================
+       KEMAMPUAN: baris zig-zag, bukan grid kartu seragam.
+       ====================================================================== -->
+  <section class="section" id="kemampuan">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 data-i18n="cap.title">Yang bisa dia tangani</h2>
+        <p data-i18n="cap.lead">Selain teks biasa, ini yang sudah jalan sehari-hari.</p>
+      </div>
+
+      <div class="capability">
+        <div class="capability-body">
+          <h3 data-i18n="cap.voice.title">Pesan suara</h3>
+          <p data-i18n="cap.voice.body">
+            Rekaman ditranskripsi lebih dulu, lalu isinya dijawab seperti pesan teks biasa.
+          </p>
+          <ul class="capability-list">
+            <li>
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
+              <span data-i18n="cap.voice.p1">Format OGG dan MP3 dari WhatsApp maupun Telegram</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
+              <span data-i18n="cap.voice.p2">Hasil transkripsi ikut tersimpan di riwayat konsol</span>
+            </li>
+          </ul>
+        </div>
+        <div class="capability-visual">
+          <div class="cap-row is-accent">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M10 3v9M7 7v3M13 6v5M4 9v1M16 8.5v2" /></svg>
+            <span class="cap-row-label" data-i18n="cap.voice.r1">Rekaman masuk</span>
+            <span class="cap-row-value">0:07</span>
+          </div>
+          <div class="cap-row">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 4h10v12H5z" /><path d="M7.5 8h5M7.5 11h3.5" /></svg>
+            <span class="cap-row-label" data-i18n="cap.voice.r2">Teks hasil transkripsi</span>
+            <span class="cap-row-value">Whisper</span>
+          </div>
+          <div class="cap-row">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 10h12M12 6.5l3.5 3.5L12 13.5" /></svg>
+            <span class="cap-row-label" data-i18n="cap.voice.r3">Dijawab seperti teks</span>
+            <span class="cap-row-value">1 giliran</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="capability flip">
+        <div class="capability-body">
+          <h3 data-i18n="cap.image.title">Gambar dan stiker</h3>
+          <p data-i18n="cap.image.body">
+            Tulisan di dalam stiker dibaca lebih dulu. Kalau tidak ada tulisan, baru gambar dan
+            konteksnya yang dibaca.
+          </p>
+          <ul class="capability-list">
+            <li>
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
+              <span data-i18n="cap.image.p1">Stiker WhatsApp dan Telegram, termasuk yang bergerak</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
+              <span data-i18n="cap.image.p2">Balasan tidak mendeskripsikan kirimanmu, cukup menanggapi</span>
+            </li>
+          </ul>
+        </div>
+        <div class="capability-visual">
+          <div class="cap-row is-accent">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2.4" /><circle cx="7.5" cy="8.5" r="1.4" /><path d="M3.5 14l4-4 3.5 3.5 2.5-2.5 3 3" /></svg>
+            <span class="cap-row-label" data-i18n="cap.image.r1">Kiriman diterima</span>
+            <span class="cap-row-value">WebP</span>
+          </div>
+          <div class="cap-row">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 5h12v10H4z" /><path d="M7 9h6M7 12h4" /></svg>
+            <span class="cap-row-label" data-i18n="cap.image.r2">Tulisan di dalamnya dibaca</span>
+            <span class="cap-row-value" data-i18n="cap.image.r2v">bila ada</span>
+          </div>
+          <div class="cap-row">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 10h12M12 6.5l3.5 3.5L12 13.5" /></svg>
+            <span class="cap-row-label" data-i18n="cap.image.r3">Ditanggapi natural</span>
+            <span class="cap-row-value" data-i18n="cap.image.r3v">tanpa deskripsi</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="capability">
+        <div class="capability-body">
+          <h3 data-i18n="cap.doc.title">Dokumen dan tautan</h3>
+          <p data-i18n="cap.doc.body">
+            PDF, Word, dan isi halaman web dibaca, lalu diringkas atau dijawab sesuai pertanyaanmu.
+          </p>
+          <ul class="capability-list">
+            <li>
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
+              <span data-i18n="cap.doc.p1">PDF, DOCX, dan teks biasa</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
+              <span data-i18n="cap.doc.p2">Isi halaman web dibaca penuh, bukan hanya judulnya</span>
+            </li>
+          </ul>
+        </div>
+        <div class="capability-visual">
+          <div class="cap-row is-accent">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5z" /><path d="M12 2.5V6h3.5" /></svg>
+            <span class="cap-row-label" data-i18n="cap.doc.r1">Berkas dibuka</span>
+            <span class="cap-row-value">PDF / DOCX</span>
+          </div>
+          <div class="cap-row">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="7" /><path d="M2.8 10h14.4M10 2.8c2 2.2 3 4.6 3 7.2s-1 5-3 7.2c-2-2.2-3-4.6-3-7.2s1-5 3-7.2z" /></svg>
+            <span class="cap-row-label" data-i18n="cap.doc.r2">Tautan diambil isinya</span>
+            <span class="cap-row-value" data-i18n="cap.doc.r2v">halaman penuh</span>
+          </div>
+          <div class="cap-row">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 10h12M12 6.5l3.5 3.5L12 13.5" /></svg>
+            <span class="cap-row-label" data-i18n="cap.doc.r3">Diringkas atau dijawab</span>
+            <span class="cap-row-value" data-i18n="cap.doc.r3v">sesuai pertanyaan</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="capability flip">
+        <div class="capability-body">
+          <h3 data-i18n="cap.memory.title">Ingatan percakapan</h3>
+          <p data-i18n="cap.memory.body">
+            Meski model yang menjawab berganti di tengah obrolan, alurnya tetap nyambung.
+            Fakta yang kamu sebutkan ikut diingat.
+          </p>
+          <ul class="capability-list">
+            <li>
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
+              <span data-i18n="cap.memory.p1">Nama, lokasi, dan kebiasaan yang kamu sebutkan tetap diingat</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
+              <span data-i18n="cap.memory.p2">Pengetahuan yang tidak ada di sistem dicari dulu, lalu disimpan</span>
+            </li>
+          </ul>
+        </div>
+        <div class="capability-visual">
+          <div class="cap-row is-accent">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 5h12v11H4z" /><path d="M7 9h6M7 12h4" /></svg>
+            <span class="cap-row-label" data-i18n="cap.memory.r1">Fakta disebutkan</span>
+            <span class="cap-row-value" data-i18n="cap.memory.r1v">1x cukup</span>
+          </div>
+          <div class="cap-row">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 6.5h9v7h-9z" /><path d="M12.5 10h4M14 8l2 2-2 2" /></svg>
+            <span class="cap-row-label" data-i18n="cap.memory.r2">Model berganti</span>
+            <span class="cap-row-value" data-i18n="cap.memory.r2v">alur tetap</span>
+          </div>
+          <div class="cap-row">
+            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M10 3.5l5.5 2.7v4c0 3-2.3 5.6-5.5 6.6-3.2-1-5.5-3.6-5.5-6.6v-4z" /></svg>
+            <span class="cap-row-label" data-i18n="cap.memory.r3">Dipanggil saat relevan</span>
+            <span class="cap-row-value" data-i18n="cap.memory.r3v">tidak bocor</span>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="kemampuan">
+  <!-- ======================================================================
+       LANGKAH PAKAI: tiga langkah, sesuai proses nyatanya.
+       ====================================================================== -->
+  <section class="section">
     <div class="wrap">
-      <div class="section-head reveal">
-        <h2>Yang bisa dia tangani</h2>
-        <p>Selain teks biasa, ini yang sudah jalan sehari-hari.</p>
-      </div>
-
-      <div class="caps">
-        <article class="cap reveal" style="--cap-color: var(--p-xkiro)">
-          <div class="cap-ico" aria-hidden="true">
-            <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-              <path d="M10 3v10M6.5 9.5L10 13l3.5-3.5M4 16.5h12"/>
-            </svg>
-          </div>
-          <h3>Pesan suara</h3>
-          <p>Rekaman ditranskripsi dulu, lalu isinya dijawab seperti pesan teks.</p>
-        </article>
-
-        <article class="cap reveal" style="--cap-color: var(--p-cloudflare)">
-          <div class="cap-ico" aria-hidden="true">
-            <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-              <rect x="3" y="4" width="14" height="12" rx="2.4"/><circle cx="7.5" cy="8.5" r="1.4"/><path d="M3.5 14l4-4 3.5 3.5 2.5-2.5 3 3"/>
-            </svg>
-          </div>
-          <h3>Gambar dan stiker</h3>
-          <p>Tulisan di dalam stiker dibaca lebih dulu, baru gambar dan konteksnya.</p>
-        </article>
-
-        <article class="cap reveal" style="--cap-color: var(--p-groq)">
-          <div class="cap-ico" aria-hidden="true">
-            <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-              <path d="M5 2.5h7l3.5 3.5v11.5H5z"/><path d="M12 2.5V6h3.5M7.5 11h5M7.5 14h3.5"/>
-            </svg>
-          </div>
-          <h3>Dokumen dan tautan</h3>
-          <p>PDF, Word, dan isi halaman web dibaca, lalu diringkas atau dijawab.</p>
-        </article>
-
-        <article class="cap reveal" style="--cap-color: var(--p-gemini)">
-          <div class="cap-ico" aria-hidden="true">
-            <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-              <circle cx="10" cy="10" r="3.4"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M5 5l1.4 1.4M13.6 13.6L15 15M15 5l-1.4 1.4M6.4 13.6L5 15"/>
-            </svg>
-          </div>
-          <h3>Cuaca dan berita</h3>
-          <p>Suhu diambil dari API cuaca, berita dari beberapa kanal resmi.</p>
-        </article>
-
-        <article class="cap reveal" style="--cap-color: var(--p-openrouter)">
-          <div class="cap-ico" aria-hidden="true">
-            <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-              <circle cx="10" cy="10" r="7"/><path d="M10 6.5v.2M10 9.5v4.5"/>
-            </svg>
-          </div>
-          <h3>Tebakan dan obrolan</h3>
-          <p>Kunci jawaban disimpan, jadi tebakan dinilai jujur dan tidak diulang.</p>
-        </article>
-
-        <article class="cap reveal" style="--cap-color: var(--p-dahl)">
-          <div class="cap-ico" aria-hidden="true">
-            <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-              <path d="M3 5.5h14v9H3z"/><path d="M6.5 5.5V4h7v1.5"/><path d="M7 9h6M7 11.5h4"/>
-            </svg>
-          </div>
-          <h3>Ingatan percakapan</h3>
-          <p>Meski model yang menjawab berganti, alur obrolan tetap nyambung.</p>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  
-
-  <section>
-    <div class="wrap">
-      <div class="section-head reveal">
-        <h2>Cara pakainya</h2>
-        <p>Tidak ada yang perlu dipasang.</p>
+      <div class="section-head">
+        <h2 data-i18n="steps.title">Cara pakainya</h2>
+        <p data-i18n="steps.lead">Tidak ada yang perlu dipasang di ponselmu.</p>
       </div>
 
       <div class="steps">
-        <div class="step reveal">
-          <span class="step-num">LANGKAH 1</span>
-          <h3>Chat nomornya</h3>
-          <p>Simpan nomor WhatsApp atau buka bot Telegram, lalu kirim pesan apa saja.</p>
+        <div class="step">
+          <span class="step-num" aria-hidden="true">1</span>
+          <h3 data-i18n="steps.1.title">Chat nomornya</h3>
+          <p data-i18n="steps.1.body">Simpan nomor WhatsApp atau buka bot Telegram, lalu kirim pesan apa saja.</p>
         </div>
-        <div class="step reveal">
-          <span class="step-num">LANGKAH 2</span>
-          <h3>Ngobrol seperti biasa</h3>
-          <p>Tanya cuaca, minta tebakan, kirim foto atau dokumen. Gaya bahasanya ikut kamu.</p>
+        <div class="step">
+          <span class="step-num" aria-hidden="true">2</span>
+          <h3 data-i18n="steps.2.title">Ngobrol seperti biasa</h3>
+          <p data-i18n="steps.2.body">Tanya cuaca, minta tebakan, kirim foto atau dokumen. Gaya bahasanya ikut kamu.</p>
         </div>
-        <div class="step reveal">
-          <span class="step-num">LANGKAH 3</span>
-          <h3>Pantau di konsol</h3>
-          <p>Konsol memperlihatkan kuota tiap kunci, model yang menjawab, dan riwayat percakapan.</p>
+        <div class="step">
+          <span class="step-num" aria-hidden="true">3</span>
+          <h3 data-i18n="steps.3.title">Pantau di konsol</h3>
+          <p data-i18n="steps.3.body">Konsol memperlihatkan kuota tiap kunci, model yang menjawab, dan riwayat percakapan.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <section>
+  <!-- ======================================================================
+       STATUS SISTEM: angka nyata dari sistem, bukan testimoni.
+       Belum ada pengguna nyata yang memberi kutipan, jadi tidak ada bagian
+       testimoni (aturan R-18: testimoni karangan dilarang).
+       ====================================================================== -->
+  <section class="section" id="status">
     <div class="wrap">
-      <div class="cta reveal">
-        <h2>Lihat sendiri isinya</h2>
-        <p>Konsol menampilkan kuota, model, dan riwayat percakapan apa adanya.</p>
-        <a class="btn btn-primary" href="/dashboard.html">Buka konsol pemantauan</a>
+      <div class="section-head">
+        <h2 data-i18n="status.title">Status sistem hari ini</h2>
+        <p data-i18n="status.lead">
+          Angka ini diambil langsung dari basis data sistem, bukan contoh. Buka konsol untuk
+          rincian tiap kunci dan model.
+        </p>
+      </div>
+
+      <div class="status-panel">
+        <div class="status-grid">
+          <div class="status-item">
+            <span class="status-item-label" data-i18n="status.1.label">Total pesan</span>
+            <span class="status-item-value" id="stat-total">&ndash;</span>
+            <span class="status-item-note" id="stat-since" data-i18n="status.1.note">Sejak sistem dijalankan</span>
+          </div>
+          <div class="status-item">
+            <span class="status-item-label" data-i18n="status.2.label">Percakapan</span>
+            <span class="status-item-value" id="stat-chats2">&ndash;</span>
+            <span class="status-item-note" data-i18n="status.2.note">Percakapan unik tercatat</span>
+          </div>
+          <div class="status-item">
+            <span class="status-item-label" data-i18n="status.3.label">Penyedia AI</span>
+            <span class="status-item-value" id="stat-providers">&ndash;</span>
+            <span class="status-item-note" data-i18n="status.3.note">Diaktifkan dan dicoba berurutan</span>
+          </div>
+          <div class="status-item">
+            <span class="status-item-label" data-i18n="status.4.label">Kunci API</span>
+            <span class="status-item-value" id="stat-keys2">&ndash;</span>
+            <span class="status-item-note" data-i18n="status.4.note">Dipakai bergiliran agar kuota merata</span>
+          </div>
+        </div>
+        <p class="status-foot" data-i18n="status.foot">
+          Data di halaman ini diperbarui tiap menit dari basis data sistem.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================================
+       CTA AKHIR
+       ====================================================================== -->
+  <section class="section">
+    <div class="wrap">
+      <div class="cta-final">
+        <h2 data-i18n="cta.title">Lihat sendiri isinya</h2>
+        <p data-i18n="cta.body">
+          Konsol menampilkan kuota, model, dan riwayat percakapan apa adanya. Tidak ada yang
+          disembunyikan.
+        </p>
+        <div class="cta-actions">
+          <a class="btn btn-primary" href="/dashboard.html" data-i18n="cta.primary">Buka konsol pemantauan</a>
+          <a class="btn btn-ghost" href="#kemampuan" data-i18n="cta.secondary">Baca ulang kemampuannya</a>
+        </div>
       </div>
     </div>
   </section>
 
 </main>
 
-<footer>
+<footer class="site-footer">
   <div class="wrap">
-    <div class="footer-inner">
-      <span>FreeAIBot &middot; versi v0.79.8</span>
-      <span class="footer-links">
-        <a href="/privacy.html">Kebijakan privasi</a>
-        <a href="/dashboard.html">Konsol</a>
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="/">
+          <span class="brand-mark" aria-hidden="true">
+            <svg width="17" height="17" viewBox="0 0 32 32"><use href="#mark" /></svg>
+          </span>
+          <span class="brand-text">
+            <span class="brand-name">FreeAIBot</span>
+            <span class="brand-sub" data-i18n="brand.sub">WhatsApp &amp; Telegram</span>
+          </span>
+        </a>
+        <p data-i18n="footer.desc">
+          Asisten AI untuk WhatsApp dan Telegram. Enam penyedia dicoba berurutan supaya pesan
+          tetap dijawab.
+        </p>
+      </div>
+
+      <div class="footer-col">
+        <h3 data-i18n="footer.nav">Halaman</h3>
+        <ul>
+          <li><a href="#kemampuan" data-i18n="nav.capabilities">Kemampuan</a></li>
+          <li><a href="#status" data-i18n="nav.status">Status sistem</a></li>
+          <li><a href="/dashboard.html" data-i18n="nav.console">Konsol</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h3 data-i18n="footer.legal">Ketentuan</h3>
+        <ul>
+          <li><a href="/privacy.html" data-i18n="footer.privacy">Kebijakan privasi</a></li>
+          <li><a href="/privacy.html#data" data-i18n="footer.data">Penanganan data</a></li>
+          <li><a href="/privacy.html#contact" data-i18n="footer.contact">Kontak</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h3 data-i18n="footer.follow">Ikuti</h3>
+        <div class="social-row">
+          <a href="https://github.com/Raflyf/chat-bot" target="_blank" rel="noopener noreferrer" aria-label="Repositori GitHub">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 19c-4.3 1.3-4.3-2.2-6-2.7m12 5.4v-3.6a3 3 0 0 0-.8-2.3c2.7-.3 5.5-1.3 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6.2 0C6.3 2.8 5.3 3.1 5.3 3.1a4.3 4.3 0 0 0-.1 3.2A4.6 4.6 0 0 0 3.9 9.5c0 4.6 2.8 5.7 5.5 6a3 3 0 0 0-.8 2.3V21" />
+            </svg>
+          </a>
+          <a href="/privacy.html#contact" aria-label="Kontak admin">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2.5" y="4.5" width="19" height="15" rx="2.4" />
+              <path d="M2.5 7l9.5 6.2L21.5 7" />
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <span>&copy; 2026 FreeAIBot &middot; <span data-i18n="footer.version">versi</span> v0.80.0</span>
+      <span class="footer-legal">
+        <a href="/privacy.html" data-i18n="footer.privacy">Kebijakan privasi</a>
+        <a href="/privacy.html#terms" data-i18n="footer.terms">Ketentuan pemakaian</a>
+        <a href="/privacy.html#contact" data-i18n="footer.contact">Kontak</a>
       </span>
     </div>
   </div>
 </footer>
 
+<script src="/js/landing.js" defer></script>
 <script src="/js/theme.js" defer></script>
 </body>
 </html>

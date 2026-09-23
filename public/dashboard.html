@@ -5,11 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Konsol FreeAIBot: kuota, model, dan riwayat percakapan</title>
 <meta name="description" content="Konsol pemantauan FreeAIBot: sisa kuota tiap kunci API, model yang aktif, pemakaian token, dan riwayat percakapan." />
-<meta name="theme-color" content="#000000" />
+<meta name="theme-color" content="#020814" />
 <meta name="robots" content="noindex, nofollow" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="shortcut icon" href="/favicon.svg" />
 <link rel="apple-touch-icon" href="/favicon.svg" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&display=swap" />
+
 <link rel="stylesheet" href="/css/console.css" />
 <script src="/js/theme-pre.js"></script>
 <script src="/js/dashboard-pre.js"></script>
@@ -17,18 +22,18 @@
 <body>
 
 <!-- ==========================================================================
-     Gerbang PIN. Modal adalah layer kontrol, jadi boleh memakai glass.
+     Gerbang PIN. Ini layer kontrol, jadi memakai glass.
      ========================================================================== -->
-<div id="auth-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-  <div class="auth-card" id="pin-card">
+<div id="auth-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+  <div class="pin-card" id="pin-card">
     <div class="auth-top-nav">
       <a href="/" class="auth-back-link" id="link-home-auth" title="Kembali ke halaman utama">&larr; Beranda</a>
     </div>
 
     <div class="auth-shield-icon" aria-hidden="true">
       <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M11 2.2l6.6 2.8v5.6c0 4-2.8 7.3-6.6 8.6-3.8-1.3-6.6-4.6-6.6-8.6V5L11 2.2z"/>
-        <path d="M8.1 11.2l2.1 2.1 3.7-4"/>
+        <path d="M11 2.2l6.6 2.8v5.6c0 4-2.8 7.3-6.6 8.6-3.8-1.3-6.6-4.6-6.6-8.6V5L11 2.2z" />
+        <path d="M8.1 11.2l2.1 2.1 3.7-4" />
       </svg>
     </div>
 
@@ -58,7 +63,7 @@
 
     <div class="pin-attempts" id="attempts-label">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-        <circle cx="8" cy="8" r="6.4"/><path d="M8 5v3.5M8 11v.2"/>
+        <circle cx="8" cy="8" r="6.4" /><path d="M8 5v3.5M8 11v.2" />
       </svg>
       <span id="attempts-text">Sisa percobaan: 5 kali</span>
     </div>
@@ -72,51 +77,48 @@
 <!-- ==========================================================================
      Modal reset PIN lewat OTP email. Juga layer kontrol.
      ========================================================================== -->
-<div id="reset-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="reset-title">
-  <div class="auth-card">
+<div id="reset-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reset-title">
+  <div class="pin-card">
     <div class="auth-shield-icon" aria-hidden="true">
       <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="2.6" y="4.8" width="16.8" height="12.4" rx="2.4"/>
-        <path d="M2.6 7l8.4 5.6L19.4 7"/>
+        <rect x="2.6" y="4.8" width="16.8" height="12.4" rx="2.4" />
+        <path d="M2.6 7l8.4 5.6L19.4 7" />
       </svg>
     </div>
     <div>
       <h2 class="auth-title" id="reset-title">Reset Master PIN</h2>
       <p class="auth-subtitle">
         Kode verifikasi dikirim ke email admin:
-        <span id="reset-target-email" style="color:var(--accent);font-weight:600">raf***@gmail.com</span>
+        <span id="reset-target-email">raf***@gmail.com</span>
       </p>
     </div>
 
     <div id="reset-alert" class="auth-alert" role="status" aria-live="polite"></div>
 
     <div id="reset-step-1" class="reset-form">
-      <p style="font-size:14px;color:var(--text-secondary);margin:0">
-        Sistem mengirim kode 6 digit ke email admin. Kode berlaku 10 menit.
-      </p>
+      <p class="auth-subtitle">Sistem mengirim kode 6 digit ke email admin. Kode berlaku 10 menit.</p>
       <button type="button" class="btn btn-primary" id="btn-send-otp">Kirim kode ke email</button>
-      <button type="button" class="btn" id="btn-cancel-reset">Batal, kembali ke login</button>
+      <button type="button" class="btn btn-ghost" id="btn-cancel-reset">Batal, kembali ke login</button>
     </div>
 
     <div id="reset-step-2" class="reset-form" style="display:none">
-      <div class="form-group">
-        <label class="form-label" for="input-otp">Kode OTP, 6 digit</label>
+      <div class="field">
+        <label for="input-otp">Kode OTP, 6 digit</label>
         <input type="text" id="input-otp" class="form-input" placeholder="123456" maxlength="6"
-               inputmode="numeric" autocomplete="one-time-code"
-               style="letter-spacing:5px;text-align:center;font-weight:600">
+               inputmode="numeric" autocomplete="one-time-code">
       </div>
-      <div class="form-group">
-        <label class="form-label" for="input-new-pin">Master PIN baru, 4 sampai 8 digit</label>
+      <div class="field">
+        <label for="input-new-pin">Master PIN baru, 4 sampai 8 digit</label>
         <input type="password" id="input-new-pin" class="form-input" placeholder="PIN baru" maxlength="8" inputmode="numeric" autocomplete="new-password">
       </div>
-      <div class="form-group">
-        <label class="form-label" for="input-confirm-pin">Ulangi PIN baru</label>
+      <div class="field">
+        <label for="input-confirm-pin">Ulangi PIN baru</label>
         <input type="password" id="input-confirm-pin" class="form-input" placeholder="Ulangi PIN baru" maxlength="8" inputmode="numeric" autocomplete="new-password">
       </div>
 
       <button type="button" class="btn btn-primary" id="btn-submit-reset">Simpan PIN baru</button>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div class="btn-row">
         <button type="button" class="auth-link-btn" id="btn-resend-otp" disabled>Kirim ulang OTP</button>
         <button type="button" class="auth-link-btn" id="btn-back-reset">Kembali</button>
       </div>
@@ -127,384 +129,430 @@
 <!-- ==========================================================================
      Header. Layer kontrol, jadi memakai glass.
      ========================================================================== -->
-<header id="site-header">
-  <div class="nav-inner">
-    <div class="nav-brand-group">
-      <a href="/" class="nav-back-btn" id="link-home-header" title="Kembali ke halaman utama">
-        <span class="nav-back-arrow" aria-hidden="true">&larr;</span>
+<header class="site-header" id="site-header">
+  <div class="wrap">
+    <nav class="site-nav" aria-label="Navigasi konsol">
+      <a href="/" class="btn btn-ghost btn-sm" id="link-home-header" title="Kembali ke halaman utama">
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 5.5L7.5 10l4.5 4.5" />
+        </svg>
         <span>Beranda</span>
       </a>
-      <div class="nav-divider" aria-hidden="true"></div>
+
       <a href="/dashboard.html" class="brand">
-        <div class="brand-icon" aria-hidden="true"><span>AI</span></div>
-        <div class="brand-info">
-          <div class="brand-title-wrap">
-            <h1 id="bot-name">Konsol FreeAIBot</h1>
-            <span class="brand-badge-version">v0.79.8</span>
-          </div>
-          <div class="brand-sub-wrap">
-            <span class="pulse-dot-mini" aria-hidden="true"></span>
-            <p id="server-time">Menyambungkan ke server...</p>
-          </div>
-        </div>
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor">
+            <rect x="6" y="5" width="20" height="3.2" rx="1.6" />
+            <rect x="6" y="10.2" width="20" height="3.2" rx="1.6" opacity="0.76" />
+            <rect x="6" y="15.4" width="20" height="3.2" rx="1.6" opacity="0.54" />
+            <rect x="6" y="20.6" width="20" height="3.2" rx="1.6" opacity="0.34" />
+          </svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-title-wrap">
+            <span class="brand-name" id="bot-name">Konsol FreeAIBot</span>
+            <span class="brand-badge-version">v0.80.0</span>
+          </span>
+          <span class="brand-sub">
+            <span class="pulse-dot-cyan" aria-hidden="true"></span>
+            <span id="server-time">Menyambungkan ke server...</span>
+          </span>
+        </span>
       </a>
-    </div>
 
-    <div class="header-actions">
-      <div class="status-pill" title="Status mesin bot dan konektivitas">
-        <span class="pulse-dot" aria-hidden="true"></span>
-        <span class="status-text-full">Sistem aktif</span>
-        <span class="status-text-short">Aktif</span>
-      </div>
+      <div class="console-head-actions">
+        <span class="status-pill" title="Status mesin bot dan konektivitas">
+          <span class="pulse-dot-cyan" aria-hidden="true"></span>
+          <span class="status-text-full">Sistem aktif</span>
+          <span class="status-text-short">Aktif</span>
+        </span>
 
-      <div class="nav-control-group">
-        <button type="button" class="btn nav-btn-control active" id="btn-auto" aria-pressed="true" title="Nyalakan atau matikan muat ulang otomatis tiap 15 detik">
-          <span>Otomatis 15 detik</span>
+        <button type="button" class="btn btn-ghost btn-sm active" id="btn-auto" aria-pressed="true" title="Nyalakan atau matikan muat ulang otomatis tiap 15 detik">
+          <span>Otomatis 15 dtk</span>
         </button>
-        <button type="button" class="btn nav-btn-control" id="btn-manual-refresh" title="Muat ulang metrik sekarang">
-          <span id="btn-refresh-icon" aria-hidden="true">&#x21bb;</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-manual-refresh" title="Muat ulang metrik sekarang">
+          <span id="btn-refresh-icon" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6" /><path d="M16.5 3v3.2h-3.2" />
+            </svg>
+          </span>
           <span>Segarkan</span>
         </button>
-        <button type="button" class="btn nav-btn-control" id="btn-theme-toggle" title="Ganti tema terang atau gelap">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-theme-toggle" title="Ganti tema terang atau gelap">
           <span id="theme-icon" aria-hidden="true">Terang</span>
         </button>
-        <button type="button" class="btn btn-danger nav-btn-control" id="btn-logout" title="Kunci konsol dan akhiri sesi">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-logout" title="Kunci konsol dan akhiri sesi">
           <span>Kunci keluar</span>
         </button>
       </div>
-    </div>
+    </nav>
   </div>
 </header>
 
-<div class="container" id="main-content">
-  <section class="filter-dashboard-bar" aria-label="Filter tampilan">
-    <div class="filter-group-wrap">
-      <span class="filter-title-label">Rentang waktu</span>
-      <div class="pill-filter-group" id="time-filter-pills" role="group" aria-label="Rentang waktu">
-        <button type="button" class="pill-filter-btn active" data-range="today">Hari ini</button>
-        <button type="button" class="pill-filter-btn" data-range="7d">7 hari</button>
-        <button type="button" class="pill-filter-btn" data-range="14d">14 hari</button>
-        <button type="button" class="pill-filter-btn" data-range="30d">30 hari</button>
-        <button type="button" class="pill-filter-btn" data-range="all">Semua</button>
-      </div>
-    </div>
+<main class="console-main" id="main-content">
+  <div class="wrap">
 
-    <div class="filter-group-wrap">
-      <span class="filter-title-label">Platform</span>
-      <div class="pill-filter-group" id="platform-filter-pills" role="group" aria-label="Platform">
-        <button type="button" class="pill-filter-btn active" data-platform="all">Semua</button>
-        <button type="button" class="pill-filter-btn" data-platform="whatsapp">WhatsApp</button>
-        <button type="button" class="pill-filter-btn" data-platform="telegram">Telegram</button>
-      </div>
-    </div>
-  </section>
-
-  <section class="kpi-grid" aria-label="Ringkasan utama">
-    <div class="kpi-card">
-      <div class="kpi-title" id="kpi-title-msgs">Pesan hari ini</div>
-      <div class="kpi-value" id="kpi-today-msgs">-</div>
-      <div class="kpi-subtext">
-        <span class="badge badge-wa" id="kpi-wa">- WA</span>
-        <span class="badge badge-tele" id="kpi-tele">- Tele</span>
-      </div>
-    </div>
-
-    <div class="kpi-card">
-      <div class="kpi-title">Total pesan sepanjang waktu</div>
-      <div class="kpi-value" id="kpi-total-msgs">-</div>
-      <div class="kpi-subtext">Tersimpan di Supabase PostgreSQL</div>
-    </div>
-
-    <div class="kpi-card">
-      <div class="kpi-title" id="kpi-title-calls">Panggilan API penyedia, hari ini</div>
-      <div class="kpi-value" id="kpi-calls-today">-</div>
-      <div class="kpi-subtext" id="kpi-total-keys">- kunci terpantau</div>
-    </div>
-
-    <div class="kpi-card">
-      <div class="kpi-title" id="kpi-title-model">Model paling sering dipakai hari ini</div>
-      <div class="kpi-value" id="kpi-top-model" style="font-size:20px;word-break:break-word">-</div>
-      <div class="kpi-subtext">Distribusi beban otomatis</div>
-    </div>
-  </section>
-
-  <section aria-labelledby="pool-section-title">
-    <div class="section-header pool-section-header">
+    <div class="console-head">
       <div>
-        <h2 class="section-title" id="pool-section-title">Pemakaian pool API key</h2>
-        <span style="font-size:13px;color:var(--text-secondary)" id="pool-reset-label">Reset harian 00:00 UTC</span>
+        <h1>Pemantauan sistem</h1>
+        <p>Kuota tiap kunci, model yang menjawab, dan riwayat percakapan. Semua angka diambil langsung dari penyedia dan basis data.</p>
       </div>
-      <div class="pool-filter-controls">
-        <div class="pill-filter-group" id="provider-filter-pills" role="group" aria-label="Penyedia">
-          <button type="button" class="pill-filter-btn active" data-provider="all">Semua penyedia</button>
-          <button type="button" class="pill-filter-btn" data-provider="xkiro">xKiro</button>
-          <button type="button" class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
-          <button type="button" class="pill-filter-btn" data-provider="groq">Groq</button>
-          <button type="button" class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
-          <button type="button" class="pill-filter-btn" data-provider="dahl">Dahl</button>
-          <button type="button" class="pill-filter-btn" data-provider="gemini">Gemini</button>
-        </div>
-        <select id="key-status-filter" class="filter-select" aria-label="Filter status kunci">
-          <option value="all">Semua status</option>
-          <option value="healthy">Sehat, di bawah 80 persen</option>
-          <option value="warning">Waspada, 80 persen ke atas</option>
-          <option value="capped">Limit habis</option>
-        </select>
+      <div class="console-meta">
+        <span>Sinkron terakhir: <strong id="sync-time">&ndash;</strong></span>
       </div>
     </div>
-    <div class="pool-grid" id="pool-grid">
-      <!-- Diisi oleh renderPool -->
-    </div>
-  </section>
 
-  <section class="live-upstream-card" id="live-upstream-section" aria-labelledby="upstream-title">
-    <div class="live-upstream-header">
-      <div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-          <h2 class="section-title" id="upstream-title" style="margin:0">Sisa kuota dan pemakaian token upstream</h2>
-          <span class="badge-live-sync"><span class="pulse-dot-mini" aria-hidden="true"></span> Sinkron langsung</span>
+    <!-- Filter tampilan -->
+    <section class="filter-dashboard-bar" aria-label="Filter tampilan">
+      <div class="filter-group">
+        <span>Rentang waktu</span>
+        <div class="pill-filter-group" id="time-filter-pills" role="group" aria-label="Rentang waktu">
+          <button type="button" class="pill-filter-btn active" data-range="today">Hari ini</button>
+          <button type="button" class="pill-filter-btn" data-range="7d">7 hari</button>
+          <button type="button" class="pill-filter-btn" data-range="14d">14 hari</button>
+          <button type="button" class="pill-filter-btn" data-range="30d">30 hari</button>
+          <button type="button" class="pill-filter-btn" data-range="all">Semua</button>
         </div>
-        <span style="font-size:13px;color:var(--text-secondary)">
-          Angka diambil dari server penyedia resmi. Mencakup pemakaian dari bot, IDE, dan terminal yang memakai kunci yang sama.
+      </div>
+
+      <div class="filter-group">
+        <span>Platform</span>
+        <div class="pill-filter-group" id="platform-filter-pills" role="group" aria-label="Platform">
+          <button type="button" class="pill-filter-btn active" data-platform="all">Semua</button>
+          <button type="button" class="pill-filter-btn" data-platform="whatsapp">WhatsApp</button>
+          <button type="button" class="pill-filter-btn" data-platform="telegram">Telegram</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- KPI -->
+    <section class="kpi-grid" aria-label="Ringkasan utama">
+      <div class="kpi-card">
+        <span class="kpi-label" id="kpi-title-msgs">Pesan hari ini</span>
+        <span class="kpi-value" id="kpi-today-msgs">&ndash;</span>
+        <span class="kpi-sub">
+          <span class="badge badge-wa" id="kpi-wa">&ndash; WA</span>
+          <span class="badge badge-tele" id="kpi-tele">&ndash; Telegram</span>
         </span>
       </div>
-    </div>
 
-    <div class="live-stats-ribbon">
-      <div class="live-stat-box">
-        <span class="live-stat-label">Total batas kuota harian</span>
-        <span class="live-stat-val" id="upstream-total-cap">0</span>
-        <span class="live-stat-sub" id="upstream-total-cap-sub">Seluruh penyedia terdaftar</span>
+      <div class="kpi-card">
+        <span class="kpi-label">Total pesan sepanjang waktu</span>
+        <span class="kpi-value" id="kpi-total-msgs">&ndash;</span>
+        <span class="kpi-sub">Tersimpan di Supabase PostgreSQL</span>
       </div>
-      <div class="live-stat-box">
-        <span class="live-stat-label">Token terpakai hari ini</span>
-        <span class="live-stat-val" id="upstream-total-used">0</span>
-        <span class="live-stat-sub" id="upstream-total-used-sub">Akumulasi global</span>
-      </div>
-      <div class="live-stat-box">
-        <span class="live-stat-label">Sisa kuota bersih</span>
-        <span class="live-stat-val" id="upstream-total-remaining">0</span>
-        <span class="live-stat-sub" id="upstream-remaining-pct">Menunggu data</span>
-      </div>
-      <div class="live-stat-box">
-        <span class="live-stat-label">Kunci dan pool terhubung</span>
-        <span class="live-stat-val" id="upstream-openrouter-status">0 kunci</span>
-        <span class="live-stat-sub" id="upstream-openrouter-sub">Menunggu data</span>
-      </div>
-      <div class="live-stat-box" title="WhatsApp Cloud API memberi 1.000 sesi percakapan gratis per bulan. Satu sesi adalah jendela 24 jam per pengguna.">
-        <span class="live-stat-label">Sesi WhatsApp Cloud</span>
-        <span class="live-stat-val" id="upstream-wa-sessions">0 / 1.000</span>
-        <span class="live-stat-sub" id="upstream-wa-sessions-sub">Sisa sesi gratis bulan ini</span>
-      </div>
-    </div>
 
-    <div class="token-table-container">
-      <table class="token-table">
-        <caption class="sr-only">Pemakaian token dan sisa kuota tiap kunci API per penyedia</caption>
-        <thead>
-          <tr>
-            <th scope="col" style="min-width:180px">Penyedia dan kunci</th>
-            <th scope="col" style="min-width:200px">Akun terdaftar</th>
-            <th scope="col" style="min-width:200px">Pemakaian hari ini</th>
-            <th scope="col" style="min-width:180px">Sisa kuota hari ini</th>
-            <th scope="col" style="min-width:110px;text-align:right">Validasi</th>
-          </tr>
-        </thead>
-        <tbody id="live-upstream-tbody">
-          <!-- Diisi oleh renderLiveUpstreamTable -->
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="token-matrix-section" id="token-matrix-section" aria-labelledby="token-matrix-title">
-    <div class="token-matrix-header">
-      <div>
-        <h2 class="section-title" id="token-matrix-title" style="margin-bottom:4px">Batas token dan siklus reset tiap penyedia</h2>
-        <span style="font-size:13px;color:var(--text-secondary)">
-          Batas resmi, mekanisme limitasi, dan jadwal reset. Setiap angka menyebut asalnya.
-        </span>
+      <div class="kpi-card">
+        <span class="kpi-label" id="kpi-title-calls">Panggilan API penyedia, hari ini</span>
+        <span class="kpi-value" id="kpi-calls-today">&ndash;</span>
+        <span class="kpi-sub" id="kpi-total-keys">&ndash; kunci terpantau</span>
       </div>
-    </div>
-    <div class="token-table-container">
-      <table class="token-table">
-        <caption class="sr-only">Batas token resmi dan siklus reset tiap penyedia</caption>
-        <thead>
-          <tr>
-            <th scope="col" style="min-width:180px">Penyedia</th>
-            <th scope="col" style="min-width:150px">Mekanisme limit</th>
-            <th scope="col" style="min-width:160px">Batas resmi</th>
-            <th scope="col" style="min-width:150px">Siklus reset</th>
-            <th scope="col" style="min-width:180px">Panggilan dan token</th>
-            <th scope="col" style="min-width:90px;text-align:right">Status</th>
-          </tr>
-        </thead>
-        <tbody id="token-matrix-tbody">
-          <!-- Diisi oleh renderTokenMatrix -->
-        </tbody>
-      </table>
-    </div>
-  </section>
 
-  <section class="matrix-section" id="ai-model-matrix-section" aria-labelledby="matrix-title">
-    <div class="matrix-header">
-      <div class="matrix-title-group">
-        <div class="matrix-title-with-icon">
-          <svg class="matrix-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="2.5" y="2.5" width="19" height="19" rx="4"/>
-            <path d="M7.5 2.5v19M16.5 2.5v19M2.5 9h19M2.5 15h19"/>
-          </svg>
-          <h2 class="matrix-main-title" id="matrix-title">Model AI dan pemantauan inferensi</h2>
+      <div class="kpi-card">
+        <span class="kpi-label" id="kpi-title-model">Model paling sering dipakai hari ini</span>
+        <span class="kpi-value" id="kpi-top-model" style="font-size:1.15rem">&ndash;</span>
+        <span class="kpi-sub">Distribusi beban otomatis</span>
+      </div>
+    </section>
+
+    <!-- Pool API key -->
+    <section aria-labelledby="pool-section-title">
+      <div class="console-head">
+        <div>
+          <h2 class="card-title" id="pool-section-title">Pemakaian pool API key</h2>
+          <p class="card-sub" id="pool-reset-label">Reset harian 00:00 UTC</p>
         </div>
-        <p class="matrix-subtitle">Kesehatan, latensi rata-rata, dan jumlah eksekusi tiap model di rantai enam tingkat.</p>
-      </div>
-
-      <div class="matrix-header-controls">
-        <div class="matrix-total-badge">
-          Total inferensi <span id="matrix-total-inferensi">0x</span>
-        </div>
-        <div class="matrix-time-filters" id="matrix-time-filters" role="group" aria-label="Rentang waktu matriks model">
-          <button type="button" class="matrix-filter-pill active" data-range="today">Hari ini</button>
-          <button type="button" class="matrix-filter-pill" data-range="7d">7 hari</button>
-          <button type="button" class="matrix-filter-pill" data-range="30d">30 hari</button>
-          <button type="button" class="matrix-filter-pill" data-range="all">Semua</button>
+        <div class="console-head-actions">
+          <div class="pill-filter-group" id="provider-filter-pills" role="group" aria-label="Penyedia">
+            <button type="button" class="pill-filter-btn active" data-provider="all">Semua</button>
+            <button type="button" class="pill-filter-btn" data-provider="xkiro">xKiro</button>
+            <button type="button" class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
+            <button type="button" class="pill-filter-btn" data-provider="groq">Groq</button>
+            <button type="button" class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
+            <button type="button" class="pill-filter-btn" data-provider="dahl">Dahl</button>
+            <button type="button" class="pill-filter-btn" data-provider="gemini">Gemini</button>
+          </div>
+          <select id="key-status-filter" class="filter-select" aria-label="Filter status kunci">
+            <option value="all">Semua status</option>
+            <option value="healthy">Sehat, di bawah 80 persen</option>
+            <option value="warning">Waspada, 80 persen ke atas</option>
+            <option value="capped">Limit habis</option>
+          </select>
         </div>
       </div>
-    </div>
+      <div class="pool-grid" id="pool-grid">
+        <!-- Diisi oleh renderPool di dashboard.js -->
+      </div>
+    </section>
 
-    <div class="smart-gateway-banner">
-      <div class="gateway-info-col">
-        <div class="gateway-badges-row">
-          <span class="gateway-badge-green">Router otomatis</span>
-          <span class="gateway-badge-sub">Pembagian beban dan perpindahan otomatis</span>
+    <!-- Sisa kuota upstream -->
+    <section class="live-upstream-card" id="live-upstream-section" aria-labelledby="upstream-title">
+      <div class="console-head">
+        <div>
+          <h2 class="card-title" id="upstream-title">Sisa kuota dan pemakaian token upstream</h2>
+          <p class="card-sub">
+            Angka diambil dari server penyedia resmi. Mencakup pemakaian dari bot, IDE, dan terminal yang memakai kunci yang sama.
+          </p>
         </div>
-        <h3 class="gateway-title">Router yang memilih model menurut kuota dan kecepatan</h3>
-        <p class="gateway-desc">
-          Setiap pesan masuk dicoba ke model utama tiap tingkat. Kalau kuotanya habis atau tidak merespons,
-          sistem pindah ke cadangan tanpa perlu kamu ubah apa pun.
-        </p>
+        <div class="console-head-actions">
+          <span class="badge badge-live-sync"><span class="pulse-dot-cyan" aria-hidden="true"></span> Sinkron langsung</span>
+        </div>
       </div>
-      <div class="gateway-stat-box">
-        <div class="gateway-stat-label">Total resolusi router</div>
-        <div class="gateway-stat-value" id="gateway-total-resolusi">0x</div>
-      </div>
-    </div>
 
-    <div class="matrix-cards-grid" id="matrix-cards-grid">
-      <div style="grid-column:1/-1;text-align:center;color:var(--text-secondary);padding:24px">
-        Memuat matriks model...
+      <div class="live-upstream-row">
+        <div class="upstream-stat">
+          <span class="upstream-stat-label">Total batas kuota harian</span>
+          <span class="upstream-stat-value" id="upstream-total-cap">0</span>
+          <span class="upstream-stat-sub" id="upstream-total-cap-sub">Seluruh penyedia terdaftar</span>
+        </div>
+        <div class="upstream-stat">
+          <span class="upstream-stat-label">Token terpakai hari ini</span>
+          <span class="upstream-stat-value" id="upstream-total-used">0</span>
+          <span class="upstream-stat-sub" id="upstream-total-used-sub">Akumulasi global</span>
+        </div>
+        <div class="upstream-stat">
+          <span class="upstream-stat-label">Sisa kuota bersih</span>
+          <span class="upstream-stat-value" id="upstream-total-remaining">0</span>
+          <span class="upstream-stat-sub" id="upstream-remaining-pct">Menunggu data</span>
+        </div>
+        <div class="upstream-stat">
+          <span class="upstream-stat-label">Kunci dan pool terhubung</span>
+          <span class="upstream-stat-value" id="upstream-openrouter-status">0 kunci</span>
+          <span class="upstream-stat-sub" id="upstream-openrouter-sub">Menunggu data</span>
+        </div>
+        <div class="upstream-stat" title="WhatsApp Cloud API memberi 1.000 sesi percakapan gratis per bulan. Satu sesi adalah jendela 24 jam per pengguna.">
+          <span class="upstream-stat-label">Sesi WhatsApp Cloud</span>
+          <span class="upstream-stat-value" id="upstream-wa-sessions">0 / 1.000</span>
+          <span class="upstream-stat-sub" id="upstream-wa-sessions-sub">Sisa sesi gratis bulan ini</span>
+        </div>
       </div>
-    </div>
-  </section>
 
-  <section class="activity-card" aria-labelledby="media-section-title" style="margin-bottom:24px">
-    <div class="section-header">
-      <div>
-        <h2 class="section-title" id="media-section-title">Jenis pesan yang diproses hari ini</h2>
-        <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0">
-          Volume pesan menurut jenisnya: teks, pesan suara, gambar, stiker, dokumen, dan video.
-        </p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <caption class="visually-hidden">Pemakaian token dan sisa kuota tiap kunci API per penyedia</caption>
+          <thead>
+            <tr>
+              <th scope="col" style="min-width:180px">Penyedia dan kunci</th>
+              <th scope="col" style="min-width:200px">Akun terdaftar</th>
+              <th scope="col" style="min-width:200px">Pemakaian hari ini</th>
+              <th scope="col" style="min-width:180px">Sisa kuota hari ini</th>
+              <th scope="col" style="min-width:110px;text-align:right">Validasi</th>
+            </tr>
+          </thead>
+          <tbody id="live-upstream-tbody">
+            <!-- Diisi oleh renderLiveUpstreamTable -->
+          </tbody>
+        </table>
       </div>
-    </div>
-    <div class="media-badges-grid">
-      <div class="media-box">
-        <div class="media-box-count" id="media-text">0</div>
-        <div class="media-box-label">Teks</div>
-      </div>
-      <div class="media-box">
-        <div class="media-box-count" id="media-voice">0</div>
-        <div class="media-box-label">Pesan suara</div>
-      </div>
-      <div class="media-box">
-        <div class="media-box-count" id="media-image">0</div>
-        <div class="media-box-label">Gambar</div>
-      </div>
-      <div class="media-box">
-        <div class="media-box-count" id="media-sticker">0</div>
-        <div class="media-box-label">Stiker</div>
-      </div>
-      <div class="media-box">
-        <div class="media-box-count" id="media-doc">0</div>
-        <div class="media-box-label">Dokumen</div>
-      </div>
-      <div class="media-box">
-        <div class="media-box-count" id="media-video">0</div>
-        <div class="media-box-label">Video</div>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <section class="activity-card" id="dataset-section" aria-labelledby="dataset-title">
-    <div class="section-header" style="flex-wrap:wrap;gap:12px">
-      <div>
-        <h2 class="section-title" id="dataset-title">Riwayat percakapan dan dataset evaluasi</h2>
-        <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0">
-          Pasangan pertanyaan pengguna dan balasan bot. Dipakai untuk menilai kualitas jawaban dan menyiapkan data latih.
-        </p>
+    <!-- Matriks batas token -->
+    <section class="activity-card" id="token-matrix-section" aria-labelledby="token-matrix-title">
+      <div class="console-head">
+        <div>
+          <h2 class="card-title" id="token-matrix-title">Batas token dan siklus reset tiap penyedia</h2>
+          <p class="card-sub">Batas resmi, mekanisme limitasi, dan jadwal reset. Setiap angka menyebut asalnya.</p>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input type="search" id="dataset-search" class="search-input" placeholder="Cari pertanyaan atau jawaban" aria-label="Cari di riwayat percakapan">
-        <select id="dataset-range-filter" class="filter-select" aria-label="Rentang waktu riwayat">
-          <option value="today">Hari ini</option>
-          <option value="all" selected>Semua waktu</option>
-          <option value="7d">7 hari terakhir</option>
-          <option value="14d">14 hari terakhir</option>
-          <option value="30d">30 hari terakhir</option>
-        </select>
-        <select id="dataset-platform-filter" class="filter-select" aria-label="Filter platform">
-          <option value="">Semua platform</option>
-          <option value="whatsapp">WhatsApp</option>
-          <option value="telegram">Telegram</option>
-        </select>
-        <select id="dataset-model-filter" class="filter-select" aria-label="Filter model">
-          <option value="">Semua model</option>
-          <option value="xkiro">xKiro</option>
-          <option value="cloudflare">Cloudflare</option>
-          <option value="groq">Groq</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="dahl">Dahl Global</option>
-          <option value="gemini">Gemini</option>
-        </select>
-        <button type="button" class="btn btn-today" id="btn-download-csv" title="Unduh data percakapan sebagai CSV sesuai filter yang aktif">
-          <span>Unduh CSV</span>
-        </button>
-        <button type="button" class="btn btn-primary" id="btn-download-jsonl" title="Unduh data percakapan sebagai JSONL untuk pelatihan model">
-          <span>Unduh JSONL</span>
-        </button>
+      <div class="table-wrap">
+        <table class="data-table">
+          <caption class="visually-hidden">Batas token resmi dan siklus reset tiap penyedia</caption>
+          <thead>
+            <tr>
+              <th scope="col" style="min-width:180px">Penyedia</th>
+              <th scope="col" style="min-width:150px">Mekanisme limit</th>
+              <th scope="col" style="min-width:160px">Batas resmi</th>
+              <th scope="col" style="min-width:150px">Siklus reset</th>
+              <th scope="col" style="min-width:180px">Panggilan dan token</th>
+              <th scope="col" style="min-width:90px;text-align:right">Status</th>
+            </tr>
+          </thead>
+          <tbody id="token-matrix-tbody">
+            <!-- Diisi oleh renderTokenMatrix -->
+          </tbody>
+        </table>
       </div>
-    </div>
+    </section>
 
-    <div class="table-container">
-      <table>
-        <caption class="sr-only">Riwayat pasangan pertanyaan pengguna dan balasan bot</caption>
-        <thead>
-          <tr>
-            <th scope="col" style="width:130px">Waktu dan platform</th>
-            <th scope="col" style="width:140px">Chat dan model</th>
-            <th scope="col" style="width:130px">Token</th>
-            <th scope="col" style="min-width:180px">Pertanyaan pengguna</th>
-            <th scope="col" style="min-width:280px">Balasan bot</th>
-            <th scope="col" style="width:70px;text-align:right">Aksi</th>
-          </tr>
-        </thead>
-        <tbody id="dataset-tbody">
-          <tr>
-            <td colspan="6" style="text-align:center;color:var(--text-secondary);padding:24px">Memuat riwayat percakapan...</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- Matriks model -->
+    <section class="matrix-section" id="ai-model-matrix-section" aria-labelledby="matrix-title">
+      <div class="console-head">
+        <div>
+          <h2 class="card-title" id="matrix-title"><span id="models-section-title">Model AI dan pemantauan inferensi</span></h2>
+          <p class="card-sub">Kesehatan, latensi rata-rata, dan jumlah eksekusi tiap model di rantai enam tingkat.</p>
+        </div>
+        <div class="console-head-actions">
+          <span class="badge">Total inferensi <strong id="matrix-total-inferensi">0x</strong></span>
+          <div class="pill-filter-group" id="matrix-time-filters" role="group" aria-label="Rentang waktu matriks model">
+            <button type="button" class="pill-filter-btn active" data-range="today">Hari ini</button>
+            <button type="button" class="pill-filter-btn" data-range="7d">7 hari</button>
+            <button type="button" class="pill-filter-btn" data-range="30d">30 hari</button>
+            <button type="button" class="pill-filter-btn" data-range="all">Semua</button>
+          </div>
+        </div>
+      </div>
 
-    <div class="pagination-bar" id="dataset-pagination-bar">
-      <div class="pagination-info" id="dataset-pagination-info">Memuat data...</div>
-      <div class="pagination-controls" id="dataset-pagination-controls"></div>
-    </div>
-  </section>
+      <div class="status-panel" style="margin-bottom:1.1rem">
+        <div class="status-grid">
+          <div class="status-item">
+            <span class="status-item-label">Router otomatis</span>
+            <span class="status-item-value" id="gateway-total-resolusi">0x</span>
+            <span class="status-item-note">Pembagian beban dan perpindahan otomatis antar tingkat</span>
+          </div>
+          <div class="status-item" style="grid-column:span 2">
+            <span class="status-item-label">Cara kerja rantai</span>
+            <span class="status-item-note" style="margin-top:0">
+              Setiap pesan masuk dicoba ke model utama tiap tingkat. Kalau kuotanya habis atau tidak merespons,
+              sistem pindah ke cadangan tanpa perlu kamu ubah apa pun.
+            </span>
+          </div>
+        </div>
+      </div>
 
-  <footer>
-    Konsol pemantauan FreeAIBot. Berjalan di Vercel Serverless dengan basis data Supabase PostgreSQL.
-  </footer>
-</div>
+      <div class="matrix-cards-grid" id="matrix-cards-grid">
+        <div class="empty-state">
+          <strong>Memuat matriks model</strong>
+          <span>Mengambil data inferensi per model.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Jenis pesan -->
+    <section class="activity-card" aria-labelledby="media-section-title">
+      <div class="console-head">
+        <div>
+          <h2 class="card-title" id="media-section-title">Jenis pesan yang diproses hari ini</h2>
+          <p class="card-sub">Volume pesan menurut jenisnya: teks, pesan suara, gambar, stiker, dokumen, dan video.</p>
+        </div>
+      </div>
+      <div class="media-grid">
+        <div class="media-item">
+          <span class="media-item-value" id="media-text">0</span>
+          <span class="media-item-label">Teks</span>
+        </div>
+        <div class="media-item">
+          <span class="media-item-value" id="media-voice">0</span>
+          <span class="media-item-label">Pesan suara</span>
+        </div>
+        <div class="media-item">
+          <span class="media-item-value" id="media-image">0</span>
+          <span class="media-item-label">Gambar</span>
+        </div>
+        <div class="media-item">
+          <span class="media-item-value" id="media-sticker">0</span>
+          <span class="media-item-label">Stiker</span>
+        </div>
+        <div class="media-item">
+          <span class="media-item-value" id="media-doc">0</span>
+          <span class="media-item-label">Dokumen</span>
+        </div>
+        <div class="media-item">
+          <span class="media-item-value" id="media-video">0</span>
+          <span class="media-item-label">Video</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Riwayat percakapan -->
+    <section class="activity-card" id="dataset-section" aria-labelledby="dataset-title">
+      <div class="console-head">
+        <div>
+          <h2 class="card-title" id="dataset-title">Riwayat percakapan dan dataset evaluasi</h2>
+          <p class="card-sub">Pasangan pertanyaan pengguna dan balasan bot. Dipakai untuk menilai kualitas jawaban dan menyiapkan data latih.</p>
+        </div>
+      </div>
+
+      <div class="filter-dashboard-bar" style="margin-bottom:1rem">
+        <div class="filter-group">
+          <input type="search" id="dataset-search" class="search-input" placeholder="Cari pertanyaan atau jawaban" aria-label="Cari di riwayat percakapan">
+        </div>
+        <div class="filter-group">
+          <label for="dataset-range-filter" class="visually-hidden">Rentang waktu riwayat</label>
+          <select id="dataset-range-filter" class="filter-select">
+            <option value="today">Hari ini</option>
+            <option value="all" selected>Semua waktu</option>
+            <option value="7d">7 hari terakhir</option>
+            <option value="14d">14 hari terakhir</option>
+            <option value="30d">30 hari terakhir</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="dataset-platform-filter" class="visually-hidden">Filter platform</label>
+          <select id="dataset-platform-filter" class="filter-select">
+            <option value="">Semua platform</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="telegram">Telegram</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="dataset-model-filter" class="visually-hidden">Filter model</label>
+          <select id="dataset-model-filter" class="filter-select">
+            <option value="">Semua model</option>
+            <option value="xkiro">xKiro</option>
+            <option value="cloudflare">Cloudflare</option>
+            <option value="groq">Groq</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="dahl">Dahl Global</option>
+            <option value="gemini">Gemini</option>
+          </select>
+        </div>
+        <div class="filter-spacer"></div>
+        <div class="filter-group">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-download-csv" title="Unduh data percakapan sebagai CSV sesuai filter yang aktif">
+            <span>Unduh CSV</span>
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-download-jsonl" title="Unduh data percakapan sebagai JSONL untuk pelatihan model">
+            <span>Unduh JSONL</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <caption class="visually-hidden">Riwayat pasangan pertanyaan pengguna dan balasan bot</caption>
+          <thead>
+            <tr>
+              <th scope="col" style="width:130px">Waktu dan platform</th>
+              <th scope="col" style="width:140px">Chat dan model</th>
+              <th scope="col" style="width:130px">Token</th>
+              <th scope="col" style="min-width:180px">Pertanyaan pengguna</th>
+              <th scope="col" style="min-width:280px">Balasan bot</th>
+              <th scope="col" style="width:70px;text-align:right">Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="dataset-tbody">
+            <tr>
+              <td colspan="6">
+                <div class="empty-state">
+                  <strong>Memuat riwayat percakapan</strong>
+                  <span>Menunggu data dari basis data.</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="console-head" id="dataset-pagination-bar" style="margin-top:1rem;margin-bottom:0">
+        <span class="console-meta" id="dataset-pagination-info">Memuat data...</span>
+        <div class="console-head-actions" id="dataset-pagination-controls"></div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-bottom" style="border-top:0;padding-top:0">
+      <span>Konsol pemantauan FreeAIBot &middot; Vercel Serverless &amp; Supabase PostgreSQL</span>
+      <span class="footer-legal">
+        <a href="/">Beranda</a>
+        <a href="/privacy.html">Kebijakan privasi</a>
+      </span>
+    </div>
+  </div>
+</footer>
 
 <script src="/js/console-theme.js"></script>
 <script src="/js/dashboard.js"></script>

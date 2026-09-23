@@ -566,18 +566,25 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           "Sinkronisasi: " + formatTime(data.serverTime) + " WIB \u2022 Periode: " + rangeLabel + platformLabel;
       }
 
+      // Waktu sinkron terakhir. Satu sumber dengan header supaya tidak ada dua
+      // timestamp berbeda di satu layar (temuan verifikasi visual).
+      (function () {
+        var st = document.getElementById("sync-time");
+        if (st) st.textContent = formatTime(data.serverTime) + " WIB";
+      })();
+
       // KPI Titles & Values
       document.getElementById("kpi-title-msgs").textContent = `Pesan (${rangeLabel})`;
       document.getElementById("kpi-today-msgs").textContent = (data.summary.totalMessagesPeriod ?? data.summary.totalMessagesToday ?? 0).toLocaleString();
       document.getElementById("kpi-total-msgs").textContent = (data.summary.totalMessagesAllTime ?? 0).toLocaleString();
       document.getElementById("kpi-wa").textContent = (data.summary.whatsappPeriod ?? data.summary.whatsappToday ?? 0) + " WA";
-      document.getElementById("kpi-tele").textContent = (data.summary.telegramPeriod ?? data.summary.telegramToday ?? 0) + " Tele";
+      document.getElementById("kpi-tele").textContent = (data.summary.telegramPeriod ?? data.summary.telegramToday ?? 0) + " Telegram";
 
       document.getElementById("kpi-title-calls").textContent = `Panggilan & Token API (${rangeLabel})`;
       const totalCalls = data.summary.totalCallsPeriod ?? data.summary.totalCallsToday ?? 0;
       const totalTokens = data.summary.totalTokensPeriod ?? 0;
-      document.getElementById("kpi-calls-today").textContent = totalCalls.toLocaleString() + " calls";
-      document.getElementById("kpi-total-keys").textContent = `${formatTokens(totalTokens)} \u2022 ${data.summary.totalKeys} Keys Terpantau`;
+      document.getElementById("kpi-calls-today").textContent = totalCalls.toLocaleString("id-ID") + " panggilan";
+      document.getElementById("kpi-total-keys").textContent = `${formatTokens(totalTokens)} \u2022 ${data.summary.totalKeys} kunci terpantau`;
 
       document.getElementById("kpi-title-model").textContent = `Model Terpopuler (${rangeLabel})`;
       const topModel = data.modelsBreakdown && data.modelsBreakdown.length > 0
@@ -1037,9 +1044,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           keysHtml = `<div style="color: var(--text-dim); font-size: 0.8rem; padding: 0.5rem 0;">Tidak ada key dengan status ${currentKeyStatusFilter}.</div>`;
         } else {
           filteredKeys.forEach(k => {
-            // Metrik BINDING: mana yang lebih dulu habis (RPD calls vs TPD token).
+            // Metrik BINDING: mana yang lebih dulu habis (RPD panggilan vs TPD token).
             // Bar & warna memakai metrik binding agar konsisten dengan badge status —
-            // sebelumnya bar bisa 22% (calls) padahal key sudah CAPPED karena token 100%.
+            // sebelumnya bar bisa 22% (panggilan) padahal key sudah CAPPED karena token 100%.
             const hasTokenCap = (k.tokenCap || 0) > 0 && (k.tokensUsed || 0) > 0;
             const bindingPct = typeof k.bindingPercent === "number" ? k.bindingPercent : Math.max(k.percent || 0, k.tokenPercent || 0);
             const bindingIsToken = (k.bindingMetric === "tokens") || (!k.bindingMetric && (k.tokenPercent || 0) > (k.percent || 0));
@@ -1050,10 +1057,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
             const statusLabel = k.status === "capped" ? "Capped" : k.status === "warning" ? "Waspada" : "Optimal";
             const cleanSuffix = k.suffix.startsWith("...") ? k.suffix : "..." + k.suffix;
-            const capLabel = k.cap > 0 ? `${k.used.toLocaleString()} / ${k.cap.toLocaleString()} calls (${k.percent}%)` : `${k.used.toLocaleString()} calls`;
+            const capLabel = k.cap > 0 ? `${k.used.toLocaleString("id-ID")} / ${k.cap.toLocaleString("id-ID")} panggilan (${k.percent}%)` : `${k.used.toLocaleString()} calls`;
 
             // Baris kedua: info TOKEN bila provider punya batas token (xKiro/Dahl/Groq).
-            // Inilah yang membuat dashboard jujur: key ...6386 tampil "112/500 calls (22%)"
+            // Inilah yang membuat dashboard jujur: key ...6386 tampil "112/500 panggilan (22%)"
             // SEKALIGUS "1.004.173 / 1.000.000 token (100%)" — tidak lagi menyesatkan.
             // Limit diambil dari endpoint provider (v0.49) — ditandai "live" atau "dokumentasi".
             let tokenLine = "";
@@ -1096,9 +1103,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const usedValue = p.usedTodayDaily ?? p.usedToday ?? p.usedPeriod ?? 0;
         const usedPeriodValue = p.usedPeriod ?? usedValue;
         const showPeriodInfo = usedPeriodValue > usedValue;
-        const capInfo = p.totalCap > 0 ? `Cap: ${p.totalCap.toLocaleString()} calls` : "Uncapped";
+        const capInfo = p.totalCap > 0 ? `Batas: ${p.totalCap.toLocaleString("id-ID")} panggilan` : "Uncapped";
         // Konteks token pada header kartu: provider yang dibatasi TOKEN (xKiro/Dahl/Groq)
-        // tidak boleh hanya menampilkan calls — pengguna perlu tahu batas mana yang mengikat.
+        // tidak boleh hanya menampilkan panggilan — pengguna perlu tahu batas mana yang mengikat.
         const hasTokenContext = (p.totalTokenCap || 0) > 0 && (p.totalTokensUsed || 0) > 0;
         const tokenContextHtml = hasTokenContext
           ? `<div style="font-size: 0.68rem; color: ${p.tokenPercent >= 100 ? "#fb7185" : p.tokenPercent >= 80 ? "#fbbf24" : "var(--text-dim)"}; font-weight: 600; margin-top: 2px;">${formatTokens(p.totalTokensUsed)} / ${formatTokens(p.totalTokenCap)} (${p.tokenPercent}%)${p.cappedKeys > 0 ? ` &bull; ${p.cappedKeys} key habis` : ""}</div>`
@@ -1149,7 +1156,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             </div>
             <div class="provider-summary-stat">
               <div class="provider-usage-text">${usedValue.toLocaleString()} Calls</div>
-              <div class="provider-cap-text">${p.keyCount} Keys &bull; ${capInfo}</div>
+              <div class="provider-cap-text">${p.keyCount} kunci &bull; ${capInfo}</div>
               ${showPeriodInfo ? `<div style="font-size: 0.66rem; color: var(--text-dim); margin-top: 1px;">Hari ini • ${usedPeriodValue.toLocaleString()} total periode</div>` : ""}
               ${tokenContextHtml}
             </div>
@@ -1339,7 +1346,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             grandTotalGroqUsed += callsUsed;
             grandTotalUnboundedTokenUsed += tokensUsed;
 
-            const callCountText = callsUsed > 0 ? ` (${callsUsed.toLocaleString("id-ID")} calls)` : "";
+            const callCountText = callsUsed > 0 ? ` (${callsUsed.toLocaleString("id-ID")} panggilan)` : "";
             const statusClass = bindingPct >= 100 ? "status-capped" : bindingPct >= 80 ? "status-warning" : "status-healthy";
             const statusText = bindingPct >= 100
               ? (tpdBinding ? "LIMIT TPD" : "LIMIT RPD")
@@ -1379,7 +1386,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             `);
           } else if (p.kind === "cloudflare") {
             // Cap per-key dari payload (120), bukan konstanta 300 yang tidak sinkron
-            // dengan angka "0 / 120 calls" pada baris key (temuan audit dashboard).
+            // dengan angka "0 / 120 panggilan" pada baris key (temuan audit dashboard).
             const keyCap = p.capPerKey || p.cap || 120;
             const keyUsed = k.used || 0;
             const keyRemaining = Math.max(0, keyCap - keyUsed);
@@ -1490,7 +1497,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         pctEl.textContent = `${remainingPct}% Kuota Bersih Tersedia`;
       }
       if (orEl) {
-        orEl.textContent = `${totalAllKeys} Kunci Aktif`;
+        orEl.textContent = `${totalAllKeys} kunci aktif`;
       }
 
       // WhatsApp Cloud API 1.000 Sesi Percakapan / Bulan (Jendela 24 Jam per User)
@@ -1521,7 +1528,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const tokensUsed = p.totalTokensUsed ?? (usedCalls * (p.avgTokensPerChat || 0));
 
         // Status provider memakai metrik BINDING (mana yang lebih dulu habis).
-        // xKiro dibatasi token harian: 1.592.109/2.000.000 token = 80% padahal calls
+        // xKiro dibatasi token harian: 1.592.109/2.000.000 token = 80% padahal panggilan
         // hanya 192/1.500 = 13%. Memakai p.percent saja membuat status salah "Optimal".
         const providerBindingPct = Math.max(p.percent || 0, p.tokenPercent || 0);
 

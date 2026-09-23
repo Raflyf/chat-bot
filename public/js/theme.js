@@ -1,8 +1,16 @@
 // Kontrol tema untuk halaman landing: tombol ganti tema dan penyesuaian meta
 // theme-color. Dipisah dari HTML karena CSP produksi melarang script inline.
+//
+// Menu ponsel TIDAK ditangani di sini: itu tugas landing.js (kelas `is-open`).
+// Sebelumnya kedua berkas menangani tombol yang sama dengan nama kelas berbeda
+// (`open` vs `is-open`), sehingga menu bisa terbuka lalu langsung tertutup lagi.
+// Satu pemilik per kontrol.
 (function () {
   var root = document.documentElement;
   var toggle = document.getElementById('themeToggle');
+
+  // Warna bilah peramban mengikuti latar tema, bukan warna merek.
+  var THEME_COLOR = { dark: '#020814', light: '#eef2f9' };
 
   function paint() {
     var dark = root.getAttribute('data-theme') === 'dark';
@@ -10,7 +18,7 @@
     // supaya pembaca layar menyebut aksi yang akan terjadi.
     if (toggle) toggle.setAttribute('aria-label', dark ? 'Ganti ke tema terang' : 'Ganti ke tema gelap');
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', dark ? '#000000' : '#f2f2f7');
+    if (meta) meta.setAttribute('content', dark ? THEME_COLOR.dark : THEME_COLOR.light);
   }
   paint();
 
@@ -18,40 +26,12 @@
     toggle.addEventListener('click', function () {
       var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       root.setAttribute('data-theme', next);
-      try { localStorage.setItem('freeaibot-theme', next); } catch (e) {}
+      try {
+        localStorage.setItem('freeaibot-theme', next);
+      } catch (e) {
+        /* penyimpanan diblokir: tema tetap berlaku untuk sesi ini */
+      }
       paint();
-    });
-  }
-
-  /* Menu ponsel: tombol buka/tutup, Escape menutup, klik di luar menutup. */
-  var navToggle = document.getElementById('navToggle');
-  var nav = document.getElementById('siteNav');
-
-  function closeNav() {
-    if (!nav || !navToggle) return;
-    nav.classList.remove('open');
-    navToggle.setAttribute('aria-expanded', 'false');
-  }
-
-  if (navToggle && nav) {
-    navToggle.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      var open = nav.classList.toggle('open');
-      navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-
-    document.addEventListener('click', function (ev) {
-      if (!nav.classList.contains('open')) return;
-      if (nav.contains(ev.target) || navToggle.contains(ev.target)) return;
-      closeNav();
-    });
-
-    document.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Escape') closeNav();
-    });
-
-    nav.addEventListener('click', function (ev) {
-      if (ev.target.closest('a')) closeNav();
     });
   }
 })();
