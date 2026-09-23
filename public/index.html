@@ -1,560 +1,160 @@
 <!DOCTYPE html>
-<html lang="id" data-theme="dark">
+<html lang="id">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>FreeAIBot: asisten AI di WhatsApp dan Telegram</title>
-<meta name="description" content="Asisten AI yang membalas di WhatsApp dan Telegram. Enam penyedia AI dicoba berurutan, jadi pesanmu tetap dijawab." />
-<meta name="theme-color" content="#020814" />
-<meta name="robots" content="index, follow" />
-<link rel="canonical" href="https://free-chatbot-ai.vercel.app/" />
-
-<!-- Open Graph -->
-<meta property="og:type" content="website" />
-<meta property="og:site_name" content="FreeAIBot" />
-<meta property="og:title" content="FreeAIBot: asisten AI di WhatsApp dan Telegram" />
-<meta property="og:description" content="Kirim pesan seperti biasa. Di belakangnya enam penyedia AI dicoba berurutan supaya pesanmu tetap dijawab." />
-<meta property="og:url" content="https://free-chatbot-ai.vercel.app/" />
-<meta property="og:image" content="https://free-chatbot-ai.vercel.app/favicon.svg" />
-<meta name="twitter:card" content="summary" />
-<meta name="twitter:title" content="FreeAIBot: asisten AI di WhatsApp dan Telegram" />
-<meta name="twitter:description" content="Kirim pesan seperti biasa. Enam penyedia AI dicoba berurutan supaya pesanmu tetap dijawab." />
-
-<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-<link rel="shortcut icon" href="/favicon.svg" />
-<link rel="apple-touch-icon" href="/favicon.svg" />
-
-<!-- Font: Exo 2 (geometris, sudut tegas) sesuai DESIGN.md -->
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&display=swap" />
-
-<link rel="stylesheet" href="/css/landing.css" />
-<script src="/js/theme-pre.js"></script>
-<script src="/js/home.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FreeAIBot - Asisten AI Pribadi WhatsApp &amp; Telegram 24/7</title>
+  <meta name="description" content="Asisten AI cerdas multi-platform untuk WhatsApp dan Telegram. Mendukung pemrosesan teks, Voice Note Whisper, dokumen PDF/Word, analisis gambar vision, serta memori persisten.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/landing.css">
+  <!-- Keamanan sesi: saat halaman ini dibuka, sesi admin dimusnahkan supaya
+       kunjungan berikutnya ke panel admin tetap meminta Master PIN. -->
+  <script src="/js/home.js"></script>
+  <!-- Penetapan tema sebelum render, mencegah kedipan warna. -->
+  <script src="/js/theme-pre.js"></script>
 </head>
 <body>
 
-<!-- Penanda merek: empat batang bertumpuk, makin ke bawah makin redup.
-     Menggambarkan rantai penyedia yang sama dipakai di seluruh halaman. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-  <symbol id="mark" viewBox="0 0 32 32">
-    <g fill="currentColor">
-      <rect x="6" y="5" width="20" height="3.2" rx="1.6" />
-      <rect x="6" y="10.2" width="20" height="3.2" rx="1.6" opacity="0.76" />
-      <rect x="6" y="15.4" width="20" height="3.2" rx="1.6" opacity="0.54" />
-      <rect x="6" y="20.6" width="20" height="3.2" rx="1.6" opacity="0.34" />
-    </g>
-  </symbol>
-</svg>
-
-<header class="site-header">
-  <div class="wrap">
-    <nav class="site-nav" aria-label="Navigasi utama">
-      <a class="brand" href="/" aria-label="FreeAIBot, halaman utama">
-        <span class="brand-mark" aria-hidden="true">
-          <svg width="17" height="17" viewBox="0 0 32 32"><use href="#mark" /></svg>
-        </span>
-        <span class="brand-text">
-          <span class="brand-name">FreeAIBot</span>
-          <span class="brand-sub" data-i18n="brand.sub">WhatsApp &amp; Telegram</span>
-        </span>
+  <!-- Top Navigation -->
+  <header>
+    <div class="container nav-inner">
+      <a href="/" class="brand">
+        <div class="brand-icon">AI</div>
+        <div class="brand-text">
+          <h1>FreeAIBot</h1>
+          <p>Personal AI Assistant</p>
+        </div>
       </a>
-
-      <button class="icon-btn nav-toggle" id="navToggle" aria-expanded="false" aria-controls="siteNav" aria-label="Buka menu navigasi" data-i18n-aria="nav.menu">
-        <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-          <path d="M3 6h14M3 10h14M3 14h14" />
-        </svg>
-      </button>
-
-      <div class="nav-links" id="siteNav">
-        <a href="#kemampuan" data-i18n="nav.capabilities">Kemampuan</a>
-        <a href="#status" data-i18n="nav.status">Status sistem</a>
-        <a href="/dashboard.html" data-i18n="nav.console">Konsol</a>
-      </div>
-
       <div class="nav-actions">
-        <button class="lang-toggle" id="langToggle" aria-label="Ganti bahasa halaman" title="Ganti bahasa">
-          <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-            <circle cx="10" cy="10" r="7.2" />
-            <path d="M2.8 10h14.4M10 2.8c2 2.2 3 4.6 3 7.2s-1 5-3 7.2c-2-2.2-3-4.6-3-7.2s1-5 3-7.2z" />
-          </svg>
-          <span id="langLabel">ID</span>
-        </button>
-
-        <button class="icon-btn" id="themeToggle" aria-label="Ganti tema terang atau gelap">
-          <svg id="iconSun" viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-            <circle cx="10" cy="10" r="3.6" />
-            <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.6 4.6L6 6M14 14l1.4 1.4M15.4 4.6L14 6M6 14l-1.4 1.4" />
-          </svg>
-          <svg id="iconMoon" viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-            <path d="M16 12.4A6.8 6.8 0 0 1 7.6 4a7 7 0 1 0 8.4 8.4Z" />
-          </svg>
-        </button>
-      </div>
-    </nav>
-  </div>
-</header>
-
-<main>
-
-  <!-- ======================================================================
-       HERO: teks kiri, panel rantai penyedia kanan (split-screen).
-       ====================================================================== -->
-  <section class="hero">
-    <div class="wrap hero-grid">
-      <div class="rise">
-        <h1>
-          <span data-i18n="hero.title.a">Asisten AI yang</span>
-          <span class="accent" data-i18n="hero.title.b">selalu siaga</span>
-          <span class="no-break" data-i18n="hero.title.c">di chat-mu.</span>
-        </h1>
-        <p class="hero-lead" data-i18n="hero.lead">
-          Kirim pesan seperti biasa di WhatsApp atau Telegram. Di belakangnya enam penyedia AI
-          dicoba berurutan, jadi pesanmu tetap dijawab walau satu penyedia sedang penuh.
-        </p>
-
-        <div class="hero-actions">
-          <a class="btn btn-primary" href="/dashboard.html" data-i18n="hero.cta.primary">Buka konsol pemantauan</a>
-          <a class="btn btn-ghost" href="#kemampuan" data-i18n="hero.cta.secondary">Lihat yang bisa ditangani</a>
+        <div class="status-pill">
+          <span class="pulse-dot"></span>
+          <span>Online 24/7</span>
         </div>
-
-        <!-- Angka diisi dari /api/public-stats. Bila gagal, tetap tanda pisah,
-             bukan angka karangan. -->
-        <ul class="hero-facts">
-          <li class="hero-fact">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-              <path d="M3 5.5h14v9H3z" /><path d="M3 8.5h14" />
-            </svg>
-            <span><b id="stat-messages" data-i18n-pending="1">&ndash;</b> <span data-i18n="fact.messages">pesan tersimpan</span></span>
-          </li>
-          <li class="hero-fact">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-              <path d="M10 3l6 2.6v4.4c0 3.6-2.5 6.6-6 7.7-3.5-1.1-6-4.1-6-7.7V5.6z" />
-            </svg>
-            <span><b id="stat-keys" data-i18n-pending="1">&ndash;</b> <span data-i18n="fact.keys">kunci API aktif</span></span>
-          </li>
-          <li class="hero-fact">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-              <circle cx="10" cy="10" r="7" /><path d="M6.5 10.5l2.2 2.2 4.6-5" />
-            </svg>
-            <span><b id="stat-models" data-i18n-pending="1">&ndash;</b> <span data-i18n="fact.models">model terpakai</span></span>
-          </li>
-          <li class="hero-fact">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-              <circle cx="10" cy="10" r="7" /><path d="M10 6.5v4l2.5 2" />
-            </svg>
-            <span><b id="stat-chats" data-i18n-pending="1">&ndash;</b> <span data-i18n="fact.chats">percakapan</span></span>
-          </li>
-        </ul>
-      </div>
-
-      <!-- Panel rantai: menggambarkan cara kerja sistem yang sebenarnya.
-           Enam tingkat, masing-masing dengan perannya. -->
-      <div class="hero-visual rise rise-2">
-        <div class="hero-visual-head">
-          <span class="live-dot" aria-hidden="true"></span>
-          <strong data-i18n="chain.title">Rantai penyedia</strong>
-          <span data-i18n="chain.sub">dipakai berurutan</span>
-        </div>
-
-        <div class="chain">
-          <div class="chain-node">
-            <span class="chain-node-icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M10 2.5l6.5 3v5c0 3.4-2.7 6.3-6.5 7.5-3.8-1.2-6.5-4.1-6.5-7.5v-5z" /></svg>
-            </span>
-            <span>
-              <span class="chain-node-name">xKiro Gateway</span>
-              <span class="chain-node-role" data-i18n="chain.1.role">Delapan kunci, dipakai bergiliran</span>
-            </span>
-            <span class="chain-node-state" data-i18n="chain.primary">Utama</span>
-          </div>
-
-          <div class="chain-node is-standby">
-            <span class="chain-node-icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M6 15.5a3.5 3.5 0 0 1-.4-7A4.6 4.6 0 0 1 14.4 8a3.7 3.7 0 0 1-.3 7.5z" /></svg>
-            </span>
-            <span>
-              <span class="chain-node-name">Cloudflare Workers AI</span>
-              <span class="chain-node-role" data-i18n="chain.2.role">Termasuk model untuk gambar</span>
-            </span>
-            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
-          </div>
-
-          <div class="chain-node is-standby">
-            <span class="chain-node-icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M4 13l3.5-3.5 3 3L16 6.5" /><path d="M4 16.5h12" /></svg>
-            </span>
-            <span>
-              <span class="chain-node-name">Groq</span>
-              <span class="chain-node-role" data-i18n="chain.3.role">Cepat, kuota per menit ketat</span>
-            </span>
-            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
-          </div>
-
-          <div class="chain-node is-standby">
-            <span class="chain-node-icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><circle cx="10" cy="10" r="3" /><path d="M10 3v2M10 15v2M3 10h2M15 10h2" /></svg>
-            </span>
-            <span>
-              <span class="chain-node-name">OpenRouter</span>
-              <span class="chain-node-role" data-i18n="chain.4.role">Cadangan luas, model gratis</span>
-            </span>
-            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
-          </div>
-
-          <div class="chain-node is-standby">
-            <span class="chain-node-icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h12v8H4z" /><path d="M7 10h6" /></svg>
-            </span>
-            <span>
-              <span class="chain-node-name">Dahl Global</span>
-              <span class="chain-node-role" data-i18n="chain.5.role">Sepuluh kunci, saldo token besar</span>
-            </span>
-            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
-          </div>
-
-          <div class="chain-node is-standby">
-            <span class="chain-node-icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.7" stroke-linecap="round"><path d="M10 3.5l2 4.2 4.5.6-3.3 3.1.8 4.5-4-2.2-4 2.2.8-4.5L3.5 8.3l4.5-.6z" /></svg>
-            </span>
-            <span>
-              <span class="chain-node-name">Google Gemini</span>
-              <span class="chain-node-role" data-i18n="chain.6.role">Lapisan terakhir, konteks 1 juta token</span>
-            </span>
-            <span class="chain-node-state" data-i18n="chain.standby">Cadangan</span>
-          </div>
-        </div>
-
-        <p class="hero-visual-foot" data-i18n="chain.foot">
-          Kalau satu tingkat penuh atau tidak merespons, sistem pindah ke tingkat berikutnya
-          tanpa kamu perlu mengubah apa pun.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ======================================================================
-       KEMAMPUAN: baris zig-zag, bukan grid kartu seragam.
-       ====================================================================== -->
-  <section class="section" id="kemampuan">
-    <div class="wrap">
-      <div class="section-head">
-        <h2 data-i18n="cap.title">Yang bisa dia tangani</h2>
-        <p data-i18n="cap.lead">Selain teks biasa, ini yang sudah jalan sehari-hari.</p>
-      </div>
-
-      <div class="capability">
-        <div class="capability-body">
-          <h3 data-i18n="cap.voice.title">Pesan suara</h3>
-          <p data-i18n="cap.voice.body">
-            Rekaman ditranskripsi lebih dulu, lalu isinya dijawab seperti pesan teks biasa.
-          </p>
-          <ul class="capability-list">
-            <li>
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
-              <span data-i18n="cap.voice.p1">Format OGG dan MP3 dari WhatsApp maupun Telegram</span>
-            </li>
-            <li>
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
-              <span data-i18n="cap.voice.p2">Hasil transkripsi ikut tersimpan di riwayat konsol</span>
-            </li>
-          </ul>
-        </div>
-        <div class="capability-visual">
-          <div class="cap-row is-accent">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M10 3v9M7 7v3M13 6v5M4 9v1M16 8.5v2" /></svg>
-            <span class="cap-row-label" data-i18n="cap.voice.r1">Rekaman masuk</span>
-            <span class="cap-row-value">0:07</span>
-          </div>
-          <div class="cap-row">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 4h10v12H5z" /><path d="M7.5 8h5M7.5 11h3.5" /></svg>
-            <span class="cap-row-label" data-i18n="cap.voice.r2">Teks hasil transkripsi</span>
-            <span class="cap-row-value">Whisper</span>
-          </div>
-          <div class="cap-row">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 10h12M12 6.5l3.5 3.5L12 13.5" /></svg>
-            <span class="cap-row-label" data-i18n="cap.voice.r3">Dijawab seperti teks</span>
-            <span class="cap-row-value">1 giliran</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="capability flip">
-        <div class="capability-body">
-          <h3 data-i18n="cap.image.title">Gambar dan stiker</h3>
-          <p data-i18n="cap.image.body">
-            Tulisan di dalam stiker dibaca lebih dulu. Kalau tidak ada tulisan, baru gambar dan
-            konteksnya yang dibaca.
-          </p>
-          <ul class="capability-list">
-            <li>
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
-              <span data-i18n="cap.image.p1">Stiker WhatsApp dan Telegram, termasuk yang bergerak</span>
-            </li>
-            <li>
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
-              <span data-i18n="cap.image.p2">Balasan tidak mendeskripsikan kirimanmu, cukup menanggapi</span>
-            </li>
-          </ul>
-        </div>
-        <div class="capability-visual">
-          <div class="cap-row is-accent">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2.4" /><circle cx="7.5" cy="8.5" r="1.4" /><path d="M3.5 14l4-4 3.5 3.5 2.5-2.5 3 3" /></svg>
-            <span class="cap-row-label" data-i18n="cap.image.r1">Kiriman diterima</span>
-            <span class="cap-row-value">WebP</span>
-          </div>
-          <div class="cap-row">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 5h12v10H4z" /><path d="M7 9h6M7 12h4" /></svg>
-            <span class="cap-row-label" data-i18n="cap.image.r2">Tulisan di dalamnya dibaca</span>
-            <span class="cap-row-value" data-i18n="cap.image.r2v">bila ada</span>
-          </div>
-          <div class="cap-row">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 10h12M12 6.5l3.5 3.5L12 13.5" /></svg>
-            <span class="cap-row-label" data-i18n="cap.image.r3">Ditanggapi natural</span>
-            <span class="cap-row-value" data-i18n="cap.image.r3v">tanpa deskripsi</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="capability">
-        <div class="capability-body">
-          <h3 data-i18n="cap.doc.title">Dokumen dan tautan</h3>
-          <p data-i18n="cap.doc.body">
-            PDF, Word, dan isi halaman web dibaca, lalu diringkas atau dijawab sesuai pertanyaanmu.
-          </p>
-          <ul class="capability-list">
-            <li>
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
-              <span data-i18n="cap.doc.p1">PDF, DOCX, dan teks biasa</span>
-            </li>
-            <li>
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
-              <span data-i18n="cap.doc.p2">Isi halaman web dibaca penuh, bukan hanya judulnya</span>
-            </li>
-          </ul>
-        </div>
-        <div class="capability-visual">
-          <div class="cap-row is-accent">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5z" /><path d="M12 2.5V6h3.5" /></svg>
-            <span class="cap-row-label" data-i18n="cap.doc.r1">Berkas dibuka</span>
-            <span class="cap-row-value">PDF / DOCX</span>
-          </div>
-          <div class="cap-row">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="7" /><path d="M2.8 10h14.4M10 2.8c2 2.2 3 4.6 3 7.2s-1 5-3 7.2c-2-2.2-3-4.6-3-7.2s1-5 3-7.2z" /></svg>
-            <span class="cap-row-label" data-i18n="cap.doc.r2">Tautan diambil isinya</span>
-            <span class="cap-row-value" data-i18n="cap.doc.r2v">halaman penuh</span>
-          </div>
-          <div class="cap-row">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 10h12M12 6.5l3.5 3.5L12 13.5" /></svg>
-            <span class="cap-row-label" data-i18n="cap.doc.r3">Diringkas atau dijawab</span>
-            <span class="cap-row-value" data-i18n="cap.doc.r3v">sesuai pertanyaan</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="capability flip">
-        <div class="capability-body">
-          <h3 data-i18n="cap.memory.title">Ingatan percakapan</h3>
-          <p data-i18n="cap.memory.body">
-            Meski model yang menjawab berganti di tengah obrolan, alurnya tetap nyambung.
-            Fakta yang kamu sebutkan ikut diingat.
-          </p>
-          <ul class="capability-list">
-            <li>
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
-              <span data-i18n="cap.memory.p1">Nama, lokasi, dan kebiasaan yang kamu sebutkan tetap diingat</span>
-            </li>
-            <li>
-              <svg viewBox="0 0 20 20" fill="none" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9" /></svg>
-              <span data-i18n="cap.memory.p2">Pengetahuan yang tidak ada di sistem dicari dulu, lalu disimpan</span>
-            </li>
-          </ul>
-        </div>
-        <div class="capability-visual">
-          <div class="cap-row is-accent">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 5h12v11H4z" /><path d="M7 9h6M7 12h4" /></svg>
-            <span class="cap-row-label" data-i18n="cap.memory.r1">Fakta disebutkan</span>
-            <span class="cap-row-value" data-i18n="cap.memory.r1v">1x cukup</span>
-          </div>
-          <div class="cap-row">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 6.5h9v7h-9z" /><path d="M12.5 10h4M14 8l2 2-2 2" /></svg>
-            <span class="cap-row-label" data-i18n="cap.memory.r2">Model berganti</span>
-            <span class="cap-row-value" data-i18n="cap.memory.r2v">alur tetap</span>
-          </div>
-          <div class="cap-row">
-            <svg viewBox="0 0 20 20" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M10 3.5l5.5 2.7v4c0 3-2.3 5.6-5.5 6.6-3.2-1-5.5-3.6-5.5-6.6v-4z" /></svg>
-            <span class="cap-row-label" data-i18n="cap.memory.r3">Dipanggil saat relevan</span>
-            <span class="cap-row-value" data-i18n="cap.memory.r3v">tidak bocor</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ======================================================================
-       LANGKAH PAKAI: tiga langkah, sesuai proses nyatanya.
-       ====================================================================== -->
-  <section class="section">
-    <div class="wrap">
-      <div class="section-head">
-        <h2 data-i18n="steps.title">Cara pakainya</h2>
-        <p data-i18n="steps.lead">Tidak ada yang perlu dipasang di ponselmu.</p>
-      </div>
-
-      <div class="steps">
-        <div class="step">
-          <span class="step-num" aria-hidden="true">1</span>
-          <h3 data-i18n="steps.1.title">Chat nomornya</h3>
-          <p data-i18n="steps.1.body">Simpan nomor WhatsApp atau buka bot Telegram, lalu kirim pesan apa saja.</p>
-        </div>
-        <div class="step">
-          <span class="step-num" aria-hidden="true">2</span>
-          <h3 data-i18n="steps.2.title">Ngobrol seperti biasa</h3>
-          <p data-i18n="steps.2.body">Tanya cuaca, minta tebakan, kirim foto atau dokumen. Gaya bahasanya ikut kamu.</p>
-        </div>
-        <div class="step">
-          <span class="step-num" aria-hidden="true">3</span>
-          <h3 data-i18n="steps.3.title">Pantau di konsol</h3>
-          <p data-i18n="steps.3.body">Konsol memperlihatkan kuota tiap kunci, model yang menjawab, dan riwayat percakapan.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ======================================================================
-       STATUS SISTEM: angka nyata dari sistem, bukan testimoni.
-       Belum ada pengguna nyata yang memberi kutipan, jadi tidak ada bagian
-       testimoni (aturan R-18: testimoni karangan dilarang).
-       ====================================================================== -->
-  <section class="section" id="status">
-    <div class="wrap">
-      <div class="section-head">
-        <h2 data-i18n="status.title">Status sistem hari ini</h2>
-        <p data-i18n="status.lead">
-          Angka ini diambil langsung dari basis data sistem, bukan contoh. Buka konsol untuk
-          rincian tiap kunci dan model.
-        </p>
-      </div>
-
-      <div class="status-panel">
-        <div class="status-grid">
-          <div class="status-item">
-            <span class="status-item-label" data-i18n="status.1.label">Total pesan</span>
-            <span class="status-item-value" id="stat-total">&ndash;</span>
-            <span class="status-item-note" id="stat-since" data-i18n="status.1.note">Sejak sistem dijalankan</span>
-          </div>
-          <div class="status-item">
-            <span class="status-item-label" data-i18n="status.2.label">Percakapan</span>
-            <span class="status-item-value" id="stat-chats2">&ndash;</span>
-            <span class="status-item-note" data-i18n="status.2.note">Percakapan unik tercatat</span>
-          </div>
-          <div class="status-item">
-            <span class="status-item-label" data-i18n="status.3.label">Penyedia AI</span>
-            <span class="status-item-value" id="stat-providers">&ndash;</span>
-            <span class="status-item-note" data-i18n="status.3.note">Diaktifkan dan dicoba berurutan</span>
-          </div>
-          <div class="status-item">
-            <span class="status-item-label" data-i18n="status.4.label">Kunci API</span>
-            <span class="status-item-value" id="stat-keys2">&ndash;</span>
-            <span class="status-item-note" data-i18n="status.4.note">Dipakai bergiliran agar kuota merata</span>
-          </div>
-        </div>
-        <p class="status-foot" data-i18n="status.foot">
-          Data di halaman ini diperbarui tiap menit dari basis data sistem.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ======================================================================
-       CTA AKHIR
-       ====================================================================== -->
-  <section class="section">
-    <div class="wrap">
-      <div class="cta-final">
-        <h2 data-i18n="cta.title">Lihat sendiri isinya</h2>
-        <p data-i18n="cta.body">
-          Konsol menampilkan kuota, model, dan riwayat percakapan apa adanya. Tidak ada yang
-          disembunyikan.
-        </p>
-        <div class="cta-actions">
-          <a class="btn btn-primary" href="/dashboard.html" data-i18n="cta.primary">Buka konsol pemantauan</a>
-          <a class="btn btn-ghost" href="#kemampuan" data-i18n="cta.secondary">Baca ulang kemampuannya</a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-</main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <div class="footer-grid">
-      <div class="footer-brand">
-        <a class="brand" href="/">
-          <span class="brand-mark" aria-hidden="true">
-            <svg width="17" height="17" viewBox="0 0 32 32"><use href="#mark" /></svg>
-          </span>
-          <span class="brand-text">
-            <span class="brand-name">FreeAIBot</span>
-            <span class="brand-sub" data-i18n="brand.sub">WhatsApp &amp; Telegram</span>
-          </span>
+        <a href="/dashboard.html" class="btn btn-dashboard" title="Buka Monitoring Dashboard">
+          <span>Monitoring Dashboard</span>
+          <span>&rarr;</span>
         </a>
-        <p data-i18n="footer.desc">
-          Asisten AI untuk WhatsApp dan Telegram. Enam penyedia dicoba berurutan supaya pesan
-          tetap dijawab.
-        </p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">
+        <span>SISTEM PRODUKSI &bull; MULTI-PLATFORM VERIFIED</span>
+      </div>
+      <h2 class="hero-title">
+        Asisten AI Cerdas, Multimodal, &amp; Siap 24 Jam Nonstop
+      </h2>
+      <p class="hero-subtitle">
+        Terhubung langsung ke nomor WhatsApp dan Telegram dengan pemrosesan Voice Note Whisper, dokumen PDF &amp; Word, analisis gambar, serta memori percakapan persisten.
+      </p>
+
+      <div class="hero-cta-group">
+        <a href="https://wa.me/6283874640066" target="_blank" rel="noopener noreferrer" class="btn btn-wa" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+          <span>Mulai Chat di WhatsApp</span>
+        </a>
+        <a href="https://t.me/FreeAIBot" target="_blank" rel="noopener noreferrer" class="btn btn-tele" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+          <span>Mulai Chat di Telegram</span>
+        </a>
+        <a href="/dashboard.html" class="btn btn-dashboard" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
+          <span>Buka Panel Dashboard</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid Section -->
+  <section class="features-section">
+    <div class="container">
+      <div class="section-title-wrap">
+        <h3 class="section-title">Kapabilitas Lengkap Tanpa Batas</h3>
+        <p class="section-subtitle">Didukung tumpukan provider gratis (Groq, Gemini, OpenRouter, Ollama) dengan otomatisasi failover.</p>
       </div>
 
-      <div class="footer-col">
-        <h3 data-i18n="footer.nav">Halaman</h3>
-        <ul>
-          <li><a href="#kemampuan" data-i18n="nav.capabilities">Kemampuan</a></li>
-          <li><a href="#status" data-i18n="nav.status">Status sistem</a></li>
-          <li><a href="/dashboard.html" data-i18n="nav.console">Konsol</a></li>
-        </ul>
+      <div class="features-grid">
+        <!-- Feature 1: Voice Note -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-rose">VN</div>
+          <h4 class="feature-title">Transkripsi Voice Note Sub-Detik</h4>
+          <p class="feature-desc">
+            Kirimkan rekaman suara VN di WhatsApp atau Telegram. Model Groq Whisper menerjemahkan suara ke teks secara instan (~500ms) dan AI menjawab pertanyaannya secara alami.
+          </p>
+        </div>
+
+        <!-- Feature 2: PDF & Word -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-amber">DOC</div>
+          <h4 class="feature-title">Analisis Dokumen PDF &amp; Word</h4>
+          <p class="feature-desc">
+            Unggah file `.pdf` atau `.docx`. AI membaca isi tabel, bagan, bab, serta kode sumber hingga puluhan halaman untuk dirangkum, dianalisis, atau dievaluasi.
+          </p>
+        </div>
+
+        <!-- Feature 3: Vision & Multimodal -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-emerald">VIS</div>
+          <h4 class="feature-title">Analisis Foto &amp; Stiker Kontekstual</h4>
+          <p class="feature-desc">
+            Dianalisis oleh Google Gemini Vision. Mampu membaca foto tugas, diagram alir, grafik, tangkapan layar, hingga memahami ekspresi stiker WhatsApp.
+          </p>
+        </div>
+
+        <!-- Feature 4: Memory -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-purple">MEM</div>
+          <h4 class="feature-title">Memori Persisten &amp; Distilasi</h4>
+          <p class="feature-desc">
+            Didukung basis data Supabase PostgreSQL dengan Row Level Security. Bot mengingat konteks percakapan lampau dan preferensi gaya bicara penggunanya.
+          </p>
+        </div>
+
+        <!-- Feature 5: 4-Provider Failover -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-blue">AI</div>
+          <h4 class="feature-title">Rantai Failover 4 Provider</h4>
+          <p class="feature-desc">
+            Jika satu model terkena rate limit, sistem otomatis mengalihkan panggilan ke provider berikutnya (Groq &rarr; Gemini &rarr; OpenRouter &rarr; Ollama) dalam hitungan milidetik.
+          </p>
+        </div>
+
+        <!-- Feature 6: Zero-Template -->
+        <div class="feature-card">
+          <div class="feature-icon-box f-emerald">BOT</div>
+          <h4 class="feature-title">Interaksi Nyata Tanpa Template</h4>
+          <p class="feature-desc">
+            Bebas dari sapaan klise robotik dan format kaku. Berinteraksi secara luwes layaknya teman karib sekaligus partner diskusi cerdas dan berwawasan luas.
+          </p>
+        </div>
       </div>
 
-      <div class="footer-col">
-        <h3 data-i18n="footer.legal">Ketentuan</h3>
-        <ul>
-          <li><a href="/privacy.html" data-i18n="footer.privacy">Kebijakan privasi</a></li>
-          <li><a href="/privacy.html#data" data-i18n="footer.data">Penanganan data</a></li>
-          <li><a href="/privacy.html#contact" data-i18n="footer.contact">Kontak</a></li>
-        </ul>
-      </div>
-
-      <div class="footer-col">
-        <h3 data-i18n="footer.follow">Ikuti</h3>
-        <div class="social-row">
-          <a href="https://github.com/Raflyf/chat-bot" target="_blank" rel="noopener noreferrer" aria-label="Repositori GitHub">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M9 19c-4.3 1.3-4.3-2.2-6-2.7m12 5.4v-3.6a3 3 0 0 0-.8-2.3c2.7-.3 5.5-1.3 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6.2 0C6.3 2.8 5.3 3.1 5.3 3.1a4.3 4.3 0 0 0-.1 3.2A4.6 4.6 0 0 0 3.9 9.5c0 4.6 2.8 5.7 5.5 6a3 3 0 0 0-.8 2.3V21" />
-            </svg>
-          </a>
-          <a href="/privacy.html#contact" aria-label="Kontak admin">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="2.5" y="4.5" width="19" height="15" rx="2.4" />
-              <path d="M2.5 7l9.5 6.2L21.5 7" />
-            </svg>
+      <!-- Dashboard Teaser Section -->
+      <div class="dashboard-teaser">
+        <div class="teaser-text">
+          <h3>Monitoring Konsol &amp; Dataset Training AI</h3>
+          <p>
+            Pantau status penggunaan seluruh pool API Key, statistik kuota harian, traffic percakapan, serta unduh riwayat pasangan chat dalam format JSONL/CSV untuk fine-tuning model AI.
+          </p>
+        </div>
+        <div>
+          <a href="/dashboard.html" class="btn btn-primary" style="padding: 0.85rem 1.6rem; font-size: 0.95rem;">
+            <span>Akses Dashboard Admin</span>
+            <span>&rarr;</span>
           </a>
         </div>
       </div>
     </div>
+  </section>
 
-    <div class="footer-bottom">
-      <span>&copy; 2026 FreeAIBot &middot; <span data-i18n="footer.version">versi</span> v0.80.0</span>
-      <span class="footer-legal">
-        <a href="/privacy.html" data-i18n="footer.privacy">Kebijakan privasi</a>
-        <a href="/privacy.html#terms" data-i18n="footer.terms">Ketentuan pemakaian</a>
-        <a href="/privacy.html#contact" data-i18n="footer.contact">Kontak</a>
-      </span>
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      FreeAIBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.22.0
     </div>
-  </div>
-</footer>
+  </footer>
 
-<script src="/js/landing.js" defer></script>
-<script src="/js/theme.js" defer></script>
 </body>
 </html>

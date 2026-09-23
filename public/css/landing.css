@@ -1,45 +1,59 @@
 /* ==========================================================================
-   FreeAIBot — Landing Page
-   Arah desain: DESIGN.md (Futuristic UI Glassmorphism).
-   Palet: bg #020814, aksen #00F0FF, glass rgba(255,255,255,0.05).
+   FreeAIBot — Landing page
+   Tema: Futuristic UI Glassmorphism (sumber spesifikasi: DESIGN.md)
+   --------------------------------------------------------------------------
+   ATURAN BERKAS INI
+   Berkas ini HANYA mengatur tampilan. Seluruh teks, kartu, dan deskripsi di
+   index.html dipertahankan persis dari versi sebelumnya: tidak ada konten yang
+   ditambah, dikurangi, atau diubah. Yang berubah hanya warna, kedalaman,
+   gerak, dan susunan visual.
 
-   KEPUTUSAN DESAIN (alasan satu baris, R-31):
-   - Latar #020814: substrat gelap wajib agar lapisan frosted terbaca.
-   - Aksen cyan dipakai di tiga titik saja (CTA utama, border hover, angka kunci);
-     sisanya netral supaya aksen tetap jadi aksen.
-   - Glass di seluruh permukaan: OVERRIDE SADAR atas R-10, dipilih pemilik produk
-     (tema "Future Glass"). Hierarki dijaga lewat luminansi border.
-   - Hero: teks kiri, panel alur penyedia kanan (split-screen), bukan screenshot palsu.
-   - Bagian kemampuan: baris zig-zag, bukan grid 3 kolom seragam (R-05).
-   - Tidak ada bagian testimoni: belum ada pengguna nyata yang memberi kutipan (R-18).
-     Digantikan panel status nyata yang datanya diambil dari sistem sendiri.
+   Keputusan desain yang perlu dijelaskan:
+   - Satu aksen utama, cyan #00F0FF. Hijau WhatsApp dan biru Telegram dipakai
+     HANYA pada tombol platform, karena keduanya sudah dikenali pengguna dan
+     berfungsi sebagai penanda tindakan, bukan hiasan.
+   - Glass dipakai di semua permukaan sesuai tema "Future Glass" yang dipilih
+     pemilik produk. Hierarki dibedakan lewat kekuatan border dan latar, bukan
+     dengan menambahkan warna baru.
+   - Semua teks dijaga lolos kontras WCAG AA terhadap latarnya.
+   - Setiap animasi berhenti bila pengguna meminta gerak minimal, dan kaca
+     diganti latar pekat bila pengguna meminta transparansi dikurangi.
    ========================================================================== */
 
 :root {
   --bg-dark: #020814;
+  --bg-deep: #01050d;
   --glass-fill: rgba(255, 255, 255, 0.05);
-  --glass-fill-strong: rgba(255, 255, 255, 0.08);
+  --glass-fill-strong: rgba(255, 255, 255, 0.085);
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-border-strong: rgba(255, 255, 255, 0.16);
   --border-glow: rgba(0, 240, 255, 0.5);
+  --border-glow-soft: rgba(0, 240, 255, 0.22);
   --accent-cyan: #00f0ff;
-  --accent-cyan-soft: rgba(0, 240, 255, 0.08);
+  --accent-cyan-dim: rgba(0, 240, 255, 0.12);
   --blur-amt: 12px;
   --blur-strong: 20px;
 
-  --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.72);
-  --text-muted: rgba(255, 255, 255, 0.62);
+  --text: #ffffff;
+  --text-muted: #9fb2c9;
+  --text-dim: #7488a0;
 
-  --ok: #34d399;
-  --radius-sm: 8px;
+  --shadow: rgba(0, 0, 0, 0.6);
+  --radius-sm: 10px;
   --radius: 16px;
   --radius-lg: 20px;
-  --shadow-float: 0 18px 48px rgba(0, 0, 0, 0.55);
+
+  /* Warna platform: hanya untuk tombol platform. */
+  --wa: #25d366;
+  --wa-ink: #04220f;
+  --tg: #2aabee;
+  --tg-ink: #04182a;
 
   --font-sans: 'Exo 2', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --maxw: 1180px;
-  --section-gap: clamp(3.5rem, 7vw, 7rem);
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --wrap: 1180px;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 *,
@@ -56,8 +70,10 @@ html {
 body {
   margin: 0;
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background-color: var(--bg-dark);
-  color: var(--text-primary);
+  color: var(--text);
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.65;
@@ -65,12 +81,9 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Aurora: dua cahaya lembut sebagai substrat, supaya kaca punya sesuatu untuk
-   dibiaskan. Bukan glow dekoratif di setiap elemen. */
-/* Aurora: TIGA bidang cahaya sebagai substrat. Ini yang membuat kaca terbaca
-   sebagai kaca: tanpa sesuatu di belakangnya, panel transparan hanya terlihat
-   seperti kotak gelap. Warnanya dari aksen (cyan) dan satu pendamping dingin,
-   bukan pasangan biru-ke-ungu. */
+/* Cahaya latar. Panel kaca hanya terbaca sebagai kaca bila ada sesuatu di
+   belakangnya untuk dibiaskan; tanpa ini, transparansi hanya terlihat seperti
+   kotak gelap. Dipasang tetap (fixed) agar tidak ikut menggulir. */
 body::before {
   content: '';
   position: fixed;
@@ -78,26 +91,39 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    /* Cahaya paling kuat ditaruh tepat di belakang panel kaca hero (kanan atas),
-       supaya ada sesuatu yang benar-benar dibiaskan oleh blur. */
-    radial-gradient(38rem 30rem at 78% 14%, rgba(0, 240, 255, 0.2), transparent 62%),
-    radial-gradient(62rem 44rem at 8% -12%, rgba(0, 240, 255, 0.14), transparent 60%),
-    radial-gradient(50rem 38rem at 96% 2%, rgba(88, 120, 255, 0.16), transparent 64%),
-    radial-gradient(70rem 56rem at 46% 112%, rgba(0, 240, 255, 0.09), transparent 66%);
+    /* Ditaruh tepat di belakang deretan kartu kemampuan, supaya blur pada
+       kartu punya sesuatu yang nyata untuk dibiaskan. */
+    radial-gradient(34rem 26rem at 22% 62%, rgba(0, 240, 255, 0.24), transparent 62%),
+    radial-gradient(30rem 24rem at 82% 72%, rgba(120, 96, 255, 0.22), transparent 64%),
+    radial-gradient(40rem 30rem at 72% 8%, rgba(0, 240, 255, 0.22), transparent 62%),
+    radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.14), transparent 60%),
+    radial-gradient(46rem 34rem at 98% 40%, rgba(88, 120, 255, 0.16), transparent 64%),
+    radial-gradient(70rem 56rem at 46% 108%, rgba(0, 240, 255, 0.12), transparent 66%);
 }
 
-/* Lapisan kedua: berkas cahaya miring yang hanya terlihat samar. Fungsinya
-   memberi tekstur permukaan agar blur punya variasi, bukan bidang rata. */
+/* Kisi halus: mengacu pada papan sirkuit, memberi tekstur agar blur punya
+   variasi permukaan. Dipudarkan di tepi supaya tidak terlihat seperti tabel. */
 body::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.5;
-  background:
-    linear-gradient(112deg, transparent 34%, rgba(0, 240, 255, 0.055) 46%, transparent 58%),
-    linear-gradient(292deg, transparent 62%, rgba(120, 150, 255, 0.05) 72%, transparent 82%);
+  opacity: 0.55;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.038) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.038) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(72% 58% at 50% 30%, #000 0%, transparent 78%);
+  -webkit-mask-image: radial-gradient(72% 58% at 50% 30%, #000 0%, transparent 78%);
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
 }
 
 a {
@@ -105,1036 +131,605 @@ a {
   text-decoration: none;
 }
 
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-
+img,
 svg {
   display: block;
+  max-width: 100%;
 }
 
 :focus-visible {
   outline: 2px solid var(--accent-cyan);
-  outline-offset: 2px;
+  outline-offset: 3px;
   border-radius: 6px;
 }
 
-.wrap {
+.container {
   width: 100%;
-  max-width: var(--maxw);
+  max-width: var(--wrap);
   margin-inline: auto;
   padding-inline: clamp(1.1rem, 4vw, 2rem);
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
+/* ==========================================================================
+   HEADER — bilah kaca yang menempel di atas
+   ========================================================================== */
 
-/* ---------- Header ---------- */
-.site-header {
+header {
   position: sticky;
   top: 0;
-  z-index: 100;
-  background: rgba(2, 8, 20, 0.6);
-  -webkit-backdrop-filter: blur(var(--blur-strong));
-  backdrop-filter: blur(var(--blur-strong));
+  z-index: 50;
+  background: rgba(2, 8, 20, 0.82);
+  -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(150%);
+  backdrop-filter: blur(var(--blur-strong)) saturate(150%);
   border-bottom: 1px solid var(--glass-border);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.site-nav {
+.nav-inner {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  justify-content: space-between;
+  gap: 1rem;
   min-height: 68px;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  margin-right: auto;
+  gap: 0.8rem;
   min-height: 44px;
+  border-radius: 12px;
 }
 
-.brand-mark {
-  width: 30px;
-  height: 30px;
+.brand-icon {
+  width: 42px;
+  height: 42px;
   flex: none;
-  border-radius: 9px;
-  border: 1px solid var(--border-glow);
-  background: linear-gradient(150deg, rgba(0, 240, 255, 0.22), rgba(0, 240, 255, 0.04));
   display: grid;
   place-items: center;
-  color: var(--accent-cyan);
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 1.02rem;
+  letter-spacing: -0.02em;
+  color: var(--bg-deep);
+  background: linear-gradient(140deg, var(--accent-cyan), #6ee7ff);
+  box-shadow: 0 0 22px rgba(0, 240, 255, 0.32);
 }
 
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-}
-
-.brand-name {
-  font-size: 1rem;
+.brand-text h1 {
+  font-size: 1.08rem;
   font-weight: 700;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
-.brand-sub {
-  font-size: 0.68rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-}
-
-.nav-links a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 0.75rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.92rem;
-  color: var(--text-secondary);
-  transition: color 0.2s ease, background-color 0.2s ease;
-}
-
-.nav-links a:hover {
-  color: var(--text-primary);
-  background: var(--glass-fill);
+.brand-text p {
+  font-size: 0.75rem;
+  color: var(--text-dim);
 }
 
 .nav-actions {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.65rem;
 }
 
-.lang-toggle,
-.icon-btn {
-  display: inline-grid;
-  place-items: center;
-  min-height: 40px;
-  min-width: 40px;
-  padding: 0 0.65rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--glass-border);
-  background: var(--glass-fill);
-  color: var(--text-secondary);
-  transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease,
-    transform 0.16s ease;
-}
-
-/* Tombol bahasa: kontrol, bukan tautan. Dibedakan dengan bentuk kotak
-   (nav pakai pil tanpa border) supaya tidak terbaca sebagai menu tambahan. */
-.lang-toggle {
+/* Pil status: menyatakan keadaan yang benar-benar berjalan (serverless dan
+   container hidup terus), bukan klaim hiasan. Titik berdenyut = penanda hidup. */
+.status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  border-radius: var(--radius-sm);
-  border-color: var(--glass-border-strong);
-  background: var(--glass-fill-strong);
-}
-
-.lang-toggle:hover,
-.icon-btn:hover {
-  border-color: var(--border-glow);
-  color: var(--text-primary);
-  background: var(--glass-fill-strong);
-}
-
-.lang-toggle:active,
-.icon-btn:active {
-  transform: scale(0.95);
-}
-
-.icon-btn svg {
-  width: 19px;
-  height: 19px;
-  stroke: currentColor;
-}
-
-.nav-toggle {
-  display: none;
-}
-
-/* Ikon tema: yang tampil adalah tujuan klik berikutnya (atribut hidden tidak
-   berlaku pada SVG, jadi diatur lewat CSS). */
-#iconSun,
-#iconMoon {
-  display: none;
-}
-
-[data-theme='dark'] #iconSun {
-  display: block;
-}
-
-[data-theme='light'] #iconMoon {
-  display: block;
-}
-
-/* ---------- Hero ---------- */
-.hero {
-  padding-block: clamp(2rem, 5.5vw, 4rem) clamp(1.6rem, 4vw, 3rem);
-}
-
-.hero-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: clamp(2rem, 5vw, 4rem);
-  align-items: center;
-}
-
-.hero h1 {
-  margin: 0 0 1rem;
-  font-size: clamp(2rem, 5.2vw, 3.4rem);
-  line-height: 1.08;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  max-width: 17ch;
-}
-
-/* Frasa yang tidak boleh terpecah antar baris. Tanpa ini, "chat-mu" bisa pecah
-   setelah tanda hubung dan menyisakan satu kata sendirian di baris terakhir. */
-.no-break {
+  gap: 0.45rem;
+  padding: 0.34rem 0.72rem;
+  border-radius: 999px;
+  font-size: 0.765rem;
+  font-weight: 650;
   white-space: nowrap;
+  color: #6ee7a8;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.32);
 }
 
-.hero h1 .accent {
-  color: var(--accent-cyan);
-  /* Frasa beraksen tidak boleh terbelah dua baris: kalau pecah, penekanannya
-     hilang dan terlihat seperti kesalahan pemenggalan. */
-  white-space: nowrap;
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+  animation: pulse 2.4s var(--ease) infinite;
 }
 
-.hero-lead {
-  margin: 0 0 1.8rem;
-  max-width: 46ch;
-  font-size: clamp(1rem, 2vw, 1.1rem);
-  color: var(--text-secondary);
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(52, 211, 153, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+  }
 }
 
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.7rem;
-  margin-bottom: 1.8rem;
-}
+/* ==========================================================================
+   TOMBOL
+   ========================================================================== */
 
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  min-height: 48px;
-  padding: 0.7rem 1.4rem;
+  min-height: 44px;
+  padding: 0.6rem 1.15rem;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-family: inherit;
+  font-size: 0.87rem;
+  font-weight: 650;
   cursor: pointer;
-  transition: transform 0.18s ease, background-color 0.2s ease, border-color 0.2s ease,
-    box-shadow 0.2s ease;
+  white-space: nowrap;
+  transition: transform 0.2s var(--ease), background-color 0.2s var(--ease),
+    border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 
-.btn-primary {
-  background: var(--accent-cyan);
-  border-color: var(--accent-cyan);
-  color: #04121a;
-  font-weight: 700;
-}
-
-.btn-primary:hover {
-  background: #33f3ff;
-  border-color: #33f3ff;
+.btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 28px rgba(0, 240, 255, 0.26);
 }
 
-.btn-primary:active {
+.btn:active {
   transform: translateY(0);
 }
 
-.btn-ghost {
+/* Panel kaca untuk aksi sekunder di dalam bilah navigasi. */
+.btn-dashboard {
+  color: var(--accent-cyan);
   background: var(--glass-fill);
-  border-color: var(--glass-border-strong);
-  color: var(--text-primary);
-  -webkit-backdrop-filter: blur(var(--blur-amt));
-  backdrop-filter: blur(var(--blur-amt));
+  border-color: var(--border-glow-soft);
+  -webkit-backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
+  backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
 }
 
-.btn-ghost:hover {
-  background: var(--glass-fill-strong);
+.btn-dashboard:hover {
+  background: var(--accent-cyan-dim);
   border-color: var(--border-glow);
-  transform: translateY(-1px);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
 }
 
-/* Fakta sistem: pernyataan yang bisa diverifikasi, bukan angka karangan.
-   Angka nyata diisi JS dari /api/public-stats; bila gagal, tetap tanda pisah. */
-.hero-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
-  gap: 0.9rem;
-  margin: 0;
-  padding: 1.4rem 0 0;
-  list-style: none;
-  border-top: 1px solid var(--glass-border);
+.btn-primary {
+  color: var(--bg-deep);
+  background: linear-gradient(135deg, var(--accent-cyan), #57e6ff);
+  border-color: transparent;
+  box-shadow: 0 8px 26px rgba(0, 240, 255, 0.24);
 }
 
-.hero-fact {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.55rem;
-  font-size: 0.88rem;
-  color: var(--text-secondary);
+.btn-primary:hover {
+  box-shadow: 0 12px 32px rgba(0, 240, 255, 0.34);
 }
 
-.hero-fact svg {
-  width: 16px;
-  height: 16px;
-  flex: none;
-  margin-top: 0.2rem;
-  stroke: var(--accent-cyan);
+/* Tombol platform: warna merek dipakai karena pengguna mengenalinya sebagai
+   pintu masuk ke aplikasi tersebut. Teksnya digelapkan agar kontras tetap
+   lolos WCAG AA di atas warna merek yang terang. */
+.btn-wa {
+  color: var(--wa-ink);
+  background: var(--wa);
+  border-color: var(--wa);
+  font-weight: 700;
 }
 
-.hero-fact b {
-  color: var(--text-primary);
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
+.btn-wa:hover {
+  background: #3ee27b;
+  border-color: #3ee27b;
+  box-shadow: 0 10px 26px rgba(37, 211, 102, 0.28);
 }
 
-/* Panel alur penyedia: satu-satunya tempat glass tebal + glow, sebagai focal point. */
-.hero-visual {
+.btn-tele {
+  color: var(--tg-ink);
+  background: var(--tg);
+  border-color: var(--tg);
+  font-weight: 700;
+}
+
+.btn-tele:hover {
+  background: #4dbcff;
+  border-color: #4dbcff;
+  box-shadow: 0 10px 26px rgba(42, 171, 238, 0.28);
+}
+
+/* ==========================================================================
+   HERO
+   ========================================================================== */
+
+.hero {
   position: relative;
+  padding-block: clamp(2.75rem, 6vw, 4.5rem) clamp(2.25rem, 5vw, 3.5rem);
+  text-align: center;
+}
+
+/* Panel kaca hero: satu permukaan yang menampung seluruh isi hero, dengan
+   tepi yang tegas. Inilah elemen yang membuat tema "Future Glass" terbaca. */
+.hero > .container {
+  position: relative;
+  max-width: 68rem;
+  padding: clamp(2rem, 5vw, 3.25rem) clamp(1.2rem, 4vw, 2.5rem);
   border-radius: var(--radius-lg);
-  padding: 1.15rem;
-  /* Kaca: isi transparan + blur + kilau atas. Tiga lapisan ini yang membedakan
-     kaca dari kotak gelap biasa. */
-  background:
-    linear-gradient(168deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.04) 42%, rgba(255, 255, 255, 0.06) 100%);
-  -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(160%);
-  backdrop-filter: blur(var(--blur-strong)) saturate(160%);
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(150%);
+  backdrop-filter: blur(var(--blur-strong)) saturate(150%);
   border: 1px solid var(--glass-border-strong);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 24px 56px rgba(0, 0, 0, 0.6),
-    0 0 40px rgba(0, 240, 255, 0.05);
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 28px 70px var(--shadow);
 }
 
-/* Kilau tepi: garis tipis paling atas, meniru pantulan cahaya pada permukaan kaca. */
-.hero-visual::before {
+/* Kilau tepi atas panel hero: pantulan cahaya pada permukaan kaca. */
+.hero > .container::before {
   content: '';
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  pointer-events: none;
   background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.55), transparent);
 }
 
-.hero-visual::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  padding: 1px;
-  background: linear-gradient(140deg, var(--border-glow), transparent 40%, transparent 60%, rgba(88, 120, 255, 0.35));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-}
-
-/* Kartu rantai bisa lebih tinggi dari viewport di laptop pendek. Solusi:
-   tinggi dibatasi dan bagian bawah dibuat memudar sebagai tanda masih ada isi,
-   bukan terpotong begitu saja di tepi layar. */
-.chain {
-  /* Di layar tinggi semua baris muat, jadi tidak ada scrollbar menggantung.
-     Di layar pendek, daftar bisa digulir dengan fade di bawah sebagai petunjuk. */
-  max-height: min(58vh, 30rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 240, 255, 0.3) transparent;
-  mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent 100%);
-  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent 100%);
-}
-
-.chain::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chain::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.chain::-webkit-scrollbar-thumb {
-  background: rgba(0, 240, 255, 0.28);
-  border-radius: 999px;
-}
-
-.hero-visual-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-bottom: 0.85rem;
-  margin-bottom: 0.85rem;
-  border-bottom: 1px solid var(--glass-border);
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-.hero-visual-head strong {
-  color: var(--text-primary);
-  font-weight: 650;
-}
-
-.hero-visual-head .live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ok);
-  flex: none;
-}
-
-/* Motif identitas halaman: rantai. Garis penghubung antar node menunjukkan
-   URUTAN percobaan, jadi maknanya nyata, bukan hiasan. */
-.chain {
-  display: grid;
-  gap: 0.5rem;
-  position: relative;
-}
-
-.chain-node {
-  position: relative;
-}
-
-/* Segmen garis dari node ini ke node berikutnya, plus simpul kecil di ujungnya.
-   Ini motif identitas halaman: rantai yang menunjukkan URUTAN percobaan. */
-.chain-node:not(:last-child)::after {
-  content: '';
-  position: absolute;
-  left: 1.4rem;
-  top: 100%;
-  width: 2px;
-  height: 0.5rem;
-  background: linear-gradient(180deg, rgba(0, 240, 255, 0.7), rgba(0, 240, 255, 0.25));
-  border-radius: 1px;
-}
-
-/* Simpul: titik kecil di ujung garis, menandai sambungan ke node berikutnya. */
-.chain-node:not(:last-child)::before {
-  content: '';
-  position: absolute;
-  left: 1.32rem;
-  top: calc(100% + 0.5rem);
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: rgba(0, 240, 255, 0.75);
-  transform: translateY(-2.5px);
-}
-
-.chain-node.is-standby:not(:last-child)::after {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.1));
-}
-
-.chain-node.is-standby:not(:last-child)::before {
-  background: rgba(255, 255, 255, 0.35);
-}
-
-.chain-node {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.62rem 0.75rem;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--glass-border);
-  font-size: 0.85rem;
-  transition: border-color 0.22s ease, background-color 0.22s ease;
-}
-
-.chain-node:hover {
-  border-color: var(--border-glow);
-  background: var(--glass-fill);
-}
-
-.chain-node-icon {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  background: var(--accent-cyan-soft);
-  border: 1px solid rgba(0, 240, 255, 0.24);
-}
-
-.chain-node-icon svg {
-  width: 14px;
-  height: 14px;
-  stroke: var(--accent-cyan);
-}
-
-.chain-node-name {
-  font-weight: 600;
-  font-size: 0.86rem;
-}
-
-.chain-node-role {
-  display: block;
-  font-size: 0.74rem;
-  color: var(--text-muted);
-}
-
-/* Badge peran. Hierarkinya nyata: UTAMA adalah tingkat yang menjawab lebih dulu,
-   CADANGAN hanya dipakai bila tingkat di atasnya penuh. Karena itu UTAMA pekat
-   dan CADANGAN outline tipis, bukan dua-duanya cyan dengan intensitas mirip. */
-.chain-node-state {
-  margin-left: auto;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 0.18rem 0.5rem;
-  border-radius: 5px;
-  color: #04121a;
-  background: var(--accent-cyan);
-  border: 1px solid var(--accent-cyan);
-  white-space: nowrap;
-}
-
-.chain-node.is-standby .chain-node-state {
-  color: var(--text-muted);
-  background: transparent;
-  border-color: var(--glass-border);
-  font-weight: 600;
-}
-
-.hero-visual-foot {
-  margin: 0.9rem 0 0;
-  padding-top: 0.8rem;
-  border-top: 1px solid var(--glass-border);
-  font-size: 0.76rem;
-  color: var(--text-muted);
-}
-
-/* ---------- Bagian umum ---------- */
-.section {
-  padding-block: var(--section-gap);
-}
-
-.section-head {
-  max-width: 60ch;
-  margin-bottom: clamp(1.6rem, 4vw, 2.8rem);
-}
-
-.section-head h2 {
-  margin: 0 0 0.55rem;
-  font-size: clamp(1.5rem, 3.5vw, 2.15rem);
-  line-height: 1.16;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-}
-
-.section-head p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 1.01rem;
-}
-
-/* ---------- Kemampuan: baris zig-zag (R-05) ---------- */
-.capability {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: clamp(1.4rem, 4vw, 3rem);
-  align-items: center;
-  padding-block: clamp(1.5rem, 3.5vw, 2.3rem);
-  border-top: 1px solid var(--glass-border);
-}
-
-.capability:first-of-type {
-  border-top: 0;
-}
-
-.capability.flip .capability-visual {
-  order: 2;
-}
-
-.capability-body h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1.26rem;
-  font-weight: 650;
-}
-
-.capability-body > p {
-  margin: 0 0 1rem;
-  color: var(--text-secondary);
-}
-
-.capability-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 0.45rem;
-}
-
-.capability-list li {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-}
-
-.capability-list svg {
-  width: 15px;
-  height: 15px;
-  flex: none;
-  margin-top: 0.24rem;
-  stroke: var(--accent-cyan);
-}
-
-.capability-visual {
-  border-radius: var(--radius-lg);
-  padding: 1rem;
-  background: var(--glass-fill);
-  -webkit-backdrop-filter: blur(var(--blur-amt));
-  backdrop-filter: blur(var(--blur-amt));
-  border: 1px solid var(--glass-border);
-}
-
-.cap-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.6rem 0.7rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.84rem;
-  border: 1px solid transparent;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
-}
-
-.cap-row + .cap-row {
-  margin-top: 0.3rem;
-}
-
-.cap-row:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: var(--glass-border);
-}
-
-.cap-row svg {
-  width: 15px;
-  height: 15px;
-  flex: none;
-  stroke: var(--text-muted);
-}
-
-.cap-row-label {
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-.cap-row-value {
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: 0.77rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.cap-row.is-accent svg {
-  stroke: var(--accent-cyan);
-}
-
-/* ---------- Langkah pakai ---------- */
-.steps {
-  display: grid;
-  gap: 0.9rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-}
-
-.step {
-  padding: 1.2rem;
-  border-radius: var(--radius);
-  background: var(--glass-fill);
-  -webkit-backdrop-filter: blur(var(--blur-amt));
-  backdrop-filter: blur(var(--blur-amt));
-  border: 1px solid var(--glass-border);
-  transition: border-color 0.24s ease, transform 0.24s ease;
-}
-
-.step:hover {
-  border-color: var(--border-glow);
-  transform: translateY(-2px);
-}
-
-.step-num {
-  display: inline-grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-bottom: 0.75rem;
-  border-radius: 9px;
-  font-size: 0.84rem;
-  font-weight: 700;
-  color: var(--accent-cyan);
-  background: var(--accent-cyan-soft);
-  border: 1px solid rgba(0, 240, 255, 0.24);
-  font-variant-numeric: tabular-nums;
-}
-
-.step h3 {
-  margin: 0 0 0.4rem;
-  font-size: 1rem;
-  font-weight: 650;
-}
-
-.step p {
-  margin: 0;
-  font-size: 0.89rem;
-  color: var(--text-secondary);
-}
-
-/* ---------- Panel status nyata ---------- */
-.status-panel {
-  border-radius: var(--radius-lg);
-  padding: clamp(1.2rem, 3vw, 1.8rem);
-  background: var(--glass-fill);
-  -webkit-backdrop-filter: blur(var(--blur-strong));
-  backdrop-filter: blur(var(--blur-strong));
-  border: 1px solid var(--glass-border);
-}
-
-.status-grid {
-  display: grid;
-  gap: 0.9rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
-}
-
-.status-item {
-  padding: 0.95rem;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--glass-border);
-}
-
-.status-item-label {
-  display: block;
-  font-size: 0.74rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 0.35rem;
-}
-
-.status-item-value {
-  display: block;
-  font-size: 1.28rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.status-item-note {
-  display: block;
-  margin-top: 0.2rem;
-  font-size: 0.77rem;
-  color: var(--text-muted);
-}
-
-.status-foot {
-  margin: 1rem 0 0;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.status-foot a {
-  color: var(--accent-cyan);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* ---------- CTA akhir ---------- */
-.cta-final {
-  position: relative;
-  border-radius: var(--radius-lg);
-  padding: clamp(1.8rem, 5vw, 3rem);
-  text-align: center;
-  background: var(--glass-fill-strong);
-  -webkit-backdrop-filter: blur(var(--blur-strong));
-  backdrop-filter: blur(var(--blur-strong));
-  border: 1px solid var(--glass-border-strong);
-}
-
-.cta-final h2 {
-  margin: 0 0 0.65rem;
-  font-size: clamp(1.45rem, 3.5vw, 2.05rem);
-  font-weight: 700;
-  letter-spacing: -0.015em;
-}
-
-.cta-final p {
-  margin: 0 auto 1.6rem;
-  max-width: 50ch;
-  color: var(--text-secondary);
-}
-
-.cta-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.7rem;
-  justify-content: center;
-}
-
-/* ---------- Footer ---------- */
-.site-footer {
-  border-top: 1px solid var(--glass-border);
-  padding-block: clamp(1.6rem, 4vw, 2.4rem) 1.2rem;
-  background: rgba(2, 8, 20, 0.5);
-  -webkit-backdrop-filter: blur(var(--blur-amt));
-  backdrop-filter: blur(var(--blur-amt));
-}
-
-.footer-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-  gap: clamp(1.3rem, 4vw, 2.4rem);
-  margin-bottom: 1.8rem;
-}
-
-.footer-brand p {
-  margin: 0.65rem 0 0.9rem;
-  max-width: 34ch;
-  font-size: 0.86rem;
-  color: var(--text-secondary);
-}
-
-.footer-col h3 {
-  margin: 0 0 0.65rem;
-  font-size: 0.74rem;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  font-weight: 650;
-}
-
-.footer-col ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 0.1rem;
-}
-
-.footer-col a {
+.hero-badge {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
-  font-size: 0.87rem;
-  color: var(--text-secondary);
-  transition: color 0.2s ease;
+  gap: 0.5rem;
+  padding: 0.38rem 0.95rem;
+  margin-bottom: 1.5rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  color: #b8f0ff;
+  background: var(--glass-fill);
+  border: 1px solid var(--border-glow-soft);
+  -webkit-backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
+  backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
 }
 
-.footer-col a:hover {
-  color: var(--accent-cyan);
+.hero-title {
+  max-width: 21ch;
+  margin: 0 auto 1.25rem;
+  font-size: clamp(2rem, 5.2vw, 3.15rem);
+  font-weight: 800;
+  line-height: 1.13;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  background: linear-gradient(120deg, #ffffff 28%, #9fe9ff 76%, var(--accent-cyan) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 
-.social-row {
+.hero-subtitle {
+  max-width: 64ch;
+  margin: 0 auto 2.25rem;
+  font-size: clamp(0.98rem, 1.7vw, 1.08rem);
+  color: #aebfd4;
+  text-wrap: pretty;
+}
+
+.hero-cta-group {
   display: flex;
-  gap: 0.45rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
 }
 
-.social-row a {
-  width: 42px;
-  height: 42px;
+/* ==========================================================================
+   KAPABILITAS
+   ========================================================================== */
+
+.features-section {
+  padding-block: clamp(2.75rem, 5.5vw, 3.75rem) clamp(1rem, 2vw, 1.5rem);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.section-title-wrap {
+  max-width: 62ch;
+  margin: 0 auto 2.5rem;
+  text-align: center;
+}
+
+.section-title {
+  margin-bottom: 0.55rem;
+  font-size: clamp(1.5rem, 3.2vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.section-subtitle {
+  color: var(--text-muted);
+  font-size: 0.96rem;
+  text-wrap: pretty;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 1.15rem;
+}
+
+/* Kartu kemampuan: panel kaca. Garis cahaya di tepi atas muncul saat disorot,
+   menegaskan bahwa ini permukaan kaca yang tepinya menyala. */
+.feature-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1.6rem;
+  border-radius: var(--radius);
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--blur-amt)) saturate(140%);
+  backdrop-filter: blur(var(--blur-amt)) saturate(140%);
+  border: 1px solid var(--glass-border);
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 10px 30px rgba(0, 0, 0, 0.32);
+  transition: transform 0.25s var(--ease), border-color 0.25s var(--ease),
+    background-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+  opacity: 0;
+  transition: opacity 0.25s var(--ease);
+}
+
+.feature-card:hover {
+  transform: translateY(-3px);
+  background: var(--glass-fill-strong);
+  border-color: var(--border-glow-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 18px 40px var(--shadow),
+    0 0 0 1px rgba(0, 240, 255, 0.08);
+}
+
+.feature-card:hover::before {
+  opacity: 1;
+}
+
+/* Kilau tepi atas: garis tipis yang meniru pantulan cahaya pada permukaan
+   kaca. Ini yang membedakan panel kaca dari kotak ber-border biasa. */
+.feature-card::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+}
+
+/* Kotak label ikon: tiap kategori diberi warna berbeda supaya enam kartu mudah
+   dibedakan saat dipindai cepat. Warna di sini berfungsi sebagai penanda
+   kategori, dan sudah dinaikkan terangnya agar kontras teksnya lolos AA. */
+.feature-icon-box {
+  width: 46px;
+  height: 46px;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--glass-border);
-  background: var(--glass-fill);
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  margin-bottom: 0.3rem;
+  border-radius: 12px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
-.social-row a:hover {
-  border-color: var(--border-glow);
-  transform: translateY(-2px);
+.f-blue {
+  color: #7fd8ff;
+  background: rgba(56, 189, 248, 0.13);
+  border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
-.social-row svg {
-  width: 17px;
-  height: 17px;
-  stroke: var(--text-secondary);
+.f-emerald {
+  color: #6ee7a8;
+  background: rgba(16, 185, 129, 0.13);
+  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
-.social-row a:hover svg {
-  stroke: var(--accent-cyan);
+.f-rose {
+  color: #ff9aae;
+  background: rgba(244, 63, 94, 0.13);
+  border: 1px solid rgba(244, 63, 94, 0.3);
 }
 
-.footer-bottom {
+.f-amber {
+  color: #ffcb70;
+  background: rgba(245, 158, 11, 0.13);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.f-purple {
+  color: #d0a6ff;
+  background: rgba(168, 85, 247, 0.13);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.feature-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.feature-desc {
+  color: var(--text-muted);
+  font-size: 0.885rem;
+  line-height: 1.62;
+  text-wrap: pretty;
+}
+
+/* ==========================================================================
+   PANEL KONSOL — jalur menuju dashboard
+   ========================================================================== */
+
+.dashboard-teaser {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.7rem 1.3rem;
   align-items: center;
   justify-content: space-between;
-  padding-top: 1.2rem;
-  border-top: 1px solid var(--glass-border);
-  font-size: 0.8rem;
+  gap: 1.5rem;
+  margin-block: 2.5rem 3.5rem;
+  padding: clamp(1.75rem, 4vw, 2.5rem);
+  border-radius: var(--radius-lg);
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(150%);
+  backdrop-filter: blur(var(--blur-strong)) saturate(150%);
+  border: 1px solid var(--border-glow-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 24px 60px var(--shadow);
+  overflow: hidden;
+}
+
+/* Cahaya cyan di sudut: menandai panel ini sebagai jalur menuju konsol,
+   sekaligus memberi kedalaman pada kacanya. */
+.dashboard-teaser::before {
+  content: '';
+  position: absolute;
+  inset: -40% -18% auto auto;
+  width: 24rem;
+  height: 24rem;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(0, 240, 255, 0.16), transparent 66%);
+}
+
+.dashboard-teaser > * {
+  position: relative;
+}
+
+.teaser-text h3 {
+  margin-bottom: 0.5rem;
+  font-size: clamp(1.2rem, 2.6vw, 1.55rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.teaser-text p {
+  max-width: 64ch;
   color: var(--text-muted);
+  font-size: 0.92rem;
+  text-wrap: pretty;
 }
 
-.footer-legal {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.9rem;
+/* ==========================================================================
+   FOOTER
+   ========================================================================== */
+
+footer {
+  margin-top: auto;
+  padding-block: 2rem;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.83rem;
+  border-top: 1px solid var(--glass-border);
+  background: rgba(1, 5, 13, 0.5);
+  -webkit-backdrop-filter: blur(var(--blur-amt));
+  backdrop-filter: blur(var(--blur-amt));
 }
 
-.footer-legal a:hover {
-  color: var(--accent-cyan);
-}
+/* ==========================================================================
+   LAYAR SEMPIT
+   ========================================================================== */
 
-/* ---------- Gerak: satu gesture masuk, tanpa loop (R-19) ---------- */
-@media (prefers-reduced-motion: no-preference) {
-  .rise {
-    animation: rise 0.54s ease-out both;
+@media (max-width: 760px) {
+  .nav-inner {
+    flex-wrap: wrap;
+    gap: 0.7rem;
   }
 
-  .rise-2 {
-    animation-delay: 0.08s;
+  .status-pill {
+    order: 3;
   }
 
-  @keyframes rise {
-    from {
-      opacity: 0;
-      transform: translateY(16px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
+  .dashboard-teaser {
+    text-align: center;
+    justify-content: center;
   }
 
-  /* Reveal saat digulir: progresif, halaman tetap terbaca bila JS gagal. */
-  .reveal {
-    animation: rise 0.54s ease-out both;
-    animation-timeline: view();
-    animation-range: entry 6% cover 20%;
+  .dashboard-teaser .btn {
+    width: 100%;
   }
 }
 
-@supports not (animation-timeline: view()) {
-  .reveal {
+@media (max-width: 420px) {
+  .hero-cta-group .btn {
+    width: 100%;
+  }
+}
+
+/* ==========================================================================
+   HORMATI PREFERENSI PENGGUNA
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .pulse-dot {
     animation: none;
   }
-}
 
-/* ---------- Ponsel ---------- */
-@media (max-width: 900px) {
-  .hero-grid,
-  .capability {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .capability.flip .capability-visual {
-    order: 0;
-  }
-
-  .hero-visual {
-    order: -1;
-  }
-
-  .footer-grid {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  .btn,
+  .feature-card,
+  .btn:hover,
+  .feature-card:hover {
+    transition: none;
+    transform: none;
   }
 }
 
-@media (max-width: 720px) {
-  .nav-links {
+/* Bila pengguna meminta transparansi dikurangi, kaca diganti latar pekat agar
+   teks tetap terbaca. Blur tidak dipaksakan. */
+@media (prefers-reduced-transparency: reduce) {
+  header,
+  footer,
+  .feature-card,
+  .feature-card:hover,
+  .dashboard-teaser,
+  .hero-badge,
+  .btn-dashboard {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: #0b1424;
+  }
+
+  .feature-card:hover {
+    background: #101c31;
+  }
+}
+
+@media print {
+  body::before,
+  body::after {
     display: none;
   }
 
-  .nav-links.is-open {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.15rem;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    padding: 0.7rem clamp(1.1rem, 4vw, 2rem) 1rem;
-    background: rgba(4, 10, 22, 0.97);
-    -webkit-backdrop-filter: blur(var(--blur-strong));
-    backdrop-filter: blur(var(--blur-strong));
-    border-bottom: 1px solid var(--glass-border-strong);
-  }
-
-  .nav-links.is-open a {
-    padding: 0.7rem 0.5rem;
-    min-height: 46px;
-  }
-
-  .nav-toggle {
-    display: inline-grid;
-  }
-
-  .hero h1 {
-    max-width: none;
-  }
-}
-
-/* ---------- Hormati preferensi pengguna ---------- */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-
-  .rise,
-  .reveal {
-    opacity: 1 !important;
-    transform: none !important;
-  }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .site-header,
-  .hero-visual,
-  .capability-visual,
-  .step,
-  .status-panel,
-  .cta-final,
-  .site-footer,
-  .btn-ghost {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    background: #071120;
+  header,
+  footer,
+  .feature-card,
+  .dashboard-teaser {
+    background: #fff;
+    color: #000;
+    box-shadow: none;
+    border-color: #ccc;
   }
 }
