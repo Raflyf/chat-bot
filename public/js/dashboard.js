@@ -357,21 +357,16 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     async function handleLogout() {
       const token = getStoredToken();
       if (token) {
-        fetch("/api/admin-otp?action=logout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-admin-token": token },
-          body: JSON.stringify({ action: "logout", session_token: token }),
-        }).catch(() => {});
+        try {
+          fetch("/api/admin-otp?action=logout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-admin-token": token },
+            body: JSON.stringify({ action: "logout", session_token: token }),
+          }).catch(() => {});
+        } catch (_) {}
       }
       clearStoredToken();
-      document.documentElement.classList.remove("authenticated");
-      document.documentElement.classList.add("not-authenticated");
-      document.getElementById("auth-modal").classList.remove("hidden");
-      const pinField = document.getElementById("pin-input");
-      if (pinField) {
-        pinField.value = "";
-        pinField.focus();
-      }
+      window.location.href = "/";
     }
 
     // =========================================================================
