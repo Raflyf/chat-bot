@@ -252,7 +252,19 @@ export async function xkiroWebSearch(
   if (opts.country) body.country = opts.country;
 
   // Coba beberapa kunci: satu kunci habis tidak boleh menghentikan yang lain.
-  const attempts = Math.min(list.length, 3);
+  //
+  // BUG YANG DIPERBAIKI (24 Sep): batasnya dulu HANYA 3 percobaan
+  // (`Math.min(list.length, 3)`). Temuan nyata saat uji: kunci #1-#3 membalas
+  // HTTP 429 ("Too many web requests in flight") sementara kunci #4-#8 SEHAT
+  // (HTTP 200, 3 hasil masing-masing) — tetapi loop sudah berhenti di 3, jadi
+  // xkiroWebSearch() mengembalikan 0 hasil padahal 5 kunci masih bisa dipakai.
+  // Gejala di produksi: web search tampak "mati" padahal hanya kunci awalnya
+  // yang sedang sibuk.
+  //
+  // Sekarang: coba SEMUA kunci yang tersedia (maksimum dibatasi 8 agar tidak
+  // memakan waktu berlebihan di serverless), dan berhenti lebih awal begitu
+  // ada hasil — jadi kasus normal (kunci pertama sehat) tetap secepat dulu.
+  const attempts = Math.min(list.length, 8);
   for (let i = 0; i < attempts; i++) {
     const key = nextKey(list);
     if (!key) break;
@@ -447,7 +459,12 @@ export async function xkiroChatWithSearch(
   const list = availableKeys();
   if (list.length === 0) return null;
 
-  const attempts = Math.min(list.length, 3);
+  // Coba beberapa kunci. Batas 3 di sini adalah BUG YANG SAMA seperti di
+  // xkiroWebSearch (lihat catatan di sana): bila kunci #1-#3 sedang 429/402
+  // sementara kunci #4+ sehat, fungsi ini menyerah dan mengembalikan null
+  // padahal masih ada kunci yang bisa dipakai. Dinaikkan ke 8 dengan alasan
+  // yang sama — loop tetap berhenti begitu ada hasil.
+  const attempts = Math.min(list.length, 8);
   for (let i = 0; i < attempts; i++) {
     const key = nextKey(list);
     if (!key) break;

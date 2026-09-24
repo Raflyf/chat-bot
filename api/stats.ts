@@ -1048,25 +1048,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const capTotal = s.keysTotal * s.capPerKey;
         const usedFromDb = webSearchUsedToday;
 
-        // SISA JATAH: pakai angka PROVIDER bila ada, karena itu yang otoritatif —
-        // provider menghitung sendiri sisanya dan melaporkannya di setiap respons
-        // (`usage.remainingToday`). Angka dari catatan kita adalah cadangan.
-        // Selisih bisa muncul karena kuota berlaku per kunci & rolling, sementara
-        // catatan kita per hari kalender dan hanya dari instance yang mencatat.
-        // Pakai remainingEstimatedTotal (kunci yang melapor pakai angka provider,
-        // sisanya dianggap penuh). JANGAN pakai reportedRemaining mentah: itu hanya
-        // mencakup kunci yang sudah dipakai, sehingga totalnya terlihat jauh lebih
-        // kecil dari kenyataan (pernah menghasilkan "terpakai 65" padahal baru 6).
+        // ------------------------------------------------------------------
+        // CACAT YANG DIPERBAIKI (temuan 24 Sep): "terpakai" dan "sisa" dulu
+        // dihitung dari SUMBER BERBEDA, sehingga bisa saling bertentangan.
+        //
+        // Contoh nyata yang terukur: terpakai 86 (dari catatan DB) tetapi sisa
+        // 160 (dari 8 kunci x cap 20) — padahal total kapasitas hanya 160.
+        // Artinya 86 + 160 = 246 > 160: angka yang tidak mungkin, dan pemilik
+        // melihat panel yang bertentangan dengan dirinya sendiri.
+        //
+        // Penyebabnya: `remainingFromKeys` menganggap SEMUA kunci masih penuh
+        // (tidak memperhitungkan pemakaian), sementara `usedToday` menghitung
+        // pemakaian nyata. Keduanya benar sendiri-sendiri, salah kalau dipasangkan.
+        //
+        // ATURAN SEKARANG: satu sumber untuk kedua angka.
+        //   - Bila provider melaporkan sisa (otoritatif): sisa = laporan provider,
+        //     terpakai = kapasitas - sisa. Keduanya konsisten by construction.
+        //   - Bila tidak ada laporan: terpakai = catatan DB, sisa = kapasitas -
+        //     catatan DB (dengan batas bawah 0). Juga konsisten.
+        // ------------------------------------------------------------------
         const adaLaporan = s.reportedKeys > 0;
-        const sisaTerbaik = adaLaporan ? s.remainingEstimatedTotal : s.remainingFromKeys;
-
-        // "Terpakai" dihitung dari angka provider bila tersedia: kapasitas total
-        // dikurangi sisa yang dilaporkan. Ini lebih jujur daripada menjumlahkan
-        // pencatatan kita yang bisa terlewat (instance berbeda, request gagal).
-        const usedFromProvider = adaLaporan
-          ? Math.max(0, capTotal - s.remainingEstimatedTotal)
+        const sisaDariProvider = adaLaporan ? s.remainingEstimatedTotal : null;
+        const usedDariProvider = sisaDariProvider !== null
+          ? Math.max(0, capTotal - sisaDariProvider)
           : null;
-        const usedTerbaik = usedFromProvider !== null ? usedFromProvider : usedFromDb;
+
+        const usedTerbaik = usedDariProvider !== null ? usedDariProvider : usedFromDb;
+        // Sisa DIHITUNG dari angka terpakai yang sama, bukan dari rumus terpisah.
+        // Ini yang menjamin usedToday + remainingToday <= capTotal selalu benar.
+        const sisaTerbaik = Math.max(0, capTotal - usedTerbaik);
 
         return {
           ...s,
@@ -1074,8 +1084,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           usedPercent: capTotal > 0 ? Math.min(100, Math.round((usedTerbaik / capTotal) * 100)) : 0,
           remainingToday: sisaTerbaik,
           // Sumber angka ditampilkan agar pemilik tahu seberapa akurat datanya.
-          usedSource: usedFromProvider !== null ? "provider" : "catatan-db",
-          remainingSource: adaLaporan ? "provider" : "perhitungan-kunci",
+          // Kedua angka kini berasal dari sumber yang SAMA (tidak campur).
+          usedSource: usedDariProvider !== null ? "provider" : "catatan-db",
+          remainingSource: usedDariProvider !== null ? "provider" : "catatan-db",
         };
       })(),
     });
