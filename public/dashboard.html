@@ -452,8 +452,12 @@
         <div class="console-head-actions">
           <span class="badge"><span>Total inferensi</span> <strong id="matrix-total-inferensi">0x</strong></span>
           <div class="pill-filter-group" id="matrix-time-filters" role="group" aria-label="Rentang waktu matriks model">
+            <!-- Kelima rentang harus lengkap, sama seperti filter di header.
+                 Sebelumnya "14 hari" hilang di sini sehingga rentang itu tidak
+                 bisa dipilih dari bagian ini. -->
             <button type="button" class="pill-filter-btn active" data-range="today">Hari ini</button>
             <button type="button" class="pill-filter-btn" data-range="7d">7 hari</button>
+            <button type="button" class="pill-filter-btn" data-range="14d">14 hari</button>
             <button type="button" class="pill-filter-btn" data-range="30d">30 hari</button>
             <button type="button" class="pill-filter-btn" data-range="all">Semua</button>
           </div>

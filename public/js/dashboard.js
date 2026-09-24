@@ -450,7 +450,14 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       document.querySelectorAll("#time-filter-pills .pill-filter-btn").forEach(btn => {
         btn.classList.toggle("active", btn.getAttribute("data-range") === range);
       });
-      document.querySelectorAll("#matrix-time-filters .matrix-filter-pill").forEach(btn => {
+      // BUG YANG DIPERBAIKI: selector di sini dulu menulis `.matrix-filter-pill`,
+      // kelas yang TIDAK PERNAH ada di dashboard.html (markup-nya memakai
+      // `.pill-filter-btn`). querySelectorAll karena itu selalu mengembalikan
+      // daftar kosong, sehingga tombol di bagian "Distribusi Model LLM" tidak
+      // pernah menerima kelas `active` — data ikut berubah saat rentang diganti,
+      // tetapi tombol yang tersorot tetap "Hari ini". Diverifikasi: kelas
+      // `.matrix-filter-pill` muncul 2x di JS ini, 0x di HTML, 4x di CSS.
+      document.querySelectorAll("#matrix-time-filters .pill-filter-btn").forEach(btn => {
         btn.classList.toggle("active", btn.getAttribute("data-range") === range);
       });
       // Sinkronkan juga filter rentang pada dataset
@@ -640,8 +647,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       if (totalInferensiEl) totalInferensiEl.textContent = `${totalCalls.toLocaleString()}x`;
       if (totalResolusiEl) totalResolusiEl.textContent = `${totalCalls.toLocaleString()}x`;
 
-      // Sinkronkan active state filter waktu
-      document.querySelectorAll("#matrix-time-filters .matrix-filter-pill").forEach(btn => {
+      // Sinkronkan active state filter waktu (selector harus `.pill-filter-btn`;
+      // versi lama menulis `.matrix-filter-pill` yang tidak ada di markup,
+      // sehingga tombol tidak pernah tersorot — lihat catatan di setTimeRange).
+      document.querySelectorAll("#matrix-time-filters .pill-filter-btn").forEach(btn => {
         btn.classList.toggle("active", btn.getAttribute("data-range") === currentTimeRange);
       });
 
