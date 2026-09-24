@@ -123,7 +123,10 @@
 
       <div class="btn-row">
         <button type="button" class="auth-link-btn" id="btn-resend-otp" disabled>Kirim ulang OTP</button>
-        <button type="button" class="auth-link-btn" id="btn-back-reset">Kembali</button>
+        <!-- ID harus unik: sebelumnya tombol ini memakai ID yang SAMA dengan tombol
+             "Kembali ke PIN" di atas, sehingga getElementById hanya menemukan yang
+             pertama dan tombol ini tidak pernah terikat ke handler. -->
+        <button type="button" class="auth-link-btn" id="btn-back-reset-step2">Kembali</button>
       </div>
     </div>
   </div>
@@ -147,7 +150,7 @@
         <span class="brand-text">
           <span class="brand-title-wrap">
             <span class="brand-name" id="bot-name">Konsol FreeAIBot</span>
-            <span class="brand-badge-version">v0.82.0</span>
+            <span class="brand-badge-version">v0.83.0</span>
           </span>
           <span class="brand-sub">
             <span class="pulse-dot-cyan" aria-hidden="true"></span>
@@ -342,6 +345,53 @@
           <span class="upstream-stat-label">Sesi WhatsApp Cloud</span>
           <span class="upstream-stat-value" id="upstream-wa-sessions">0 / 1.000</span>
           <span class="upstream-stat-sub" id="upstream-wa-sessions-sub">Sisa sesi gratis bulan ini</span>
+        </div>
+      </div>
+
+      <!-- Web search xKiro: kuota TERPISAH dari kuota token.
+           Diletakkan tepat di bawah ringkasan upstream karena sifatnya sama:
+           informasi kapasitas yang menentukan apakah bot masih bisa mencari
+           di internet. Tanpa panel ini, angka token terlihat aman padahal
+           jatah pencarian bisa sudah menipis. -->
+      <div class="websearch-panel" id="websearch-panel">
+        <div class="websearch-head">
+          <div>
+            <div class="websearch-title">Web search xKiro</div>
+            <div class="websearch-sub" id="websearch-sub">Menunggu data</div>
+          </div>
+        </div>
+        <div class="websearch-metrics">
+          <div class="websearch-metric">
+            <!-- Label menyebut SATUAN yang diukur bar-nya. Sebelumnya bar diletakkan
+                 di bawah angka "sisa", padahal isi bar = terpakai, sehingga mata bisa
+                 salah tafsir ("terisi" dibaca "sisa"). Sekarang bar diberi labelnya
+                 sendiri: "terpakai", dengan persen eksplisit. -->
+            <span class="websearch-metric-label">Terpakai hari ini</span>
+            <span class="websearch-metric-value" id="websearch-used">0</span>
+            <span class="websearch-metric-note" id="websearch-used-note">dari 0 pencarian</span>
+            <div class="websearch-bar" role="img" aria-label="Pemakaian jatah pencarian">
+              <span id="websearch-bar-fill" style="width: 0%"></span>
+            </div>
+          </div>
+          <div class="websearch-metric">
+            <span class="websearch-metric-label">Sisa jatah</span>
+            <span class="websearch-metric-value" id="websearch-remaining">0</span>
+            <span class="websearch-metric-note" id="websearch-remaining-note">pencarian tersisa</span>
+          </div>
+          <div class="websearch-metric">
+            <span class="websearch-metric-label">Kunci siap pakai</span>
+            <span class="websearch-metric-value" id="websearch-keys">0 / 0</span>
+            <span class="websearch-metric-note" id="websearch-keys-note">Semua kunci tersedia</span>
+          </div>
+          <div class="websearch-metric">
+            <span class="websearch-metric-label">Batas per kunci</span>
+            <span class="websearch-metric-value" id="websearch-cap">0</span>
+            <span class="websearch-metric-note">pencarian per kunci per hari</span>
+          </div>
+        </div>
+        <div class="websearch-foot" id="websearch-foot">
+          Web search memakai kuota terpisah dari kuota token. Bila jatah xKiro habis,
+          bot otomatis memakai mesin pencari cadangan yang tanpa kuota.
         </div>
       </div>
 

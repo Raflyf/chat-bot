@@ -63,6 +63,82 @@ export function xkiroKeysLeft(): number {
   return availableKeys().length;
 }
 
+// ============================================================================
+// PELACAKAN KUOTA WEB SEARCH (ditambahkan 24 Sep 2026)
+// ----------------------------------------------------------------------------
+// Web search punya kuota TERPISAH dari kuota token. Batasnya diukur langsung,
+// bukan dari dokumentasi: satu kunci membalas HTTP 429 pada pencarian ke-11,
+// jadi batasnya 10 pencarian/kunci/hari. Dengan 8 kunci -> ~80 pencarian/hari.
+//
+// Kenapa dilacak di sini: dashboard perlu menampilkan pemakaian web search
+// supaya pemilik produk tahu sisa jatah sebelum bot kehabisan dan turun ke
+// mesin gratis. Tanpa ini, angka token terlihat aman padahal search bisa habis.
+// ============================================================================
+
+/** Batas pencarian per kunci per hari (hasil pengukuran langsung). */
+export const XKIRO_SEARCH_CAP_PER_KEY = 10;
+
+/** Penghitung lokal per kunci (serverless: per instance, jadi perkiraan bawah). */
+const searchUsage = new Map<string, number>();
+
+/** Ringkasan pemakaian web search untuk dashboard. */
+export type XkiroSearchStatus = {
+  /** Jumlah kunci terdaftar. */
+  keysTotal: number;
+  /** Kunci yang masih bisa dipakai (tidak sedang kehabisan kuota). */
+  keysAvailable: number;
+  /** Batas pencarian per kunci per hari. */
+  capPerKey: number;
+  /** Total batas harian seluruh kunci (keysTotal x capPerKey). */
+  capTotal: number;
+  /** Pencarian yang tercatat di instance ini (perkiraan bawah). */
+  usedThisInstance: number;
+  /** Sisa jatah teoretis (capTotal - usedThisInstance). */
+  remainingEstimate: number;
+  /** Kunci yang sedang dinonaktifkan karena kuota habis. */
+  keysCoolingDown: number;
+  /** Kapan kunci yang dinonaktifkan akan aktif kembali (epoch ms, paling cepat). */
+  nextRecoveryAt: number | null;
+};
+
+/**
+ * Status web search xKiro untuk dashboard.
+ *
+ * Catatan kejujuran angka: penghitung di sini bersifat PER INSTANCE (serverless
+ * Vercel bisa punya beberapa instance), jadi `usedThisInstance` adalah batas BAWAH,
+ * bukan total sebenarnya. Yang akurat dan berguna adalah `keysAvailable` dan
+ * `keysCoolingDown` — keduanya diturunkan dari respons nyata provider (402/429).
+ */
+export function xkiroSearchStatus(): XkiroSearchStatus {
+  const keys = allKeys();
+  const now = Date.now();
+  const cooling = keys.filter((k) => (exhausted.get(k) ?? 0) > now);
+  const available = keys.length - cooling.length;
+  const nextRecovery = cooling.length
+    ? Math.min(...cooling.map((k) => exhausted.get(k) ?? now))
+    : null;
+
+  let used = 0;
+  for (const k of keys) used += searchUsage.get(k) ?? 0;
+
+  const capTotal = keys.length * XKIRO_SEARCH_CAP_PER_KEY;
+  return {
+    keysTotal: keys.length,
+    keysAvailable: available,
+    capPerKey: XKIRO_SEARCH_CAP_PER_KEY,
+    capTotal,
+    usedThisInstance: used,
+    remainingEstimate: Math.max(0, capTotal - used),
+    keysCoolingDown: cooling.length,
+    nextRecoveryAt: nextRecovery,
+  };
+}
+
+/** Catat satu pencarian sukses (dipakai internal setelah hasil diterima). */
+function recordSearchUse(key: string): void {
+  searchUsage.set(key, (searchUsage.get(key) ?? 0) + 1);
+}
+
 export type XkiroSearchResult = {
   title: string;
   url: string;
@@ -110,8 +186,12 @@ export async function xkiroWebSearch(
         signal: AbortSignal.timeout(opts.timeoutMs ?? 12000),
       });
 
-      if (res.status === 402) {
+      if (res.status === 402 || res.status === 429) {
         // Kuota kunci INI habis: catat, lalu coba kunci berikutnya.
+        // 429 ditambahkan 24 Sep 2026: pengukuran langsung menunjukkan kunci
+        // membalas 429 (bukan 402) saat jatah pencariannya habis. Sebelumnya
+        // hanya 402 yang ditangani, sehingga kunci habis tetap dicoba berulang
+        // dan membuang waktu percobaan.
         exhausted.set(key, Date.now() + EXHAUSTED_MS);
         continue;
       }
@@ -137,7 +217,12 @@ export async function xkiroWebSearch(
           publishedDate: r.publishedDate ?? null,
         }));
       // Hasil kosong dianggap percobaan gagal -> coba kunci berikutnya.
-      if (mapped.length > 0) return mapped;
+      if (mapped.length > 0) {
+        // Catat pemakaian HANYA saat berhasil, supaya angka di dashboard tidak
+        // membengkak karena percobaan yang gagal.
+        recordSearchUse(key);
+        return mapped;
+      }
     } catch {
       // Jaringan/timeout: coba kunci berikutnya.
     }
@@ -178,7 +263,8 @@ export async function xkiroWebFetch(urls: string[], maxContentTokens = 8000): Pr
         signal: AbortSignal.timeout(20000),
       });
 
-      if (res.status === 402) {
+      if (res.status === 402 || res.status === 429) {
+        // 429 = jatah pencarian/fetch habis (lihat catatan di xkiroWebSearch).
         exhausted.set(key, Date.now() + EXHAUSTED_MS);
         continue;
       }

@@ -3,6 +3,24 @@ import crypto from 'crypto';
 import { config } from '../src/env.js';
 import { db } from '../src/db.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
+import { xkiroSearchStatus } from '../src/xkiro_web.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Versi aplikasi dibaca dari package.json saat modul dimuat, bukan ditulis ulang
+// di HTML. Sebelumnya badge versi di dashboard.html di-hardcode, sehingga setiap
+// rilis harus mengingat untuk mengubahnya juga — dan kalau lupa, dashboard
+// menampilkan versi lama. Satu sumber kebenaran: package.json.
+const APP_VERSION = (() => {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'));
+    return typeof pkg.version === 'string' ? pkg.version : '';
+  } catch {
+    return '';
+  }
+})();
 import {
   fetchXkiroLimits,
   fetchOpenRouterLimits,
@@ -1001,6 +1019,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       recentModels: recentModelOrder,
       modelsBreakdown,
       mediaCounts,
+      version: APP_VERSION,
+      // Pemakaian WEB SEARCH xKiro — kuota terpisah dari kuota token.
+      // Batas 10 pencarian/kunci/hari diukur langsung dari respons provider
+      // (kunci membalas 429 pada pencarian ke-11), bukan dari dokumentasi.
+      webSearch: xkiroSearchStatus(),
     });
   } catch (err) {
     console.error('[api/stats] Gagal mengumpulkan metrik:', err);

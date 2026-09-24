@@ -600,9 +600,16 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const mediaH = document.getElementById("media-section-title");
       if (mediaH) mediaH.textContent = `Pemrosesan Tipe Media (${rangeLabel})`;
 
+      // Badge versi diambil dari package.json lewat API, bukan ditulis di HTML:
+      // versi yang di-hardcode mudah tertinggal setiap kali rilis, dan dashboard
+      // yang menampilkan versi lama membuat pemilik ragu apakah deploy berhasil.
+      const versionBadge = document.querySelector(".brand-badge-version");
+      if (versionBadge && data.version) versionBadge.textContent = "v" + data.version;
+
       // Render Pools Matrix, Dedicated Token Quota Matrix & AI Model Router Matrix
       renderPoolMatrix(data);
       renderLiveUpstreamTable(data);
+      renderWebSearchPanel(data);
       renderTokenMatrix(data);
       renderAiModelMatrix(data);
 
@@ -1071,9 +1078,18 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             if (hasTokenCap) {
               const tokenPct = k.tokenPercent || 0;
               const tokenColor = tokenPct >= 100 ? "#fb7185" : tokenPct >= 80 ? "#fbbf24" : "#34d399";
-              tokenLine = `<div class="key-token-line" style="font-size: 0.7rem; font-family: var(--font-mono); color: var(--text-dim); margin-top: 3px;">
-                <span style="color: ${tokenColor}; font-weight: 700;">${(k.tokensUsed || 0).toLocaleString("id-ID")} / ${(k.tokenCap || 0).toLocaleString("id-ID")} token (${tokenPct}%)</span>
-                ${bindingIsToken ? '<span style="color: #fb7185; font-weight: 700;"> &bull; BATAS TOKEN</span>' : ""}
+              // Angka saja sulit dibaca sekilas ("178.330 / 200.000 token (89%)"),
+              // jadi ditambah bar tipis di bawah teks: panjangnya menunjukkan
+              // porsi terpakai, warnanya mengikuti ambang yang sama dengan angka.
+              tokenLine = `<div class="key-token-line">
+                <div class="key-token-head">
+                  <span class="key-token-label">Token</span>
+                  <span style="color: ${tokenColor};">${(k.tokensUsed || 0).toLocaleString("id-ID")} / ${(k.tokenCap || 0).toLocaleString("id-ID")} (${tokenPct}%)</span>
+                  ${bindingIsToken ? '<span class="key-token-binding">BATAS TOKEN</span>' : ""}
+                </div>
+                <div class="key-token-bar" role="img" aria-label="Pemakaian token ${tokenPct} persen">
+                  <span style="width: ${Math.min(100, tokenPct)}%; background: ${tokenColor};"></span>
+                </div>
               </div>`;
             }
 
@@ -1105,8 +1121,19 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         // Konteks token pada header kartu: provider yang dibatasi TOKEN (xKiro/Dahl/Groq)
         // tidak boleh hanya menampilkan panggilan — pengguna perlu tahu batas mana yang mengikat.
         const hasTokenContext = (p.totalTokenCap || 0) > 0 && (p.totalTokensUsed || 0) > 0;
+        const providerTokenPct = p.tokenPercent || 0;
+        const providerTokenColor = providerTokenPct >= 100 ? "#fb7185" : providerTokenPct >= 80 ? "#fbbf24" : "#34d399";
         const tokenContextHtml = hasTokenContext
-          ? `<div style="font-size: 0.68rem; color: ${p.tokenPercent >= 100 ? "#fb7185" : p.tokenPercent >= 80 ? "#fbbf24" : "var(--text-dim)"}; font-weight: 600; margin-top: 2px;">${formatTokens(p.totalTokensUsed)} / ${formatTokens(p.totalTokenCap)} (${p.tokenPercent}%)${p.cappedKeys > 0 ? ` &bull; ${p.cappedKeys} key habis` : ""}</div>`
+          ? `<div class="provider-token-block">
+              <div class="provider-token-head">
+                <span class="provider-token-label">Pemakaian token</span>
+                <span style="color: ${providerTokenColor};">${formatTokens(p.totalTokensUsed)} / ${formatTokens(p.totalTokenCap)} (${providerTokenPct}%)</span>
+              </div>
+              <div class="provider-token-bar" role="img" aria-label="Pemakaian token provider ${providerTokenPct} persen">
+                <span style="width: ${Math.min(100, providerTokenPct)}%; background: ${providerTokenColor};"></span>
+              </div>
+              ${p.cappedKeys > 0 ? `<div class="provider-token-note">${p.cappedKeys} kunci sudah habis kuotanya</div>` : ""}
+            </div>`
           : "";
         // Kalau hari ini belum ada pemakaian tapi provider ini pernah dipakai,
         // sebutkan kapan. Tanpa ini, "0" terbaca seperti data rusak.
@@ -1182,7 +1209,111 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       });
     }
 
-    function renderLiveUpstreamTable(data) {
+    /**
+ * Panel pemakaian WEB SEARCH xKiro.
+ *
+ * Kenapa panel terpisah: web search memakai kuota yang TERPISAH dari kuota token
+ * (10 pencarian per kunci per hari, diukur langsung dari respons provider —
+ * kunci membalas 429 pada pencarian ke-11). Karena itu ia tidak bisa dibaca dari
+ * angka token; tanpa panel ini jatah pencarian bisa habis tanpa terlihat.
+ *
+ * Semua angka di sini berasal dari `webSearch` di /api/stats, yang diturunkan
+ * dari penghitung runtime + status kunci yang sedang kehabisan kuota. Tidak ada
+ * angka yang dikarang: bila data belum ada, panel menampilkan tanda pisah.
+ */
+function renderWebSearchPanel(data) {
+  const panel = document.getElementById("websearch-panel");
+  if (!panel) return;
+
+  const ws = data && data.webSearch;
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+
+  if (!ws || typeof ws !== "object") {
+    setText("websearch-sub", "Data belum tersedia");
+    setText("websearch-used", "–");
+    setText("websearch-remaining", "–");
+    setText("websearch-keys", "–");
+    setText("websearch-cap", "–");
+    return;
+  }
+
+  const capTotal = ws.capTotal || 0;
+  const used = ws.usedThisInstance || 0;
+  const remaining = Math.max(0, capTotal - used);
+  const usedPct = capTotal > 0 ? Math.min(100, Math.round((used / capTotal) * 100)) : 0;
+  const keysTotal = ws.keysTotal || 0;
+  const keysAvailable = typeof ws.keysAvailable === "number" ? ws.keysAvailable : keysTotal;
+  const cooling = ws.keysCoolingDown || 0;
+
+  // Warna bar mengikuti PEMAKAIAN: hijau saat masih lega, kuning saat menipis,
+  // merah saat hampir habis. Ambang ini sama dengan bar token di kartu provider,
+  // supaya satu bahasa warna dipakai di seluruh dashboard.
+  const barColor = usedPct >= 80 ? "#fb7185" : usedPct >= 50 ? "#fbbf24" : "#34d399";
+  const fill = document.getElementById("websearch-bar-fill");
+  const bar = fill ? fill.parentElement : null;
+  if (fill) {
+    fill.style.width = usedPct + "%";
+    fill.style.background = barColor;
+  }
+  // Pembaca layar tidak bisa "melihat" panjang bar, jadi nilainya diberikan
+  // sebagai atribut: role progressbar + valuenow/min/max.
+  if (bar) {
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuenow", String(used));
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", String(capTotal));
+    bar.setAttribute("aria-valuetext", `${used} dari ${capTotal} pencarian terpakai (${usedPct}%)`);
+    bar.setAttribute("aria-label", "Pemakaian jatah web search hari ini");
+  }
+
+  // Bar diberi label "terpakai" + persen eksplisit: tanpa persen, pengguna tetap
+  // harus menghitung sendiri, dan bar jadi hiasan bukan informasi.
+  setText("websearch-used", used.toLocaleString("id-ID"));
+  setText("websearch-used-note", `dari ${capTotal.toLocaleString("id-ID")} pencarian • ${usedPct}% terpakai`);
+  setText("websearch-remaining", remaining.toLocaleString("id-ID"));
+  setText("websearch-remaining-note", `${Math.max(0, 100 - usedPct)}% jatah masih tersisa`);
+  setText("websearch-keys", `${keysAvailable} / ${keysTotal}`);
+  setText("websearch-cap", (ws.capPerKey || 0).toLocaleString("id-ID"));
+
+  // Subjudul menjelaskan KENAPA angka bisa rendah: kunci yang kehabisan kuota
+  // dinonaktifkan 1 jam lalu aktif sendiri, jadi ini keadaan sementara.
+  // Waktu pemulihan dihitung SEKALI di sini lalu dipakai di subjudul dan catatan
+  // kaki. Sebelumnya kedua tempat menyebut waktu dengan gaya berbeda ("dalam 1 jam"
+  // vs "sekitar 17.34"), sehingga pembaca mengira itu dua kejadian berbeda.
+  const nextAt = ws.nextRecoveryAt ? new Date(ws.nextRecoveryAt) : null;
+  const jamPulih = nextAt && !isNaN(nextAt.getTime())
+    ? nextAt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+    : null;
+
+  const sub = document.getElementById("websearch-sub");
+  if (sub) {
+    if (cooling > 0) {
+      sub.textContent = jamPulih
+        ? `${cooling} dari ${keysTotal} kunci sedang kehabisan kuota — kunci pertama aktif lagi sekitar pukul ${jamPulih}`
+        : `${cooling} dari ${keysTotal} kunci sedang kehabisan kuota, aktif lagi otomatis`;
+    } else {
+      sub.textContent = "Pencarian dicoba lewat xKiro lebih dulu, mesin cadangan dipakai bila jatah habis";
+    }
+  }
+
+  const keysNote = document.getElementById("websearch-keys-note");
+  if (keysNote) {
+    keysNote.textContent = cooling > 0 ? `${cooling} kunci istirahat sementara` : "Semua kunci tersedia";
+  }
+
+  const foot = document.getElementById("websearch-foot");
+  if (foot) {
+    foot.textContent =
+      `Web search memakai kuota terpisah dari kuota token: ${ws.capPerKey} pencarian per kunci per hari. ` +
+      `Angka pemakaian di sini adalah batas bawah (serverless bisa punya beberapa instance), ` +
+      `sedangkan jumlah kunci siap pakai diambil dari respons nyata provider.`;
+  }
+}
+
+function renderLiveUpstreamTable(data) {
       const tbody = document.getElementById("live-upstream-tbody");
       if (!tbody) return;
       tbody.innerHTML = "";
@@ -1913,6 +2044,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       on("btn-submit-reset", "click", handleVerifyOtpAndReset);
       on("btn-cancel-reset", "click", closeResetModal);
       on("btn-back-reset", "click", closeResetModal);
+      // Tombol "Kembali" di langkah 2 memakai ID terpisah (lihat catatan di
+      // dashboard.html): ID yang sama membuat handler ini tidak pernah terpasang
+      // pada tombol tersebut, jadi menekannya tidak melakukan apa pun.
+      on("btn-back-reset-step2", "click", closeResetModal);
 
       // Header action controls
       on("btn-auto", "click", toggleAutoRefresh);

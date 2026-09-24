@@ -557,6 +557,176 @@ section { margin-bottom: var(--s5); }
 .key-info-line { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .key-stats { text-align: right; display: flex; flex-direction: column; gap: 2px; }
 .key-token-line { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* ---- Bar pemakaian token (per kunci & per provider) ----
+   Angka saja sulit dibaca sekilas, jadi tiap baris token diberi bar tipis.
+   Tinggi 4px: cukup terlihat, tidak menambah tinggi baris secara berarti.
+   Warna bar mengikuti ambang yang sama dengan angkanya (hijau/kuning/merah),
+   jadi satu pandangan sudah cukup untuk tahu kondisi kunci. */
+.key-token-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+}
+
+.key-token-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.key-token-binding {
+  color: var(--stop);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.key-token-bar {
+  height: 5px;
+  margin-top: 4px;
+  border-radius: 999px;
+  /* Track 22% agar batas total terbaca (sama dengan bar web search). */
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  overflow: hidden;
+}
+
+.key-token-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.provider-token-block {
+  margin-top: 6px;
+}
+
+.provider-token-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.provider-token-label {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.provider-token-bar {
+  height: 6px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  overflow: hidden;
+}
+
+.provider-token-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.provider-token-note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--stop);
+}
+
+/* ---- Panel web search xKiro ----
+   Kuota web search TERPISAH dari kuota token: satu kunci punya 10 pencarian/hari
+   (diukur langsung, kunci membalas 429 pada pencarian ke-11). Tanpa panel ini,
+   pemilik produk tidak tahu jatah pencarian sudah menipis karena angka token
+   tetap terlihat aman. */
+.websearch-panel {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  border-radius: var(--r-panel);
+  border: 1px solid var(--separator);
+  background: var(--surface-raised);
+}
+
+.websearch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.websearch-title {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.websearch-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.websearch-metrics {
+  display: grid;
+  gap: var(--s3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
+
+.websearch-metric {
+  display: grid;
+  gap: 4px;
+}
+
+.websearch-metric-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.websearch-metric-value {
+  font-size: 20px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.websearch-metric-note {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.websearch-bar {
+  /* 8px + track yang JELAS: pengukuran menunjukkan fill 29% sudah benar
+     (78.8px dari 271.8px), tetapi track putih 14% nyaris tak terlihat di atas
+     latar navy, sehingga porsi terpakai tidak bisa dinilai sekilas. Track
+     dinaikkan ke 22% + garis tepi tipis agar batas "total" terbaca. */
+  height: 8px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  overflow: hidden;
+}
+
+.websearch-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.websearch-foot {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
 .key-badge-status { font-size: 11px; font-weight: 600; }
 .status-healthy { color: var(--ok); }
 .status-warning { color: var(--warn); }
@@ -828,7 +998,9 @@ td:nth-child(1) { font-variant-numeric: normal; }
 .model-matrix-card.card-active {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--separator));
   background: color-mix(in srgb, var(--accent) 4.5%, var(--surface-raised));
-  box-shadow: 0 0 24px -4px rgba(0, 240, 255, 0.16);
+  /* Kartu aktif dibedakan lewat border aksen + garis atas, bukan pendaran.
+     Glow membuat kartu terbaca seperti lampu, bukan seperti pilihan aktif. */
+  border-color: var(--accent-dim);
 }
 .model-matrix-card.card-active::before {
   background: var(--accent);
@@ -2033,6 +2205,23 @@ body {
   opacity: 0 !important;
 }
 
+/* ==========================================================================
+   DROPDOWN (glass-select) — Liquid Glass
+   --------------------------------------------------------------------------
+   Ditulis ulang 24 Sep 2026. Sebelumnya komponen ini memakai glow cyan berlapis
+   (box-shadow menyala + radial-gradient di dalam kontrol + drop-shadow pada ikon
+   centang), sehingga terbaca seperti lampu neon, bukan kontrol UI. Itu melanggar
+   aturan proyek: glow hanya boleh ada bila punya fungsi, bukan dekorasi.
+
+   Arah baru — konsisten dengan sisa konsol:
+   - Satu bahasa bahan: kaca tipis (rgba putih 0.05) + blur, sama seperti kartu
+     dan baris filter lain. Bukan kaca "akrilik padat" dengan pancaran cahaya.
+   - Aksen cyan HANYA di titik interaksi (border saat fokus/terbuka, item terpilih).
+     Tidak ada pendaran keluar dari tepi kontrol.
+   - Hierarki kedalaman memakai bayangan hitam netral (bukan bayangan berwarna).
+   - Fallback 3 lapis tetap: backdrop-filter -> @supports -> permukaan padat.
+   ========================================================================== */
+
 .glass-select-container {
   position: relative;
   display: inline-flex;
@@ -2045,49 +2234,43 @@ body {
   z-index: 1000;
 }
 
+/* Pemicu: permukaan kaca yang sama dengan kontrol lain. */
 .glass-select-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
   width: 100%;
-  min-height: 38px;
+  min-height: 40px;
   padding: 0.45rem 0.9rem;
-  border-radius: var(--radius-sm, 10px);
-  border: 1px solid rgba(0, 229, 255, 0.24);
-  background: 
-    radial-gradient(ellipse at 50% 0%, rgba(0, 229, 255, 0.1) 0%, transparent 70%),
-    linear-gradient(180deg, rgba(14, 28, 52, 0.88) 0%, rgba(8, 16, 32, 0.94) 100%);
-  -webkit-backdrop-filter: blur(24px) saturate(190%);
-  backdrop-filter: blur(24px) saturate(190%);
-  color: var(--text-primary, #f0f6fc);
+  border-radius: var(--r-control, 8px);
+  border: 1px solid var(--separator-strong);
+  background: var(--surface-raised);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  color: var(--text);
   font-family: inherit;
   font-size: 0.82rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--duration-fast, 140ms) cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transition: border-color 0.16s ease, background-color 0.16s ease;
 }
 
 .glass-select-trigger:hover {
-  border-color: var(--accent-cyan, #00e5ff);
-  background: 
-    radial-gradient(ellipse at 50% 0%, rgba(0, 229, 255, 0.16) 0%, transparent 70%),
-    linear-gradient(180deg, rgba(18, 36, 68, 0.92) 0%, rgba(10, 20, 40, 0.96) 100%);
-  box-shadow: 0 0 18px rgba(0, 229, 255, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  border-color: var(--separator-strong);
+  background: rgba(255, 255, 255, 0.08);
 }
 
+/* Fokus keyboard: cincin tipis, bukan pendaran. */
 .glass-select-trigger:focus-visible {
-  outline: 2px solid var(--accent-cyan, #00e5ff);
-  outline-offset: 1px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
+/* Terbuka: border menegas dengan aksen, tanpa glow. */
 .glass-select-container.is-open .glass-select-trigger {
-  border-color: var(--accent-cyan, #00e5ff);
-  box-shadow: 0 0 24px rgba(0, 229, 255, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  background: 
-    radial-gradient(ellipse at 50% 0%, rgba(0, 229, 255, 0.22) 0%, transparent 70%),
-    linear-gradient(180deg, rgba(18, 36, 68, 0.96) 0%, rgba(10, 20, 40, 0.98) 100%);
+  border-color: var(--accent-dim);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .glass-select-label {
@@ -2099,16 +2282,18 @@ body {
 .glass-select-arrow {
   display: inline-flex;
   align-items: center;
-  color: var(--text-tertiary, #6e7681);
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), color 0.18s ease;
+  color: var(--text-tertiary);
+  transition: transform 0.2s var(--ease), color 0.16s ease;
   flex-shrink: 0;
 }
 
 .glass-select-container.is-open .glass-select-arrow {
   transform: rotate(180deg);
-  color: var(--accent-cyan, #00e5ff);
+  color: var(--accent);
 }
 
+/* Panel opsi: kaca yang lebih pekat agar teks tabel di belakang tidak mengganggu,
+   dengan bayangan netral untuk memisahkan dari latar. */
 .glass-select-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -2118,32 +2303,23 @@ body {
   max-width: 320px;
   max-height: 280px;
   overflow-y: auto;
-  
-  /* Lapisan Akrilik Liquid Glass Padat Multi-Dimensi:
-     Mencegah teks tabel di belakang berkonflik/bocor, namun tetap mempertahankan
-     pancaran bias cahaya cyan cair & saturasi optik kelas atas */
-  background: 
-    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(0, 229, 255, 0.16) 0%, rgba(0, 160, 255, 0.05) 50%, transparent 80%),
-    linear-gradient(180deg, rgba(10, 22, 42, 0.96) 0%, rgba(6, 14, 26, 0.98) 100%);
-  -webkit-backdrop-filter: blur(40px) saturate(220%) brightness(1.1);
-  backdrop-filter: blur(40px) saturate(220%) brightness(1.1);
-  
-  border: 1px solid rgba(0, 229, 255, 0.32);
-  border-radius: var(--radius-md, 14px);
-  box-shadow: 
-    0 24px 56px rgba(0, 0, 0, 0.82),
-    0 4px 16px rgba(0, 0, 0, 0.4),
-    0 0 28px rgba(0, 229, 255, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    inset 0 0 16px rgba(0, 229, 255, 0.06);
-  padding: 0.45rem;
+  overscroll-behavior: contain;
+
+  background: rgba(10, 16, 28, 0.92);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--r-panel, 16px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  padding: 0.35rem;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-8px) scale(0.98);
-  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(-6px) scale(0.99);
+  transition: opacity 0.16s ease, transform 0.16s var(--ease);
   z-index: 1001;
   scrollbar-width: thin;
 }
@@ -2154,18 +2330,26 @@ body {
   transform: translateY(0) scale(1);
 }
 
+/* Varian untuk pemicu di dekat tepi kanan layar: menu diratakan ke kanan agar
+   tidak melewati batas viewport (penyebab scroll horizontal). Kelas ini
+   ditambahkan oleh glass-dropdown.js setelah mengukur posisi nyata. */
+.glass-select-container.align-right .glass-select-menu {
+  left: auto;
+  right: 0;
+}
+
 .glass-select-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.85rem;
-  padding: 0.6rem 0.85rem;
-  border-radius: var(--radius-sm, 9px);
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--r-control, 8px);
   font-size: 0.82rem;
   font-weight: 500;
-  color: var(--text-secondary, #9da7b3);
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.14s ease, color 0.14s ease;
   user-select: none;
   white-space: nowrap;
   position: relative;
@@ -2173,62 +2357,49 @@ body {
 }
 
 .glass-select-item:hover {
-  background: rgba(0, 229, 255, 0.12);
-  color: #ffffff;
-  border-color: rgba(0, 229, 255, 0.2);
-  transform: translateX(3px);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
 }
 
+/* Terpilih: dibedakan lewat latar + warna teks, bukan lewat pendaran. */
 .glass-select-item.is-selected {
-  background: linear-gradient(90deg, rgba(0, 229, 255, 0.22) 0%, rgba(0, 229, 255, 0.08) 100%);
-  color: var(--accent-cyan, #00e5ff);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-weight: 600;
-  border: 1px solid rgba(0, 229, 255, 0.35);
-  box-shadow: 0 0 12px rgba(0, 229, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border-color: var(--accent-dim);
 }
 
 .glass-select-check {
   display: none;
-  color: var(--accent-cyan, #00e5ff);
+  color: var(--accent);
   flex-shrink: 0;
-  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.6));
 }
 
 .glass-select-item.is-selected .glass-select-check {
   display: inline-flex;
 }
 
-/* Light Theme Fluid Glass Dropdown */
+/* ---- Varian tema terang ---- */
 [data-theme="light"] .glass-select-trigger {
-  background: 
-    radial-gradient(ellipse at 50% 0%, rgba(0, 102, 204, 0.06) 0%, transparent 70%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(242, 248, 255, 0.98) 100%);
-  border-color: rgba(0, 102, 204, 0.24);
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(10, 30, 60, 0.16);
   color: #0c1a2e;
-  box-shadow: 0 4px 12px rgba(10, 30, 60, 0.08), inset 0 1px 0 #ffffff;
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
 }
 
-[data-theme="light"] .glass-select-trigger:hover,
-[data-theme="light"] .glass-select-container.is-open .glass-select-trigger {
-  border-color: #0066cc;
+[data-theme="light"] .glass-select-trigger:hover {
   background: #ffffff;
-  box-shadow: 0 0 16px rgba(0, 102, 204, 0.2), inset 0 1px 0 #ffffff;
+  border-color: rgba(10, 30, 60, 0.24);
+}
+
+[data-theme="light"] .glass-select-container.is-open .glass-select-trigger {
+  background: #ffffff;
+  border-color: #0066cc;
 }
 
 [data-theme="light"] .glass-select-menu {
-  background: 
-    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(0, 102, 204, 0.09) 0%, transparent 70%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(245, 250, 255, 0.99) 100%);
-  border-color: rgba(0, 102, 204, 0.25);
-  box-shadow: 
-    0 22px 52px rgba(10, 30, 60, 0.18),
-    0 4px 14px rgba(10, 30, 60, 0.08),
-    0 0 0 1px rgba(255, 255, 255, 0.8),
-    inset 0 1px 0 rgba(255, 255, 255, 1);
-  -webkit-backdrop-filter: blur(40px) saturate(190%);
-  backdrop-filter: blur(40px) saturate(190%);
+  background: rgba(255, 255, 255, 0.97);
+  border-color: rgba(10, 30, 60, 0.16);
+  box-shadow: 0 16px 40px rgba(10, 30, 60, 0.16);
 }
 
 [data-theme="light"] .glass-select-item {
@@ -2236,21 +2407,63 @@ body {
 }
 
 [data-theme="light"] .glass-select-item:hover {
-  background: rgba(0, 102, 204, 0.09);
+  background: rgba(0, 102, 204, 0.07);
   color: #0066cc;
-  border-color: rgba(0, 102, 204, 0.16);
 }
 
 [data-theme="light"] .glass-select-item.is-selected {
-  background: linear-gradient(90deg, rgba(0, 102, 204, 0.14) 0%, rgba(0, 102, 204, 0.05) 100%);
+  background: rgba(0, 102, 204, 0.1);
   color: #0066cc;
-  border-color: rgba(0, 102, 204, 0.28);
-  box-shadow: 0 0 10px rgba(0, 102, 204, 0.12), inset 0 1px 0 #ffffff;
+  border-color: rgba(0, 102, 204, 0.24);
 }
 
 [data-theme="light"] .glass-select-arrow,
 [data-theme="light"] .glass-select-check {
   color: #0066cc;
+}
+
+/* Fallback: bila browser tidak mendukung backdrop-filter, pakai permukaan padat. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-select-trigger,
+  .glass-select-menu {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .glass-select-trigger {
+    background: #0e1626;
+  }
+
+  .glass-select-menu {
+    background: #0a101c;
+  }
+
+  [data-theme="light"] .glass-select-trigger,
+  [data-theme="light"] .glass-select-menu {
+    background: #ffffff;
+  }
+}
+
+/* Hormati permintaan transparansi dikurangi: matikan kaca, pakai permukaan padat. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass-select-trigger,
+  .glass-select-menu {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .glass-select-trigger {
+    background: #0e1626;
+  }
+
+  .glass-select-menu {
+    background: #0a101c;
+  }
+
+  [data-theme="light"] .glass-select-trigger,
+  [data-theme="light"] .glass-select-menu {
+    background: #ffffff;
+  }
 }
 
 /* Grup tombol filter berbentuk pil */
@@ -2286,7 +2499,7 @@ body {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 650;
-  box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.3);
+  border-color: var(--accent-dim);
 }
 
 /* ---------- KPI ---------- */

@@ -91,7 +91,7 @@
       function openDropdown() {
         document.querySelectorAll(".glass-select-container.is-open").forEach(function (c) {
           if (c !== container) {
-            c.classList.remove("is-open");
+            c.classList.remove("is-open", "align-right");
             c.querySelector(".glass-select-trigger")?.setAttribute("aria-expanded", "false");
             var pb = c.closest(".filter-dashboard-bar, .pool-section-header, .filter-group");
             if (pb) pb.classList.remove("has-open-dropdown");
@@ -101,6 +101,18 @@
         trigger.setAttribute("aria-expanded", "true");
         var bar = container.closest(".filter-dashboard-bar, .pool-section-header, .filter-group");
         if (bar) bar.classList.add("has-open-dropdown");
+
+        // Menu diposisikan absolut, jadi bila pemicunya ada di dekat tepi kanan,
+        // menu bisa melewati batas layar dan memunculkan scroll horizontal
+        // (terukur: 10px overflow pada dropdown filter di baris kanan).
+        // Solusi: ukur setelah render, lalu ratakan menu ke kanan pemicu bila
+        // memang akan keluar layar.
+        container.classList.remove("align-right");
+        var rect = menu.getBoundingClientRect();
+        var margin = 8;
+        if (rect.right > window.innerWidth - margin) {
+          container.classList.add("align-right");
+        }
       }
 
       function closeDropdown() {
@@ -139,7 +151,7 @@
 
     function closeAllActiveDropdowns() {
       document.querySelectorAll(".glass-select-container.is-open").forEach(function (c) {
-        c.classList.remove("is-open");
+        c.classList.remove("is-open", "align-right");
         c.querySelector(".glass-select-trigger")?.setAttribute("aria-expanded", "false");
       });
       document.querySelectorAll(".has-open-dropdown").forEach(function (b) {
@@ -160,6 +172,10 @@
         closeAllActiveDropdowns();
       }
     });
+
+    // Tutup saat ukuran layar berubah: posisi tepi bisa bergeser sehingga
+    // perataan yang dihitung saat dibuka menjadi tidak valid.
+    window.addEventListener("resize", closeAllActiveDropdowns);
   }
 
   window.setupGlassDropdowns = initGlassDropdowns;
