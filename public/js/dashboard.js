@@ -1010,7 +1010,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           else if (lower.includes("code")) capClass = "tag-cap-code";
           return `<span class="tag-cap ${capClass}">${escapeHtml(cap)}</span>`;
         }).join("");
-      setHtmlIfChanged(gridEl, __htmlGrid);
 
         const providerKey = (c.provider || "").toLowerCase();
 
@@ -1035,6 +1034,13 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           </div>
         `;
       }).join("");
+
+      // Tulis grid SEKALI setelah SEMUA kartu selesai dibangun.
+      // Sebelumnya baris ini nyasar ke dalam map() -> ReferenceError
+      // ("Cannot access '__htmlGrid' before initialization") -> seluruh
+      // renderDashboard berhenti dan grid tetap menampilkan "Memuat matriks
+      // model". Sekaligus pakai setHtmlIfChanged supaya tidak berkedip.
+      setHtmlIfChanged(gridEl, __htmlGrid);
     }
 
 
@@ -1073,7 +1079,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     function renderPoolMatrix(data) {
       const poolGrid = document.getElementById("pool-grid");
       if (!poolGrid) return;
-      poolGrid.innerHTML = "";
 
       const pools = data.pools || data.providers || [];
       const filteredPools = pools.filter(p => {
@@ -1082,9 +1087,15 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       });
 
       if (filteredPools.length === 0) {
-        poolGrid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 2rem;">Tidak ada pool provider yang sesuai filter.</div>`;
+        setHtmlIfChanged(poolGrid, `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 2rem;">Tidak ada pool provider yang sesuai filter.</div>`);
         return;
       }
+
+      // Kartu dibangun di FRAGMEN (bukan langsung ke grid) supaya bisa
+      // dibandingkan dulu; kalau isinya sama, DOM tidak disentuh sama sekali
+      // -> grid tidak berkedip saat refresh berkala (perbaikan blink 24 Sep).
+      // Event listener tombol lipat tetap terpasang karena kartunya elemen nyata.
+      const __frag = document.createDocumentFragment();
 
       filteredPools.forEach(p => {
         const card = document.createElement("div");
@@ -1262,7 +1273,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           </div>
           ${toggleHtml}
         `;
-        poolGrid.appendChild(card);
+        __frag.appendChild(card);
 
         // Tombol lipat: buka/tutup daftar kunci penuh.
         const toggleBtn = card.querySelector("[data-toggle-keys]");
@@ -1278,6 +1289,19 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           });
         }
       });
+
+      // Bandingkan dulu: kalau isi grid identik dengan render sebelumnya,
+      // JANGAN sentuh DOM -> tidak ada kedip.
+      const __htmlBaru = (() => {
+        const tmp = document.createElement("div");
+        tmp.appendChild(__frag.cloneNode(true));
+        return tmp.innerHTML;
+      })();
+      if (poolGrid.__lastHtml !== __htmlBaru) {
+        poolGrid.innerHTML = "";
+        poolGrid.appendChild(__frag);
+        poolGrid.__lastHtml = __htmlBaru;
+      }
     }
 
     /**
@@ -1413,7 +1437,9 @@ function renderWebSearchPanel(data) {
 function renderLiveUpstreamTable(data) {
       const tbody = document.getElementById("live-upstream-tbody");
       if (!tbody) return;
-      tbody.innerHTML = "";
+      // JANGAN kosongkan tbody di sini. Tabel diisi lewat setHtmlIfChanged() di
+      // akhir fungsi; mengosongkan lebih dulu membuat tabel hilang sekejap ->
+      // kedip saat refresh berkala (perbaikan blink 24 Sep).
 
       const pools = data.pools || data.providers || [];
       let grandTotalTokenCap = 0;
@@ -1741,13 +1767,17 @@ function renderLiveUpstreamTable(data) {
     function renderTokenMatrix(data) {
       const tbody = document.getElementById("token-matrix-tbody");
       if (!tbody) return;
-      tbody.innerHTML = "";
 
       const pools = data.pools || data.providers || [];
       if (pools.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">Tidak ada data provider.</td></tr>`;
+        setHtmlIfChanged(tbody, `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">Tidak ada data provider.</td></tr>`);
         return;
       }
+
+      // Fragmen WAJIB dibuat di sini. Sebelumnya baris di bawah memakai __frag
+      // yang hanya dibuat di renderLiveUpstreamTable -> ReferenceError -> seluruh
+      // renderDashboard berhenti dan semua panel setelah token matrix kosong.
+      const __frag = document.createDocumentFragment();
 
       pools.forEach(p => {
         const usedCalls = p.usedPeriod ?? p.usedToday ?? 0;
@@ -1940,10 +1970,8 @@ function renderLiveUpstreamTable(data) {
       const endIdx = Math.min(startIdx + DATASET_PAGE_SIZE, total);
       const pageItems = cachedDatasetPairs.slice(startIdx, endIdx);
 
-      tbody.innerHTML = "";
-      // Bangun baris di FRAGMENT dulu (bukan langsung ke tbody), lalu bandingkan
-      // dengan isi terakhir. Kalau sama, DOM tidak disentuh -> tabel tidak
-      // berkedip saat refresh berkala (perbaikan blink 24 Sep).
+      // JANGAN kosongkan tbody di sini (perbaikan blink 24 Sep): baris dibangun
+      // di fragmen, lalu dibandingkan; kalau sama DOM tidak disentuh.
       const __frag = document.createDocumentFragment();
       pageItems.forEach(p => {
         const tr = document.createElement("tr");
@@ -1996,8 +2024,21 @@ function renderLiveUpstreamTable(data) {
             </button>
           </td>
         `;
-        tbody.appendChild(tr);
+        __frag.appendChild(tr);
       });
+
+      // Bandingkan dulu: kalau isi tabel identik dengan render sebelumnya,
+      // JANGAN sentuh DOM — inilah yang mencegah tabel berkedip tiap refresh.
+      const __htmlBaru = (() => {
+        const tmp = document.createElement("tbody");
+        tmp.appendChild(__frag.cloneNode(true));
+        return tmp.innerHTML;
+      })();
+      if (tbody.__lastHtml !== __htmlBaru) {
+        tbody.innerHTML = "";
+        tbody.appendChild(__frag);
+        tbody.__lastHtml = __htmlBaru;
+      }
 
       // Update Pagination Text
       if (infoEl) {
