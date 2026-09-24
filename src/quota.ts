@@ -9,6 +9,20 @@ import { db } from './db.js';
 
 export type ProviderKind = 'dahl' | 'groq' | 'gemini' | 'cloudflare' | 'openrouter' | 'xkiro';
 
+/**
+ * Kind khusus untuk WEB SEARCH xKiro.
+ *
+ * Dipisah dari 'xkiro' karena web search memakai kuota yang berbeda dari chat
+ * completion: 10 pencarian/kunci/hari, sedangkan chat dibatasi token. Kalau
+ * digabung, pencarian akan ikut menaikkan hitungan "panggilan API" dan membuat
+ * persentase pemakaian token terlihat salah.
+ *
+ * Dicatat ke tabel `provider_quota` yang sama supaya angkanya PERSISTEN — bukan
+ * penghitung in-memory yang selalu 0 di serverless (tiap request bisa instance
+ * berbeda).
+ */
+export type QuotaKind = ProviderKind | 'xkiro-search';
+
 interface Counter {
   date: string;
   count: number;
@@ -45,7 +59,7 @@ function keyHash(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
 }
 
-function slot(kind: ProviderKind, key: string): Counter {
+function slot(kind: QuotaKind, key: string): Counter {
   // Prune tanggal usang jika map membesar
   if (counters.size > 200) {
     const t = today();
@@ -62,7 +76,7 @@ function slot(kind: ProviderKind, key: string): Counter {
   return fresh;
 }
 
-function tokenSlot(kind: ProviderKind, key: string): TokenCounter {
+function tokenSlot(kind: QuotaKind, key: string): TokenCounter {
   if (tokenCounters.size > 200) {
     const t = today();
     for (const [k, v] of tokenCounters.entries()) {
@@ -79,12 +93,12 @@ function tokenSlot(kind: ProviderKind, key: string): TokenCounter {
 }
 
 /** Pemakaian token harian key (TPD) — untuk limit token per hari (mis. Groq 200K TPD). */
-export function keyTokensUsedToday(kind: ProviderKind, key: string): number {
+export function keyTokensUsedToday(kind: QuotaKind, key: string): number {
   return tokenSlot(kind, key).tokens;
 }
 
 /** Jumlah REQUEST harian key (RPD) — dipakai rotasi key agar beban merata antar key. */
-export function keyRequestsUsedToday(kind: ProviderKind, key: string): number {
+export function keyRequestsUsedToday(kind: QuotaKind, key: string): number {
   return slot(kind, key).count;
 }
 
@@ -102,7 +116,7 @@ function pruneHydratedKeys(): void {
 }
 
 /** Hydrate kuota pemakaian dari Supabase provider_quota saat instance baru aktif (C5 & P1-4) */
-export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<void> {
+export async function hydrateKeyQuota(kind: QuotaKind, key: string): Promise<void> {
   const suffix = keyHash(key);
   const id = `${kind}:${suffix}`;
   const day = today();
@@ -167,7 +181,7 @@ export async function hydrateKeyQuota(kind: ProviderKind, key: string): Promise<
 }
 
 /** Pastikan kuota key sudah terhidrasi sebelum dievaluasi (mencegah cold-start over-quota - C5 & E8). */
-export async function ensureKeyQuotaHydrated(kind: ProviderKind, key: string): Promise<void> {
+export async function ensureKeyQuotaHydrated(kind: QuotaKind, key: string): Promise<void> {
   const suffix = keyHash(key);
   const day = today();
   const cacheKey = `${kind}:${suffix}:${day}`;
@@ -182,7 +196,7 @@ export async function ensureKeyQuotaHydrated(kind: ProviderKind, key: string): P
  * tokenCapPerDay > 0 mengaktifkan guard TPD (mis. Groq Free Tier 200K TPD).
  */
 export async function isKeyAllowed(
-  kind: ProviderKind,
+  kind: QuotaKind,
   key: string,
   cap: number,
   tokenCapPerDay: number = 0,
@@ -194,7 +208,7 @@ export async function isKeyAllowed(
 }
 
 /** Catat satu pemakaian sukses/gagal-terkirim (429 ikut dihitung agar pool berhenti). */
-export function keyUsed(kind: ProviderKind, key: string): void {
+export function keyUsed(kind: QuotaKind, key: string): void {
   const s = slot(kind, key);
   s.count += 1;
 
@@ -239,7 +253,7 @@ export function keyUsed(kind: ProviderKind, key: string): void {
  * Dipakai provider dengan limit token per hari (mis. Groq Free Tier 200K TPD)
  * agar pool berhenti sebelum menabrak 429 upstream.
  */
-export function keyTokensUsed(kind: ProviderKind, key: string, tokens: number): void {
+export function keyTokensUsed(kind: QuotaKind, key: string, tokens: number): void {
   const amount = Math.max(0, Math.round(tokens));
   if (amount <= 0) return;
   const ts = tokenSlot(kind, key);

@@ -1241,17 +1241,26 @@ function renderWebSearchPanel(data) {
   }
 
   const capTotal = ws.capTotal || 0;
-  const used = ws.usedThisInstance || 0;
-  const remaining = Math.max(0, capTotal - used);
-  const usedPct = capTotal > 0 ? Math.min(100, Math.round((used / capTotal) * 100)) : 0;
+  // Pemakaian diambil dari angka DATABASE (persisten), bukan penghitung
+  // in-memory: di serverless setiap request bisa dilayani instance baru yang
+  // penghitungnya mulai dari 0, sehingga "terpakai" akan selalu terbaca 0.
+  const used = typeof ws.usedToday === "number" ? ws.usedToday : null;
+  const usedPct = used !== null && capTotal > 0
+    ? Math.min(100, Math.round((used / capTotal) * 100))
+    : (ws.usedPercent || 0);
+  const remaining = typeof ws.remainingToday === "number" ? ws.remainingToday : Math.max(0, capTotal - (used || 0));
   const keysTotal = ws.keysTotal || 0;
   const keysAvailable = typeof ws.keysAvailable === "number" ? ws.keysAvailable : keysTotal;
   const cooling = ws.keysCoolingDown || 0;
 
-  // Warna bar mengikuti PEMAKAIAN: hijau saat masih lega, kuning saat menipis,
-  // merah saat hampir habis. Ambang ini sama dengan bar token di kartu provider,
-  // supaya satu bahasa warna dipakai di seluruh dashboard.
-  const barColor = usedPct >= 80 ? "#fb7185" : usedPct >= 50 ? "#fbbf24" : "#34d399";
+  // Warna bar mengikuti TINGKAT PEMAKAIAN dengan ambang yang SAMA di seluruh
+  // dashboard (bar token per kunci, bar token provider, dan bar web search):
+  //   < 80%   hijau  (masih lega)
+  //   >= 80%  kuning (menipis, siapkan cadangan)
+  //   >= 100% merah  (habis)
+  // Ambang seragam penting: sebelumnya bar web search memakai 50/80, sehingga
+  // kuning di satu tempat berarti beda dengan kuning di tempat lain.
+  const barColor = usedPct >= 100 ? "#fb7185" : usedPct >= 80 ? "#fbbf24" : "#34d399";
   const fill = document.getElementById("websearch-bar-fill");
   const bar = fill ? fill.parentElement : null;
   if (fill) {
@@ -1262,7 +1271,7 @@ function renderWebSearchPanel(data) {
   // sebagai atribut: role progressbar + valuenow/min/max.
   if (bar) {
     bar.setAttribute("role", "progressbar");
-    bar.setAttribute("aria-valuenow", String(used));
+    bar.setAttribute("aria-valuenow", String(used === null ? usedPct : used));
     bar.setAttribute("aria-valuemin", "0");
     bar.setAttribute("aria-valuemax", String(capTotal));
     bar.setAttribute("aria-valuetext", `${used} dari ${capTotal} pencarian terpakai (${usedPct}%)`);
@@ -1271,10 +1280,16 @@ function renderWebSearchPanel(data) {
 
   // Bar diberi label "terpakai" + persen eksplisit: tanpa persen, pengguna tetap
   // harus menghitung sendiri, dan bar jadi hiasan bukan informasi.
-  setText("websearch-used", used.toLocaleString("id-ID"));
-  setText("websearch-used-note", `dari ${capTotal.toLocaleString("id-ID")} pencarian • ${usedPct}% terpakai`);
+  // Bila angka pemakaian tidak tersedia (DB tidak terbaca), tampilkan tanda
+  // pisah — bukan 0. Angka 0 yang salah lebih menyesatkan daripada tanda pisah.
+  setText("websearch-used", used === null ? "–" : used.toLocaleString("id-ID"));
+  setText("websearch-used-note", used === null
+    ? `dari ${capTotal.toLocaleString("id-ID")} pencarian`
+    : `dari ${capTotal.toLocaleString("id-ID")} pencarian • ${usedPct}% terpakai`);
   setText("websearch-remaining", remaining.toLocaleString("id-ID"));
-  setText("websearch-remaining-note", `${Math.max(0, 100 - usedPct)}% jatah masih tersisa`);
+  setText("websearch-remaining-note", used === null
+    ? `${Math.max(0, 100 - usedPct)}% jatah tersisa (perkiraan dari kunci siap pakai)`
+    : `${Math.max(0, 100 - usedPct)}% jatah masih tersisa`);
   setText("websearch-keys", `${keysAvailable} / ${keysTotal}`);
   setText("websearch-cap", (ws.capPerKey || 0).toLocaleString("id-ID"));
 
@@ -1299,17 +1314,24 @@ function renderWebSearchPanel(data) {
     }
   }
 
+  // Catatan kunci cukup menyebut APA yang terjadi pada kunci itu; jumlah kunci
+  // istirahat sudah disebut di subjudul, jadi tidak diulang lagi di sini.
   const keysNote = document.getElementById("websearch-keys-note");
   if (keysNote) {
-    keysNote.textContent = cooling > 0 ? `${cooling} kunci istirahat sementara` : "Semua kunci tersedia";
+    keysNote.textContent = cooling > 0 ? "sisanya istirahat sementara" : "semua kunci tersedia";
   }
 
   const foot = document.getElementById("websearch-foot");
   if (foot) {
-    foot.textContent =
-      `Web search memakai kuota terpisah dari kuota token: ${ws.capPerKey} pencarian per kunci per hari. ` +
-      `Angka pemakaian di sini adalah batas bawah (serverless bisa punya beberapa instance), ` +
-      `sedangkan jumlah kunci siap pakai diambil dari respons nyata provider.`;
+    // Catatan ini menyebut SUMBER angka, supaya pemilik produk tahu seberapa
+    // jauh ia bisa mempercayainya: pemakaian dari database (bertahan lintas
+    // instance), jumlah kunci dari respons nyata provider.
+    foot.textContent = used === null
+      ? `Web search memakai kuota terpisah dari kuota token: ${ws.capPerKey} pencarian per kunci per hari. ` +
+        `Angka pemakaian belum terbaca dari database, jadi yang ditampilkan hanya perkiraan dari jumlah kunci siap pakai.`
+      : `Web search memakai kuota terpisah dari kuota token: ${ws.capPerKey} pencarian per kunci per hari. ` +
+        `Angka pemakaian diambil dari catatan harian di database, jumlah kunci siap pakai dari respons nyata provider. ` +
+        `Bila jatah xKiro habis, bot otomatis memakai mesin pencari cadangan tanpa kuota.`;
   }
 }
 

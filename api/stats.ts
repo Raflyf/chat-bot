@@ -378,7 +378,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Map kuota HARI INI (dipakai untuk persentase/status saat rentang bukan "hari ini").
     const todayQuotaMap = new Map<string, number>();
     const todayTokenQuotaMap = new Map<string, number>();
+    // Pemakaian WEB SEARCH xKiro (kind 'xkiro-search') dihitung TERPISAH:
+    // kuotanya berbeda dari chat (10 pencarian/kunci/hari vs token), jadi
+    // mencampurnya akan mengacaukan persentase pemakaian token provider.
+    let webSearchUsedToday = 0;
     for (const q of todayQuotasData ?? []) {
+      if (q.kind === 'xkiro-search') {
+        webSearchUsedToday += q.used || 0;
+        continue;
+      }
       const key = `${q.kind}:${q.key_suffix}`;
       todayQuotaMap.set(key, (todayQuotaMap.get(key) || 0) + (q.used || 0));
       todayTokenQuotaMap.set(key, (todayTokenQuotaMap.get(key) || 0) + (Number(q.tokens_used) || 0));
@@ -1023,7 +1031,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       // Pemakaian WEB SEARCH xKiro — kuota terpisah dari kuota token.
       // Batas 10 pencarian/kunci/hari diukur langsung dari respons provider
       // (kunci membalas 429 pada pencarian ke-11), bukan dari dokumentasi.
-      webSearch: xkiroSearchStatus(),
+      //
+      // Angka "terpakai" diambil dari DATABASE (persisten lintas instance),
+      // bukan dari penghitung in-memory yang selalu 0 di serverless.
+      // Bila DB tidak tersedia, nilainya null dan dashboard menampilkannya
+      // sebagai tanda pisah — lebih jujur daripada menampilkan 0.
+      webSearch: (() => {
+        const s = xkiroSearchStatus();
+        const capTotal = s.keysTotal * s.capPerKey;
+        const usedFromDb = webSearchUsedToday;
+        return {
+          ...s,
+          usedToday: usedFromDb,
+          usedPercent: capTotal > 0 ? Math.min(100, Math.round((usedFromDb / capTotal) * 100)) : 0,
+          remainingToday: Math.max(0, capTotal - usedFromDb),
+        };
+      })(),
     });
   } catch (err) {
     console.error('[api/stats] Gagal mengumpulkan metrik:', err);

@@ -22,6 +22,8 @@
  * dicatat PER KUNCI, lalu kunci berikutnya langsung dicoba.
  */
 
+import { keyUsed } from './quota.js';
+
 const XKIRO_SEARCH_URL = 'https://api.xkiro.com/v1/search';
 const XKIRO_FETCH_URL = 'https://api.xkiro.com/v1/fetch';
 
@@ -91,10 +93,19 @@ export type XkiroSearchStatus = {
   capPerKey: number;
   /** Total batas harian seluruh kunci (keysTotal x capPerKey). */
   capTotal: number;
-  /** Pencarian yang tercatat di instance ini (perkiraan bawah). */
+  /**
+   * Sisa jatah yang AKURAT: jumlah kunci siap pakai x batas per kunci.
+   *
+   * Kenapa bukan "capTotal - usedThisInstance": di serverless (Vercel) setiap
+   * request bisa dilayani instance berbeda, sehingga penghitung in-memory selalu
+   * mulai dari 0 dan angka "terpakai" nyaris selalu 0 — menyesatkan. Sebaliknya,
+   * kunci yang kehabisan kuota DINONAKTIFKAN berdasarkan respons nyata provider
+   * (402/429), jadi `keysAvailable` mencerminkan keadaan sebenarnya dan
+   * `keysAvailable x capPerKey` adalah sisa jatah yang bisa dipercaya.
+   */
+  remainingFromKeys: number;
+  /** Pencarian yang tercatat di instance INI saja (batas bawah, bukan total). */
   usedThisInstance: number;
-  /** Sisa jatah teoretis (capTotal - usedThisInstance). */
-  remainingEstimate: number;
   /** Kunci yang sedang dinonaktifkan karena kuota habis. */
   keysCoolingDown: number;
   /** Kapan kunci yang dinonaktifkan akan aktif kembali (epoch ms, paling cepat). */
@@ -127,8 +138,11 @@ export function xkiroSearchStatus(): XkiroSearchStatus {
     keysAvailable: available,
     capPerKey: XKIRO_SEARCH_CAP_PER_KEY,
     capTotal,
+    // Angka yang bisa dipercaya: kunci sehat x jatah per kunci. Kunci yang sudah
+    // kehabisan kuota sudah dikeluarkan dari `available` berdasarkan respons
+    // nyata provider, jadi perkalian ini tidak mengarang.
+    remainingFromKeys: available * XKIRO_SEARCH_CAP_PER_KEY,
     usedThisInstance: used,
-    remainingEstimate: Math.max(0, capTotal - used),
     keysCoolingDown: cooling.length,
     nextRecoveryAt: nextRecovery,
   };
@@ -221,6 +235,10 @@ export async function xkiroWebSearch(
         // Catat pemakaian HANYA saat berhasil, supaya angka di dashboard tidak
         // membengkak karena percobaan yang gagal.
         recordSearchUse(key);
+        // Persist ke tabel provider_quota (kind 'xkiro-search') agar angka
+        // pemakaian bertahan lintas instance serverless. In-memory saja tidak
+        // cukup: setiap request bisa dilayani instance baru yang mulai dari 0.
+        keyUsed('xkiro-search', key);
         return mapped;
       }
     } catch {

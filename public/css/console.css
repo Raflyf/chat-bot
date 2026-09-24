@@ -587,8 +587,9 @@ section { margin-bottom: var(--s5); }
   height: 5px;
   margin-top: 4px;
   border-radius: 999px;
-  /* Track 22% agar batas total terbaca (sama dengan bar web search). */
-  background: color-mix(in srgb, var(--text) 22%, transparent);
+  /* Warna solid (lihat catatan di .websearch-bar): track transparan tidak
+     mencapai kontras minimum sehingga batas total tidak terbaca. */
+  background: #6b7280;
   overflow: hidden;
 }
 
@@ -622,7 +623,7 @@ section { margin-bottom: var(--s5); }
   height: 6px;
   margin-top: 5px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 22%, transparent);
+  background: #6b7280;
   overflow: hidden;
 }
 
@@ -702,15 +703,17 @@ section { margin-bottom: var(--s5); }
 }
 
 .websearch-bar {
-  /* 8px + track yang JELAS: pengukuran menunjukkan fill 29% sudah benar
-     (78.8px dari 271.8px), tetapi track putih 14% nyaris tak terlihat di atas
-     latar navy, sehingga porsi terpakai tidak bisa dinilai sekilas. Track
-     dinaikkan ke 22% + garis tepi tipis agar batas "total" terbaca. */
+  /* Track memakai warna SOLID #6b7280, bukan color-mix transparan.
+     Alasan terukur (WCAG 1.4.11 untuk elemen grafis non-teks, minimum 3.0):
+       - color-mix putih 30% di atas kartu gelap -> kontras 1.1  (gagal)
+       - #374151 (abu tua)                        -> kontras 1.79 (gagal)
+       - #6b7280 (abu medium)                     -> kontras 3.81 (LOLOS)
+     Warna dihitung terhadap latar kartu nyata (rgba(255,255,255,0.05) di atas
+     #020814 = sekitar rgb(15,20,32)), bukan dikira-kira. */
   height: 8px;
   margin-top: 2px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 22%, transparent);
-  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  background: #6b7280;
   overflow: hidden;
 }
 
