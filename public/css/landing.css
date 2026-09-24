@@ -54,6 +54,7 @@
 
   --wrap: 1180px;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 *,
@@ -154,6 +155,57 @@ svg {
    HEADER — bilah kaca yang menempel di atas
    ========================================================================== */
 
+/* ==========================================================================
+   KEYFRAMES — Animasi Halus Masuk & Gerak
+   ========================================================================== */
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes heroReveal {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes elementFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes iconPop {
+  0% {
+    transform: scale(0.82);
+    opacity: 0.5;
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 header {
   position: sticky;
   top: 0;
@@ -163,6 +215,7 @@ header {
   backdrop-filter: blur(var(--blur-strong)) saturate(150%);
   border-bottom: 1px solid var(--glass-border);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+  animation: fadeInDown 0.6s var(--ease-spring) both;
 }
 
 .nav-inner {
@@ -194,6 +247,12 @@ header {
   color: var(--bg-deep);
   background: linear-gradient(140deg, var(--accent-cyan), #6ee7ff);
   box-shadow: 0 0 22px rgba(0, 240, 255, 0.32);
+  transition: transform 0.25s var(--ease-spring), box-shadow 0.25s ease;
+}
+
+.brand:hover .brand-icon {
+  transform: scale(1.06) rotate(-2deg);
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.5);
 }
 
 .brand-text h1 {
@@ -228,6 +287,14 @@ header {
   color: #6ee7a8;
   background: rgba(16, 185, 129, 0.12);
   border: 1px solid rgba(16, 185, 129, 0.32);
+  animation: elementFadeUp 0.5s var(--ease-spring) 0.15s both;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.status-pill:hover {
+  border-color: rgba(16, 185, 129, 0.55);
+  background-color: rgba(16, 185, 129, 0.18);
+  transform: translateY(-1px);
 }
 
 .pulse-dot {
@@ -270,16 +337,26 @@ header {
   font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
-  transition: transform 0.2s var(--ease), background-color 0.2s var(--ease),
+  transition: transform 0.25s var(--ease-spring), background-color 0.2s var(--ease),
     border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 
 .btn:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 
 .btn:active {
-  transform: translateY(0);
+  transform: translateY(1px) scale(0.98);
+}
+
+/* Arrow slide micro-motion pada tombol yang memiliki span panah */
+.btn span:last-child {
+  display: inline-block;
+  transition: transform 0.25s var(--ease-spring);
+}
+
+.btn:hover span:last-child {
+  transform: translateX(3px);
 }
 
 /* Panel kaca untuk aksi sekunder di dalam bilah navigasi. */
@@ -361,6 +438,7 @@ header {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     0 28px 70px var(--shadow);
+  animation: heroReveal 0.8s var(--ease-spring) 0.08s both;
 }
 
 /* Kilau tepi atas panel hero: pantulan cahaya pada permukaan kaca. */
@@ -390,6 +468,14 @@ header {
   border: 1px solid var(--border-glow-soft);
   -webkit-backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
   backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
+  animation: elementFadeUp 0.6s var(--ease-spring) 0.18s both;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.hero-badge:hover {
+  border-color: var(--border-glow);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.2);
+  transform: translateY(-1px);
 }
 
 .hero-title {
@@ -405,6 +491,7 @@ header {
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
+  animation: elementFadeUp 0.65s var(--ease-spring) 0.28s both;
 }
 
 .hero-subtitle {
@@ -413,6 +500,7 @@ header {
   font-size: clamp(0.98rem, 1.7vw, 1.08rem);
   color: #aebfd4;
   text-wrap: pretty;
+  animation: elementFadeUp 0.65s var(--ease-spring) 0.38s both;
 }
 
 .hero-cta-group {
@@ -421,6 +509,18 @@ header {
   align-items: center;
   justify-content: center;
   gap: 0.8rem;
+}
+
+.hero-cta-group .btn:nth-child(1) {
+  animation: elementFadeUp 0.6s var(--ease-spring) 0.48s both;
+}
+
+.hero-cta-group .btn:nth-child(2) {
+  animation: elementFadeUp 0.6s var(--ease-spring) 0.56s both;
+}
+
+.hero-cta-group .btn:nth-child(3) {
+  animation: elementFadeUp 0.6s var(--ease-spring) 0.64s both;
 }
 
 /* ==========================================================================
@@ -475,7 +575,7 @@ header {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
     0 10px 30px rgba(0, 0, 0, 0.32);
-  transition: transform 0.25s var(--ease), border-color 0.25s var(--ease),
+  transition: transform 0.25s var(--ease-spring), border-color 0.25s var(--ease),
     background-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
 }
 
@@ -490,13 +590,13 @@ header {
 }
 
 .feature-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-5px);
   background: var(--glass-fill-strong);
   border-color: var(--border-glow-soft);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 18px 40px var(--shadow),
-    0 0 0 1px rgba(0, 240, 255, 0.08);
+    0 22px 46px var(--shadow),
+    0 0 0 1px rgba(0, 240, 255, 0.1);
 }
 
 .feature-card:hover::before {
@@ -528,6 +628,11 @@ header {
   font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.03em;
+  transition: transform 0.25s var(--ease-spring), box-shadow 0.25s ease;
+}
+
+.feature-card:hover .feature-icon-box {
+  transform: translateY(-2px) scale(1.08);
 }
 
 .f-blue {
@@ -565,6 +670,11 @@ header {
   font-weight: 700;
   letter-spacing: -0.01em;
   text-wrap: balance;
+  transition: color 0.2s var(--ease);
+}
+
+.feature-card:hover .feature-title {
+  color: #ffffff;
 }
 
 .feature-desc {
@@ -572,6 +682,41 @@ header {
   font-size: 0.885rem;
   line-height: 1.62;
   text-wrap: pretty;
+}
+
+/* ==========================================================================
+   SCROLL REVEAL — Efek Muncul Berjenjang (Stagger) Saat Digulir
+   ========================================================================== */
+
+.reveal-init {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s var(--ease-spring) var(--reveal-delay, 0s),
+              transform 0.7s var(--ease-spring) var(--reveal-delay, 0s);
+  will-change: opacity, transform;
+}
+
+.reveal-init.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Stagger delay kartu kemampuan */
+.features-grid .feature-card:nth-child(1) { --reveal-delay: 0.04s; }
+.features-grid .feature-card:nth-child(2) { --reveal-delay: 0.12s; }
+.features-grid .feature-card:nth-child(3) { --reveal-delay: 0.20s; }
+.features-grid .feature-card:nth-child(4) { --reveal-delay: 0.28s; }
+.features-grid .feature-card:nth-child(5) { --reveal-delay: 0.36s; }
+.features-grid .feature-card:nth-child(6) { --reveal-delay: 0.44s; }
+
+/* Menghilangkan delay saat kartu di-hover */
+.feature-card.revealed:hover {
+  transition-delay: 0s !important;
+}
+
+/* Pop ikon saat kartu terungkap */
+.feature-card.revealed .feature-icon-box {
+  animation: iconPop 0.5s var(--ease-spring) calc(var(--reveal-delay, 0s) + 0.12s) both;
 }
 
 /* ==========================================================================
@@ -596,6 +741,26 @@ header {
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     0 24px 60px var(--shadow);
   overflow: hidden;
+  transition: opacity 0.75s var(--ease-spring),
+              transform 0.75s var(--ease-spring),
+              border-color 0.3s ease,
+              box-shadow 0.3s ease;
+}
+
+.dashboard-teaser.reveal-init {
+  transform: translateY(32px) scale(0.985);
+}
+
+.dashboard-teaser.reveal-init.revealed {
+  transform: translateY(0) scale(1);
+}
+
+.dashboard-teaser:hover {
+  border-color: rgba(0, 240, 255, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 28px 70px var(--shadow),
+    0 0 32px rgba(0, 240, 255, 0.08);
 }
 
 /* Cahaya cyan di sudut: menandai panel ini sebagai jalur menuju konsol,
@@ -643,6 +808,17 @@ footer {
   background: rgba(1, 5, 13, 0.5);
   -webkit-backdrop-filter: blur(var(--blur-amt));
   backdrop-filter: blur(var(--blur-amt));
+  transition: opacity 0.65s var(--ease-spring), transform 0.65s var(--ease-spring);
+}
+
+footer.reveal-init {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+footer.reveal-init.revealed {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* ==========================================================================
@@ -688,12 +864,36 @@ footer {
     animation: none;
   }
 
+  header,
+  .hero > .container,
+  .hero-badge,
+  .hero-title,
+  .hero-subtitle,
+  .hero-cta-group .btn,
+  .status-pill,
+  .feature-card.revealed .feature-icon-box {
+    animation: none !important;
+  }
+
+  .reveal-init {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
   .btn,
   .feature-card,
+  .dashboard-teaser,
+  footer,
   .btn:hover,
-  .feature-card:hover {
-    transition: none;
-    transform: none;
+  .feature-card:hover,
+  .feature-card:hover .feature-icon-box,
+  .btn:hover span:last-child,
+  .brand:hover .brand-icon,
+  .status-pill:hover,
+  .hero-badge:hover {
+    transition: none !important;
+    transform: none !important;
   }
 }
 
