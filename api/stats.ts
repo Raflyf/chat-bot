@@ -381,12 +381,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Pemakaian WEB SEARCH xKiro (kind 'xkiro-search') dihitung TERPISAH:
     // kuotanya berbeda dari chat (10 pencarian/kunci/hari vs token), jadi
     // mencampurnya akan mengacaukan persentase pemakaian token provider.
+    //
+    // Sumber datanya BERGANTUNG RENTANG — ini pernah jadi bug: ketika filter
+    // "Hari Ini" dipakai, `todayQuotasData` sengaja kosong (query-nya di-null
+    // karena dianggap duplikat), sehingga pemakaian web search selalu terbaca 0
+    // walau database berisi data. Yang benar: saat rentang "Hari Ini", data hari
+    // ini ada di `quotasData`; saat rentang lain, di `todayQuotasData`.
+    const webSearchSource = range === 'today' ? (quotasData ?? []) : (todayQuotasData ?? []);
     let webSearchUsedToday = 0;
+    for (const q of webSearchSource) {
+      if (q.kind === 'xkiro-search') webSearchUsedToday += q.used || 0;
+    }
     for (const q of todayQuotasData ?? []) {
-      if (q.kind === 'xkiro-search') {
-        webSearchUsedToday += q.used || 0;
-        continue;
-      }
+      if (q.kind === 'xkiro-search') continue;
       const key = `${q.kind}:${q.key_suffix}`;
       todayQuotaMap.set(key, (todayQuotaMap.get(key) || 0) + (q.used || 0));
       todayTokenQuotaMap.set(key, (todayTokenQuotaMap.get(key) || 0) + (Number(q.tokens_used) || 0));
@@ -1040,11 +1047,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const s = xkiroSearchStatus();
         const capTotal = s.keysTotal * s.capPerKey;
         const usedFromDb = webSearchUsedToday;
+
+        // SISA JATAH: pakai angka PROVIDER bila ada, karena itu yang otoritatif —
+        // provider menghitung sendiri sisanya dan melaporkannya di setiap respons
+        // (`usage.remainingToday`). Angka dari catatan kita adalah cadangan.
+        // Selisih bisa muncul karena kuota berlaku per kunci & rolling, sementara
+        // catatan kita per hari kalender dan hanya dari instance yang mencatat.
+        // Pakai remainingEstimatedTotal (kunci yang melapor pakai angka provider,
+        // sisanya dianggap penuh). JANGAN pakai reportedRemaining mentah: itu hanya
+        // mencakup kunci yang sudah dipakai, sehingga totalnya terlihat jauh lebih
+        // kecil dari kenyataan (pernah menghasilkan "terpakai 65" padahal baru 6).
+        const adaLaporan = s.reportedKeys > 0;
+        const sisaTerbaik = adaLaporan ? s.remainingEstimatedTotal : s.remainingFromKeys;
+
+        // "Terpakai" dihitung dari angka provider bila tersedia: kapasitas total
+        // dikurangi sisa yang dilaporkan. Ini lebih jujur daripada menjumlahkan
+        // pencatatan kita yang bisa terlewat (instance berbeda, request gagal).
+        const usedFromProvider = adaLaporan
+          ? Math.max(0, capTotal - s.remainingEstimatedTotal)
+          : null;
+        const usedTerbaik = usedFromProvider !== null ? usedFromProvider : usedFromDb;
+
         return {
           ...s,
-          usedToday: usedFromDb,
-          usedPercent: capTotal > 0 ? Math.min(100, Math.round((usedFromDb / capTotal) * 100)) : 0,
-          remainingToday: Math.max(0, capTotal - usedFromDb),
+          usedToday: usedTerbaik,
+          usedPercent: capTotal > 0 ? Math.min(100, Math.round((usedTerbaik / capTotal) * 100)) : 0,
+          remainingToday: sisaTerbaik,
+          // Sumber angka ditampilkan agar pemilik tahu seberapa akurat datanya.
+          usedSource: usedFromProvider !== null ? "provider" : "catatan-db",
+          remainingSource: adaLaporan ? "provider" : "perhitungan-kunci",
         };
       })(),
     });

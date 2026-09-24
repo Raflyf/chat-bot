@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { config } from './env.js';
 import { isKeyAllowed, keyUsed, keyTokensUsed, keyTokensUsedToday, keyRequestsUsedToday, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
+import { xkiroChatWithSearch } from './xkiro_web.js';
 
 // --- CIRCUIT BREAKER & ADAPTIVE KEY ROUTING (LATENCY OPTIMIZER) ---
 const keyCooldownMap = new Map<string, number>(); // `${kind}:${keyHash}` -> timestamp cooldown
@@ -1425,5 +1426,50 @@ export async function chat(
     // Pass pertama sudah menghasilkan percobaan -> tidak perlu pass best-effort.
     if (anyModelAttempted) break;
   }
+  // ------------------------------------------------------------------------
+  // JARING TERAKHIR: xKiro chat + pencarian web.
+  //
+  // Dipakai HANYA di sini, setelah seluruh rantai 6 tier gagal. Alasannya:
+  // jalur ini memakai 1 kuota pencarian yang sama dengan /v1/search, sedangkan
+  // model kita sendiri lebih hemat (pencarian saja, jawaban disusun model kita).
+  // Jadi ia bukan pengganti rantai, melainkan penopang terakhir agar pengguna
+  // tetap mendapat jawaban berbasis data web alih-alih pesan gangguan.
+  //
+  // Terverifikasi langsung: `qwen/qwen3.5-omni-plus:free` menjawab 1.369 karakter
+  // dengan 3 sumber dalam ~9,8 detik (24 Sep 2026).
+  //
+  // PENTING: bila pencariannya sendiri tidak jalan (kuota habis / rate limit),
+  // provider menyertakan `notice` berisi kalimat siap-tampil. Kita pakai kalimat
+  // itu apa adanya — jangan mengarang pesan sendiri, dan jangan menyajikan
+  // jawaban dari memori seolah-olah hasil pencarian.
+  // ------------------------------------------------------------------------
+  if (!needVision) {
+    try {
+      const pesanSederhana = messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => ({ role: m.role, content: typeof m.content === 'string' ? m.content : '' }))
+        .filter((m) => m.content);
+      if (pesanSederhana.length > 0) {
+        const hasilXkiro = await xkiroChatWithSearch(pesanSederhana, { count: 5 });
+        if (hasilXkiro && hasilXkiro.text) {
+          // Bila pencarian TIDAK berjalan, provider memberi `notice`. Kita
+          // teruskan sebagai catatan singkat agar pengguna tahu jawaban ini
+          // tidak berbasis hasil web — kejujuran lebih penting daripada terlihat mulus.
+          const catatan = hasilXkiro.searchStatus === 'ok' || !hasilXkiro.notice
+            ? ''
+            : `\n\n_${hasilXkiro.notice}_`;
+          return {
+            text: hasilXkiro.text + catatan,
+            via: `xkiro-chat/${hasilXkiro.model}`,
+            tokens: hasilXkiro.tokens,
+          };
+        }
+      }
+    } catch {
+      // Diamkan: ini sudah jalur terakhir. Kegagalannya tidak boleh menutupi
+      // error asli dari rantai utama yang informasinya lebih berguna.
+    }
+  }
+
   throw new Error(`ALL_PROVIDERS_FAILED:${lastError}`);
 }

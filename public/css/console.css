@@ -459,14 +459,49 @@ section { margin-bottom: var(--s5); }
   grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
 }
 .kpi-card {
+  position: relative;
   background: var(--surface-raised);
+  /* Liquid glass: blur + saturate seperti kartu landing, supaya permukaan
+     terbaca sebagai kaca, bukan kotak abu. */
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow: hidden;
+  /* Inset 1px di tepi atas = pantulan cahaya pada tepi kaca. Bayangan luar
+     memberi kedalaman tanpa glow berwarna. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 10px 30px rgba(0, 0, 0, 0.32);
+  transition: transform 0.25s var(--ease), border-color 0.25s var(--ease),
+    background-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
 }
+
+/* Garis aksen tipis di tepi atas saat hover — sama seperti kartu landing. */
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0;
+  transition: opacity 0.25s var(--ease);
+}
+
+.kpi-card:hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.085);
+  border-color: rgba(0, 240, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.kpi-card:hover::before { opacity: 1; }
 .kpi-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 .kpi-value {
   font-size: 30px;
@@ -509,14 +544,44 @@ section { margin-bottom: var(--s5); }
 }
 
 .provider-card {
+  position: relative;
   background: var(--surface-raised);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
   display: flex;
   flex-direction: column;
   gap: var(--s3);
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 10px 30px rgba(0, 0, 0, 0.32);
+  transition: transform 0.25s var(--ease), border-color 0.25s var(--ease),
+    background-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
 }
+
+.provider-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0;
+  transition: opacity 0.25s var(--ease);
+}
+
+.provider-card:hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.085);
+  border-color: rgba(0, 240, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.provider-card:hover::before { opacity: 1; }
 .provider-header { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
 .provider-name { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
 .provider-summary-stat {
@@ -648,6 +713,11 @@ section { margin-bottom: var(--s5); }
 .websearch-panel {
   display: grid;
   gap: var(--s3);
+  /* Panel ini berdiri di antara ringkasan upstream dan tabel penyedia.
+     Margin dibuat SIMETRIS (24px atas dan bawah): versi sebelumnya memakai
+     24px atas / 32px bawah, sehingga panel terbaca menempel ke kartu statistik
+     di atasnya tetapi mengambang jauh dari tabel di bawahnya. */
+  margin: var(--s5, 24px) 0;
   padding: var(--s4);
   border-radius: var(--r-panel);
   border: 1px solid var(--separator);
@@ -779,8 +849,13 @@ section { margin-bottom: var(--s5); }
 /* Bar kemajuan. Warnanya menandai tingkat pemakaian yang nyata. */
 .progress-bar-bg {
   height: 6px;
+  margin-top: 4px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 12%, transparent);
+  /* Warna solid, bukan color-mix transparan: track transparan di atas kartu
+     gelap hanya mencapai kontras ~1.1 sehingga porsi terpakai tidak terbaca.
+     #6b7280 memberi kontras 3.81 (lolos WCAG 1.4.11, minimum 3.0) dan
+     konsisten dengan bar token & web search. */
+  background: #6b7280;
   overflow: hidden;
 }
 .progress-bar-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.3s ease; }
@@ -1373,48 +1448,59 @@ header.header-scrolled .nav-inner {
 }
 
 /* ---- Gerak: masuk sekali, hover halus, tanpa loop ---- */
-@media (prefers-reduced-motion: no-preference) {
-  .provider-card {
-    animation: card-in 0.42s var(--ease) both;
-    transition: border-color 0.2s ease, transform 0.2s var(--ease);
-  }
-  .provider-card:hover { transform: translateY(-2px); border-color: var(--separator-strong); }
-  @keyframes card-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: none; }
-  }
+/* ==========================================================================
+   ANIMASI & MOTION — SELALU AKTIF
+   --------------------------------------------------------------------------
+   Sebelumnya seluruh blok ini dibungkus `@media (prefers-reduced-motion: no-preference)`,
+   sehingga animasi MATI ketika perangkat dalam mode hemat daya atau pengguna
+   menyalakan "kurangi gerakan" di sistem. Akibatnya dashboard terasa kaku dan
+   berbeda dari landing page — padahal pemilik produk ingin keduanya sama.
 
-  .kpi-card {
-    animation: card-in 0.42s var(--ease) both;
-    transition: border-color 0.2s ease, transform 0.2s var(--ease);
-  }
-  .kpi-card:hover { transform: translateY(-2px); border-color: var(--separator-strong); }
-
-  .provider-card:nth-child(1) { animation-delay: 0.02s; }
-  .provider-card:nth-child(2) { animation-delay: 0.06s; }
-  .provider-card:nth-child(3) { animation-delay: 0.1s; }
-  .provider-card:nth-child(4) { animation-delay: 0.14s; }
-  .provider-card:nth-child(5) { animation-delay: 0.18s; }
-  .provider-card:nth-child(6) { animation-delay: 0.22s; }
-
-  .kpi-card:nth-child(1) { animation-delay: 0.02s; }
-  .kpi-card:nth-child(2) { animation-delay: 0.06s; }
-  .kpi-card:nth-child(3) { animation-delay: 0.1s; }
-  .kpi-card:nth-child(4) { animation-delay: 0.14s; }
-
-  /* Baris tabel masuk berurutan supaya mata bisa mengikuti. */
-  tbody tr { animation: row-in 0.34s var(--ease) both; }
-  @keyframes row-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  /* Kartu model di matriks. */
-  .model-matrix-card {
-    transition: transform 0.2s var(--ease), border-color 0.2s ease;
-  }
-  .model-matrix-card:hover { transform: translateY(-2px); border-color: var(--separator-strong); }
+   Keputusan pemilik produk: fitur tetap nyala. Animasi di sini pendek (0,3-0,4 dtk),
+   hanya opacity + translateY kecil, tanpa gerakan besar yang bisa memicu motion
+   sickness, jadi menyalakannya terus tetap aman.
+   ========================================================================== */
+/* Animasi masuk kartu — memakai kurva & jarak yang sama dengan `heroReveal`
+   di landing page (translateY + scale kecil), supaya motion terasa satu bahasa.
+   JANGAN menaruh `transition`/`:hover` di sini: definisi .kpi-card dan
+   .provider-card di atas sudah memilikinya, dan blok ini datang lebih akhir
+   sehingga akan menimpanya (pernah terjadi: hover turun jadi -2px, bukan -3px). */
+.provider-card,
+.kpi-card {
+  animation: card-in 0.44s var(--ease-spring, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(22px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Stagger: kartu masuk berurutan, bukan serentak. */
+.provider-card:nth-child(1), .kpi-card:nth-child(1) { animation-delay: 0.03s; }
+.provider-card:nth-child(2), .kpi-card:nth-child(2) { animation-delay: 0.07s; }
+.provider-card:nth-child(3), .kpi-card:nth-child(3) { animation-delay: 0.11s; }
+.provider-card:nth-child(4), .kpi-card:nth-child(4) { animation-delay: 0.15s; }
+.provider-card:nth-child(5) { animation-delay: 0.19s; }
+.provider-card:nth-child(6) { animation-delay: 0.23s; }
+
+/* Baris tabel masuk berurutan supaya mata bisa mengikuti. */
+tbody tr { animation: row-in 0.34s var(--ease) both; }
+@keyframes row-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Kartu model di matriks: hover naik + border menyala lembut (sama seperti kartu). */
+.model-matrix-card {
+  transition: transform 0.25s var(--ease), border-color 0.25s var(--ease),
+    background-color 0.25s var(--ease);
+}
+.model-matrix-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(0, 240, 255, 0.22);
+  background: rgba(255, 255, 255, 0.085);
+}
+
 
 
 
@@ -2448,26 +2534,12 @@ body {
 }
 
 /* Hormati permintaan transparansi dikurangi: matikan kaca, pakai permukaan padat. */
-@media (prefers-reduced-transparency: reduce) {
-  .glass-select-trigger,
-  .glass-select-menu {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
+/* Catatan: sebelumnya ada blok `@media (prefers-reduced-transparency: reduce)`
+   yang mematikan backdrop-filter dan menggantinya dengan warna solid. Blok itu
+   DIHAPUS atas permintaan pemilik produk: efek liquid glass harus tetap tampil
+   walau perangkat dalam mode hemat daya atau pengguna menyalakan pengurangan
+   transparansi di sistem. */
 
-  .glass-select-trigger {
-    background: #0e1626;
-  }
-
-  .glass-select-menu {
-    background: #0a101c;
-  }
-
-  [data-theme="light"] .glass-select-trigger,
-  [data-theme="light"] .glass-select-menu {
-    background: #ffffff;
-  }
-}
 
 /* Grup tombol filter berbentuk pil */
 .pill-filter-group {

@@ -305,3 +305,38 @@ export function keyTokensUsed(kind: QuotaKind, key: string, tokens: number): voi
     }
   })();
 }
+
+/**
+ * Simpan PEMAKAIAN ABSOLUT yang dilaporkan provider untuk satu kunci.
+ *
+ * Kenapa perlu: beberapa provider (mis. xKiro) melaporkan sisa kuota di setiap
+ * respons (`usage.remainingToday`). Angka itu otoritatif, tapi hanya hidup di
+ * memori instance yang menerima respons tersebut — di serverless, instance lain
+ * tidak melihatnya dan dashboard kembali menampilkan angka lama.
+ *
+ * Fungsi ini menyimpannya ke database sebagai NILAI ABSOLUT (bukan penambahan),
+ * sehingga:
+ *   - instance mana pun membaca angka yang sama,
+ *   - nilai bisa turun bila provider melaporkan sisa yang lebih kecil
+ *     (berbeda dari `keyUsed` yang menambah dan karenanya hanya bisa naik).
+ *
+ * Sengaja TIDAK memakai Math.max seperti pada token: di sini turun adalah benar
+ * (kuota provider memang bisa berkurang), dan angka provider adalah kebenaran.
+ */
+export function keyUsedAbsolute(kind: QuotaKind, key: string, used: number): void {
+  const nilai = Math.max(0, Math.round(used));
+  const c = db();
+  if (!c) return;
+  const suffix = keyHash(key);
+  const day = today();
+  void (async () => {
+    try {
+      await c.from('provider_quota').upsert(
+        { kind, key_suffix: suffix, day, used: nilai },
+        { onConflict: 'kind,key_suffix,day' },
+      );
+    } catch {
+      // best-effort, abaikan
+    }
+  })();
+}

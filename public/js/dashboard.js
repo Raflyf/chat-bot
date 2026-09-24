@@ -1085,10 +1085,28 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                 <div class="key-token-head">
                   <span class="key-token-label">Token</span>
                   <span style="color: ${tokenColor};">${(k.tokensUsed || 0).toLocaleString("id-ID")} / ${(k.tokenCap || 0).toLocaleString("id-ID")} (${tokenPct}%)</span>
-                  ${bindingIsToken ? '<span class="key-token-binding">BATAS TOKEN</span>' : ""}
+                  ${bindingIsToken && bindingPct >= 80 ? '<span class="key-token-binding">BATAS TOKEN</span>' : ""}
                 </div>
                 <div class="key-token-bar" role="img" aria-label="Pemakaian token ${tokenPct} persen">
                   <span style="width: ${Math.min(100, tokenPct)}%; background: ${tokenColor};"></span>
+                </div>
+              </div>`;
+            } else if ((k.cap || 0) > 0) {
+              // Provider tanpa batas token (Cloudflare, Gemini, OpenRouter) hanya
+              // punya batas panggilan. Sebelumnya mereka tampil tanpa baris
+              // terukur sama sekali, sehingga bar hanya terlihat di xKiro/Dahl.
+              // Sekarang setiap kunci punya baris bar: panggilan bila token tidak
+              // dibatasi, token bila dibatasi — jadi semua provider konsisten.
+              const callPct = Math.min(100, k.percent || 0);
+              const callColor = callPct >= 100 ? "#fb7185" : callPct >= 80 ? "#fbbf24" : "#34d399";
+              tokenLine = `<div class="key-token-line">
+                <div class="key-token-head">
+                  <span class="key-token-label">Panggilan</span>
+                  <span style="color: ${callColor};">${(k.used || 0).toLocaleString("id-ID")} / ${(k.cap || 0).toLocaleString("id-ID")} (${k.percent || 0}%)</span>
+                  ${!bindingIsToken && bindingPct >= 80 ? '<span class="key-token-binding">BATAS PANGGILAN</span>' : ""}
+                </div>
+                <div class="key-token-bar" role="img" aria-label="Pemakaian panggilan ${k.percent || 0} persen">
+                  <span style="width: ${callPct}%; background: ${callColor};"></span>
                 </div>
               </div>`;
             }
@@ -1181,7 +1199,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             </div>
             <div class="provider-summary-stat">
               <div class="provider-usage-text">${usedValue.toLocaleString()} Calls</div>
-              <div class="provider-cap-text">${p.keyCount} kunci &bull; ${capInfo}</div>
+              <div class="provider-cap-text">${typeof p.keyCount === "number" ? p.keyCount : (p.keys || []).length} kunci &bull; ${capInfo}</div>
               ${showPeriodInfo ? `<div style="font-size: 0.66rem; color: var(--text-dim); margin-top: 1px;">Hari ini • ${usedPeriodValue.toLocaleString()} total periode</div>` : ""}
               ${tokenContextHtml}
             </div>
@@ -1326,12 +1344,16 @@ function renderWebSearchPanel(data) {
     // Catatan ini menyebut SUMBER angka, supaya pemilik produk tahu seberapa
     // jauh ia bisa mempercayainya: pemakaian dari database (bertahan lintas
     // instance), jumlah kunci dari respons nyata provider.
-    foot.textContent = used === null
-      ? `Web search memakai kuota terpisah dari kuota token: ${ws.capPerKey} pencarian per kunci per hari. ` +
-        `Angka pemakaian belum terbaca dari database, jadi yang ditampilkan hanya perkiraan dari jumlah kunci siap pakai.`
-      : `Web search memakai kuota terpisah dari kuota token: ${ws.capPerKey} pencarian per kunci per hari. ` +
-        `Angka pemakaian diambil dari catatan harian di database, jumlah kunci siap pakai dari respons nyata provider. ` +
-        `Bila jatah xKiro habis, bot otomatis memakai mesin pencari cadangan tanpa kuota.`;
+    // Sebut SUMBER angkanya: pemilik produk perlu tahu seberapa jauh angka ini
+    // bisa dipercaya. Angka langsung dari provider lebih akurat daripada hitungan
+    // kita sendiri (yang bisa terlewat saat instance serverless berbeda).
+    const sumber = ws.usedSource === "provider"
+      ? "Angka diambil langsung dari laporan penyedia di setiap pencarian, jadi paling akurat."
+      : "Penyedia belum melaporkan sisanya, jadi angka ini dihitung dari catatan harian di database.";
+    foot.textContent =
+      `Web search memakai kuota terpisah dari kuota token: ${ws.capPerKey} pencarian per kunci per hari. ` +
+      sumber +
+      ` Bila jatah xKiro habis, bot otomatis memakai mesin pencari cadangan tanpa kuota.`;
   }
 }
 
