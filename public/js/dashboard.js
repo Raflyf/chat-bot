@@ -624,11 +624,27 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       if (versionBadge && data.version) versionBadge.textContent = "v" + data.version;
 
       // Render Pools Matrix, Dedicated Token Quota Matrix & AI Model Router Matrix
-      renderPoolMatrix(data);
-      renderLiveUpstreamTable(data);
-      renderWebSearchPanel(data);
-      renderTokenMatrix(data);
-      renderAiModelMatrix(data);
+      //
+      // PELINDUNG PER-PANEL (perbaikan 24 Sep): sebelumnya keenam pemanggilan ini
+      // berjalan tanpa pelindung, sehingga SATU error saja (mis. variabel yang
+      // belum dibuat di salah satu fungsi) menghentikan SEMUA panel berikutnya —
+      // gejalanya "data tidak muncul" di banyak panel sekaligus, padahal akarnya
+      // hanya satu. Sekarang tiap panel dilindungi sendiri: kalau satu gagal,
+      // panel lain tetap terisi dan error-nya tercatat di konsol untuk ditelusuri.
+      const panelRenders = [
+        ["Pemakaian pool API key", renderPoolMatrix],
+        ["Penyedia dan kunci", renderLiveUpstreamTable],
+        ["Web search xKiro", renderWebSearchPanel],
+        ["Batas token per penyedia", renderTokenMatrix],
+        ["Distribusi model LLM", renderAiModelMatrix],
+      ];
+      for (const [nama, fn] of panelRenders) {
+        try {
+          fn(data);
+        } catch (err) {
+          console.error(`[dashboard] panel "${nama}" gagal dirender:`, err);
+        }
+      }
 
       // Media Counts
       const mc = data.mediaCounts || {};
