@@ -31,7 +31,9 @@
   --border-glow-soft: rgba(0, 240, 255, 0.22);
   --accent-cyan: #00f0ff;
   --accent-cyan-dim: rgba(0, 240, 255, 0.12);
-  --blur-amt: 12px;
+  /* Blur kaca: 20px untuk SEMUA permukaan (dulu kartu 12px, navbar 20px —
+     sehingga hanya navbar yang terlihat mewah). Sekarang seragam. */
+  --blur-amt: 20px;
   --blur-strong: 20px;
 
   --text: #ffffff;
@@ -68,12 +70,63 @@ html {
   scroll-behavior: smooth;
 }
 
+/* ----------------------------------------------------------------------------
+   LATAR BERGERAK (WebP animasi, loop 5 detik)
+   ----------------------------------------------------------------------------
+   Video asli 1920x1080 60fps 19,5 detik 33,9 MB dikonversi ke WebP animasi:
+   5 detik, 10fps, 640px, 442 KB. Segmen yang dipilih (detik 8-13) adalah bagian
+   dengan gerakan paling merata, sehingga loop-nya tidak terasa "melompat".
+
+   Kenapa ditaruh di html::before: body sudah memakai ::before (aurora) dan
+   ::after (kisi). Video ini jadi lapisan paling bawah, di bawah aurora, supaya
+   warnanya menyatu dengan tema alih-alih menutupinya.
+
+   Diblur 28px + opacity rendah: video ini adegan mecha yang ramai. Tanpa blur,
+   ia akan mengganggu keterbacaan dan terlihat seperti tempelan. Setelah diblur,
+   yang tersisa hanya pergerakan warna — dan itu yang membuat kaca di atasnya
+   terlihat hidup karena ada sesuatu yang benar-benar bergerak untuk dibiaskan.
+
+   Ukuran: 640px cukup karena setelah diblur 28px detailnya hilang; memakai
+   resolusi lebih tinggi hanya menambah berat tanpa perbedaan yang terlihat.
+   ---------------------------------------------------------------------------- */
+html::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
+  background-image: url('/assets/bg-loop.webp');
+  background-size: cover;
+  background-position: center;
+  /* blur + saturate: memperkuat warna, menghilangkan detail yang mengganggu */
+  filter: blur(28px) saturate(150%);
+  /* scale menutup tepi transparan yang muncul akibat blur di pinggir layar */
+  transform: scale(1.15);
+  opacity: 0.5;
+}
+
+/* Perangkat yang tidak mendukung WebP animasi tetap mendapat aurora di atas —
+   jadi halaman tidak pernah kosong, hanya kehilangan latar bergerak. */
+@supports not (background-image: url('x.webp')) {
+  html::before { display: none; }
+}
+
+/* Warna dasar dipasang di html, BUKAN di body.
+   KENAPA: `body::before` (aurora) memakai `z-index: -1`, dan background body
+   sendiri dilukis DI ATAS elemen ber-z-index negatif. Jadi selama warna dasar
+   ada di body, aurora tidak pernah terlihat — kaca pun tidak punya apa pun
+   untuk dibiaskan, sehingga blur tampak seperti kotak gelap. Warna dasar di
+   html membuat aurora benar-benar tampil di belakang kaca. */
+html {
+  background-color: var(--bg-dark);
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  background-color: var(--bg-dark);
+  /* Sengaja TIDAK memberi background-color di sini — lihat catatan di atas. */
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 16px;
@@ -92,14 +145,22 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    /* Ditaruh tepat di belakang deretan kartu kemampuan, supaya blur pada
-       kartu punya sesuatu yang nyata untuk dibiaskan. */
-    radial-gradient(34rem 26rem at 22% 62%, rgba(0, 240, 255, 0.24), transparent 62%),
-    radial-gradient(30rem 24rem at 82% 72%, rgba(120, 96, 255, 0.22), transparent 64%),
-    radial-gradient(40rem 30rem at 72% 8%, rgba(0, 240, 255, 0.22), transparent 62%),
-    radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.14), transparent 60%),
-    radial-gradient(46rem 34rem at 98% 40%, rgba(88, 120, 255, 0.16), transparent 64%),
-    radial-gradient(70rem 56rem at 46% 108%, rgba(0, 240, 255, 0.12), transparent 66%);
+    /* Cahaya utama di TENGAH viewport. Lapisan ini yang membuat setiap kartu
+       selalu punya sesuatu untuk dibiaskan, karena konten hampir selalu berada
+       di area tengah layar saat digulir. Tanpa ini, aurora hanya terlihat di
+       posisi tertentu dan blur kartu tampak tidak bekerja.
+       Opacity dihitung: cyan α=0,30 di atas latar #020814 menghasilkan
+       rgb(2, 78, 90) — cukup terang untuk dibiaskan, tidak sampai menyilaukan. */
+    radial-gradient(56rem 40rem at 50% 45%, rgba(0, 240, 255, 0.30), transparent 60%),
+    radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.26), transparent 62%),
+    radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.24), transparent 64%),
+    /* Lapisan pendukung di tepi: memberi variasi warna saat kartu digulir
+       melewatinya, sehingga kaca tidak terlihat rata. */
+    radial-gradient(34rem 26rem at 22% 78%, rgba(0, 240, 255, 0.24), transparent 62%),
+    radial-gradient(30rem 24rem at 82% 88%, rgba(120, 96, 255, 0.22), transparent 64%),
+    radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.16), transparent 60%),
+    radial-gradient(46rem 34rem at 98% 40%, rgba(88, 120, 255, 0.18), transparent 64%),
+    radial-gradient(70rem 56rem at 46% 108%, rgba(0, 240, 255, 0.14), transparent 66%);
 }
 
 /* Kisi halus: mengacu pada papan sirkuit, memberi tekstur agar blur punya
@@ -110,13 +171,18 @@ body::after {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.55;
+  /* Kisi ini yang memberi detail bertepi untuk diblur kaca. */
+  opacity: 0.7;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.038) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.038) 1px, transparent 1px);
   background-size: 64px 64px;
-  mask-image: radial-gradient(72% 58% at 50% 30%, #000 0%, transparent 78%);
-  -webkit-mask-image: radial-gradient(72% 58% at 50% 30%, #000 0%, transparent 78%);
+  /* Mask dibuat jauh lebih longgar (dulu 72% 58% at 50% 30% dengan pudar di 78%):
+     kisi hampir hilang tepat di area kartu, sehingga blur tidak punya detail
+     bertepi untuk diblur dan efek kaca tidak terbaca. Sekarang kisi bertahan
+     di seluruh area konten dan hanya memudar di tepi layar. */
+  mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
+  -webkit-mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
 }
 
 h1,
@@ -598,8 +664,8 @@ header {
   padding: 1.6rem;
   border-radius: var(--radius);
   background: var(--glass-fill);
-  -webkit-backdrop-filter: blur(var(--blur-amt)) saturate(140%);
-  backdrop-filter: blur(var(--blur-amt)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--blur-amt)) saturate(160%);
+  backdrop-filter: blur(var(--blur-amt)) saturate(160%);
   border: 1px solid var(--glass-border);
   overflow: hidden;
   box-shadow:

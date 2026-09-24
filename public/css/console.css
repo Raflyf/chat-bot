@@ -49,8 +49,12 @@
   --glass-fill:       0.05;
   --glass-edge:       0.1;
   --glass-edge-strong: 0.16;
-  --glass-blur:       12px;
-  --glass-saturate:   150%;
+  /* Blur kaca: 20px, sama dengan navbar landing (--blur-strong).
+     Dinaikkan dari 12px atas permintaan pemilik produk: efek kaca harus
+     terasa mewah dan SERAGAM di semua elemen, bukan hanya navbar. */
+  --glass-blur:       20px;
+  --glass-blur-strong: 20px;
+  --glass-saturate:   160%;
 
   /* Radius jadi alat hierarki: kontrol 8, kartu 16, panel 20. */
   --r-control: 8px;
@@ -122,10 +126,58 @@
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 
+/* ----------------------------------------------------------------------------
+   LATAR BERGERAK (WebP animasi, loop 5 detik)
+   ----------------------------------------------------------------------------
+   Video asli 1920x1080 60fps 19,5 detik 33,9 MB dikonversi ke WebP animasi:
+   5 detik, 10fps, 640px, 442 KB. Segmen yang dipilih (detik 8-13) adalah bagian
+   dengan gerakan paling merata, sehingga loop-nya tidak terasa "melompat".
+
+   Kenapa ditaruh di html::before: body sudah memakai ::before (aurora) dan
+   ::after (kisi). Video ini jadi lapisan paling bawah, di bawah aurora, supaya
+   warnanya menyatu dengan tema alih-alih menutupinya.
+
+   Diblur 28px + opacity rendah: video ini adegan mecha yang ramai. Tanpa blur,
+   ia akan mengganggu keterbacaan dan terlihat seperti tempelan. Setelah diblur,
+   yang tersisa hanya pergerakan warna — dan itu yang membuat kaca di atasnya
+   terlihat hidup karena ada sesuatu yang benar-benar bergerak untuk dibiaskan.
+
+   Ukuran: 640px cukup karena setelah diblur 28px detailnya hilang; memakai
+   resolusi lebih tinggi hanya menambah berat tanpa perbedaan yang terlihat.
+   ---------------------------------------------------------------------------- */
+html::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
+  background-image: url('/assets/bg-loop.webp');
+  background-size: cover;
+  background-position: center;
+  /* blur + saturate: memperkuat warna, menghilangkan detail yang mengganggu */
+  filter: blur(28px) saturate(150%);
+  /* scale menutup tepi transparan yang muncul akibat blur di pinggir layar */
+  transform: scale(1.15);
+  opacity: 0.5;
+}
+
+/* Perangkat yang tidak mendukung WebP animasi tetap mendapat aurora di atas —
+   jadi halaman tidak pernah kosong, hanya kehilangan latar bergerak. */
+@supports not (background-image: url('x.webp')) {
+  html::before { display: none; }
+}
+
+/* Warna dasar di html, bukan body — lihat catatan di landing.css:
+   `body::before` ber-z-index -1 tertutup oleh background body sendiri,
+   sehingga aurora tidak terlihat dan blur kaca kehilangan objek biasan. */
+html {
+  background-color: #020814;
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
-  background-color: #020814;
+  /* Sengaja tanpa background-color: aurora di body::before harus terlihat. */
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
@@ -134,7 +186,9 @@ body {
   overflow-x: hidden;
 }
 
-[data-theme="light"] body { background-color: var(--surface); }
+/* Tema terang: warna dasar tetap di html (bukan body) agar aurora terlihat. */
+[data-theme="light"] html { background-color: var(--surface); }
+[data-theme="light"] body { background-color: transparent; }
 
 /* ---- Lenis Smooth Scroll & Optimasi GPU ---- */
 html.lenis, html.lenis body {
@@ -165,8 +219,14 @@ html.lenis, html.lenis body {
   backface-visibility: hidden;
 }
 
-/* Latar atmosfer: dua bidang warna redup supaya glass punya sesuatu untuk
-   dibiaskan. Warnanya dari aksen dan status, bukan pasangan biru ke ungu. */
+/* Latar atmosfer: enam bidang warna, sama seperti landing page.
+   KENAPA INI PENTING: blur pada kaca hanya terlihat bila ada sesuatu di
+   belakangnya untuk dibiaskan. Versi sebelumnya memakai tiga bidang dengan
+   opacity 0,05-0,10 — terlalu redup di atas latar #020814, sehingga kartu
+   ber-blur tampak seperti kotak gelap biasa dan efek kacanya hilang.
+   Nilai di sini disamakan dengan landing (0,12-0,24) supaya blur benar-benar
+   terbaca. Titik-titiknya ditaruh di area yang dilalui kartu, bukan di sudut
+   layar yang tidak pernah terlihat. */
 body::before {
   content: "";
   position: fixed;
@@ -174,12 +234,43 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(52rem 36rem at 10% -10%, rgba(0, 240, 255, 0.1), transparent 64%),
-    radial-gradient(44rem 32rem at 94% 4%, rgba(88, 120, 255, 0.09), transparent 68%),
-    radial-gradient(50rem 40rem at 50% 106%, rgba(0, 240, 255, 0.05), transparent 70%);
+    /* Cahaya utama di tengah viewport — lihat catatan di landing.css.
+       Dashboard penuh kartu di area tengah, jadi lapisan ini yang paling
+       banyak membuat blur terlihat. */
+    radial-gradient(56rem 40rem at 50% 45%, rgba(0, 240, 255, 0.28), transparent 60%),
+    radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.24), transparent 62%),
+    radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.22), transparent 64%),
+    radial-gradient(34rem 26rem at 22% 78%, rgba(0, 240, 255, 0.22), transparent 62%),
+    radial-gradient(30rem 24rem at 82% 88%, rgba(120, 96, 255, 0.20), transparent 64%),
+    radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.15), transparent 60%),
+    radial-gradient(46rem 34rem at 98% 40%, rgba(88, 120, 255, 0.17), transparent 64%),
+    radial-gradient(70rem 56rem at 46% 108%, rgba(0, 240, 255, 0.13), transparent 66%);
 }
-[data-theme="light"] body::before { opacity: 0.45; }
-[data-theme="light"] body::before { opacity: 0.55; }
+[data-theme="light"] body::before { opacity: 0.5; }
+
+/* Kisi halus di atas aurora: memberi variasi permukaan sehingga blur punya
+   tekstur untuk dibiaskan, bukan sekadar gradasi rata. Dipudarkan di tepi
+   agar tidak terbaca seperti tabel. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* Kisi ini yang memberi detail bertepi untuk diblur kaca. */
+  opacity: 0.7;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.038) 1px, transparent 1px);
+  background-size: 64px 64px;
+  /* Mask dibuat jauh lebih longgar (dulu 72% 58% at 50% 30% dengan pudar di 78%):
+     kisi hampir hilang tepat di area kartu, sehingga blur tidak punya detail
+     bertepi untuk diblur dan efek kaca tidak terbaca. Sekarang kisi bertahan
+     di seluruh area konten dan hanya memudar di tepi layar. */
+  mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
+  -webkit-mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
+}
+[data-theme="light"] body::after { opacity: 0.25; }
 
 /* ---- Glass: hanya untuk layer kontrol ---- */
 .glass {
@@ -404,9 +495,11 @@ section { margin-bottom: var(--s5); }
   padding: var(--s3) var(--s4);
   border-radius: var(--r-panel);
   margin-bottom: var(--s5);
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(255, 255, 255, 0.05);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--separator);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   position: relative;
 }
 
@@ -463,8 +556,8 @@ section { margin-bottom: var(--s5); }
   background: var(--surface-raised);
   /* Liquid glass: blur + saturate seperti kartu landing, supaya permukaan
      terbaca sebagai kaca, bukan kotak abu. */
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
@@ -546,8 +639,8 @@ section { margin-bottom: var(--s5); }
 .provider-card {
   position: relative;
   background: var(--surface-raised);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
@@ -609,6 +702,9 @@ section { margin-bottom: var(--s5); }
   padding: 9px 11px;
   border-radius: var(--r-control);
   background: var(--surface-sunken);
+  /* Baris kunci juga diberi kaca supaya seluruh permukaan seragam. */
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--separator);
 }
 [data-theme="dark"] .key-row {
@@ -722,6 +818,9 @@ section { margin-bottom: var(--s5); }
   border-radius: var(--r-panel);
   border: 1px solid var(--separator);
   background: var(--surface-raised);
+  /* Kaca mewah, sama seperti kartu lain. */
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
 }
 
 .websearch-head {
@@ -993,10 +1092,15 @@ td:nth-child(1) { font-variant-numeric: normal; }
   padding: var(--s4);
   border-radius: var(--r-panel);
   background: var(--surface-raised);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--separator);
   margin-bottom: var(--s4);
   position: relative;
   overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 10px 30px rgba(0, 0, 0, 0.32);
 }
 .smart-gateway-banner::before {
   content: "";
@@ -1048,11 +1152,17 @@ td:nth-child(1) { font-variant-numeric: normal; }
   padding: 1rem 1.05rem 0.95rem;
   border-radius: var(--r-panel);
   background: var(--surface-raised);
+  /* Kaca mewah: blur 20px + saturate, sama seperti navbar landing. */
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 10px 30px rgba(0, 0, 0, 0.32);
   transition: transform 0.2s var(--ease), border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .model-matrix-card::before {
@@ -2695,6 +2805,9 @@ body {
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
+  /* Pembungkus tabel diberi kaca; tabel di dalamnya tetap rata agar teks tajam. */
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   scrollbar-width: thin;
   scrollbar-color: var(--separator-strong) transparent;
 }
@@ -2840,8 +2953,8 @@ body {
   border-top: 1px solid var(--separator);
   padding-block: 1.4rem 1.8rem;
   background: rgba(2, 8, 20, 0.5);
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);
 }
 
 [data-theme="light"] .site-footer { background: rgba(238, 242, 249, 0.7); }
