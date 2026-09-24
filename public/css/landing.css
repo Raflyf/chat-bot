@@ -97,7 +97,7 @@ html::before {
   inset: 0;
   z-index: -3;
   pointer-events: none;
-  background-image: url('/assets/bg-loop.webp');
+  background-image: url('/assets/bg-mob.webp');
   background-size: cover;
   /* Posisi 85% 50%: dipilih dengan membandingkan empat posisi lewat screenshot
      (65/60, 85/50, 100/45, 100/60). Nilai ini menampilkan bagian robot yang
@@ -121,7 +121,14 @@ html::before {
    hanya mengunduh file yang cocok media query, jadi tidak ada biaya ganda. */
 @media (min-width: 1200px) {
   html::before {
-    background-image: url('/assets/bg-loop-hd.webp');
+    background-image: url('/assets/bg-hd.webp');
+  }
+}
+
+/* Ponsel & tablet kecil: versi 800px (44 KB) sudah tajam karena layar kecil. */
+@media (max-width: 1199px) {
+  html::before {
+    background-image: url('/assets/bg-mob.webp');
   }
 }
 

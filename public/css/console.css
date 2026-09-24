@@ -169,31 +169,27 @@ html::before {
   inset: 0;
   z-index: -3;
   pointer-events: none;
-  background-image: url('/assets/bg-loop.webp');
+  /* FOTO STATIS (langit malam + meteor), sama seperti landing page.
+     Menggantikan WebP animasi: 628 KB + 1,4 MB -> 44-196 KB, dan nol biaya
+     decode berkala. Dashboard khusus dipantau terus-menerus, jadi beban render
+     yang berulang di sini paling terasa (permintaan pemilik produk: "agar lebih
+     ringan"). */
+  background-image: url('/assets/bg-mob.webp');
   background-size: cover;
-  /* Posisi 85% 50%: dipilih dengan membandingkan empat posisi lewat screenshot
-     (65/60, 85/50, 100/45, 100/60). Nilai ini menampilkan bagian robot yang
-     paling mudah dikenali — kepala dengan dua lensa mata bercahaya cyan di
-     kanan-atas plus armor bahu — sementara teks tetap terbaca karena berada di
-     kartu berlatar gelap. Subjek video ada di KANAN frame; `center` memotongnya. */
-  background-position: 85% 50%;
-  /* TANPA filter blur.
-     Alasan: `filter: blur()` pada elemen berisi animasi memaksa browser
-     mem-blur ulang SELURUH layar setiap frame (10x/detik) — itu penyebab
-     frame drop. Blur sudah "dibakar" ke dalam file WebP (ffmpeg gblur 3px),
-     jadi hasilnya sama tapi biaya render nol.
-     Tanpa blur CSS juga membuat objek di video (robot) tetap terlihat,
-     sesuai permintaan pemilik produk. */
+  /* Posisi 50% 45%: meteor ada di tengah-atas, sedangkan siluet pepohonan yang
+     gelap digeser sedikit keluar agar area kartu jatuh di langit yang rata. */
+  background-position: 50% 45%;
+  /* TANPA filter blur: foto ini sudah gelap & halus, dan blur full-screen
+     memaksa compositor bekerja ulang setiap saat (biang frame drop). */
   opacity: 1;
 }
 
-/* Layar besar: pakai versi 1280px yang lebih tajam.
-   Versi 800px cukup untuk ponsel (layar kecil, perbesaran rendah), tapi di
-   layar >=1200px ia diperbesar ~1,8x sehingga detail robot melunak. Browser
-   hanya mengunduh file yang cocok media query, jadi tidak ada biaya ganda. */
+/* Layar besar: versi 1920px (196 KB) agar bintang & meteor tetap tajam.
+   Browser hanya mengunduh file yang cocok media query, jadi tidak ada biaya
+   ganda. */
 @media (min-width: 1200px) {
   html::before {
-    background-image: url('/assets/bg-loop-hd.webp');
+    background-image: url('/assets/bg-hd.webp');
   }
 }
 

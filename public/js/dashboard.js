@@ -169,9 +169,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           pinField.value = "";
           fetchData();
           fetchDataset();
-          if (autoRefresh && !refreshTimer) {
-            refreshTimer = setInterval(fetchData, 15000);
-          }
+          pasangAutoRefresh();
         } else {
           // Gagal
           const card = document.getElementById("pin-card");
@@ -995,7 +993,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       });
 
       // Render kartu dengan urutan baru: posisi #1 selalu model yang sedang aktif
-      gridEl.innerHTML = orderedCatalog.map((c, i) => {
+      const __htmlGrid = orderedCatalog.map((c, i) => {
         const count = getCount(c.matchKeys);
         const isActive = i === 0; // Posisi #1 selalu aktif terbaru
         const activeBadge = isActive
@@ -1012,6 +1010,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           else if (lower.includes("code")) capClass = "tag-cap-code";
           return `<span class="tag-cap ${capClass}">${escapeHtml(cap)}</span>`;
         }).join("");
+      setHtmlIfChanged(gridEl, __htmlGrid);
 
         const providerKey = (c.provider || "").toLowerCase();
 
@@ -1036,6 +1035,39 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           </div>
         `;
       }).join("");
+    }
+
+
+    // ---------------------------------------------------------------------
+    // TULIS DOM HANYA BILA BERUBAH (perbaikan blink 24 Sep).
+    //
+    // Menulis `.innerHTML` pada elemen yang isinya SAMA memaksa browser
+    // membongkar dan membangun ulang seluruh subpohon DOM-nya. Efeknya:
+    // kartu berkedip, animasi CSS mulai dari awal, dan sorotan/hover hilang.
+    // Karena dashboard menyegarkan diri tiap 15 detik, efek ini terlihat
+    // sebagai "blink blink glitch" terus-menerus.
+    //
+    // Helper ini membandingkan isi lebih dulu; kalau identik, DOM tidak
+    // disentuh sama sekali. Dipakai untuk semua daftar/kartu/tabel yang
+    // dirender ulang secara berkala.
+    // ---------------------------------------------------------------------
+    function setHtmlIfChanged(el, html) {
+      if (!el) return false;
+      if (el.__lastHtml === html) return false;
+      el.innerHTML = html;
+      el.__lastHtml = html;
+      return true;
+    }
+
+    // Sama untuk textContent: menyetel teks yang sama tetap memicu layout ulang
+    // pada sebagian browser. Bandingkan dulu.
+    function setTextIfChanged(el, teks) {
+      if (!el) return false;
+      const s = String(teks);
+      if (el.__lastText === s) return false;
+      el.textContent = s;
+      el.__lastText = s;
+      return true;
     }
 
     function renderPoolMatrix(data) {
@@ -1651,7 +1683,7 @@ function renderLiveUpstreamTable(data) {
       if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">Tidak ada data sinkronisasi upstream aktif.</td></tr>`;
       } else {
-        tbody.innerHTML = rows.join("");
+        setHtmlIfChanged(tbody, rows.join(""));
       }
 
       // Update Mini KPI Ribbon (Universal across all providers)
@@ -1804,8 +1836,20 @@ function renderLiveUpstreamTable(data) {
             <span class="key-badge-status ${statusBadgeClass}">${statusText}</span>
           </td>
         `;
-        tbody.appendChild(tr);
+        __frag.appendChild(tr);
       });
+
+      // Bandingkan dulu: kalau isi tabel identik, jangan sentuh DOM sama sekali.
+      const __htmlBaru = (() => {
+        const tmp = document.createElement("tbody");
+        tmp.appendChild(__frag.cloneNode(true));
+        return tmp.innerHTML;
+      })();
+      if (tbody.__lastHtml !== __htmlBaru) {
+        tbody.innerHTML = "";
+        tbody.appendChild(__frag);
+        tbody.__lastHtml = __htmlBaru;
+      }
     }
 
 
@@ -1897,6 +1941,10 @@ function renderLiveUpstreamTable(data) {
       const pageItems = cachedDatasetPairs.slice(startIdx, endIdx);
 
       tbody.innerHTML = "";
+      // Bangun baris di FRAGMENT dulu (bukan langsung ke tbody), lalu bandingkan
+      // dengan isi terakhir. Kalau sama, DOM tidak disentuh -> tabel tidak
+      // berkedip saat refresh berkala (perbaikan blink 24 Sep).
+      const __frag = document.createDocumentFragment();
       pageItems.forEach(p => {
         const tr = document.createElement("tr");
 
@@ -1993,7 +2041,7 @@ function renderLiveUpstreamTable(data) {
         const nextAction = currentDatasetPage >= totalPages ? "" : `data-page="${currentDatasetPage + 1}"`;
         paginationHtml += `<button class="pagination-btn" ${nextDisabledAttr} ${nextAction}>Next &raquo;</button>`;
 
-        controlsEl.innerHTML = paginationHtml;
+        setHtmlIfChanged(controlsEl, paginationHtml);
       }
     }
 
@@ -2075,15 +2123,37 @@ function renderLiveUpstreamTable(data) {
       }).catch(() => {});
     }
 
+
+    // ---------------------------------------------------------------------
+    // TIMER AUTO-REFRESH TERPUSAT (perbaikan blink 24 Sep).
+    //
+    // BUG: ada 3 tempat memasang setInterval ke `refreshTimer` tanpa memeriksa
+    // apakah sudah ada timer berjalan (saat login, saat toggle Auto, dan saat
+    // init). Akibatnya timer MENUMPUK: fetchData dipanggil 2-3x beruntun tiap
+    // siklus, dan karena setiap panggilan menulis ulang seluruh isi kartu
+    // (innerHTML), dashboard tampak berkedip/glitch setiap refresh.
+    //
+    // Sekarang semua pemasangan lewat satu fungsi yang selalu membersihkan
+    // timer lama lebih dulu — dijamin hanya satu timer aktif.
+    // ---------------------------------------------------------------------
+    function pasangAutoRefresh() {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+      if (!autoRefresh) return;
+      refreshTimer = setInterval(() => {
+        fetchData();
+      }, 15000);
+    }
+
     function toggleAutoRefresh() {
       autoRefresh = !autoRefresh;
       const btn = document.getElementById("btn-auto");
       if (autoRefresh) {
         btn.classList.add("active");
         btn.querySelector("span").textContent = "Auto: 15s";
-        refreshTimer = setInterval(() => {
-          fetchData();
-        }, 15000);
+        pasangAutoRefresh();
       } else {
         btn.classList.remove("active");
         btn.querySelector("span").textContent = "Auto: Off";
@@ -2213,6 +2283,24 @@ function renderLiveUpstreamTable(data) {
 
     function initDashboardScrollReveal() {
       if (typeof window === "undefined" || !("IntersectionObserver" in window)) return;
+
+      // ---------------------------------------------------------------------
+      // ANIMASI MASUK HANYA SEKALI (perbaikan blink 24 Sep).
+      //
+      // BUG: fungsi ini dipanggil setiap kali dashboard selesai render
+      // (renderDashboard -> setTimeout(initDashboardScrollReveal)). Setiap
+      // panggilan menambahkan kelas `reveal-init` (opacity: 0) ke elemen yang
+      // SUDAH terlihat, lalu observer baru menambahkan `revealed` beberapa saat
+      // kemudian. Karena render berjalan tiap 15 detik, seluruh kartu berkedip
+      // hilang-muncul — inilah "blink blink glitch" yang terlihat.
+      //
+      // Perbaikan: animasi masuk hanya dijalankan SEKALI per pemuatan halaman.
+      // Render berikutnya (refresh data) tidak menyentuh kelas animasi, jadi
+      // angka berubah mulus tanpa kedip.
+      // ---------------------------------------------------------------------
+      if (window._dashRevealDone) return;
+      window._dashRevealDone = true;
+
       const targets = document.querySelectorAll(
         ".console-head, .kpi-card, .smart-gateway-banner, .matrix-section, .provider-card, .live-upstream-card, .token-matrix-section, #dataset-section, .model-matrix-card"
       );
@@ -2268,9 +2356,13 @@ function renderLiveUpstreamTable(data) {
       if (isAuthed) {
         fetchData();
         fetchDataset(true);
-        refreshTimer = setInterval(() => {
-          fetchData();
-          fetchDataset(true);
-        }, 15000);
+        pasangAutoRefresh();
+        // Dataset ikut disegarkan pada interval yang sama, tapi TIDAK di setiap
+        // tick: tabel riwayat ditulis ulang penuh, dan menyegarkannya tiap 15
+        // detik membuat baris tabel berkedip tanpa manfaat (datanya jarang
+        // berubah). Cukup tiap 3 siklus (~45 detik).
+        if (!window._datasetTick) window._datasetTick = 0;
+        window._datasetTick++;
+        if (window._datasetTick % 3 === 0) fetchDataset(true);
       }
     })();
