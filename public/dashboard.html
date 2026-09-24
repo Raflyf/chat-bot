@@ -77,8 +77,11 @@
 <!-- ==========================================================================
      Modal reset PIN lewat OTP email. Juga layer kontrol.
      ========================================================================== -->
-<div id="reset-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reset-title">
+<div id="reset-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="reset-title">
   <div class="pin-card">
+    <div class="auth-top-nav">
+      <button type="button" class="auth-back-link" id="btn-back-reset" title="Kembali ke layar PIN">&larr; Kembali ke PIN</button>
+    </div>
     <div class="auth-shield-icon" aria-hidden="true">
       <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2.6" y="4.8" width="16.8" height="12.4" rx="2.4" />
@@ -382,7 +385,7 @@
           <p class="card-sub">Kesehatan, latensi rata-rata, dan jumlah eksekusi tiap model di rantai enam tingkat.</p>
         </div>
         <div class="console-head-actions">
-          <span class="badge">Total inferensi <strong id="matrix-total-inferensi">0x</strong></span>
+          <span class="badge"><span>Total inferensi</span> <strong id="matrix-total-inferensi">0x</strong></span>
           <div class="pill-filter-group" id="matrix-time-filters" role="group" aria-label="Rentang waktu matriks model">
             <button type="button" class="pill-filter-btn active" data-range="today">Hari ini</button>
             <button type="button" class="pill-filter-btn" data-range="7d">7 hari</button>

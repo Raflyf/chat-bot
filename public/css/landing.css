@@ -827,12 +827,51 @@ footer.reveal-init.revealed {
 
 @media (max-width: 760px) {
   .nav-inner {
-    flex-wrap: wrap;
-    gap: 0.7rem;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 58px;
+    padding-block: 0.35rem;
+  }
+
+  .brand {
+    gap: 0.6rem;
+    min-height: 40px;
+  }
+
+  .brand-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 0.92rem;
+    border-radius: 10px;
+  }
+
+  .brand-text h1 {
+    font-size: 0.95rem;
+  }
+
+  .brand-text p {
+    font-size: 0.68rem;
+  }
+
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
   }
 
   .status-pill {
-    order: 3;
+    padding: 0.28rem 0.55rem;
+    font-size: 0.72rem;
+    gap: 0.35rem;
+  }
+
+  .btn-dashboard {
+    padding: 0.42rem 0.75rem;
+    font-size: 0.8rem;
+    min-height: 36px;
   }
 
   .dashboard-teaser {
@@ -845,9 +884,53 @@ footer.reveal-init.revealed {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
+  .nav-inner {
+    min-height: 52px;
+    gap: 0.4rem;
+  }
+
+  .brand-text p {
+    display: none;
+  }
+
+  .status-pill {
+    padding: 0.24rem 0.48rem;
+  }
+
+  .status-pill span:last-child {
+    display: none;
+  }
+
+  .status-pill::after {
+    content: '24/7';
+    font-size: 0.7rem;
+    font-weight: 650;
+  }
+
+  .btn-dashboard {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.76rem;
+    min-height: 34px;
+    gap: 0.3rem;
+  }
+
+  .btn-dashboard span:first-child {
+    display: none;
+  }
+
+  .btn-dashboard::before {
+    content: 'Dashboard';
+    font-size: 0.76rem;
+    font-weight: 650;
+  }
+
   .hero-cta-group .btn {
     width: 100%;
+  }
+
+  .feature-card {
+    padding: 1.25rem 1.15rem;
   }
 }
 
