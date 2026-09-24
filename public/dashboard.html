@@ -150,7 +150,7 @@
         <span class="brand-text">
           <span class="brand-title-wrap">
             <span class="brand-name" id="bot-name">Konsol FreeAIBot</span>
-            <span class="brand-badge-version">v0.87.1</span>
+            <span class="brand-badge-version">v0.87.2</span>
           </span>
           <span class="brand-sub">
             <span class="pulse-dot-cyan" aria-hidden="true"></span>
@@ -327,7 +327,7 @@
           <span class="upstream-stat-sub" id="upstream-total-cap-sub">Seluruh penyedia terdaftar</span>
         </div>
         <div class="upstream-stat">
-          <span class="upstream-stat-label">Token terpakai hari ini</span>
+          <span class="upstream-stat-label" id="upstream-label-used">Token terpakai hari ini</span>
           <span class="upstream-stat-value" id="upstream-total-used">0</span>
           <span class="upstream-stat-sub" id="upstream-total-used-sub">Akumulasi global</span>
         </div>
@@ -402,8 +402,8 @@
             <tr>
               <th scope="col" style="min-width:180px">Penyedia dan kunci</th>
               <th scope="col" style="min-width:200px">Akun terdaftar</th>
-              <th scope="col" style="min-width:200px">Pemakaian hari ini</th>
-              <th scope="col" style="min-width:180px">Sisa kuota hari ini</th>
+              <th scope="col" style="min-width:200px" id="th-pemakaian">Pemakaian hari ini</th>
+              <th scope="col" style="min-width:180px" id="th-sisa">Sisa kuota hari ini</th>
               <th scope="col" style="min-width:110px;text-align:right">Validasi</th>
             </tr>
           </thead>

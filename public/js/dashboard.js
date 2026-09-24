@@ -607,6 +607,18 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const mediaH = document.getElementById("media-section-title");
       if (mediaH) mediaH.textContent = `Pemrosesan Tipe Media (${rangeLabel})`;
 
+      // Label rentang yang ikut berubah. Sebelumnya ketiga label ini ditulis
+      // "hari ini" di HTML tanpa id, sehingga saat rentang diganti ke 7/14/30
+      // hari teksnya tetap berbunyi "hari ini" — padahal angkanya sudah
+      // menampilkan periode lain.
+      const rangeWord = data.range === "today" ? "hari ini" : rangeLabel.toLowerCase();
+      const labelUsed = document.getElementById("upstream-label-used");
+      if (labelUsed) labelUsed.textContent = `Token terpakai ${rangeWord}`;
+      const thPakai = document.getElementById("th-pemakaian");
+      if (thPakai) thPakai.textContent = `Pemakaian ${rangeWord}`;
+      const thSisa = document.getElementById("th-sisa");
+      if (thSisa) thSisa.textContent = `Sisa kuota ${rangeWord}`;
+
       // Badge versi diambil dari package.json lewat API, bukan ditulis di HTML:
       // versi yang di-hardcode mudah tertinggal setiap kali rilis, dan dashboard
       // yang menampilkan versi lama membuat pemilik ragu apakah deploy berhasil.
