@@ -374,6 +374,36 @@ header {
   box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
 }
 
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: var(--glass-fill);
+  border: 1px solid var(--border-glow-soft);
+  color: var(--text-main);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.2s var(--ease-spring);
+}
+
+.btn-ghost:hover {
+  background: var(--accent-cyan-dim);
+  border-color: var(--border-glow);
+  color: var(--accent-cyan);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.2);
+}
+
+.btn-sm {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+  min-height: 36px;
+}
+
 .btn-primary {
   color: var(--bg-deep);
   background: linear-gradient(135deg, var(--accent-cyan), #57e6ff);
@@ -938,66 +968,40 @@ footer.reveal-init.revealed {
    HORMATI PREFERENSI PENGGUNA
    ========================================================================== */
 
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
+/* ==========================================================================
+   LENIS SMOOTH SCROLL & OPTIMASI GPU
+   ========================================================================== */
 
-  .pulse-dot {
-    animation: none;
-  }
-
-  header,
-  .hero > .container,
-  .hero-badge,
-  .hero-title,
-  .hero-subtitle,
-  .hero-cta-group .btn,
-  .status-pill,
-  .feature-card.revealed .feature-icon-box {
-    animation: none !important;
-  }
-
-  .reveal-init {
-    opacity: 1 !important;
-    transform: none !important;
-    transition: none !important;
-  }
-
-  .btn,
-  .feature-card,
-  .dashboard-teaser,
-  footer,
-  .btn:hover,
-  .feature-card:hover,
-  .feature-card:hover .feature-icon-box,
-  .btn:hover span:last-child,
-  .brand:hover .brand-icon,
-  .status-pill:hover,
-  .hero-badge:hover {
-    transition: none !important;
-    transform: none !important;
-  }
+html.lenis, html.lenis body {
+  height: auto;
 }
 
-/* Bila pengguna meminta transparansi dikurangi, kaca diganti latar pekat agar
-   teks tetap terbaca. Blur tidak dipaksakan. */
-@media (prefers-reduced-transparency: reduce) {
-  header,
-  footer,
-  .feature-card,
-  .feature-card:hover,
-  .dashboard-teaser,
-  .hero-badge,
-  .btn-dashboard {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    background: #0b1424;
-  }
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
 
-  .feature-card:hover {
-    background: #101c31;
-  }
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+.lenis.lenis-scrolling iframe {
+  pointer-events: none;
+}
+
+/* Akselerasi perangkat keras GPU untuk rendering mulus 60-120fps tanpa framedrop */
+.feature-card,
+.dashboard-teaser,
+.section-title-wrap,
+footer,
+header,
+.btn {
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 @media print {

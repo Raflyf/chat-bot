@@ -7,10 +7,22 @@
 
   function paint() {
     var dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    if (label) label.textContent = dark ? 'Terang' : 'Gelap';
-    btn.setAttribute('aria-label', dark ? 'Ganti ke tema terang' : 'Ganti ke tema gelap');
+    var sun = btn.querySelector('.theme-icon-sun');
+    var moon = btn.querySelector('.theme-icon-moon');
+    if (sun) sun.style.display = dark ? 'inline-block' : 'none';
+    if (moon) moon.style.display = dark ? 'none' : 'inline-block';
+    var isEn = (document.documentElement.lang || 'id') === 'en';
+    if (label) {
+      if (isEn) {
+        label.textContent = dark ? 'Light' : 'Dark';
+      } else {
+        label.textContent = dark ? 'Terang' : 'Gelap';
+      }
+    }
+    btn.setAttribute('aria-label', dark ? (isEn ? 'Switch to light theme' : 'Ganti ke tema terang') : (isEn ? 'Switch to dark theme' : 'Ganti ke tema gelap'));
+    btn.setAttribute('title', dark ? (isEn ? 'Switch to light theme' : 'Ganti ke tema terang') : (isEn ? 'Switch to dark theme' : 'Ganti ke tema gelap'));
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', dark ? '#000000' : '#f2f2f7');
+    if (meta) meta.setAttribute('content', dark ? '#020814' : '#f2f2f7');
   }
   paint();
 
@@ -20,6 +32,8 @@
     try { localStorage.setItem('freeaibot-theme', next); } catch (e) {}
     paint();
   });
+
+  window.updateThemeUI = paint;
 })();
 
 /* Escape menutup modal reset. Gerbang login sengaja tidak ditutup dengan Escape:

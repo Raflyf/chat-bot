@@ -33,10 +33,35 @@
       <div class="nav-actions">
         <div class="status-pill">
           <span class="pulse-dot"></span>
-          <span>Online 24/7</span>
+          <span data-i18n="nav.status">Online 24/7</span>
         </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-theme-toggle" title="Ganti tema terang atau gelap" aria-label="Ganti tema">
+          <svg class="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <span id="theme-icon">Terang</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-lang-toggle" title="Ganti bahasa (ID / EN)" aria-label="Ganti bahasa">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          <span id="lang-label">ID</span>
+        </button>
         <a href="/dashboard.html" class="btn btn-dashboard" title="Buka Monitoring Dashboard">
-          <span>Monitoring Dashboard</span>
+          <span data-i18n="nav.dashboard">Monitoring Dashboard</span>
           <span>&rarr;</span>
         </a>
       </div>
@@ -47,24 +72,24 @@
   <section class="hero">
     <div class="container">
       <div class="hero-badge">
-        <span>SISTEM PRODUKSI &bull; MULTI-PLATFORM VERIFIED</span>
+        <span data-i18n="hero.badge">SISTEM PRODUKSI &bull; MULTI-PLATFORM VERIFIED</span>
       </div>
-      <h2 class="hero-title">
+      <h2 class="hero-title" data-i18n="hero.title">
         Asisten AI Cerdas, Multimodal, &amp; Siap 24 Jam Nonstop
       </h2>
-      <p class="hero-subtitle">
+      <p class="hero-subtitle" data-i18n="hero.sub">
         Terhubung langsung ke nomor WhatsApp dan Telegram dengan pemrosesan Voice Note Whisper, dokumen PDF &amp; Word, analisis gambar, serta memori percakapan persisten.
       </p>
 
       <div class="hero-cta-group">
         <a href="https://wa.me/6283874640066" target="_blank" rel="noopener noreferrer" class="btn btn-wa" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
-          <span>Mulai Chat di WhatsApp</span>
+          <span data-i18n="hero.cta.wa">Mulai Chat di WhatsApp</span>
         </a>
         <a href="https://t.me/chatkita_bot" target="_blank" rel="noopener noreferrer" class="btn btn-tele" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
-          <span>Mulai Chat di Telegram</span>
+          <span data-i18n="hero.cta.tele">Mulai Chat di Telegram</span>
         </a>
         <a href="/dashboard.html" class="btn btn-dashboard" style="padding: 0.75rem 1.4rem; font-size: 0.95rem;">
-          <span>Buka Panel Dashboard</span>
+          <span data-i18n="hero.cta.dash">Buka Panel Dashboard</span>
         </a>
       </div>
     </div>
@@ -74,16 +99,16 @@
   <section class="features-section">
     <div class="container">
       <div class="section-title-wrap">
-        <h3 class="section-title">Kapabilitas Lengkap Tanpa Batas</h3>
-        <p class="section-subtitle">Didukung tumpukan provider gratis (Groq, Gemini, OpenRouter, Ollama) dengan otomatisasi failover.</p>
+        <h3 class="section-title" data-i18n="feat.heading">Kapabilitas Lengkap Tanpa Batas</h3>
+        <p class="section-subtitle" data-i18n="feat.subheading">Didukung tumpukan provider gratis (Groq, Gemini, OpenRouter, Ollama) dengan otomatisasi failover.</p>
       </div>
 
       <div class="features-grid">
         <!-- Feature 1: Voice Note -->
         <div class="feature-card">
           <div class="feature-icon-box f-rose">VN</div>
-          <h4 class="feature-title">Transkripsi Voice Note Sub-Detik</h4>
-          <p class="feature-desc">
+          <h4 class="feature-title" data-i18n="feat.1.title">Transkripsi Voice Note Sub-Detik</h4>
+          <p class="feature-desc" data-i18n="feat.1.desc">
             Kirimkan rekaman suara VN di WhatsApp atau Telegram. Model Groq Whisper menerjemahkan suara ke teks secara instan (~500ms) dan AI menjawab pertanyaannya secara alami.
           </p>
         </div>
@@ -91,8 +116,8 @@
         <!-- Feature 2: PDF & Word -->
         <div class="feature-card">
           <div class="feature-icon-box f-amber">DOC</div>
-          <h4 class="feature-title">Analisis Dokumen PDF &amp; Word</h4>
-          <p class="feature-desc">
+          <h4 class="feature-title" data-i18n="feat.2.title">Analisis Dokumen PDF &amp; Word</h4>
+          <p class="feature-desc" data-i18n="feat.2.desc">
             Unggah file `.pdf` atau `.docx`. AI membaca isi tabel, bagan, bab, serta kode sumber hingga puluhan halaman untuk dirangkum, dianalisis, atau dievaluasi.
           </p>
         </div>
@@ -100,8 +125,8 @@
         <!-- Feature 3: Vision & Multimodal -->
         <div class="feature-card">
           <div class="feature-icon-box f-emerald">VIS</div>
-          <h4 class="feature-title">Analisis Foto &amp; Stiker Kontekstual</h4>
-          <p class="feature-desc">
+          <h4 class="feature-title" data-i18n="feat.3.title">Analisis Foto &amp; Stiker Kontekstual</h4>
+          <p class="feature-desc" data-i18n="feat.3.desc">
             Dianalisis oleh Google Gemini Vision. Mampu membaca foto tugas, diagram alir, grafik, tangkapan layar, hingga memahami ekspresi stiker WhatsApp.
           </p>
         </div>
@@ -109,8 +134,8 @@
         <!-- Feature 4: Memory -->
         <div class="feature-card">
           <div class="feature-icon-box f-purple">MEM</div>
-          <h4 class="feature-title">Memori Persisten &amp; Distilasi</h4>
-          <p class="feature-desc">
+          <h4 class="feature-title" data-i18n="feat.4.title">Memori Persisten &amp; Distilasi</h4>
+          <p class="feature-desc" data-i18n="feat.4.desc">
             Didukung basis data Supabase PostgreSQL dengan Row Level Security. Bot mengingat konteks percakapan lampau dan preferensi gaya bicara penggunanya.
           </p>
         </div>
@@ -118,8 +143,8 @@
         <!-- Feature 5: 4-Provider Failover -->
         <div class="feature-card">
           <div class="feature-icon-box f-blue">AI</div>
-          <h4 class="feature-title">Rantai Failover 4 Provider</h4>
-          <p class="feature-desc">
+          <h4 class="feature-title" data-i18n="feat.5.title">Rantai Failover 4 Provider</h4>
+          <p class="feature-desc" data-i18n="feat.5.desc">
             Jika satu model terkena rate limit, sistem otomatis mengalihkan panggilan ke provider berikutnya (Groq &rarr; Gemini &rarr; OpenRouter &rarr; Ollama) dalam hitungan milidetik.
           </p>
         </div>
@@ -127,8 +152,8 @@
         <!-- Feature 6: Zero-Template -->
         <div class="feature-card">
           <div class="feature-icon-box f-emerald">BOT</div>
-          <h4 class="feature-title">Interaksi Nyata Tanpa Template</h4>
-          <p class="feature-desc">
+          <h4 class="feature-title" data-i18n="feat.6.title">Interaksi Nyata Tanpa Template</h4>
+          <p class="feature-desc" data-i18n="feat.6.desc">
             Bebas dari sapaan klise robotik dan format kaku. Berinteraksi secara luwes layaknya teman karib sekaligus partner diskusi cerdas dan berwawasan luas.
           </p>
         </div>
@@ -137,14 +162,14 @@
       <!-- Dashboard Teaser Section -->
       <div class="dashboard-teaser">
         <div class="teaser-text">
-          <h3>Monitoring Konsol &amp; Dataset Training AI</h3>
-          <p>
+          <h3 data-i18n="teaser.title">Monitoring Konsol &amp; Dataset Training AI</h3>
+          <p data-i18n="teaser.desc">
             Pantau status penggunaan seluruh pool API Key, statistik kuota harian, traffic percakapan, serta unduh riwayat pasangan chat dalam format JSONL/CSV untuk fine-tuning model AI.
           </p>
         </div>
         <div>
           <a href="/dashboard.html" class="btn btn-primary" style="padding: 0.85rem 1.6rem; font-size: 0.95rem;">
-            <span>Akses Dashboard Admin</span>
+            <span data-i18n="teaser.btn">Akses Dashboard Admin</span>
             <span>&rarr;</span>
           </a>
         </div>
@@ -154,10 +179,14 @@
 
   <!-- Footer -->
   <footer>
-    <div class="container">
+    <div class="container" data-i18n="footer.text">
       FreeAIBot Production Suite &bull; Vercel Serverless &bull; Supabase Engine &bull; Versi v0.80.0
     </div>
   </footer>
 
+  <script src="/js/lenis.min.js"></script>
+  <script src="/js/smooth-scroll.js"></script>
+  <script src="/js/i18n.js"></script>
+  <script src="/js/console-theme.js"></script>
 </body>
 </html>

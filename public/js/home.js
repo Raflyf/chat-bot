@@ -19,24 +19,19 @@
     );
     if (!targets.length) return;
 
-    var prefersReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!("IntersectionObserver" in window) || prefersReduced) {
-      targets.forEach(function(el) {
-        el.classList.add("revealed");
-      });
-      return;
-    }
-
+    // Reveal dua arah permanen (scroll atas dan bawah)
     var observer = new IntersectionObserver(function(entries) {
       entries.forEach(function(entry) {
         if (entry.isIntersecting) {
           entry.target.classList.add("revealed");
-          observer.unobserve(entry.target);
+        } else {
+          // Reset status revealed saat keluar viewport agar beranimasi kembali saat digulir ulang
+          entry.target.classList.remove("revealed");
         }
       });
     }, {
-      threshold: 0.1,
-      rootMargin: "0px 0px -40px 0px"
+      threshold: 0.08,
+      rootMargin: "0px 0px -25px 0px"
     });
 
     targets.forEach(function(el) {

@@ -619,6 +619,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       document.getElementById("media-sticker").textContent = (mc.sticker || 0).toLocaleString();
       document.getElementById("media-doc").textContent = (mc.document || 0).toLocaleString();
       document.getElementById("media-video").textContent = (mc.video || 0).toLocaleString();
+      setTimeout(initDashboardScrollReveal, 60);
     }
 
     function renderAiModelMatrix(data) {
@@ -989,8 +990,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           return `<span class="tag-cap ${capClass}">${escapeHtml(cap)}</span>`;
         }).join("");
 
+        const providerKey = (c.provider || "").toLowerCase();
+
         return `
-          <div class="${cardClass}">
+          <div class="${cardClass}" data-provider="${providerKey}">
             <div>
               <div class="card-top-row">
                 <div class="card-num-group">
@@ -2014,11 +2017,45 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       }, { passive: true });
     })();
 
+    function initDashboardScrollReveal() {
+      if (typeof window === "undefined" || !("IntersectionObserver" in window)) return;
+      const targets = document.querySelectorAll(
+        ".kpi-card, .smart-gateway-banner, .matrix-section, .provider-card, .live-upstream-card, .token-matrix-section, #dataset-section, .model-matrix-card"
+      );
+      if (!targets.length) return;
+
+      if (!window._dashRevealObserver) {
+        window._dashRevealObserver = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("revealed");
+            } else {
+              entry.target.classList.remove("revealed");
+            }
+          });
+        }, {
+          threshold: 0.05,
+          rootMargin: "0px 0px -20px 0px"
+        });
+      }
+
+      targets.forEach((el) => {
+        if (!el.classList.contains("reveal-init")) {
+          el.classList.add("reveal-init");
+          window._dashRevealObserver.observe(el);
+        }
+      });
+    }
+
     // =========================================================================
     // INITIALIZATION
     // =========================================================================
     (async () => {
       bindDashboardEvents();
+      initDashboardScrollReveal();
+      if (typeof window.setupGlassDropdowns === "function") {
+        window.setupGlassDropdowns();
+      }
       const isAuthed = await checkSession();
       if (isAuthed) {
         fetchData();
