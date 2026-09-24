@@ -1141,7 +1141,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             else if (k.status === "warning" || bindingPct >= 80) progressColor = "progress-amber";
 
             const statusLabel = k.status === "capped" ? "Capped" : k.status === "warning" ? "Waspada" : "Optimal";
-            const cleanSuffix = k.suffix.startsWith("...") ? k.suffix : "..." + k.suffix;
+            const cleanSuffix = String(k.suffix || "").startsWith("...") ? k.suffix : "..." + (k.suffix || "????");
             const capLabel = k.cap > 0 ? `${k.used.toLocaleString("id-ID")} / ${k.cap.toLocaleString("id-ID")} panggilan (${k.percent}%)` : `${k.used.toLocaleString()} calls`;
 
             // Baris kedua: info TOKEN bila provider punya batas token (xKiro/Dahl/Groq).
@@ -1476,7 +1476,7 @@ function renderLiveUpstreamTable(data) {
 
         p.keys.forEach(k => {
           totalAllKeys++;
-          const cleanSuffix = k.suffix.startsWith("...") ? k.suffix : "..." + k.suffix;
+          const cleanSuffix = String(k.suffix || "").startsWith("...") ? k.suffix : "..." + (k.suffix || "????");
 
           if (p.kind === "dahl") {
             const keyCap = k.tokenCap || 100000000;
