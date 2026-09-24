@@ -1972,9 +1972,9 @@ function renderLiveUpstreamTable(data) {
 
       const total = cachedDatasetPairs.length;
       if (total === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 2.5rem;">Tidak ada data percakapan yang cocok dengan filter pencarian.</td></tr>`;
+        setHtmlIfChanged(tbody, `<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 2.5rem;">Tidak ada data percakapan yang cocok dengan filter pencarian.</td></tr>`);
         if (infoEl) infoEl.textContent = "Tidak ada percakapan ditemukan";
-        if (controlsEl) controlsEl.innerHTML = "";
+        setHtmlIfChanged(controlsEl, "");
         return;
       }
 
