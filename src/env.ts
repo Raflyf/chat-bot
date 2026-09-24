@@ -161,8 +161,29 @@ export const config = {
     // Dipakai chat({ vision: true }) untuk foto, stiker, dan gambar di dalam dokumen Word.
     visionChain: [
       { kind: 'groq', model: 'qwen/qwen3.8-27b' },
-      { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
-      { kind: 'cloudflare', model: '@cf/mistralai/mistral-small-3.1-24b-instruct' },
+      // ---------------------------------------------------------------------
+      // DIKOREKSI 24 Sep (temuan pemilik produk): `@cf/meta/llama-4-scout` dan
+      // `@cf/mistralai/mistral-small-3.1` DIKELUARKAN dari jalur vision.
+      //
+      // Keluhan nyata: user meminta ekstraksi angka dari tabel harga kayu, bot
+      // membalas deretan tanda pisah ("- - - - -") alih-alih angkanya. Setelah
+      // diuji, akarnya BUKAN kode kita (tidak ada satu pun aturan yang mengubah
+      // digit jadi dash — sudah dipindai seluruh src/), melainkan kedua model itu
+      // memang tidak sanggup membaca digit di dalam sel tabel.
+      //
+      // Uji pembanding pada gambar yang sama (50 angka kunci), hasil terukur:
+      //   groq/qwen3.8-27b        49/50 benar,  5,4 dtk  <- tetap primer
+      //   xkiro/qwen3.8-max       50/50 benar, 16,7 dtk
+      //   xkiro/qwen3-vl-plus     50/50 benar, 22,3 dtk
+      //   gemini-2.5-flash         2/50 benar, 76 dtk   (gagal)
+      // Kedua model Cloudflare di bawah ini tidak dipakai lagi karena alasan itu;
+      // Cloudflare tetap ada di rantai lewat qwen3.8-27b yang jauh lebih akurat.
+      //
+      // Catatan: `@cf/meta/llama-4-scout` tetap BENAR dan cepat (716ms) untuk
+      // gambar biasa (foto, stiker) — yang gagal adalah pembacaan digit halus.
+      // Karena itu ia dipindah ke urutan paling akhir sebagai jaring terakhir,
+      // bukan dibuang: lebih baik memberi jawaban umum daripada tidak menjawab.
+      // ---------------------------------------------------------------------
       { kind: 'cloudflare', model: '@cf/qwen/qwen3.8-27b' },
       { kind: 'gemini', model: 'gemini-3.1-flash-lite' },
       { kind: 'gemini', model: 'gemini-2.5-flash' },
@@ -175,6 +196,9 @@ export const config = {
       // tambahan sebelum jaring terakhir, karena kuotanya terpisah per kunci.
       { kind: 'xkiro', model: 'qwen/qwen3-vl-plus:free' },
       { kind: 'xkiro', model: 'qwen/qwen3.5-omni-flash:free' },
+      // Jaring TERAKHIR: model Cloudflare yang cepat tapi lemah membaca digit halus.
+      // Dipakai hanya bila seluruh model di atas gagal, agar user tetap dapat balasan.
+      { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
       // xKiro Qwen 3.8 Omni Flash (model multimodal terbaru xKiro). DIUJI 22 Sep dengan
       // 10 stiker nyata dan hasilnya TIDAK ANDAL, jadi sengaja ditaruh PALING AKHIR:
       //   - 2/5 berhasil pada gambar baru (60% timeout 90 dtk); pembanding xKiro

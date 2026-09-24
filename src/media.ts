@@ -1,11 +1,178 @@
 import { config } from './env.js';
-import { autoReply, describeImage, sanitizeAssistantOutput } from './skills.js';
+import { autoReply, describeImage, sanitizeAssistantOutput, continueIfTruncated } from './skills.js';
 import { chat, geminiThinkingConfig } from './providers.js';
 import type { ChatContext } from './memory.js';
 import { keyUsed, isKeyAllowed, keyTokensUsed } from './quota.js';
 import { getOrderedKeys } from './providers.js';
 import mammoth from 'mammoth';
 import zlib from 'node:zlib';
+
+// ============================================================================
+// PARSER EXCEL (.xlsx / .xlsm) TANPA DEPENDENSI EKSTERNAL
+//
+// KENAPA tidak memakai paket `xlsx` (SheetJS): versi terakhir yang tersedia di
+// npm registry adalah 0.18.5 dan membawa DUA kerentanan tingkat tinggi tanpa
+// perbaikan (Prototype Pollution GHSA-4r6h-8v6p-xvw6, ReDoS GHSA-5pgg-2g8v-p4x9).
+// Bot ini menerima berkas dari pengguna umum, jadi memasang parser ber-CVE tinggi
+// untuk membaca spreadsheet adalah pertukaran yang buruk.
+//
+// Sebagai gantinya, .xlsx dibaca langsung: berkasnya adalah arsip ZIP berisi XML.
+// Yang dibutuhkan hanya tiga bagian:
+//   xl/sharedStrings.xml  -> tabel string bersama (sel bertipe "s" menunjuk ke sini)
+//   xl/worksheets/sheet1.xml -> isi sel (nilai + koordinat kolom/baris)
+//   xl/workbook.xml       -> nama tiap sheet agar output terbaca manusia
+// Ekstraksi ZIP dilakukan dengan membaca entri terpusat (central directory) dan
+// meng-inflate tiap entri memakai zlib bawaan Node — tanpa paket pihak ketiga.
+// ============================================================================
+
+/** Cari entri di arsip ZIP berdasarkan nama, kembalikan isinya (sudah di-inflate). */
+function zipEntry(buf: Buffer, nama: string): Buffer | null {
+  // Cari End of Central Directory (EOCD): tanda 0x06054b50, dipindai dari belakang.
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i > buf.length - 66000; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return null;
+  const jumlahEntri = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16); // offset awal central directory
+
+  for (let n = 0; n < jumlahEntri; n++) {
+    if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) break;
+    const metode = buf.readUInt16LE(p + 10);
+    const ukuranKompres = buf.readUInt32LE(p + 20);
+    const panjangNama = buf.readUInt16LE(p + 28);
+    const panjangExtra = buf.readUInt16LE(p + 30);
+    const panjangKomentar = buf.readUInt16LE(p + 32);
+    const offsetLokal = buf.readUInt32LE(p + 42);
+    const namaEntri = buf.toString('utf8', p + 46, p + 46 + panjangNama);
+
+    if (namaEntri === nama) {
+      // Header lokal: lewati nama + extra field untuk menemukan awal data.
+      const lNama = buf.readUInt16LE(offsetLokal + 26);
+      const lExtra = buf.readUInt16LE(offsetLokal + 28);
+      const mulai = offsetLokal + 30 + lNama + lExtra;
+      const data = buf.subarray(mulai, mulai + ukuranKompres);
+      if (metode === 0) return Buffer.from(data); // disimpan apa adanya
+      try {
+        return zlib.inflateRawSync(data);
+      } catch {
+        return null;
+      }
+    }
+    p += 46 + panjangNama + panjangExtra + panjangKomentar;
+  }
+  return null;
+}
+
+/** Ambil semua teks di dalam <t>...</t>, sekaligus decode entitas XML dasar. */
+function xmlDecode(s: string): string {
+  return s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&amp;/g, '&');
+}
+
+/** Baca xl/sharedStrings.xml -> array string (indeks = nomor string bersama). */
+function bacaSharedStrings(buf: Buffer): string[] {
+  const xml = zipEntry(buf, 'xl/sharedStrings.xml');
+  if (!xml) return [];
+  const teks = xml.toString('utf8');
+  const out: string[] = [];
+  // Tiap <si> adalah satu string; di dalamnya bisa ada beberapa <t> (rich text).
+  const reSi = /<si\b[^>]*>([\s\S]*?)<\/si>/g;
+  let m: RegExpExecArray | null;
+  while ((m = reSi.exec(teks)) !== null) {
+    const bagian = m[1];
+    let gabung = '';
+    const reT = /<t\b[^>]*>([\s\S]*?)<\/t>/g;
+    let t: RegExpExecArray | null;
+    while ((t = reT.exec(bagian)) !== null) gabung += xmlDecode(t[1]);
+    out.push(gabung);
+  }
+  return out;
+}
+
+/** Ubah referensi kolom Excel (A, B, ..., AA) menjadi indeks angka (0-based). */
+function kolomKeIndeks(ref: string): number {
+  const huruf = ref.replace(/[^A-Z]/gi, '').toUpperCase();
+  let n = 0;
+  for (const c of huruf) n = n * 26 + (c.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+/**
+ * Ekstrak isi .xlsx menjadi teks tab-separated (per sheet).
+ * Angka diformat apa adanya; tanggal dikembalikan sebagai serial Excel + catatan,
+ * karena konversi serial->tanggal butuh tabel format yang tidak ada di XML mentah.
+ */
+function bacaXlsx(buffer: Buffer): string | null {
+  // Daftar nama sheet dari workbook.xml (urutan sesuai r:id).
+  const wb = zipEntry(buffer, 'xl/workbook.xml');
+  const namaSheet: string[] = [];
+  if (wb) {
+    const re = /<sheet\b[^>]*\bname="([^"]*)"/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(wb.toString('utf8'))) !== null) namaSheet.push(xmlDecode(m[1]));
+  }
+
+  const shared = bacaSharedStrings(buffer);
+  const keluaran: string[] = [];
+
+  // Coba sheet1..sheet20 sampai tidak ditemukan lagi.
+  for (let idx = 1; idx <= 20; idx++) {
+    const xml = zipEntry(buffer, `xl/worksheets/sheet${idx}.xml`);
+    if (!xml) break;
+    const teks = xml.toString('utf8');
+    const baris: string[][] = [];
+    const reRow = /<row\b[^>]*>([\s\S]*?)<\/row>/g;
+    let r: RegExpExecArray | null;
+
+    while ((r = reRow.exec(teks)) !== null) {
+      const sel: string[] = [];
+      // Tiap <c r="A1" t="s"><v>12</v></c>  (t="s" = string bersama, t="inlineStr" = teks langsung)
+      const reC = /<c\b([^>]*)>([\s\S]*?)<\/c>/g;
+      let c: RegExpExecArray | null;
+      while ((c = reC.exec(r[1])) !== null) {
+        const atribut = c[1];
+        const isi = c[2];
+        const refMatch = /\br="([A-Z]+\d+)"/.exec(atribut);
+        const kolom = refMatch ? kolomKeIndeks(refMatch[1]) : sel.length;
+        const tipe = /\bt="([^"]+)"/.exec(atribut)?.[1] || '';
+
+        let nilai = '';
+        if (tipe === 's') {
+          const v = /<v>([\s\S]*?)<\/v>/.exec(isi);
+          const i = v ? Number(v[1]) : NaN;
+          nilai = Number.isFinite(i) && shared[i] !== undefined ? shared[i] : '';
+        } else if (tipe === 'inlineStr') {
+          const reT = /<t\b[^>]*>([\s\S]*?)<\/t>/g;
+          let t: RegExpExecArray | null;
+          while ((t = reT.exec(isi)) !== null) nilai += xmlDecode(t[1]);
+        } else {
+          const v = /<v>([\s\S]*?)<\/v>/.exec(isi);
+          nilai = v ? xmlDecode(v[1]) : '';
+        }
+        // Isi celah kolom dengan string kosong agar kolom tetap sejajar.
+        while (sel.length < kolom) sel.push('');
+        sel[kolom] = nilai;
+      }
+      if (sel.some((s) => s !== '')) baris.push(sel);
+    }
+
+    if (baris.length > 0) {
+      const nama = namaSheet[idx - 1] || `Sheet${idx}`;
+      keluaran.push(`### ${nama}`);
+      for (const b of baris) keluaran.push(b.join('\t'));
+      keluaran.push('');
+    }
+  }
+
+  return keluaran.length > 0 ? keluaran.join('\n').trim() : null;
+}
 
 /** Helper transkripsi via Groq Whisper API */
 async function transcribeViaGroq(buffer: Buffer, mime: string, model: string): Promise<string | null> {
@@ -350,9 +517,24 @@ export function sniffMimeType(buffer: Buffer): string | null {
   ) {
     return 'image/webp';
   }
-  // ZIP / Word .docx: PK\x03\x04
+  // ZIP (PK\x03\x04) — bisa Word .docx, Excel .xlsx, atau arsip lain.
+  //
+  // BUG YANG DIPERBAIKI (24 Sep): dulu SEMUA berkas ZIP langsung dilabeli
+  // "wordprocessingml.document". Akibatnya .xlsx ikut dikirim ke parser Word
+  // (mammoth) dan gagal dengan "Could not find main document part" — sehingga
+  // Excel tidak pernah bisa dibaca. Sekarang isi arsip diperiksa untuk
+  // menentukan jenis sebenarnya: keberadaan xl/workbook.xml berarti Excel,
+  // word/document.xml berarti Word.
   if (buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04) {
-    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const teksArsip = buffer.toString('latin1');
+    if (teksArsip.includes('xl/workbook.xml') || teksArsip.includes('xl/worksheets/')) {
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    }
+    if (teksArsip.includes('word/document.xml')) {
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    }
+    // Arsip ZIP lain (mis. .zip biasa) — biarkan tanpa mime agar tidak salah tebak.
+    return null;
   }
   // Ogg audio: OggS
   if (buffer.length >= 4 && buffer.toString('ascii', 0, 4) === 'OggS') {
@@ -408,11 +590,29 @@ export async function extractDocumentText(
     }
   }
 
-  // 2. Berkas teks polos, kode sumber, data terstruktur (.txt, .md, .csv, .json, dsb)
+  // 2. Excel (.xlsx / .xlsm) via parser ZIP+XML sendiri (tanpa dependensi ber-CVE).
+  //    CATATAN: .xls (format lama, biner OLE) TIDAK didukung parser ini — deteksi
+  //    di bawah hanya menangkap .xlsx/.xlsm, dan .xls akan jatuh ke jalur "tidak
+  //    didukung" dengan pesan dinamis dari model.
+  if (
+    lowerName.endsWith('.xlsx') ||
+    lowerName.endsWith('.xlsm') ||
+    effectiveMime.includes('spreadsheetml')
+  ) {
+    try {
+      const isi = bacaXlsx(buffer);
+      if (isi && isi.trim().length > 0) return isi.trim();
+    } catch (err) {
+      console.warn('[media] Gagal ekstrak Excel .xlsx:', err);
+    }
+  }
+
+  // 3. Berkas teks polos, kode sumber, data terstruktur (.txt, .md, .csv, .json, dsb)
   const textExtensions = [
     '.txt',
     '.md',
     '.csv',
+    '.tsv',
     '.json',
     '.js',
     '.ts',
@@ -425,6 +625,12 @@ export async function extractDocumentText(
     '.yaml',
     '.yml',
     '.xml',
+    '.log',
+    '.ini',
+    '.conf',
+    '.env.example',
+    '.srt',
+    '.vtt',
   ];
 
   if (
@@ -503,12 +709,28 @@ export async function processIncomingDocument(
     // 1. Gemini native PDF (model vision: 3.6 Flash > 3.5 Flash Lite > 2.5 Flash)
     for (const model of config.models.geminiVision) {
       const p = await processPdfViaGemini(buffer, prompt, model);
-      if (p) return p;
+      if (p) {
+        // Gemini native PDF juga bisa terpotong pada dokumen bertabel panjang
+        // (uji nyata: finishReason MAX_TOKENS pada gemini-2.5-flash). Sambung bila perlu.
+        const lanjutan = await continueIfTruncated(
+          [{ role: 'user', content: prompt }],
+          p.reply,
+          ctx?.chatId,
+        );
+        return { ...p, reply: lanjutan };
+      }
     }
 
     // 2. Cadangan: OpenRouter plugin file-parser (engine pdf-text)
     const pOr = await processPdfViaOpenRouter(buffer, prompt, filename);
-    if (pOr) return pOr;
+    if (pOr) {
+      const lanjutanOr = await continueIfTruncated(
+        [{ role: 'user', content: prompt }],
+        pOr.reply,
+        ctx?.chatId,
+      );
+      return { ...pOr, reply: lanjutanOr };
+    }
 
     // 3. Parser Teks Lokal (Fallback): Ekstrak teks halaman PDF secara lokal lalu teruskan ke rantai teks utama
     const extractedText = extractPdfTextSimple(buffer);
@@ -524,7 +746,14 @@ export async function processIncomingDocument(
           : 'Tolong baca dan rangkum inti dokumen PDF ini secara jelas, padat, dan terstruktur.',
       ].join('\n');
       const autoRes = await autoReply(localPrompt, ctx);
-      return { reply: autoRes.reply, via: `local-parser/${autoRes.via}`, tokens: autoRes.tokens };
+      // PDF panjang (daftar harga, laporan bertabel) sering melewati batas output
+      // provider sehingga jawaban berhenti di tengah — sambung otomatis.
+      const lanjutan = await continueIfTruncated(
+        [{ role: 'user', content: localPrompt }],
+        autoRes.reply,
+        ctx?.chatId,
+      );
+      return { reply: lanjutan, via: `local-parser/${autoRes.via}`, tokens: autoRes.tokens };
     }
 
     // Fallback terakhir: murni dinamis. ZERO teks statis — bila model juga mati,
@@ -570,7 +799,13 @@ export async function processIncomingDocument(
           ];
           const visionRes = await chat([{ role: 'user', content: parts }], { vision: true });
           if (visionRes.text.trim()) {
-            return { reply: sanitizeAssistantOutput(visionRes.text), via: `docx-vision/${visionRes.via}`, tokens: visionRes.tokens };
+            // Dokumen bergambar + tabel panjang juga bisa terpotong — sambung otomatis.
+            const lanjutan = await continueIfTruncated(
+              [{ role: 'user', content: parts }],
+              visionRes.text,
+              ctx?.chatId,
+            );
+            return { reply: sanitizeAssistantOutput(lanjutan), via: `docx-vision/${visionRes.via}`, tokens: visionRes.tokens };
           }
         } catch (err) {
           console.warn('[media] Analisis gambar .docx via vision gagal, lanjut teks saja:', err);
@@ -578,7 +813,15 @@ export async function processIncomingDocument(
       }
     }
 
-    return await autoReply(prompt, ctx);
+    // Word/Excel/teks: sambung jawaban bila terpotong (dokumen panjang & bertabel
+    // rutin melewati batas output provider — lihat catatan di continueIfTruncated).
+    const autoDoc = await autoReply(prompt, ctx);
+    const lanjutanDoc = await continueIfTruncated(
+      [{ role: 'user', content: prompt }],
+      autoDoc.reply,
+      ctx?.chatId,
+    );
+    return { reply: lanjutanDoc, via: autoDoc.via, tokens: autoDoc.tokens };
   }
 
   // Kasus C: Dokumen tidak didukung (misal biner terenkripsi) — murni dinamis, tanpa teks statis.
@@ -655,7 +898,14 @@ export async function processIncomingVideo(
               }
             : undefined;
           if (tokens?.total) keyTokensUsed('gemini', key, tokens.total);
-          return { reply: sanitizeAssistantOutput(text, caption, undefined, true), via: `gemini/${model}`, tokens };
+          // Video panjang bisa menghasilkan jawaban panjang (transkrip + rangkuman)
+          // yang melewati batas output — sambung otomatis bila terputus.
+          const lanjutanVid = await continueIfTruncated(
+            [{ role: 'user', content: caption?.trim() || 'Rangkum video ini.' }],
+            text,
+            ctx?.chatId,
+          );
+          return { reply: sanitizeAssistantOutput(lanjutanVid, caption, undefined, true), via: `gemini/${model}`, tokens };
         }
       } catch (err) {
         console.warn(`[media] Video via Gemini [${model}] gagal:`, err);

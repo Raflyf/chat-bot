@@ -2143,6 +2143,109 @@ async function chatRetry(
   }
 }
 
+/**
+ * Deteksi apakah jawaban berhenti di tengah (terpotong batas output provider).
+ *
+ * Dipakai BERSAMA oleh semua jalur media (gambar, PDF, Word, Excel, teks, video)
+ * supaya perilakunya seragam — dulu logika ini hanya ada di describeImage sehingga
+ * permintaan panjang lewat jalur dokumen tetap terpotong.
+ *
+ * Tanda yang ditangkap:
+ *  (a) terputus di tengah kata/angka — ekor berakhir digit, "Rp", koma, titik, "|";
+ *  (b) terputus di tengah PENANDA markdown — ekor seperti "- **Baris" tanpa isinya.
+ *      Kasus (b) ditemukan saat uji nyata: jawaban tabel berhenti tepat di "- **Baris".
+ */
+export function isTruncatedReply(teks: string): boolean {
+  if (!teks || teks.length < 300) return false;
+  const ekor = teks.slice(-60).trimEnd();
+  return (
+    /(?:Rp\.?|Rp\s*[\d.,]*|\d[\d.,]*|[-,;:(|]|\*\*?|_|`)\s*$/.test(ekor) ||
+    /(?:^|\n)\s*[-*+]\s*\*{0,2}\s*$/.test(teks.slice(-30)) ||
+    /(?:Baris|baris|Row|row)\s*\*{0,2}\s*$/.test(ekor) ||
+    /:\s*\*{0,2}\s*$/.test(ekor)
+  );
+}
+
+/**
+ * Lanjutkan jawaban yang terpotong lewat permintaan kedua.
+ *
+ * KENAPA tidak menaikkan max_tokens saja: pada provider ber-ITPM ketat (Groq free,
+ * TPM 8.000) permintaan lebih besar DITOLAK — uji terukur:
+ *   max_tokens=800  -> berhasil, tetapi finish_reason "length" (jawaban terpotong)
+ *   max_tokens=1200 -> HTTP 429 "Request too large ... ITPM Limit 7000"
+ * Jadi melanjutkan sebagai permintaan TERPISAH adalah satu-satunya jalan yang bekerja
+ * tanpa mengubah konfigurasi provider.
+ *
+ * Dibatasi `maksLanjutan` (default 1) supaya latensi tidak membengkak dan tidak
+ * memicu 429 berantai. Dipakai semua jalur media agar seragam.
+ */
+export async function continueIfTruncated(
+  messages: ChatMsg[],
+  teks: string,
+  cacheScope?: string,
+  maksLanjutan = 1,
+): Promise<string> {
+  let hasil = teks;
+  for (let i = 0; i < maksLanjutan; i++) {
+    if (!isTruncatedReply(hasil)) break;
+    try {
+      // PENTING: pesan lanjutan harus memuat tugas aslinya. Tanpa itu, model
+      // hanya melihat potongan tabel tanpa pertanyaan dan menjawab "SELESAI"
+      // (atau menolak melanjutkan) — terbukti saat uji 24 Sep: respons 7 karakter
+      // "SELESAI" alih-alih sambungan tabelnya.
+      //
+      // Konteks tugas diambil dari pesan user TERAKHIR di `messages` (yang memuat
+      // instruksi + gambar/dokumen), lalu diringkas agar tidak melampaui ITPM.
+      const tugasAsli = (() => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i];
+          if (m.role !== 'user') continue;
+          if (typeof m.content === 'string') return m.content.slice(0, 1200);
+          if (Array.isArray(m.content)) {
+            const bagianTeks = m.content
+              .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+              .map((p) => p.text)
+              .join('\n');
+            return bagianTeks.slice(0, 1200);
+          }
+        }
+        return '';
+      })();
+
+      // Jawaban berbentuk TABEL butuh instruksi berbeda: model cenderung menilai
+      // tabelnya "sudah lengkap" (karena baris header + separator + beberapa baris
+      // sudah membentuk tabel yang valid secara struktur) lalu menjawab SELESAI,
+      // padahal baris datanya masih terpotong di tengah. Uji 24 Sep membuktikan itu:
+      // model konsisten menjawab "SELESAI" walau baris terakhir berhenti di "| 3.5".
+      // Karena itu, untuk kasus tabel, minta lanjutkan BARIS-nya secara eksplisit.
+      const berbentukTabel = /\|[\s\S]*\|\s*[\d.,]*\s*$/.test(hasil.slice(-400));
+      const instruksi = berbentukTabel
+        ? `TUGAS AWAL (yang kamu kerjakan):\n${tugasAsli}\n\n---\n\nTABEL YANG SUDAH KAMU TULIS (baris terakhirnya TERPOTONG di tengah):\n${hasil}\n\n---\n\nTabel di atas BELUM selesai — baris terakhirnya berhenti di tengah. Lanjutkan MULAI dari baris yang terpotong itu: tulis ulang baris tersebut secara utuh, lalu teruskan baris-baris berikutnya sampai semua data habis. Jangan mengulang baris yang sudah lengkap, jangan menulis kalimat pembuka, jangan berkomentar. Kalau memang semua baris sudah tertulis lengkap, balas dengan satu kata: SELESAI`
+        : tugasAsli
+          ? `TUGAS AWAL (yang kamu kerjakan):\n${tugasAsli}\n\n---\n\nJAWABANMU SEJAUH INI (terpotong di akhir):\n${hasil}\n\n---\n\nLanjutkan jawaban di atas TEPAT dari titik terputus. Sambung langsung isinya — jangan mengulang bagian yang sudah ada, jangan menulis kalimat pembuka baru, jangan berkomentar soal permintaan ini. Kalau isinya memang sudah lengkap, balas dengan satu kata: SELESAI`
+          : `Lanjutkan tulisan berikut TEPAT dari titik terputus (jangan mengulang, jangan berkomentar):\n\n${hasil}`;
+
+      const lanjut = await chatRetry([{ role: 'user', content: instruksi }], false, cacheScope);
+      const sambungan = String(lanjut.text || '').trim();
+      if (!sambungan) break;
+      // Model menyatakan tuntas, atau menolak melanjutkan dengan komentar.
+      // Kasus nyata: "...Rp 8.0 Lahh, ini chat baru kosong melompong dari awal,
+      // gak ada yang terputus buat disambungin." — jawaban tidak boleh berakhir
+      // dengan kalimat seperti itu.
+      if (/^(?:SELESAI|selesai)\b/i.test(sambungan)) break;
+      const menolakMelanjutkan =
+        /\b(?:tidak ada (?:yang )?terputus|gak ada (?:yang )?terputus|nggak ada (?:yang )?terputus|chat baru|kosong melompong|belum ada isi|tidak ada teks sebelumnya|tidak ada tulisan sebelumnya)\b/i.test(
+          sambungan,
+        );
+      if (menolakMelanjutkan) break;
+      hasil = `${hasil}${hasil.endsWith(' ') || sambungan.startsWith(' ') ? '' : ' '}${sambungan}`;
+    } catch {
+      break;
+    }
+  }
+  return hasil;
+}
+
 function buildMessages(
   clean: string,
   ctx?: ChatContext,
@@ -3176,6 +3279,26 @@ export async function describeImage(
   ];
 
   const { text, via, tokens } = await chatRetry(messages, true, ctx?.chatId);
+  // ==========================================================================
+  // PENYELAMAT JAWABAN TERPOTONG (temuan 24 Sep, keluhan pemilik produk).
+  //
+  // Kasus nyata: user meminta "extract semua angka dari tabel ini". Model
+  // sebenarnya MEMBACA dengan benar, tetapi jawabannya berhenti di tengah
+  // karena batas output provider. Bukti terukur pada Groq (TPM ketat):
+  //   max_tokens=800  -> finish_reason "length", ekor jawaban menggantung
+  //                      tepat di "Rp. " (angka berikutnya belum sempat ditulis)
+  //   max_tokens=1500 -> HTTP 429 (TPM 8.000 terlampaui)
+  // Jadi menaikkan batas token BUKAN jalan keluar untuk provider ini.
+  //
+  // Akibatnya di lapangan: jawaban panjang tampak "rusak" — deretan angka
+  // terpotong lalu baris berikutnya hilang, dan saat sanitizer merapikan
+  // sisa potongan itu, hasilnya terbaca seperti deretan tanda pisah.
+  //
+  // Logika deteksi + lanjutan kini ada di helper bersama `continueIfTruncated`
+  // (dipakai SEMUA jalur media, bukan hanya gambar) — lihat komentarnya.
+  // ==========================================================================
+  const textLengkap = await continueIfTruncated(messages, text, ctx?.chatId);
+
   // Sanitasi memakai teks user asli (caption) sebagai konteks sinyal humor — bukan teks instruksi.
   // mediaReply=true: buang narasi isi kiriman (kecuali user bertanya eksplisit) — ATURAN KERAS user.
   const recentOpenings = (ctx?.history ?? [])
@@ -3184,7 +3307,7 @@ export async function describeImage(
     .map((h) => leadingInterjection(stripDurableMarkers(h.content as string)))
     .filter((w): w is string => Boolean(w));
   let reply = sanitizeAssistantOutput(
-    text,
+    textLengkap,
     caption?.trim() || undefined,
     recentOpenings,
     true,

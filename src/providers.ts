@@ -1240,9 +1240,49 @@ export async function chat(
     return Math.ceil(chars / 4);
   };
   const promptTokensEstimate = estimatePromptTokens(messages);
+
+  // ---------------------------------------------------------------------------
+  // ANGGARAN ITPM GROQ UNTUK JALUR VISION (perbaikan 24 Sep).
+  //
+  // Masalah nyata: Groq adalah model vision TERBAIK yang kita punya (uji gambar
+  // tabel: 49/50 angka benar dalam 5,4 dtk, sementara model lain 10/28 atau
+  // gagal). Tetapi ia hampir SELALU dilewati untuk gambar, karena prompt sistem
+  // bot (~5.700 token) + gambar (~4.000 token) = ~9.700 token, jauh di atas
+  // batas 6.800 yang dipasang untuk teks.
+  //
+  // Akibatnya gambar selalu jatuh ke model cadangan yang jauh lebih lemah —
+  // inilah sebab keluhan "angka di tabel tidak terbaca".
+  //
+  // Solusi: saat memproses GAMBAR, kirim pesan sistem yang RINGKAS ke Groq
+  // (instruksi inti saja, tanpa seluruh persona panjang). Kualitas pembacaan
+  // gambar tidak bergantung pada panjang persona; yang menentukan adalah
+  // gambarnya dan instruksi tugasnya. Anggaran jadi ~4.300 token — aman.
+  //
+  // Hanya berlaku untuk Groq di jalur vision; provider lain tetap menerima
+  // prompt lengkap (kuotanya lapang) dan percakapan teks tidak berubah.
+  // ---------------------------------------------------------------------------
+  const ringkasUntukGroqVision = (msgs: ChatMsg[]): ChatMsg[] => {
+    if (!needVision) return msgs;
+    return msgs.map((m) => {
+      if (m.role !== 'system' || typeof m.content !== 'string') return m;
+      // Ambil instruksi tugas (biasanya di akhir prompt sistem, memuat aturan
+      // spesifik untuk gambar ini) lalu tambahkan persona minimal.
+      const aturanTugas = m.content.match(/\[[^\]]{4,200}\][\s\S]{0,2500}/);
+      return {
+        role: 'system' as const,
+        content: [
+          'Kamu asisten yang membantu dan ramah. Jawab langsung, akurat, tanpa pembuka klise.',
+          aturanTugas ? aturanTugas[0] : m.content.slice(-2500),
+        ].join('\n'),
+      };
+    });
+  };
+
   // Untuk vision: rantai eksplisit dari config.models.visionChain (urutan mutlak sesuai
   // keputusan review user, tidak disusun ulang oleh pengurutan latensi).
   const orderedSteps = needVision ? visionSteps(allSteps, messages) : allSteps;
+  const messagesRingkas = ringkasUntukGroqVision(messages);
+  const promptTokensGroqVision = estimatePromptTokens(messagesRingkas);
 
   // Anggaran waktu TOTAL seluruh rantai failover: pagar agar satu model yang menggantung
   // tidak menghabiskan jatah serverless. Sisa anggaran diteruskan ke tiap attempt (`t`).
@@ -1258,10 +1298,17 @@ export async function chat(
     // Guard ITPM: lewati provider yang batas token-per-menitnya pasti terlampaui.
     // Ini mencegah request yang DIJAMIN 429 (mis. Groq 7.000 ITPM vs prompt 9.000 token)
     // sehingga rantai tidak membuang waktu dan langsung mencoba provider yang sanggup.
-    if (step.maxPromptTokens > 0 && promptTokensEstimate > step.maxPromptTokens) {
+    //
+    // Untuk jalur VISION, provider Groq dinilai dengan anggaran prompt RINGKAS
+    // (lihat ringkasUntukGroqVision): tanpa ini Groq selalu dilewati karena
+    // prompt persona panjang + gambar melampaui batas, padahal Groq adalah
+    // pembaca gambar terbaik yang tersedia.
+    const estimasiUntukStep =
+      needVision && step.kind === 'groq' ? promptTokensGroqVision : promptTokensEstimate;
+    if (step.maxPromptTokens > 0 && estimasiUntukStep > step.maxPromptTokens) {
       if (!allowCoolingPass) {
         console.warn(
-          `[providers] Lewati ${step.kind}: prompt ~${promptTokensEstimate} token melebihi batas ITPM ${step.maxPromptTokens}.`,
+          `[providers] Lewati ${step.kind}: prompt ~${estimasiUntukStep} token melebihi batas ITPM ${step.maxPromptTokens}.`,
         );
       }
       continue;
@@ -1318,7 +1365,13 @@ export async function chat(
         const attemptStart = Date.now();
         try {
           // `t` = sisa anggaran rantai (dibatasi timeout per-request) agar attempt ini tidak melewati deadline
-          const result = await step.run(key, model, messages, Math.min(remainingMs, config.timeoutMs));
+          //
+          // Groq di jalur vision memakai pesan RINGKAS: prompt persona penuh +
+          // gambar akan melampaui ITPM 7.000 sehingga request dijamin 413/429.
+          // Kualitas pembacaan gambar tidak bergantung pada panjang persona.
+          const msgsUntukStep =
+            needVision && step.kind === 'groq' ? messagesRingkas : messages;
+          const result = await step.run(key, model, msgsUntukStep, Math.min(remainingMs, config.timeoutMs));
           recordKeySuccess(step.kind, key, model);
           // Catat latensi aktual untuk failover berbasis waktu respons pada request berikutnya
           recordModelLatency(step.kind, model, Date.now() - attemptStart);
