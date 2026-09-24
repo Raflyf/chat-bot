@@ -1142,7 +1142,13 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
             const statusLabel = k.status === "capped" ? "Capped" : k.status === "warning" ? "Waspada" : "Optimal";
             const cleanSuffix = String(k.suffix || "").startsWith("...") ? k.suffix : "..." + (k.suffix || "????");
-            const capLabel = k.cap > 0 ? `${k.used.toLocaleString("id-ID")} / ${k.cap.toLocaleString("id-ID")} panggilan (${k.percent}%)` : `${k.used.toLocaleString()} calls`;
+            // k.used / k.cap bisa undefined pada kunci yang baru terdaftar dan belum
+            // punya catatan kuota -> tanpa fallback, satu kunci seperti itu melempar
+            // TypeError dan mematikan seluruh panel. Pakai Number(...) || 0.
+            const kUsed = Number(k.used) || 0;
+            const kCap = Number(k.cap) || 0;
+            const kPct = Number(k.percent) || 0;
+            const capLabel = kCap > 0 ? `${kUsed.toLocaleString("id-ID")} / ${kCap.toLocaleString("id-ID")} panggilan (${kPct}%)` : `${kUsed.toLocaleString()} calls`;
 
             // Baris kedua: info TOKEN bila provider punya batas token (xKiro/Dahl/Groq).
             // Inilah yang membuat dashboard jujur: key ...6386 tampil "112/500 panggilan (22%)"
@@ -1215,7 +1221,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const usedValue = p.usedTodayDaily ?? p.usedToday ?? p.usedPeriod ?? 0;
         const usedPeriodValue = p.usedPeriod ?? usedValue;
         const showPeriodInfo = usedPeriodValue > usedValue;
-        const capInfo = p.totalCap > 0 ? `Batas: ${p.totalCap.toLocaleString("id-ID")} panggilan` : "Uncapped";
+        const capInfo = p.totalCap > 0 ? `Batas: ${(Number(p.totalCap) || 0).toLocaleString("id-ID")} panggilan` : "Uncapped";
         // Konteks token pada header kartu: provider yang dibatasi TOKEN (xKiro/Dahl/Groq)
         // tidak boleh hanya menampilkan panggilan — pengguna perlu tahu batas mana yang mengikat.
         const hasTokenContext = (p.totalTokenCap || 0) > 0 && (p.totalTokensUsed || 0) > 0;
@@ -1842,7 +1848,7 @@ function renderLiveUpstreamTable(data) {
           limitOfficial = "1.000 RPD • 8K TPM • 200K TPD";
         } else if (p.tokenLimitType === "requests_tpm") {
           mechanismText = "Batas Permintaan & TPM";
-          limitOfficial = p.totalCap > 0 ? `${p.capPerKey.toLocaleString()} RPD/key` : "Tanpa Limit Mutlak";
+          limitOfficial = p.totalCap > 0 ? `${(Number(p.capPerKey) || 0).toLocaleString()} RPD/key` : "Tanpa Limit Mutlak";
         } else if (p.tokenLimitType === "monthly_credits") {
           mechanismText = "Kredit Bulanan Akun";
           limitOfficial = "Included Usage Credits";
