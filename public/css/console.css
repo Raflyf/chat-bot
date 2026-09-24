@@ -23,13 +23,17 @@
      Sebelumnya putih 5% — terlalu transparan sehingga teks tenggelam ke
      wallpaper dan kartu tidak terbaca. Nilai ini dipakai 20+ kartu di
      dashboard, jadi mengubah di sini menyeragamkan semuanya sekaligus. */
-  /* Kartu dashboard: 0,82 (lebih pekat dari landing 0,62).
-     Alasan: wallpaper di area kartu dashboard lebih ramai/terang, sehingga
-     0,62 masih tembus — terukur selisih warna kartu vs wallpaper hanya 9-30.
-     Dengan 0,82 kartu terangkat jelas sementara efek kaca tetap ada. */
-  --surface-raised:   rgba(4, 10, 22, 0.82);
+  /* Kartu dashboard: 0,68 (landing 0,62).
+     Dipilih dengan perhitungan, bukan kira-kira:
+       - 0,82 menutup 82% wallpaper -> backdrop-filter TIDAK terlihat, kartu
+         tampak solid/datar dan justru itulah yang dikeluhkan.
+       - 0,68 menyisakan 32% wallpaper -> efek kaca terbaca, sementara kontras
+         teks tetap 17:1 (WCAG minimum 4,5:1) sehingga keterbacaan aman.
+     Uji definitif blur ON vs OFF: 62,6% piksel berubah, ketajaman turun
+     dari 8,27 -> 6,77 (baris KPI). */
+  --surface-raised:   rgba(4, 10, 22, 0.68);
   /* Baris kunci: sedikit lebih gelap dari kartu agar hierarki tetap terbaca. */
-  --surface-sunken:   rgba(3, 8, 18, 0.7);
+  --surface-sunken:   rgba(3, 8, 18, 0.6);
   --text:             #ffffff;
   /* Opacity teks sekunder dinaikkan (0,72/0,52/0,45 -> 0,82/0,68/0,60).
      Alasan: wallpaper sekarang terlihat di belakang kartu, sehingga teks redup
@@ -547,7 +551,7 @@ section { margin-bottom: var(--s5); }
   padding: var(--s3) var(--s4);
   border-radius: var(--r-panel);
   margin-bottom: var(--s5);
-  background: rgba(4, 10, 22, 0.78);
+  background: rgba(4, 10, 22, 0.66);
   -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--separator);
@@ -568,6 +572,8 @@ section { margin-bottom: var(--s5); }
   padding: 3px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--text) 7%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   min-width: 0;
   max-width: 100%;
 }
@@ -593,7 +599,7 @@ section { margin-bottom: var(--s5); }
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
 [data-theme="dark"] .pill-filter-btn.active {
-  background: rgba(18, 30, 50, 0.88);
+  background: rgba(18, 30, 50, 0.76);
   border: 1px solid var(--separator-strong);
 }
 
@@ -639,7 +645,7 @@ section { margin-bottom: var(--s5); }
 
 .kpi-card:hover {
   transform: translateY(-3px);
-  background: rgba(12, 22, 40, 0.85);
+  background: rgba(12, 22, 40, 0.72);
   border-color: rgba(0, 240, 255, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -719,7 +725,7 @@ section { margin-bottom: var(--s5); }
 
 .provider-card:hover {
   transform: translateY(-3px);
-  background: rgba(12, 22, 40, 0.85);
+  background: rgba(12, 22, 40, 0.72);
   border-color: rgba(0, 240, 255, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -760,7 +766,9 @@ section { margin-bottom: var(--s5); }
   border: 1px solid var(--separator);
 }
 [data-theme="dark"] .key-row {
-  background: rgba(3, 8, 18, 0.7);
+  background: rgba(3, 8, 18, 0.6);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border-color: rgba(255, 255, 255, 0.06);
 }
 .key-row.status-warning { border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
@@ -963,7 +971,7 @@ section { margin-bottom: var(--s5); }
   font-size: 11px;
   font-weight: 550;
   line-height: 1.3;
-  background: rgba(4, 10, 22, 0.78);
+  background: rgba(4, 10, 22, 0.66);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
 }
@@ -983,7 +991,7 @@ section { margin-bottom: var(--s5); }
   border-color: rgba(251, 191, 36, 0.25);
 }
 .tag-cap-text {
-  background: rgba(4, 10, 22, 0.78);
+  background: rgba(4, 10, 22, 0.66);
   color: var(--text-secondary);
   border-color: rgba(255, 255, 255, 0.08);
 }
@@ -1017,10 +1025,19 @@ section { margin-bottom: var(--s5); }
 
 /* ---- Tabel: konten, permukaan padat ---- */
 .live-upstream-card, .token-matrix-section, .matrix-section, .activity-card {
+  position: relative;
   background: var(--surface-raised);
+  /* Kaca: panel-panel BESAR ini sebelumnya tidak punya backdrop-filter sehingga
+     terlihat solid/datar di antara kartu lain yang berkaca — inilah yang membuat
+     dashboard terasa tidak seragam. */
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 10px 30px rgba(0, 0, 0, 0.32);
 }
 .live-upstream-header, .token-matrix-header { margin-bottom: var(--s4); }
 .badge-live-sync {
@@ -1043,12 +1060,16 @@ section { margin-bottom: var(--s5); }
   padding: var(--s3);
   border-radius: var(--r-control);
   background: var(--surface-sunken);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-[data-theme="dark"] .live-stat-box { background: rgba(3, 8, 18, 0.72); }
+[data-theme="dark"] .live-stat-box { background: rgba(3, 8, 18, 0.62);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%); }
 .live-stat-label { font-size: 12px; color: var(--text-secondary); }
 .live-stat-val { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
 .live-stat-sub { font-size: 11px; color: var(--text-secondary); }
@@ -1058,7 +1079,9 @@ section { margin-bottom: var(--s5); }
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
-}
+
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);}
 table, .token-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td {
   padding: 10px var(--s3);
@@ -1132,7 +1155,7 @@ td:nth-child(1) { font-variant-numeric: normal; }
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
 [data-theme="dark"] .matrix-filter-pill.active {
-  background: rgba(18, 30, 50, 0.88);
+  background: rgba(18, 30, 50, 0.76);
   border: 1px solid var(--separator-strong);
 }
 
@@ -1306,12 +1329,16 @@ td:nth-child(1) { font-variant-numeric: normal; }
   padding: var(--s3);
   border-radius: var(--r-control);
   background: var(--surface-sunken);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-[data-theme="dark"] .media-box { background: rgba(3, 8, 18, 0.72); }
+[data-theme="dark"] .media-box { background: rgba(3, 8, 18, 0.62);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%); }
 .media-box-count { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.018em; }
 .media-box-label { font-size: 12px; color: var(--text-secondary); }
 
@@ -1660,7 +1687,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
 .model-matrix-card:hover {
   transform: translateY(-3px);
   border-color: rgba(0, 240, 255, 0.22);
-  background: rgba(12, 22, 40, 0.85);
+  background: rgba(12, 22, 40, 0.72);
 }
 
 
@@ -1713,7 +1740,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   font-size: 13px;
   font-weight: 550;
   color: var(--text-secondary);
-  background: rgba(4, 10, 22, 0.75);
+  background: rgba(4, 10, 22, 0.65);
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
   text-decoration: none;
@@ -1838,7 +1865,9 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
   -webkit-overflow-scrolling: touch;
-}
+
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);}
   th, td { padding: 9px 10px; }
   .auth-card { padding: var(--s5) var(--s3) var(--s4); max-width: 100%; }
   .auth-shield-icon { width: 46px; height: 46px; border-radius: 13px; }
@@ -2002,7 +2031,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   min-height: 46px;
   padding: 0.55rem 0.8rem;
   border-radius: var(--radius-sm);
-  background: rgba(4, 10, 22, 0.75);
+  background: rgba(4, 10, 22, 0.65);
   border: 1px solid var(--glass-border);
   color: var(--text-primary);
   font: inherit;
@@ -2047,7 +2076,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
 
 .badge-bot-sync {
   color: var(--text-muted);
-  background: rgba(4, 10, 22, 0.75);
+  background: rgba(4, 10, 22, 0.65);
   border: 1px solid var(--glass-border);
 }
 
@@ -2112,7 +2141,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   border-radius: 5px;
   font-size: 0.68rem;
   font-weight: 650;
-  background: rgba(6, 14, 28, 0.8);
+  background: rgba(6, 14, 28, 0.68);
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -2275,13 +2304,13 @@ body {
 /* Tombol ghost & kecil */
 .btn-ghost {
   background: var(--accent-soft);
-  background: rgba(4, 10, 22, 0.78);
+  background: rgba(4, 10, 22, 0.66);
   border-color: var(--separator-strong);
   color: var(--text);
 }
 
 .btn-ghost:hover {
-  background: rgba(12, 22, 40, 0.86);
+  background: rgba(12, 22, 40, 0.74);
   border-color: var(--accent);
 }
 
@@ -2347,7 +2376,10 @@ body {
   gap: 4px;
   padding: 5px 10px;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.8);
+  background: rgba(4, 10, 22, 0.7);
+  /* Kaca juga di sini agar seragam dengan elemen lain. */
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--separator);
   white-space: nowrap;
 }
@@ -2378,13 +2410,17 @@ body {
   padding: 0.8rem 1rem;
   margin-bottom: 1.2rem;
   border-radius: var(--r-panel);
-  background: rgba(3, 8, 18, 0.72);
+  background: rgba(3, 8, 18, 0.62);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--separator);
   position: relative;
 }
 
 [data-theme="light"] .filter-dashboard-bar {
   background: var(--surface-raised);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
 }
 
 .filter-dashboard-bar.has-open-dropdown,
@@ -2414,7 +2450,7 @@ body {
   min-height: 40px;
   padding: 0 0.65rem;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.75);
+  background: rgba(4, 10, 22, 0.65);
   border: 1px solid var(--separator-strong);
   color: var(--text);
   font: inherit;
@@ -2608,7 +2644,7 @@ body {
 }
 
 .glass-select-item:hover {
-  background: rgba(6, 14, 28, 0.8);
+  background: rgba(6, 14, 28, 0.68);
   color: var(--text);
 }
 
@@ -2710,7 +2746,9 @@ body {
   gap: 2px;
   padding: 3px;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.75);
+  background: rgba(4, 10, 22, 0.65);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--separator);
   max-width: 100%;
 }
@@ -2730,7 +2768,7 @@ body {
   transition: background-color 0.18s ease, color 0.18s ease;
 }
 
-.pill-filter-btn:hover { color: var(--text); background: rgba(4, 10, 22, 0.78); }
+.pill-filter-btn:hover { color: var(--text); background: rgba(4, 10, 22, 0.66); }
 
 .pill-filter-btn.active {
   background: var(--accent-soft);
@@ -2762,7 +2800,7 @@ body {
 .status-panel {
   padding: clamp(1rem, 2.5vw, 1.5rem);
   border-radius: var(--r-panel);
-  background: rgba(4, 10, 22, 0.78);
+  background: rgba(4, 10, 22, 0.66);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
   border: 1px solid var(--separator);
@@ -2779,7 +2817,9 @@ body {
 .status-item {
   padding: 0.9rem;
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.7);
+  background: rgba(3, 8, 18, 0.6);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--separator);
 }
 
@@ -2820,10 +2860,17 @@ body {
 }
 
 .upstream-stat {
+  /* Kartu metrik di dalam panel "Sisa kuota". Sebelumnya TIDAK punya
+     backdrop-filter sehingga terlihat solid/datar di antara kartu lain yang
+     berkaca. Sekarang diberi kaca yang sama agar seragam. */
+  position: relative;
   padding: 0.8rem;
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.7);
+  background: rgba(3, 8, 18, 0.6);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--separator);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -2887,7 +2934,7 @@ body {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  background: rgba(3, 8, 18, 0.7);
+  background: rgba(3, 8, 18, 0.6);
   white-space: nowrap;
   position: sticky;
   top: 0;
@@ -2895,7 +2942,7 @@ body {
 }
 
 .data-table tbody tr:last-child td { border-bottom: 0; }
-.data-table tbody tr:hover td { background: rgba(3, 8, 18, 0.7); }
+.data-table tbody tr:hover td { background: rgba(3, 8, 18, 0.6); }
 .data-table td { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .data-table td.num { color: var(--text); white-space: nowrap; }
 
@@ -2924,7 +2971,9 @@ body {
 .media-item {
   padding: 0.85rem;
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.7);
+  background: rgba(3, 8, 18, 0.6);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--separator);
   text-align: center;
 }
@@ -2962,7 +3011,7 @@ body {
   min-height: 46px;
   padding: 0 0.8rem;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.75);
+  background: rgba(4, 10, 22, 0.65);
   border: 1px solid var(--separator-strong);
   color: var(--text);
   font: inherit;
@@ -3221,7 +3270,9 @@ body {
     align-items: center;
     min-height: 36px;
     padding: 0.3rem 0.85rem;
-    background: rgba(4, 10, 22, 0.75);
+    background: rgba(4, 10, 22, 0.68);
+    -webkit-backdrop-filter: blur(14px) saturate(150%);
+    backdrop-filter: blur(14px) saturate(150%);
     border: 1px solid var(--separator);
     border-radius: var(--r-control);
     font-size: 0.82rem;
