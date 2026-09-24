@@ -2336,7 +2336,9 @@ body {
 }
 
 /* ---------- Kerangka halaman ---------- */
-.console-main { padding-block: 1.8rem 3.5rem; }
+/* Padding bawah 3.5rem (56px) menyisakan celah besar antara konten terakhir dan
+   footer sehingga footer terlihat menggantung. Dikurangi ke 1.5rem (24px). */
+.console-main { padding-block: 1.8rem 1.5rem; }
 
 .console-head {
   display: flex;
@@ -3052,7 +3054,9 @@ body {
 /* ---------- Footer ---------- */
 .site-footer {
   border-top: 1px solid var(--separator);
-  padding-block: 1.4rem 1.8rem;
+  /* Disamakan dengan landing (1.5rem) — sebelumnya 1.4rem/1.8rem membuat
+     jarak atas-bawah tidak simetris. */
+  padding-block: 1.5rem;
   background: rgba(2, 8, 20, 0.5);
   -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);

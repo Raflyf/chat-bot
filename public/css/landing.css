@@ -673,7 +673,9 @@ header {
    ========================================================================== */
 
 .features-section {
-  padding-block: clamp(2.75rem, 5.5vw, 3.75rem) clamp(1rem, 2vw, 1.5rem);
+  /* Padding bawah dirapatkan ke footer (sebelumnya clamp 1-1.5rem menyisakan
+     celah 16-24px yang membuat footer terlihat menggantung). */
+  padding-block: clamp(2.75rem, 5.5vw, 3.75rem) clamp(0.75rem, 1.4vw, 1rem);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -889,7 +891,9 @@ header {
   align-items: center;
   justify-content: space-between;
   gap: 1.5rem;
-  margin-block: 2.5rem 3.5rem;
+  /* Margin bawah 3.5rem (56px) menyisakan celah besar sebelum footer sehingga
+     footer terlihat menggantung. Dikurangi ke 1rem (16px) agar rapat. */
+  margin-block: 2.5rem 1rem;
   padding: clamp(1.75rem, 4vw, 2.5rem);
   border-radius: var(--radius-lg);
   /* Disamakan dengan .feature-card: kartu ini sebelumnya tertinggal memakai
@@ -966,7 +970,9 @@ header {
 
 footer {
   margin-top: auto;
-  padding-block: 2rem;
+  /* 1.5rem (24px) — sebelumnya 2rem (32px) membuat footer terasa tinggi dan
+     menggantung untuk satu baris teks. */
+  padding-block: 1.5rem;
   text-align: center;
   color: var(--text-dim);
   font-size: 0.83rem;

@@ -32,7 +32,9 @@
       "teaser.title": "Monitoring Console & AI Training Dataset",
       "teaser.desc": "Monitor API key pool usage, daily quotas, conversation traffic, and download chat logs in JSONL/CSV format for AI model fine-tuning.",
       "teaser.btn": "Access Admin Dashboard",
-      "footer.text": "FreeAIBot Production Suite • Vercel Serverless • Supabase Engine • Version v0.80.0",
+      // "footer.text" sengaja TIDAK ada di kamus: teks footer memuat versi
+      // aplikasi yang dikirim dinamis dari /api/stats. Kalau didefinisikan di
+      // sini, mengganti bahasa akan menimpanya dengan angka basi (v0.80.0).
 
       // Dashboard
       "dash.back": "Back to Home",
