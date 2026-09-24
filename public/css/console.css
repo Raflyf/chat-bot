@@ -153,11 +153,12 @@ html::before {
   pointer-events: none;
   background-image: url('/assets/bg-loop.webp');
   background-size: cover;
-  /* Posisi 65% 60%: subjek video (robot + efek energi) berada di kanan-bawah
-     frame — diukur dari kecerahan frame (grid 3x3: area kanan-bawah paling
-     terang, 117 vs 17 di kiri-atas). Dengan `center`, bagian itu terpotong di
-     layar lebar sehingga yang terlihat hanya latar gelap kosong. */
-  background-position: 65% 60%;
+  /* Posisi 85% 50%: dipilih dengan membandingkan empat posisi lewat screenshot
+     (65/60, 85/50, 100/45, 100/60). Nilai ini menampilkan bagian robot yang
+     paling mudah dikenali — kepala dengan dua lensa mata bercahaya cyan di
+     kanan-atas plus armor bahu — sementara teks tetap terbaca karena berada di
+     kartu berlatar gelap. Subjek video ada di KANAN frame; `center` memotongnya. */
+  background-position: 85% 50%;
   /* TANPA filter blur.
      Alasan: `filter: blur()` pada elemen berisi animasi memaksa browser
      mem-blur ulang SELURUH layar setiap frame (10x/detik) — itu penyebab
