@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,8 +15,6 @@
   <!-- Keamanan sesi: saat halaman ini dibuka, sesi admin dimusnahkan supaya
        kunjungan berikutnya ke panel admin tetap meminta Master PIN. -->
   <script src="/js/home.js"></script>
-  <!-- Penetapan tema sebelum render, mencegah kedipan warna. -->
-  <script src="/js/theme-pre.js"></script>
 </head>
 <body>
 
@@ -35,23 +33,6 @@
           <span class="pulse-dot"></span>
           <span data-i18n="nav.status">Online 24/7</span>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" id="btn-theme-toggle" title="Ganti tema terang atau gelap" aria-label="Ganti tema">
-          <svg class="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="5"></circle>
-            <line x1="12" y1="1" x2="12" y2="3"></line>
-            <line x1="12" y1="21" x2="12" y2="23"></line>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-            <line x1="1" y1="12" x2="3" y2="12"></line>
-            <line x1="21" y1="12" x2="23" y2="12"></line>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-          </svg>
-          <svg class="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-          </svg>
-          <span id="theme-icon">Terang</span>
-        </button>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-lang-toggle" title="Ganti bahasa (ID / EN)" aria-label="Ganti bahasa">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="10"></circle>
@@ -187,6 +168,5 @@
   <script src="/js/lenis.min.js"></script>
   <script src="/js/smooth-scroll.js"></script>
   <script src="/js/i18n.js"></script>
-  <script src="/js/console-theme.js"></script>
 </body>
 </html>

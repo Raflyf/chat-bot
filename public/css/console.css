@@ -2536,16 +2536,8 @@ body {
     padding-block: 0.6rem;
   }
 
-  .site-nav > a.btn-ghost#link-home-header {
-    order: 1;
-    min-height: 36px;
-    padding: 0.35rem 0.65rem;
-    font-size: 0.8rem;
-    flex: 0 0 auto;
-  }
-
   .brand {
-    order: 2;
+    order: 1;
     margin-right: 0;
     flex: 1 1 auto;
     justify-content: flex-start;
@@ -2737,13 +2729,20 @@ body {
   }
 }
 
-/* ---------- Animasi Reveal Dua Arah Permanen Konsol ---------- */
+/* ---------- Animasi Reveal Dua Arah Fisika Murni Konsol ---------- */
 .reveal-init {
   opacity: 0;
-  transform: translateY(24px) translateZ(0);
-  transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1),
-              transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
   will-change: opacity, transform;
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal-init.reveal-from-bottom {
+  transform: translateY(32px) translateZ(0);
+}
+
+.reveal-init.reveal-from-top {
+  transform: translateY(-32px) translateZ(0);
 }
 
 .reveal-init.revealed {

@@ -718,17 +718,25 @@ header {
    SCROLL REVEAL — Efek Muncul Berjenjang (Stagger) Saat Digulir
    ========================================================================== */
 
+/* Reveal Animasi Dua Arah Fisika Murni (Scroll Atas & Bawah) */
 .reveal-init {
   opacity: 0;
-  transform: translateY(28px);
-  transition: opacity 0.7s var(--ease-spring) var(--reveal-delay, 0s),
-              transform 0.7s var(--ease-spring) var(--reveal-delay, 0s);
   will-change: opacity, transform;
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0s),
+              transform 0.65s cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0s);
+}
+
+.reveal-init.reveal-from-bottom {
+  transform: translateY(36px) translateZ(0);
+}
+
+.reveal-init.reveal-from-top {
+  transform: translateY(-36px) translateZ(0);
 }
 
 .reveal-init.revealed {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) translateZ(0);
 }
 
 /* Stagger delay kartu kemampuan */

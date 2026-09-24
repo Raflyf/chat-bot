@@ -1911,7 +1911,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
       // Auth gateway controls
       on("link-home-auth", "click", (e) => leaveToHome(e));
-      on("link-home-header", "click", (e) => leaveToHome(e));
       on("pin-form", "submit", (e) => handlePinSubmit(e));
       on("btn-open-reset", "click", openResetModal);
       on("btn-send-otp", "click", handleSendOtp);
@@ -2020,28 +2019,42 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     function initDashboardScrollReveal() {
       if (typeof window === "undefined" || !("IntersectionObserver" in window)) return;
       const targets = document.querySelectorAll(
-        ".kpi-card, .smart-gateway-banner, .matrix-section, .provider-card, .live-upstream-card, .token-matrix-section, #dataset-section, .model-matrix-card"
+        ".console-head, .kpi-card, .smart-gateway-banner, .matrix-section, .provider-card, .live-upstream-card, .token-matrix-section, #dataset-section, .model-matrix-card"
       );
       if (!targets.length) return;
 
       if (!window._dashRevealObserver) {
         window._dashRevealObserver = new IntersectionObserver((entries) => {
           entries.forEach((entry) => {
+            const el = entry.target;
             if (entry.isIntersecting) {
-              entry.target.classList.add("revealed");
+              el.classList.add("revealed");
             } else {
-              entry.target.classList.remove("revealed");
+              el.classList.remove("revealed");
+              if (entry.boundingClientRect.top < 0) {
+                el.classList.remove("reveal-from-bottom");
+                el.classList.add("reveal-from-top");
+              } else {
+                el.classList.remove("reveal-from-top");
+                el.classList.add("reveal-from-bottom");
+              }
             }
           });
         }, {
           threshold: 0.05,
-          rootMargin: "0px 0px -20px 0px"
+          rootMargin: "-15px 0px -15px 0px"
         });
       }
 
       targets.forEach((el) => {
         if (!el.classList.contains("reveal-init")) {
           el.classList.add("reveal-init");
+          const rect = el.getBoundingClientRect();
+          if (rect.top < 0) {
+            el.classList.add("reveal-from-top");
+          } else {
+            el.classList.add("reveal-from-bottom");
+          }
           window._dashRevealObserver.observe(el);
         }
       });

@@ -15,27 +15,42 @@
 
   function initRevealObserver() {
     var targets = document.querySelectorAll(
-      ".section-title-wrap, .feature-card, .dashboard-teaser, footer"
+      ".hero-badge, .hero-title, .hero-subtitle, .hero-cta-group, .section-title-wrap, .feature-card, .dashboard-teaser, footer"
     );
     if (!targets.length) return;
 
-    // Reveal dua arah permanen (scroll atas dan bawah)
+    // Reveal dua arah fisik murni (animasi meluncur ke atas dan meluncur ke bawah)
     var observer = new IntersectionObserver(function(entries) {
       entries.forEach(function(entry) {
+        var el = entry.target;
         if (entry.isIntersecting) {
-          entry.target.classList.add("revealed");
+          el.classList.add("revealed");
         } else {
-          // Reset status revealed saat keluar viewport agar beranimasi kembali saat digulir ulang
-          entry.target.classList.remove("revealed");
+          el.classList.remove("revealed");
+          // Jika berada di atas viewport, siapkan untuk meluncur ke bawah saat digulir kembali ke atas
+          if (entry.boundingClientRect.top < 0) {
+            el.classList.remove("reveal-from-bottom");
+            el.classList.add("reveal-from-top");
+          } else {
+            // Jika berada di bawah viewport, siapkan untuk meluncur ke atas saat digulir ke bawah
+            el.classList.remove("reveal-from-top");
+            el.classList.add("reveal-from-bottom");
+          }
         }
       });
     }, {
-      threshold: 0.08,
-      rootMargin: "0px 0px -25px 0px"
+      threshold: 0.05,
+      rootMargin: "-15px 0px -15px 0px"
     });
 
     targets.forEach(function(el) {
       el.classList.add("reveal-init");
+      var rect = el.getBoundingClientRect();
+      if (rect.top < 0) {
+        el.classList.add("reveal-from-top");
+      } else {
+        el.classList.add("reveal-from-bottom");
+      }
       observer.observe(el);
     });
   }
