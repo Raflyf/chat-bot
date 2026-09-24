@@ -734,9 +734,12 @@ header {
   transform: translateY(-36px) translateZ(0);
 }
 
+.reveal-init.reveal-from-bottom.revealed,
+.reveal-init.reveal-from-top.revealed,
 .reveal-init.revealed {
   opacity: 1;
-  transform: translateY(0) translateZ(0);
+  transform: none;
+  will-change: auto;
 }
 
 /* Stagger delay kartu kemampuan */

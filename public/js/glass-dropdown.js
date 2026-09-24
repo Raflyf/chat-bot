@@ -93,15 +93,21 @@
           if (c !== container) {
             c.classList.remove("is-open");
             c.querySelector(".glass-select-trigger")?.setAttribute("aria-expanded", "false");
+            var pb = c.closest(".filter-dashboard-bar, .pool-section-header, .filter-group");
+            if (pb) pb.classList.remove("has-open-dropdown");
           }
         });
         container.classList.add("is-open");
         trigger.setAttribute("aria-expanded", "true");
+        var bar = container.closest(".filter-dashboard-bar, .pool-section-header, .filter-group");
+        if (bar) bar.classList.add("has-open-dropdown");
       }
 
       function closeDropdown() {
         container.classList.remove("is-open");
         trigger.setAttribute("aria-expanded", "false");
+        var bar = container.closest(".filter-dashboard-bar, .pool-section-header, .filter-group");
+        if (bar) bar.classList.remove("has-open-dropdown");
       }
 
       function toggleDropdown() {
@@ -131,23 +137,27 @@
       });
     });
 
+    function closeAllActiveDropdowns() {
+      document.querySelectorAll(".glass-select-container.is-open").forEach(function (c) {
+        c.classList.remove("is-open");
+        c.querySelector(".glass-select-trigger")?.setAttribute("aria-expanded", "false");
+      });
+      document.querySelectorAll(".has-open-dropdown").forEach(function (b) {
+        b.classList.remove("has-open-dropdown");
+      });
+    }
+
     // Tutup saat klik di luar
     document.addEventListener("click", function (e) {
       if (!e.target.closest(".glass-select-container")) {
-        document.querySelectorAll(".glass-select-container.is-open").forEach(function (c) {
-          c.classList.remove("is-open");
-          c.querySelector(".glass-select-trigger")?.setAttribute("aria-expanded", "false");
-        });
+        closeAllActiveDropdowns();
       }
     });
 
     // Tutup saat tombol Escape ditekan
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") {
-        document.querySelectorAll(".glass-select-container.is-open").forEach(function (c) {
-          c.classList.remove("is-open");
-          c.querySelector(".glass-select-trigger")?.setAttribute("aria-expanded", "false");
-        });
+        closeAllActiveDropdowns();
       }
     });
   }
