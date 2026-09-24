@@ -4,7 +4,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
-import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
@@ -669,6 +669,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     // Stiker balasan (opsional) — hormati cooldown DURABLE (riwayat chat) + fast-path lokal.
     // Emoji "keras" (🖕/🤬/👊) hanya boleh saat konteks bercanda (user bercanda/roasting dulu).
     const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text || rawText);
+    // KECOCOKAN SUASANA (permintaan pemilik produk 24 Sep 2026): stiker harus pas
+    // dengan suasana pesan. Keluhan nyata: stiker lucu dikirim saat user sedih/kesal.
+    // Prompt saja tidak cukup karena model berganti tiap pesan pada rantai failover.
+    const moodOk = stickerFitsMood(sticker || '', text || rawText);
     // Cooldown DURABLE: minimal N balasan sejak stiker terakhir + emoji tidak boleh sama beruntun.
     const turnsSinceSticker = assistantTurnsSinceLastSticker(ctx?.history);
     const prevStickerEmoji = lastStickerEmoji(ctx?.history);
@@ -680,7 +684,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       turnsSinceSticker >= STICKER_MIN_TURNS_SINCE_LAST &&
       sticker !== prevStickerEmoji &&
       hasStickerForEmoji(sticker) &&
-      allowStickerForChat(`tg:${chatKey}`)
+      allowStickerForChat(`tg:$ moodOk &&{chatKey}`)
     ) {
       const sent = await sendTelegramStickerSafe(bot, chatId, sticker);
       if (!sent) {

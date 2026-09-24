@@ -43,6 +43,100 @@ export function isPlayfulContext(userText?: string): boolean {
   );
 }
 
+/**
+ * Kategori suasana sebuah emoji stiker.
+ *
+ * KENAPA ADA (permintaan pemilik produk 24 Sep 2026): "kadang bot nya memberikan
+ * stiker yg tidak sesuai dengan suasana". Akar masalahnya bukan jumlah stiker,
+ * melainkan KECOCOKAN: stiker lucu dikirim saat user sedih, atau stiker mesra
+ * dikirim saat user marah. Prompt saja tidak cukup karena model berganti setiap
+ * pesan pada rantai failover — jadi kecocokan ditegakkan di kode.
+ */
+export type StickerMood =
+  | 'lucu'      // tertawa, bercanda ringan
+  | 'sindir'    // nyinyir, roasting, ledek
+  | 'kesal'     // marah, kesal, jengkel
+  | 'sedih'     // sedih, kecewa, menahan nangis
+  | 'hangat'    // mesra, sayang, gemas
+  | 'sopan'     // hormat, minta maaf, setuju, terima kasih
+  | 'netral';   // bingung, kaget, datar
+
+const MOOD_MAP: Record<string, StickerMood> = {
+  // lucu / tertawa
+  '😂': 'lucu', '🤣': 'lucu', '😆': 'lucu', '😅': 'lucu', '😹': 'lucu', '😁': 'lucu',
+  '😜': 'lucu', '🤪': 'lucu', '😛': 'lucu', '🎉': 'lucu', '🥳': 'lucu',
+  // sindir / roasting
+  '😏': 'sindir', '🙄': 'sindir', '😒': 'sindir', '🤨': 'sindir', '😼': 'sindir',
+  '🫣': 'sindir', '😈': 'sindir',
+  // kesal / marah
+  '😠': 'kesal', '😡': 'kesal', '🤬': 'kesal', '😤': 'kesal', '😾': 'kesal',
+  '🖕': 'kesal', '👊': 'kesal', '💢': 'kesal', '💩': 'kesal', '💀': 'kesal',
+  // sedih / kecewa
+  '😢': 'sedih', '😭': 'sedih', '😔': 'sedih', '😞': 'sedih', '😿': 'sedih',
+  '🥺': 'sedih', '💔': 'sedih', '😩': 'sedih', '😫': 'sedih', '🫠': 'sedih',
+  '😰': 'sedih', '😨': 'sedih', '😧': 'sedih', '😦': 'sedih',
+  // hangat / mesra
+  '🥰': 'hangat', '😍': 'hangat', '😘': 'hangat', '❤': 'hangat', '❤️': 'hangat',
+  '😳': 'hangat', '🤗': 'hangat', '🫶': 'hangat', '💕': 'hangat',
+  // sopan / hormat
+  '🙏': 'sopan', '👍': 'sopan', '👎': 'sopan', '🤝': 'sopan', '🫡': 'sopan',
+  '👋': 'sopan', '✋': 'sopan', '🙋': 'sopan', '🆗': 'sopan', '👌': 'sopan',
+  '🎂': 'sopan', '🤲': 'sopan', '💪': 'sopan', '🍳': 'sopan',
+  // netral
+  '🤔': 'netral', '🧐': 'netral', '😐': 'netral', '😑': 'netral', '🤷': 'netral',
+  '😮': 'netral', '😲': 'netral', '😱': 'netral', '😵': 'netral', '🤯': 'netral',
+  '😴': 'netral', '🥱': 'netral', '🤫': 'netral', '🙈': 'netral', '🙉': 'netral',
+  '🚀': 'netral', '📢': 'netral', '📍': 'netral', '📝': 'netral', '🧠': 'netral',
+  '👀': 'netral', '🐱': 'netral', '😺': 'netral', '🚶': 'netral', '🏃': 'netral',
+  '🚗': 'netral', '🤥': 'netral', '🧘': 'netral', '😎': 'netral', '🙃': 'netral',
+};
+
+/** Suasana sebuah emoji stiker. Emoji yang tidak dikenal dianggap netral. */
+export function stickerMood(emoji: string): StickerMood {
+  if (!emoji) return 'netral';
+  const e = emoji.trim();
+  return MOOD_MAP[e] ?? MOOD_MAP[e.replace(/\uFE0F/g, '')] ?? 'netral';
+}
+
+/**
+ * Apakah stiker ini PANTAS dikirim untuk pesan user tertentu.
+ *
+ * Aturannya sederhana dan konservatif — lebih baik tidak mengirim stiker
+ * daripada mengirim yang salah suasana:
+ *  - Suasana user SEDIH/KESAL -> hanya stiker 'sedih' atau 'sopan'. Stiker lucu
+ *    dan mesra DILARANG (inilah keluhan nyatanya).
+ *  - Suasana user MARAH ke bot -> hanya 'sopan' (minta maaf wajar) atau 'sedih'.
+ *  - Suasana user BERCANDA -> 'lucu'/'sindir' boleh, 'sedih' jangan.
+ *  - Suasana user FORMAL/PROFESIONAL -> tidak ada stiker sama sekali.
+ *  - Selain itu -> apa pun boleh kecuali yang edgy (dijaga guard terpisah).
+ */
+export function stickerFitsMood(emoji: string, userText: string | undefined, isProfessional = false): boolean {
+  if (isProfessional) return false;
+
+  const mood = stickerMood(emoji);
+  const t = (userText || '').toLowerCase();
+
+  const userSedih = /\b(?:sedih|nangis|menangis|kecewa|galau|putus|capek|lelah|lemas|sakit hati|terluka|down|hancur|minder|sendirian|kesepian|gagal)\b/.test(t);
+  const userKesal = /\b(?:kesal|marah|jengkel|sebal|muak|bete|emosi|ngamuk|nyebelin|goblok|bego|tolol|bodoh|dongo|gaje|ngaco|bacot)\b/.test(t);
+  const userBercanda = /(?:wkwk+|haha+|hehe+|ngakak|lucu|kocak|garing|cringe|joke|becanda|bercanda|iseng|roast|ledek|tebak|gombal|gokil|jir+|anjay|😂|🤣|😹|😅)/i.test(t);
+  const userFormal = /\b(?:mohon|dengan hormat|dimohon|saudara|yang terhormat|terima kasih atas|saya ingin menanyakan)\b/.test(t);
+
+  if (userFormal) return false;
+
+  // Sedih: hanya stiker yang ikut sedih atau sopan (menemani), bukan lucu/mesra.
+  if (userSedih) return mood === 'sedih' || mood === 'sopan';
+
+  // Kesal: hanya sopan/sedih (mengakui, bukan bercanda).
+  if (userKesal && !userBercanda) return mood === 'sopan' || mood === 'sedih';
+
+  // Bercanda: jangan kirim stiker sedih ATAU kesal — keduanya merusak suasana
+  // lucu. (Kasus nyata: user baru tertawa, bot malah mengirim stiker marah.)
+  if (userBercanda) return mood !== 'sedih' && mood !== 'kesal';
+
+  // Default: hindari stiker yang menuntut suasana tertentu.
+  return mood === 'netral' || mood === 'sopan' || mood === 'lucu';
+}
+
 /** Nama file stiker untuk emoji (null bila emoji tidak punya aset). */
 export function stickerFileForEmoji(emoji: string): string | null {
   if (!emoji) return null;

@@ -943,6 +943,46 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     }
   })();
 
+  // 1b. xKiro WEB SEARCH — PRIORITAS UTAMA (permintaan pemilik produk 24 Sep 2026).
+  //
+  // Alasan urutan ini (bukan asumsi, hasil uji langsung):
+  // - Kualitas: kueri "harga beras premium hari ini" -> 5/5 hasil relevan
+  //   ("Harga Beras Premium Hari Ini di Indonesia — Per Provinsi | Econiq.id"),
+  //   sementara mesin gratis sering hanya memberi deskripsi generik.
+  // - `search_domain_filter` benar-benar bekerja (uji lama: 5/5 hasil dari domain diminta).
+  // - Hasilnya bersih & luas, jadi penelusuran bot lebih dalam di percobaan pertama.
+  // - Kuota: TERUKUR 10 pencarian/kunci/hari (kunci #1 membalas HTTP 429 pada percobaan
+  //   ke-11), dan kuota dihitung PER KUNCI (7 kunci lain tetap HTTP 200 setelah kunci #1
+  //   habis) -> 8 kunci = ~80 pencarian/hari. Cukup untuk jadi lapisan utama, dan
+  //   otomatis turun ke mesin gratis begitu kuota habis (tidak ada waktu terbuang:
+  //   modul xkiro_web menonaktifkan kunci yang habis selama 1 jam).
+  //
+  // Mesin gratis (Bing RSS/HTML, Google News, feed media, Wikipedia, HN) TETAP berjalan
+  // di bawah ini sebagai lapisan pelengkap — bukan dihapus — supaya bot tidak pernah
+  // kehabisan sumber saat kuota xKiro habis.
+  if (xkiroWebAvailable()) {
+    try {
+      const xr: XkiroSearchResult[] = await xkiroWebSearch(cleanQuery, {
+        maxResults: 10,
+        country: 'ID',
+        recency: strictFreshNews ? 'day' : isNewsLike ? 'week' : undefined,
+      });
+      for (const it of xr) {
+        if (it.url && isSafePublicUrl(it.url)) discoveredUrls.add(it.url);
+        addSnippet(
+          it.source ? `xKiro/${it.source}` : 'xKiro Web',
+          it.title,
+          it.snippet,
+          it.publishedDate || '',
+          it.url,
+          92, // prioritas: di atas Bing Web (55), Bing News (62), xKiro lama (88); di bawah feed topik yang cocok judul (120)
+        );
+      }
+    } catch {
+      // Prioritas boleh gagal: mesin gratis di bawah tetap mengambil alih.
+    }
+  }
+
   // 2. Formulasi Kueri Entitas Multi-Engine dengan Anaphora Resolution
   const searchQueries = formulateSmartSearchQueries(cleanQuery, previousContext);
   const primaryQ = searchQueries[0] ?? cleanQuery.slice(0, 80);
@@ -1561,35 +1601,6 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     clearTimeout(timeout);
   }
 
-  // 2f. LAPISAN PELENGKAP xKiro (opsional, bukan pengganti).
-  // Mesin gratis di atas adalah tulang punggung: tanpa kuota, tanpa biaya. xKiro dipanggil
-  // HANYA bila hasil gratis terlalu sedikit, karena kuota gratisnya kecil (20/hari menurut
-  // dokumentasi; pada uji langsung, 402 "Insufficient wallet balance" muncul setelah ~7
-  // pencarian). Bila kuota habis, modul xkiro_web menonaktifkan diri sendiri selama 1 jam
-  // sehingga tidak ada waktu terbuang. Hasilnya diberi skor lebih tinggi daripada mesin
-  // gratis karena relevansinya teruji lebih baik (uji: 5/5 hasil dari domain yang diminta).
-  if (xkiroWebAvailable() && structuredSnippets.length < 6) {
-    try {
-      const xr: XkiroSearchResult[] = await xkiroWebSearch(cleanQuery, {
-        maxResults: 8,
-        country: 'ID',
-        recency: strictFreshNews || isNewsLike ? 'week' : undefined,
-      });
-      for (const it of xr) {
-        if (it.url && isSafePublicUrl(it.url)) discoveredUrls.add(it.url);
-        addSnippet(
-          it.source ? `xKiro/${it.source}` : 'xKiro Web',
-          it.title,
-          it.snippet,
-          it.publishedDate || '',
-          it.url,
-          88, // di atas Bing Web (55) & Bing News (62), di bawah feed topik (115)
-        );
-      }
-    } catch {
-      // Lapisan pelengkap: kegagalan tidak boleh mengganggu hasil gratis yang sudah ada.
-    }
-  }
 
   // Fase 1 & 2 selesai — pastikan hasil baca URL user sudah masuk sebelum deep-scrape.
   await urlScrapePromise;

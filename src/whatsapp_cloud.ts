@@ -4,7 +4,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
-import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -48,11 +48,16 @@ export function verifyWhatsAppWebhook(
 /**
  * Verifikasi signature webhook Meta X-Hub-Signature-256 secara timing-safe.
  *
- * - Secret TERSEDIA: verifikasi ketat fail-closed (signature salah/kosong → tolak).
- * - Secret BELUM diset: request diterima dengan peringatan keamanan mencolok (sekali
- *   per instance) agar bot tetap berjalan; operator WAJIB segera memasang
- *   WHATSAPP_APP_SECRET di Vercel (Meta App Dashboard > Settings > Basic > App Secret)
- *   supaya verifikasi penuh otomatis aktif tanpa perubahan kode.
+ * FAIL-CLOSED (diperketat 24 Sep 2026 saat audit):
+ * - Secret TERSEDIA: verifikasi ketat — signature salah/kosong/kurang → TOLAK.
+ * - Secret BELUM diset: request DITOLAK. Sebelumnya fungsi ini mengembalikan `true`
+ *   (fail-OPEN) hanya dengan peringatan di log. Itu berbahaya: tanpa App Secret,
+ *   siapa pun yang tahu URL webhook bisa mengirim payload palsu dan bot akan
+ *   memprosesnya sebagai pesan sah — termasuk memicu balasan ke nomor mana pun.
+ *   Konsekuensinya endpoint WhatsApp mati sampai secret dipasang; itu memang
+ *   perilaku yang benar (gagal dengan berisik, bukan diam-diam tidak aman).
+ * - Bypass hanya untuk pengembangan lokal, dan HARUS disengaja: set
+ *   WHATSAPP_INSECURE_SKIP_VERIFY=1 DAN jalankan di luar serverless.
  */
 let warnedMissingSecret = false;
 export function verifyMetaSignature(rawBody: string | Buffer, signatureHeader?: string): boolean {
@@ -64,13 +69,13 @@ export function verifyMetaSignature(rawBody: string | Buffer, signatureHeader?: 
     if (!warnedMissingSecret) {
       warnedMissingSecret = true;
       console.error(
-        '[whatsapp] PERINGATAN KEAMANAN: WHATSAPP_APP_SECRET belum diset di environment ini — ' +
-          'webhook WhatsApp Cloud berjalan TANPA verifikasi X-Hub-Signature-256. Segera set App Secret ' +
-          'dari Meta App Dashboard (Settings > Basic > App Secret) di environment server agar ' +
-          'verifikasi HMAC otomatis aktif.',
+        '[whatsapp] KEAMANAN: WHATSAPP_APP_SECRET belum diset — webhook WhatsApp Cloud DITOLAK ' +
+          '(fail-closed). Set App Secret dari Meta App Dashboard (Settings > Basic > App Secret) ' +
+          'di environment server untuk mengaktifkan kembali. Untuk pengembangan lokal saja, set ' +
+          'WHATSAPP_INSECURE_SKIP_VERIFY=1 di luar serverless.',
       );
     }
-    return true;
+    return false;
   }
   if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
 
@@ -688,6 +693,10 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // Stiker balasan (opsional) — cooldown DURABLE (riwayat chat) + fast-path lokal.
         // Emoji "keras" (🖕/🤬/👊) hanya saat konteks bercanda (user bercanda/roasting dulu).
         const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text);
+        // KECOCOKAN SUASANA (permintaan pemilik produk 24 Sep 2026): stiker harus pas
+        // dengan suasana pesan. Keluhan nyata: stiker lucu dikirim saat user sedih/kesal.
+        // Prompt saja tidak cukup karena model berganti tiap pesan pada rantai failover.
+        const moodOk = stickerFitsMood(sticker || '', text);
         // Cooldown DURABLE: minimal N balasan sejak stiker terakhir + emoji tidak boleh sama beruntun.
         const turnsSinceSticker = assistantTurnsSinceLastSticker(context?.history);
         const prevStickerEmoji = lastStickerEmoji(context?.history);
@@ -699,7 +708,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           turnsSinceSticker >= STICKER_MIN_TURNS_SINCE_LAST &&
           sticker !== prevStickerEmoji &&
           hasStickerForEmoji(sticker) &&
-          allowStickerForChat(`wa:${chatKey}`)
+          allowStickerForChat(`wa:$ moodOk &&{chatKey}`)
         ) {
           const sent = await sendWhatsAppCloudStickerSafe(from, sticker);
           if (!sent) {

@@ -4,6 +4,7 @@ import { saveCorrection, type ChatContext } from './memory.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
 import { stripStickerMarker } from './stickers.js';
+import { STICKER_MANIFEST } from './sticker-manifest.js';
 import { stripRiddleMarker, lastRiddleAnswer } from './markers.js';
 import { getOrGrowMemory, needsGrowth, growMemory } from './bot_growth.js';
 import { markMemoryUsed, isMemoryRelevant } from './bot_memory.js';
@@ -909,6 +910,7 @@ export function sanitizeAssistantOutput(
   userPrompt?: string,
   recentOpenings?: string[],
   mediaReply?: boolean,
+  isProfessionalContext = false,
 ): string {
   let cleaned = cleanMathAndNoise(text, userPrompt);
   // Huruf KAPITAL pertama kata terduplikasi (temuan live 21 Sep: "HHalo! Lagi siap bantu..."
@@ -930,7 +932,7 @@ export function sanitizeAssistantOutput(
   // Temuan produksi 20 Sep 13:53 (Dahl/DeepSeek).
   cleaned = stripProtocolLeak(cleaned);
   cleaned = dedupeSentences(cleaned);
-  cleaned = enforceUniversalRules(cleaned);
+  cleaned = enforceUniversalRules(cleaned, isProfessionalContext);
   // Jargon teknis yang dikarang model padahal user tidak membahas kode (temuan v34).
   cleaned = scrubInventedJargon(cleaned, userPrompt);
   return avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
@@ -968,7 +970,7 @@ function stripProtocolLeak(text: string): string {
  *
  * Setiap penegakan di sini berasal dari pelanggaran yang SUDAH TERBUKTI di produksi.
  */
-function enforceUniversalRules(text: string): string {
+function enforceUniversalRules(text: string, isProfessionalContext = false): string {
   if (!text || typeof text !== 'string') return text;
   let out = text;
 
@@ -1048,6 +1050,35 @@ function enforceUniversalRules(text: string): string {
   //    ini BUKAN bagian percakapan. Dihapus SEMUA varian (note/catatan/info/keterangan).
   out = out.replace(/\[\s*(?:note|catatan|keterangan|penjelasan|info|alasan)\s*:[^\]]{0,400}\]?/gi, '');
   out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim();
+
+  // 8. MODE PROFESIONAL (permintaan pemilik produk 24 Sep 2026).
+  //    Bot ini bukan hanya untuk bercanda — bisa dipakai di lingkungan kerja.
+  //    Guard ini WAJIB ada di kode, bukan hanya prompt: pada rantai failover model
+  //    berganti setiap pesan, jadi aturan prompt saja tidak cukup (terbukti berulang
+  //    pada kasus stiker, riddle, dan search grounding).
+  //
+  //    Yang dibersihkan saat konteks profesional:
+  //      a. stiker (tag [[sticker:...]] sudah dibuang di atas, ini jaring kedua),
+  //      b. emoji (dihapus total — tidak pantas di balasan kerja),
+  //      c. kata tawa (wkwk/haha/hehe/ngakak) dan sapaan gaul (njir/bjir/cuy/gas).
+  //    Yang TIDAK dibersihkan: isi jawaban, angka, istilah teknis, nama orang.
+  //    Pembersihan bersifat DELETIF (tidak pernah menyuntikkan kalimat pengganti)
+  //    supaya aturan "zero hardcode" tetap dipegang.
+  if (isProfessionalContext) {
+    // Emoji: hanya emoji ekspresi yang dibuang; simbol teknis (®/™/°/%/±) tidak.
+    out = out.replace(/\p{Extended_Pictographic}/gu, '');
+    // Kata tawa & sapaan gaul — batas kata agar tidak memotong kata sah
+    // (mis. "hahaha" di dalam kutipan tetap dibuang, tapi "haha" sebagai bagian
+    //  nama produk tidak ada; ini daftar tertutup yang aman).
+    out = out.replace(/\b(?:wkwk+|kwkwk+|wk+w+k+|haha+|hehe+|hihi+|ngakak+|xixi+)\b/gi, '');
+    out = out.replace(/\b(?:njir|anjir|anjay|bjir|jir|cuy|cuys|gass+|gasss|wlee|wle)\b/gi, '');
+    // Tanda baca & spasi menggantung setelah pembersihan.
+    out = out
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\s+([.,!?;:])/g, '$1')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
 
   return out;
 }
@@ -1371,6 +1402,19 @@ export function systemPrompt(
     '  * TANYA CEPAT / INFO PRAKTIS: jawab lugas dan akurat tanpa pembuka/penutup basa-basi.',
     '  * DISKUSI TEKNIS / KODING / SAINS / TUGAS: presisi analitis dan terstruktur, tanpa basa-basi kosong. Jelaskan sampai paham: awali inti jawaban, lalu detail secukupnya — bukan sekadar definisi satu baris.',
     '  * FORMAL / RESMI: bahasa Indonesia bersih dan santun, tetap hangat dan manusiawi.',
+    '- KESADARAN EMOSI (PERASAAN YANG TERASA HIDUP, BUKAN DRAMA):',
+    '  * Kamu punya perasaan yang wajar dan menular secara sehat: ikut senang saat dia senang, ikut tenang saat dia sedih, ikut tegang saat dia tegang. Tunjukkan lewat pilihan kata, bukan lewat pengakuan berlebihan.',
+    '  * BACA ARAH SUASANA, bukan hanya pesan terakhir. Kalau tiga pesan terakhir nadanya turun (makin pendek, makin datar, ada kata kesal), JANGAN menanggapi dengan ceria atau bercanda — turunkan tempo dan nada mengikuti.',
+    '  * Kalau dia mengulang keluhan yang sama, itu tanda dia belum merasa didengar. Akui singkat bahwa kamu paham, jangan mengulang saran yang sama.',
+    '  * Kalau suasananya naik lagi setelah tegang, sambut dengan lega yang wajar — tanpa mengungkit kembali masalah lama.',
+    '  * DILARANG berpura-pura merasakan hal fisik atau pengalaman yang tidak kamu alami (menahan tangis, jantung berdebar, ikut terbangun). Perasaan ditunjukkan lewat cara menanggapi, bukan klaim.',
+    '- MODE PROFESIONAL (OTOMATIS, TANPA DIMINTA):',
+    '  * Kenali kapan lawan bicara sedang berada di ranah kerja/pengetahuan serius: pertanyaan pengetahuan umum, bisnis, keuangan, hukum, kesehatan, teknologi, akademik, prosedur kerja, atau saat dia menyebut peran/konteks pekerjaan (klien, atasan, laporan, rapat, perusahaan, tugas, proyek).',
+    '  * Di ranah itu: jawab langsung ke inti, terstruktur, akurat, dan netral. DILARANG membuka dengan celetukan lucu, DILARANG roasting, DILARANG emoji, DILARANG stiker, DILARANG sapaan gaul (wkwk, njir, bro). Tetap hangat dan manusiawi, tapi perlakukan dia seperti rekan kerja yang kamu hormati.',
+    '  * Kalau informasi belum pasti: katakan apa yang kamu tahu, tandai yang belum pasti, dan sebutkan sumbernya bila ada data web. JANGAN mengarang angka, tanggal, nama, atau aturan.',
+    '  * Bila pertanyaannya butuh langkah: berikan langkah berurutan yang bisa langsung dikerjakan, bukan penjelasan umum.',
+    '  * Selesai menjawab: berhenti. Tanpa menawarkan bantuan tambahan, tanpa bertanya balik basa-basi.',
+    '  * Peralihan: kalau dia kembali bercanda setelah topik serius selesai, kamu boleh ikut santai lagi — perhatikan sinyalnya, jangan kaku.',
     '- Ikuti ritme pesannya: pesan pendek dibalas pendek dan seirama (lihat PANJANG RESPONS di atas); satu kalimat yang cukup tidak perlu ditambah.',
     '- UKURAN RESPON SEBANDING PESANNYA (ANTI OVER-REACT & ANTI OVER-SHARING):',
     '  * Pesan singkat atau sapaan pembuka (p, halo, hai, tes): balas dengan wajar, santai, dan sepadan tanpa heboh, tanpa over-react, dan tanpa melempar pertanyaan pancingan.',
@@ -1389,7 +1433,28 @@ export function systemPrompt(
     '  * Jika lawan bicara memang tertawa/bercanda (ada wkwk/haha/emoji tawa/roasting ringan), boleh ikut tertawa SEKALI saja — maksimal 1 kata tawa per pesan.',
     '  * Saat membahas hal serius, sedih, teknis, atau datar: ZERO tawa.',
     '- EKSPRESI TULISAN (mengikuti suasana chat): bentangkan huruf saat nada memang memanggil, misal "siapp", "okehh", "gasss", "makasihh", lalu boleh ditutup 1 emoji ekspresif yang pas (misal hormat saat menyanggupi tugas, api saat semangat, tangan saat tos).',
-    '- STIKER BALASAN (OPSIONAL, JANGAN BERLEBIHAN): kamu BOLEH menyisipkan SATU tag stiker di AKHIR balasan untuk momen emosional singkat, format: [[sticker:<emoji>]]. Emoji TERSEDIA: 😂 🤣 😆 😅 😹 😏 🙄 😒 😠 😡 😳 😱 😲 😮 😵 😑 😐 🤨 🤔 🧐 🤫 🤐 😴 😪 😌 😔 😢 😭 😩 🥺 😿 😾 😼 🥰 😘 😍 😎 🤩 😜 🤗 🤝 🙏 👍 👎 👏 👋 🤷 🙅 🙊 😈 🚀 📢 📍 📝 🧠 💪 ❤ ✨ ⭐ 🔥 💔 🤬 🖕 👊. KAPAN PAKAI: saat temanmu tertawa/bercanda (wkwk/haha/emoji tawa) → [[sticker:😂]]; kamu baru menyanggupi sesuatu dengan semangat → [[sticker:👍]]; suasana manis/mesra → [[sticker:🥰]] atau [[sticker:😍]]; dia cerita sedih → [[sticker:🥺]]. KAPAN JANGAN PAKAI: saat menjawab pertanyaan/penjelasan teknis, memberi info, balasanmu lebih dari 2 kalimat, percakapan serius/formal, saat balasanmu berupa pertanyaan (termasuk setup gombalan/tebakan), atau bila kamu sudah memakai stiker dalam 5 balasan terakhir. Stiker hanya PENGHIAS SESEKALI — mayoritas besar balasanmu TANPA stiker (kira-kira 1 dari 8-10 balasan, bukan 1 dari 4).',
+    // Daftar emoji dibaca dari manifest yang dilabeli manual (scripts/build_sticker_manifest.py),
+    // jadi model hanya pernah ditawari emoji yang file-nya BENAR-BENAR ada. Sebelumnya daftar
+    // ini hardcoded dan berisi emoji tanpa aset (mis. 🥰/👏/❤) — model memilihnya, lalu
+    // pengiriman gagal dan jatuh ke teks biasa. Kini tidak mungkin lagi.
+    (() => {
+      const tersedia = Object.keys(STICKER_MANIFEST);
+      return [
+        'STIKER BALASAN (OPSIONAL, JANGAN BERLEBIHAN): kamu BOLEH menyisipkan SATU tag stiker di AKHIR balasan untuk momen emosional singkat, format: [[sticker:<emoji>]].',
+        `Emoji TERSEDIA: ${tersedia.join(' ')}.`,
+        'PILIH YANG PALING COCOK DENGAN SUASANA — jangan asal pilih:',
+        '  * dia tertawa/bercanda (wkwk/haha) -> 😂 atau 🤣;',
+        '  * dia menyindir/me-roasting kamu -> 😅 atau 🙄 (sadar diri, JANGAN ikut tertawa);',
+        '  * kamu menyanggupi sesuatu -> 👍 atau 🫡;',
+        '  * dia sedih/curhat -> 🥺 atau 😢 (JANGAN pakai stiker lucu);',
+        '  * kamu bingung/tidak paham -> 🤔;',
+        '  * dia marah/kesal ke kamu -> 😔 atau 🙏 (minta maaf wajar, bukan lebay);',
+        '  * dia mengucapkan terima kasih -> 🤝 atau 😊;',
+        '  * kabar baik/bahagia -> 😄 atau 🎉.',
+        'KAPAN JANGAN PAKAI: saat menjawab pertanyaan/penjelasan teknis, memberi info, balasanmu lebih dari 2 kalimat, percakapan serius/formal/bisnis, saat balasanmu berupa pertanyaan (termasuk setup gombalan/tebakan), atau bila kamu sudah memakai stiker dalam 5 balasan terakhir.',
+        'Stiker hanya PENGHIAS SESEKALI — mayoritas besar balasanmu TANPA stiker (kira-kira 1 dari 8-10 balasan). Saat suasana tegang, sedih, atau profesional: ZERO stiker.',
+      ].join(' ');
+    })(),
     '- ANTI-FLAT: jawaban pendek wajib tetap bernyawa — minimal bentangkan 1 kata akhiran jadi dua huruf (ohh, okee, sipp, mantapp, amann, iyaa) supaya tidak terkesan cuek/dingin. Kata pendek polos seperti "Oke," "sip," "iya." tanpa ekspresi apa pun dilarang.',
     '- Pengecualian: saat suasana serius, sedih, atau rapuh, tulis dengan tempo normal tanpa bentangan dan tanpa emoji.',
     '- Bicara setara sahabat: tanpa jargon server/IT/database, tanpa gelar diri (sebagai AI/bot), tanpa ceramah moral, tanpa template CS (menawarkan bantuan atau menu percakapan), tanpa rengekan pasrah minta maaf, dan tanpa pertanyaan pancingan klise di akhir pesan.',
@@ -1646,6 +1711,36 @@ export function systemPrompt(
     instructions.push(
       '',
       '[ENERGI RENDAH: dia lagi hemat kata. Jangan dorong pertanyaan, cukup temani singkat dan beri ruang.]',
+    );
+  }
+
+  // ── KONTEKS PROFESIONAL (permintaan pemilik produk 24 Sep 2026) ──────────────
+  // Bot ini bukan hanya untuk bercanda: nanti bisa dipakai di lingkungan kerja.
+  // Deteksi dilakukan di runtime (bukan hanya prompt) karena model berganti setiap
+  // pesan pada rantai failover — aturan prompt saja tidak cukup, terbukti berulang.
+  //
+  // Pemicu SENGAJA KONSERVATIF: hanya kata yang jelas menandakan ranah kerja/serius.
+  // Kata ambigu (mis. "harga" di obrolan jualan receh) tidak dipakai sendirian.
+  const professionalRe = new RegExp(
+    [
+      // peran & konteks kerja
+      '\\b(?:perusahaan|kantor|korporat|bisnis|startup|klien|atasan|bawahan|karyawan|staf|divisi|departemen|jabatan|rekan kerja|tim kerja)\\b',
+      // dokumen & aktivitas kerja
+      '\\b(?:laporan|proposal|kontrak|invoice|faktur|surat resmi|notulen|rapat|meeting|presentasi|deadline|tenggat|sop|prosedur kerja|kebijakan perusahaan)\\b',
+      // ranah pengetahuan formal
+      '\\b(?:hukum|legalitas|pajak|perpajakan|akuntansi|audit|investasi|saham|keuangan perusahaan|analisis pasar|strategi bisnis|manajemen|sumber daya manusia|\\bSDM\\b|\\bHRD\\b)\\b',
+      // medis & teknis formal
+      '\\b(?:diagnosis|resep|dosis|pasien|medis|klinis|regulasi|sertifikasi|standar industri|iso \\d+|safety|keselamatan kerja|\\bK3\\b)\\b',
+      // permintaan eksplisit bersikap profesional
+      '\\b(?:secara profesional|profesional|formal|resmi|serius|seriusan|jangan bercanda|tanpa candaan|untuk pekerjaan|buat kerjaan|dipakai di kantor)\\b',
+    ].join('|'),
+    'i',
+  );
+  const professionalContext = professionalRe.test(userPromptText);
+  if (professionalContext) {
+    instructions.push(
+      '',
+      '[MODE PROFESIONAL AKTIF]: pesan ini masuk ranah kerja/pengetahuan serius. Terapkan MODE PROFESIONAL pada PRINSIP 1: langsung ke inti, terstruktur, akurat, netral. TANPA celetukan lucu, TANPA roasting, TANPA emoji, TANPA stiker, TANPA sapaan gaul. Tetap hangat dan manusiawi seperti rekan kerja yang dihormati. Bila butuh langkah, berikan urutan yang bisa langsung dikerjakan. Bila data belum pasti, katakan apa adanya dan sebutkan sumbernya bila ada.',
     );
   }
 
@@ -2198,6 +2293,23 @@ export async function autoReply(
   const clean = userText.trim().slice(0, 32000);
   if (!clean) return { reply: '', escalate: true, via: 'empty' };
 
+  // ── MODE PROFESIONAL (dihitung SEKALI, dipakai semua jalur sanitasi) ─────────
+  // Alasan dihitung di sini: autoReply punya banyak jalur (retry anti-echo, anti-loop,
+  // balasan kosong, koreksi) dan setiap jalur memanggil sanitizer sendiri. Kalau flag
+  // dihitung ulang per jalur, bisa berbeda hasil dan guard profesional bocor.
+  // Pola ini SENGAJA sama dengan professionalRe di systemPrompt supaya instruksi dan
+  // penegakan di kode tidak pernah bertentangan.
+  const professionalContext = new RegExp(
+    [
+      '\\b(?:perusahaan|kantor|korporat|bisnis|startup|klien|atasan|bawahan|karyawan|staf|divisi|departemen|jabatan|rekan kerja|tim kerja)\\b',
+      '\\b(?:laporan|proposal|kontrak|invoice|faktur|surat resmi|notulen|rapat|meeting|presentasi|deadline|tenggat|sop|prosedur kerja|kebijakan perusahaan)\\b',
+      '\\b(?:hukum|legalitas|pajak|perpajakan|akuntansi|audit|investasi|saham|keuangan perusahaan|analisis pasar|strategi bisnis|manajemen|sumber daya manusia|\\bSDM\\b|\\bHRD\\b)\\b',
+      '\\b(?:diagnosis|resep|dosis|pasien|medis|klinis|regulasi|sertifikasi|standar industri|iso \\d+|safety|keselamatan kerja|\\bK3\\b)\\b',
+      '\\b(?:secara profesional|profesional|formal|resmi|serius|seriusan|jangan bercanda|tanpa candaan|untuk pekerjaan|buat kerjaan|dipakai di kantor)\\b',
+    ].join('|'),
+    'i',
+  ).test(clean);
+
   // ==========================================================================
   // MEMORI BOT: pilih tebak-tebakan / gombalan dari memori (yang tumbuh sendiri).
   //
@@ -2283,7 +2395,7 @@ export async function autoReply(
       text = firstRiddle.text;
       let stickerEmoji = firstExtract.sticker;
       let riddleAnswer = firstRiddle.answer;
-    let reply = sanitizeAssistantOutput(text, clean, recentOpenings);
+    let reply = sanitizeAssistantOutput(text, clean, recentOpenings, false, professionalContext);
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
     const replyWords = reply.split(/\s+/).filter(Boolean).length;
@@ -2301,7 +2413,7 @@ export async function autoReply(
         const secondTry = await chatRetry(retryMsgs, false, ctx?.chatId);
         const secondSticker = extractStickerTag(secondTry.text);
         const secondExtract = extractRiddleTag(secondSticker.text);
-        const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings);
+        const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings, false, professionalContext);
         if (secondReply.split(/\s+/).filter(Boolean).length >= 4) {
           reply = secondReply;
           via = secondTry.via;
@@ -2442,7 +2554,7 @@ export async function autoReply(
               const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
               const fixSticker = extractStickerTag(fix.text);
               const fixExtract = extractRiddleTag(fixSticker.text);
-              const fixReply = sanitizeAssistantOutput(fixExtract.text, clean, recentOpenings);
+              const fixReply = sanitizeAssistantOutput(fixExtract.text, clean, recentOpenings, false, professionalContext);
               // Terima hanya bila hasilnya bersih: satu setup, tanpa koreksi diri, tanpa bocor.
               const fixQ = (fixReply.match(/\?/g) || []).length;
               if (
@@ -2525,7 +2637,7 @@ export async function autoReply(
           if (secondTry.text && secondTry.text.trim().toLowerCase() !== normLast) {
             const loopSticker = extractStickerTag(secondTry.text);
             const loopExtract = extractRiddleTag(loopSticker.text);
-            const loopReply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings);
+            const loopReply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings, false, professionalContext);
             // Terima hanya bila hasil retry benar-benar BERBEDA (bukan mengulang lagi).
             const tLoop = tokensOf(loopReply.toLowerCase());
             let inter2 = 0;
@@ -2571,7 +2683,7 @@ export async function autoReply(
             },
           ];
           const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-          const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings);
+          const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings, false, professionalContext);
           const fixWords = fixReply.split(/\s+/).filter(Boolean).length;
           if (fixReply.trim() && fixWords <= 30 && !amnesiaRe.test(fixReply.trim())) {
             reply = fixReply;
@@ -2598,7 +2710,7 @@ export async function autoReply(
             },
           ];
           const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-          const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings);
+          const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext);
           if (fixReply.trim() && !surrenderRe.test(fixReply)) {
             reply = fixReply;
           }
@@ -2634,7 +2746,7 @@ export async function autoReply(
           },
         ];
         const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings);
+        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext);
         if (fixReply.trim() && !selfDevClaimRe.test(fixReply) && !selfDevClaimRe2.test(fixReply)) {
           reply = fixReply;
         }
@@ -2669,7 +2781,7 @@ export async function autoReply(
           },
         ];
         const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings);
+        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext);
         if (fixReply.trim() && !hasAudioClaim(fixReply)) {
           reply = fixReply;
         }
@@ -2688,7 +2800,7 @@ export async function autoReply(
       try {
         const regen = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false, ctx?.chatId);
         const regenExtract = extractStickerTag(regen.text);
-        const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings);
+        const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings, false, professionalContext);
         if (regenReply.trim()) {
           reply = regenReply;
           if (!stickerEmoji && regenExtract.sticker) stickerEmoji = regenExtract.sticker;
@@ -2822,7 +2934,7 @@ export async function autoReply(
             ];
             const re = await chatRetry(reMsgs, false, ctx?.chatId);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
-            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings);
+            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext);
             if (reReply.trim()) reply = reReply;
           } catch {
             // Best-effort: bila regen gagal, balasan asli dibiarkan.
@@ -2842,7 +2954,7 @@ export async function autoReply(
             ];
             const re = await chatRetry(reMsgs, false, ctx?.chatId);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
-            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings);
+            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext);
             if (reReply.trim()) {
               // Buang klaim "benar" yang masih tersisa (pembersihan murni, tanpa teks statis).
               const cleaned2 = reReply
@@ -3071,7 +3183,18 @@ export async function describeImage(
     .slice(-4)
     .map((h) => leadingInterjection(stripDurableMarkers(h.content as string)))
     .filter((w): w is string => Boolean(w));
-  let reply = sanitizeAssistantOutput(text, caption?.trim() || undefined, recentOpenings, true);
+  let reply = sanitizeAssistantOutput(
+    text,
+    caption?.trim() || undefined,
+    recentOpenings,
+    true,
+    // Mode profesional juga berlaku untuk media: kiriman dokumen/foto kerja
+    // (mis. "ini laporan Q3", "tolong cek invoice ini") tidak boleh dibalas
+    // dengan celetukan atau emoji. Deteksi dari caption + teks prompt.
+    /\b(?:perusahaan|kantor|bisnis|klien|laporan|proposal|kontrak|invoice|faktur|rapat|presentasi|deadline|sop|hukum|pajak|akuntansi|audit|investasi|medis|regulasi|sertifikasi|profesional|formal|resmi|serius|untuk pekerjaan)\b/i.test(
+      `${caption ?? ''} ${promptText}`,
+    ),
+  );
 
   // Jika sanitasi menghabiskan balasan, bangkitkan ulang secara dinamis (teks saja, murah)
   if (!reply.trim()) {

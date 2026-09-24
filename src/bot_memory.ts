@@ -38,7 +38,11 @@ import { db } from './db.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
 
 /** Jenis memori yang dikelola. Tambah di sini bila ada jenis baru. */
-export type MemoryKind = 'riddle' | 'gombal' | 'fact';
+// 'knowledge' dan 'professional' ditambahkan 24 Sep 2026 (permintaan pemilik
+// produk): bot harus terus bertambah pintar seperti self-improvement, bukan hanya
+// mengandalkan tebak-tebakan. Dua jenis ini menyimpan pengetahuan yang dipakai
+// berulang supaya giliran berikutnya tidak perlu mencari lagi (hemat kuota + cepat).
+export type MemoryKind = 'riddle' | 'gombal' | 'fact' | 'knowledge' | 'professional';
 
 export interface MemoryItem {
   /** Pertanyaan / pembuka (untuk riddle & gombal), atau judul topik (untuk fact). */
@@ -95,7 +99,10 @@ export async function saveMemoryItem(kind: MemoryKind, item: MemoryItem): Promis
   if (question.length < 8 || answer.length < 2) return false;
 
   // Buang pasangan yang jelas bukan tanya-jawab (mis. potongan kalimat artikel).
-  if (!question.includes('?') && kind !== 'fact') return false;
+  // 'fact', 'knowledge', dan 'professional' TIDAK wajib berbentuk pertanyaan: isinya
+  // penjelasan/ringkasan pengetahuan yang tetap berguna walau tanpa tanda tanya.
+  const bolehTanpaTanya = kind === 'fact' || kind === 'knowledge' || kind === 'professional';
+  if (!question.includes('?') && !bolehTanpaTanya) return false;
 
   const c = db();
   if (!c) return false;
@@ -325,6 +332,19 @@ export function isMemoryRelevant(kind: MemoryKind, userText: string): boolean {
     );
   }
 
+  if (kind === 'knowledge') {
+    // Pengetahuan umum: dipakai saat ada pertanyaan terbuka yang butuh penjelasan.
+    // Sengaja lebih luas dari 'fact' karena jenis ini menyimpan penjelasan/definisi.
+    return /\b(?:apa|siapa|kapan|dimana|kenapa|mengapa|bagaimana|gimana|jelaskan|jelasin|arti|definisi|pengertian|contoh)\b/i.test(t);
+  }
+
+  if (kind === 'professional') {
+    // Pengetahuan profesional: hanya aktif di ranah kerja/bisnis/formal supaya
+    // memori ini tidak bocor ke obrolan santai (sesuai permintaan pemilik produk:
+    // bot dipakai di perusahaan, tapi tetap tidak kaku saat ngobrol biasa).
+    return /\b(?:perusahaan|kantor|bisnis|klien|laporan|proposal|kontrak|invoice|pajak|hukum|akuntansi|audit|investasi|manajemen|sdm|hrd|sop|prosedur|strategi|profesional|formal|resmi)\b/i.test(t);
+  }
+
   return false;
 }
 
@@ -412,6 +432,72 @@ export function extractQAFromText(text: string, limit = 60): MemoryItem[] {
     seen.add(norm);
 
     out.push({ question, answer });
+  }
+
+  return out;
+}
+
+/**
+ * Ekstrak POTONGAN PENGETAHUAN dari teks hasil scraping.
+ *
+ * Kenapa perlu: `extractQAFromText` hanya menangkap format tanya-jawab
+ * ("...? Jawaban: ..."). Halaman penjelasan (panduan, definisi, prosedur) tidak
+ * memakai format itu, jadi pengetahuannya tidak pernah tersimpan. Padahal justru
+ * inilah yang membuat bot bertambah pintar seperti self-improvement: apa yang
+ * sudah dicari sekali tidak perlu dicari lagi di giliran berikutnya.
+ *
+ * Yang diambil: kalimat deklaratif yang mengandung pola penjelasan
+ * ("adalah", "merupakan", "yaitu", "disebut", "terdiri dari", "bertujuan untuk").
+ * Bukan kalimat iklan/navigasi/promosi.
+ *
+ * @param topicTopik kata kunci topik (dipakai untuk memastikan relevansi)
+ */
+export function extractKnowledgeFromText(text: string, topic: string, limit = 12): MemoryItem[] {
+  if (!text || typeof text !== 'string') return [];
+
+  const clean = sanitizeKnowledgeText(text);
+  const out: MemoryItem[] = [];
+  const seen = new Set<string>();
+
+  // Kalimat pemisah: titik, tanda seru, tanda tanya, atau baris baru.
+  const sentences = clean
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.replace(/[*_>`#]/g, '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  // Kata kunci topik untuk menilai relevansi (minimal 4 huruf, maks 4 kata).
+  const topicWords = topic
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length >= 4)
+    .slice(0, 4);
+
+  // Pola penjelasan yang menandakan kalimat berisi pengetahuan.
+  const explainRe = /\b(?:adalah|merupakan|yaitu|ialah|disebut|dikenal sebagai|terdiri dari|bertujuan untuk|berfungsi untuk|digunakan untuk|termasuk|contohnya|misalnya|menyebabkan|menghasilkan|didefinisikan)\b/i;
+  // Pola yang menandakan BUKAN pengetahuan (navigasi, iklan, ajakan).
+  const junkRe = /\b(?:klik|daftar sekarang|beli sekarang|hubungi kami|diskon|promo|berlangganan|baca juga|selengkapnya|iklan|copyright|hak cipta|syarat dan ketentuan|kebijakan privasi|follow|subscribe|share|bagikan)\b/i;
+
+  for (const s of sentences) {
+    if (out.length >= limit) break;
+    if (s.length < 60 || s.length > 420) continue;      // terlalu pendek = fragmen, terlalu panjang = tidak padat
+    if (!explainRe.test(s)) continue;                   // bukan kalimat penjelasan
+    if (junkRe.test(s)) continue;                       // navigasi/iklan
+    if ((s.match(/\?/g) || []).length > 0) continue;   // kalimat tanya ditangani extractQAFromText
+
+    // Relevansi topik: minimal satu kata kunci topik muncul.
+    if (topicWords.length > 0) {
+      const low = s.toLowerCase();
+      if (!topicWords.some((w) => low.includes(w))) continue;
+    }
+
+    // Kunci dedupe: 60 karakter pertama, huruf kecil.
+    const norm = s.slice(0, 60).toLowerCase();
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+
+    // Pertanyaan di sini BUKAN pertanyaan, melainkan topik singkat sebagai kunci.
+    // Disimpan dalam bentuk "topik" agar bisa dicari ulang lewat pencarian teks.
+    out.push({ question: topic.slice(0, 160), answer: s });
   }
 
   return out;

@@ -29,6 +29,7 @@
 import { searchWeb, scrapeWebpage } from './web.js';
 import {
   extractQAFromText,
+  extractKnowledgeFromText,
   guessCategory,
   saveMemoryItems,
   pickMemoryItem,
@@ -43,13 +44,36 @@ const SEARCH_QUERIES: Record<MemoryKind, string[]> = {
     'kumpulan tebak tebakan lucu dan jawabannya',
     'teka teki lucu beserta jawaban bahasa indonesia',
     '100 tebak tebakan receh dan jawabannya',
+    // Variasi tema supaya stok tidak monoton dan tidak mengulang tema yang sama.
+    'tebak tebakan hewan dan jawabannya',
+    'tebak tebakan buah sayur dan jawabannya',
+    'teka teki logika sederhana dan jawaban',
   ],
   gombal: [
     'kumpulan gombalan lucu dan jawabannya',
     'tebak tebakan gombal romantis beserta jawaban',
+    'gombalan baper singkat dan jawabannya',
   ],
   fact: [
     'fakta menarik dan penjelasannya',
+    'fakta unik sains dan penjelasannya',
+    'fakta sejarah indonesia dan penjelasannya',
+  ],
+  // ── JENIS BARU (permintaan pemilik produk 24 Sep 2026) ─────────────────────
+  // Bot harus terus bertambah pintar seperti self-improvement, bukan hanya
+  // mengandalkan tebak-tebakan. Pengetahuan yang dipakai berulang disimpan agar
+  // giliran berikutnya tidak perlu mencari lagi (hemat kuota + lebih cepat).
+  knowledge: [
+    'penjelasan lengkap dan benar tentang',
+    'panduan praktis langkah demi langkah',
+    'fakta dasar yang perlu diketahui tentang',
+  ],
+  // Pengetahuan profesional untuk antisipasi pemakaian di perusahaan.
+  professional: [
+    'panduan bisnis praktis untuk pemula',
+    'dasar akuntansi dan laporan keuangan',
+    'prosedur kerja standar perusahaan',
+    'dasar hukum bisnis di indonesia',
   ],
 };
 
@@ -71,6 +95,10 @@ const TRUSTED_DOMAINS: Record<MemoryKind, string[]> = {
   riddle: ['gramedia.com', 'detik.com', 'wolipop.detik.com'],
   gombal: ['gramedia.com', 'detik.com', 'wolipop.detik.com'],
   fact: ['kompas.com', 'detik.com', 'tempo.co'],
+  // Sumber pengetahuan umum: ensiklopedia + media yang isinya bisa dibaca penuh.
+  knowledge: ['wikipedia.org', 'kompas.com', 'kbbi.kemdikbud.go.id'],
+  // Sumber profesional: domain resmi & media bisnis yang teksnya bisa di-scrape.
+  professional: ['ojk.go.id', 'pajak.go.id', 'kemenkeu.go.id', 'cnbcindonesia.com', 'kontan.co.id'],
 };
 
 /**
@@ -246,8 +274,11 @@ export async function growMemory(kind: MemoryKind): Promise<number> {
     const collected: MemoryItem[] = [];
     const seen = new Set<string>();
 
-    // Batasi 2 kueri per pertumbuhan supaya tidak boros kuota dan waktu.
-    for (const q of queries.slice(0, 2)) {
+    // Batasi kueri per pertumbuhan supaya tidak boros kuota dan waktu.
+    // Pengetahuan butuh lebih banyak sumber (halaman penjelasan lebih jarang
+    // menghasilkan banyak kalimat padat dibanding daftar tebak-tebakan).
+    const maxQueries = kind === 'knowledge' || kind === 'professional' ? 3 : 2;
+    for (const q of queries.slice(0, maxQueries)) {
       try {
         // TAHAP 1: cari untuk mendapat daftar URL sumber.
         // Jalur utama: xKiro search + filter domain (hasil terarah, sedikit
@@ -276,14 +307,22 @@ export async function growMemory(kind: MemoryKind): Promise<number> {
             const page = await fetchPageForGrowth(url);
             if (!page || page.length < 200) continue;
 
-            const items = extractQAFromText(page, 40);
+            // Jenis 'knowledge'/'professional' tidak berbentuk tanya-jawab, jadi
+            // memakai ekstraktor kalimat penjelasan; sisanya memakai ekstraktor QA.
+            const pakaiPengetahuan = kind === 'knowledge' || kind === 'professional';
+            const items = pakaiPengetahuan
+              ? extractKnowledgeFromText(page, q, 12)
+              : extractQAFromText(page, 40);
             for (const it of items) {
               const norm = it.answer.toLowerCase().trim();
               if (seen.has(norm)) continue;
               seen.add(norm);
               collected.push({
                 ...it,
-                category: guessCategory(it.question),
+                // Kategori: untuk pengetahuan dipakai jenisnya sendiri (agar bisa
+                // difilter saat pengambilan); untuk tebak-tebakan tetap ditebak
+                // dari kata kuncinya supaya tidak mengulang tema yang sama.
+                category: kind === 'knowledge' || kind === 'professional' ? kind : guessCategory(it.question),
                 explanation: '',
                 sourceUrl: url,
               });
