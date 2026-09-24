@@ -31,9 +31,9 @@
          teks tetap 17:1 (WCAG minimum 4,5:1) sehingga keterbacaan aman.
      Uji definitif blur ON vs OFF: 62,6% piksel berubah, ketajaman turun
      dari 8,27 -> 6,77 (baris KPI). */
-  --surface-raised:   rgba(4, 10, 22, 0.68);
+  --surface-raised:   rgba(4, 10, 22, 0.48);
   /* Baris kunci: sedikit lebih gelap dari kartu agar hierarki tetap terbaca. */
-  --surface-sunken:   rgba(3, 8, 18, 0.6);
+  --surface-sunken:   rgba(3, 8, 18, 0.42);
   --text:             #ffffff;
   /* Opacity teks sekunder dinaikkan (0,72/0,52/0,45 -> 0,82/0,68/0,60).
      Alasan: wallpaper sekarang terlihat di belakang kartu, sehingga teks redup
@@ -45,7 +45,7 @@
   --text-dim:         rgba(255, 255, 255, 0.60);
 
   /* Border dipertegas (0,1 -> 0,14): batas kartu kurang tegas di atas wallpaper. */
-  --separator:        rgba(255, 255, 255, 0.14);
+  --separator:        rgba(255, 255, 255, 0.18);
   --separator-strong: rgba(255, 255, 255, 0.16);
 
   /* Aksen tunggal: dipakai hemat di titik interaksi, bukan di semua permukaan. */
@@ -70,8 +70,8 @@
   /* Blur kaca: 20px, sama dengan navbar landing (--blur-strong).
      Dinaikkan dari 12px atas permintaan pemilik produk: efek kaca harus
      terasa mewah dan SERAGAM di semua elemen, bukan hanya navbar. */
-  --glass-blur:       20px;
-  --glass-blur-strong: 20px;
+  --glass-blur:       10px;
+  --glass-blur-strong: 12px;
   --glass-saturate:   160%;
 
   /* Radius jadi alat hierarki: kontrol 8, kartu 16, panel 20. */
@@ -209,8 +209,8 @@ html::after {
      cukup untuk menurunkan kontras wallpaper tanpa menyembunyikannya.
      Keterbacaan teks dijaga oleh latar kartu (bukan oleh scrim full-screen). */
   background:
-    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.45), rgba(2, 8, 20, 0.22) 65%, rgba(2, 8, 20, 0.12) 100%),
-    linear-gradient(180deg, rgba(2, 8, 20, 0.35) 0%, rgba(2, 8, 20, 0.12) 35%, rgba(2, 8, 20, 0.4) 100%);
+    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
+    linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%);
 }
 
 /* Perangkat yang tidak mendukung WebP animasi tetap mendapat aurora di atas —
@@ -290,9 +290,9 @@ body::before {
        Dashboard penuh kartu di area tengah, jadi lapisan ini yang paling
        banyak membuat blur terlihat. */
     radial-gradient(56rem 40rem at 50% 45%, rgba(0, 240, 255, 0.28), transparent 60%),
-    radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.24), transparent 62%),
-    radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.22), transparent 64%),
-    radial-gradient(34rem 26rem at 22% 78%, rgba(0, 240, 255, 0.22), transparent 62%),
+    radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.11), transparent 62%),
+    radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.10), transparent 64%),
+    radial-gradient(34rem 26rem at 22% 78%, rgba(0, 240, 255, 0.10), transparent 62%),
     radial-gradient(30rem 24rem at 82% 88%, rgba(120, 96, 255, 0.20), transparent 64%),
     radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.15), transparent 60%),
     radial-gradient(46rem 34rem at 98% 40%, rgba(88, 120, 255, 0.17), transparent 64%),
@@ -310,7 +310,7 @@ body::after {
   z-index: -1;
   pointer-events: none;
   /* Kisi ini yang memberi detail bertepi untuk diblur kaca. */
-  opacity: 0.7;
+  opacity: 0.25;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.038) 1px, transparent 1px);
@@ -547,7 +547,7 @@ section { margin-bottom: var(--s5); }
   padding: var(--s3) var(--s4);
   border-radius: var(--r-panel);
   margin-bottom: var(--s5);
-  background: rgba(4, 10, 22, 0.66);
+  background: rgba(4, 10, 22, 0.46);
   -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--separator);
@@ -568,8 +568,8 @@ section { margin-bottom: var(--s5); }
   padding: 3px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--text) 7%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   min-width: 0;
   max-width: 100%;
 }
@@ -595,7 +595,7 @@ section { margin-bottom: var(--s5); }
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
 [data-theme="dark"] .pill-filter-btn.active {
-  background: rgba(18, 30, 50, 0.76);
+  background: rgba(18, 30, 50, 0.54);
   border: 1px solid var(--separator-strong);
 }
 
@@ -641,7 +641,7 @@ section { margin-bottom: var(--s5); }
 
 .kpi-card:hover {
   transform: translateY(-3px);
-  background: rgba(12, 22, 40, 0.72);
+  background: rgba(12, 22, 40, 0.5);
   border-color: rgba(0, 240, 255, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -721,7 +721,7 @@ section { margin-bottom: var(--s5); }
 
 .provider-card:hover {
   transform: translateY(-3px);
-  background: rgba(12, 22, 40, 0.72);
+  background: rgba(12, 22, 40, 0.5);
   border-color: rgba(0, 240, 255, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -763,8 +763,8 @@ section { margin-bottom: var(--s5); }
 }
 [data-theme="dark"] .key-row {
   background: rgba(3, 8, 18, 0.6);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border-color: rgba(255, 255, 255, 0.06);
 }
 .key-row.status-warning { border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
@@ -967,7 +967,7 @@ section { margin-bottom: var(--s5); }
   font-size: 11px;
   font-weight: 550;
   line-height: 1.3;
-  background: rgba(4, 10, 22, 0.66);
+  background: rgba(4, 10, 22, 0.46);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
 }
@@ -987,7 +987,7 @@ section { margin-bottom: var(--s5); }
   border-color: rgba(251, 191, 36, 0.25);
 }
 .tag-cap-text {
-  background: rgba(4, 10, 22, 0.66);
+  background: rgba(4, 10, 22, 0.46);
   color: var(--text-secondary);
   border-color: rgba(255, 255, 255, 0.08);
 }
@@ -1056,16 +1056,16 @@ section { margin-bottom: var(--s5); }
   padding: var(--s3);
   border-radius: var(--r-control);
   background: var(--surface-sunken);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-[data-theme="dark"] .live-stat-box { background: rgba(3, 8, 18, 0.62);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%); }
+[data-theme="dark"] .live-stat-box { background: rgba(3, 8, 18, 0.44);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%); }
 .live-stat-label { font-size: 12px; color: var(--text-secondary); }
 .live-stat-val { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
 .live-stat-sub { font-size: 11px; color: var(--text-secondary); }
@@ -1076,8 +1076,8 @@ section { margin-bottom: var(--s5); }
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
 
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);}
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);}
 table, .token-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td {
   padding: 10px var(--s3);
@@ -1151,7 +1151,7 @@ td:nth-child(1) { font-variant-numeric: normal; }
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
 [data-theme="dark"] .matrix-filter-pill.active {
-  background: rgba(18, 30, 50, 0.76);
+  background: rgba(18, 30, 50, 0.54);
   border: 1px solid var(--separator-strong);
 }
 
@@ -1325,16 +1325,16 @@ td:nth-child(1) { font-variant-numeric: normal; }
   padding: var(--s3);
   border-radius: var(--r-control);
   background: var(--surface-sunken);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-[data-theme="dark"] .media-box { background: rgba(3, 8, 18, 0.62);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%); }
+[data-theme="dark"] .media-box { background: rgba(3, 8, 18, 0.44);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%); }
 .media-box-count { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.018em; }
 .media-box-label { font-size: 12px; color: var(--text-secondary); }
 
@@ -1412,8 +1412,8 @@ td:nth-child(1) { font-variant-numeric: normal; }
     linear-gradient(180deg,
       rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.96)),
       rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.72)));
-  -webkit-backdrop-filter: blur(24px) saturate(var(--glass-saturate));
-          backdrop-filter: blur(24px) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(10px) saturate(var(--glass-saturate));
+          backdrop-filter: blur(10px) saturate(var(--glass-saturate));
   border: 1px solid rgb(255 255 255 / var(--glass-edge));
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.3),
@@ -1683,7 +1683,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
 .model-matrix-card:hover {
   transform: translateY(-3px);
   border-color: rgba(0, 240, 255, 0.22);
-  background: rgba(12, 22, 40, 0.72);
+  background: rgba(12, 22, 40, 0.5);
 }
 
 
@@ -1736,7 +1736,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   font-size: 13px;
   font-weight: 550;
   color: var(--text-secondary);
-  background: rgba(4, 10, 22, 0.65);
+  background: rgba(4, 10, 22, 0.45);
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
   text-decoration: none;
@@ -1862,8 +1862,8 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   border-radius: var(--r-control);
   -webkit-overflow-scrolling: touch;
 
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);}
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);}
   th, td { padding: 9px 10px; }
   .auth-card { padding: var(--s5) var(--s3) var(--s4); max-width: 100%; }
   .auth-shield-icon { width: 46px; height: 46px; border-radius: 13px; }
@@ -2027,7 +2027,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   min-height: 46px;
   padding: 0.55rem 0.8rem;
   border-radius: var(--radius-sm);
-  background: rgba(4, 10, 22, 0.65);
+  background: rgba(4, 10, 22, 0.45);
   border: 1px solid var(--glass-border);
   color: var(--text-primary);
   font: inherit;
@@ -2072,7 +2072,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
 
 .badge-bot-sync {
   color: var(--text-muted);
-  background: rgba(4, 10, 22, 0.65);
+  background: rgba(4, 10, 22, 0.45);
   border: 1px solid var(--glass-border);
 }
 
@@ -2137,7 +2137,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   border-radius: 5px;
   font-size: 0.68rem;
   font-weight: 650;
-  background: rgba(6, 14, 28, 0.68);
+  background: rgba(6, 14, 28, 0.48);
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -2224,8 +2224,8 @@ body {
   top: 0;
   z-index: 100;
   background: rgba(2, 8, 20, 0.62);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  backdrop-filter: blur(12px) saturate(150%);
   border-bottom: 1px solid var(--separator);
   transition: transform 0.22s ease, background-color 0.25s ease;
 }
@@ -2300,13 +2300,13 @@ body {
 /* Tombol ghost & kecil */
 .btn-ghost {
   background: var(--accent-soft);
-  background: rgba(4, 10, 22, 0.66);
+  background: rgba(4, 10, 22, 0.46);
   border-color: var(--separator-strong);
   color: var(--text);
 }
 
 .btn-ghost:hover {
-  background: rgba(12, 22, 40, 0.74);
+  background: rgba(12, 22, 40, 0.52);
   border-color: var(--accent);
 }
 
@@ -2374,10 +2374,10 @@ body {
   gap: 4px;
   padding: 5px 10px;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.7);
+  background: rgba(4, 10, 22, 0.48);
   /* Kaca juga di sini agar seragam dengan elemen lain. */
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   white-space: nowrap;
 }
@@ -2408,17 +2408,17 @@ body {
   padding: 0.8rem 1rem;
   margin-bottom: 1.2rem;
   border-radius: var(--r-panel);
-  background: rgba(3, 8, 18, 0.62);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  background: rgba(3, 8, 18, 0.44);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   position: relative;
 }
 
 [data-theme="light"] .filter-dashboard-bar {
   background: var(--surface-raised);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
 }
 
 .filter-dashboard-bar.has-open-dropdown,
@@ -2448,7 +2448,7 @@ body {
   min-height: 40px;
   padding: 0 0.65rem;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.65);
+  background: rgba(4, 10, 22, 0.45);
   border: 1px solid var(--separator-strong);
   color: var(--text);
   font: inherit;
@@ -2591,8 +2591,8 @@ body {
   overscroll-behavior: contain;
 
   background: rgba(10, 16, 28, 0.92);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
 
   border: 1px solid var(--separator-strong);
   border-radius: var(--r-panel, 16px);
@@ -2642,7 +2642,7 @@ body {
 }
 
 .glass-select-item:hover {
-  background: rgba(6, 14, 28, 0.68);
+  background: rgba(6, 14, 28, 0.48);
   color: var(--text);
 }
 
@@ -2744,9 +2744,9 @@ body {
   gap: 2px;
   padding: 3px;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.65);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  background: rgba(4, 10, 22, 0.45);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   max-width: 100%;
 }
@@ -2766,7 +2766,7 @@ body {
   transition: background-color 0.18s ease, color 0.18s ease;
 }
 
-.pill-filter-btn:hover { color: var(--text); background: rgba(4, 10, 22, 0.66); }
+.pill-filter-btn:hover { color: var(--text); background: rgba(4, 10, 22, 0.46); }
 
 .pill-filter-btn.active {
   background: var(--accent-soft);
@@ -2798,9 +2798,9 @@ body {
 .status-panel {
   padding: clamp(1rem, 2.5vw, 1.5rem);
   border-radius: var(--r-panel);
-  background: rgba(4, 10, 22, 0.66);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
+  background: rgba(4, 10, 22, 0.46);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border: 1px solid var(--separator);
 }
 
@@ -2816,8 +2816,8 @@ body {
   padding: 0.9rem;
   border-radius: var(--r-control);
   background: rgba(3, 8, 18, 0.6);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
 }
 
@@ -2865,8 +2865,8 @@ body {
   padding: 0.8rem;
   border-radius: var(--r-control);
   background: rgba(3, 8, 18, 0.6);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   display: flex;
@@ -2970,8 +2970,8 @@ body {
   padding: 0.85rem;
   border-radius: var(--r-control);
   background: rgba(3, 8, 18, 0.6);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   text-align: center;
 }
@@ -3009,7 +3009,7 @@ body {
   min-height: 46px;
   padding: 0 0.8rem;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.65);
+  background: rgba(4, 10, 22, 0.45);
   border: 1px solid var(--separator-strong);
   color: var(--text);
   font: inherit;
@@ -3041,8 +3041,8 @@ body {
   background: rgba(6, 14, 28, 0.94);
   border: 1px solid var(--separator-strong);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  backdrop-filter: blur(12px) saturate(150%);
 }
 
 [data-theme="light"] .pin-card { background: #fff; }
@@ -3271,8 +3271,8 @@ body {
     min-height: 36px;
     padding: 0.3rem 0.85rem;
     background: rgba(4, 10, 22, 0.68);
-    -webkit-backdrop-filter: blur(14px) saturate(150%);
-    backdrop-filter: blur(14px) saturate(150%);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+    backdrop-filter: blur(10px) saturate(150%);
     border: 1px solid var(--separator);
     border-radius: var(--r-control);
     font-size: 0.82rem;

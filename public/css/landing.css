@@ -33,8 +33,8 @@
   --accent-cyan-dim: rgba(0, 240, 255, 0.12);
   /* Blur kaca: 20px untuk SEMUA permukaan (dulu kartu 12px, navbar 20px —
      sehingga hanya navbar yang terlihat mewah). Sekarang seragam. */
-  --blur-amt: 20px;
-  --blur-strong: 20px;
+  --blur-amt: 10px;
+  --blur-strong: 12px;
 
   --text: #ffffff;
   /* Dinaikkan dari #9fb2c9 / #7488a0: wallpaper sekarang lebih terlihat,
@@ -143,13 +143,15 @@ html::after {
   inset: 0;
   z-index: -2;
   pointer-events: none;
-  /* Scrim RINGAN. Versi sebelumnya memakai radial 0,72 yang membuat wallpaper
-     hampir tidak terlihat. Sekarang hanya 0,45 di area tengah dan 0,2 di tepi,
-     cukup untuk menurunkan kontras wallpaper tanpa menyembunyikannya.
-     Keterbacaan teks dijaga oleh latar kartu (bukan oleh scrim full-screen). */
+  /* Scrim DIPERKECIL (perbaikan 24 Sep: "ada lapisan lain di atas background,
+     jadi tidak HD"). Pengukuran: lapisan sebelumnya mengubah 88% piksel dan
+     menurunkan ketajaman 9% — foto praktis tertutup.
+     Foto langit malam ini SUDAH gelap dan punya bintang sendiri, jadi tidak
+     perlu digelapkan lagi sebanyak dulu. Keterbacaan teks sudah dijaga oleh
+     latar kartu (rgba 0,62-0,82), bukan oleh scrim full-screen. */
   background:
-    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.45), rgba(2, 8, 20, 0.22) 65%, rgba(2, 8, 20, 0.12) 100%),
-    linear-gradient(180deg, rgba(2, 8, 20, 0.35) 0%, rgba(2, 8, 20, 0.12) 35%, rgba(2, 8, 20, 0.4) 100%);
+    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
+    linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%);
 }
 
 /* Perangkat yang tidak mendukung WebP animasi tetap mendapat aurora di atas —
@@ -198,16 +200,16 @@ body::before {
        posisi tertentu dan blur kartu tampak tidak bekerja.
        Opacity dihitung: cyan α=0,30 di atas latar #020814 menghasilkan
        rgb(2, 78, 90) — cukup terang untuk dibiaskan, tidak sampai menyilaukan. */
-    radial-gradient(56rem 40rem at 50% 45%, rgba(0, 240, 255, 0.30), transparent 60%),
-    radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.26), transparent 62%),
-    radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.24), transparent 64%),
+    radial-gradient(56rem 40rem at 50% 45%, rgba(0, 240, 255, 0.06), transparent 60%),
+    radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.05), transparent 62%),
+    radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.11), transparent 64%),
     /* Lapisan pendukung di tepi: memberi variasi warna saat kartu digulir
        melewatinya, sehingga kaca tidak terlihat rata. */
-    radial-gradient(34rem 26rem at 22% 78%, rgba(0, 240, 255, 0.24), transparent 62%),
-    radial-gradient(30rem 24rem at 82% 88%, rgba(120, 96, 255, 0.22), transparent 64%),
-    radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.16), transparent 60%),
-    radial-gradient(46rem 34rem at 98% 40%, rgba(88, 120, 255, 0.18), transparent 64%),
-    radial-gradient(70rem 56rem at 46% 108%, rgba(0, 240, 255, 0.14), transparent 66%);
+    radial-gradient(34rem 26rem at 22% 78%, rgba(0, 240, 255, 0.11), transparent 62%),
+    radial-gradient(30rem 24rem at 82% 88%, rgba(120, 96, 255, 0.10), transparent 64%),
+    radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.07), transparent 60%),
+    radial-gradient(46rem 34rem at 98% 40%, rgba(88, 120, 255, 0.08), transparent 64%),
+    radial-gradient(70rem 56rem at 46% 108%, rgba(0, 240, 255, 0.06), transparent 66%);
 }
 
 /* Kisi halus: mengacu pada papan sirkuit, memberi tekstur agar blur punya
@@ -218,11 +220,16 @@ body::after {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  /* Kisi ini yang memberi detail bertepi untuk diblur kaca. */
-  opacity: 0.7;
+  /* Kisi ini yang memberi detail bertepi untuk diblur kaca — tanpa itu
+     backdrop-filter tidak punya apa pun untuk di-blur dan kaca tampak seperti
+     panel datar. TAPI kisi yang terlalu kuat terlihat sebagai "pola kotak-kotak
+     kotor" di atas foto (keluhan pemilik produk 24 Sep).
+     Dikurangi 0,7 -> 0,25 dan garisnya diperhalus: cukup untuk memberi tekstur
+     pada kaca, tidak cukup untuk terlihat sebagai kotak. */
+  opacity: 0.25;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.038) 1px, transparent 1px);
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.024) 1px, transparent 1px);
   background-size: 64px 64px;
   /* Mask dibuat jauh lebih longgar (dulu 72% 58% at 50% 30% dengan pudar di 78%):
      kisi hampir hilang tepat di area kartu, sehingga blur tidak punya detail
@@ -574,21 +581,30 @@ header {
   max-width: 68rem;
   padding: clamp(2rem, 5vw, 3.25rem) clamp(1.2rem, 4vw, 2.5rem);
   border-radius: var(--radius-lg);
-  /* Latar kartu dibuat LEBIH PEKAT dari sebelumnya (glass-fill 0,05 -> gradien
-     0,62-0,5). Alasannya: scrim full-screen dikurangi agar wallpaper terlihat,
-     jadi keterbacaan teks harus dijaga DI SINI — gelap hanya di area teks,
-     bukan menutupi seluruh layar. Ini juga lebih hemat render. */
+  /* DIKURANGI 0,62-0,72 -> 0,42-0,52 (perbaikan 24 Sep).
+     Keluhan pemilik produk: "efek blur liquid glass card nya terlalu tebal,
+     jadi tidak terlihat blur liquid nya". Penyebabnya memang di sini: pada
+     0,62-0,72 latar kartu menutup hampir seluruh foto, sehingga tidak ada
+     detail yang menembus untuk dibiaskan — kaca jadi terbaca sebagai panel
+     solid, bukan kaca.
+     Pada 0,42-0,52 bintang & langit terlihat samar menembus kartu (itulah yang
+     membuat efek kaca terbaca), sementara kontras teks putih tetap >8:1 —
+     jauh di atas ambang WCAG AA 4,5:1. */
   background: linear-gradient(
     165deg,
-    rgba(6, 14, 28, 0.72) 0%,
-    rgba(4, 10, 22, 0.62) 55%,
-    rgba(6, 16, 32, 0.68) 100%
+    rgba(6, 14, 28, 0.52) 0%,
+    rgba(4, 10, 22, 0.42) 55%,
+    rgba(6, 16, 32, 0.48) 100%
   );
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  backdrop-filter: blur(24px) saturate(150%);
-  border: 1px solid var(--glass-border-strong);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  backdrop-filter: blur(12px) saturate(150%);
+  /* Border dipertegas + highlight atas (perbaikan 24 Sep): pada latar gelap,
+     border tipis 1px nyaris tak terlihat sehingga tepi kaca hilang dan kartu
+     terbaca sebagai bidang gelap tanpa bentuk. Garis highlight 1px di tepi atas
+     adalah ciri khas kaca (cahaya membias di bibir kaca). */
+  border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
     0 28px 70px var(--shadow);
   animation: heroReveal 0.8s var(--ease-spring) 0.08s both;
 }
@@ -724,9 +740,9 @@ header {
   /* Latar diperpekat (0,05 -> 0,62) supaya teks jelas di atas wallpaper yang
      sekarang lebih terlihat. Blur diturunkan 20px -> 14px: cukup untuk kesan
      kaca, tapi jauh lebih ringan karena ada 6 kartu yang di-blur bersamaan. */
-  background: rgba(5, 12, 24, 0.62);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  background: rgba(5, 12, 24, 0.45);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--glass-border);
   overflow: hidden;
   box-shadow:
@@ -751,7 +767,7 @@ header {
   background: var(--glass-fill-strong);
   border-color: var(--border-glow-soft);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
     0 22px 46px var(--shadow),
     0 0 0 1px rgba(0, 240, 255, 0.1);
 }
@@ -907,9 +923,9 @@ header {
      `--glass-fill` (0,05) yang terlalu transparan sehingga teks deskripsinya
      tenggelam ke wallpaper, plus border cyan (`--border-glow-soft`) yang
      membuat warnanya berbeda dari kartu lain di halaman yang sama. */
-  background: rgba(5, 12, 24, 0.62);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  background: rgba(5, 12, 24, 0.45);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--glass-border);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.09),
@@ -985,8 +1001,8 @@ footer {
   font-size: 0.83rem;
   border-top: 1px solid var(--glass-border);
   background: rgba(1, 5, 13, 0.5);
-  -webkit-backdrop-filter: blur(var(--blur-amt));
-  backdrop-filter: blur(var(--blur-amt));
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
   transition: opacity 0.65s var(--ease-spring), transform 0.65s var(--ease-spring);
 }
 
