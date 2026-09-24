@@ -153,12 +153,49 @@ html::before {
   pointer-events: none;
   background-image: url('/assets/bg-loop.webp');
   background-size: cover;
-  background-position: center;
-  /* blur + saturate: memperkuat warna, menghilangkan detail yang mengganggu */
-  filter: blur(28px) saturate(150%);
-  /* scale menutup tepi transparan yang muncul akibat blur di pinggir layar */
-  transform: scale(1.15);
-  opacity: 0.5;
+  /* Posisi 65% 60%: subjek video (robot + efek energi) berada di kanan-bawah
+     frame — diukur dari kecerahan frame (grid 3x3: area kanan-bawah paling
+     terang, 117 vs 17 di kiri-atas). Dengan `center`, bagian itu terpotong di
+     layar lebar sehingga yang terlihat hanya latar gelap kosong. */
+  background-position: 65% 60%;
+  /* TANPA filter blur.
+     Alasan: `filter: blur()` pada elemen berisi animasi memaksa browser
+     mem-blur ulang SELURUH layar setiap frame (10x/detik) — itu penyebab
+     frame drop. Blur sudah "dibakar" ke dalam file WebP (ffmpeg gblur 3px),
+     jadi hasilnya sama tapi biaya render nol.
+     Tanpa blur CSS juga membuat objek di video (robot) tetap terlihat,
+     sesuai permintaan pemilik produk. */
+  opacity: 1;
+}
+
+/* Layar besar: pakai versi 1280px yang lebih tajam.
+   Versi 800px cukup untuk ponsel (layar kecil, perbesaran rendah), tapi di
+   layar >=1200px ia diperbesar ~1,8x sehingga detail robot melunak. Browser
+   hanya mengunduh file yang cocok media query, jadi tidak ada biaya ganda. */
+@media (min-width: 1200px) {
+  html::before {
+    background-image: url('/assets/bg-loop-hd.webp');
+  }
+}
+
+/* Scrim: lapisan gelap bertingkat DI ATAS video, DI BAWAH konten.
+   Fungsinya menggantikan blur untuk menjaga keterbacaan teks: area tengah
+   (tempat kartu & teks berada) digelapkan lebih kuat, sementara tepi layar
+   dibiarkan lebih terang supaya wallpaper tetap terlihat.
+   Ini jauh lebih murah daripada blur karena hanya gradien statis. */
+html::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  /* Scrim RINGAN. Versi sebelumnya memakai radial 0,72 yang membuat wallpaper
+     hampir tidak terlihat. Sekarang hanya 0,45 di area tengah dan 0,2 di tepi,
+     cukup untuk menurunkan kontras wallpaper tanpa menyembunyikannya.
+     Keterbacaan teks dijaga oleh latar kartu (bukan oleh scrim full-screen). */
+  background:
+    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.45), rgba(2, 8, 20, 0.22) 65%, rgba(2, 8, 20, 0.12) 100%),
+    linear-gradient(180deg, rgba(2, 8, 20, 0.35) 0%, rgba(2, 8, 20, 0.12) 35%, rgba(2, 8, 20, 0.4) 100%);
 }
 
 /* Perangkat yang tidak mendukung WebP animasi tetap mendapat aurora di atas —
@@ -2102,21 +2139,16 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   margin-bottom: 1rem;
 }
 
-/* Latar aurora konsol: sama seperti landing, satu sumber kedalaman. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(52rem 36rem at 10% -10%, rgba(0, 240, 255, 0.09), transparent 64%),
-    radial-gradient(44rem 32rem at 94% 4%, rgba(88, 120, 255, 0.08), transparent 68%);
-}
+/* CATATAN: aurora duplikat DIHAPUS. Versi 8 lapis yang aktif ada di bagian atas
+   file (dekat :root). Blok ini dulu menimpanya dengan versi 2 lapis yang lebih
+   redup, sehingga latar dashboard terlihat datar. */
 
-/* Warna latar halaman konsol */
+/* CATATAN: blok `body { background-color: #020814; }` DIHAPUS.
+   Blok itu menimpa perbaikan di atas (warna dasar harus di `html`, body
+   transparan) sehingga aurora dan video latar tertutup total di dashboard —
+   inilah sebabnya dashboard tampak tidak berubah. */
 body {
-  background-color: #020814;
+  /* Sengaja tanpa background-color. */
 }
 
 

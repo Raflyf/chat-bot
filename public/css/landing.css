@@ -97,12 +97,49 @@ html::before {
   pointer-events: none;
   background-image: url('/assets/bg-loop.webp');
   background-size: cover;
-  background-position: center;
-  /* blur + saturate: memperkuat warna, menghilangkan detail yang mengganggu */
-  filter: blur(28px) saturate(150%);
-  /* scale menutup tepi transparan yang muncul akibat blur di pinggir layar */
-  transform: scale(1.15);
-  opacity: 0.5;
+  /* Posisi 65% 60%: subjek video (robot + efek energi) berada di kanan-bawah
+     frame — diukur dari kecerahan frame (grid 3x3: area kanan-bawah paling
+     terang, 117 vs 17 di kiri-atas). Dengan `center`, bagian itu terpotong di
+     layar lebar sehingga yang terlihat hanya latar gelap kosong. */
+  background-position: 65% 60%;
+  /* TANPA filter blur.
+     Alasan: `filter: blur()` pada elemen berisi animasi memaksa browser
+     mem-blur ulang SELURUH layar setiap frame (10x/detik) — itu penyebab
+     frame drop. Blur sudah "dibakar" ke dalam file WebP (ffmpeg gblur 3px),
+     jadi hasilnya sama tapi biaya render nol.
+     Tanpa blur CSS juga membuat objek di video (robot) tetap terlihat,
+     sesuai permintaan pemilik produk. */
+  opacity: 1;
+}
+
+/* Layar besar: pakai versi 1280px yang lebih tajam.
+   Versi 800px cukup untuk ponsel (layar kecil, perbesaran rendah), tapi di
+   layar >=1200px ia diperbesar ~1,8x sehingga detail robot melunak. Browser
+   hanya mengunduh file yang cocok media query, jadi tidak ada biaya ganda. */
+@media (min-width: 1200px) {
+  html::before {
+    background-image: url('/assets/bg-loop-hd.webp');
+  }
+}
+
+/* Scrim: lapisan gelap bertingkat DI ATAS video, DI BAWAH konten.
+   Fungsinya menggantikan blur untuk menjaga keterbacaan teks: area tengah
+   (tempat kartu & teks berada) digelapkan lebih kuat, sementara tepi layar
+   dibiarkan lebih terang supaya wallpaper tetap terlihat.
+   Ini jauh lebih murah daripada blur karena hanya gradien statis. */
+html::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  /* Scrim RINGAN. Versi sebelumnya memakai radial 0,72 yang membuat wallpaper
+     hampir tidak terlihat. Sekarang hanya 0,45 di area tengah dan 0,2 di tepi,
+     cukup untuk menurunkan kontras wallpaper tanpa menyembunyikannya.
+     Keterbacaan teks dijaga oleh latar kartu (bukan oleh scrim full-screen). */
+  background:
+    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.45), rgba(2, 8, 20, 0.22) 65%, rgba(2, 8, 20, 0.12) 100%),
+    linear-gradient(180deg, rgba(2, 8, 20, 0.35) 0%, rgba(2, 8, 20, 0.12) 35%, rgba(2, 8, 20, 0.4) 100%);
 }
 
 /* Perangkat yang tidak mendukung WebP animasi tetap mendapat aurora di atas —
@@ -276,7 +313,7 @@ header {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(2, 8, 20, 0.82);
+  background: rgba(4, 10, 20, 0.88);
   -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(150%);
   backdrop-filter: blur(var(--blur-strong)) saturate(150%);
   border-bottom: 1px solid var(--glass-border);
@@ -527,9 +564,18 @@ header {
   max-width: 68rem;
   padding: clamp(2rem, 5vw, 3.25rem) clamp(1.2rem, 4vw, 2.5rem);
   border-radius: var(--radius-lg);
-  background: var(--glass-fill);
-  -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(150%);
-  backdrop-filter: blur(var(--blur-strong)) saturate(150%);
+  /* Latar kartu dibuat LEBIH PEKAT dari sebelumnya (glass-fill 0,05 -> gradien
+     0,62-0,5). Alasannya: scrim full-screen dikurangi agar wallpaper terlihat,
+     jadi keterbacaan teks harus dijaga DI SINI — gelap hanya di area teks,
+     bukan menutupi seluruh layar. Ini juga lebih hemat render. */
+  background: linear-gradient(
+    165deg,
+    rgba(6, 14, 28, 0.72) 0%,
+    rgba(4, 10, 22, 0.62) 55%,
+    rgba(6, 16, 32, 0.68) 100%
+  );
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
   border: 1px solid var(--glass-border-strong);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -663,13 +709,16 @@ header {
   gap: 0.7rem;
   padding: 1.6rem;
   border-radius: var(--radius);
-  background: var(--glass-fill);
-  -webkit-backdrop-filter: blur(var(--blur-amt)) saturate(160%);
-  backdrop-filter: blur(var(--blur-amt)) saturate(160%);
+  /* Latar diperpekat (0,05 -> 0,62) supaya teks jelas di atas wallpaper yang
+     sekarang lebih terlihat. Blur diturunkan 20px -> 14px: cukup untuk kesan
+     kaca, tapi jauh lebih ringan karena ada 6 kartu yang di-blur bersamaan. */
+  background: rgba(5, 12, 24, 0.62);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--glass-border);
   overflow: hidden;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
     0 10px 30px rgba(0, 0, 0, 0.32);
   transition: transform 0.25s var(--ease-spring), border-color 0.25s var(--ease),
     background-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
