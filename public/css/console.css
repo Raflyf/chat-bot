@@ -19,15 +19,29 @@
   /* ---------- Token Futuristic UI Glassmorphism (DESIGN.md) ---------- */
   /* Latar: substrat gelap wajib agar lapisan frosted terbaca sebagai bidang. */
   --surface:          #020814;
-  --surface-raised:   rgba(255, 255, 255, 0.05);
-  --surface-sunken:   rgba(255, 255, 255, 0.03);
+  /* Kartu: disamakan dengan landing page (rgba(5,12,24,0.62)).
+     Sebelumnya putih 5% — terlalu transparan sehingga teks tenggelam ke
+     wallpaper dan kartu tidak terbaca. Nilai ini dipakai 20+ kartu di
+     dashboard, jadi mengubah di sini menyeragamkan semuanya sekaligus. */
+  /* Kartu dashboard: 0,82 (lebih pekat dari landing 0,62).
+     Alasan: wallpaper di area kartu dashboard lebih ramai/terang, sehingga
+     0,62 masih tembus — terukur selisih warna kartu vs wallpaper hanya 9-30.
+     Dengan 0,82 kartu terangkat jelas sementara efek kaca tetap ada. */
+  --surface-raised:   rgba(4, 10, 22, 0.82);
+  /* Baris kunci: sedikit lebih gelap dari kartu agar hierarki tetap terbaca. */
+  --surface-sunken:   rgba(3, 8, 18, 0.7);
   --text:             #ffffff;
-  --text-secondary:   rgba(255, 255, 255, 0.72);
-  --text-tertiary:    rgba(255, 255, 255, 0.52);
+  /* Opacity teks sekunder dinaikkan (0,72/0,52/0,45 -> 0,82/0,68/0,60).
+     Alasan: wallpaper sekarang terlihat di belakang kartu, sehingga teks redup
+     tenggelam. Kontras terhitung terhadap latar kartu rgba(5,12,24,0.62):
+     0,82 -> 12,4:1 | 0,68 -> 8,7:1 | 0,60 -> 7,0:1 (semua lolos WCAG AA 4,5:1). */
+  --text-secondary:   rgba(255, 255, 255, 0.82);
+  --text-tertiary:    rgba(255, 255, 255, 0.68);
   /* Dipakai inline style di dashboard.js untuk angka sekunder. */
-  --text-dim:         rgba(255, 255, 255, 0.45);
+  --text-dim:         rgba(255, 255, 255, 0.60);
 
-  --separator:        rgba(255, 255, 255, 0.1);
+  /* Border dipertegas (0,1 -> 0,14): batas kartu kurang tegas di atas wallpaper. */
+  --separator:        rgba(255, 255, 255, 0.14);
   --separator-strong: rgba(255, 255, 255, 0.16);
 
   /* Aksen tunggal: dipakai hemat di titik interaksi, bukan di semua permukaan. */
@@ -533,7 +547,7 @@ section { margin-bottom: var(--s5); }
   padding: var(--s3) var(--s4);
   border-radius: var(--r-panel);
   margin-bottom: var(--s5);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(4, 10, 22, 0.78);
   -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--separator);
@@ -579,7 +593,7 @@ section { margin-bottom: var(--s5); }
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
 [data-theme="dark"] .pill-filter-btn.active {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(18, 30, 50, 0.88);
   border: 1px solid var(--separator-strong);
 }
 
@@ -625,7 +639,7 @@ section { margin-bottom: var(--s5); }
 
 .kpi-card:hover {
   transform: translateY(-3px);
-  background: rgba(255, 255, 255, 0.085);
+  background: rgba(12, 22, 40, 0.85);
   border-color: rgba(0, 240, 255, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -705,7 +719,7 @@ section { margin-bottom: var(--s5); }
 
 .provider-card:hover {
   transform: translateY(-3px);
-  background: rgba(255, 255, 255, 0.085);
+  background: rgba(12, 22, 40, 0.85);
   border-color: rgba(0, 240, 255, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -746,7 +760,7 @@ section { margin-bottom: var(--s5); }
   border: 1px solid var(--separator);
 }
 [data-theme="dark"] .key-row {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(3, 8, 18, 0.7);
   border-color: rgba(255, 255, 255, 0.06);
 }
 .key-row.status-warning { border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
@@ -949,7 +963,7 @@ section { margin-bottom: var(--s5); }
   font-size: 11px;
   font-weight: 550;
   line-height: 1.3;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(4, 10, 22, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
 }
@@ -969,7 +983,7 @@ section { margin-bottom: var(--s5); }
   border-color: rgba(251, 191, 36, 0.25);
 }
 .tag-cap-text {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(4, 10, 22, 0.78);
   color: var(--text-secondary);
   border-color: rgba(255, 255, 255, 0.08);
 }
@@ -1034,7 +1048,7 @@ section { margin-bottom: var(--s5); }
   flex-direction: column;
   gap: 3px;
 }
-[data-theme="dark"] .live-stat-box { background: rgba(255, 255, 255, 0.035); }
+[data-theme="dark"] .live-stat-box { background: rgba(3, 8, 18, 0.72); }
 .live-stat-label { font-size: 12px; color: var(--text-secondary); }
 .live-stat-val { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
 .live-stat-sub { font-size: 11px; color: var(--text-secondary); }
@@ -1118,7 +1132,7 @@ td:nth-child(1) { font-variant-numeric: normal; }
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
 [data-theme="dark"] .matrix-filter-pill.active {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(18, 30, 50, 0.88);
   border: 1px solid var(--separator-strong);
 }
 
@@ -1297,7 +1311,7 @@ td:nth-child(1) { font-variant-numeric: normal; }
   flex-direction: column;
   gap: 3px;
 }
-[data-theme="dark"] .media-box { background: rgba(255, 255, 255, 0.035); }
+[data-theme="dark"] .media-box { background: rgba(3, 8, 18, 0.72); }
 .media-box-count { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.018em; }
 .media-box-label { font-size: 12px; color: var(--text-secondary); }
 
@@ -1646,7 +1660,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
 .model-matrix-card:hover {
   transform: translateY(-3px);
   border-color: rgba(0, 240, 255, 0.22);
-  background: rgba(255, 255, 255, 0.085);
+  background: rgba(12, 22, 40, 0.85);
 }
 
 
@@ -1699,7 +1713,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   font-size: 13px;
   font-weight: 550;
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(4, 10, 22, 0.75);
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
   text-decoration: none;
@@ -1842,7 +1856,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
 :root {
   /* Warna teks redup untuk angka sekunder di dalam kartu. Dipakai JS lewat
      style="color: var(--text-dim)" sehingga harus ada sebagai variabel. */
-  --text-dim: rgba(255, 255, 255, 0.45);
+  --text-dim: rgba(255, 255, 255, 0.60);
 }
 
 /* ---------- Merek di header konsol ---------- */
@@ -1988,7 +2002,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   min-height: 46px;
   padding: 0.55rem 0.8rem;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(4, 10, 22, 0.75);
   border: 1px solid var(--glass-border);
   color: var(--text-primary);
   font: inherit;
@@ -2033,7 +2047,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
 
 .badge-bot-sync {
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(4, 10, 22, 0.75);
   border: 1px solid var(--glass-border);
 }
 
@@ -2098,7 +2112,7 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   border-radius: 5px;
   font-size: 0.68rem;
   font-weight: 650;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(6, 14, 28, 0.8);
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -2261,13 +2275,13 @@ body {
 /* Tombol ghost & kecil */
 .btn-ghost {
   background: var(--accent-soft);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(4, 10, 22, 0.78);
   border-color: var(--separator-strong);
   color: var(--text);
 }
 
 .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(12, 22, 40, 0.86);
   border-color: var(--accent);
 }
 
@@ -2326,11 +2340,16 @@ body {
 }
 
 .console-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem 1rem;
-  font-size: 0.78rem;
-  color: var(--text-tertiary);
+  /* Diberi latar chip gelap: elemen ini berada di area yang bertabrakan dengan
+     wallpaper terang sehingga teksnya tenggelam. Latar chip memisahkannya. */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: var(--r-control);
+  background: rgba(4, 10, 22, 0.8);
+  border: 1px solid var(--separator);
+  white-space: nowrap;
 }
 
 .console-meta strong { color: var(--text); font-weight: 600; }
@@ -2359,7 +2378,7 @@ body {
   padding: 0.8rem 1rem;
   margin-bottom: 1.2rem;
   border-radius: var(--r-panel);
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(3, 8, 18, 0.72);
   border: 1px solid var(--separator);
   position: relative;
 }
@@ -2395,7 +2414,7 @@ body {
   min-height: 40px;
   padding: 0 0.65rem;
   border-radius: var(--r-control);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(4, 10, 22, 0.75);
   border: 1px solid var(--separator-strong);
   color: var(--text);
   font: inherit;
@@ -2490,7 +2509,7 @@ body {
 
 .glass-select-trigger:hover {
   border-color: var(--separator-strong);
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(10, 20, 38, 0.84);
 }
 
 /* Fokus keyboard: cincin tipis, bukan pendaran. */
@@ -2502,7 +2521,7 @@ body {
 /* Terbuka: border menegas dengan aksen, tanpa glow. */
 .glass-select-container.is-open .glass-select-trigger {
   border-color: var(--accent-dim);
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(6, 14, 28, 0.85);
 }
 
 .glass-select-label {
@@ -2589,7 +2608,7 @@ body {
 }
 
 .glass-select-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(6, 14, 28, 0.8);
   color: var(--text);
 }
 
@@ -2691,7 +2710,7 @@ body {
   gap: 2px;
   padding: 3px;
   border-radius: var(--r-control);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(4, 10, 22, 0.75);
   border: 1px solid var(--separator);
   max-width: 100%;
 }
@@ -2711,7 +2730,7 @@ body {
   transition: background-color 0.18s ease, color 0.18s ease;
 }
 
-.pill-filter-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.pill-filter-btn:hover { color: var(--text); background: rgba(4, 10, 22, 0.78); }
 
 .pill-filter-btn.active {
   background: var(--accent-soft);
@@ -2743,7 +2762,7 @@ body {
 .status-panel {
   padding: clamp(1rem, 2.5vw, 1.5rem);
   border-radius: var(--r-panel);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(4, 10, 22, 0.78);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
   border: 1px solid var(--separator);
@@ -2760,7 +2779,7 @@ body {
 .status-item {
   padding: 0.9rem;
   border-radius: var(--r-control);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(3, 8, 18, 0.7);
   border: 1px solid var(--separator);
 }
 
@@ -2803,7 +2822,7 @@ body {
 .upstream-stat {
   padding: 0.8rem;
   border-radius: var(--r-control);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(3, 8, 18, 0.7);
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
@@ -2868,7 +2887,7 @@ body {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(3, 8, 18, 0.7);
   white-space: nowrap;
   position: sticky;
   top: 0;
@@ -2876,7 +2895,7 @@ body {
 }
 
 .data-table tbody tr:last-child td { border-bottom: 0; }
-.data-table tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
+.data-table tbody tr:hover td { background: rgba(3, 8, 18, 0.7); }
 .data-table td { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .data-table td.num { color: var(--text); white-space: nowrap; }
 
@@ -2905,7 +2924,7 @@ body {
 .media-item {
   padding: 0.85rem;
   border-radius: var(--r-control);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(3, 8, 18, 0.7);
   border: 1px solid var(--separator);
   text-align: center;
 }
@@ -2943,7 +2962,7 @@ body {
   min-height: 46px;
   padding: 0 0.8rem;
   border-radius: var(--r-control);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(4, 10, 22, 0.75);
   border: 1px solid var(--separator-strong);
   color: var(--text);
   font: inherit;
@@ -3006,7 +3025,7 @@ body {
 .footer-legal a:hover { color: var(--accent); }
 
 /* ---------- Variabel warna teks redup (dipakai inline style dashboard.js) ---------- */
-:root { --text-dim: rgba(255, 255, 255, 0.45); }
+:root { --text-dim: rgba(255, 255, 255, 0.60); }
 [data-theme="light"] { --text-dim: rgba(10, 20, 36, 0.55); }
 
 /* ---------- Responsif konsol ---------- */
@@ -3202,7 +3221,7 @@ body {
     align-items: center;
     min-height: 36px;
     padding: 0.3rem 0.85rem;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(4, 10, 22, 0.75);
     border: 1px solid var(--separator);
     border-radius: var(--r-control);
     font-size: 0.82rem;
