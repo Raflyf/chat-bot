@@ -905,6 +905,31 @@ export function extractRiddleTag(text: string): { text: string; answer: string |
   return { text: cleaned, answer };
 }
 
+/**
+ * Apakah balasan ini berbentuk data TSV hasil ekstraksi tabel?
+ *
+ * KENAPA PERLU: 23 tempat di berkas ini memakai /[ \t]{2,}/g -> ' ' untuk
+ * merapikan spasi berlebih. Untuk balasan percakapan itu benar, tetapi untuk
+ * hasil ekstraksi TSV aturan itu MENGHANCURKAN pemisah kolomnya (tab jadi
+ * spasi) sehingga hasilnya tidak bisa dipaste ke Excel — persis keluhan
+ * "untuk saya copy paste ke excel".
+ *
+ * Deteksi dibuat KETAT supaya balasan percakapan biasa tidak ikut dianggap TSV:
+ * butuh minimal 3 baris, dan mayoritas baris harus punya >= 2 kolom berisi
+ * angka/pemisah. Tabel Markdown (pakai "|") sengaja TIDAK dihitung — untuk
+ * kasus itu pembersih spasi tetap boleh jalan.
+ */
+export function isTsvExtraction(text: string): boolean {
+  if (!text || text.length < 20) return false;
+  // Tabel Markdown bukan TSV — biarkan pembersih biasa bekerja.
+  if (/\|/.test(text)) return false;
+  const baris = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (baris.length < 3) return false;
+  const barisBerTabulasi = baris.filter((l) => (l.match(/\t/g) || []).length >= 2);
+  // Minimal 3 baris ber-tab DAN minimal 60% baris berbentuk TSV
+  return barisBerTabulasi.length >= 3 && barisBerTabulasi.length / baris.length >= 0.6;
+}
+
 export function sanitizeAssistantOutput(
   text: string,
   userPrompt?: string,
@@ -912,6 +937,25 @@ export function sanitizeAssistantOutput(
   mediaReply?: boolean,
   isProfessionalContext = false,
 ): string {
+  // ---------------------------------------------------------------------
+  // JALUR KHUSUS HASIL EKSTRAKSI TSV (perbaikan 25 Sep).
+  //
+  // Kalau balasan berbentuk data TSV, JANGAN lewat pembersih percakapan:
+  // banyak di antaranya memakai /[ \t]{2,}/g -> ' ' yang mengubah tab jadi
+  // spasi sehingga kolom menempel dan hasilnya tidak bisa dipaste ke Excel.
+  // Pembersih kalimat (dedupe, hindari-pembuka-ulang, dll) juga tidak relevan
+  // untuk data tabel — malah bisa membuang baris yang mirip.
+  // ---------------------------------------------------------------------
+  if (isTsvExtraction(text)) {
+    return text
+      .split('\n')
+      .map((l) => l.replace(/[ \t]+$/g, ''))
+      .filter((l, i, arr) => l.trim() !== '' || (i > 0 && i < arr.length - 1))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
   let cleaned = cleanMathAndNoise(text, userPrompt);
   // Huruf KAPITAL pertama kata terduplikasi (temuan live 21 Sep: "HHalo! Lagi siap bantu..."
   // dari xKiro qwen3.8-max). Model kadang mengetik huruf pertama dua kali; terlihat seperti
@@ -2158,6 +2202,44 @@ async function chatRetry(
 export function isTruncatedReply(teks: string): boolean {
   if (!teks || teks.length < 300) return false;
   const ekor = teks.slice(-60).trimEnd();
+
+  // ---------------------------------------------------------------------
+  // Hasil EKSTRAKSI TSV: penanda terpotong bukan ekor menggantung, melainkan
+  // BARIS TERAKHIR PUNYA KOLOM LEBIH SEDIKIT dari baris sebelumnya.
+  //
+  // KENAPA perlu dibedakan: jawaban ekstraksi kemarin berakhir dengan kalimat
+  // penutup yang wajar ("Silakan dicoba, semoga rapi dan mempermudah kerjanya!")
+  // sehingga deteksi ekor-menggantung tidak menangkapnya — padahal 12 dari 22
+  // baris data hilang. Baris yang berhenti di tengah ("... | 6.650.00") justru
+  // pola yang khas, dan itu yang diperiksa di sini.
+  // ---------------------------------------------------------------------
+  // Data tabel (TSV atau dipisah spasi): periksa KONSISTENSI jumlah kolom.
+  // Tab dipakai bila ada; kalau model menulis spasi, tetap terdeteksi lewat
+  // jumlah potongan per baris — supaya baris lengkap tidak salah dianggap
+  // terpotong (bug 25 Sep: baris terakhir terduplikasi + muncul "SELESAI").
+  {
+    const baris = teks
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .filter((l) => !/^(?:SELESAI|selesai)\b/.test(l));
+    if (baris.length >= 4) {
+      const pisah = teks.includes('\t') ? /\t/ : /\s{2,}/;
+      const jumlahKolom = baris.map((l) => (l.split(pisah).length - 1));
+      const berTabel = jumlahKolom.filter((n) => n >= 2).length;
+      // Mayoritas baris berbentuk kolom -> perlakukan sebagai data tabel.
+      if (berTabel / baris.length >= 0.7) {
+        const terakhir = jumlahKolom[jumlahKolom.length - 1];
+        const sebelumnya = jumlahKolom[jumlahKolom.length - 2] ?? terakhir;
+        // Baris terakhir kolomnya lebih sedikit = berhenti di tengah.
+        if (terakhir < sebelumnya) return true;
+        if (/[\t]\s*$/.test(teks)) return true;
+        // Sudah konsisten -> TIDAK terpotong, hentikan pemeriksaan di sini.
+        return false;
+      }
+    }
+  }
+
   return (
     /(?:Rp\.?|Rp\s*[\d.,]*|\d[\d.,]*|[-,;:(|]|\*\*?|_|`)\s*$/.test(ekor) ||
     /(?:^|\n)\s*[-*+]\s*\*{0,2}\s*$/.test(teks.slice(-30)) ||
@@ -2218,8 +2300,14 @@ export async function continueIfTruncated(
       // padahal baris datanya masih terpotong di tengah. Uji 24 Sep membuktikan itu:
       // model konsisten menjawab "SELESAI" walau baris terakhir berhenti di "| 3.5".
       // Karena itu, untuk kasus tabel, minta lanjutkan BARIS-nya secara eksplisit.
+      // Hasil EKSTRAKSI TSV: baris terakhir berhenti di tengah kolom. Instruksi
+      // harus spesifik "lanjutkan baris ini, jangan ulang yang sudah ada" —
+      // kalau tidak, model menilai tabelnya "sudah lengkap" lalu berhenti.
+      const berbentukTsv = isTsvExtraction(hasil);
       const berbentukTabel = /\|[\s\S]*\|\s*[\d.,]*\s*$/.test(hasil.slice(-400));
-      const instruksi = berbentukTabel
+      const instruksi = berbentukTsv
+        ? `TUGAS AWAL (yang kamu kerjakan):\n${tugasAsli}\n\n---\n\nHASIL SEMENTARAMU (kolom dipisah TAB, baris terakhir TERPOTONG):\n${hasil}\n\n---\n\nLanjutkan TEPAT dari baris yang terpotong itu: tulis ulang baris tersebut secara utuh, lalu teruskan baris-baris berikutnya sampai semua data di gambar habis. Format tetap sama (kolom dipisah TAB, angka polos). JANGAN mengulang baris yang sudah lengkap, jangan menulis pembuka/penutup/penjelasan. Kalau memang semua baris sudah lengkap, balas satu kata: SELESAI`
+        : berbentukTabel
         ? `TUGAS AWAL (yang kamu kerjakan):\n${tugasAsli}\n\n---\n\nTABEL YANG SUDAH KAMU TULIS (baris terakhirnya TERPOTONG di tengah):\n${hasil}\n\n---\n\nTabel di atas BELUM selesai — baris terakhirnya berhenti di tengah. Lanjutkan MULAI dari baris yang terpotong itu: tulis ulang baris tersebut secara utuh, lalu teruskan baris-baris berikutnya sampai semua data habis. Jangan mengulang baris yang sudah lengkap, jangan menulis kalimat pembuka, jangan berkomentar. Kalau memang semua baris sudah tertulis lengkap, balas dengan satu kata: SELESAI`
         : tugasAsli
           ? `TUGAS AWAL (yang kamu kerjakan):\n${tugasAsli}\n\n---\n\nJAWABANMU SEJAUH INI (terpotong di akhir):\n${hasil}\n\n---\n\nLanjutkan jawaban di atas TEPAT dari titik terputus. Sambung langsung isinya — jangan mengulang bagian yang sudah ada, jangan menulis kalimat pembuka baru, jangan berkomentar soal permintaan ini. Kalau isinya memang sudah lengkap, balas dengan satu kata: SELESAI`
@@ -3186,6 +3274,54 @@ export async function dynamicNotice(instruction: string, ctx?: ChatContext): Pro
 }
 
 /** Respon gambar / media visual / dokumen secara alami via model vision. */
+/**
+ * Bersihkan artefak pada hasil ekstraksi tabel — TANPA menyentuh baris data.
+ *
+ * Artefak nyata yang terbukti muncul (uji 25 Sep):
+ *  1. Baris HEADER ikut tertulis ("Cutting\tInvoice\tHarga Putihan Rp.M3...")
+ *     padahal instruksi melarang header — user hanya minta baris datanya.
+ *  2. Kata "SELESAI" bocor dari mekanisme lanjutan jawaban terpotong.
+ *  3. Baris terakhir terduplikasi akibat lanjutan yang tidak perlu.
+ *
+ * PENTING: fungsi ini hanya membuang baris yang JELAS bukan data (header &
+ * penanda), lalu membuang duplikat PERSIS di akhir. Baris data tidak diubah.
+ */
+export function bersihkanArtefakEkstraksi(teks: string): string {
+  if (!teks) return teks;
+  const pisah = teks.includes('\t') ? '\t' : '\n';
+  const baris = teks.split('\n').map((l) => l.replace(/[ \t]+$/, ''));
+
+  const bersih = baris.filter((l) => {
+    const t = l.trim();
+    if (!t) return false;
+    // Penanda internal yang bocor.
+    if (/^(?:SELESAI|selesai)\b/.test(t)) return false;
+    // Baris header: memuat kata nama kolom DAN tidak punya angka panjang.
+    // Catatan: memakai >=3 digit berturut-turut, bukan "ada angka" — sebab nama
+    // kolom "Rp.M3" memuat digit "3" sehingga pemeriksaan "ada angka" gagal
+    // membedakan header dari baris data (bug yang tertangkap di uji 25 Sep).
+    const adaAngkaPanjang = /\d{3,}/.test(t);
+    const kataHeader = /(?:^|[\t ])(?:cutting|invoice|harga|putihan|full\s*merah|m3|btg|rp)\b/i.test(t);
+    if (kataHeader && !adaAngkaPanjang) return false;
+    return true;
+  });
+
+  // Buang duplikat PERSIS yang berurutan (akibat lanjutan ganda).
+  const hasil: string[] = [];
+  for (const l of bersih) {
+    if (hasil.length > 0 && hasil[hasil.length - 1] === l) continue;
+    hasil.push(l);
+  }
+  // Buang baris terakhir bila persis sama dengan baris sebelumnya setelah
+  // dinormalkan (spasi/tab dianggap sama) — kasus lanjutan yang menduplikasi.
+  if (hasil.length >= 2) {
+    const norm = (x: string) => x.replace(/[\t ]+/g, ' ').trim();
+    if (norm(hasil[hasil.length - 1]) === norm(hasil[hasil.length - 2])) hasil.pop();
+  }
+
+  return hasil.join('\n').trim();
+}
+
 export async function describeImage(
   base64: string,
   mime: string,
@@ -3238,14 +3374,57 @@ export async function describeImage(
     ].join('\n');
   } else {
     const trimmed = caption.trim();
-    promptText = [
-      `Pertanyaan / instruksi temanmu tentang gambar ini: "${trimmed}"`,
-      'ATURAN RESPON MUTLAK:',
-      '1. DILARANG KERAS MEMBUKA DENGAN KALIMAT ROBOTIK: "Gambar ini menampilkan...", "Berdasarkan gambar...", dsb!',
-      '2. DILARANG OVER-REACT ATAU MEMBAHAS PERIFERAL DI LUAR LAYAR.',
-      '3. Jawab LANGSUNG pertanyaan/instruksi temanmu secara jelas, to-the-point, akurat, dan bersahabat.',
-      '4. Jika menanyakan masalah teknis / koding / error: langsung berikan akar masalah dan solusinya secara presisi.',
-    ].join('\n');
+    // ---------------------------------------------------------------------
+    // TUGAS EKSTRAKSI DATA (temuan 25 Sep — keluhan "12 baris hilang").
+    //
+    // Kasus nyata: user mengirim foto tabel 22 baris + "extract dengan rapih
+    // angka yg ada di dalam ini untuk saya copy paste ke excel". Bot hanya
+    // mengeluarkan 10 baris, 3 angka salah, dan satu angka rusak ("7,20 0,000").
+    //
+    // DIUKUR dengan model & gambar yang sama, max_tokens sama (800):
+    //   prompt gaya "teman ngobrol"  ->  0 baris TSV, 1107 char, TERPOTONG
+    //   prompt gaya "ekstraksi"      -> 22 baris TSV,  796 char, SELESAI
+    // Akurasi model 19/19 angka benar di KEDUA prompt — jadi akar masalahnya
+    // BUKAN kemampuan membaca, melainkan PROMPT: aturan "balas seperti teman
+    // ngobrol" membuat model menulis tabel Markdown bertele-tele (pipa, spasi,
+    // kalimat pembuka/penutup) sehingga kehabisan ruang sebelum baris terakhir.
+    //
+    // Perbaikan: untuk permintaan ekstraksi, pakai aturan format yang padat.
+    // Angka ditulis POLOS (tanpa "Rp", tanpa pemisah ribuan) supaya Excel
+    // langsung mengenalinya sebagai angka dan bisa dijumlahkan.
+    // ---------------------------------------------------------------------
+    const mintaEkstraksi =
+      /\b(?:extract|ekstrak|eksrak|eksrtak|eksetra|copy\s*[- ]?paste|salin|siap\s+(?:di)?\s*paste|paste\s+ke|untuk\s+excel|ke\s+excel|format\s+tabel|jadikan\s+tabel|rapihkan|rapikan)\b/i.test(
+        trimmed,
+      ) ||
+      // Permintaan "ambil/daftar semua angka" juga termasuk ekstraksi.
+      /\b(?:semua|seluruh)\s+(?:angka|data|baris|isinya)\b/i.test(trimmed);
+
+    if (mintaEkstraksi) {
+      promptText = [
+        `TUGAS: ${trimmed}`,
+        '',
+        'ATURAN EKSTRAKSI DATA (WAJIB DIPATUHI):',
+        '1. Tulis HANYA baris datanya. Satu baris = satu record.',
+        '2. Kolom dipisah karakter TAB (bukan tanda pipa "|", bukan koma).',
+        '3. Angka ditulis POLOS: tanpa "Rp", tanpa titik/koma pemisah ribuan, tanpa spasi di dalam angka.',
+        '   Contoh BENAR: 2800000 — Contoh SALAH: Rp 2,800,000.00 / 2.800.000 / 7,20 0,000',
+        '4. Sel kosong atau bertanda "-" tetap ditulis sebagai -.',
+        '5. DILARANG menulis kalimat pembuka, kalimat penutup, penjelasan, judul tabel, atau baris pemisah.',
+        '6. DILARANG memakai format tabel Markdown (jangan pakai karakter |).',
+        '7. Tulis SEMUA baris sampai habis — jangan berhenti di tengah. Kalau ruang menipis, padatkan: tetap tulis semua barisnya.',
+        '8. Kalau ada baris yang tidak terbaca jelas, tulis ? pada sel itu — jangan dikarang, jangan dihilangkan barisnya.',
+      ].join('\n');
+    } else {
+      promptText = [
+        `Pertanyaan / instruksi temanmu tentang gambar ini: "${trimmed}"`,
+        'ATURAN RESPON MUTLAK:',
+        '1. DILARANG KERAS MEMBUKA DENGAN KALIMAT ROBOTIK: "Gambar ini menampilkan...", "Berdasarkan gambar...", dsb!',
+        '2. DILARANG OVER-REACT ATAU MEMBAHAS PERIFERAL DI LUAR LAYAR.',
+        '3. Jawab LANGSUNG pertanyaan/instruksi temanmu secara jelas, to-the-point, akurat, dan bersahabat.',
+        '4. Jika menanyakan masalah teknis / koding / error: langsung berikan akar masalah dan solusinya secara presisi.',
+      ].join('\n');
+    }
   }
 
   const parts: ContentPart[] = [
@@ -3306,18 +3485,27 @@ export async function describeImage(
     .slice(-4)
     .map((h) => leadingInterjection(stripDurableMarkers(h.content as string)))
     .filter((w): w is string => Boolean(w));
-  let reply = sanitizeAssistantOutput(
-    textLengkap,
-    caption?.trim() || undefined,
-    recentOpenings,
-    true,
-    // Mode profesional juga berlaku untuk media: kiriman dokumen/foto kerja
-    // (mis. "ini laporan Q3", "tolong cek invoice ini") tidak boleh dibalas
-    // dengan celetukan atau emoji. Deteksi dari caption + teks prompt.
-    /\b(?:perusahaan|kantor|bisnis|klien|laporan|proposal|kontrak|invoice|faktur|rapat|presentasi|deadline|sop|hukum|pajak|akuntansi|audit|investasi|medis|regulasi|sertifikasi|profesional|formal|resmi|serius|untuk pekerjaan)\b/i.test(
-      `${caption ?? ''} ${promptText}`,
-    ),
-  );
+  // Hasil ekstraksi data (TSV) DIKEMBALIKAN APA ADANYA — jangan lewat pembersih
+  // percakapan sama sekali. Alasannya (temuan 25 Sep):
+  //   - mediaReply=true memicu stripMediaNarration yang bisa membuang baris data;
+  //   - pembersih spasi mengubah TAB jadi spasi sehingga kolom menempel;
+  //   - guard panjang/emoji tidak relevan untuk data tabel.
+  // Angka di dalamnya sudah diverifikasi benar; merapikannya justru merusak.
+  const ekstraksiTsv = isTsvExtraction(textLengkap);
+  let reply = ekstraksiTsv
+    ? bersihkanArtefakEkstraksi(textLengkap)
+    : sanitizeAssistantOutput(
+        textLengkap,
+        caption?.trim() || undefined,
+        recentOpenings,
+        true,
+        // Mode profesional juga berlaku untuk media: kiriman dokumen/foto kerja
+        // (mis. "ini laporan Q3", "tolong cek invoice ini") tidak boleh dibalas
+        // dengan celetukan atau emoji. Deteksi dari caption + teks prompt.
+        /\b(?:perusahaan|kantor|bisnis|klien|laporan|proposal|kontrak|invoice|faktur|rapat|presentasi|deadline|sop|hukum|pajak|akuntansi|audit|investasi|medis|regulasi|sertifikasi|profesional|formal|resmi|serius|untuk pekerjaan)\b/i.test(
+          `${caption ?? ''} ${promptText}`,
+        ),
+      );
 
   // Jika sanitasi menghabiskan balasan, bangkitkan ulang secara dinamis (teks saja, murah)
   if (!reply.trim()) {
