@@ -36,8 +36,8 @@ const EXHAUSTED_MS = 60 * 60 * 1000;
  *
  * BEDA dengan 429 (jatah harian): 402 "Insufficient wallet balance" TIDAK
  * pulih sendiri — perlu top-up oleh pemilik. Dengan TTL 1 jam, bot mencoba
- * ulang tiap jam dan membuang waktu (terukur: 8 kunci x 0,1-0,2 dtk ≈ 1,2 dtk
- * per percobaan). 6 jam lebih hemat dan tetap pulih otomatis begitu saldo diisi.
+ * ulang tiap jam dan membuang waktu (terukur: 8 kunci x 0,1-0,2 dtk per
+ * percobaan). 6 jam lebih hemat dan tetap pulih otomatis begitu saldo diisi.
  */
 const EXHAUSTED_SALDO_MS = 6 * 60 * 60 * 1000;
 
@@ -72,16 +72,15 @@ function nextKey(list: string[]): string {
  *
  * MASALAH NYATA (25 Sep, keluhan pemilik produk): dashboard menampilkan
  * "8/8 kunci siap pakai • 0/160 terpakai • 100% jatah tersisa" padahal
- * pengukuran langsung menunjukkan SEMUA 8 kunci membalas:
+ * pengukuran langsung ke endpoint menunjukkan SEMUA 8 kunci membalas:
  *   HTTP 402 "Insufficient wallet balance — please top up to continue"
  * Pemilik produk jadi bingung kenapa web search tidak terpakai.
  *
  * AKAR: `exhausted` adalah Map in-memory. Di Vercel serverless tiap instance
  * dingin mengosongkan Map itu, sehingga kunci yang sudah 402 dianggap siap lagi.
  *
- * PERBAIKAN: tulis penanda ke tabel `provider_quota` (lewat keyUsedAbsolute,
- * dipakai bersama jalur kuota lain) agar status bertahan. 402 = SALDO habis
- * (butuh top-up), berbeda dari 429 = jatah harian habis (pulih sendiri).
+ * PERBAIKAN: tulis penanda ke tabel `provider_quota` agar status bertahan.
+ * 402 = SALDO habis (butuh top-up), berbeda dari 429 = jatah harian (pulih sendiri).
  */
 function catatKunciHabis(key: string): void {
   try {
@@ -576,6 +575,7 @@ export async function xkiroChatWithSearch(
 
         if (res.status === 402 || res.status === 429) {
           exhausted.set(key, Date.now() + (res.status === 402 ? EXHAUSTED_SALDO_MS : EXHAUSTED_MS));
+          if (res.status === 402) catatKunciHabis(key);
           break; // kunci ini habis, coba kunci berikutnya
         }
         if (!res.ok) continue; // model ini tidak tersedia, coba model lain
