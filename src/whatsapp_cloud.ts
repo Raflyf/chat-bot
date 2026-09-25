@@ -423,9 +423,11 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               });
 
               let webResults: string | null = null;
-              if (needsSearch(transcription)) {
+              // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
+              const prevContextVn = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+              if (needsSearch(transcription, prevContextVn)) {
                 try {
-                  const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+                  const prevContext = prevContextVn;
                   webResults = await searchWeb(transcription, prevContext);
                 } catch (err) {
                   console.warn('[wa-cloud] Gagal penelusuran web audio:', err);
@@ -674,9 +676,11 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         // 3. Periksa kebutuhan pencarian web real-time 2026
         let webResults: string | null = null;
-        if (needsSearch(text)) {
+        // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
+        const prevContextTeks = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+        if (needsSearch(text, prevContextTeks)) {
           try {
-            const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+            const prevContext = prevContextTeks;
             webResults = await searchWeb(text, prevContext);
           } catch (err) {
             console.warn('[wa-cloud] Gagal penelusuran web:', err);

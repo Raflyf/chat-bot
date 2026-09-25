@@ -22,7 +22,7 @@
  * dicatat PER KUNCI, lalu kunci berikutnya langsung dicoba.
  */
 
-import { keyUsed, keyUsedAbsolute } from './quota.js';
+import { keyUsed, keyUsedAbsolute, keyHash } from './quota.js';
 
 const XKIRO_SEARCH_URL = 'https://api.xkiro.com/v1/search';
 const XKIRO_FETCH_URL = 'https://api.xkiro.com/v1/fetch';
@@ -30,6 +30,16 @@ const XKIRO_CHAT_URL = 'https://api.xkiro.com/v1/chat/completions';
 
 /** Lama menonaktifkan satu kunci setelah kuotanya habis (1 jam). */
 const EXHAUSTED_MS = 60 * 60 * 1000;
+
+/**
+ * Lama menonaktifkan kunci yang SALDO-nya habis (HTTP 402), 6 jam.
+ *
+ * BEDA dengan 429 (jatah harian): 402 "Insufficient wallet balance" TIDAK
+ * pulih sendiri — perlu top-up oleh pemilik. Dengan TTL 1 jam, bot mencoba
+ * ulang tiap jam dan membuang waktu (terukur: 8 kunci x 0,1-0,2 dtk ≈ 1,2 dtk
+ * per percobaan). 6 jam lebih hemat dan tetap pulih otomatis begitu saldo diisi.
+ */
+const EXHAUSTED_SALDO_MS = 6 * 60 * 60 * 1000;
 
 /** Kunci yang kuotanya habis -> sampai kapan (epoch ms). */
 const exhausted = new Map<string, number>();
@@ -57,6 +67,30 @@ function nextKey(list: string[]): string {
 }
 
 /** Apakah lapisan xKiro masih bisa dipakai (ada kunci yang belum habis kuotanya). */
+/**
+ * Catat kunci yang saldo/kutanya HABIS ke DB, supaya status bertahan antar-instance.
+ *
+ * MASALAH NYATA (25 Sep, keluhan pemilik produk): dashboard menampilkan
+ * "8/8 kunci siap pakai • 0/160 terpakai • 100% jatah tersisa" padahal
+ * pengukuran langsung menunjukkan SEMUA 8 kunci membalas:
+ *   HTTP 402 "Insufficient wallet balance — please top up to continue"
+ * Pemilik produk jadi bingung kenapa web search tidak terpakai.
+ *
+ * AKAR: `exhausted` adalah Map in-memory. Di Vercel serverless tiap instance
+ * dingin mengosongkan Map itu, sehingga kunci yang sudah 402 dianggap siap lagi.
+ *
+ * PERBAIKAN: tulis penanda ke tabel `provider_quota` (lewat keyUsedAbsolute,
+ * dipakai bersama jalur kuota lain) agar status bertahan. 402 = SALDO habis
+ * (butuh top-up), berbeda dari 429 = jatah harian habis (pulih sendiri).
+ */
+function catatKunciHabis(key: string): void {
+  try {
+    keyUsedAbsolute('xkiro-search', key, XKIRO_SEARCH_CAP_PER_KEY);
+  } catch {
+    // best-effort: kegagalan pencatatan tidak boleh menghentikan pencarian
+  }
+}
+
 export function xkiroWebAvailable(): boolean {
   return availableKeys().length > 0;
 }
@@ -174,39 +208,92 @@ export type XkiroSearchStatus = {
  * `keysCoolingDown` — keduanya diturunkan dari respons nyata provider (402/429).
  */
 export function xkiroSearchStatus(): XkiroSearchStatus {
-  const keys = allKeys();
+  return hitungStatus(allKeys(), null);
+}
+
+/**
+ * Status web search yang JUJUR — membaca pemakaian dari DATABASE.
+ *
+ * KENAPA PERLU VERSI ASYNC INI (temuan 25 Sep, keluhan pemilik produk):
+ * dashboard menampilkan "8/8 kunci siap pakai • 0/160 terpakai • 100% jatah
+ * tersisa", padahal pengukuran langsung ke endpoint menunjukkan SEMUA 8 kunci
+ * membalas HTTP 402 "Insufficient wallet balance — please top up to continue".
+ * Pemilik produk wajar bingung: "kenapa web search xKiro tidak terpakai?"
+ *
+ * AKAR: `exhausted` dan `searchUsage` adalah Map IN-MEMORY. Di Vercel
+ * serverless, setiap instance baru memulai dengan Map kosong, sehingga kunci
+ * yang sudah mati selalu tampak "siap pakai" lagi. Status yang ditampilkan
+ * tidak pernah jujur.
+ *
+ * VERSI INI: menerima pemakaian per-kunci dari DB (yang mencatat 402 lewat
+ * catatKunciHabis), sehingga kunci yang saldo habis benar-benar terhitung
+ * habis — walau instance baru saja dimulai.
+ *
+ * @param pemakaianDariDb Map keyHash -> jumlah pemakaian hari ini (dari DB)
+ */
+export function xkiroSearchStatusAsync(
+  pemakaianDariDb: Map<string, number>,
+): XkiroSearchStatus {
+  return hitungStatus(allKeys(), pemakaianDariDb);
+}
+
+/**
+ * Inti perhitungan status — dipakai versi sync (in-memory) dan async (DB).
+ *
+ * @param keys daftar kunci
+ * @param pemakaianDariDb bila diberikan, angka pemakaian diambil dari sini
+ *        (persisten); bila null, memakai penghitung in-memory (per instance).
+ */
+function hitungStatus(
+  keys: string[],
+  pemakaianDariDb: Map<string, number> | null,
+): XkiroSearchStatus {
   const now = Date.now();
   const cooling = keys.filter((k) => (exhausted.get(k) ?? 0) > now);
-  const available = keys.length - cooling.length;
+
+  // Pemakaian per kunci: dari DB bila tersedia, jika tidak dari in-memory.
+  const pemakaian = (k: string): number => {
+    if (pemakaianDariDb) {
+      const dariDb = pemakaianDariDb.get(keyHash(k));
+      if (typeof dariDb === 'number') return dariDb;
+    }
+    return searchUsage.get(k) ?? 0;
+  };
+
+  // Kunci yang pemakaiannya sudah mencapai batas (menurut catatan mana pun)
+  // dianggap TIDAK tersedia — inilah yang membuat status jujur setelah instance
+  // baru dimulai, karena DB mengingat kunci yang saldo/kutanya habis.
+  const habisMenurutCatatan = keys.filter((k) => pemakaian(k) >= XKIRO_SEARCH_CAP_PER_KEY);
+  const tersedia = keys.filter(
+    (k) => (exhausted.get(k) ?? 0) <= now && pemakaian(k) < XKIRO_SEARCH_CAP_PER_KEY,
+  );
+  const available = tersedia.length;
   const nextRecovery = cooling.length
     ? Math.min(...cooling.map((k) => exhausted.get(k) ?? now))
     : null;
 
   let used = 0;
-  for (const k of keys) used += searchUsage.get(k) ?? 0;
+  for (const k of keys) used += pemakaian(k);
 
   const capTotal = keys.length * XKIRO_SEARCH_CAP_PER_KEY;
+  // Sisa dihitung dari pemakaian NYATA, bukan dari kunci x cap (yang selalu
+  // menganggap semua kunci penuh). Ini yang membuat "terpakai + sisa = kapasitas"
+  // selalu benar, dan panel tidak lagi bertentangan dengan dirinya sendiri.
+  const sisaNyata = Math.max(0, capTotal - used);
+
   return {
     keysTotal: keys.length,
     keysAvailable: available,
     capPerKey: XKIRO_SEARCH_CAP_PER_KEY,
     capTotal,
-    // Angka yang bisa dipercaya: kunci sehat x jatah per kunci. Kunci yang sudah
-    // kehabisan kuota sudah dikeluarkan dari `available` berdasarkan respons
-    // nyata provider, jadi perkalian ini tidak mengarang.
-    remainingFromKeys: available * XKIRO_SEARCH_CAP_PER_KEY,
+    remainingFromKeys: sisaNyata,
     usedThisInstance: used,
-    keysCoolingDown: cooling.length,
+    keysCoolingDown: cooling.length + habisMenurutCatatan.filter((k) => (exhausted.get(k) ?? 0) <= now).length,
     nextRecoveryAt: nextRecovery,
     reportedRemaining: reportedRemaining.size > 0
       ? Array.from(reportedRemaining.values()).reduce((a, b) => a + b, 0)
       : null,
-    // Estimasi total: kunci yang melapor pakai angka provider, sisanya dianggap
-    // penuh. Jangan memakai reportedRemaining mentah sebagai total — lihat
-    // catatan di deklarasi tipe.
-    remainingEstimatedTotal:
-      Array.from(reportedRemaining.values()).reduce((a, b) => a + b, 0) +
-      Math.max(0, keys.length - reportedRemaining.size) * XKIRO_SEARCH_CAP_PER_KEY,
+    remainingEstimatedTotal: sisaNyata,
     reportedKeys: reportedRemaining.size,
     reportedAt: reportedRemainingAt,
   };
@@ -282,7 +369,11 @@ export async function xkiroWebSearch(
         // membalas 429 (bukan 402) saat jatah pencariannya habis. Sebelumnya
         // hanya 402 yang ditangani, sehingga kunci habis tetap dicoba berulang
         // dan membuang waktu percobaan.
-        exhausted.set(key, Date.now() + EXHAUSTED_MS);
+        exhausted.set(key, Date.now() + (res.status === 402 ? EXHAUSTED_SALDO_MS : EXHAUSTED_MS));
+        // 402 = SALDO habis (butuh top-up) — tahan lama, jadi dicatat ke DB
+        // supaya dashboard tidak lagi menampilkan kunci mati sebagai "siap pakai"
+        // (temuan 25 Sep: 8/8 kunci tampak sehat padahal semua 402).
+        if (res.status === 402) catatKunciHabis(key);
         continue;
       }
       if (!res.ok) continue;
@@ -382,7 +473,8 @@ export async function xkiroWebFetch(urls: string[], maxContentTokens = 8000): Pr
 
       if (res.status === 402 || res.status === 429) {
         // 429 = jatah pencarian/fetch habis (lihat catatan di xkiroWebSearch).
-        exhausted.set(key, Date.now() + EXHAUSTED_MS);
+        exhausted.set(key, Date.now() + (res.status === 402 ? EXHAUSTED_SALDO_MS : EXHAUSTED_MS));
+        if (res.status === 402) catatKunciHabis(key);
         continue;
       }
       if (!res.ok) continue;
@@ -483,7 +575,7 @@ export async function xkiroChatWithSearch(
         });
 
         if (res.status === 402 || res.status === 429) {
-          exhausted.set(key, Date.now() + EXHAUSTED_MS);
+          exhausted.set(key, Date.now() + (res.status === 402 ? EXHAUSTED_SALDO_MS : EXHAUSTED_MS));
           break; // kunci ini habis, coba kunci berikutnya
         }
         if (!res.ok) continue; // model ini tidak tersedia, coba model lain

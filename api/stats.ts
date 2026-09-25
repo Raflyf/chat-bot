@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { config } from '../src/env.js';
 import { db } from '../src/db.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
-import { xkiroSearchStatus } from '../src/xkiro_web.js';
+import { xkiroSearchStatus, xkiroSearchStatusAsync } from '../src/xkiro_web.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -1044,7 +1044,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       // Bila DB tidak tersedia, nilainya null dan dashboard menampilkannya
       // sebagai tanda pisah — lebih jujur daripada menampilkan 0.
       webSearch: (() => {
-        const s = xkiroSearchStatus();
+        // ------------------------------------------------------------------
+        // STATUS JUJUR DARI DB (perbaikan 25 Sep).
+        //
+        // Masalah terukur: dashboard menampilkan "8/8 kunci siap pakai,
+        // 0/160 terpakai, 100% jatah tersisa" padahal SEMUA 8 kunci xKiro
+        // membalas HTTP 402 "Insufficient wallet balance — please top up".
+        // Pemilik produk bingung kenapa web search tidak terpakai.
+        //
+        // Akar: status lama dihitung dari Map in-memory yang KOSONG setiap
+        // instance Vercel baru -> kunci mati selalu tampak sehat.
+        //
+        // Perbaikan: bangun peta pemakaian per-kunci dari DB (yang mencatat
+        // 402 lewat catatKunciHabis), lalu hitung status dari data itu.
+        // ------------------------------------------------------------------
+        const pemakaianPerKunci = new Map<string, number>();
+        for (const q of webSearchSource) {
+          if (q.kind !== 'xkiro-search') continue;
+          if (q.key_suffix) pemakaianPerKunci.set(q.key_suffix, Number(q.used) || 0);
+        }
+        const s = pemakaianPerKunci.size > 0
+          ? xkiroSearchStatusAsync(pemakaianPerKunci)
+          : xkiroSearchStatus();
         const capTotal = s.keysTotal * s.capPerKey;
         const usedFromDb = webSearchUsedToday;
 

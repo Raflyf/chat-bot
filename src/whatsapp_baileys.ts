@@ -392,9 +392,13 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           });
 
           let web: string | null = null;
-          if (needsSearch(transcription)) {
+          // Konteks dihitung SEBELUM needsSearch: percakapan lanjutan tentang
+          // berita/politik harus ikut ditelusuri walau pesannya pendek
+          // (temuan 25 Sep — 6 dari 7 pesan lanjutan tidak ditelusuri).
+          const prevContextVn = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+          if (needsSearch(transcription, prevContextVn)) {
             try {
-              const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+              const prevContext = prevContextVn;
               const found = await searchWeb(transcription, prevContext);
               if (found) web = found;
             } catch (err) {
@@ -725,9 +729,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
     // 3. Periksa kebutuhan penelusuran web real-time 2026
     let webResults: string | null = null;
-    if (needsSearch(text)) {
+    // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch):
+    // lanjutan topik berita wajib ditelusuri walau pesannya pendek.
+    const prevContextTeks = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+    if (needsSearch(text, prevContextTeks)) {
       try {
-        const prevContext = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+        const prevContext = prevContextTeks;
         webResults = await searchWeb(text, prevContext);
       } catch (err) {
         console.warn('[whatsapp] Gagal penelusuran web:', err);

@@ -347,10 +347,48 @@ export function extractSpaMetadata(html: string): string {
 }
 
 /** Tentukan apakah kueri memerlukan penelusuran internet live */
-export function needsSearch(text: string): boolean {
+export function needsSearch(text: string, konteksPercakapan?: string): boolean {
   if (!text || typeof text !== 'string') return false;
   const q = text.trim();
   if (q.length < 2) return false;
+
+  // ========================================================================
+  // LANJUTAN TOPIK BERITA (temuan 25 Sep — keluhan "bot halu soal berita").
+  //
+  // KENAPA PERLU: needsSearch() hanya melihat pesan TERAKHIR. Dalam percakapan
+  // nyata tentang penggantian wapres, pesan lanjutan seperti "gara gara apa emg
+  // itu" dan "terus udh ada calon pengganti nya belum?" TIDAK memicu penelusuran
+  // (terukur: 6 dari 7 pesan lanjutan bernilai false). Akibatnya bot menjawab
+  // dari pengetahuan model sendiri — persis kondisi yang memicu halusinasi pada
+  // topik politik yang sensitif dan datanya berubah cepat.
+  //
+  // Solusi: kalau KONTEKS percakapan terakhir membahas berita/politik/figur
+  // publik, maka pesan lanjutan yang pendek & bersifat menanyakan kelanjutan
+  // ikut ditelusuri. Ini menjaga jawaban tetap bersumber data, bukan ingatan.
+  // ========================================================================
+  if (konteksPercakapan) {
+    const konteks = konteksPercakapan.toLowerCase();
+    const topikBerita =
+      /\b(?:berita|kabar|info|isu|wapres|presiden|menteri|dpr|pemerintah|politik|koalisi|reshuffle|pemilu|pilkada|partai|kabinet|pejabat|korupsi|hukum|kasus|ijazah|skandal|viralnya|viral|heboh|terkini|terbaru)\b/i.test(
+        konteks,
+      );
+    if (topikBerita) {
+      const qn = q.toLowerCase();
+      // Pesan lanjutan: menanyakan kelanjutan/perkembangan/penyebab/tokoh.
+      const lanjutan =
+        /\b(?:lanjutan(?:nya)?|kelanjutan|perkembangan(?:nya)?|gimana|gimana\s+lanjut|terus|trus|lalu|jadi|kok|kenapa|kenapa\s+bisa|gara\s*[- ]?gara|sebab|akibat|asal\s*usul|duduk\s+perkara|calon|pengganti|gantinya|siapa\s+lagi|apa\s+lagi|udah|sudah|belum|masih|sejauh\s+mana|sejauh\s+apa|kabarnya|update(?:nya)?|terbaru(?:nya)?|resmi|beneran|benar\s+gak|bener\s+gak|hoax|hoaks|fitnah|klarifikasi|tanggapan|respon|reaksi)\b/i.test(
+          qn,
+        );
+      // Pesan pendek (<= 12 kata) yang menanyakan kelanjutan topik berita.
+      const pendek = qn.split(/\s+/).filter(Boolean).length <= 12;
+      if (lanjutan && pendek) return true;
+      // Pesan yang MENGANDAIKAN suatu klaim (mis. "bukannya gara-gara X?")
+      // WAJIB diverifikasi ke sumber — jangan langsung diiyakan.
+      if (/\b(?:bukannya|bukanya|bukan\s*gara|katanya|kata\s+orang|kabarnya|setahu\s+(?:aku|saya)|kayaknya|sepertinya)\b/i.test(qn)) {
+        return true;
+      }
+    }
+  }
 
   // 1. Jika ada URL, link, atau nama domain, WAJIB search / browse / scrape
   if (

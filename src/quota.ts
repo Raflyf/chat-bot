@@ -55,7 +55,7 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function keyHash(key: string): string {
+export function keyHash(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
 }
 

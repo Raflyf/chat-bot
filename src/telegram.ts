@@ -454,9 +454,11 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN user:', err));
 
           let web: string | null = null;
-          if (needsSearch(transcription)) {
+          // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
+          const prevContextVn = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+          if (needsSearch(transcription, prevContextVn)) {
             try {
-              const prevContext = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+              const prevContext = prevContextVn;
               const found = await searchWeb(transcription, prevContext);
               if (found) web = found;
             } catch (err) {
@@ -653,9 +655,11 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     }).catch((err) => console.warn('[telegram] Gagal sinkronisasi pesan user:', err));
 
     let web: string | null = null;
-    if (needsSearch(text)) {
+    // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
+    const prevContextTeks = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+    if (needsSearch(text, prevContextTeks)) {
       try {
-        const prevContext = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+        const prevContext = prevContextTeks;
         const found = await searchWeb(text, prevContext);
         if (found) web = found;
       } catch (err) {

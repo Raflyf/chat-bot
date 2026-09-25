@@ -936,6 +936,11 @@ export function sanitizeAssistantOutput(
   recentOpenings?: string[],
   mediaReply?: boolean,
   isProfessionalContext = false,
+  // Apakah konteks turn ini memuat DATA INTERNET. Dipakai untuk menegakkan
+  // aturan anti-mengiyakan klaim: mengiyakan SAH bila bersumber data, DILARANG
+  // bila tidak ada data (temuan 25 Sep — bot mengiyakan klaim "ijazah palsu"
+  // tanpa verifikasi, padahal web search sedang gagal).
+  adaDataInternet = false,
 ): string {
   // ---------------------------------------------------------------------
   // JALUR KHUSUS HASIL EKSTRAKSI TSV (perbaikan 25 Sep).
@@ -979,6 +984,10 @@ export function sanitizeAssistantOutput(
   cleaned = enforceUniversalRules(cleaned, isProfessionalContext);
   // Jargon teknis yang dikarang model padahal user tidak membahas kode (temuan v34).
   cleaned = scrubInventedJargon(cleaned, userPrompt);
+  // Penegakan anti-mengiyakan klaim (aturan kritis — lihat fungsi di atas).
+  // Ditempatkan SETELAH semua pembersih lain supaya kalimat pengiyakan yang
+  // baru muncul akibat perapian tetap tertangkap.
+  cleaned = tegakkanAntiMengiyakanKlaim(cleaned, userPrompt, adaDataInternet);
   return avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
 }
 
@@ -1014,6 +1023,77 @@ function stripProtocolLeak(text: string): string {
  *
  * Setiap penegakan di sini berasal dari pelanggaran yang SUDAH TERBUKTI di produksi.
  */
+/**
+ * Tegakkan aturan anti-mengiyakan klaim berita tanpa sumber.
+ *
+ * MASALAH NYATA (25 Sep, keluhan pemilik produk: "apakah respon bot nya sudah
+ * valid dan tidak mengarang serta halu"): user menanyakan sebab sebuah isu
+ * berita, bot menjawab MENGIYAKAN tanpa verifikasi:
+ *   user: "bukannya gara gara masalah ijasah palsu?"
+ *   bot : "Iyaa, isu ijazah itu emang yang bikin rame terus dan sering dipake
+ *          buat nuntut penggantian."
+ * Kalau klaim user salah, bot ikut menyebarkan informasi keliru.
+ *
+ * KENAPA DI KODE, BUKAN DI PROMPT: aturan sudah ditulis di system prompt, TAPI
+ * uji nyata menunjukkan model (xkiro/qwen3.8-max:free) tetap mengiyakan. Karena
+ * failover memakai model berbeda tiap pesan, kepatuhan tidak bisa diandalkan.
+ *
+ * CARA KERJA: kalau balasan MEMBUKA dengan pengiyakan ("iya bener", "ohh iya",
+ * "betul", "bener banget") pada konteks pertanyaan yang memuat pola klaim
+ * ("bukannya...", "katanya...", "kabarnya..."), dan TIDAK ada data internet
+ * yang bisa dikutip, maka kalimat pengiyakan itu dibuang dan diganti pengakuan
+ * jujur bahwa dasarnya belum ditemukan.
+ *
+ * @param text balasan model
+ * @param userPrompt pesan user (untuk mendeteksi pola klaim)
+ * @param adaDataInternet apakah ada data internet di konteks (webText)
+ */
+function tegakkanAntiMengiyakanKlaim(
+  text: string,
+  userPrompt: string | undefined,
+  adaDataInternet: boolean,
+): string {
+  if (!text || !userPrompt) return text;
+  // Kalau ada data internet, mengiyakan SAH selama bersumber — biarkan model
+  // mengutip sumbernya. Yang dilarang adalah mengiyakan TANPA data.
+  if (adaDataInternet) return text;
+
+  // Apakah user menyodorkan KLAIM (bukan bertanya biasa)?
+  const userMenyodorkanKlaim =
+    /\b(?:bukannya|bukanya|bukan\s*gara|katanya|kata\s+orang|kabarnya|kabarny|setahu\s+(?:aku|saya)|kayaknya|sepertinya|apa\s+benar|bener\s+gak|benar\s+gak|hoax|hoaks)\b/i.test(
+      userPrompt,
+    );
+  if (!userMenyodorkanKlaim) return text;
+
+  // Apakah balasan MENGIYAKAN klaim itu? Diperiksa di awal balasan (pengiyakan
+  // di awal = bot menyetujui premis user).
+  const awal = text.slice(0, 120);
+  const mengiyakan =
+    /^\s*(?:ohh?\s+)?(?:iyaa?|yaa?|yap|yup|betul|bener|benar|tepat|nah)\b[^.!?\n]{0,40}\b(?:bener|benar|betul|iya|iyaa|emang|memang|tepat|itu)\b/i.test(
+      awal,
+    ) ||
+    /^\s*(?:ohh?\s+)?(?:iyaa?|betul|bener|benar)\s*[,!.]/i.test(awal) ||
+    /^\s*(?:iyaa?|betul|bener|benar)\b[^.!?\n]{0,30}(?:emang|memang|yang\s+bikin|sering\s+dipake|jadi\s+bahan)/i.test(
+      awal,
+    );
+
+  if (!mengiyakan) return text;
+
+  // Buang kalimat pengiyakan pertama, sisakan sisanya bila ada isi berguna.
+  const sisa = text
+    .split(/(?<=[.!?\n])\s+/)
+    .slice(1)
+    .join(' ')
+    .trim();
+
+  // Kalau tidak ada sisa yang berguna, beri pengakuan jujur (dinamis, bukan
+  // template kaku): menyatakan belum menemukan dasar klaimnya.
+  if (!sisa || sisa.length < 15) {
+    return 'Aku belum nemu dasar yang jelas soal itu di data yang aku pegang. Kalau kamu punya sumbernya, boleh share — biar aku bantu cek bareng.';
+  }
+  return sisa;
+}
+
 function enforceUniversalRules(text: string, isProfessionalContext = false): string {
   if (!text || typeof text !== 'string') return text;
   let out = text;
@@ -2134,6 +2214,8 @@ ${ctx.summary}
       '- DILARANG KERAS menyebutkan berita, peristiwa, nama, angka, tanggal, atau produk TERTENTU sebagai "terbaru/hari ini/baru saja" — kamu TIDAK punya datanya. Mengarang berita (termasuk menyebut kejadian/artikel lama seperti tahun 2000-an, atau produk yang belum tentu rilis) adalah halusinasi yang merusak kepercayaan.',
       '- YANG BENAR: katakan terus terang dengan gayamu sendiri bahwa kamu belum berhasil mengambil data terbarunya saat ini (mis. koneksi pencarian sedang tidak membuahkan hasil), lalu tawarkan singkat agar dia coba tanya lagi sebentar lagi ATAU tanyakan topik spesifik yang dia minati supaya pencarian bisa lebih tepat.',
       '- JANGAN berpura-pura tahu, JANGAN mengarang, JANGAN menyebut sumber/berita fiktif.',
+      '- DILARANG MENJAWAB DENGAN YAKIN (ATURAN KERAS): dilarang menulis kalimat seperti "sejauh ini belum ada...", "belum ada keputusan resmi", "masih sebatas wacana", atau menyebut nama tokoh/kejadian apa pun seolah kamu tahu keadaan terkini. Kalimat semacam itu terbaca seperti fakta padahal berasal dari ingatan model yang bisa basi atau salah. Yang benar: katakan terus terang bahwa kamu sedang tidak berhasil mengambil data terbarunya, tanpa menambahkan detail apa pun tentang kejadiannya.',
+      '- DILARANG MENGARANG PENYEBAB ALASAN: dilarang menyebut sebab-sebab seperti "dinamika politik internal", "kurang puas sama arah kebijakan", "manfaatin momentum", atau alasan apa pun yang tidak ada di data. Alasan yang tidak bersumber = karangan.',
     );
   }
 
@@ -2147,7 +2229,8 @@ ${sanitizedWeb.slice(0, 4500)}
 
 PEDOMAN DATA INTERNET & WAKTU BERITA:
 - Gunakan data internet di atas untuk menjawab berita, peristiwa, angka, nama, harga, atau perkembangan terkini (konteks tahun: ${nowYear}).
-- ATURAN SUMBER (KERAS): untuk pertanyaan berita/fakta terkini, jawab HANYA dari data di atas. DILARANG menambahkan berita/peristiwa/angka dari ingatanmu sendiri. Bila data di atas hanya memuat sedikit atau tidak relevan, sampaikan apa adanya yang ada di data (sebutkan tanggalnya), dan jangan mengarang sisanya.
+'- ATURAN SUMBER (KERAS): untuk pertanyaan berita/fakta terkini, jawab HANYA dari data di atas. DILARANG menambahkan berita/peristiwa/angka dari ingatanmu sendiri. Bila data di atas hanya memuat sedikit atau tidak relevan, sampaikan apa adanya yang ada di data (sebutkan tanggalnya), dan jangan mengarang sisanya.',
+'- DILARANG MENGIYAKAN KLAIM TEMANMU TANPA DASAR (ATURAN KERAS): bila temanmu menyebut sebab/klaim (mis. "bukannya gara-gara X?", "katanya X", "kabarnya X"), JANGAN langsung membenarkan dengan "iya bener" / "ohh iya" / "betul". Periksa dulu apakah klaim itu ADA di data di atas. Kalau ada, sebutkan sumbernya. Kalau TIDAK ada, katakan jujur bahwa kamu belum menemukan dasarnya di data yang kamu pegang — jangan mengiyakan supaya terlihat nyambung. Mengiyakan klaim tanpa dasar = ikut menyebarkan informasi yang mungkin salah.',
 - PILIH YANG RELEVAN DULU: data di atas memuat banyak sumber. SEBELUM bilang "tidak ada", PERIKSA SEMUA sumber dan ambil yang paling nyambung dengan topik yang ditanyakan temanmu (mis. ditanya ekonomi → cari sumber bernuansa ekonomi/bisnis/harga/keuangan; ditanya olahraga → cari sumber olahraga). Baru katakan datanya tidak ada JIKA setelah diperiksa memang tidak ada satu pun yang relevan.
 - WAJIB BACA DETAIL HALAMAN: bila data di atas memuat "[Isi Halaman Web (...)]" atau "[Isi Lengkap Halaman Web (...)]", ITULAH isi situs yang ditanyakan temanmu — BACA dan KUTIP detail nyatanya (angka, nama fitur, daftar, harga, klaim). DILARANG menjawab "belum nemu info" atau "belum bisa baca" bila blok isi halaman itu ada di data: datanya sudah kamu pegang, sampaikan isinya secara ringkas dan konkret. Jawab kabur padahal data tersedia = jawaban buruk.
 - DILARANG MENYEBUT TAHUN LAMA SEBAGAI BERITA TERBARU: jika data memuat artikel lama (mis. 2003-2004), JANGAN menyajikannya sebagai kabar terkini — sampaikan jujur bahwa data terbaru belum ketemu.
@@ -2586,7 +2669,7 @@ export async function autoReply(
       text = firstRiddle.text;
       let stickerEmoji = firstExtract.sticker;
       let riddleAnswer = firstRiddle.answer;
-    let reply = sanitizeAssistantOutput(text, clean, recentOpenings, false, professionalContext);
+    let reply = sanitizeAssistantOutput(text, clean, recentOpenings, false, professionalContext, !!web);
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
     const replyWords = reply.split(/\s+/).filter(Boolean).length;
@@ -2604,7 +2687,7 @@ export async function autoReply(
         const secondTry = await chatRetry(retryMsgs, false, ctx?.chatId);
         const secondSticker = extractStickerTag(secondTry.text);
         const secondExtract = extractRiddleTag(secondSticker.text);
-        const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings, false, professionalContext);
+        const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings, false, professionalContext, !!web);
         if (secondReply.split(/\s+/).filter(Boolean).length >= 4) {
           reply = secondReply;
           via = secondTry.via;
@@ -2745,7 +2828,7 @@ export async function autoReply(
               const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
               const fixSticker = extractStickerTag(fix.text);
               const fixExtract = extractRiddleTag(fixSticker.text);
-              const fixReply = sanitizeAssistantOutput(fixExtract.text, clean, recentOpenings, false, professionalContext);
+              const fixReply = sanitizeAssistantOutput(fixExtract.text, clean, recentOpenings, false, professionalContext, !!web);
               // Terima hanya bila hasilnya bersih: satu setup, tanpa koreksi diri, tanpa bocor.
               const fixQ = (fixReply.match(/\?/g) || []).length;
               if (
@@ -2828,7 +2911,7 @@ export async function autoReply(
           if (secondTry.text && secondTry.text.trim().toLowerCase() !== normLast) {
             const loopSticker = extractStickerTag(secondTry.text);
             const loopExtract = extractRiddleTag(loopSticker.text);
-            const loopReply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings, false, professionalContext);
+            const loopReply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings, false, professionalContext, !!web);
             // Terima hanya bila hasil retry benar-benar BERBEDA (bukan mengulang lagi).
             const tLoop = tokensOf(loopReply.toLowerCase());
             let inter2 = 0;
@@ -2874,7 +2957,7 @@ export async function autoReply(
             },
           ];
           const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-          const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings, false, professionalContext);
+          const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings, false, professionalContext, !!web);
           const fixWords = fixReply.split(/\s+/).filter(Boolean).length;
           if (fixReply.trim() && fixWords <= 30 && !amnesiaRe.test(fixReply.trim())) {
             reply = fixReply;
@@ -2901,7 +2984,7 @@ export async function autoReply(
             },
           ];
           const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-          const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext);
+          const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web);
           if (fixReply.trim() && !surrenderRe.test(fixReply)) {
             reply = fixReply;
           }
@@ -2937,7 +3020,7 @@ export async function autoReply(
           },
         ];
         const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext);
+        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web);
         if (fixReply.trim() && !selfDevClaimRe.test(fixReply) && !selfDevClaimRe2.test(fixReply)) {
           reply = fixReply;
         }
@@ -2972,7 +3055,7 @@ export async function autoReply(
           },
         ];
         const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext);
+        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web);
         if (fixReply.trim() && !hasAudioClaim(fixReply)) {
           reply = fixReply;
         }
@@ -2991,7 +3074,7 @@ export async function autoReply(
       try {
         const regen = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false, ctx?.chatId);
         const regenExtract = extractStickerTag(regen.text);
-        const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings, false, professionalContext);
+        const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings, false, professionalContext, !!web);
         if (regenReply.trim()) {
           reply = regenReply;
           if (!stickerEmoji && regenExtract.sticker) stickerEmoji = regenExtract.sticker;
@@ -3125,7 +3208,7 @@ export async function autoReply(
             ];
             const re = await chatRetry(reMsgs, false, ctx?.chatId);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
-            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext);
+            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext, !!web);
             if (reReply.trim()) reply = reReply;
           } catch {
             // Best-effort: bila regen gagal, balasan asli dibiarkan.
@@ -3145,7 +3228,7 @@ export async function autoReply(
             ];
             const re = await chatRetry(reMsgs, false, ctx?.chatId);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
-            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext);
+            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext, !!web);
             if (reReply.trim()) {
               // Buang klaim "benar" yang masih tersisa (pembersihan murni, tanpa teks statis).
               const cleaned2 = reReply
