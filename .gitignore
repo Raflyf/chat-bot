@@ -31,3 +31,37 @@ scripts/scrub_git_history.py
 scripts/verify_scrub.py
 __pycache__/
 *.pyc
+
+# === Pencegahan sampah (ditambahkan 25 Sep) ===
+# Backup files
+*.bak
+*.bak_*
+*_bak
+*.backup
+*.old
+*.orig
+*.bundle
+*.patch
+*.diff
+*.rej
+
+# Temp & cache
+*.tmp
+*.temp
+*~
+*.swp
+*.swo
+__pycache__/
+*.pyc
+*.pyo
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+logs/
+
+# Git backup folders
+.git-backup-*/
