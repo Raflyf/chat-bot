@@ -20,3 +20,14 @@ dataset/*.csv
 # Temp probe dari subagent audit
 tmp_*.mts
 tmp_*.mjs
+
+# Pembersihan 25 Sep — dokumen & script internal tidak di-push ke publik
+CLAUDE.md
+DOCUMENTATION.md
+scripts/audit_git_history_secrets.py
+scripts/audit_secret_leak.py
+scripts/check_github_gc.py
+scripts/scrub_git_history.py
+scripts/verify_scrub.py
+__pycache__/
+*.pyc

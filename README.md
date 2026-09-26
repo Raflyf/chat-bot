@@ -114,7 +114,7 @@ Catatan kuota penting:
 - **WhatsApp 24/7 Mandiri**: Jalankan perintah `npm run whatsapp` pada cloud container (seperti Render, Koyeb, atau VPS). Sesi login otomatis tersimpan di Supabase sehingga tidak perlu pindai ulang saat restart.
 - **Basis Data**: Jalankan skrip SQL pada folder `sql/` di SQL Editor Supabase secara berurutan untuk inisialisasi skema, keamanan RLS, dan pelacakan kuota token harian (wajib menjalankan `migrate_v18_daily_token_tracking.sql` agar pembatasan TPD Groq tersinkron lintas instance).
 
-Dokumentasi arsitektur mendalam dan riwayat teknis versi dapat dilihat di [DOCUMENTATION.md](DOCUMENTATION.md).
+Dokumentasi arsitektur mendalam dan riwayat teknis versi dikelola secara internal dan tidak dipublikasikan di repositori ini.
 
 ---
 
