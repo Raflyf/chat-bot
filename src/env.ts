@@ -67,7 +67,11 @@ export const config = {
   models: {
     // Tier 1: xKiro Gateway (Qwen 3.8 Max Free → slot DeepSeek arsip bila pulih;
     // MiniMax M3 dipakai KHUSUS di rantai multimodal, bukan cadangan teks)
-    xkiroPrimary: 'qwen/qwen3.8-max:free',
+    // DIPERBARUI 25 Sep (katalog Cohere baru di xKiro) — hasil benchmark nyata:
+    // Command A+ 10/10 sukses, rata-rata 430ms (vs Qwen 3.8 Max 3849ms), vision
+    // akurat (4/4 angka tabel, 2x lebih cepat dari Qwen VL Plus), patuh persona.
+    // Qwen tetap dipertahankan sebagai backup (terbukti andal sejak awal).
+    xkiroPrimary: 'cohere/command-a-plus',
     // Backup WAJIB ada di katalog gateway (diverifikasi live). Model lama
     // 'deepseek/deepseek-v4.1-flash:free' sudah DIHAPUS dari xkiro -> tiap failover
     // ke sana menghasilkan HTTP 404 dan membuang waktu rantai (temuan audit).
@@ -77,7 +81,12 @@ export const config = {
     // UJI LANJUTAN 21 Sep (3 prompt berbeda): ketiga Qwen lolos SEMUA (P2 kepatuhan,
     // P3 kepintaran, P4 gaya) dengan 0 pelanggaran. Latensi: 3.6-max 3629ms <
     // 3.7-max 4012ms < 3.8-max 4972ms -> yang lebih gesit didahulukan sebagai backup.
-    xkiroBackup: ['qwen/qwen3.6-max-preview:free', 'qwen/qwen3.7-max:free'],
+    xkiroBackup: [
+      'cohere/command-a',
+      'qwen/qwen3.8-max:free',
+      'qwen/qwen3.6-max-preview:free',
+      'qwen/qwen3.7-max:free',
+    ],
     // Tier 2: OpenRouter (model :free).
     // AUDIT 20 Sep 2026: 'deepseek/deepseek-v4-flash-0731:free' SUDAH TIDAK ADA di
     // katalog OpenRouter (dicek live: 446 model, NOL model deepseek :free) -> setiap
@@ -161,6 +170,10 @@ export const config = {
     // Dipakai chat({ vision: true }) untuk foto, stiker, dan gambar di dalam dokumen Word.
     visionChain: [
       { kind: 'groq', model: 'qwen/qwen3.8-27b' },
+      // DITAMBAHKAN 25 Sep: Command A Vision — terukur 4/4 akurat untuk OCR tabel
+      // angka (2.557ms), jauh lebih cepat dari xkiro/qwen3-vl-plus (4.828ms) dan
+      // mengisi celah antara Groq (primer) dan Cloudflare (lemah baca digit halus).
+      { kind: 'xkiro', model: 'cohere/command-a-vision' },
       // ---------------------------------------------------------------------
       // DIKOREKSI 24 Sep (temuan pemilik produk): `@cf/meta/llama-4-scout` dan
       // `@cf/mistralai/mistral-small-3.1` DIKELUARKAN dari jalur vision.
