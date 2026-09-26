@@ -1016,9 +1016,13 @@ function steps(): Step[] {
       maxPromptTokens: 0, // tidak ada batas ITPM ketat yang diketahui
       run: (k, m, msgs, t) => {
         return openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
-          // Effort reasoning MINIMAL (keputusan user). Hasil uji: 'none' membuat
-          // MiniMax M3 (kini khusus rantai multimodal) membalas KOSONG, jadi 'minimal' yang dipakai.
-          reasoning: { effort: 'minimal' },
+          // DIUBAH 25 Sep (temuan uji benchmark Cohere): 'minimal' membuat model
+          // Cohere membakar SELURUH anggaran token di penalaran internal lalu
+          // mengembalikan content KOSONG (finish_reason 'length') — terukur 6 dari
+          // 9 request gagal. 'none' menyelesaikannya: 3/3 sukses, output normal.
+          // Catatan lama soal MiniMax M3 tidak lagi relevan (MiniMax sudah keluar
+          // dari rantai teks xKiro sejak instruksi user 21 Sep).
+          reasoning: { effort: 'none' },
           // Parameter bersama (F5) — konsisten dengan tier lain.
           ...BASE_GEN,
         }, t);
