@@ -65,25 +65,23 @@ export const config = {
   },
   cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
   models: {
-    // Tier 1: xKiro Gateway (Qwen 3.8 Max Free → slot DeepSeek arsip bila pulih;
-    // MiniMax M3 dipakai KHUSUS di rantai multimodal, bukan cadangan teks)
-    // DIPERBARUI 25 Sep (katalog Cohere baru di xKiro) — hasil benchmark nyata:
-    // Command A+ 10/10 sukses, rata-rata 430ms (vs Qwen 3.8 Max 3849ms), vision
-    // akurat (4/4 angka tabel, 2x lebih cepat dari Qwen VL Plus), patuh persona.
-    // Qwen tetap dipertahankan sebagai backup (terbukti andal sejak awal).
-    xkiroPrimary: 'cohere/command-a-plus',
-    // Backup WAJIB ada di katalog gateway (diverifikasi live). Model lama
-    // 'deepseek/deepseek-v4.1-flash:free' sudah DIHAPUS dari xkiro -> tiap failover
-    // ke sana menghasilkan HTTP 404 dan membuang waktu rantai (temuan audit).
+    // Tier 1: xKiro Gateway (Qwen 3.8 Max — DIPULIHKAN sebagai primary 26 Sep 2026)
     //
-    // INSTRUKSI USER (21 Sep): "untuk model dari xkiro itu cukup dari qwen saja,
-    // jangan masukan minimax atau mistral" -> seluruh backup adalah Qwen.
-    // UJI LANJUTAN 21 Sep (3 prompt berbeda): ketiga Qwen lolos SEMUA (P2 kepatuhan,
-    // P3 kepintaran, P4 gaya) dengan 0 pelanggaran. Latensi: 3.6-max 3629ms <
-    // 3.7-max 4012ms < 3.8-max 4972ms -> yang lebih gesit didahulukan sebagai backup.
+    // KEPUTUSAN USER (26 Sep 2026): Cohere Command A+ DIKEMBALIKAN ke Qwen.
+    // Alasan (bukan selera — hasil benchmark head-to-head 6 prompt produksi):
+    //   "tes"          -> Cohere "Oke, aku siap dengarmu" (kaku, CS) | Qwen "Masuk kok." (natural)
+    //   "halo bot"     -> Cohere "semoga harimu menyenangkan!" (template) | Qwen "Halo juga, gimana kabarmu?"
+    //   "kamu bisa apa"-> Cohere KOSONG (bug output) | Qwen jawaban lengkap
+    //   "lagi ngapain" -> Cohere mengaku "dengerin musik" (halusinasi diri) | Qwen jujur santai
+    // Cohere memang lebih cepat (1,2-3,0 dtk vs 2,8-4,4 dtk) TAPI konsisten kaku ala
+    // customer service, sesekali kosong, dan berhalusinasi soal dirinya sendiri.
+    // Persona natural = prioritas utama bot ini, jadi Qwen kembali memimpin.
+    xkiroPrimary: 'qwen/qwen3.8-max:free',
+    // Backup WAJIB ada di katalog gateway (diverifikasi live).
+    // URUTAN 26 Sep: Cohere Command A tetap dipakai sebagai backup PERTAMA karena
+    // 10/10 sukses & tercepat — bagus saat Qwen lambat/gagal. Qwen 3.6/3.7 menyusul.
     xkiroBackup: [
       'cohere/command-a',
-      'qwen/qwen3.8-max:free',
       'qwen/qwen3.6-max-preview:free',
       'qwen/qwen3.7-max:free',
     ],

@@ -27,6 +27,161 @@ function redactOutput(text: string): string {
 }
 
 /**
+ * ANTI-LINK FIKTIF (temuan produksi 26 Sep 2026).
+ *
+ * MASALAH NYATA: model (terutama saat menjawab pertanyaan akademik) mengarang
+ * URL jurnal/referensi yang TIDAK ADA — mis. `https://jurnal.univ-xyz.ac.id/...`
+ * yang tidak bisa diakses. Halusinasi URL merusak kredibilitas bot: user mengklik,
+ * halaman 404, dan seluruh jawaban dianggap ngawur.
+ *
+ * PRINSIP: URL hanya boleh muncul di balasan jika URL itu BENAR-BENAR ada di data
+ * internet yang kita berikan ke model (webText). Kalau tidak ada di data, URL itu
+ * karangan -> DIBUANG dari balasan (teks penjelasnya tetap, hanya URL-nya hilang).
+ *
+ * Domain umum yang aman disebut tanpa data (bukan hasil pencarian spesifik):
+ * domain institusi/portal publik yang stabil dan tidak mengklaim konten spesifik.
+ */
+const SAFE_KNOWN_DOMAINS = new Set([
+  'wikipedia.org', 'wikimedia.org', 'github.com', 'stackoverflow.com',
+  'kemdikbud.go.id', 'scholar.google.com', 'doi.org',
+  'arxiv.org', 'nature.com', 'sciencedirect.com', 'springer.com',
+  'researchgate.net', 'jstor.org', 'pubmed.ncbi.nlm.nih.gov', 'ncbi.nlm.nih.gov',
+  'openai.com', 'anthropic.com', 'google.com', 'microsoft.com', 'apple.com',
+]);
+
+/**
+ * Buang URL yang tidak ada di data internet yang diberikan ke model.
+ * @param text balasan model
+ * @param webData data internet yang benar-benar dipakai turn ini (null = tidak ada)
+ */
+function stripInventedUrls(text: string, webData: string | null): string {
+  if (!text || typeof text !== 'string') return text;
+
+  // Tanpa data internet: HANYA domain umum yang boleh lolos (bot tidak punya dasar
+  // untuk menyebut URL spesifik apa pun).
+  const allowedUrls = new Set<string>();
+  if (webData) {
+    // Kumpulkan SEMUA URL nyata dari data internet (snippet memuat "Sumber: <url>")
+    const urlRe = /https?:\/\/[^\s<>"')\]]+/gi;
+    for (const m of webData.matchAll(urlRe)) {
+      allowedUrls.add(m[0].replace(/[.,;:]+$/, ''));
+    }
+  }
+
+  const isAllowed = (raw: string): boolean => {
+    const clean = raw.replace(/[.,;:!?]+$/, '');
+    // 1. URL persis ada di data internet -> boleh (paling kuat).
+    if (allowedUrls.has(clean)) return true;
+    // 2. Prefix cocok (URL di data tanpa trailing slash / dengan query) -> boleh.
+    for (const u of allowedUrls) {
+      if (clean.startsWith(u) || u.startsWith(clean)) return true;
+    }
+    try {
+      const parsed = new URL(clean);
+      const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+      // 3. Domain umum yang stabil (Wikipedia, DOI, GitHub, dst) -> boleh.
+      if (SAFE_KNOWN_DOMAINS.has(host)) return true;
+      for (const d of SAFE_KNOWN_DOMAINS) {
+        if (host === d || host.endsWith('.' + d)) return true;
+      }
+      // 4. Domain institusi (.go.id/.ac.id/.sch.id) HANYA boleh bila TANPA path
+      //    spesifik. Domainnya nyata (portal), tapi path panjang seperti
+      //    "/artikel/123" adalah karangan yang tidak bisa diverifikasi — persis
+      //    keluhan user soal "link jurnal fiktif". Path kosong/"/" = portal resmi.
+      if (/\.(?:go|ac|sch|or)\.id$/.test(host)) {
+        const path = parsed.pathname.replace(/\/+$/, '');
+        if (!path) return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  };
+
+  // Proses PER KALIMAT supaya kalimat yang isinya cuma wadah link karangan bisa
+  // dibuang utuh. Jangan sentuh URL di dalam blok kode (```...```).
+  //
+  // Alur:
+  //   1. Split kalimat (setelah tanda . ! ?)
+  //   2. Untuk tiap kalimat: cek apakah ada URL yang TIDAK diizinkan
+  //   3. Kalau ada -> buang URL-nya, rapikan frasa menggantung, lalu:
+  //      - kalau kalimat masih utuh (>= 5 kata, tidak menggantung) -> pertahankan
+  //      - kalau kalimat jadi rusak -> BUANG SELURUH KALIMAT
+  //   4. Kalimat tanpa URL dibiarkan apa adanya
+  const codeParts = text.split(/(```[\s\S]*?```)/g);
+  const outParts: string[] = [];
+
+  for (let ci = 0; ci < codeParts.length; ci++) {
+    if (ci % 2 === 1) {
+      // Blok kode: biarkan utuh (URL di dalam kode = contoh teknis, bukan klaim sumber)
+      outParts.push(codeParts[ci]);
+      continue;
+    }
+
+    const sentences = codeParts[ci].split(/(?<=[.!?])\s+/);
+    const keptSentences: string[] = [];
+
+    for (const sentence of sentences) {
+      // Cek apakah kalimat memuat URL yang tidak diizinkan
+      let hasInventedUrl = false;
+      for (const m of sentence.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
+        const trailing = (m[0].match(/[.,;:!?]+$/) || [''])[0];
+        const core = trailing ? m[0].slice(0, -trailing.length) : m[0];
+        if (!isAllowed(core)) {
+          hasInventedUrl = true;
+          break;
+        }
+      }
+      if (!hasInventedUrl) {
+        keptSentences.push(sentence);
+        continue;
+      }
+
+      // Buang URL yang tidak diizinkan; kembalikan tanda baca ekornya.
+      let fixed = sentence.replace(/https?:\/\/[^\s<>"')\]]+/gi, (m) => {
+        const trailing = (m.match(/[.,;:!?]+$/) || [''])[0];
+        const core = trailing ? m.slice(0, -trailing.length) : m;
+        return isAllowed(core) ? m : trailing;
+      });
+      // Rapikan frasa pengantar & kata sambung yang menggantung setelah URL dibuang.
+      //   "Ada di https://x dan ." -> "Ada di https://x."
+      fixed = fixed
+        .replace(/\b(?:di|pada|dari|ke|via|lewat|sumber(?:nya)?(?:\s+dari)?|cek|baca|lihat|kunjungi|akses|buka|simak|telusuri)\s+(?=[.,;!?]|$)/gi, '')
+        .replace(/\s+(?:dan|atau|serta|juga|maupun)\s*(?=[.,;!?]|$)/gi, '')
+        .replace(/\(\s*\)/g, '')
+        .replace(/\s+([.,;!?])/g, '$1')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+      // Apakah kalimat MASIH memuat URL yang diizinkan? Kalau ya, kalimat tetap
+      // berguna (link nyata dari data) -> jangan buang hanya karena pendek.
+      let hasAllowedUrl = false;
+      for (const m of fixed.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
+        const t = (m[0].match(/[.,;:!?]+$/) || [''])[0];
+        const c = t ? m[0].slice(0, -t.length) : m[0];
+        if (isAllowed(c)) { hasAllowedUrl = true; break; }
+      }
+
+      // Kalimat rusak/menggantung setelah URL dibuang -> buang kalimatnya.
+      // Kecuali kalimat itu masih menyimpan URL sah dari data internet.
+      const endsBad = /(?:\b(?:di|pada|dari|ke|via|lewat|sumber|sumbernya|cek|baca|lihat|kunjungi|akses|buka)|[,;:])$/i.test(fixed);
+      const words = fixed.split(/\s+/).filter(Boolean);
+      if ((words.length < 5 && !hasAllowedUrl) || endsBad) continue;
+      keptSentences.push(fixed);
+    }
+
+    outParts.push(keptSentences.join(' '));
+  }
+
+  return outParts
+    .join('')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s,;:]+/, '')
+    .trim();
+}
+
+
+/**
  * Verifikasi owner via perbandingan digit eksak (anti false-positive substring).
  * chatKey Telegram = id numerik; WhatsApp = wa_<jid> sehingga digit jid harus
  * sama persis dengan digit owner. Grup tidak pernah lolos walau owner anggota.
@@ -941,6 +1096,10 @@ export function sanitizeAssistantOutput(
   // bila tidak ada data (temuan 25 Sep — bot mengiyakan klaim "ijazah palsu"
   // tanpa verifikasi, padahal web search sedang gagal).
   adaDataInternet = false,
+  // [ANTI-LINK FIKTIF 26 Sep] Data internet mentah turn ini. Dipakai untuk
+  // memverifikasi URL di balasan: URL yang tidak ada di data = karangan -> dibuang.
+  // Parameter ke-7 (opsional) agar pemanggil lama tetap kompatibel.
+  webData?: string | null,
 ): string {
   // ---------------------------------------------------------------------
   // JALUR KHUSUS HASIL EKSTRAKSI TSV (perbaikan 25 Sep).
@@ -988,6 +1147,9 @@ export function sanitizeAssistantOutput(
   // Ditempatkan SETELAH semua pembersih lain supaya kalimat pengiyakan yang
   // baru muncul akibat perapian tetap tertangkap.
   cleaned = tegakkanAntiMengiyakanKlaim(cleaned, userPrompt, adaDataInternet);
+  // [ANTI-LINK FIKTIF 26 Sep] Buang URL karangan yang tidak ada di data internet.
+  // Dijalankan PALING AKHIR agar URL yang disisipkan pembersih lain tetap tervalidasi.
+  cleaned = stripInventedUrls(cleaned, webData ?? null);
   return avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
 }
 
@@ -2229,6 +2391,7 @@ ${sanitizedWeb.slice(0, 4500)}
 
 PEDOMAN DATA INTERNET & WAKTU BERITA:
 - Gunakan data internet di atas untuk menjawab berita, peristiwa, angka, nama, harga, atau perkembangan terkini (konteks tahun: ${nowYear}).
+- ATURAN LINK/URL (SANGAT KERAS — ANTI-LINK FIKTIF): DILARANG MENGARANG URL, link jurnal, link artikel, atau alamat situs apa pun. Link yang kamu tulis HANYA boleh berasal dari kata "Sumber:" yang TERTERA PERSIS di data internet di atas — salin apa adanya, jangan diubah, jangan ditambah, jangan digubah. Kalau data tidak memuat link untuk topik itu, JANGAN menulis link sama sekali: cukup sebutkan nama jurnal/situs secara umum tanpa alamat URL. Link karangan yang tidak bisa diakses = jawaban dianggap ngawur dan merusak kepercayaan.
 '- ATURAN SUMBER (KERAS): untuk pertanyaan berita/fakta terkini, jawab HANYA dari data di atas. DILARANG menambahkan berita/peristiwa/angka dari ingatanmu sendiri. Bila data di atas hanya memuat sedikit atau tidak relevan, sampaikan apa adanya yang ada di data (sebutkan tanggalnya), dan jangan mengarang sisanya.',
 '- DILARANG MENGIYAKAN KLAIM TEMANMU TANPA DASAR (ATURAN KERAS): bila temanmu menyebut sebab/klaim (mis. "bukannya gara-gara X?", "katanya X", "kabarnya X"), JANGAN langsung membenarkan dengan "iya bener" / "ohh iya" / "betul". Periksa dulu apakah klaim itu ADA di data di atas. Kalau ada, sebutkan sumbernya. Kalau TIDAK ada, katakan jujur bahwa kamu belum menemukan dasarnya di data yang kamu pegang — jangan mengiyakan supaya terlihat nyambung. Mengiyakan klaim tanpa dasar = ikut menyebarkan informasi yang mungkin salah.',
 - PILIH YANG RELEVAN DULU: data di atas memuat banyak sumber. SEBELUM bilang "tidak ada", PERIKSA SEMUA sumber dan ambil yang paling nyambung dengan topik yang ditanyakan temanmu (mis. ditanya ekonomi → cari sumber bernuansa ekonomi/bisnis/harga/keuangan; ditanya olahraga → cari sumber olahraga). Baru katakan datanya tidak ada JIKA setelah diperiksa memang tidak ada satu pun yang relevan.
@@ -2669,7 +2832,7 @@ export async function autoReply(
       text = firstRiddle.text;
       let stickerEmoji = firstExtract.sticker;
       let riddleAnswer = firstRiddle.answer;
-    let reply = sanitizeAssistantOutput(text, clean, recentOpenings, false, professionalContext, !!web);
+    let reply = sanitizeAssistantOutput(text, clean, recentOpenings, false, professionalContext, !!web, web);
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
     const replyWords = reply.split(/\s+/).filter(Boolean).length;
@@ -2687,7 +2850,7 @@ export async function autoReply(
         const secondTry = await chatRetry(retryMsgs, false, ctx?.chatId);
         const secondSticker = extractStickerTag(secondTry.text);
         const secondExtract = extractRiddleTag(secondSticker.text);
-        const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings, false, professionalContext, !!web);
+        const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings, false, professionalContext, !!web, web);
         if (secondReply.split(/\s+/).filter(Boolean).length >= 4) {
           reply = secondReply;
           via = secondTry.via;
@@ -2828,7 +2991,7 @@ export async function autoReply(
               const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
               const fixSticker = extractStickerTag(fix.text);
               const fixExtract = extractRiddleTag(fixSticker.text);
-              const fixReply = sanitizeAssistantOutput(fixExtract.text, clean, recentOpenings, false, professionalContext, !!web);
+              const fixReply = sanitizeAssistantOutput(fixExtract.text, clean, recentOpenings, false, professionalContext, !!web, web);
               // Terima hanya bila hasilnya bersih: satu setup, tanpa koreksi diri, tanpa bocor.
               const fixQ = (fixReply.match(/\?/g) || []).length;
               if (
@@ -2911,7 +3074,7 @@ export async function autoReply(
           if (secondTry.text && secondTry.text.trim().toLowerCase() !== normLast) {
             const loopSticker = extractStickerTag(secondTry.text);
             const loopExtract = extractRiddleTag(loopSticker.text);
-            const loopReply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings, false, professionalContext, !!web);
+            const loopReply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings, false, professionalContext, !!web, web);
             // Terima hanya bila hasil retry benar-benar BERBEDA (bukan mengulang lagi).
             const tLoop = tokensOf(loopReply.toLowerCase());
             let inter2 = 0;
@@ -2957,7 +3120,7 @@ export async function autoReply(
             },
           ];
           const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-          const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings, false, professionalContext, !!web);
+          const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings, false, professionalContext, !!web, web);
           const fixWords = fixReply.split(/\s+/).filter(Boolean).length;
           if (fixReply.trim() && fixWords <= 30 && !amnesiaRe.test(fixReply.trim())) {
             reply = fixReply;
@@ -2984,7 +3147,7 @@ export async function autoReply(
             },
           ];
           const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-          const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web);
+          const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web, web);
           if (fixReply.trim() && !surrenderRe.test(fixReply)) {
             reply = fixReply;
           }
@@ -3020,7 +3183,7 @@ export async function autoReply(
           },
         ];
         const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web);
+        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web, web);
         if (fixReply.trim() && !selfDevClaimRe.test(fixReply) && !selfDevClaimRe2.test(fixReply)) {
           reply = fixReply;
         }
@@ -3055,7 +3218,7 @@ export async function autoReply(
           },
         ];
         const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
-        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web);
+        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web, web);
         if (fixReply.trim() && !hasAudioClaim(fixReply)) {
           reply = fixReply;
         }
@@ -3074,7 +3237,7 @@ export async function autoReply(
       try {
         const regen = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false, ctx?.chatId);
         const regenExtract = extractStickerTag(regen.text);
-        const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings, false, professionalContext, !!web);
+        const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings, false, professionalContext, !!web, web);
         if (regenReply.trim()) {
           reply = regenReply;
           if (!stickerEmoji && regenExtract.sticker) stickerEmoji = regenExtract.sticker;
@@ -3208,7 +3371,7 @@ export async function autoReply(
             ];
             const re = await chatRetry(reMsgs, false, ctx?.chatId);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
-            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext, !!web);
+            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext, !!web, web);
             if (reReply.trim()) reply = reReply;
           } catch {
             // Best-effort: bila regen gagal, balasan asli dibiarkan.
@@ -3228,7 +3391,7 @@ export async function autoReply(
             ];
             const re = await chatRetry(reMsgs, false, ctx?.chatId);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
-            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext, !!web);
+            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext, !!web, web);
             if (reReply.trim()) {
               // Buang klaim "benar" yang masih tersisa (pembersihan murni, tanpa teks statis).
               const cleaned2 = reReply
@@ -3588,6 +3751,9 @@ export async function describeImage(
         /\b(?:perusahaan|kantor|bisnis|klien|laporan|proposal|kontrak|invoice|faktur|rapat|presentasi|deadline|sop|hukum|pajak|akuntansi|audit|investasi|medis|regulasi|sertifikasi|profesional|formal|resmi|serius|untuk pekerjaan)\b/i.test(
           `${caption ?? ''} ${promptText}`,
         ),
+        // [ANTI-LINK FIKTIF] Media (dokumen/foto) tidak memakai data web -> undefined.
+        // URL yang muncul di balasan media harus domain umum, sisanya dibuang.
+        undefined,
       );
 
   // Jika sanitasi menghabiskan balasan, bangkitkan ulang secara dinamis (teks saja, murah)
