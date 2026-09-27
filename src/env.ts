@@ -77,13 +77,14 @@ export const config = {
     // customer service, sesekali kosong, dan berhalusinasi soal dirinya sendiri.
     // Persona natural = prioritas utama bot ini, jadi Qwen kembali memimpin.
     xkiroPrimary: 'qwen/qwen3.8-max:free',
-    // Backup WAJIB ada di katalog gateway (diverifikasi live).
-    // URUTAN 26 Sep: Cohere Command A tetap dipakai sebagai backup PERTAMA karena
-    // 10/10 sukses & tercepat — bagus saat Qwen lambat/gagal. Qwen 3.6/3.7 menyusul.
+    // Backup SEMUA Qwen (aturan terdokumentasi: "cukup dari qwen saja").
+    // Cohere Command A DIKELUARKAN dari rantai teks 26 Sep — kalau ia tetap di
+    // backup, setiap Qwen gagal/timeout user akan menerima balasan bergaya Cohere
+    // yang kaku (persis yang dikeluhkan). Cohere tetap dipakai di visionChain
+    // (Command A Vision) karena di sana keunggulannya nyata: OCR tabel 4/4 akurat.
     xkiroBackup: [
-      'cohere/command-a',
-      'qwen/qwen3.6-max-preview:free',
       'qwen/qwen3.7-max:free',
+      'qwen/qwen3.6-max-preview:free',
     ],
     // Tier 2: OpenRouter (model :free).
     // AUDIT 20 Sep 2026: 'deepseek/deepseek-v4-flash-0731:free' SUDAH TIDAK ADA di
