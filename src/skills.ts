@@ -1292,7 +1292,12 @@ function enforceUniversalRules(text: string, isProfessionalContext = false): str
   out = out.replace(/\[\[?\s*(?:jawab(?:an)?|sticker|stiker)\s*(?::[^\]]{0,120})?\s*\]\]?/gi, '');
   // 3b. Sisa tanda baca menggantung setelah tag dibuang: " ." / " ," / ", Eh" di awal.
   out = out.replace(/\s+([.,!?;:])/g, '$1');           // spasi sebelum tanda baca
-  out = out.replace(/(^|[.!?]\s*)[,;:]\s+/g, '$1');    // koma menggantung setelah titik
+  // Koma menggantung setelah titik — HANYA bila ada spasi antara keduanya (sampah
+  // ". , sisa"). Versi lama `[.!?]\s*` membuat spasi opsional sehingga menelan koma
+  // yang SAH dalam sitasi akademik: "et al., 2012" -> "et al.2012", "(Breiman, 2001)"
+  // -> rusak. Temuan uji E2E 26 Sep saat bot menjawab 3 jurnal ber-DOI.
+  // Sekarang wajib ada spasi minimal 1: ". ," dibersihkan, "., 2012" dipertahankan.
+  out = out.replace(/(^|[.!?]\s+)[,;:]\s+/g, '$1');     // koma menggantung setelah titik
   out = out.replace(/^\s*[,;:]\s*/, '');               // koma di awal balasan
   // Fragmen kutipan/markup menggantung di akhir balasan. Temuan produksi 20 Sep 19:38
   // (balasan reset): 'Sesi udah di-reset, siap lanjut lagi. " saja.' — sisa potongan
