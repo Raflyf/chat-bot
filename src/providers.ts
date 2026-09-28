@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { config } from './env.js';
-import { isKeyAllowed, keyUsed, keyTokensUsed, keyTokensUsedToday, keyRequestsUsedToday, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
+import { isKeyAllowed, keyUsed, keyTokensUsed, keyTokensUsedToday, keyRequestsUsedToday, keyTokenAbsolute, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
 import { xkiroChatWithSearch } from './xkiro_web.js';
 
 // --- CIRCUIT BREAKER & ADAPTIVE KEY ROUTING (LATENCY OPTIMIZER) ---
@@ -23,6 +23,84 @@ function recordKeySuccess(kind: ProviderKind, key: string, model: string): void 
   modelCooldownMap.delete(`${kind}:${model}`);
 }
 
+interface XkiroKeyStatus {
+  remaining: number;
+  expiresAt: number;
+}
+const xkiroUsageCache = new Map<string, XkiroKeyStatus>();
+
+/**
+ * Sisa milidetik sampai reset kuota harian xKiro pada 00.00 UTC (07.00 WIB), plus 5 menit margin.
+ * Terbukti empiris: reset terjadi pada 00.00 UTC (07.00 WIB), bukan tengah malam waktu lokal WIB.
+ */
+function msUntilDailyResetUtc(): number {
+  const nowMs = Date.now();
+  const dayMs = 86_400_000;
+  const nextReset = (Math.floor(nowMs / dayMs) + 1) * dayMs;
+  return Math.max(60_000, nextReset + 5 * 60_000 - nowMs);
+}
+
+/**
+ * Ambil status kuota dari endpoint /v1/usage xKiro (gratis, tanpa bakar kuota chat).
+ * Menyimpan pemakaian riil ke Supabase provider_quota (keyTokenAbsolute) sehingga
+ * instance baru serverless langsung tahu sisa kuota tanpa perlu menabrak 429 dulu.
+ */
+async function syncXkiroUsage(key: string): Promise<number | null> {
+  try {
+    const res = await fetch('https://api.xkiro.com/v1/usage', {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      free_tokens?: { used_today?: number; limit_per_day?: number; remaining?: number };
+    };
+    const ft = data.free_tokens;
+    if (!ft || typeof ft.remaining !== 'number') return null;
+
+    const used = ft.used_today ?? 0;
+    const remaining = ft.remaining;
+    const limit = ft.limit_per_day ?? 0;
+    const kh = keyHash(key);
+
+    keyTokenAbsolute('xkiro', key, used);
+
+    if (remaining <= 0) {
+      const cd = Date.now() + msUntilDailyResetUtc();
+      keyCooldownMap.set(`xkiro:${kh}`, cd);
+      xkiroUsageCache.set(kh, { remaining: 0, expiresAt: cd });
+      console.warn(
+        `[xkiro] Key ...${kh} kuota habis (${used.toLocaleString()}/${limit.toLocaleString()} token). Cooldown sampai reset UTC.`,
+      );
+    } else {
+      xkiroUsageCache.set(kh, { remaining, expiresAt: Date.now() + 15 * 60_000 });
+    }
+    return remaining;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cek cepat apakah key xKiro masih punya sisa token sebelum dipanggil.
+ * Memakai cache in-memory (15 menit untuk key sehat, s/d reset UTC untuk key habis).
+ * Jika belum ada di cache, probe ke /v1/usage (timeout 3s).
+ */
+async function isXkiroKeyAvailable(key: string): Promise<boolean> {
+  const kh = keyHash(key);
+  const now = Date.now();
+  const cached = xkiroUsageCache.get(kh);
+  if (cached && now < cached.expiresAt) {
+    return cached.remaining > 0;
+  }
+
+  const remaining = await syncXkiroUsage(key);
+  if (remaining === null) {
+    return true; // Fallback jika endpoint error/timeout: jangan blokir key
+  }
+  return remaining > 0;
+}
+
 function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   const kh = `${kind}:${keyHash(key)}`;
   const msg = err instanceof Error ? err.message : String(err);
@@ -37,6 +115,16 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   // Perbaikan: cooldown 6 jam untuk pola ini supaya tier dilewati, bukan diulang.
   if (/concurrency capacity|Paid accounts are admitted first|insufficient_quota|Insufficient wallet balance/i.test(msg)) {
     keyCooldownMap.set(kh, Date.now() + 6 * 60 * 60_000);
+    return;
+  }
+
+  // RATE LIMIT xKiro: reset pada 00.00 UTC (07.00 WIB). Bukan rate limit 60s sementara.
+  // Cooldown sampai reset UTC + 5 menit, dan sinkronkan usage ke DB/cache.
+  if (kind === 'xkiro' && (msg === 'RATE_LIMITED' || (err as { code?: string })?.code === 'RATE_LIMITED' || msg.includes('429'))) {
+    const cd = Date.now() + msUntilDailyResetUtc();
+    keyCooldownMap.set(kh, cd);
+    xkiroUsageCache.set(keyHash(key), { remaining: 0, expiresAt: cd });
+    void syncXkiroUsage(key);
     return;
   }
 
@@ -1360,6 +1448,13 @@ export async function chat(
           keyAllowed = true;
         }
         if (!keyAllowed) continue;
+
+        // Pre-check xKiro: skip key yang kuota hariannya sudah habis (remaining = 0)
+        // tanpa membuang waktu dan koneksi menabrak 429 upstream.
+        if (step.kind === 'xkiro') {
+          const available = await isXkiroKeyAvailable(key);
+          if (!available) continue;
+        }
         const remainingMs = deadline - Date.now();
         if (remainingMs < 1500) {
           lastError = 'CHAIN_DEADLINE';

@@ -307,6 +307,33 @@ export function keyTokensUsed(kind: QuotaKind, key: string, tokens: number): voi
 }
 
 /**
+ * Simpan pemakaian TOKEN harian absolut yang dilaporkan provider (mis. xKiro /v1/usage).
+ * Monoton naik via Math.max agar penghitung lokal tidak pernah mundur.
+ */
+export function keyTokenAbsolute(kind: QuotaKind, key: string, tokens: number): void {
+  const nilai = Math.max(0, Math.round(tokens));
+  if (nilai <= 0) return;
+  const ts = tokenSlot(kind, key);
+  ts.tokens = Math.max(ts.tokens, nilai);
+  ts.estimated = false;
+
+  const c = db();
+  if (!c) return;
+  const suffix = keyHash(key);
+  const day = today();
+  void (async () => {
+    try {
+      await c.from('provider_quota').upsert(
+        { kind, key_suffix: suffix, day, tokens_used: nilai },
+        { onConflict: 'kind,key_suffix,day' },
+      );
+    } catch {
+      // best-effort, abaikan
+    }
+  })();
+}
+
+/**
  * Simpan PEMAKAIAN ABSOLUT yang dilaporkan provider untuk satu kunci.
  *
  * Kenapa perlu: beberapa provider (mis. xKiro) melaporkan sisa kuota di setiap
