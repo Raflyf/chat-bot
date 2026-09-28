@@ -118,9 +118,31 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
     return;
   }
 
-  // RATE LIMIT xKiro: reset pada 00.00 UTC (07.00 WIB). Bukan rate limit 60s sementara.
+  // RATE LIMIT HARIAN GROQ / CLOUDFLARE
+   // Jika ini adalah 429 harian, kita harus suspend kunci ini sampai besok.
+   // Groq TPD biasanya menolak dengan error code atau msg yang mencolok 'daily', 'quota', 'limit_exceeded'.
+   // Karena sebelumnya error dari `RATE_LIMITED` menangkap body di pesan errornya, kita baca itu:
+   const errCode = (err as { code?: string } | null)?.code;
+   const rates = errCode === 'RATE_LIMITED' || msg === 'RATE_LIMITED' || msg.includes('429');
+   if ((kind === 'groq' || kind === 'cloudflare') && rates) {
+     // Bedakan antara limit per menit (TPM) dan per hari (TPD)
+     // - Groq biasanya melampirkan "Please try again in 5.6s" (ada 'try again in') atau retry-after jika TPM
+     // - Cloudflare juga ada response body khusus.
+     const isTempLimit = /try again in|requests per minute|tokens per minute/i.test(msg) || (err as any)?.retryAfter;
+     if (isTempLimit) {
+       keyCooldownMap.set(kh, Date.now() + 60_000); // 1 menit untuk TPM
+       return;
+     } else if (/daily|quota|limit|insufficient/i.test(msg)) {
+       // Limit harian -> cooldown sampai reset UTC
+       const cd = Date.now() + msUntilDailyResetUtc();
+       keyCooldownMap.set(kh, cd);
+       return;
+     }
+   }
+
+   // RATE LIMIT xKiro: reset pada 00.00 UTC (07.00 WIB). Bukan rate limit 60s sementara.
   // Cooldown sampai reset UTC + 5 menit, dan sinkronkan usage ke DB/cache.
-  if (kind === 'xkiro' && (msg === 'RATE_LIMITED' || (err as { code?: string })?.code === 'RATE_LIMITED' || msg.includes('429'))) {
+  if (kind === 'xkiro' && rates) {
     const cd = Date.now() + msUntilDailyResetUtc();
     keyCooldownMap.set(kh, cd);
     xkiroUsageCache.set(keyHash(key), { remaining: 0, expiresAt: cd });
@@ -129,7 +151,7 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   }
 
   // Jika rate limited (429), cooldown 60s
-  if (msg === 'RATE_LIMITED' || (err as { code?: string })?.code === 'RATE_LIMITED' || msg.includes('429')) {
+  if (rates) {
     keyCooldownMap.set(kh, Date.now() + 60_000);
     return;
   }
@@ -352,8 +374,13 @@ async function fetchJsonWithLifecycle(
   }
 
   if (res.status === 429) {
-    const err = new Error('RATE_LIMITED') as Error & { code?: string };
+    // Baca body untuk membedakan rate limit per-menit vs per-hari
+    let errBody = '';
+    try { errBody = await res.text(); } catch {}
+    const retryAfter = res.headers.get('retry-after');
+    const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null };
     err.code = 'RATE_LIMITED';
+    err.retryAfter = retryAfter;
     throw err;
   }
   if (!res.ok) {
@@ -468,8 +495,13 @@ async function streamSse(
     });
 
     if (res.status === 429) {
-      const err = new Error('RATE_LIMITED') as Error & { code?: string };
+      // Baca body untuk membedakan rate limit per-menit vs per-hari
+      let errBody = '';
+      try { errBody = await res.text(); } catch {}
+      const retryAfter = res.headers.get('retry-after');
+      const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null };
       err.code = 'RATE_LIMITED';
+      err.retryAfter = retryAfter;
       throw err;
     }
     if (!res.ok) {
