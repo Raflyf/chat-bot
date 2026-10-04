@@ -2195,20 +2195,6 @@ function renderLiveUpstreamTable(data) {
             <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;" title="Input Context: ${ctxTk.toLocaleString('id-ID')} tk | Output Completion: ${outTk.toLocaleString('id-ID')} tk | Total: ${totalTk.toLocaleString('id-ID')} tk${isRealUsage ? ' (Terverifikasi Upstream Engine)' : ''}">
               <span style="color: var(--text-muted);">Ctx:</span> ${ctxTk.toLocaleString("id-ID")} &bull; <span style="color: var(--text-muted);">Out:</span> ${outTk.toLocaleString("id-ID")}
             </div>
-            ${(() => {
-              // BAR DITAMBAHKAN (04 Okt): kolom token sebelumnya hanya angka sehingga
-              // sulit melihat sekilas pesan mana yang paling boros. Bar menunjukkan
-              // porsi CONTEXT (prompt) vs OUTPUT, dengan skala relatif ke pesan terboros
-              // di halaman ini agar perbandingan antar-baris langsung terlihat.
-              const maxTk = Math.max(1, ...pageItems.map((x) => Number(x.totalTokens) || 0));
-              const barW = Math.min(100, Math.round((totalTk / maxTk) * 100));
-              const ctxPorsi = totalTk > 0 ? Math.round((ctxTk / totalTk) * 100) : 0;
-              const warna = barW >= 90 ? 'progress-rose' : barW >= 60 ? 'progress-amber' : 'progress-emerald';
-              return `<div class="progress-bar-bg" style="height: 5px; margin-top: 5px;" title="Context ${ctxPorsi}% • Output ${100 - ctxPorsi}%">
-                        <div class="progress-bar-fill ${warna}" style="width: ${barW}%"></div>
-                      </div>
-                      <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 2px;">Ctx ${ctxPorsi}% • Out ${100 - ctxPorsi}%</div>`;
-            })()}
           </td>
           <td>
             <div class="dataset-prompt">${escapeHtml(p.userPrompt)}</div>
