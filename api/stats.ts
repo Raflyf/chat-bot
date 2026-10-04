@@ -450,6 +450,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       groq: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       gemini: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       cloudflare: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      opencode: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       openrouter: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       xkiro: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
     };
@@ -460,7 +461,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Atribusi provider dari string via. Format bisa berlapis (mis. "local-parser/groq/qwen/...",
     // "dynamic-pdf-error/gemini/..."), jadi cari segmen path yang cocok dengan provider resmi —
     // bukan hanya segmen pertama — agar token tetap terhitung ke pool yang benar.
-    const KNOWN_PROVIDER_KINDS = ['dreamprompting', 'cloudflare', 'nvidia', 'openrouter', 'groq', 'gemini', 'dahl', 'xkiro'];
+    const KNOWN_PROVIDER_KINDS = ['dreamprompting', 'cloudflare', 'nvidia', 'openrouter', 'groq', 'gemini', 'dahl', 'xkiro', 'opencode'];
     const extractProviderKind = (via: string): string => {
       const segments = via.toLowerCase().split('/');
       return segments.find((s) => KNOWN_PROVIDER_KINDS.includes(s)) || '';
@@ -606,7 +607,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // 4. Bangun status Pool per Provider & tiap API Key (7 Tier Resmi Runtime Sistem)
     const providerDefs: Array<{
-      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'xkiro';
+      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'xkiro' | 'opencode';
       displayName: string;
       keys: string[];
       cap: number;
@@ -733,6 +734,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         primaryModel: config.models.dahlPrimary,
         backupModel: config.models.dahlBackup.join(' / '),
         allModels: [config.models.dahlPrimary, ...config.models.dahlBackup],
+      },
+      {
+        kind: 'opencode',
+        displayName: 'OpenCode Free',
+        keys: config.pools.opencode,
+        cap: config.dailyCap.opencode,
+        tokenCapPerKey: config.dailyTokenCap.opencode,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.opencode,
+        tokenLimitType: 'daily_cap',
+        // OpenCode Free: tanpa API key (noAuth, "Bearer public"). Kuota dihitung
+        // per SESI di sisi upstream, bukan per key — jadi angka di sini adalah
+        // pemakaian internal bot (bukan kuota resmi yang bisa dibaca dari API).
+        tokenLimitLabel: 'Tanpa API key (Bearer public) • kuota per sesi di upstream • 8.000 token/respons',
+        resetCycle: 'Rolling (per sesi)',
+        contextWindow: '1.000.000 Token (1M)',
+        primaryModel: config.models.opencodePrimary,
+        backupModel: config.models.opencodeBackup.join(' / '),
+        allModels: [config.models.opencodePrimary, ...config.models.opencodeBackup],
       },
       ...(config.pools.xkiro.length > 0 ? [{
         kind: 'xkiro' as const,

@@ -91,8 +91,8 @@ export const config = {
     // OpenCode Free (langsung ke opencode.ai, TANPA 9Router):
     // 2 model sesuai permintaan user. Terverifikasi 3/3 stabil.
     // Wajib: 4 tool fingerprint + format per-endpoint (lihat opencodeChat).
-    opencodePrimary: 'mimo-v2.6-flash-free',
-    opencodeBackup: ['muse-spark-1.3-contributor-free'],
+    opencodePrimary: 'muse-spark-1.3-contributor-free',
+    opencodeBackup: ['mimo-v2.6-flash-free'],
     nvidiaPrimary: 'google/diffusiongemma-26b-a4b-it',
     nvidiaBackup: [
       'meta/llama-3.2-11b-vision-instruct',

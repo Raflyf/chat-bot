@@ -1872,6 +1872,47 @@ function renderLiveUpstreamTable(data) {
                 </td>
               </tr>
             `);
+          } else if (p.kind === "opencode") {
+            // BAR DITAMBAHKAN (04 Okt): OpenCode Free (mimo-v2.6 + muse-spark-1.3).
+            // Tanpa API key (Bearer public); kuota dihitung per SESI di upstream,
+            // jadi bar menampilkan pemakaian internal bot (bukan kuota resmi API).
+            const ocCap = p.capPerKey || p.cap || 1000;
+            const ocUsed = k.used || 0;
+            const ocRemaining = Math.max(0, ocCap - ocUsed);
+            const ocPct = ocCap > 0 ? Math.min(100, Math.round((ocUsed / ocCap) * 100)) : 0;
+            const ocStatusClass = ocPct >= 100 ? "status-capped" : ocPct >= 80 ? "status-warning" : "status-healthy";
+            const ocStatusText = ocPct >= 100 ? "LIMIT CAP" : ocPct >= 80 ? "WASPADAI" : "OPTIMAL";
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #E87040; font-weight: 700; margin-top: 3px;">public (no-auth)</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">OpenCode Zen</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">opencode.ai/zen/v1</div>
+                </td>
+                <td>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #E87040;">${ocUsed.toLocaleString("id-ID")} Panggilan</span>
+                    <span style="color: var(--text-dim);">${ocPct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${ocPct >= 100 ? 'progress-rose' : ocPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${ocPct}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : 'Tanpa API key • kuota per sesi'}</div>
+                  <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">Utama: ${escapeHtml(p.primaryModel || '-')} • Cadangan: ${escapeHtml(p.backupModel || '-')}</div>
+                </td>
+                <td>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: ${ocPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${ocPct >= 100 ? 'HABIS' : ocRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: ${ocPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${ocPct >= 100 ? '● Kuota habis' : '● Sisa Panggilan'}</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(232, 112, 64, 0.15); color: #E87040; border-color: rgba(232, 112, 64, 0.3);">● Bot Monitored</span>
+                  <div><span class="key-badge-status ${ocStatusClass}">${ocStatusText}</span></div>
+                </td>
+              </tr>
+            `);
           }
         });
       });
@@ -1994,6 +2035,10 @@ function renderLiveUpstreamTable(data) {
         } else if (p.kind === "groq") {
           mechanismText = "RPD + TPD (Token Harian)";
           limitOfficial = "1.000 RPD • 8K TPM • 200K TPD";
+        } else if (p.kind === "opencode") {
+          // OpenCode Free: tanpa API key (noAuth), kuota per SESI di upstream.
+          mechanismText = "Kuota per Sesi (tanpa API key)";
+          limitOfficial = "Bearer public • 8.000 token/respons";
         } else if (p.tokenLimitType === "requests_tpm") {
           mechanismText = "Batas Permintaan & TPM";
           limitOfficial = p.totalCap > 0 ? `${(Number(p.capPerKey) || 0).toLocaleString()} RPD/key` : "Tanpa Limit Mutlak";
