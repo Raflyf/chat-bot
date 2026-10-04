@@ -595,7 +595,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // Pool reset label
       const poolReset = document.getElementById("pool-reset-label");
       if (poolReset) {
-        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (Cloudflare, OpenRouter, Groq, Dahl, xKiro) \u2022 00:00 PT (Gemini) \u2022 Rolling 24h (DreamPrompting)";
+        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (Cloudflare, OpenRouter, Groq, Dahl) \u2022 00:00 PT (Gemini) \u2022 Rolling 24h (DreamPrompting) \u2022 per sesi (OpenCode)";
         else poolReset.textContent = `Akumulasi Periode ${rangeLabel}`;
       }
 
@@ -634,8 +634,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const panelRenders = [
         ["Pemakaian pool API key", renderPoolMatrix],
         ["Penyedia dan kunci", renderLiveUpstreamTable],
-        ["Web search xKiro", renderWebSearchPanel],
-        ["Batas token per penyedia", renderTokenMatrix],
+        ["Web search", renderWebSearchPanel],
         ["Distribusi model LLM", renderAiModelMatrix],
       ];
       for (const [nama, fn] of panelRenders) {
@@ -796,7 +795,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "NVIDIA",
           tagClass: "tag-nvidia",
           capabilities: ["Text", "Reasoning", "NIM Speed"],
-          desc: "Prioritas #1 Tier 3 - Primer teks NVIDIA NIM, 590ms latensi teruji; 1.000 credits pool",
+          desc: "Prioritas #1 Tier 5 - Primer teks NVIDIA NIM, 590ms latensi teruji; 1.000 credits pool",
           matchKeys: ["nvidia/google/diffusiongemma-26b-a4b-it", "google/diffusiongemma-26b-a4b-it", "diffusiongemma-26b-a4b-it", "diffusiongemma"],
         },
         {
@@ -804,7 +803,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "NVIDIA",
           tagClass: "tag-nvidia",
           capabilities: ["Text", "Vision", "NIM Speed"],
-          desc: "Cadangan #1 Tier 3 - Penalaran visual/multimodal dan teks cadangan NVIDIA NIM, 711ms",
+          desc: "Cadangan #1 Tier 5 - Penalaran visual/multimodal dan teks cadangan NVIDIA NIM, 711ms",
           matchKeys: ["nvidia/meta/llama-3.2-11b-vision-instruct", "meta/llama-3.2-11b-vision-instruct", "llama-3.2-11b-vision-instruct", "llama-3.2-11b"],
         },
         // --- Tier 4: OpenRouter AI (Free Models) ---
@@ -830,7 +829,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Text", "Reasoning", "Vision", "LPU Speed"],
-          desc: "Prioritas #1 Tier 5 - 370ms = TERCEPAT dari seluruh model LPU; vision prioritas #1 rantai multimodal",
+          desc: "Prioritas #1 Tier 6 - 370ms = TERCEPAT dari seluruh model LPU; vision prioritas #1 rantai multimodal",
           matchKeys: ["groq/qwen/qwen3.8-27b", "groq/qwen3.8", "qwen/qwen3.8-27b", "qwen3.8-27b"],
         },
         {
@@ -838,7 +837,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Text", "Reasoning", "LPU Speed"],
-          desc: "Prioritas #2 Tier 5 - Penalaran kuat GPT-OSS 120B di LPU Groq (reasoning_effort: low)",
+          desc: "Prioritas #2 Tier 6 - Penalaran kuat GPT-OSS 120B di LPU Groq (reasoning_effort: low)",
           matchKeys: ["groq/openai/gpt-oss-120b", "openai/gpt-oss-120b", "gpt-oss-120b"],
         },
         {
@@ -855,7 +854,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "GEMINI",
           tagClass: "tag-gemini",
           capabilities: ["Text", "Reasoning", "PDF & Video"],
-          desc: "Prioritas #1 Tier 6 - Primer teks & dokumen/video native (1M konteks); 1.500 RPD tier",
+          desc: "Prioritas #1 Tier 7 - Primer teks & dokumen/video native (1M konteks); 1.500 RPD tier",
           matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
         },
         {
@@ -888,7 +887,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "DAHL",
           tagClass: "tag-dahl",
           capabilities: ["Fast Reasoning", "Text", "Code"],
-          desc: "Prioritas #1 Tier 7 - SOTA Reasoning kilat & 1 Miliar Token Pool",
+          desc: "Prioritas #1 Tier 8 - SOTA Reasoning kilat & 1 Miliar Token Pool",
           matchKeys: ["dahl/deepseek-ai/deepseek-v4-flash-0731", "deepseek-ai/deepseek-v4-flash-0731"],
         },
         {
@@ -896,41 +895,43 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "DAHL",
           tagClass: "tag-dahl",
           capabilities: ["Text", "Reasoning", "Thinking"],
-          desc: "Cadangan #1 Tier 7 - Zhipu AI GLM 5.3 Flash via Cloudflare Worker proxy Dahl Global",
+          desc: "Cadangan #1 Tier 8 - Zhipu AI GLM 5.3 Flash via Cloudflare Worker proxy Dahl Global",
           matchKeys: ["dahl/zai-org/glm-5.3-flash", "zai-org/glm-5.3-flash", "glm-5.3-flash"],
         },
-        // --- Cadangan Multimodal & Web Search Fallback: xKiro Gateway ---
+        // --- Tier 8: OpenCode Free (mimo/muse, TANPA API key) ---
+        // DITAMBAHKAN 04 Okt: xKiro DIHAPUS (8 akun disuspend permanen 403),
+        // digantikan OpenCode Free yang terverifikasi berfungsi.
         {
-          name: "Qwen 3.8 Max Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Multimodal", "Search Fallback"],
-          desc: "Vision prioritas #8 rantai multimodal & web search fallback",
-          matchKeys: ["xkiro/qwen/qwen3.8-max:free", "qwen/qwen3.8-max:free", "qwen3.8-max"],
+          name: "Muse Spark 1.3 Contributor",
+          provider: "OPENCODE",
+          tagClass: "tag-opencode",
+          capabilities: ["Text", "Reasoning", "Multimodal", "No API Key"],
+          desc: "Prioritas #1 Tier 8 - Primer teks OpenCode Free; gratis tanpa API key (Bearer public), effort low 780ms",
+          matchKeys: ["opencode/muse-spark-1.3-contributor-free", "muse-spark-1.3-contributor-free", "muse-spark-1.3"],
         },
         {
-          name: "Qwen 3 VL Plus Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Multimodal"],
-          desc: "Vision prioritas #9 - Model visual khusus xKiro",
-          matchKeys: ["xkiro/qwen/qwen3-vl-plus:free", "qwen/qwen3-vl-plus:free", "qwen3-vl-plus"],
+          name: "MiMo v2.6 Flash",
+          provider: "OPENCODE",
+          tagClass: "tag-opencode",
+          capabilities: ["Text", "Reasoning", "Multimodal", "No API Key"],
+          desc: "Cadangan #1 Tier 8 - Cadangan teks OpenCode Free; ikut balapan (race) dengan primer, menang saat primer lambat",
+          matchKeys: ["opencode/mimo-v2.6-flash-free", "mimo-v2.6-flash-free", "mimo-v2.6-flash"],
         },
         {
-          name: "Qwen 3.5 Omni Flash Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Multimodal"],
-          desc: "Vision prioritas #10 - Generasi omni sebelumnya, terbukti andal",
-          matchKeys: ["xkiro/qwen/qwen3.5-omni-flash:free", "qwen/qwen3.5-omni-flash:free", "qwen3.5-omni-flash"],
+          name: "Big Pickle",
+          provider: "OPENCODE",
+          tagClass: "tag-opencode",
+          capabilities: ["Vision", "Multimodal", "No API Key"],
+          desc: "Vision OpenCode #1 - Terukur 1261ms, benar + taat instruksi (diuji 04 Okt)",
+          matchKeys: ["opencode/big-pickle", "big-pickle"],
         },
         {
-          name: "Qwen 3.8 Omni Flash Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Multimodal"],
-          desc: "Vision prioritas #11 (jaring terakhir) - Model omni xKiro terbaru",
-          matchKeys: ["xkiro/qwen/qwen3.8-omni-flash:free", "qwen/qwen3.8-omni-flash:free", "qwen3.8-omni-flash"],
+          name: "MiMo v2.5 Free",
+          provider: "OPENCODE",
+          tagClass: "tag-opencode",
+          capabilities: ["Vision", "Multimodal", "No API Key"],
+          desc: "Vision OpenCode #2 - Terukur 1536ms, benar + taat instruksi (diuji 04 Okt)",
+          matchKeys: ["opencode/mimo-v2.5-free", "mimo-v2.5-free"],
         },
       ];
 
@@ -1171,7 +1172,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             const kPct = Number(k.percent) || 0;
             const capLabel = kCap > 0 ? `${kUsed.toLocaleString("id-ID")} / ${kCap.toLocaleString("id-ID")} panggilan (${kPct}%)` : `${kUsed.toLocaleString()} calls`;
 
-            // Baris kedua: info TOKEN bila provider punya batas token (xKiro/Dahl/Groq).
+            // Baris kedua: info TOKEN bila provider punya batas token (Dahl/Groq).
             // Inilah yang membuat dashboard jujur: key ...6386 tampil "112/500 panggilan (22%)"
             // SEKALIGUS "1.004.173 / 1.000.000 token (100%)" — tidak lagi menyesatkan.
             // Limit diambil dari endpoint provider (v0.49) — ditandai "live" atau "dokumentasi".
@@ -1201,7 +1202,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             } else if ((k.cap || 0) > 0) {
               // Provider tanpa batas token (Cloudflare, Gemini, OpenRouter) hanya
               // punya batas panggilan. Sebelumnya mereka tampil tanpa baris
-              // terukur sama sekali, sehingga bar hanya terlihat di xKiro/Dahl.
+              // terukur sama sekali, sehingga bar hanya terlihat di Dahl.
               // Sekarang setiap kunci punya baris bar: panggilan bila token tidak
               // dibatasi, token bila dibatasi — jadi semua provider konsisten.
               const callPct = Math.min(100, k.percent || 0);
@@ -1243,7 +1244,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const usedPeriodValue = p.usedPeriod ?? usedValue;
         const showPeriodInfo = usedPeriodValue > usedValue;
         const capInfo = p.totalCap > 0 ? `Batas: ${(Number(p.totalCap) || 0).toLocaleString("id-ID")} panggilan` : "Uncapped";
-        // Konteks token pada header kartu: provider yang dibatasi TOKEN (xKiro/Dahl/Groq)
+        // Konteks token pada header kartu: provider yang dibatasi TOKEN (Dahl/Groq)
         // tidak boleh hanya menampilkan panggilan — pengguna perlu tahu batas mana yang mengikat.
         const hasTokenContext = (p.totalTokenCap || 0) > 0 && (p.totalTokensUsed || 0) > 0;
         const providerTokenPct = p.tokenPercent || 0;
@@ -1348,7 +1349,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     }
 
     /**
- * Panel pemakaian WEB SEARCH xKiro.
+ * Panel pemakaian WEB SEARCH (mesin pencari cadangan).
  *
  * Kenapa panel terpisah: web search memakai kuota yang TERPISAH dari kuota token
  * (10 pencarian per kunci per hari, diukur langsung dari respons provider —
@@ -1448,7 +1449,7 @@ function renderWebSearchPanel(data) {
         ? `${cooling} dari ${keysTotal} kunci sedang kehabisan kuota — kunci pertama aktif lagi sekitar pukul ${jamPulih}`
         : `${cooling} dari ${keysTotal} kunci sedang kehabisan kuota, aktif lagi otomatis`;
     } else {
-      sub.textContent = "Pencarian dicoba lewat xKiro lebih dulu, mesin cadangan dipakai bila jatah habis";
+      sub.textContent = "Pencarian lewat mesin utama, mesin cadangan dipakai bila jatah habis";
     }
   }
 
@@ -1473,7 +1474,7 @@ function renderWebSearchPanel(data) {
     foot.textContent =
       `Web search memakai kuota terpisah dari kuota token: ${ws.capPerKey} pencarian per kunci per hari. ` +
       sumber +
-      ` Bila jatah xKiro habis, bot otomatis memakai mesin pencari cadangan tanpa kuota.`;
+      ` Bila jatah mesin utama habis, bot otomatis memakai mesin pencari cadangan tanpa kuota.`;
   }
 }
 
@@ -1941,18 +1942,18 @@ function renderLiveUpstreamTable(data) {
         if (grandTotalGroqRpd > 0) extraParts.push(`${grandTotalGroqRpd.toLocaleString("id-ID")} RPD Groq`);
         if (grandTotalCloudflareRpd > 0) extraParts.push(`${grandTotalCloudflareRpd.toLocaleString("id-ID")} RPD Cloudflare`);
         capSubEl.textContent = extraParts.length > 0 
-          ? `Dahl & xKiro Gateway (+${extraParts.join(", ")})` 
-          : "Dahl & xKiro Gateway (Token Pool)";
+          ? `Dahl Global (+${extraParts.join(", ")})` 
+          : "Dahl Global (Token Pool)";
       }
       if (usedEl) {
-        // Token pool berbatas (Dahl + xKiro) ditampilkan utama agar sinkron dengan cap & sisa;
+        // Token pool berbatas (Dahl) ditampilkan utama agar sinkron dengan cap & sisa;
         // token provider bebas kuota (Groq) dilaporkan terpisah di subtext.
         usedEl.textContent = grandTotalTokenUsed.toLocaleString("id-ID") + " Token";
       }
       const usedSubEl = document.getElementById("upstream-total-used-sub");
       if (usedSubEl) {
         usedSubEl.textContent = grandTotalUnboundedTokenUsed > 0
-          ? `Pool Dahl & xKiro • +${grandTotalUnboundedTokenUsed.toLocaleString("id-ID")} Token Bebas Kuota (Groq)`
+          ? `Pool Dahl Global • +${grandTotalUnboundedTokenUsed.toLocaleString("id-ID")} Token Bebas Kuota (Groq)`
           : "Akumulasi Global (Bot + IDE)";
       }
       if (remEl) remEl.textContent = grandTotalTokenRemaining.toLocaleString("id-ID") + " Token";
@@ -1975,150 +1976,6 @@ function renderLiveUpstreamTable(data) {
         waSessSubEl.textContent = `Sisa ${waSessions.remaining.toLocaleString("id-ID")} Sesi (${waSessions.monthLabel})`;
       }
     }
-
-    function renderTokenMatrix(data) {
-      const tbody = document.getElementById("token-matrix-tbody");
-      if (!tbody) return;
-
-      const pools = data.pools || data.providers || [];
-      if (pools.length === 0) {
-        setHtmlIfChanged(tbody, `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">Tidak ada data provider.</td></tr>`);
-        return;
-      }
-
-      // Fragmen WAJIB dibuat di sini. Sebelumnya baris di bawah memakai __frag
-      // yang hanya dibuat di renderLiveUpstreamTable -> ReferenceError -> seluruh
-      // renderDashboard berhenti dan semua panel setelah token matrix kosong.
-      const __frag = document.createDocumentFragment();
-
-      pools.forEach(p => {
-        const usedCalls = p.usedPeriod ?? p.usedToday ?? 0;
-        const tokensUsed = p.totalTokensUsed ?? (usedCalls * (p.avgTokensPerChat || 0));
-
-        // Status provider memakai metrik BINDING (mana yang lebih dulu habis).
-        // xKiro dibatasi token harian: 1.592.109/2.000.000 token = 80% padahal panggilan
-        // hanya 192/1.500 = 13%. Memakai p.percent saja membuat status salah "Optimal".
-        const providerBindingPct = Math.max(p.percent || 0, p.tokenPercent || 0);
-
-        let statusBadgeClass = "status-healthy";
-        let statusText = "Optimal";
-        if (providerBindingPct >= 100) {
-          statusBadgeClass = "status-capped";
-          statusText = "Capped";
-        } else if (providerBindingPct >= 80) {
-          statusBadgeClass = "status-warning";
-          statusText = "Waspada";
-        }
-
-        let mechanismText = "Kuota Token Harian";
-        // Limit resmi per-key. xKiro TIDAK seragam (key1 1jt, key2/3 500k) — tampilkan
-        // rentang nyata, bukan satu angka yang menyesatkan (temuan: tertulis "5M
-        // Token/hari/key" padahal limit asli 1jt & 500k).
-        const perKeyCaps = Array.isArray(p.tokenCapPerKeyList) ? p.tokenCapPerKeyList.filter((c) => c > 0) : [];
-        let limitOfficial;
-        if (perKeyCaps.length > 0) {
-          const minCap = Math.min(...perKeyCaps);
-          const maxCap = Math.max(...perKeyCaps);
-          // formatTokens sudah memuat kata "Token"; buang agar tidak "1M Token-500K Token".
-          const fmtNum = (n) => formatTokens(n).replace(/\s*Token$/, "");
-          limitOfficial = minCap === maxCap
-            ? `${fmtNum(minCap)} Token/hari/key`
-            : `${fmtNum(minCap)}-${fmtNum(maxCap)} Token/hari/key`;
-        } else {
-          limitOfficial = `${formatTokens(p.tokenCapPerKey)}/hari/key`;
-        }
-        if (p.kind === "dahl") {
-          mechanismText = "Pool Saldo Token (1B)";
-          limitOfficial = "100M Token/key (~5K RPD)";
-        } else if (p.kind === "cloudflare") {
-          mechanismText = "Batas Neuron Harian";
-          limitOfficial = `10.000 Neuron (~${(p.capPerKey || 300).toLocaleString()} RPD)`;
-        } else if (p.kind === "groq") {
-          mechanismText = "RPD + TPD (Token Harian)";
-          limitOfficial = "1.000 RPD • 8K TPM • 200K TPD";
-        } else if (p.kind === "opencode") {
-          // OpenCode Free: tanpa API key (noAuth), kuota per SESI di upstream.
-          mechanismText = "Kuota per Sesi (tanpa API key)";
-          limitOfficial = "Bearer public • 8.000 token/respons";
-        } else if (p.tokenLimitType === "requests_tpm") {
-          mechanismText = "Batas Permintaan & TPM";
-          limitOfficial = p.totalCap > 0 ? `${(Number(p.capPerKey) || 0).toLocaleString()} RPD/key` : "Tanpa Limit Mutlak";
-        } else if (p.tokenLimitType === "monthly_credits") {
-          mechanismText = "Kredit Bulanan Akun";
-          limitOfficial = "Included Usage Credits";
-        }
-
-        let syncSubtext = "";
-        if (p.isLiveSynced) {
-          syncSubtext = `<div style="font-size: 0.72rem; color: #34d399; margin-top: 2px; font-weight: 600;">● Live API Sync (Global di Semua App &amp; IDE)</div>`;
-        } else if (p.realUsageCalls > 0 || (p.avgTokensPerChat && p.avgTokensPerChat > 0)) {
-          syncSubtext = `<div style="font-size: 0.72rem; color: #38bdf8; margin-top: 2px; font-weight: 600;">● Token Riil Upstream (Rata-rata ~${formatTokens(p.avgTokensPerChat)}/chat)</div>`;
-        } else {
-          syncSubtext = `<div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Terhitung dari riwayat pesan</div>`;
-        }
-
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>
-            <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-          </td>
-          <td>
-            <span style="color: #cbd5e1; font-weight: 500;">${escapeHtml(mechanismText)}</span>
-          </td>
-          <td>
-            <span style="font-weight: 600; color: #38bdf8;">${escapeHtml(limitOfficial)}</span>
-          </td>
-          <td>
-            <span class="tp-badge-cycle">${escapeHtml(p.resetCycle || "-")}</span>
-          </td>
-          <td>
-            <div style="font-weight: 700; color: var(--text-main);">${usedCalls.toLocaleString()} Calls &bull; ${formatTokens(tokensUsed)}</div>
-            ${(p.totalTokenCap > 0 && p.totalTokensRemaining !== undefined)
-              ? `<div style="font-size: 0.72rem; color: #34d399; margin-top: 2px;">Sisa ${formatTokens(p.totalTokensRemaining)} dari ${formatTokens(p.totalTokenCap)}${p.cappedKeys > 0 ? ` &bull; <span style="color:#fb7185;font-weight:700;">${p.cappedKeys} key habis</span>` : ''}</div>`
-              : ""}
-            ${(() => {
-              // BAR DITAMBAHKAN (04 Okt): tabel matriks token sebelumnya hanya teks
-              // sehingga sulit dilihat sekilas mana provider yang mendekati batas.
-              // Bar memakai metrik BINDING (panggilan vs token — mana yang lebih dulu habis).
-              const barPct = Math.min(100, Math.max(0, providerBindingPct));
-              const barColor = barPct >= 100 ? 'progress-rose' : barPct >= 80 ? 'progress-amber' : 'progress-emerald';
-              return `<div class="progress-bar-bg" style="height: 6px; margin-top: 6px;">
-                        <div class="progress-bar-fill ${barColor}" style="width: ${barPct}%"></div>
-                      </div>
-                      <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-dim); margin-top: 3px;">
-                        <span>${barPct}% terpakai (${p.percent || 0}% req &bull; ${p.tokenPercent || 0}% token)</span>
-                        <span>${barPct >= 100 ? 'HABIS' : 'tersedia'}</span>
-                      </div>`;
-            })()}
-            ${syncSubtext}
-          </td>
-          <td style="text-align: right;">
-            <span class="key-badge-status ${statusBadgeClass}">${statusText}</span>
-          </td>
-        `;
-        __frag.appendChild(tr);
-      });
-
-      // Bandingkan dulu: kalau isi tabel identik, jangan sentuh DOM sama sekali.
-      const __htmlBaru = (() => {
-        const tmp = document.createElement("tbody");
-        tmp.appendChild(__frag.cloneNode(true));
-        return tmp.innerHTML;
-      })();
-      if (tbody.__lastHtml !== __htmlBaru) {
-        tbody.innerHTML = "";
-        tbody.appendChild(__frag);
-        tbody.__lastHtml = __htmlBaru;
-      }
-    }
-
-
-    // =========================================================================
-    // DATASET EVALUATION & TRAINING LOADER (PAGINATED: 5 CHATS PER PAGE)
-    // =========================================================================
-    let currentDatasetPage = 1;
-    const DATASET_PAGE_SIZE = 5;
-    let cachedDatasetPairs = [];
 
     function debounceDatasetSearch() {
       if (datasetSearchTimeout) clearTimeout(datasetSearchTimeout);
@@ -2573,7 +2430,7 @@ function renderLiveUpstreamTable(data) {
       window._dashRevealDone = true;
 
       const targets = document.querySelectorAll(
-        ".console-head, .kpi-card, .smart-gateway-banner, .matrix-section, .provider-card, .live-upstream-card, .token-matrix-section, #dataset-section, .model-matrix-card"
+        ".console-head, .kpi-card, .smart-gateway-banner, .matrix-section, .provider-card, .live-upstream-card, #dataset-section, .model-matrix-card"
       );
       if (!targets.length) return;
 

@@ -2167,6 +2167,8 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
 .tag-gemini { color: #fbbf24; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.28); }
 .tag-dahl { color: #2dd4bf; background: rgba(45, 212, 191, 0.1); border: 1px solid rgba(45, 212, 191, 0.28); }
 .tag-xkiro { color: #4da3ff; background: rgba(77, 163, 255, 0.1); border: 1px solid rgba(77, 163, 255, 0.28); }
+/* OpenCode Free — pengganti xKiro (yang disuspend). Warna oranye khas OpenCode. */
+.tag-opencode { color: #E87040; background: rgba(232, 112, 64, 0.1); border: 1px solid rgba(232, 112, 64, 0.28); }
 
 /* Pagination bar di riwayat percakapan */
 .pagination-info {
