@@ -139,6 +139,23 @@ export const config = {
     // Dipakai chat({ vision: true }) untuk foto, stiker, dan gambar di dalam dokumen Word.
     visionChain: [
       { kind: 'groq', model: 'qwen/qwen3.8-27b' },
+      // ---- DITAMBAHKAN 04 Okt (hasil ukur nyata dengan gambar uji) ----
+      // xKiro DISUSPEND (403) & Cloudflare NEURON HABIS -> 5 dari 11 model lama mati.
+      // Tiga model berikut diukur langsung dan terbukti BERFUNGSI + CEPAT:
+      //   openrouter/nemotron-3-nano-omni-free  441ms  benar + taat instruksi (TERCEPAT)
+      //   nvidia/llama-3.2-11b-vision-instruct  769ms  benar (kurang taat format)
+      //   openrouter/space-bunny-alpha         2112ms  benar + taat
+      { kind: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
+      { kind: 'nvidia', model: 'meta/llama-3.2-11b-vision-instruct' },
+      { kind: 'openrouter', model: 'stealth/space-bunny-alpha' },
+      // DITAMBAHKAN 04 Okt (uji nyata): OpenCode ternyata BISA VISION.
+      // Diuji dengan gambar nyata — 4 model menjawab BENAR & taat instruksi:
+      //   big-pickle       1261ms | space-bunny-free  1301ms
+      //   mimo-v2.5-free   1536ms | mimo-v2.6-flash   1821ms
+      // CATATAN: muse-spark-1.3 (model utama OpenCode) TIDAK bisa vision —
+      // dia menjawab "Saya cek dulu gambarnya..." alih-alih membacanya.
+      { kind: 'opencode', model: 'big-pickle' },
+      { kind: 'opencode', model: 'mimo-v2.5-free' },
       // DITAMBAHKAN 25 Sep: Command A Vision — terukur 4/4 akurat untuk OCR tabel
       // angka (2.557ms), jauh lebih cepat dari xkiro/qwen3-vl-plus (4.828ms) dan
       // mengisi celah antara Groq (primer) dan Cloudflare (lemah baca digit halus).
