@@ -538,25 +538,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       config.models.cfPrimary,
       ...config.models.cfBackup,
       ...config.models.cfVision,
-      // Tier 3: NVIDIA NIM
-      config.models.nvidiaPrimary,
-      ...config.models.nvidiaBackup,
+      // Tier 3: OpenCode Free (mimo/muse, tanpa API key)
+      // DITAMBAHKAN 04 Okt 2026 — BUG YANG DIPERBAIKI:
+      // Sebelumnya OpenCode TIDAK terdaftar di sini, sehingga isModelActive()
+      // mengembalikan false untuk semua balasan OpenCode. Akibatnya model yang
+      // PALING BARU merespons (muse-spark / mimo) DIBUANG dari daftar MRU, dan
+      // dashboard menampilkan model lain (Nemotron) di posisi #1 — padahal bukan
+      // dia yang terakhir menjawab. Keluhan user: "kenapa yg #1 tidak model yg
+      // sedang merespon".
+      config.models.opencodePrimary,
+      ...config.models.opencodeBackup,
       // Tier 4: OpenRouter
       config.models.orPrimary,
       ...config.models.orBackup,
-      // Tier 5: Groq
+      // Tier 5: NVIDIA NIM
+      config.models.nvidiaPrimary,
+      ...config.models.nvidiaBackup,
+      // Tier 6: Groq
       config.models.groqPrimary,
       ...config.models.groqBackup,
-      // Tier 6: Gemini (teks + model vision khusus)
+      // Tier 7: Gemini (teks + model vision khusus)
       config.models.geminiPrimary,
       ...config.models.geminiBackup,
       ...config.models.geminiVision,
-      // Tier 7: Dahl Global
+      // Tier 8: Dahl Global
       config.models.dahlPrimary,
       ...config.models.dahlBackup,
-      // Provider Cadangan & Multimodal / Search
-      config.models.xkiroPrimary,
-      ...config.models.xkiroBackup,
+      // CATATAN: xKiro DIHAPUS 04 Okt 2026 (8 akun disuspend permanen 403).
+      // Entri xkiroPrimary/xkiroBackup yang lama sudah dibuang dari daftar ini.
       // Rantai vision eksplisit (model yang bisa muncul sebagai `via`)
       ...config.models.visionChain.map((v) => v.model),
       'whisper-large-v3-turbo',
