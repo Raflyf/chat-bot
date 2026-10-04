@@ -11,9 +11,45 @@ export interface ReminderItem {
   status: 'pending' | 'processing' | 'sent' | 'failed';
   platform?: 'telegram' | 'whatsapp';
   lease_until?: string | null;
+  /** Kapan pengingat dibuat (dipakai agar AI tidak mengarang "kemarin"). */
+  created_at?: string | null;
 }
 
 /** Simpan reminder ke Supabase untuk persistensi Vercel Serverless & Cron. */
+/**
+ * Bulatkan waktu jatuh tempo ke AWAL MENIT agar cron per-menit menangkapnya
+ * tepat waktu.
+ *
+ * MASALAH NYATA (04 Okt 2026, keluhan: "masih ngaret 1 menit"):
+ *   User: "ingatkan 1 menit lagi login" pukul 22.56 -> due_at = 22.57:xx
+ *   cron-job.org memeriksa tiap menit, TAPI dengan jitter 4-40 detik.
+ *   Bila due_at = 22.57:45 sedangkan cron memeriksa 22.57:10 (belum jatuh tempo),
+ *   pengingat BARU terkirim pada 22.58:10 -> terasa telat ~1 menit.
+ *
+ * SOLUSI: bulatkan due_at KE BAWAH ke awal menit (22.57:00). Dengan begitu
+ * pemeriksaan cron mana pun DALAM menit itu (22.57:04 s/d 22.57:40) sudah
+ * menemukan pengingatnya.
+ *
+ * PENGAMAN: bila hasil pembulatan terlalu dekat dengan SEKARANG (< 30 detik),
+ * jangan dipakai — pengingat bisa terasa "kecepetan". Pakai menit berikutnya.
+ * Contoh: user minta "1 menit lagi" pada 22.56:50 -> due 22.57:50 ->
+ *         pembulatan 22.57:00 hanya 10 detik dari sekarang -> pakai 22.58:00.
+ *
+ * TRADEOFF JUJUR: dengan cron ber-granularitas 60 detik + jitter 4-40 detik,
+ * pengingat tetap bisa meleset ~30-60 detik. Pembulatan ini mempersempit
+ * kelewatan, bukan menghilangkannya.
+ */
+function bulatkanKeAwalMenit(dueAt: Date, sekarang: Date = new Date()): Date {
+  const floor = new Date(dueAt);
+  floor.setSeconds(0, 0);
+
+  const jarakDetik = (floor.getTime() - sekarang.getTime()) / 1000;
+  // Sudah lewat / hampir lewat -> kirim segera (jangan ditunda).
+  if (jarakDetik < 0) return dueAt;
+  // Terlalu dekat (< 30 detik) -> pakai menit berikutnya agar tidak kecepetan.
+  if (jarakDetik < 30) return new Date(floor.getTime() + 60_000);
+  return floor;
+}
 export async function saveReminderToDb(
   chatId: string,
   message: string,
@@ -26,7 +62,9 @@ export async function saveReminderToDb(
     const { error } = await c.from('reminders').insert({
       chat_id: chatId,
       message,
-      due_at: dueAt.toISOString(),
+      // due_at dimajukan ke awal menit agar cron per-menit menangkapnya lebih cepat
+      // (mengurangi "ngaret" — lihat penjelasan di bulatkanKeAwalMenit).
+      due_at: bulatkanKeAwalMenit(dueAt).toISOString(),
       status: 'pending',
       platform,
     });
@@ -71,7 +109,7 @@ export async function checkDueReminders(
     // 2. Ambil pengingat yang jatuh tempo
     const { data, error } = await c
       .from('reminders')
-      .select('id, chat_id, message, due_at, status, platform, lease_until')
+      .select('id, chat_id, message, due_at, status, platform, lease_until, created_at')
       .eq('status', 'pending')
       .lte('due_at', now)
       .order('due_at', { ascending: true })
@@ -118,6 +156,14 @@ export async function checkDueReminders(
         // Teks pengingat dibuat dinamis mengikuti gaya bot. ZERO teks statis:
         // bila model mati, teks pengingat milik user sendiri yang dikirim apa adanya.
         let deliveryText = item.message;
+        // Waktu pembuatan pengingat (untuk mencegah AI mengarang "kemarin").
+        // Bila kolom created_at tidak tersedia, pakai waktu jatuh tempo sebagai acuan.
+        const dibuatPada = (item as { created_at?: string }).created_at
+          ? new Date((item as { created_at?: string }).created_at as string)
+          : new Date(item.due_at);
+        const createdAtStr = dibuatPada.toLocaleString('id-ID', {
+          timeZone: 'Asia/Jakarta', dateStyle: 'full', timeStyle: 'short',
+        });
         //
         // BUG YANG DIPERBAIKI (04 Okt 2026, keluhan pemilik produk):
         //   User: "ingatkan saya 1 menit lagi tidur"
@@ -145,6 +191,16 @@ export async function checkDueReminders(
             `- DILARANG menasihati, menyuruh, mengucapkan selamat, atau menambah kalimat motivasi ` +
             `(contoh SALAH: "Istirahat yang nyenyak ya", "Jangan begadang terus", "Semangat ya!").\n` +
             `- DILARANG bertanya balik atau menambah obrolan baru.\n` +
+            // BUG YANG DIPERBAIKI (04 Okt 2026): bot pernah menulis
+            // "waktunya login sesuai jadwalmu KEMARIN" — padahal pengingat dibuat
+            // BARU SAJA (beberapa menit lalu). AI MENGARANG keterangan waktu
+            // karena tidak diberi tahu kapan pengingat ini dibuat.
+            // Perbaikan: beri tahu waktu pembuatan & jatuh tempo yang SEBENARNYA,
+            // dan larang menyebut keterangan waktu yang tidak diberikan.
+            `- Waktu SEKARANG: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'full', timeStyle: 'short' })} WIB.\n` +
+            `- Pengingat ini dibuat user pada: ${createdAtStr} WIB.\n` +
+            `- DILARANG menyebut "kemarin", "besok", "minggu lalu", atau keterangan waktu lain ` +
+            `yang TIDAK disebutkan di atas. Kalau ragu soal waktu, JANGAN sebut waktu sama sekali.\n` +
             `- Boleh 1 kalimat pendek saja. Gaya boleh santai/hangat, tapi TETAP sebuah pengingat.\n\n` +
             `Contoh BENAR (bentuknya seperti ini, kalimatnya bebas kamu susun sendiri):\n` +
             `- "Pengingat! Waktunya tidur 🌙"\n` +
