@@ -832,7 +832,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         // hanya 1000 RPD + 8000 TPM), maka TIDAK ADA batas token harian — jangan
         // jatuh ke angka .env yang tidak didukung endpoint (itu klaim palsu).
         let tokenCap: number;
-        if (endpointAuthoritative) {
+        // KHUSUS CLOUDFLARE (perbaikan 04 Okt): endpoint hanya menyatakan RATE LIMIT
+        // per jendela (header ratelimit-policy), BUKAN kuota neuron harian. Karena
+        // `endpointAuthoritative` bernilai true, cabang di bawah akan menetapkan
+        // tokenCap = 0 -> tokenPercent selalu 0% -> dashboard menampilkan "OPTIMAL"
+        // padahal neuron SUDAH HABIS (kasus nyata: 209.738 token/key, semua 429).
+        // Karena itu kuota neuron diambil dari konfigurasi (DAILY_TOKEN_CAP_CLOUDFLARE),
+        // yang memang satu-satunya sumber angka harian untuk provider ini.
+        if (p.kind === 'cloudflare') {
+          tokenCap = perKeyTokenCap > 0
+            ? (daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
+            : effectiveTokenCapPerKey;
+        } else if (endpointAuthoritative) {
           tokenCap = perKeyTokenCap > 0
             ? (p.kind === 'dahl' ? perKeyTokenCap : daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
             : 0;
