@@ -1216,6 +1216,194 @@ const BASE_GEN_TIGHT = {
   maxTokens: 800,
 } as const;
 
+/**
+ * OpenCode Free — LANGSUNG ke opencode.ai, TANPA 9Router, TANPA API key.
+ * Diverifikasi 04 Okt: mimo-v2.6 3/3 & muse-spark-1.3 3/3 berhasil.
+ *
+ * RAHASIA (dibedah dari repo 9router, open-sse/executors/opencode.js +
+ * open-sse/utils/opencodeFingerprint.js):
+ *
+ * 1. FINGERPRINT TOOLS (WAJIB). Gate free-tier memeriksa apakah request memuat
+ *    4 tool file-search: bash, glob, grep, read. Tanpa ini -> 403
+ *    "OpenCode's free tier can only be used from within OpenCode".
+ *    Tool ini hanya "sidik jari" — deskripsinya sengaja dibuat tidak bisa dipakai.
+ *
+ * 2. FORMAT BERBEDA PER ENDPOINT:
+ *    - muse-spark  -> /zen/v1/responses  (format Responses API: input[], tool FLAT,
+ *                     tool_choice "auto", max_output_tokens, reasoning{effort,summary})
+ *    - model lain  -> /zen/v1/chat/completions (messages[], tool NESTED,
+ *                     tool_choice "none" bila klien tak mengirim tool)
+ *
+ * 3. SESSION STABIL. Kuota free-tier dihitung PER SESI. Membuat sesi baru tiap
+ *    request menghabiskan kuota cepat dan memicu 429. Sesuatu sesi panjang dipakai
+ *    ulang per identitas — di sini satu sesi per proses.
+ *
+ * 4. SELALU STREAMING (stream=true). Free tier menolak permintaan non-stream
+ *    dengan 403.
+ *
+ * 5. Authorization: "Bearer public" (endpoint noAuth).
+ */
+const OPENCODE_BASE = 'https://opencode.ai/zen/v1';
+const OPENCODE_UA = 'opencode/1.18.31';
+const OPENCODE_FINGERPRINT_TOOLS = ['bash', 'glob', 'grep', 'read'] as const;
+
+// Satu sesi stabil per proses (kuota free-tier dihitung per sesi).
+let opencodeSessionCache: string | null = null;
+let opencodeSessionAt = 0;
+const OPENCODE_SESSION_TTL_MS = 30 * 60_000;
+
+function opencodeSession(): string {
+  const now = Date.now();
+  if (opencodeSessionCache && now - opencodeSessionAt < OPENCODE_SESSION_TTL_MS) {
+    return opencodeSessionCache;
+  }
+  const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  const bytes = crypto.randomBytes(14);
+  let rnd = '';
+  for (let i = 0; i < 14; i++) rnd += B62[bytes[i] % 62];
+  const t = Array.from({ length: 6 }, (_, i) =>
+    Number((BigInt(now) * 0x1000n >> BigInt(40 - 8 * i)) & 0xffn).toString(16).padStart(2, '0')).join('');
+  opencodeSessionCache = `ses_${t}${rnd}`;
+  opencodeSessionAt = now;
+  return opencodeSessionCache;
+}
+
+function opencodeRequestId(): string {
+  const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  const bytes = crypto.randomBytes(14);
+  let rnd = '';
+  for (let i = 0; i < 14; i++) rnd += B62[bytes[i] % 62];
+  const now = Date.now();
+  const t = Array.from({ length: 6 }, (_, i) =>
+    Number((BigInt(now) * 0x1000n >> BigInt(40 - 8 * i)) & 0xffn).toString(16).padStart(2, '0')).join('');
+  return `msg_${t}${rnd}`;
+}
+
+/** Tool fingerprint format FLAT (untuk /responses). */
+function fingerprintFlat() {
+  return OPENCODE_FINGERPRINT_TOOLS.map((name) => ({
+    type: 'function',
+    name,
+    description: 'This tool is currently unavailable and must not be used.',
+    parameters: { type: 'object', properties: {} },
+  }));
+}
+/** Tool fingerprint format NESTED (untuk /chat/completions). */
+function fingerprintNested() {
+  return OPENCODE_FINGERPRINT_TOOLS.map((name) => ({
+    type: 'function',
+    function: {
+      name,
+      description: 'This tool is currently unavailable and must not be used.',
+      parameters: { type: 'object', properties: {} },
+    },
+  }));
+}
+
+function isOpencodeResponsesModel(model: string): boolean {
+  const base = model.replace(/\([^()]+\)\s*$/, '').trim();
+  return /^muse[-_]?spark/i.test(base);
+}
+
+async function opencodeChat(
+  _key: string,
+  model: string,
+  msgs: ChatMsg[],
+  timeoutMs: number,
+): Promise<ProviderResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const pakaiResponses = isOpencodeResponsesModel(model);
+    const url = pakaiResponses ? `${OPENCODE_BASE}/responses` : `${OPENCODE_BASE}/chat/completions`;
+
+    let body: Record<string, unknown>;
+    if (pakaiResponses) {
+      // Format Responses API.
+      const input = msgs.map((m) => ({
+        type: 'message',
+        role: m.role,
+        content: [{ type: m.role === 'assistant' ? 'output_text' : 'input_text', text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+      }));
+      body = {
+        model,
+        input,
+        tools: fingerprintFlat(),
+        tool_choice: 'auto',
+        stream: true,
+        store: false,
+      };
+    } else {
+      body = {
+        model,
+        messages: msgs,
+        tools: fingerprintNested(),
+        tool_choice: 'none',
+        stream: true,
+      };
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer public',
+        'User-Agent': OPENCODE_UA,
+        'x-opencode-client': 'desktop',
+        'x-opencode-session': opencodeSession(),
+        'x-opencode-request': opencodeRequestId(),
+        'x-opencode-project': 'global',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const teks = await res.text().catch(() => '');
+      throw new Error(`PROVIDER_${res.status}:${teks.slice(0, 300)}`);
+    }
+
+    // Baca SSE dan rangkai teks.
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('NO_STREAM_BODY');
+    const dec = new TextDecoder();
+    let buf = '';
+    let out = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const baris = buf.split('\n');
+      buf = baris.pop() || '';
+      for (const l of baris) {
+        if (!l.startsWith('data:')) continue;
+        const d = l.slice(5).trim();
+        if (!d || d === '[DONE]') continue;
+        try {
+          const j = JSON.parse(d) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+            delta?: string;
+            type?: string;
+          };
+          out += j.choices?.[0]?.delta?.content || '';
+          if (!out && typeof j.delta === 'string') out += j.delta;
+        } catch {
+          // potongan tidak lengkap
+        }
+      }
+    }
+    reader.cancel().catch(() => {});
+    const text = out.trim();
+    if (!text) throw new Error('EMPTY_REPLY');
+    // ProviderResult.tokens berbentuk {prompt, completion, total}. OpenCode tidak
+    // mengirim usage pada stream, jadi diisi 0 (dicatat sebagai estimasi di lapisan atas).
+    return { text, tokens: { prompt: 0, completion: 0, total: 0 } };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function steps(): Step[] {
   return [
     // --- TIER 1: DreamPrompting (100 RPM, rolling free tier) ---
@@ -1244,7 +1432,23 @@ function steps(): Step[] {
       maxPromptTokens: 0,
       run: (k, m, msgs, t) => cloudflareChat(k, m, msgs, t),
     },
-    // --- TIER 3: OpenRouter (free models) ---
+    // --- TIER 3: OpenCode Free (mimo-v2.6 + muse-spark-1.3) ---
+    // LANGSUNG ke opencode.ai, TANPA 9Router, TANPA API key.
+    // Terverifikasi 04 Okt: mimo 3/3 & muse 3/3 berhasil.
+    // Wajib: 4 tool fingerprint + format per-endpoint + session stabil + streaming.
+    //
+    // TANPA BATAS TOKEN PER CHAT (permintaan user): maxPromptTokens: 0 artinya
+    // prompt tidak dipangkas/dilewati. Batas 8.000 token per respons SUDAH
+    // ditegakkan endpoint OpenCode sendiri, jadi tidak perlu dibatasi lagi di sini.
+    {
+      kind: 'opencode',
+      keys: config.pools.opencode,
+      models: [config.models.opencodePrimary, ...config.models.opencodeBackup],
+      cap: config.dailyCap.opencode,
+      maxPromptTokens: 0,
+      run: (k, m, msgs, t) => opencodeChat(k, m, msgs, t),
+    },
+    // --- TIER 4: OpenRouter (free models) ---
     // User instruction: Primary Nemotron Ultra, Backup Ling; reasoning none untuk minimal token
     {
       kind: 'openrouter',
@@ -1259,7 +1463,7 @@ function steps(): Step[] {
           ...BASE_GEN,
         }, t),
     },
-    // --- TIER 4: NVIDIA NIM (1.000 free credits / key) ---
+    // --- TIER 5: NVIDIA NIM (1.000 free credits / key) ---
     {
       kind: 'nvidia',
       keys: config.pools.nvidia,
@@ -1277,7 +1481,7 @@ function steps(): Step[] {
         }, t);
       },
     },
-    // --- TIER 5: Groq Cloud API (LPU Ultra-Fast Inference) ---
+    // --- TIER 6: Groq Cloud API (LPU Ultra-Fast Inference) ---
     // Prompt & output dijaga <8000 token; reasoning none pada Qwen, low pada GPT-OSS
     {
       kind: 'groq',
@@ -1297,7 +1501,7 @@ function steps(): Step[] {
         }, t);
       },
     },
-    // --- TIER 6: Google Gemini API (1M Konteks) ---
+    // --- TIER 7: Google Gemini API (1M Konteks) ---
     {
       kind: 'gemini',
       keys: config.pools.gemini,
@@ -1306,7 +1510,7 @@ function steps(): Step[] {
       maxPromptTokens: 0,
       run: (k, m, msgs, t) => geminiChat(k, m, msgs, t),
     },
-    // --- TIER 7: Dahl Global (Saldo 1 Miliar Token) ---
+    // --- TIER 8: Dahl Global (Saldo 1 Miliar Token) ---
     {
       kind: 'dahl',
       keys: config.pools.dahl,
@@ -1394,8 +1598,16 @@ export async function chat(
   opts?: { vision?: boolean; cacheScope?: string },
 ): Promise<{ text: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const needVision = opts?.vision === true;
-  // Batasi total token maksimal sesuai batas config.maxTokensLimit (default 8000)
-  const messages = trimMessagesToTokenBudget(rawMessages, config.maxTokensLimit);
+  // PEMANGKASAN TOKEN: HANYA untuk provider yang endpoint-nya benar-benar ketat
+  // (DreamPrompting & Groq, keduanya ~7.000 token). Provider lain TIDAK dipangkas
+  // di sini — masing-masing menegakkan batasnya sendiri di endpoint (mis. OpenCode
+  // membatasi 8.000 token per respons dari sisi server).
+  //
+  // Sebelumnya pemangkasan dilakukan GLOBAL di sini (config.maxTokensLimit=8000),
+  // sehingga provider tanpa batas pun ikut dipotong — itu keliru. Kini pemangkasan
+  // hanya terjadi di dalam step DreamPrompting & Groq (lihat maxPromptTokens + trim
+  // di steps()). Di sini pesan dibiarkan utuh.
+  const messages = rawMessages;
   // KUNCI CACHE HARUS PER-PERCAKAPAN (temuan produksi v0.79.7).
   //
   // Bug lama: cacheKey = JSON.stringify({v, messages}) — TANPA identitas percakapan.

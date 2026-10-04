@@ -64,6 +64,7 @@ export const config = {
     gemini: csv('GEMINI_KEYS'),
     dahl: csv('DAHL_KEYS'),
     xkiro: csv('XKIRO_KEYS'),
+    opencode: csv('OPENCODE_KEYS'),
   },
   cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
   models: {
@@ -87,6 +88,11 @@ export const config = {
     // Tier 3: NVIDIA NIM (1.000 Free Credits / key)
     // Model Utama: google/diffusiongemma-26b-a4b-it (590ms)
     // Cadangan: meta/llama-3.2-11b-vision-instruct (711ms, multimodal & reasoning)
+    // OpenCode Free (langsung ke opencode.ai, TANPA 9Router):
+    // 2 model sesuai permintaan user. Terverifikasi 3/3 stabil.
+    // Wajib: 4 tool fingerprint + format per-endpoint (lihat opencodeChat).
+    opencodePrimary: 'mimo-v2.6-flash-free',
+    opencodeBackup: ['muse-spark-1.3-contributor-free'],
     nvidiaPrimary: 'google/diffusiongemma-26b-a4b-it',
     nvidiaBackup: [
       'meta/llama-3.2-11b-vision-instruct',
@@ -187,7 +193,7 @@ export const config = {
       // memakai kuota provider lain. Catatan: model ini TIDAK punya batas token ketat.
       { kind: 'xkiro', model: 'qwen/qwen3.8-omni-flash:free' },
     ] as Array<{
-      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'xkiro';
+      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'xkiro' | 'opencode';
       model: string;
     }>,
   },
@@ -255,11 +261,13 @@ export const config = {
     gemini: num('DAILY_CAP_GEMINI', 1500),
     dahl: num('DAILY_CAP_DAHL', 5000),
     xkiro: num('DAILY_CAP_XKIRO', 500),
+    opencode: num('DAILY_CAP_OPENCODE', 1000),
   },
   // Batas TOKEN per hari (TPD) per key. 0 = tidak dibatasi.
   // Groq Free Tier resmi: 200K TPD untuk qwen3.8-27b & qwen3.6-27b
   // (tercapai jauh lebih cepat daripada RPD 1.000 pada ~2.5K token/call).
   dailyTokenCap: {
+    opencode: numAllowZero('DAILY_TOKEN_CAP_OPENCODE', 0),
     dreamprompting: numAllowZero('DAILY_TOKEN_CAP_DREAMPROMPTING', 0),
     cloudflare: numAllowZero('DAILY_TOKEN_CAP_CLOUDFLARE', 0),
     nvidia: numAllowZero('DAILY_TOKEN_CAP_NVIDIA', 0),
@@ -274,6 +282,7 @@ export const config = {
   // sementara key #2/#3 hanya 500.000. Format env: "1000000,500000,500000".
   // Bila kosong, semua key memakai dailyTokenCap[kind].
   dailyTokenCapPerKey: {
+    opencode: numList('DAILY_TOKEN_CAP_PER_KEY_OPENCODE'),
     dreamprompting: numList('DAILY_TOKEN_CAP_PER_KEY_DREAMPROMPTING'),
     cloudflare: numList('DAILY_TOKEN_CAP_PER_KEY_CLOUDFLARE'),
     nvidia: numList('DAILY_TOKEN_CAP_PER_KEY_NVIDIA'),

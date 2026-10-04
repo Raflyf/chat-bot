@@ -15,7 +15,8 @@ export type ProviderKind =
   | 'groq'
   | 'gemini'
   | 'dahl'
-  | 'xkiro';
+  | 'xkiro'
+  | 'opencode';
 
 /**
  * Kind khusus untuk WEB SEARCH xKiro.
