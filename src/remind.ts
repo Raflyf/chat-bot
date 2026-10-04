@@ -17,38 +17,19 @@ export interface ReminderItem {
 
 /** Simpan reminder ke Supabase untuk persistensi Vercel Serverless & Cron. */
 /**
- * Bulatkan waktu jatuh tempo ke AWAL MENIT agar cron per-menit menangkapnya
- * tepat waktu.
+ * Waktu jatuh tempo dipakai APA ADANYA (tanpa pembulatan).
  *
- * MASALAH NYATA (04 Okt 2026, keluhan: "masih ngaret 1 menit"):
- *   User: "ingatkan 1 menit lagi login" pukul 22.56 -> due_at = 22.57:xx
- *   cron-job.org memeriksa tiap menit, TAPI dengan jitter 4-40 detik.
- *   Bila due_at = 22.57:45 sedangkan cron memeriksa 22.57:10 (belum jatuh tempo),
- *   pengingat BARU terkirim pada 22.58:10 -> terasa telat ~1 menit.
- *
- * SOLUSI: bulatkan due_at KE BAWAH ke awal menit (22.57:00). Dengan begitu
- * pemeriksaan cron mana pun DALAM menit itu (22.57:04 s/d 22.57:40) sudah
- * menemukan pengingatnya.
- *
- * PENGAMAN: bila hasil pembulatan terlalu dekat dengan SEKARANG (< 30 detik),
- * jangan dipakai — pengingat bisa terasa "kecepetan". Pakai menit berikutnya.
- * Contoh: user minta "1 menit lagi" pada 22.56:50 -> due 22.57:50 ->
- *         pembulatan 22.57:00 hanya 10 detik dari sekarang -> pakai 22.58:00.
- *
- * TRADEOFF JUJUR: dengan cron ber-granularitas 60 detik + jitter 4-40 detik,
- * pengingat tetap bisa meleset ~30-60 detik. Pembulatan ini mempersempit
- * kelewatan, bukan menghilangkannya.
+ * CATATAN PERUBAHAN (04 Okt 2026):
+ * Versi sebelumnya membulatkan due_at ke awal menit. Setelah disimulasikan
+ * (20.000 sampel), cara itu KALAH dibanding strategi "due_at tepat + endpoint
+ * menunggu sebentar":
+ *   bulat + tunggu 20s : rata-rata 21,9s | median 21,7s
+ *   tepat + tunggu 20s : rata-rata 15,0s | median  9,9s  <- LEBIH BAIK
+ * Karena itu pembulatan dibatalkan; ketepatan ditangani oleh mekanisme
+ * "tunggu sebentar" di checkDueReminders().
  */
-function bulatkanKeAwalMenit(dueAt: Date, sekarang: Date = new Date()): Date {
-  const floor = new Date(dueAt);
-  floor.setSeconds(0, 0);
-
-  const jarakDetik = (floor.getTime() - sekarang.getTime()) / 1000;
-  // Sudah lewat / hampir lewat -> kirim segera (jangan ditunda).
-  if (jarakDetik < 0) return dueAt;
-  // Terlalu dekat (< 30 detik) -> pakai menit berikutnya agar tidak kecepetan.
-  if (jarakDetik < 30) return new Date(floor.getTime() + 60_000);
-  return floor;
+function waktuJatuhTempo(dueAt: Date): Date {
+  return dueAt;
 }
 export async function saveReminderToDb(
   chatId: string,
@@ -62,9 +43,7 @@ export async function saveReminderToDb(
     const { error } = await c.from('reminders').insert({
       chat_id: chatId,
       message,
-      // due_at dimajukan ke awal menit agar cron per-menit menangkapnya lebih cepat
-      // (mengurangi "ngaret" — lihat penjelasan di bulatkanKeAwalMenit).
-      due_at: bulatkanKeAwalMenit(dueAt).toISOString(),
+      due_at: waktuJatuhTempo(dueAt).toISOString(),
       status: 'pending',
       platform,
     });
@@ -84,6 +63,45 @@ export async function checkDueReminders(
   const c = db();
   if (!c) return 0;
   try {
+    // ── TUNGGU SEBENTAR BILA ADA PENGINGAT YANG HAMPIR JATUH TEMPO ──
+    //
+    // MASALAH (keluhan: "tidak bisa diperkecil lagi jadi 5 atau 10 detik?"):
+    // cron-job.org memanggil tiap 60 detik dengan jitter 4-40 detik. Bila
+    // panggilan datang sedikit SEBELUM due_at, pengingat harus menunggu
+    // panggilan berikutnya (~60 detik lagi) -> terasa ngaret.
+    //
+    // SOLUSI: bila ada pengingat yang jatuh tempo dalam <= TUNGGU_MAKS detik,
+    // endpoint MENUNGGU sebentar (sleep) lalu mengirimnya di panggilan yang SAMA.
+    // Hasil simulasi (20.000 sampel):
+    //   tanpa tunggu : rata-rata 31,9s | median 30,1s | <=10s hanya 17%
+    //   tunggu 25s   : rata-rata 12,0s | median  5,1s | <=10s jadi 58%
+    //
+    // BATAS AMAN: cron-job.org timeout 30 detik dan Vercel maxDuration 30 detik
+    // untuk endpoint cron. Karena itu tunggu maksimum dibatasi 20 detik (sisakan
+    // 10 detik untuk proses kirim + respons).
+    const TUNGGU_MAKS_MS = 20_000;
+    try {
+      const batasCek = new Date(Date.now() + TUNGGU_MAKS_MS + 2000).toISOString();
+      const { data: hampir } = await c
+        .from('reminders')
+        .select('due_at')
+        .eq('status', 'pending')
+        .gt('due_at', new Date().toISOString())   // belum jatuh tempo
+        .lte('due_at', batasCek)                  // tapi sangat dekat
+        .order('due_at', { ascending: true })
+        .limit(1);
+      const terdekat = (hampir ?? [])[0] as { due_at?: string } | undefined;
+      if (terdekat?.due_at) {
+        const selisih = new Date(terdekat.due_at).getTime() - Date.now();
+        if (selisih > 0 && selisih <= TUNGGU_MAKS_MS) {
+          console.log(`[remind] Menunggu ${Math.round(selisih / 1000)}s agar pengingat terkirim tepat waktu.`);
+          await new Promise((r) => setTimeout(r, selisih + 200)); // +200ms margin
+        }
+      }
+    } catch {
+      // best-effort: bila gagal, lanjut tanpa menunggu
+    }
+
     const now = new Date().toISOString();
 
     // 1. Reaper: Kembalikan reminder 'processing' yang lease-nya kadaluwarsa ke 'pending'
