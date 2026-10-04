@@ -209,97 +209,146 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
  * Sengaja KONSERVATIF: lebih baik melewatkan catatan (user bisa pakai /)
  * daripada salah mencatat obrolan biasa.
  */
-export function deteksiNiat(teks: string): NiatTerdeteksi | null {
-  const s = teks.toLowerCase().trim();
-  if (s.length < 6 || s.length > 400) return null;
+/**
+ * KATA PERINTAH UNIVERSAL — pesan WAJIB dimulai dengan salah satu kata ini
+ * (setelah kata pengantar opsional). Prinsipnya: HANYA kalimat PERINTAH yang
+ * boleh dicatat, bukan pertanyaan, bukan cerita, bukan obrolan.
+ */
+const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|remind|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary';
 
-  // ── 1. KEUANGAN ──
-  // Kata pemicu + nominal wajib ada (agar "aku makan mahal" tidak tercatat)
-  const pemicuUang =
-    /\b(catat|catet|note|ingat|simpan|tulis)\b/.test(s) && /\b(pengeluaran|pemasukan|belanja|bayar|beli|uang|duit|habis|keluar|masuk|gaji|bonus|dapat|terima)\b/.test(s);
+/** Kata pengantar yang BOLEH mendahului perintah (bukan penanda obrolan). */
+const PENGANTAR_BOLEH = /^\s*(tolong|coba|bisa|boleh|please|pls|mau|aku\s+mau|saya\s+mau|aku\s+pengen|saya\s+pengen|aku\s+ingin|saya\s+ingin|aku\s+pingin|saya\s+pingin|gw\s+mau|gue\s+mau|aku\s+mo|saya\s+mo)\s+/i;
+
+/**
+ * PENANDA OBROLAN — bila ada salah satu, pesan DITOLAK (tidak dicatat).
+ * Ini yang mencegah obrolan biasa tercampur ke fitur pencatatan.
+ */
+const PENANDA_OBROLAN: RegExp[] = [
+  /\?/,                                                     // pertanyaan
+  /\b(apa|apakah|apaan|berapa|brp|kenapa|mengapa|gimana|bagaimana|kok|ya\s*kan|bukan\s*ya|emang|memang)\b/,
+  /\b(tadi|kemarin|barusan|baru\s+aja|td|tadi\s+kan)\b/,     // cerita masa lalu
+  /\b(katanya|kata\s+dia|kata\s+orang)\b/,                  // kabar dari orang
+  /\b(banget|bgt|sih|deh|dong|nih|loh|lah|kan|yah|yaudah|yaudahlah|wkwk|haha|hehe|xixi)\b/,
+  /\b(aku\s+sudah|saya\s+sudah|udah\s+aku|sudah\s+aku)\b/,   // menyatakan sudah terjadi
+  /\b(mungkin|kayaknya|sepertinya|sepertinya|rasanya|kayak\s+nya)\b/, // dugaan
+];
+
+/** Kata pengantar yang HARUS dibuang sebelum mengambil isi. */
+function bersihkanIsi(teks: string, tambahan: RegExp[] = []): string {
+  let isi = teks.trim();
+  const pola = [
+    new RegExp(`^\\s*\\/?(${KATA_PERINTAH})\\b\\s*[:\\-]?\\s*`, 'i'),
+    /^\s*(penting|urgent|segera|buruan|prioritas|santai|nanti|kapan-kapan|gak\s+urgent|dong|nih|ya|tolong|saya|aku|gue|gw)\b\s*/i,
+    ...tambahan,
+  ];
+  let berubah = true, putaran = 0;
+  while (berubah && putaran < 6) {
+    berubah = false;
+    for (const p of pola) {
+      const sebelum = isi;
+      isi = isi.replace(p, '');
+      if (isi !== sebelum) berubah = true;
+    }
+    putaran++;
+  }
+  return isi.trim();
+}
+
+/**
+ * DETEKSI NIAT PENCATATAN — KETAT & UNIVERSAL (diperketat 04 Okt 2026).
+ *
+ * FILOSOFI: LEBIH BAIK MELEWATKAN daripada salah mencatat obrolan.
+ * Karena itu ada 4 lapis penyaring yang harus LOLOS semua:
+ *
+ *   L1. Pesan WAJIB dimulai kata perintah (setelah kata pengantar opsional).
+ *       "aku tadi makan enak" -> tidak diawali perintah -> TOLAK.
+ *   L2. Pesan TIDAK BOLEH memuat penanda obrolan (tanya, cerita, partikel gaul).
+ *       "catat dong tadi aku makan" -> ada "dong"+"tadi" -> TOLAK.
+ *   L3. Pesan TIDAK BOLEH berupa pertanyaan.
+ *       "berapa pengeluaranku" -> TOLAK (ditangani deteksiPertanyaan).
+ *   L4. Isi WAJIB cukup jelas (nominal untuk uang, teks cukup untuk tugas/catatan).
+ *
+ * Bila salah satu lapis gagal -> null (pesan diteruskan ke AI sebagai obrolan).
+ */
+export function deteksiNiat(teks: string): NiatTerdeteksi | null {
+  const asli = teks.trim();
+  const s = asli.toLowerCase();
+  if (s.length < 8 || s.length > 400) return null;
+
+  // ── L2. TOLAK bila ada penanda obrolan ──
+  for (const pola of PENANDA_OBROLAN) {
+    if (pola.test(s)) return null;
+  }
+
+  // ── L1. WAJIB dimulai kata perintah (setelah kata pengantar opsional) ──
+  //    Buang pengantar dulu, lalu cek awal kalimat.
+  const tanpaPengantar = asli.replace(PENGANTAR_BOLEH, '');
+  const polaAwal = new RegExp(`^\\s*\\/?(${KATA_PERINTAH})\\b`, 'i');
+  if (!polaAwal.test(tanpaPengantar)) return null;
+
+  // ── L4. Ambil isi & klasifikasikan ──
   const nominal = parseNominal(s);
-  if (pemicuUang && nominal) {
+
+  // 4a. KEUANGAN — wajib ada nominal
+  const adaKataUang = /\b(uang|duit|pengeluaran|pemasukan|belanja|bayar|beli|habis|keluar|masuk|gaji|bonus|dapat|terima|honor|fee|pendapatan|jajan|ongkos|biaya|tarif)\b/.test(s);
+  const perintahUang = /^\s*\/?(uang|keluar|masuk|pengeluaran|pemasukan)\b/i.test(tanpaPengantar);
+  if (nominal && (perintahUang || adaKataUang)) {
     const kind: ExpenseKind = /\b(masuk|gaji|bonus|dapat|terima|pemasukan|honor|fee|pendapatan)\b/.test(s) ? 'in' : 'out';
     return {
       kind: 'expense',
-      yakin: 0.9,
-      data: { amount: nominal, kind, category: tebakKategori(s), note: teks.trim() },
+      yakin: 0.92,
+      data: { amount: nominal, kind, category: tebakKategori(s), note: asli },
       ringkas: `${kind === 'in' ? 'Pemasukan' : 'Pengeluaran'} Rp${nominal.toLocaleString('id-ID')} (${tebakKategori(s)})`,
     };
   }
 
-  // ── 2. TUGAS / TO-DO ──
-  const pemicuTodo =
-    /\b(tambah|tambahin|catat|catet|buat|bikin)\b[^.]{0,20}\b(tugas|todo|to-do|task|list|daftar|kerjaan|pekerjaan|pr)\b/.test(s) ||
-    /^\s*(todo|to-do|tugas)\s*[:]\s*\S/.test(s) ||
-    /\b(ingetin|ingatkan)\s+(aku|saya)?\s*(buat|untuk|jangan lupa)\b/.test(s);
-  if (pemicuTodo) {
-    // Bersihkan berulang: buang SEMUA kata pemicu & kata sifat di awal, karena
-    // kalimat bisa memuat lebih dari satu ("tambah tugas penting bayar listrik"
-    // punya "tambah" + "tugas" + "penting").
-    let isi = teks.trim();
-    const polaBuang = [
-      /^\s*\/?(todo|to-do|tugas|task|tambah|tambahin|tambahin|catat|catet|buat|bikin)\b\s*[:\-]?\s*/i,
-      /^\s*(penting|urgent|segera|buruan|prioritas|santai|dong|nih|ya)\b\s*/i,
-    ];
-    let berubah = true;
-    let putaran = 0;
-    while (berubah && putaran < 5) {
-      berubah = false;
-      for (const pola of polaBuang) {
-        const sebelum = isi;
-        isi = isi.replace(pola, '');
-        if (isi !== sebelum) berubah = true;
+  // 4b. PENGINGAT — wajib ada kata ingatkan/ingetin/remind + waktu jelas
+  const perintahIngat = /^\s*\/?(ingatkan|ingetin|remind)\b/i.test(tanpaPengantar);
+  if (perintahIngat) {
+    const kapan = parseWaktuAlami(s);
+    if (kapan) {
+      const pesan = bersihkanIsi(asli, [
+        /\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi,
+        /\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi,
+        /\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi,
+      ]);
+      if (pesan.length >= 3) {
+        return {
+          kind: 'note',
+          yakin: 0.9,
+          data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
+          ringkas: `Pengingat "${pesan}" pada ${kapan.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}`,
+        };
       }
-      putaran++;
     }
-    isi = isi.trim();
+    return null; // perintah ingatkan tapi waktu tak jelas -> serahkan ke AI
+  }
+
+  // 4c. TUGAS — wajib ada kata tugas/todo/task
+  const perintahTodo = /^\s*\/?(todo|to-do|tugas|task)\b/i.test(tanpaPengantar);
+  const sebutTodo = /\b(tugas|todo|to-do|task|kerjaan|pekerjaan|pr|daftar\s+kerjaan)\b/.test(s);
+  if (perintahTodo || sebutTodo) {
+    const isi = bersihkanIsi(asli);
     if (isi.length >= 3) {
       const prioritas = /\b(penting|urgent|segera|buruan|prioritas)\b/.test(s) ? 1 : /\b(santai|nanti|kapan-kapan|gak urgent)\b/.test(s) ? 3 : 2;
       const due = parseWaktuAlami(s);
       return {
         kind: 'todo',
-        yakin: 0.85,
+        yakin: 0.9,
         data: { task: isi, priority: prioritas, due_at: due ? due.toISOString() : null },
         ringkas: `Tugas: "${isi}"${due ? ` (tenggat ${due.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })})` : ''}`,
       };
     }
   }
 
-  // ── 3. PENGINGAT BAHASA ALAMI ──
-  // "ingatkan saya besok jam 8 rapat" — beda dari /remind (menit)
-  const pemicuIngat =
-    /\b(ingatkan|ingetin|remind)\b/.test(s) && /\b(besok|lusa|hari ini|jam|pukul|pagi|siang|sore|malam|nanti|senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/.test(s);
-  if (pemicuIngat) {
-    const kapan = parseWaktuAlami(s);
-    if (kapan) {
-      // Buang kata pemicu, kata waktu, dan sisa "jam 8" agar pesan bersih.
-      const pesan = teks
-        .replace(/^\s*(tolong\s+)?(ingatkan|ingetin|remind)\s*(aku|saya)?\s*/i, '')
-        .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam)\b/gi, '')
-        .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
-        .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
-        .replace(/\s{2,}/g, ' ')
-        .trim() || teks.trim();
-      return {
-        kind: 'note', // pengingat disimpan lewat jalur reminder, ditandai di atas
-        yakin: 0.8,
-        data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
-        ringkas: `Pengingat "${pesan}" pada ${kapan.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}`,
-      };
-    }
-  }
-
-  // ── 4. CATATAN BEBAS ──
-  const pemicuCatatan =
-    /\b(catat|catet|simpan|note|tulis)\b[^.]{0,15}\b(catatan|ini|nih|ya|dong)?\b/.test(s) &&
-    !/\b(tugas|todo|pengeluaran|pemasukan|uang|duit)\b/.test(s);
-  if (pemicuCatatan) {
-    const isi = teks.replace(/^\s*(catat|catet|simpan|note|tulis)\s*(ini|nih|ya|dong)?\s*[:\-]?\s*/i, '').trim();
+  // 4d. CATATAN — wajib kata catat/simpan/note/tulis/jurnal + isi cukup
+  const perintahCatat = /^\s*\/?(catat|catet|simpan|note|notes|tulis|jurnal|diary)\b/i.test(tanpaPengantar);
+  if (perintahCatat) {
+    const isi = bersihkanIsi(asli);
     if (isi.length >= 5) {
       return {
         kind: 'note',
-        yakin: 0.75,
+        yakin: 0.85,
         data: { content: isi },
         ringkas: `Catatan: "${isi.slice(0, 80)}${isi.length > 80 ? '…' : ''}"`,
       };
