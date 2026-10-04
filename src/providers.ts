@@ -1332,6 +1332,10 @@ async function opencodeChat(
         tool_choice: 'auto',
         stream: true,
         store: false,
+        // EFFORT/THINKING (diuji 04 Okt): OpenCode TIDAK menerima effort "none"
+        // (HTTP 400), tapi menerima "low" — dan "low" terukur 2,3x LEBIH CEPAT
+        // dari tanpa effort (780ms vs 1838ms) dengan jawaban tetap benar.
+        reasoning: { effort: 'low' },
       };
     } else {
       body = {
@@ -1340,6 +1344,10 @@ async function opencodeChat(
         tools: fingerprintNested(),
         tool_choice: 'none',
         stream: true,
+        // Model OpenCode jalur chat/completions memakai chat_template_kwargs
+        // untuk mematikan thinking (pola sama dengan provider lain).
+        chat_template_kwargs: { enable_thinking: false },
+        reasoning_effort: 'none',
       };
     }
 
@@ -1381,13 +1389,27 @@ async function opencodeChat(
         const d = l.slice(5).trim();
         if (!d || d === '[DONE]') continue;
         try {
+          // Dua bentuk respons yang harus didukung:
+          //  1. /chat/completions (OpenAI) -> choices[0].delta.content
+          //  2. /responses (OpenAI Responses API, dipakai muse-spark) ->
+          //     event "response.output_text.delta" dengan field `delta` (string)
+          // BUG YANG DIPERBAIKI (04 Okt): dulu `if (!out && typeof j.delta...)`
+          // sehingga begitu `out` terisi 1 karakter, SELURUH delta berikutnya
+          // diabaikan -> jawaban terpotong ("Halo! Saya", "Halo! Kab").
+          // Sekarang kedua bentuk digabung tanpa syarat.
           const j = JSON.parse(d) as {
             choices?: Array<{ delta?: { content?: string } }>;
-            delta?: string;
+            delta?: string | { content?: string };
             type?: string;
           };
-          out += j.choices?.[0]?.delta?.content || '';
-          if (!out && typeof j.delta === 'string') out += j.delta;
+          const dariChoices = j.choices?.[0]?.delta?.content || '';
+          const dariDelta =
+            typeof j.delta === 'string'
+              ? j.delta
+              : typeof j.delta === 'object' && j.delta
+                ? j.delta.content || ''
+                : '';
+          out += dariChoices || dariDelta;
         } catch {
           // potongan tidak lengkap
         }
@@ -1571,6 +1593,112 @@ function visionSteps(all: Step[], msgs?: ChatMsg[]): Step[] {
 }
 
 /**
+ * BALAPAN MODEL DALAM SATU TIER — permintaan user 04 Okt.
+ *
+ * MASALAH: perilaku lama = coba model UTAMA dulu; hanya bila ia gagal/lambat,
+ * model CADANGAN dicoba. Jadi bila model utama lambat (mis. 8 detik), user
+ * menunggu 8 detik itu dulu sebelum cadangan yang mungkin hanya 2 detik dipakai.
+ *
+ * SOLUSI: kedua model dikirim BERSAMAAN (cadangan menyusul setelah
+ * config.raceStaggerMs), lalu JAWABAN YANG TIBA PALING CEPAT yang dipakai.
+ * Model yang kalah dibatalkan (AbortController) agar tidak membuang kuota.
+ *
+ * Aman terhadap kuota: model utama diberi keunggulan stagger kecil sehingga
+ * tidak selalu dihabiskan; cadangan hanya "menang" bila memang lebih cepat.
+ *
+ * Bila raceModels=0, fungsi ini tidak dipakai (jalur sekuensial lama tetap ada).
+ */
+async function balapanModelDalamTier(
+  step: Step,
+  models: string[],
+  messages: ChatMsg[],
+  deadline: number,
+  allowCoolingPass: boolean,
+): Promise<{ text: string; tokens?: ProviderResult['tokens']; model: string }> {
+  const controller = new AbortController();
+  const percobaan: Array<Promise<{ text: string; tokens?: ProviderResult['tokens']; model: string }>> = [];
+
+  const jalankanSatu = async (model: string, delayMs: number) => {
+    if (delayMs > 0) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+    if (controller.signal.aborted) throw new Error('RACE_ABORTED');
+    if (!allowCoolingPass && isModelCoolingDown(step.kind, model)) {
+      throw new Error('MODEL_COOLING');
+    }
+    const candidateKeys = getOrderedKeys(step.kind, step.keys);
+    let lastErr: Error = new Error('NO_KEY');
+    for (const key of candidateKeys) {
+      if (controller.signal.aborted) throw new Error('RACE_ABORTED');
+      let keyAllowed = true;
+      try {
+        const perKeyCaps = config.dailyTokenCapPerKey[step.kind] || [];
+        const keyIndex = step.keys.indexOf(key);
+        const keyTokenCap =
+          keyIndex >= 0 && keyIndex < perKeyCaps.length
+            ? perKeyCaps[keyIndex]
+            : config.dailyTokenCap[step.kind] || 0;
+        keyAllowed = await isKeyAllowed(step.kind, key, step.cap, keyTokenCap);
+      } catch {
+        keyAllowed = true;
+      }
+      if (!keyAllowed) continue;
+      const remainingMs = deadline - Date.now();
+      if (remainingMs < 1500) throw new Error('CHAIN_DEADLINE');
+      const attemptStart = Date.now();
+      try {
+        const result = await step.run(key, model, messages, Math.min(remainingMs, config.timeoutMs));
+        if (controller.signal.aborted) throw new Error('RACE_ABORTED');
+        recordKeySuccess(step.kind, key, model);
+        recordModelLatency(step.kind, model, Date.now() - attemptStart);
+        keyUsed(step.kind, key);
+        if (result.tokens?.total) keyTokensUsed(step.kind, key, result.tokens.total);
+        return { text: result.text, tokens: result.tokens, model };
+      } catch (e) {
+        lastErr = e instanceof Error ? e : new Error('UNKNOWN');
+        if (lastErr.message === 'RACE_ABORTED') throw lastErr;
+        recordKeyFailure(step.kind, key, e);
+        const m = lastErr.message;
+        if (
+          m.includes('PROVIDER_404') || m.includes('ModelError') || m.includes('PROVIDER_413') ||
+          m.includes('PROVIDER_400') || m.includes('PROVIDER_401') || m.includes('PROVIDER_403') ||
+          m.includes('PROVIDER_422') || m.includes('BAD_IMAGE') || m.includes('NO_IMAGE_DATA_FOR_VISION')
+        ) {
+          recordModelFailure(step.kind, model, 15 * 60_000);
+          throw lastErr;
+        }
+        if (m === ERR_NO_FIRST_TOKEN) {
+          keyCooldownMap.set(`${step.kind}:${keyHash(key)}`, Date.now() + 120_000);
+          continue;
+        }
+        if (m === ERR_STREAM_IDLE) {
+          recordModelFailure(step.kind, model, 60_000);
+          throw lastErr;
+        }
+        if (m === 'RATE_LIMITED') keyUsed(step.kind, key);
+      }
+    }
+    throw lastErr;
+  };
+
+  for (let i = 0; i < models.length; i++) {
+    // Model utama tanpa jeda; cadangan menyusul setelah stagger.
+    percobaan.push(jalankanSatu(models[i], i === 0 ? 0 : config.raceStaggerMs * i));
+  }
+
+  try {
+    // Yang pertama BERHASIL menang; yang gagal diabaikan (sudah dicatat cooldown-nya).
+    const pemenang = await Promise.any(percobaan);
+    // Batalkan model yang masih berjalan agar tidak membuang kuota.
+    controller.abort();
+    return pemenang;
+  } catch {
+    controller.abort();
+    throw new Error('ALL_MODELS_IN_TIER_FAILED');
+  }
+}
+
+/**
  * Chat dengan failover cerdas:
  * - Teks umum / matematika / koding: xKiro (Qwen 3.8 Max > Qwen 3.7 Max > Qwen 3.6 Max Preview) > Cloudflare (GLM 4.7 Flash > GPT-OSS 120B > Qwen 3.8 27B > Llama 3.3 70B) > Groq (Qwen 3.8 27B > GPT-OSS 120B) > Dahl (DeepSeek V4 Flash > GLM 5.3) > OpenRouter (Nex N2.5 Pro > Nemotron Lightning > GLM 5.2) > Groq (Qwen 3.8 > GPT-OSS 120B) > Cloudflare (Qwen 3.8 > GLM 4.7 > GPT-OSS > Llama 3.3) > Gemini (3.8 > 3.5).
  *   Dahl dinaikkan ke Tier 2 (20 Sep) berdasarkan benchmark latensi nyata: p50 234ms
@@ -1718,6 +1846,30 @@ export async function chat(
     // Urutkan model dalam tier ini berdasarkan latensi terukur (gesit di depan, lambat di belakang).
     // Rantai vision dibiarkan apa adanya karena tiap step hanya berisi satu model.
     const models = needVision ? step.models : orderModelsByLatency(step.kind, step.models);
+
+    // BALAPAN MODEL (permintaan user 04 Okt): model utama & cadangan dikirim
+    // BERSAMAAN; yang jawabannya tiba paling cepat yang dipakai. Hanya di jalur
+    // TEKS (vision sudah punya rantai eksplisit 1-model-per-step) dan bila ada >1
+    // model. Bila raceModels=0, jalur sekuensial lama di bawah tetap dipakai.
+    if (config.raceModels > 0 && !needVision && models.length > 1) {
+      const layak = models.filter((m) => allowCoolingPass || !isModelCoolingDown(step.kind, m));
+      if (layak.length > 0) {
+        anyModelAttempted = true;
+        try {
+          const menang = await balapanModelDalamTier(step, layak, messages, deadline, allowCoolingPass);
+          if (cacheKey) cacheSet(cacheKey, menang.text);
+          console.log(
+            `[providers] Balapan ${step.kind}: menang "${menang.model}" dari ${layak.length} model.`,
+          );
+          return { text: menang.text, via: `${step.kind}/${menang.model}`, tokens: menang.tokens };
+        } catch {
+          lastError = 'ALL_MODELS_IN_TIER_FAILED';
+          // lanjut ke tier berikutnya
+          continue;
+        }
+      }
+    }
+
     for (const model of models) {
       // Fast-pass: Lewati model yang sedang dalam cooldown server error (0ms overhead).
       // Pass best-effort (allowCoolingPass) mengabaikan cooldown — hanya berjalan bila pass

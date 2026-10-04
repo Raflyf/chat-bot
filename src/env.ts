@@ -254,6 +254,14 @@ export const config = {
   // Ambang "model lambat" (ms) untuk failover berbasis waktu respons di dalam tier yang sama.
   // Model yang rata-rata merespons lebih lambat dari ini diturunkan prioritasnya.
   slowModelMs: num('SLOW_MODEL_MS', 12000),
+  // BALAPAN MODEL (permintaan user 04 Okt): bila aktif, model utama & cadangan dalam
+  // satu tier dikirim BERSAMAAN, lalu yang jawabannya tiba paling cepat yang dipakai.
+  // Ini memangkas latensi karena tidak perlu menunggu model utama gagal/lambat dulu.
+  // 0 = mati (perilaku lama: utama dulu, baru cadangan bila gagal).
+  raceModels: numAllowZero('RACE_MODELS', 1),
+  // Jeda (ms) sebelum model cadangan ikut balapan. Model utama diberi sedikit keunggulan
+  // agar tidak selalu dihabiskan kuotanya, tapi cadangan tetap menyusul bila utama lambat.
+  raceStaggerMs: num('RACE_STAGGER_MS', 400),
   // Kapasitas output token agar AI mampu menjelaskan detail & koding tanpa terpotong
   maxOutputTokens: num('MAX_OUTPUT_TOKENS', 2500),
   // Batas maksimal total token konteks prompt (agar muat di kuota ketat Groq 8K TPM)
