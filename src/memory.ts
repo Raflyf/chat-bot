@@ -89,6 +89,7 @@ export function isResetCommand(text: string): boolean {
   );
 }
 
+
 /** Reset sesi percakapan aktif: menyematkan checkpoint pemotong riwayat, menghapus ringkasan lama & membersihkan cache.
  * Tidak mengembalikan teks konfirmasi statis — balasan dibuat dinamis oleh pemanggil via autoReply. */
 export async function resetSession(chatKey: string, platform: string = 'whatsapp'): Promise<void> {
@@ -97,21 +98,31 @@ export async function resetSession(chatKey: string, platform: string = 'whatsapp
   // Chat fixture test (mis. __verify_v32__) tidak boleh menulis checkpoint ke DB production.
   if (/^__.*__$/.test(chatKey) || chatKey.startsWith('test_')) return;
   const c = db();
-  if (c) {
-    try {
-      await Promise.all([
-        c.from('messages').insert({
-          platform,
-          chat_id: chatKey,
-          role: 'user',
-          content: '[SESSION_RESET]',
-          via: 'system/reset',
-        }),
-        c.from('summaries').delete().eq('chat_id', chatKey),
-      ]);
-    } catch {
-      // best-effort
-    }
+  if (!c) return;
+
+  try {
+    // /reset = hapus RIWAYAT PESAN + PREFERENSI (permintaan user 04 Okt 2026).
+    //
+    // CATATAN PENTING (temuan nyata): sebelumnya /reset HANYA menghapus riwayat
+    // pesan + ringkasan, sedangkan preferensi personal (/salah) TETAP ADA. Itulah
+    // sebab user merasa "/reset seperti tidak ada pengaruhnya" — bot masih ingat
+    // preferensi lama.
+    //
+    // Sesuai permintaan user: yang dihapus adalah RIWAYAT PESAN dan PREFERENSI.
+    // Data LAIN (catatan, tugas, keuangan, kebiasaan, pengingat) TIDAK disentuh.
+    await Promise.all([
+      c.from('messages').insert({
+        platform,
+        chat_id: chatKey,
+        role: 'user',
+        content: '[SESSION_RESET]',
+        via: 'system/reset',
+      }),
+      c.from('summaries').delete().eq('chat_id', chatKey),
+      c.from('corrections').delete().eq('chat_id', chatKey),
+    ]);
+  } catch {
+    // best-effort
   }
 }
 
