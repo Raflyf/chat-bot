@@ -103,6 +103,8 @@ async function isXkiroKeyAvailable(key: string): Promise<boolean> {
 
 function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   const kh = `${kind}:${keyHash(key)}`;
+  // Pesan error bisa panjang (body upstream). Pencocokan pola dilakukan pada
+  // pesan penuh; yang dipotong hanya untuk log agar tidak membanjiri keluaran.
   const msg = err instanceof Error ? err.message : String(err);
 
   // RATE LIMIT PERMANEN (concurrency capacity / akun gratis tidak diutamakan).
@@ -115,6 +117,21 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   // Perbaikan: cooldown 6 jam untuk pola ini supaya tier dilewati, bukan diulang.
   if (/concurrency capacity|Paid accounts are admitted first|insufficient_quota|Insufficient wallet balance/i.test(msg)) {
     keyCooldownMap.set(kh, Date.now() + 6 * 60 * 60_000);
+    return;
+  }
+
+  // KUOTA NEURON CLOUDFLARE HABIS (temuan 04 Okt, terbukti dari endpoint):
+  //   "AiError: you have used up your daily free allocation of 10,000 neurons,
+  //    please upgrade to Cloudflare's Workers Paid plan"
+  // Ini BUKAN rate limit per menit dan BUKAN 429 — Cloudflare membalas HTTP 400
+  // dengan code 4006. Sebelumnya pola ini tidak dikenali sehingga key langsung
+  // dicoba lagi di request berikutnya dan gagal terus (membuang waktu rantai).
+  // Neuron direset harian -> cooldown sampai reset UTC + margin.
+  if (kind === 'cloudflare' && /neurons|daily free allocation|4006|workers paid/i.test(msg)) {
+    const cd = Date.now() + msUntilDailyResetUtc();
+    for (const other of config.pools.cloudflare) {
+      keyCooldownMap.set(`cloudflare:${keyHash(other)}`, cd);
+    }
     return;
   }
 
@@ -444,7 +461,7 @@ async function fetchJsonWithLifecycle(
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     console.warn(`[providers] Upstream error dari ${url}: status=${res.status}, body=${errBody.slice(0, 300)}`);
-    throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 100)}`);
+    throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 300)}`);
   }
 
   // Fase timeout: model aktif dan sedang berpikir / menghasilkan konten
@@ -567,7 +584,7 @@ async function streamSse(
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       console.warn(`[providers] Upstream error dari ${url}: status=${res.status}, body=${errBody.slice(0, 300)}`);
-      throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 100)}`);
+      throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 300)}`);
     }
     if (!res.body) throw new Error('NO_STREAM_BODY');
 
