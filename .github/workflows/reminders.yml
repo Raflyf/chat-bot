@@ -18,16 +18,21 @@ name: Kirim Pengingat Jatuh Tempo
 
 on:
   schedule:
-    # Setiap 5 menit. Catatan: GitHub bisa menunda saat beban tinggi
-    # (kadang 5-15 menit), tapi jauh lebih baik dari 1x/hari (Vercel Hobby).
+    # TIGA jadwal bergeser untuk memperkecil jeda rata-rata.
     #
-    # AKURASI UNTUK PENGINGAT PENDEK:
-    # GitHub Actions TIDAK menjamin ketepatan detik. Untuk pengingat "2 menit lagi",
-    # lapisan LAZY-CHECK (dipanggil saat ada pesan masuk) memberi ketepatan lebih
-    # baik. Dua lapisan ini saling melengkapi:
-    #   - Actions  : jalan tiap 5 menit walau tidak ada aktivitas
-    #   - Lazy-check: jalan tiap ada pesan masuk (bisa lebih cepat)
-    - cron: '*/5 * * * *'
+    # KENAPA BERGESER: GitHub minimum 5 menit per jadwal. Dengan menambah jadwal
+    # yang saling mengisi, pemicu menjadi lebih rapat dari 5 menit sehingga
+    # pengingat pendek ("1-2 menit lagi") tidak terlalu ngaret.
+    #
+    # CATATAN JUJUR: GitHub Actions TIDAK menjamin ketepatan detik, dan saat beban
+    # tinggi bisa tertunda. Untuk ketepatan ~1 menit, pakai layanan cron eksternal
+    # (mis. cron-job.org gratis) yang memanggil /api/cron/reminders tiap menit,
+    # atau jalankan bot lokal (startReminderWorker, interval 30 detik).
+    #
+    # Lapisan LAZY-CHECK juga tetap aktif: setiap pesan masuk memicu pemeriksaan.
+    - cron: '*/5 * * * *'     # menit 0,5,10,...
+    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'  # geser +2 menit
+    - cron: '4,9,14,19,24,29,34,39,44,49,54,59 * * * *'  # geser +4 menit
   # Memungkinkan menjalankan manual dari tab Actions untuk menguji.
   workflow_dispatch:
   # Jalankan juga saat push ke main (memastikan workflow aktif setelah deploy).

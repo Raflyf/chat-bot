@@ -118,9 +118,39 @@ export async function checkDueReminders(
         // Teks pengingat dibuat dinamis mengikuti gaya bot. ZERO teks statis:
         // bila model mati, teks pengingat milik user sendiri yang dikirim apa adanya.
         let deliveryText = item.message;
+        //
+        // BUG YANG DIPERBAIKI (04 Okt 2026, keluhan pemilik produk):
+        //   User: "ingatkan saya 1 menit lagi tidur"
+        //   Bot : "Istirahat yang nyenyak ya, jangan begadang terus. 🌙"
+        //   -> Itu NASIHAT/UCAPAN, bukan PENGINGAT. User protes: "seharusnya
+        //      responnya 'pengingat! waktunya tidur' atau apapun yg MENGINGATKAN,
+        //      bukan malah menyuruh atau apapun itu."
+        //
+        // AKAR: prompt lama hanya "Sampaikan pengingat ini dengan gayamu sendiri,
+        // singkat dan hangat" — tanpa menegaskan bahwa ini PENGINGAT yang harus
+        // MENGINGATKAN. Model bebas menafsirkan konteks ("tidur") lalu menjawab
+        // dengan nasihat/ucapan selamat, bukan mengingatkan.
+        //
+        // PERBAIKAN: prompt menegaskan TUGAS = MENGINGATKAN (bukan menasihati,
+        // bukan mengucapkan selamat, bukan menyuruh). Gaya tetap dinamis.
+        // Tiga contoh konkret diberikan sebagai acuan (bukan template wajib) agar
+        // model paham BENTUK yang diinginkan, sementara kalimatnya tetap bebas.
         try {
           const gen = await autoReply(
-            `Sampaikan pengingat ini ke user dengan gayamu sendiri, singkat dan hangat, tanpa pertanyaan tambahan: "${item.message}"`,
+            `TUGAS: Kamu sedang MENGIRIM PENGINGAT yang sudah dijadwalkan user sebelumnya. ` +
+            `Isi pengingat user: "${item.message}".\n\n` +
+            `ATURAN KERAS:\n` +
+            `- Awali dengan kata/penanda pengingat (mis. "Pengingat!" / "⏰ Pengingat:" / "Woy, waktunya..." ).\n` +
+            `- Sebut KEMBALI isi pengingatnya secara jelas supaya user tahu apa yang diingatkan.\n` +
+            `- DILARANG menasihati, menyuruh, mengucapkan selamat, atau menambah kalimat motivasi ` +
+            `(contoh SALAH: "Istirahat yang nyenyak ya", "Jangan begadang terus", "Semangat ya!").\n` +
+            `- DILARANG bertanya balik atau menambah obrolan baru.\n` +
+            `- Boleh 1 kalimat pendek saja. Gaya boleh santai/hangat, tapi TETAP sebuah pengingat.\n\n` +
+            `Contoh BENAR (bentuknya seperti ini, kalimatnya bebas kamu susun sendiri):\n` +
+            `- "Pengingat! Waktunya tidur 🌙"\n` +
+            `- "⏰ Woy, waktunya login game nih!"\n` +
+            `- "Pengingat: jangan lupa minum obat ya 💊"\n\n` +
+            `Sekarang tulis pengingatnya:`,
           );
           if (gen.reply.trim()) deliveryText = gen.reply;
         } catch {
