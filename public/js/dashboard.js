@@ -1987,7 +1987,26 @@ function renderLiveUpstreamTable(data) {
 
     async function fetchDataset(force = false) {
       const token = getStoredToken();
-      if (!token) return;
+      const tbodyEl = document.getElementById("dataset-tbody");
+      const infoEl0 = document.getElementById("dataset-pagination-info");
+
+      // BUG YANG DIPERBAIKI (04 Okt 2026, keluhan: "stuck di memuat data dan
+      // tidak pernah selesai"):
+      //
+      // Versi lama: `if (!token) return;` -> bila token belum terbaca (mis. sesi
+      // baru dipulihkan, atau key localStorage berbeda), fungsi KELUAR DIAM-DIAM
+      // dan tabel tetap menampilkan "Memuat riwayat percakapan / Menunggu data
+      // dari basis data" SELAMANYA — tanpa pesan, tanpa tombol coba lagi.
+      //
+      // Sekarang: setiap kondisi gagal MENULIS status yang jelas ke tabel,
+      // sehingga user selalu tahu apa yang terjadi dan bisa mencoba lagi.
+      if (!token) {
+        setHtmlIfChanged(tbodyEl, `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:2.5rem;">
+          Sesi admin belum aktif.<br><span style="font-size:0.8rem;">Masukkan Master PIN untuk memuat riwayat percakapan.</span>
+        </td></tr>`);
+        if (infoEl0) infoEl0.textContent = "Menunggu login admin";
+        return;
+      }
 
       const q = document.getElementById("dataset-search").value.trim();
       const range = document.getElementById("dataset-range-filter")?.value || "all";
@@ -2002,11 +2021,23 @@ function renderLiveUpstreamTable(data) {
         renderDatasetTable();
       }
 
+      // Tampilkan indikator memuat yang jelas (bukan pesan awal yang menggantung).
+      setHtmlIfChanged(tbodyEl, `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:2rem;">
+        Memuat riwayat percakapan…</td></tr>`);
+
+      // Batas waktu 25 detik: bila server tidak menjawab, tampilkan error +
+      // tombol coba lagi. Tanpa ini, request yang menggantung membuat tabel
+      // "stuck" tanpa akhir.
+      const ctrl = new AbortController();
+      const timeoutId = setTimeout(() => ctrl.abort(), 25_000);
+
       try {
         const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=300&_t=${Date.now()}`;
         const res = await fetch(url, {
           headers: { "x-admin-token": token },
+          signal: ctrl.signal,
         });
+        clearTimeout(timeoutId);
 
         if (res.status === 401) {
           // Lakukan recheck verifikasi sesi sebelum memutuskan sesi hilang
@@ -2017,7 +2048,15 @@ function renderLiveUpstreamTable(data) {
           if (recheck && recheck.ok) {
             const recheckData = await recheck.json().catch(() => ({}));
             if (recheckData.valid) {
+              // Sesi MASIH valid tapi /api/dataset menolak -> ini bukan sesi
+              // hilang. Versi lama `return;` di sini -> tabel stuck selamanya.
+              // Sekarang: tampilkan pesan jelas + tombol coba lagi.
               console.warn("Transient 401 pada /api/dataset terdeteksi, sesi tetap valid.");
+              setHtmlIfChanged(tbodyEl, `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:2.5rem;">
+                Server menolak permintaan sementara (401). Sesi Anda masih valid.<br>
+                <button type="button" class="btn btn-ghost btn-sm" style="margin-top:0.75rem;" onclick="fetchDataset(true)">Coba lagi</button>
+              </td></tr>`);
+              if (infoEl0) infoEl0.textContent = "Gagal memuat — klik Coba lagi";
               return;
             }
           }
@@ -2026,12 +2065,32 @@ function renderLiveUpstreamTable(data) {
           return;
         }
 
+        if (!res.ok) {
+          // Status HTTP lain (500/502/504): tampilkan kode + tombol coba lagi.
+          setHtmlIfChanged(tbodyEl, `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:2.5rem;">
+            Gagal memuat riwayat (HTTP ${res.status}).<br>
+            <button type="button" class="btn btn-ghost btn-sm" style="margin-top:0.75rem;" onclick="fetchDataset(true)">Coba lagi</button>
+          </td></tr>`);
+          if (infoEl0) infoEl0.textContent = `Gagal memuat (HTTP ${res.status})`;
+          return;
+        }
+
         const data = await res.json();
         cachedDatasetPairs = data.pairs || [];
         datasetCache.set(cacheKey, cachedDatasetPairs);
         renderDatasetTable();
       } catch (err) {
+        clearTimeout(timeoutId);
         console.error("fetchDataset error:", err);
+        // Termasuk AbortError (timeout) — tampilkan jelas + tombol coba lagi.
+        const pesan = err && err.name === "AbortError"
+          ? "Waktu habis memuat riwayat (25 detik). Server tidak menjawab."
+          : "Gagal menghubungi server.";
+        setHtmlIfChanged(tbodyEl, `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:2.5rem;">
+          ${pesan}<br>
+          <button type="button" class="btn btn-ghost btn-sm" style="margin-top:0.75rem;" onclick="fetchDataset(true)">Coba lagi</button>
+        </td></tr>`);
+        if (infoEl0) infoEl0.textContent = pesan;
       }
     }
 
