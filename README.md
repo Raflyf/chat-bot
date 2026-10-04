@@ -25,11 +25,11 @@ Asisten AI multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. Dibangun de
 
 ## Fitur Utama
 
-- **Multimodal Lengkap**: Memproses pesan suara (*Voice Note* via Whisper), dokumen kerja (PDF, Word, TXT, CSV), gambar/foto (*Vision*), serta stiker dan video pendek.
+- **Multimodal Lengkap**: Memproses pesan suara (*Voice Note*), dokumen kerja (PDF, Word, TXT, CSV), gambar/foto (*Vision*), serta stiker dan video pendek.
 - **Pencarian Web Real-Time**: Dilengkapi mesin pencari internet untuk menyajikan data dan berita terkini secara faktual.
 - **Persona Dinamis & Baca Suasana**: Respon menyesuaikan suasana chat (canda, serius, sedih, lemas), mengikuti trajektori emosi lintas giliran, intensitas pesan, dan register bahasa lawan bicara. Tanpa kalimat template hafalan.
 - **Memori & Konteks Percakapan**: Menjaga kesinambungan alur obrolan secara alami dengan penyimpanan aman di Supabase PostgreSQL.
-- **Keandalan Tinggi**: Sistem failover berlapis antar provider dengan rotasi kunci, circuit breaker, cooldown presisi, dan failover berbasis waktu respons antar model dalam satu tier.
+- **Keandalan Tinggi**: Sistem failover berlapis multi-provider dengan rotasi kunci, circuit breaker, cooldown presisi, dan pemilihan rute berbasis waktu respons tercepat.
 - **Zona Waktu Dinamis**: Mengenali waktu lokal secara akurat (WIB, WITA, WIT, dan waktu internasional) berdasarkan deteksi nomor atau lokasi GPS.
 - **Pengingat Terjadwal**: Mendukung penjadwalan pengingat otomatis yang dikirimkan langsung ke ruang obrolan Anda.
 - **Konsol Observabilitas**: Panel web terproteksi PIN untuk memantau status sistem, kesehatan koneksi, kuota per key (RPD + TPD), dan metrik penggunaan.
@@ -37,23 +37,11 @@ Asisten AI multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. Dibangun de
 
 ---
 
-## Arsitektur Rantai Failover (7 Tingkat)
+## Sistem Failover Otomatis
 
-Sistem merutekan setiap percakapan melalui tujuh tingkat failover otomatis. Bila pemrosesan dalam satu tingkat mengalami kegagalan, timeout, atau menyentuh batas kapasitas, sistem secara otomatis mengalihkan permintaan ke tingkat berikutnya tanpa intervensi manual.
+Sistem merutekan setiap percakapan melalui rantai failover bertingkat secara mandiri. Bila pemrosesan pada satu jalur mengalami kegagalan, timeout, atau menyentuh batas kapasitas, sistem secara otomatis mengalihkan permintaan ke jalur berikutnya tanpa intervensi manual.
 
-| Tingkat (Tier) | Peran Utama |
-| :--- | :--- |
-| Tier 1 | Primer teks ultra-cepat ~370ms (100 RPM) |
-| Tier 2 | Teks terdistribusi & pemrosesan vision multi-model |
-| Tier 3 | Akselerasi inferensi microservices sub-detik (~590ms) |
-| Tier 4 | Jalur model parameter raksasa (550B) & pemrosesan instruksi kompleks |
-| Tier 5 | Inferensi berkecepatan tinggi (~370ms) & transkripsi audio |
-| Tier 6 | Konteks 1M token, dokumen PDF, video, dan audio native |
-| Tier 7 | Jaring pengaman akhir pool kapasitas besar (1 Miliar Token Pool) |
-
-Jalur cadangan sekunder tetap dipertahankan secara khusus untuk pencarian web real-time (`/search`) dan rantai vision multimodal.
-
-Di dalam setiap tier, jalur yang rata-rata merespons lambat diturunkan prioritasnya secara otomatis, sehingga permintaan berikutnya mendahulukan jalur yang lebih responsif.
+Algoritma pemantau latensi dan circuit breaker terus mengevaluasi kesehatan tiap rute, memprioritaskan jalur yang paling responsif, dan memastikan kelangsungan layanan percakapan tetap stabil 24/7.
 
 ---
 
@@ -85,11 +73,7 @@ Salin template konfigurasi `.env.example` ke `.env`:
 ```bash
 cp .env.example .env
 ```
-Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key provider yang digunakan. Seluruh nama model dikelola langsung di dalam kode (`src/env.ts`), sehingga cukup menyuplai API key tanpa konfigurasi model tambahan.
-
-Catatan kuota penting:
-- `DAILY_CAP_GROQ=1000` dan `DAILY_TOKEN_CAP_GROQ=200000` mengikuti Free Tier resmi Groq (1.000 RPD + 200K TPD per key). TPD biasanya tercapai lebih dulu, jadi keduanya dibatasi runtime.
-- `DAILY_CAP_GEMINI=1500` mengikuti Free Tier resmi Google AI Studio.
+Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key yang digunakan. Seluruh konfigurasi model dan pembatasan kuota dikelola secara fleksibel melalui variabel lingkungan tanpa perlu mengubah logika inti aplikasi.
 
 ### 3. Jalankan Aplikasi
 - **Bot Telegram (Polling Lokal):**
