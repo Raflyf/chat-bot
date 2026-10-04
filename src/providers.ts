@@ -1167,7 +1167,22 @@ function steps(): Step[] {
       maxPromptTokens: 0,
       run: (k, m, msgs, t) => cloudflareChat(k, m, msgs, t),
     },
-    // --- TIER 3: NVIDIA NIM (1.000 free credits / key) ---
+    // --- TIER 3: OpenRouter (free models) ---
+    // User instruction: Primary Nemotron Ultra, Backup Ling; reasoning none untuk minimal token
+    {
+      kind: 'openrouter',
+      keys: config.pools.openrouter,
+      models: [config.models.orPrimary, ...config.models.orBackup],
+      cap: config.dailyCap.openrouter,
+      maxPromptTokens: 0,
+      run: (k, m, msgs, t) =>
+        openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, {
+          reasoning: { effort: 'none' },
+          reasoning_effort: 'none',
+          ...BASE_GEN,
+        }, t),
+    },
+    // --- TIER 4: NVIDIA NIM (1.000 free credits / key) ---
     {
       kind: 'nvidia',
       keys: config.pools.nvidia,
@@ -1184,21 +1199,6 @@ function steps(): Step[] {
           ...BASE_GEN,
         }, t);
       },
-    },
-    // --- TIER 4: OpenRouter (free models) ---
-    // User instruction: Primary Nemotron Ultra, Backup Ling; reasoning none untuk minimal token
-    {
-      kind: 'openrouter',
-      keys: config.pools.openrouter,
-      models: [config.models.orPrimary, ...config.models.orBackup],
-      cap: config.dailyCap.openrouter,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) =>
-        openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, {
-          reasoning: { effort: 'none' },
-          reasoning_effort: 'none',
-          ...BASE_GEN,
-        }, t),
     },
     // --- TIER 5: Groq Cloud API (LPU Ultra-Fast Inference) ---
     // Prompt & output dijaga <8000 token; reasoning none pada Qwen, low pada GPT-OSS

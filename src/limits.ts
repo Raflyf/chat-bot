@@ -55,7 +55,35 @@ async function fetchXkiroLimitsUncached(keys: string[]): Promise<Map<string, Liv
           headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
-        if (!res.ok) return;
+        // KOREKSI AUDIT (04 Okt): sebelumnya `if (!res.ok) return;` membuat key yang
+        // AKUN-NYA DISUSPEND tampak "tidak ada data" — dashboard lalu menampilkan
+        // fallback .env seolah sehat, padahal provider itu MATI TOTAL.
+        // Terverifikasi live: GET /v1/usage -> 403 account_suspended
+        // ("operating multiple accounts to get around free-tier limits").
+        // Sekarang kondisi gagal ditampilkan jujur di dashboard.
+        if (!res.ok) {
+          let alasan = `HTTP ${res.status}`;
+          try {
+            const e = (await res.json()) as { error?: { code?: string; message?: string } };
+            if (e.error?.code) alasan = e.error.code;
+            if (e.error?.message) alasan += ` — ${e.error.message.slice(0, 120)}`;
+          } catch {
+            // biarkan alasan = HTTP <status>
+          }
+          out.set(key, {
+            requestsPerDay: null,
+            tokensPerDay: null,
+            tokensPerMinute: null,
+            requestsUsedToday: null,
+            tokensUsedToday: null,
+            requestsRemaining: null,
+            tokensRemaining: null,
+            officialLabel: `TIDAK AKTIF: ${alasan}`,
+            source: 'api.xkiro.com/v1/usage (gagal)',
+            isLive: true,
+          });
+          return;
+        }
         const j = (await res.json()) as {
           free_tokens?: { used_today?: number; limit_per_day?: number; remaining?: number };
         };
@@ -146,9 +174,16 @@ async function fetchGroqLimitsUncached(keys: string[], model: string): Promise<M
           body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
           signal: AbortSignal.timeout(15000),
         });
-        // Header rate limit tersedia bahkan saat 429 — itulah sumber otoritatifnya.
+        // KOREKSI AUDIT (04 Okt, diverifikasi ke endpoint nyata):
+        // Header rate limit Groq TERSEDIA JUGA saat status 200 — bukan hanya 429.
+        // Diukur live: x-ratelimit-limit-requests=1000, limit-tokens=8000,
+        // remaining-requests=999, remaining-tokens=7986. Komentar lama
+        // ("header hanya muncul saat 429") SALAH dan membuat dashboard kehilangan
+        // data sisa kuota yang sebenarnya tersedia.
         let rpd = numOrNull(res.headers.get('x-ratelimit-limit-requests'));
         let tpm = numOrNull(res.headers.get('x-ratelimit-limit-tokens'));
+        const rpdRemaining = numOrNull(res.headers.get('x-ratelimit-remaining-requests'));
+        const tpmRemaining = numOrNull(res.headers.get('x-ratelimit-remaining-tokens'));
         // Saat 429, pesan error menyebut limit ITPM ASLI model (lebih akurat dari header).
         // Contoh: "on input tokens per minute (ITPM): Limit 7000, Used 4690".
         if (res.status === 429) {
@@ -164,10 +199,12 @@ async function fetchGroqLimitsUncached(keys: string[], model: string): Promise<M
             // abaikan
           }
         }
-        // PENTING: header `x-ratelimit-remaining-*` Groq merujuk JENDELA PENDEK
-        // (per menit), BUKAN sisa harian. Memakainya sebagai "sisa harian" menghasilkan
-        // angka palsu (temuan: sisa tampil 39.930 padahal kuota harian masih penuh).
-        // Karena itu remaining TIDAK diisi dari header ini.
+        // PEMISAHAN JENDELA WAKTU (penting agar dashboard tidak menyesatkan):
+        //  - x-ratelimit-remaining-requests -> jendela HARIAN (RPD). Valid sebagai sisa harian.
+        //  - x-ratelimit-remaining-tokens   -> jendela PER MENIT (TPM), reset ~detik.
+        //    Nilai ini TIDAK dipakai sebagai "sisa harian" (itu kesalahan lama yang
+        //    menampilkan sisa 39.930 padahal kuota harian penuh). Disimpan apa adanya
+        //    sebagai info TPM saja, tidak diklaim sebagai sisa token harian.
         if (rpd === null && tpm === null) return;
         out.set(key, {
           requestsPerDay: rpd,
@@ -177,20 +214,20 @@ async function fetchGroqLimitsUncached(keys: string[], model: string): Promise<M
           // dari console resmi Groq, BUKAN dari endpoint — ditandai di `source`.
           tokensPerDay: 200000,
           tokensPerMinute: tpm,
-          requestsUsedToday: null,
+          requestsUsedToday: rpd !== null && rpdRemaining !== null ? Math.max(0, rpd - rpdRemaining) : null,
           tokensUsedToday: null,
-          requestsRemaining: null,
+          requestsRemaining: rpdRemaining,
           tokensRemaining: null,
           // Label lengkap sesuai console Groq: 30 RPM • 8K TPM • 1K RPD • 200K TPD
           officialLabel:
             rpd !== null && tpm !== null
-              ? `30 RPM • ${tpm.toLocaleString('id-ID')} TPM • ${rpd.toLocaleString('id-ID')} RPD • 200.000 TPD (console Groq)`
+              ? `${tpm.toLocaleString('id-ID')} TPM • ${rpd.toLocaleString('id-ID')} RPD • 200.000 TPD (console Groq)`
               : rpd !== null
               ? `${rpd.toLocaleString('id-ID')} RPD • 200.000 TPD (console Groq)`
               : `${(tpm ?? 0).toLocaleString('id-ID')} TPM (console Groq)`,
           // Sumber gabungan: RPD & TPM dari header endpoint (terverifikasi), TPD dari
           // console resmi Groq (endpoint tidak menyatakannya).
-          source: 'api.groq.com header x-ratelimit-* (RPD, TPM) + console.groq.com (TPD)',
+          source: 'api.groq.com header x-ratelimit-* (RPD, TPM, sisa) + console.groq.com (TPD)',
           isLive: true,
         });
       } catch {
