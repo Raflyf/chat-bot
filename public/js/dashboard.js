@@ -1530,8 +1530,15 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">dreamprompting.com</div>
                 </td>
                 <td>
-                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">${callsUsed.toLocaleString("id-ID")} Panggilan${tokensUsed > 0 ? ` &bull; ${tokensUsed.toLocaleString("id-ID")} Tok` : ''}</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '5.000 req/hari &bull; 500.000 token/hari'}</div>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #38bdf8;">${callsUsed.toLocaleString("id-ID")} Panggilan${tokensUsed > 0 ? ` &bull; ${tokensUsed.toLocaleString("id-ID")} Tok` : ''}</span>
+                    <span style="color: var(--text-dim);">${bindingPct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '5.000 req/hari • 500.000 token/hari'}</div>
+                  <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">${pct}% request &bull; ${tokenPctDp}% token (scope akun)</div>
                 </td>
                 <td>
                   <div style="font-size: 0.92rem; font-weight: 700; color: ${bindingPct >= 100 ? '#f87171' : '#34d399'};">${bindingPct >= 100 ? 'KUOTA HABIS' : 'Active Gateway'}</div>
@@ -1562,12 +1569,19 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">build.nvidia.com &bull; NIM Microservices</div>
                 </td>
                 <td>
-                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #84cc16;">${callsUsed.toLocaleString("id-ID")} Panggilan${tokensUsed > 0 ? ` &bull; ${tokensUsed.toLocaleString("id-ID")} Tok` : ''}</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.000 Free Credits/key'}</div>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #84cc16;">${callsUsed.toLocaleString("id-ID")} Panggilan</span>
+                    <span style="color: var(--text-dim);">${pct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.000 Free Credits/key'}</div>
+                  ${tokensUsed > 0 ? `<div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">${tokensUsed.toLocaleString("id-ID")} token terpakai</div>` : ''}
                 </td>
                 <td>
-                  <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Active NIM</div>
-                  <div style="font-size: 0.72rem; color: #10b981; margin-top: 2px;">Tier 3 Akselerasi NIM</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: ${pct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${pct >= 100 ? 'HABIS' : callsRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: ${pct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${pct >= 100 ? '● Kuota habis' : '● Sisa Credits'}</div>
                 </td>
                 <td style="text-align: right;">
                   <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(118, 185, 0, 0.15); color: #84cc16; border-color: rgba(118, 185, 0, 0.3);">● Bot Monitored</span>
@@ -1668,6 +1682,17 @@ function renderLiveUpstreamTable(data) {
             const usageUsd = Number(k.liveUsageUsd || 0);
             const dailyUsd = Number(k.liveUsageDailyUsd || 0);
             totalOrUsageUsd += usageUsd;
+            // BAR DITAMBAHKAN (04 Okt): OpenRouter sebelumnya TIDAK punya progress bar
+            // sehingga sulit dilihat sekilas. Padahal endpoint /auth/key menyediakan
+            // free_model_daily_requests (limit + used + remaining) yang bisa dibar-kan.
+            const orRpdCap = Number(k.cap) > 0 ? Number(k.cap) : 50;
+            const orRpdUsed = typeof k.used === "number" ? k.used : 0;
+            const orRpdRemaining = (k.remaining !== null && k.remaining !== undefined)
+              ? k.remaining
+              : Math.max(0, orRpdCap - orRpdUsed);
+            const orPct = orRpdCap > 0 ? Math.min(100, Math.round((orRpdUsed / orRpdCap) * 100)) : 0;
+            const orStatusClass = orPct >= 100 ? "status-capped" : orPct >= 80 ? "status-warning" : "status-healthy";
+            const orStatusText = orPct >= 100 ? "LIMIT RPD" : orPct >= 80 ? "WASPADAI" : "OPTIMAL";
 
             rows.push(`
               <tr>
@@ -1680,16 +1705,23 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">openrouter.ai/keys</div>
                 </td>
                 <td>
-                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">$${dailyUsd.toFixed(5)} USD</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Pemakaian Hari Ini &bull; Total Akun: $${usageUsd.toFixed(5)} &bull; Free Model Route</div>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #a855f7;">${orRpdUsed.toLocaleString("id-ID")} / ${orRpdCap.toLocaleString("id-ID")} req</span>
+                    <span style="color: var(--text-dim);">${orPct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${orPct >= 100 ? 'progress-rose' : orPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${orPct}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '50 req/hari (model :free)'}</div>
+                  <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">Pemakaian hari ini: $${dailyUsd.toFixed(5)} &bull; Total akun: $${usageUsd.toFixed(5)}</div>
                 </td>
                 <td>
-                  <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Free Tier Active</div>
-                  <div style="font-size: 0.72rem; color: #10b981; margin-top: 2px;">Bebas Kuota Model :free</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: ${orPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${orPct >= 100 ? 'HABIS' : orRpdRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: ${orPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${orPct >= 100 ? '● Kuota habis' : '● Sisa Request (:free)'}</div>
                 </td>
                 <td style="text-align: right;">
                   <span class="badge-live-sync" style="margin-bottom: 4px;">● Live Synced</span>
-                  <div><span class="key-badge-status status-healthy">OPTIMAL</span></div>
+                  <div><span class="key-badge-status ${orStatusClass}">${orStatusText}</span></div>
                 </td>
               </tr>
             `);
@@ -1801,6 +1833,15 @@ function renderLiveUpstreamTable(data) {
               </tr>
             `);
           } else if (p.kind === "gemini") {
+            // BAR DITAMBAHKAN (04 Okt): Gemini sebelumnya tanpa progress bar.
+            // Limit dari dokumentasi resmi (endpoint kuota tidak tersedia), jadi
+            // ditandai jujur "dokumentasi resmi" agar tidak diklaim live.
+            const gmCap = p.capPerKey || p.cap || 1500;
+            const gmUsed = k.used || 0;
+            const gmRemaining = Math.max(0, gmCap - gmUsed);
+            const gmPct = gmCap > 0 ? Math.min(100, Math.round((gmUsed / gmCap) * 100)) : 0;
+            const gmStatusClass = gmPct >= 100 ? "status-capped" : gmPct >= 80 ? "status-warning" : "status-healthy";
+            const gmStatusText = gmPct >= 100 ? "LIMIT RPD" : gmPct >= 80 ? "WASPADAI" : "OPTIMAL";
             rows.push(`
               <tr>
                 <td>
@@ -1812,16 +1853,22 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">aistudio.google.com</div>
                 </td>
                 <td>
-                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">${(k.used || 0).toLocaleString("id-ID")} Panggilan</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.500 RPD/key'} &bull; ${k.limitIsLive ? 'Live Synced' : 'dokumentasi resmi'}</div>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: #60a5fa;">${gmUsed.toLocaleString("id-ID")} / ${gmCap.toLocaleString("id-ID")} req</span>
+                    <span style="color: var(--text-dim);">${gmPct}%</span>
+                  </div>
+                  <div class="progress-bar-bg" style="height: 6px;">
+                    <div class="progress-bar-fill ${gmPct >= 100 ? 'progress-rose' : gmPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${gmPct}%"></div>
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.500 RPD/key'} &bull; ${k.limitIsLive ? 'Live Synced' : 'dokumentasi resmi'}</div>
                 </td>
                 <td>
-                  <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Uncapped Daily</div>
-                  <div style="font-size: 0.72rem; color: #10b981; margin-top: 2px;">Bebas Kuota Token Harian</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: ${gmPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${gmPct >= 100 ? 'HABIS' : gmRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: ${gmPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${gmPct >= 100 ? '● Kuota habis' : '● Sisa Request Harian'}</div>
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px;">● Bot Monitored</span>
-                  <div><span class="key-badge-status ${k.status === 'capped' ? 'status-capped' : k.status === 'warning' ? 'status-warning' : 'status-healthy'}">${k.status === 'capped' ? 'LIMIT RPD' : k.status === 'warning' ? 'WASPADAI' : 'OPTIMAL'}</span></div>
+                  <span class="badge-bot-sync" style="margin-bottom: 4px;">${k.limitIsLive ? '● Live Synced' : '● Bot Monitored'}</span>
+                  <div><span class="key-badge-status ${gmStatusClass}">${gmStatusText}</span></div>
                 </td>
               </tr>
             `);
@@ -1983,6 +2030,20 @@ function renderLiveUpstreamTable(data) {
             ${(p.totalTokenCap > 0 && p.totalTokensRemaining !== undefined)
               ? `<div style="font-size: 0.72rem; color: #34d399; margin-top: 2px;">Sisa ${formatTokens(p.totalTokensRemaining)} dari ${formatTokens(p.totalTokenCap)}${p.cappedKeys > 0 ? ` &bull; <span style="color:#fb7185;font-weight:700;">${p.cappedKeys} key habis</span>` : ''}</div>`
               : ""}
+            ${(() => {
+              // BAR DITAMBAHKAN (04 Okt): tabel matriks token sebelumnya hanya teks
+              // sehingga sulit dilihat sekilas mana provider yang mendekati batas.
+              // Bar memakai metrik BINDING (panggilan vs token — mana yang lebih dulu habis).
+              const barPct = Math.min(100, Math.max(0, providerBindingPct));
+              const barColor = barPct >= 100 ? 'progress-rose' : barPct >= 80 ? 'progress-amber' : 'progress-emerald';
+              return `<div class="progress-bar-bg" style="height: 6px; margin-top: 6px;">
+                        <div class="progress-bar-fill ${barColor}" style="width: ${barPct}%"></div>
+                      </div>
+                      <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-dim); margin-top: 3px;">
+                        <span>${barPct}% terpakai (${p.percent || 0}% req &bull; ${p.tokenPercent || 0}% token)</span>
+                        <span>${barPct >= 100 ? 'HABIS' : 'tersedia'}</span>
+                      </div>`;
+            })()}
             ${syncSubtext}
           </td>
           <td style="text-align: right;">
@@ -2134,6 +2195,20 @@ function renderLiveUpstreamTable(data) {
             <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;" title="Input Context: ${ctxTk.toLocaleString('id-ID')} tk | Output Completion: ${outTk.toLocaleString('id-ID')} tk | Total: ${totalTk.toLocaleString('id-ID')} tk${isRealUsage ? ' (Terverifikasi Upstream Engine)' : ''}">
               <span style="color: var(--text-muted);">Ctx:</span> ${ctxTk.toLocaleString("id-ID")} &bull; <span style="color: var(--text-muted);">Out:</span> ${outTk.toLocaleString("id-ID")}
             </div>
+            ${(() => {
+              // BAR DITAMBAHKAN (04 Okt): kolom token sebelumnya hanya angka sehingga
+              // sulit melihat sekilas pesan mana yang paling boros. Bar menunjukkan
+              // porsi CONTEXT (prompt) vs OUTPUT, dengan skala relatif ke pesan terboros
+              // di halaman ini agar perbandingan antar-baris langsung terlihat.
+              const maxTk = Math.max(1, ...pageItems.map((x) => Number(x.totalTokens) || 0));
+              const barW = Math.min(100, Math.round((totalTk / maxTk) * 100));
+              const ctxPorsi = totalTk > 0 ? Math.round((ctxTk / totalTk) * 100) : 0;
+              const warna = barW >= 90 ? 'progress-rose' : barW >= 60 ? 'progress-amber' : 'progress-emerald';
+              return `<div class="progress-bar-bg" style="height: 5px; margin-top: 5px;" title="Context ${ctxPorsi}% • Output ${100 - ctxPorsi}%">
+                        <div class="progress-bar-fill ${warna}" style="width: ${barW}%"></div>
+                      </div>
+                      <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 2px;">Ctx ${ctxPorsi}% • Out ${100 - ctxPorsi}%</div>`;
+            })()}
           </td>
           <td>
             <div class="dataset-prompt">${escapeHtml(p.userPrompt)}</div>
