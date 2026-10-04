@@ -110,8 +110,8 @@ export const config = {
 
     // Tier 6: Google Gemini API (1M Konteks)
     geminiPrimary: 'gemini-3.8-flash',
-    geminiBackup: ['gemini-3.1-flash-lite'],
-    geminiVision: ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.6-flash'],
+    geminiBackup: ['gemini-flash-lite-latest'],
+    geminiVision: ['gemini-flash-lite-latest', 'gemini-3.6-flash'],
 
     // Tier 7: Dahl Global API (1B Token Pool)
     // Model Utama: deepseek-ai/DeepSeek-V4-Flash-0731
@@ -182,7 +182,7 @@ export const config = {
       // bukan dibuang: lebih baik memberi jawaban umum daripada tidak menjawab.
       // ---------------------------------------------------------------------
       { kind: 'cloudflare', model: '@cf/qwen/qwen3.8-27b' },
-      { kind: 'gemini', model: 'gemini-3.1-flash-lite' },
+      { kind: 'gemini', model: 'gemini-flash-lite-latest' },
       { kind: 'gemini', model: 'gemini-2.5-flash' },
       { kind: 'gemini', model: 'gemini-3.6-flash' },
       { kind: 'xkiro', model: 'qwen/qwen3.8-max:free' },

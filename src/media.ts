@@ -105,6 +105,52 @@ function kolomKeIndeks(ref: string): number {
 }
 
 /**
+ * Ekstrak isi .pptx (PowerPoint) menjadi teks per slide.
+ * Format .pptx sama seperti .docx/.xlsx: arsip ZIP berisi XML. Teks tiap slide
+ * ada di ppt/slides/slideN.xml dalam tag <a:t>...</a:t>.
+ *
+ * DITAMBAHKAN 04 Okt: sebelumnya .pptx TIDAK didukung (jatuh ke jalur "tidak
+ * didukung"). Parser ini menutup celah itu tanpa dependensi baru (memakai
+ * zipEntry + inflateRawSync yang sudah ada).
+ */
+function bacaPptx(buffer: Buffer): string | null {
+  const bagian: string[] = [];
+  // Slide biasanya slide1..slideN (bisa tidak berurutan di arsip, tapi umumnya ada).
+  for (let idx = 1; idx <= 60; idx++) {
+    const xml = zipEntry(buffer, `ppt/slides/slide${idx}.xml`);
+    if (!xml) continue;
+    const teks = xml.toString('utf8');
+    const potongan: string[] = [];
+    const reT = /<a:t>([\s\S]*?)<\/a:t>/g;
+    let m: RegExpExecArray | null;
+    while ((m = reT.exec(teks)) !== null) {
+      const t = xmlDecode(m[1]).trim();
+      if (t) potongan.push(t);
+    }
+    if (potongan.length > 0) {
+      bagian.push(`### Slide ${idx}\n${potongan.join('\n')}`);
+    }
+  }
+  // Catatan pembicara (notes) bila ada — sering memuat konteks penting.
+  for (let idx = 1; idx <= 60; idx++) {
+    const xml = zipEntry(buffer, `ppt/notesSlides/notesSlide${idx}.xml`);
+    if (!xml) continue;
+    const teks = xml.toString('utf8');
+    const potongan: string[] = [];
+    const reT = /<a:t>([\s\S]*?)<\/a:t>/g;
+    let m: RegExpExecArray | null;
+    while ((m = reT.exec(teks)) !== null) {
+      const t = xmlDecode(m[1]).trim();
+      if (t) potongan.push(t);
+    }
+    // notesSlide memuat nomor slide juga; buang yang hanya angka.
+    const isi = potongan.filter((x) => !/^\d+$/.test(x));
+    if (isi.length > 0) bagian.push(`### Catatan Slide ${idx}\n${isi.join('\n')}`);
+  }
+  return bagian.length > 0 ? bagian.join('\n\n') : null;
+}
+
+/**
  * Ekstrak isi .xlsx menjadi teks tab-separated (per sheet).
  * Angka diformat apa adanya; tanggal dikembalikan sebagai serial Excel + catatan,
  * karena konversi serial->tanggal butuh tabel format yang tidak ada di XML mentah.
@@ -533,6 +579,10 @@ export function sniffMimeType(buffer: Buffer): string | null {
     if (teksArsip.includes('word/document.xml')) {
       return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     }
+    // DITAMBAHKAN 04 Okt: PowerPoint .pptx — keberadaan ppt/presentation.xml.
+    if (teksArsip.includes('ppt/presentation.xml') || teksArsip.includes('ppt/slides/')) {
+      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    }
     // Arsip ZIP lain (mis. .zip biasa) — biarkan tanpa mime agar tidak salah tebak.
     return null;
   }
@@ -604,6 +654,21 @@ export async function extractDocumentText(
       if (isi && isi.trim().length > 0) return isi.trim();
     } catch (err) {
       console.warn('[media] Gagal ekstrak Excel .xlsx:', err);
+    }
+  }
+
+  // 2b. PowerPoint (.pptx) via parser ZIP+XML sendiri (DITAMBAHKAN 04 Okt).
+  //     Sebelumnya .pptx tidak didukung sama sekali dan jatuh ke jalur "tidak
+  //     didukung". .ppt (format lama, biner OLE) tetap tidak didukung.
+  if (
+    lowerName.endsWith('.pptx') ||
+    effectiveMime.includes('presentationml')
+  ) {
+    try {
+      const isi = bacaPptx(buffer);
+      if (isi && isi.trim().length > 0) return isi.trim();
+    } catch (err) {
+      console.warn('[media] Gagal ekstrak PowerPoint .pptx:', err);
     }
   }
 
