@@ -1536,20 +1536,9 @@ function steps(): Step[] {
  */
 function visionSteps(all: Step[], msgs?: ChatMsg[]): Step[] {
   const byKind = new Map(all.map((s) => [s.kind, s]));
-  if (!byKind.has('xkiro') && config.pools.xkiro.length > 0) {
-    byKind.set('xkiro', {
-      kind: 'xkiro',
-      keys: config.pools.xkiro,
-      models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
-      cap: config.dailyCap.xkiro,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) => openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
-        reasoning: { effort: 'minimal' },
-        reasoning_effort: 'low',
-        ...BASE_GEN,
-      }, t),
-    });
-  }
+  // CATATAN 04 Okt: blok byKind.set('xkiro', ...) DIHAPUS karena semua akun xKiro
+  // DISUSPEND permanen (403 "operating multiple accounts"). xKiro juga sudah
+  // dikeluarkan dari visionChain di env.ts, jadi tidak akan pernah dicoba.
   const out: Step[] = [];
 
   // Format gambar yang dikirim di request ini (dari data URL: data:image/webp;base64,...).

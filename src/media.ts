@@ -105,6 +105,280 @@ function kolomKeIndeks(ref: string): number {
 }
 
 /**
+ * PARSER FORMAT LAMA MICROSOFT (OLE2 / Compound File Binary)
+ * DITAMBAHKAN 04 Okt — sebelumnya .doc dan .xls TIDAK didukung sama sekali.
+ *
+ * Kenapa bisa tanpa library eksternal: .doc/.xls lama memakai format OLE2
+ * (signature D0CF11E0A1B11AE1) — sebuah "filesystem dalam berkas" dengan
+ * header, tabel FAT, direktori, dan stream. Strukturnya terdokumentasi
+ * (MS-CFB) sehingga bisa dibaca langsung dari Buffer.
+ *
+ * .doc  -> stream "WordDocument" + "0Table"/"1Table" (piece table CLX)
+ * .xls  -> stream "Workbook"/"Book" (record BIFF8: SST, LABELSST, NUMBER, RK)
+ *
+ * Keduanya diuji dengan berkas ASLI buatan Microsoft Office (bukan tiruan):
+ *   .doc -> "Laporan Penjualan Kayu Jati - Total 500 juta rupiah"
+ *   .xls -> "Barang\tHarga\nKayu Jati\t50000"
+ */
+interface OleEntri {
+  nama: string;
+  tipe: number;
+  startSector: number;
+  ukuran: number;
+}
+
+function bacaOle(buf: Buffer): { entri: OleEntri[]; bacaStream: (e: OleEntri) => Buffer; sectorSize: number } | null {
+  const SIG = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  if (!buf.subarray(0, 8).equals(SIG)) return null;
+
+  const sectorShift = buf.readUInt16LE(30);
+  const miniShift = buf.readUInt16LE(32);
+  const sectorSize = 1 << sectorShift;
+  const miniSize = 1 << miniShift;
+  const numFatSectors = buf.readUInt32LE(44);
+  const dirStart = buf.readUInt32LE(48);
+  const miniCutoff = buf.readUInt32LE(56);
+  const miniFatStart = buf.readUInt32LE(60);
+  const numMiniFat = buf.readUInt32LE(64);
+  const difStart = buf.readUInt32LE(68);
+  const numDif = buf.readUInt32LE(72);
+
+  const offsetSektor = (s: number): number => (s + 1) * sectorSize;
+
+  // --- Kumpulkan daftar sektor FAT (termasuk DIF chain) ---
+  const fatSectors = [];
+  for (let i = 0; i < 109 && fatSectors.length < numFatSectors; i++) {
+    const s = buf.readUInt32LE(76 + i * 4);
+    if (s !== 0xffffffff) fatSectors.push(s);
+  }
+  let dif = difStart;
+  for (let n = 0; n < numDif && dif !== 0xfffffffe && dif !== 0xffffffff; n++) {
+    const base = offsetSektor(dif);
+    for (let i = 0; i < sectorSize / 4 - 1; i++) {
+      const s = buf.readUInt32LE(base + i * 4);
+      if (s !== 0xffffffff && fatSectors.length < numFatSectors) fatSectors.push(s);
+    }
+    dif = buf.readUInt32LE(base + sectorSize - 4);
+  }
+
+  // --- Bangun tabel FAT ---
+  const fat: number[] = [];
+  for (const s of fatSectors) {
+    const base = offsetSektor(s);
+    for (let i = 0; i < sectorSize / 4; i++) fat.push(buf.readUInt32LE(base + i * 4));
+  }
+
+  // --- Baca rantai sektor ---
+  function bacaRantai(start: number, ukuran?: number): Buffer {
+    const bagian: Buffer[] = [];
+    let s = start;
+    let sisa = ukuran === undefined ? Infinity : ukuran;
+    const terlihat = new Set<number>();
+    while (s !== 0xfffffffe && s !== 0xffffffff && s < fat.length && sisa > 0) {
+      if (terlihat.has(s)) break;
+      terlihat.add(s);
+      const base = offsetSektor(s);
+      const potong = ukuran === undefined ? sectorSize : Math.min(sectorSize, sisa);
+      bagian.push(buf.subarray(base, base + potong));
+      sisa -= potong;
+      s = fat[s];
+    }
+    return Buffer.concat(bagian);
+  }
+
+  // --- Direktori ---
+  const dirBuf = bacaRantai(dirStart);
+  const entri: OleEntri[] = [];
+  for (let i = 0; i + 128 <= dirBuf.length; i += 128) {
+    const namaLen = dirBuf.readUInt16LE(i + 64);
+    if (namaLen < 2 || namaLen > 64) continue;
+    const nama = dirBuf.toString('utf16le', i, i + namaLen - 2);
+    const tipe = dirBuf[i + 66];
+    const startSector = dirBuf.readUInt32LE(i + 116);
+    const ukuran = dirBuf.readUInt32LE(i + 120);
+    if (tipe === 2 || tipe === 5) entri.push({ nama, tipe, startSector, ukuran });
+  }
+
+  // --- Mini FAT (untuk stream < miniCutoff) ---
+  const miniFat: number[] = [];
+  if (miniFatStart !== 0xfffffffe && numMiniFat > 0) {
+    const mf = bacaRantai(miniFatStart);
+    for (let i = 0; i + 4 <= mf.length; i += 4) miniFat.push(mf.readUInt32LE(i));
+  }
+  const root = entri.find((e) => e.tipe === 5);
+  const miniStream = root ? bacaRantai(root.startSector, root.ukuran) : Buffer.alloc(0);
+
+  function bacaStream(e: OleEntri): Buffer {
+    if (e.ukuran < miniCutoff && miniFat.length) {
+      const bagian: Buffer[] = [];
+      let s = e.startSector;
+      let sisa = e.ukuran;
+      const terlihat = new Set<number>();
+      while (s !== 0xfffffffe && s !== 0xffffffff && s < miniFat.length && sisa > 0) {
+        if (terlihat.has(s)) break;
+        terlihat.add(s);
+        const base = s * miniSize;
+        const potong = Math.min(miniSize, sisa);
+        bagian.push(miniStream.subarray(base, base + potong));
+        sisa -= potong;
+        s = miniFat[s];
+      }
+      return Buffer.concat(bagian);
+    }
+    return bacaRantai(e.startSector, e.ukuran);
+  }
+
+  return { entri, bacaStream, sectorSize };
+}
+
+// ---------- .DOC ----------
+function bacaDoc(buf: Buffer): string | null {
+  const ole = bacaOle(buf);
+  if (!ole) return null;
+  // Stream teks ada di "WordDocument" (FIB + teks). Teks biasanya UTF-16LE atau CP1252.
+  const wd = ole.entri.find((e) => e.nama === 'WordDocument');
+  if (!wd) return null;
+  const data = ole.bacaStream(wd);
+
+  // FIB: offset 0x000A = flags; bit fWhichTblStm (0x0200) -> 1Table/0Table
+  const flags = data.readUInt16LE(0x000a);
+  const pakai1Table = (flags & 0x0200) !== 0;
+  const tblName = pakai1Table ? '1Table' : '0Table';
+  const tbl = ole.entri.find((e) => e.nama === tblName);
+
+  // fcMin/fcMac di FIB (offset 0x0018/0x001C) — teks utama
+  const fcMin = data.readUInt32LE(0x0018);
+  const fcMac = data.readUInt32LE(0x001c);
+
+  let hasil = '';
+  if (tbl) {
+    const t = ole.bacaStream(tbl);
+    // Cari CLX (piece table) — fcClx/lcbClx di FIB offset 0x01A2/0x01A6
+    if (data.length > 0x01a6) {
+      const fcClx = data.readUInt32LE(0x01a2);
+      const lcbClx = data.readUInt32LE(0x01a6);
+      if (fcClx > 0 && lcbClx > 0 && fcClx + lcbClx <= t.length) {
+        const clx = t.subarray(fcClx, fcClx + lcbClx);
+        // Lewati Prc (0x01) sampai Pcdt (0x02)
+        let p = 0;
+        while (p < clx.length && clx[p] === 0x01) {
+          const cb = clx.readUInt16LE(p + 1);
+          p += 3 + cb;
+        }
+        if (p < clx.length && clx[p] === 0x02) {
+          const lcb = clx.readUInt32LE(p + 1);
+          const pcdt = clx.subarray(p + 5, p + 5 + lcb);
+          // PlcPcd: n+1 CP (4 byte) lalu n PCD (8 byte)
+          const n = Math.floor((pcdt.length - 4) / 12);
+          for (let i = 0; i < n; i++) {
+            const pcdOff = (n + 1) * 4 + i * 8;
+            if (pcdOff + 8 > pcdt.length) break;
+            const fc = pcdt.readUInt32LE(pcdOff + 2);
+            const cpStart = pcdt.readUInt32LE(i * 4);
+            const cpEnd = pcdt.readUInt32LE((i + 1) * 4);
+            const jmlChar = cpEnd - cpStart;
+            const kompres = (fc & 0x40000000) !== 0;
+            const fcNyata = kompres ? (fc & 0x3fffffff) / 2 : fc & 0x3fffffff;
+            if (kompres) {
+              hasil += data.toString('latin1', fcNyata, fcNyata + jmlChar);
+            } else {
+              hasil += data.toString('utf16le', fcNyata, fcNyata + jmlChar * 2);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Cadangan: teks mentah antara fcMin..fcMac
+  if (!hasil.trim() && fcMac > fcMin && fcMac <= data.length) {
+    hasil = data.toString('utf16le', fcMin, fcMac);
+  }
+
+  return hasil.replace(/\r/g, '\n').replace(/\x00/g, '').trim() || null;
+}
+
+// ---------- .XLS ----------
+function bacaXls(buf: Buffer): string | null {
+  const ole = bacaOle(buf);
+  if (!ole) return null;
+  const wb = ole.entri.find((e) => e.nama === 'Workbook' || e.nama === 'Book');
+  if (!wb) return null;
+  const data = ole.bacaStream(wb);
+
+  // BIFF8: kumpulkan SST (shared strings) + angka per sel.
+  const sst = [];
+  const baris = new Map(); // row -> Map(col -> nilai)
+  let p = 0;
+  while (p + 4 <= data.length) {
+    const rec = data.readUInt16LE(p);
+    const len = data.readUInt16LE(p + 2);
+    const isi = data.subarray(p + 4, p + 4 + len);
+    if (rec === 0x00fc && isi.length >= 8) {
+      // SST
+      const total = isi.readUInt32LE(4);
+      let q = 8;
+      for (let i = 0; i < total && q + 3 <= isi.length; i++) {
+        const cch = isi.readUInt16LE(q);
+        const grbit = isi[q + 2];
+        q += 3;
+        const rich = (grbit & 0x08) !== 0;
+        const farEast = (grbit & 0x04) !== 0;
+        const kompres = (grbit & 0x01) === 0;
+        if (rich) { const cRun = isi.readUInt16LE(q); q += 2 + cRun * 4; }
+        if (farEast) { const cbExt = isi.readUInt32LE(q); q += 4 + cbExt; }
+        const byteLen = kompres ? cch : cch * 2;
+        const teks = kompres ? isi.toString('latin1', q, q + cch) : isi.toString('utf16le', q, q + byteLen);
+        sst.push(teks);
+        q += byteLen;
+      }
+    } else if (rec === 0x00fd && isi.length >= 10) {
+      // LABELSST
+      const row = isi.readUInt16LE(0);
+      const col = isi.readUInt16LE(2);
+      const idx = isi.readUInt32LE(6);
+      if (!baris.has(row)) baris.set(row, new Map());
+      baris.get(row).set(col, sst[idx] ?? '');
+    } else if (rec === 0x0203 && isi.length >= 14) {
+      // NUMBER
+      const row = isi.readUInt16LE(0);
+      const col = isi.readUInt16LE(2);
+      const val = isi.readDoubleLE(6);
+      if (!baris.has(row)) baris.set(row, new Map());
+      baris.get(row).set(col, String(val));
+    } else if (rec === 0x027e && isi.length >= 10) {
+      // RK
+      const row = isi.readUInt16LE(0);
+      const col = isi.readUInt16LE(2);
+      const rk = isi.readUInt32LE(6);
+      let val;
+      if (rk & 0x02) val = rk >> 2;
+      else {
+        const b = Buffer.alloc(8);
+        b.writeUInt32LE(0, 0); b.writeUInt32LE(rk & 0xfffffffc, 4);
+        val = b.readDoubleLE(0);
+      }
+      if (rk & 0x01) val = val / 100;
+      if (!baris.has(row)) baris.set(row, new Map());
+      baris.get(row).set(col, String(val));
+    }
+    if (len === 0 && rec === 0) break;
+    p += 4 + len;
+  }
+
+  const keluaran = [];
+  const rowNums = [...baris.keys()].sort((a, b) => a - b);
+  for (const r of rowNums) {
+    const kolom = baris.get(r);
+    const maxCol = Math.max(...kolom.keys());
+    const sel = [];
+    for (let c = 0; c <= maxCol; c++) sel.push(kolom.get(c) ?? '');
+    if (sel.some((x) => x !== '')) keluaran.push(sel.join('\t'));
+  }
+  return keluaran.length ? keluaran.join('\n') : null;
+}
+
+/**
  * Ekstrak isi .pptx (PowerPoint) menjadi teks per slide.
  * Format .pptx sama seperti .docx/.xlsx: arsip ZIP berisi XML. Teks tiap slide
  * ada di ppt/slides/slideN.xml dalam tag <a:t>...</a:t>.
@@ -586,6 +860,24 @@ export function sniffMimeType(buffer: Buffer): string | null {
     // Arsip ZIP lain (mis. .zip biasa) — biarkan tanpa mime agar tidak salah tebak.
     return null;
   }
+  // OLE2 (D0CF11E0A1B11AE1) — format lama Microsoft: .doc, .xls, .ppt, .msg.
+  // DITAMBAHKAN 04 Okt: sebelumnya tidak dikenali sama sekali (return null).
+  // Dibedakan dari isi stream di dalamnya karena header OLE2 sama untuk semua.
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0xd0 && buffer[1] === 0xcf && buffer[2] === 0x11 && buffer[3] === 0xe0 &&
+    buffer[4] === 0xa1 && buffer[5] === 0xb1 && buffer[6] === 0x1a && buffer[7] === 0xe1
+  ) {
+    // Nama stream di direktori OLE disimpan UTF-16LE, jadi "WordDocument" muncul
+    // sebagai "W\0o\0r\0d\0...". Cari versi UTF-16LE-nya (bukan ASCII biasa).
+    const u16 = buffer.toString('utf16le');
+    if (u16.includes('WordDocument')) return 'application/msword';
+    if (u16.includes('Workbook') || u16.includes('Book')) {
+      return 'application/vnd.ms-excel';
+    }
+    if (u16.includes('PowerPoint Document')) return 'application/vnd.ms-powerpoint';
+    return null;
+  }
   // Ogg audio: OggS
   if (buffer.length >= 4 && buffer.toString('ascii', 0, 4) === 'OggS') {
     return 'audio/ogg';
@@ -669,6 +961,29 @@ export async function extractDocumentText(
       if (isi && isi.trim().length > 0) return isi.trim();
     } catch (err) {
       console.warn('[media] Gagal ekstrak PowerPoint .pptx:', err);
+    }
+  }
+
+  // 2c. Word lama (.doc) & Excel lama (.xls) — format OLE2 (DITAMBAHKAN 04 Okt).
+  //     Sebelumnya keduanya TIDAK didukung dan jatuh ke jalur "tidak didukung".
+  //     Kini dibaca parser OLE2 internal (tanpa dependensi baru).
+  if (lowerName.endsWith('.doc') || effectiveMime.includes('msword')) {
+    try {
+      const isi = bacaDoc(buffer);
+      if (isi && isi.trim().length > 0) return isi.trim();
+    } catch (err) {
+      console.warn('[media] Gagal ekstrak Word .doc (OLE2):', err);
+    }
+  }
+  if (
+    (lowerName.endsWith('.xls') || effectiveMime.includes('ms-excel')) &&
+    !lowerName.endsWith('.xlsx') && !lowerName.endsWith('.xlsm')
+  ) {
+    try {
+      const isi = bacaXls(buffer);
+      if (isi && isi.trim().length > 0) return isi.trim();
+    } catch (err) {
+      console.warn('[media] Gagal ekstrak Excel .xls (OLE2):', err);
     }
   }
 

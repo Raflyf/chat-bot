@@ -157,7 +157,6 @@ export const config = {
       // DITAMBAHKAN 25 Sep: Command A Vision — terukur 4/4 akurat untuk OCR tabel
       // angka (2.557ms), jauh lebih cepat dari xkiro/qwen3-vl-plus (4.828ms) dan
       // mengisi celah antara Groq (primer) dan Cloudflare (lemah baca digit halus).
-      { kind: 'xkiro', model: 'cohere/command-a-vision' },
       // ---------------------------------------------------------------------
       // DIKOREKSI 24 Sep (temuan pemilik produk): `@cf/meta/llama-4-scout` dan
       // `@cf/mistralai/mistral-small-3.1` DIKELUARKAN dari jalur vision.
@@ -185,14 +184,11 @@ export const config = {
       { kind: 'gemini', model: 'gemini-flash-lite-latest' },
       { kind: 'gemini', model: 'gemini-2.5-flash' },
       { kind: 'gemini', model: 'gemini-3.6-flash' },
-      { kind: 'xkiro', model: 'qwen/qwen3.8-max:free' },
       // Dua model multimodal xKiro lain yang TERBUKTI bekerja saat uji 22 Sep (gambar
       // stiker nyata, semua terbaca benar). Ditaruh setelah qwen3.8-max karena keduanya
       // lebih lambat pada gambar BARU (qwen3-vl-plus 5.293ms, qwen3.5-omni-flash 10.153ms,
       // sedangkan qwen3.8-max 4.269-6.486ms) — tapi tetap berguna sebagai lapisan
       // tambahan sebelum jaring terakhir, karena kuotanya terpisah per kunci.
-      { kind: 'xkiro', model: 'qwen/qwen3-vl-plus:free' },
-      { kind: 'xkiro', model: 'qwen/qwen3.5-omni-flash:free' },
       // Jaring TERAKHIR: model Cloudflare yang cepat tapi lemah membaca digit halus.
       // Dipakai hanya bila seluruh model di atas gagal, agar user tetap dapat balasan.
       { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
@@ -206,7 +202,6 @@ export const config = {
       // Tetap dipasang sebagai jaring terakhir (bukan dibuang) karena model ini BENAR
       // saat berhasil ("Ipin dari Upin & Ipin", "anak kucing menangis") dan tidak
       // memakai kuota provider lain. Catatan: model ini TIDAK punya batas token ketat.
-      { kind: 'xkiro', model: 'qwen/qwen3.8-omni-flash:free' },
     ] as Array<{
       kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'xkiro' | 'opencode';
       model: string;
