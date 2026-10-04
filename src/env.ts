@@ -51,10 +51,11 @@ export const config = {
   telegramToken: cleanStr('TELEGRAM_BOT_TOKEN'),
   ownerChatId: cleanStr('OWNER_CHAT_ID'),
   ownerWaNumber: cleanStr('OWNER_WA_NUMBER'),
-  // Jika DAHL_PROXY_URL diset, semua request Dahl dialihkan ke Cloudflare Worker
-  // (bypass Cloudflare WAF Dahl yang memblokir IP AWS/Vercel).
-  // Bila kosong: pakai DAHL_BASE_URL (endpoint langsung) atau default resmi Dahl.
-  dahlProxyUrl: cleanStr('DAHL_PROXY_URL') || cleanStr('DAHL_BASE_URL') || 'https://inference.dahl.global/v1',
+  // Endpoint Dahl. DAHL_PROXY_URL (Cloudflare Worker) DIHAPUS 04 Okt 2026 —
+  // proxy-nya sudah mati (HTTP 403 error 1010, akun diblokir), dan folder
+  // cloudflare-worker/dahl-proxy dihapus dari repo. Dahl diakses langsung
+  // lewat DAHL_BASE_URL, atau default resmi bila tidak diisi.
+  dahlProxyUrl: cleanStr('DAHL_BASE_URL') || 'https://inference.dahl.global/v1',
   pools: {
     dreamprompting: csv('DREAMPROMPTING_KEYS'),
     cloudflare: csv('CLOUDFLARE_KEYS'),
