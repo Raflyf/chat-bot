@@ -1873,9 +1873,10 @@ function renderLiveUpstreamTable(data) {
               </tr>
             `);
           } else if (p.kind === "opencode") {
-            // BAR DITAMBAHKAN (04 Okt): OpenCode Free (mimo-v2.6 + muse-spark-1.3).
-            // Tanpa API key (Bearer public); kuota dihitung per SESI di upstream,
-            // jadi bar menampilkan pemakaian internal bot (bukan kuota resmi API).
+            // BAR DITAMBAHKAN (04 Okt): OpenCode Free (muse-spark-1.3 + mimo-v2.6).
+            // TIDAK BISA LIVE-SYNCED: 10 endpoint usage diuji, semua 404; header
+            // respons chat tidak memuat info kuota. Karena itu badge-nya
+            // "Bot Monitored" (catatan internal bot), bukan "Live Synced".
             const ocCap = p.capPerKey || p.cap || 1000;
             const ocUsed = k.used || 0;
             const ocRemaining = Math.max(0, ocCap - ocUsed);

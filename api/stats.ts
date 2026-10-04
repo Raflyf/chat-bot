@@ -743,9 +743,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         tokenCapPerKey: config.dailyTokenCap.opencode,
         tokenCapPerKeyList: config.dailyTokenCapPerKey.opencode,
         tokenLimitType: 'daily_cap',
-        // OpenCode Free: tanpa API key (noAuth, "Bearer public"). Kuota dihitung
-        // per SESI di sisi upstream, bukan per key — jadi angka di sini adalah
-        // pemakaian internal bot (bukan kuota resmi yang bisa dibaca dari API).
+        // OpenCode Free: TIDAK BISA LIVE-SYNCED. Diuji 04 Okt ke 10 endpoint kandidat
+        // (/zen/v1/usage, /quota, /limits, /me, /account, /key, /credits, /api/v1/...)
+        // -> SEMUA 404; header respons chat juga TIDAK memuat info kuota/limit.
+        // Karena itu dashboard memakai catatan internal bot (dihitung dari pemakaian
+        // nyata), ditandai "Bot Monitored" — bukan "Live Synced" — agar jujur.
         tokenLimitLabel: 'Tanpa API key (Bearer public) • kuota per sesi di upstream • 8.000 token/respons',
         resetCycle: 'Rolling (per sesi)',
         contextWindow: '1.000.000 Token (1M)',
