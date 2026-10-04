@@ -119,7 +119,12 @@ Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key yang 
   - `migrate_v18_daily_token_tracking.sql` — pelacakan kuota token harian (TPD) lintas instance.
   - `migrate_v22_personal_notes.sql` — tabel fitur pencatatan (`notes`, `todos`, `expenses`, `habits`, `habit_logs`).
   - `migrate_v23_pending_confirmations.sql` — konfirmasi tertunda lintas instance serverless (opsional; tanpa ini bot memakai fallback di tabel `messages`).
-- **Pengingat Tepat Waktu (GitHub Actions)**: Workflow `.github/workflows/reminders.yml` memanggil `/api/cron/reminders` tiap 5 menit. Agar aktif, set **GitHub Secrets**: `CRON_SECRET` (sama dengan di Vercel) dan `APP_URL` (domain produksi). Tanpa ini, pengingat hanya dikirim saat ada pesan masuk (*lazy-check*).
+- **Pengingat Tepat Waktu**: tiga lapisan pemicu yang saling melengkapi:
+  1. **cron-job.org** (UTAMA, gratis) — memanggil `/api/cron/reminders` **tiap 1 menit**. Setup: `sql/CARA_SETUP_CRONJOB_ORG.md`. Hasil terukur: pengingat terkirim dalam ~40 detik.
+  2. **GitHub Actions** — workflow `.github/workflows/reminders.yml`, 3 jadwal bergeser (cadangan).
+  3. **Lazy-check** — diperiksa setiap ada pesan masuk (cadangan).
+
+  Semua memanggil endpoint yang sama dengan header `Authorization: Bearer <CRON_SECRET>`. Aman berjalan bersamaan karena endpoint memakai klaim atomik (`lease_until`) — pengingat tidak terkirim dobel.
 
 Dokumentasi arsitektur mendalam dan riwayat teknis versi dikelola secara internal dan tidak dipublikasikan di repositori ini.
 
