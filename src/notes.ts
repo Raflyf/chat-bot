@@ -25,6 +25,34 @@
  * semuanya deterministik agar cepat, murah, dan tidak berhalusinasi.
  */
 import { db } from './db.js';
+import { formatInZone } from './timezone.js';
+
+/**
+ * Format tanggal+jam dalam ZONA WAKTU USER (default WIB / Asia/Jakarta).
+ *
+ * BUG YANG DIPERBAIKI (04 Okt 2026, keluhan pemilik produk):
+ *   User minta "ingatkan 2 menit lagi" pada pukul 22:14 WIB.
+ *   Bot menjawab: "Pengingat ... pada 4 Okt 2026, 15.16"  <- SALAH 7 jam!
+ *   Sebabnya: `toLocaleString('id-ID')` TANPA opsi `timeZone` memakai zona
+ *   SERVER (Vercel = UTC), bukan zona user (WIB = UTC+7).
+ *   Pengingatnya sendiri tersimpan BENAR (due_at UTC), hanya TAMPILANNYA salah.
+ *
+ * Perbaikan: selalu sebutkan `timeZone` eksplisit. Zona diambil dari parameter
+ * (bila pemanggil punya info lokasi) atau default Asia/Jakarta (WIB), karena
+ * mayoritas pengguna bot ini di Indonesia.
+ */
+function formatWaktuUser(d: Date, zone = 'Asia/Jakarta'): string {
+  try {
+    return d.toLocaleString('id-ID', {
+      timeZone: zone,
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+  } catch {
+    // Zona tidak valid -> fallback ke WIB (zona paling umum).
+    return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short' });
+  }
+}
 
 // ============================================================================
 // TIPE & KONSTANTA
@@ -351,7 +379,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         kind: 'note',
         yakin: 0.9,
         data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
-        ringkas: `Pengingat "${pesan}" pada ${kapan.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}`,
+        ringkas: `Pengingat "${pesan}" pada ${formatWaktuUser(kapan)} WIB`,
       };
     }
     return null; // perintah ingatkan tapi waktu tak jelas -> serahkan ke AI
@@ -369,7 +397,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         kind: 'todo',
         yakin: 0.9,
         data: { task: isi, priority: prioritas, due_at: due ? due.toISOString() : null },
-        ringkas: `Tugas: "${isi}"${due ? ` (tenggat ${due.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })})` : ''}`,
+        ringkas: `Tugas: "${isi}"${due ? ` (tenggat ${formatWaktuUser(due)} WIB)` : ''}`,
       };
     }
   }
@@ -695,7 +723,7 @@ export function formatDaftarTugas(rows: TugasRingkas[]): string {
   const label = (p: number) => (p === 1 ? '🔴' : p === 3 ? '🟢' : '🟡');
   return rows.map((r) => {
     const due = r.due_at
-      ? ` — tenggat ${new Date(r.due_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}`
+      ? ` — tenggat ${formatWaktuUser(new Date(r.due_at))} WIB`
       : '';
     return `${label(r.priority)} #${r.id} ${r.task}${due}`;
   }).join('\n');
