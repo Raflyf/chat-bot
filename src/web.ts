@@ -851,9 +851,18 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   const isNewsLike =
     /\b(?:berita|kabar|headline|news|peristiwa|breaking|viral)\b/i.test(cleanQuery) ||
     /^(?:ada\s+berita\s+apa|apa\s+berita\s+hari\s+ini|berita\s+apa\s+hari\s+ini)/i.test(cleanQuery.toLowerCase());
+
+  // Kueri CUACA harus SELALU live, tidak boleh dari cache.
+  // KASUS NYATA 04 Okt: user tanya "infokan cuaca hari ini" pukul 10.02, tetapi bot
+  // menjawab data dari pukul 02:51 (7 jam sebelumnya) — lengkap dengan kalimat
+  // "Data terkini dari wttr.in pukul 02:51 AM". Penyebab: kueri ini tidak memuat kata
+  // berita sehingga isNewsLike=false, lalu cache web_knowledge dipakai. Cuaca berubah
+  // tiap jam; menyajikan data basi sebagai "hari ini" adalah kesalahan fakta.
+  const isWeatherLike =
+    /\b(?:cuaca|suhu|temperatur|berapa\s+derajat|hujan|panas|dingin|gerah|mendung|cerah|berawan|kelembapan|angin)\b/i.test(cleanQuery);
   const strictFreshNews =
-    isNewsLike &&
-    /\b(?:hari\s*ini|terkini|terbaru|terpanas|pagi\s*ini|siang\s*ini|sore\s*ini|malam\s*ini|breaking|viral|saat\s*ini)\b/i.test(cleanQuery);
+    (isNewsLike || isWeatherLike) &&
+    /\b(?:hari\s*ini|terkini|terbaru|terpanas|pagi\s*ini|siang\s*ini|sore\s*ini|malam\s*ini|breaking|viral|saat\s*ini|sekarang|skrg)\b/i.test(cleanQuery);
 
   // Kueri yang memuat URL/link: kontennya spesifik halaman, bukan entitas — cache
   // berbasis entity key akan MENABRAKKAN kueri berbeda (URL dibuang saat normalisasi,
@@ -866,7 +875,8 @@ export async function searchWeb(query: string, previousContext?: string): Promis
 
   // 0. Cek Persistent Knowledge Memory (Hot Cache & Supabase web_knowledge)
   // Jika fakta sudah pernah dipelajari dan masih berlaku segar, kembalikan instan (0 - 30ms)!
-  if (!isNewsLike && !queryHasUrl) {
+  // CUACA DIKECUALIKAN: data cuaca basi = kesalahan fakta (kasus nyata 04 Okt).
+  if (!isNewsLike && !isWeatherLike && !queryHasUrl) {
     try {
       const cached = await getKnowledge(cleanQuery);
       if (cached && cached.knowledge && cached.knowledge.length > 50) {
