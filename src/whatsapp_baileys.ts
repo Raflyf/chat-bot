@@ -19,7 +19,8 @@ import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStic
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
-import { saveReminderToDb } from './remind.js';
+import { saveReminderToDb, checkDueReminders } from './remind.js';
+import { sendWhatsAppCloudMessageSafe } from './whatsapp_cloud.js';
 import {
   restoreSessionFromSupabase,
   syncSessionDirToSupabase,
@@ -183,6 +184,32 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   if (!remoteJid || remoteJid === 'status@broadcast') return;
 
   const isGroup = remoteJid.endsWith('@g.us');
+
+  // ── LAZY-CHECK PENGINGAT (DITAMBAHKAN 04 Okt 2026) ──
+  // KENAPA: Vercel Hobby HANYA mengizinkan cron 1x/hari (bahkan itu presisinya
+  // ±59 menit), sehingga cron per-menit GAGAL DEPLOY. Karena itu pengingat tidak
+  // bisa diandalkan dari cron di plan Hobby.
+  //
+  // Solusi: setiap ada pesan masuk, periksa pengingat yang sudah jatuh tempo dan
+  // kirim sekarang. Ini "lazy check" — pengiriman terjadi saat bot sedang aktif
+  // (dipicu aktivitas), bukan pada detik tepat jatuh tempo.
+  //
+  // Tradeoff yang diterima: pengingat terkirim saat ADA pesan masuk setelah
+  // tenggatnya, bukan tepat waktu. Untuk pengingat presisi detik, dibutuhkan
+  // plan Pro (cron per-menit) atau worker lokal (startReminderWorker).
+  //
+  // Dijalankan tanpa `await` (fire-and-forget) agar TIDAK menambah latensi balasan.
+  void (async () => {
+    try {
+      await checkDueReminders(async (chatId, text, platform) => {
+        if (platform === 'telegram') return; // Telegram ditangani cron/worker terpisah
+        const cleanTo = String(chatId).replace(/@.*$/, '').replace(/^\+/, '');
+        await sendWhatsAppCloudMessageSafe(cleanTo, text);
+      });
+    } catch (err) {
+      console.warn('[remind] Lazy-check gagal:', String((err as Error)?.message ?? err).slice(0, 120));
+    }
+  })();
 
   // Ekstrak teks atau caption dari berbagai tipe pesan
   let text =
