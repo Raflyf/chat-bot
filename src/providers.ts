@@ -140,7 +140,27 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
      }
    }
 
-   // RATE LIMIT xKiro: reset pada 00.00 UTC (07.00 WIB). Bukan rate limit 60s sementara.
+   // RATE LIMIT DREAMPROMPTING (temuan 04 Okt): kuota dihitung per AKUN dengan
+  // jendela BERGULIR 24 JAM, bukan reset tengah malam dan bukan per key.
+  // Pesan 429-nya: "Daily token quota reached (...). It is summed across every key
+  // on your account and frees up on a rolling 24 hour window."
+  //
+  // BUG YANG DIPERBAIKI: sebelumnya jatuh ke aturan umum `if (rates)` -> cooldown
+  // hanya 60 DETIK, padahal resetnya 24 jam. Akibatnya SETIAP request membuang waktu
+  // mencoba tier 1 yang sudah habis, lalu 429 lagi, berulang tanpa henti.
+  // Sekarang: cooldown 24 jam + margin 5 menit (per AKUN, karena scope-nya akun —
+  // jadi SEMUA key DreamPrompting diistirahatkan bersamaan, bukan satu per satu).
+  if (kind === 'dreamprompting' && rates && /daily|quota|token|limit|rolling/i.test(msg)) {
+    const cd = Date.now() + (24 * 60 * 60_000) + 5 * 60_000;
+    // Istirahatkan SEMUA key DreamPrompting: kuota milik akun, bukan key.
+    // Menandai satu key saja membuat key lain tetap dicoba dan 429 berulang.
+    for (const other of config.pools.dreamprompting) {
+      keyCooldownMap.set(`dreamprompting:${keyHash(other)}`, cd);
+    }
+    return;
+  }
+
+  // RATE LIMIT xKiro: reset pada 00.00 UTC (07.00 WIB). Bukan rate limit 60s sementara.
   // Cooldown sampai reset UTC + 5 menit, dan sinkronkan usage ke DB/cache.
   if (kind === 'xkiro' && rates) {
     const cd = Date.now() + msUntilDailyResetUtc();
