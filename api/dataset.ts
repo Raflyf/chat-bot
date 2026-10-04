@@ -288,7 +288,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // kode. Baris user dengan `via` NULL tetap dipertahankan (itu normal).
     const isBarisSistem = (via: unknown): boolean => {
       const v = String(via ?? '');
-      return v.startsWith('system/') || v.startsWith('notes/');
+      // HANYA buang penanda internal 'system/*' (mis. system/reset ->
+      // "[SESSION_RESET]" yang bukan percakapan).
+      //
+      // BUG YANG DIPERBAIKI (04 Okt 2026): sebelumnya 'notes/*' IKUT dibuang.
+      // Padahal baris 'notes/*' adalah BALASAN BOT yang nyata ke user:
+      //   notes/niat-note     -> "Sepertinya kamu mau mencatat: ..."
+      //   notes/konfirmasi-ya -> "✅ Pengingat disimpan ..."
+      //   notes/perintah-*    -> "Catat ini? ..."
+      // Akibatnya kolom "BALASAN BOT" di dashboard KOSONG, model tampil "-",
+      // dan Out token 0 — pasangan pertanyaan/jawaban jadi tidak lengkap.
+      return v.startsWith('system/');
     };
     const messages = (messagesRaw || []).filter((m: { via?: string | null }) => !isBarisSistem(m.via));
 
