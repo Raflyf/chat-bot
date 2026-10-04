@@ -1,0 +1,73 @@
+name: Kirim Pengingat Jatuh Tempo
+
+# ============================================================================
+# KENAPA PAKAI GITHUB ACTIONS (bukan Vercel Cron)?
+#
+# Vercel plan HOBBY hanya mengizinkan cron 1x/HARI (presisi ±59 menit), dan
+# schedule per-menit MEMBUAT DEPLOY GAGAL dengan pesan:
+#   "Hobby accounts are limited to daily cron jobs."
+#
+# GitHub Actions GRATIS untuk repo publik dan bisa dijadwalkan setiap 5 MENIT
+# (interval minimum cron GitHub). Ini memberi pengingat yang benar-benar tepat
+# waktu tanpa biaya berlangganan.
+#
+# Cara kerja: workflow ini memanggil endpoint /api/cron/reminders di Vercel
+# dengan header Authorization yang benar, lalu endpoint itu memeriksa database
+# dan mengirim semua pengingat yang sudah jatuh tempo.
+# ============================================================================
+
+on:
+  schedule:
+    # Setiap 5 menit. Catatan: GitHub bisa menunda saat beban tinggi,
+    # tapi umumnya tetap dalam hitungan menit (jauh lebih baik dari 1x/hari).
+    - cron: '*/5 * * * *'
+  # Memungkinkan menjalankan manual dari tab Actions untuk menguji.
+  workflow_dispatch:
+
+# Batalkan run yang menumpuk agar tidak dobel kirim.
+concurrency:
+  group: reminders
+  cancel-in-progress: false
+
+jobs:
+  kirim-pengingat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Panggil endpoint cron pengingat
+        env:
+          # Rahasia disimpan di GitHub Secrets (Settings -> Secrets -> Actions).
+          # Nilainya sama dengan CRON_SECRET di Vercel.
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Secret CRON_SECRET belum diset di GitHub."
+            echo "Buka: Settings -> Secrets and variables -> Actions -> New repository secret"
+            exit 1
+          fi
+          if [ -z "$APP_URL" ]; then
+            echo "::warning::Secret APP_URL belum diset; memakai domain default."
+            APP_URL="https://free-chatbot-ai.vercel.app"
+          fi
+
+          echo "Memanggil $APP_URL/api/cron/reminders ..."
+          HTTP=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            --max-time 60 \
+            "$APP_URL/api/cron/reminders")
+
+          echo "HTTP $HTTP"
+          cat /tmp/resp.json || true
+          echo ""
+
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Endpoint mengembalikan HTTP $HTTP"
+            exit 1
+          fi
+
+          # Tampilkan berapa pengingat yang diproses (dari field "processed").
+          PROCESSED=$(python3 -c "import json,sys; print(json.load(open('/tmp/resp.json')).get('processed','?'))" 2>/dev/null || echo "?")
+          echo "Pengingat diproses: $PROCESSED"
+          echo "### Pengingat diproses: $PROCESSED" >> $GITHUB_STEP_SUMMARY
