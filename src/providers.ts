@@ -1030,9 +1030,17 @@ export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: 
   // sedikit, yaitu persis jalur describeImage/processIncomingSticker.
   // Perbaikan: bangun array BARU secara eksplisit, jangan splice dengan indeks yang bisa
   // menunjuk elemen yang sudah tidak ada.
+  // KONTINUITAS PERCAKAPAN (perbaikan 04 Okt — keluhan "kaya chat baru"):
+  // Sebelumnya riwayat dibuang SEMUA sampai muat anggaran. Karena system prompt +
+  // konteks web bisa memakai hampir seluruh budget, riwayat habis dan model
+  // kehilangan konteks obrolan -> menjawab seperti memulai chat baru.
+  // Sekarang: SISAKAN minimal N pesan terakhir (default 4) yang TIDAK boleh dibuang;
+  // kekurangan anggaran dipenuhi dengan memangkas konteks web di pesan terakhir.
+  const MIN_HISTORY_TURNS = 4;
   if (out.length > 2) {
     const history = out.slice(1, -1);
-    while (history.length > 0 && totalTokens > maxBudgetTokens) {
+    // Buang riwayat tertua, tetapi sisakan MIN_HISTORY_TURNS pesan terakhir.
+    while (history.length > MIN_HISTORY_TURNS && totalTokens > maxBudgetTokens) {
       history.shift();
       totalTokens = estimateTokens([systemMsg, ...history, lastMsg]);
     }
@@ -1047,6 +1055,9 @@ export function trimMessagesToTokenBudget(messages: ChatMsg[], maxBudgetTokens: 
   // jadi tidak pernah terpakai untuk kueri berita. Sekarang isi pesan terakhir dipangkas
   // dari BELAKANG (konteks web ada di bawah, pertanyaan user ada di atas) sehingga
   // pertanyaannya tetap utuh.
+  // PRIORITAS PANGKAS: konteks web (pesan terakhir) dipangkas DULU sebelum
+  // riwayat disentuh lebih jauh — riwayat menentukan kontinuitas obrolan,
+  // sedangkan konteks web bisa dipangkas tanpa kehilangan alur percakapan.
   if (totalTokens > maxBudgetTokens) {
     const last = out[out.length - 1];
     // Guard tipe: content bisa ARRAY (multimodal: teks + gambar). Hanya string yang
@@ -1137,9 +1148,9 @@ function steps(): Step[] {
       keys: config.pools.dreamprompting,
       models: [config.models.dpPrimary, ...config.models.dpBackup],
       cap: config.dailyCap.dreamprompting,
-      maxPromptTokens: 6800,
+      maxPromptTokens: 7000,
       run: (k, m, msgs, t) => {
-        const dpMsgs = trimMessagesToTokenBudget(msgs, 6800);
+        const dpMsgs = trimMessagesToTokenBudget(msgs, 7000);
         return openAiChat('https://dreamprompting.com/api/v1', k, m, dpMsgs, BASE_GEN_TIGHT.maxTokens, {
           reasoning_effort: 'none',
           reasoning: { effort: 'none' },
@@ -1196,9 +1207,9 @@ function steps(): Step[] {
       keys: config.pools.groq,
       models: [config.models.groqPrimary, ...config.models.groqBackup],
       cap: config.dailyCap.groq,
-      maxPromptTokens: 6800,
+      maxPromptTokens: 7000,
       run: (k, m, msgs, t) => {
-        const groqMsgs = trimMessagesToTokenBudget(msgs, 6800);
+        const groqMsgs = trimMessagesToTokenBudget(msgs, 7000);
         // Groq menolak reasoning_effort 'none' pada model reasoning (mis. openai/gpt-oss-120b harus low).
         // Model Qwen mendukung 'none' untuk 0 token reasoning.
         const extraReasoning = m.includes('gpt-oss') ? { reasoning_effort: 'low' } : { reasoning_effort: 'none' };

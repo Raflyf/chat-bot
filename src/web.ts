@@ -1350,12 +1350,15 @@ export async function searchWeb(query: string, previousContext?: string): Promis
                 const desc = cur.weatherDesc?.[0]?.value || '';
                 const lines = [
                   `[DATA CUACA REAL-TIME (wttr.in) - ${target}]:`,
-                  `Suhu: ${cur.temp_C}°C (terasa seperti ${cur.FeelsLikeC}°C)`,
+                  `Suhu AKTUAL: ${cur.temp_C} derajat Celsius`,
+                  `Terasa seperti: ${cur.FeelsLikeC} derajat Celsius`,
                   `Kondisi: ${desc}`,
-                  `Kelembapan: ${cur.humidity}%`,
+                  `Kelembapan: ${cur.humidity} persen`,
                   `Angin: ${cur.windspeedKmph} km/jam`,
                   `Waktu observasi: ${cur.observation_time}`,
-                  `Catatan: ini data cuaca AKTUAL dari API cuaca, bukan artikel berita. Gunakan angka ini untuk menjawab suhu/keadaan cuaca sekarang.`,
+                  // KASUS NYATA 04 Okt: data benar (27°C) tetapi model menjawab "7°C"
+                  // — digit pertama hilang. Instruksi eksplisit di bawah mencegahnya.
+                  `ATURAN KERAS: angka suhu WAJIB disalin PERSIS seperti di atas (${cur.temp_C}). DILARANG membulatkan, memotong digit, atau menggantinya dengan angka lain. Bila ragu, sebut ulang angka aslinya.`,
                 ];
                 structuredSnippets.unshift({
                   text: lines.join('\n'),
