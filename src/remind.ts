@@ -166,9 +166,9 @@ export async function handleRemind(
 
   const minutes = Number(m[1]);
   const rawMessage = m[2].trim().slice(0, 500);
-  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440 || !rawMessage) {
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 43200 || !rawMessage) {
     const { reply } = await autoReply(
-      `User salah format perintah pengingat (menit="${m[1]}"). Jelaskan syaratnya (angka 1-1440 + pesan) dengan satu contoh singkat dan ramah.`,
+      `User salah format perintah pengingat (menit="${m[1]}"). Jelaskan syaratnya (angka 1-43200 + pesan) dengan satu contoh singkat dan ramah.`,
     );
     if (reply.trim()) await bot.sendMessage(chatId, reply);
     return;

@@ -727,9 +727,9 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     }
     const minutes = Number(mRemind[1]);
     const message = mRemind[2].trim().slice(0, 500);
-    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440 || !message) {
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 43200 || !message) {
       const { reply } = await autoReply(
-        `User salah format perintah pengingat (menit="${mRemind[1]}"). Jelaskan syaratnya (angka 1-1440 + pesan) dengan satu contoh singkat dan ramah.`,
+        `User salah format perintah pengingat (menit="${mRemind[1]}"). Jelaskan syaratnya (angka 1-43200 + pesan) dengan satu contoh singkat dan ramah.`,
         remindCtx,
       );
       await sendWhatsAppMessageSafe(sock, remoteJid, reply);

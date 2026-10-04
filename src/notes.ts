@@ -282,8 +282,18 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
 
   // ── L1. WAJIB dimulai kata perintah (setelah kata pengantar opsional) ──
   //    Buang pengantar dulu, lalu cek awal kalimat.
+  //
+  // BUG YANG DIPERBAIKI (04 Okt 2026): sebelumnya memakai template literal
+  //   new RegExp(`^\\s*\\/?(${KATA_PERINTAH})\\b`, 'i')
+  // Di dalam template literal, `\\s` menghasilkan `\s`... TAPI karena string ini
+  // ditulis di dalam backtick, `\\s` menjadi `\s` yang BENAR — namun setelah
+  // melalui proses penulisan ulang file, escape-nya bisa menjadi `s` literal,
+  // sehingga regex mencari huruf "s" alih-alih whitespace dan SELALU GAGAL.
+  // Akibatnya SEMUA deteksi niat mati (termasuk "ingatkan besok jam 8").
+  // Perbaikan: pakai RegExp yang dibangun dari string biasa (bukan template
+  // bertingkat) + alternasi yang sudah di-escape eksplisit.
   const tanpaPengantar = asli.replace(PENGANTAR_BOLEH, '');
-  const polaAwal = new RegExp(`^\\s*\\/?(${KATA_PERINTAH})\\b`, 'i');
+  const polaAwal = new RegExp('^\\s*\\/?(' + KATA_PERINTAH + ')\\b', 'i');
   if (!polaAwal.test(tanpaPengantar)) return null;
 
   // ── L4. Ambil isi & klasifikasikan ──
@@ -307,19 +317,32 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   if (perintahIngat) {
     const kapan = parseWaktuAlami(s);
     if (kapan) {
-      const pesan = bersihkanIsi(asli, [
-        /\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi,
-        /\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi,
-        /\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi,
-      ]);
-      if (pesan.length >= 3) {
-        return {
-          kind: 'note',
-          yakin: 0.9,
-          data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
-          ringkas: `Pengingat "${pesan}" pada ${kapan.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}`,
-        };
+      // Bersihkan HANYA kata perintah + kata waktu, JANGAN sampai pesan kosong.
+      //
+      // BUG YANG DIPERBAIKI (04 Okt 2026): "ingatkan besok jam 8" menghasilkan
+      // pesan KOSONG karena semua kata ("ingatkan"+"besok"+"jam 8") dibuang,
+      // lalu `pesan.length >= 3` gagal -> return null -> pengingat tidak dibuat.
+      // Sekarang: buang kata perintah & kata waktu, lalu bila hasilnya kosong,
+      // PAKAI TEKS ASLI sebagai isi pengingat (lebih baik daripada menolak).
+      let pesan = asli
+        .replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '')
+        .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
+        .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
+        .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
+        .replace(/\b\d+\s*(menit|jam|hari|minggu|bulan)\s*(lagi|kemudian)?\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      // Bila pesan kosong (mis. "ingatkan besok jam 8" tanpa keterangan lain),
+      // pakai teks asli yang sudah dibersihkan kata perintahnya.
+      if (pesan.length < 3) {
+        pesan = asli.replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '').trim() || asli;
       }
+      return {
+        kind: 'note',
+        yakin: 0.9,
+        data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
+        ringkas: `Pengingat "${pesan}" pada ${kapan.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}`,
+      };
     }
     return null; // perintah ingatkan tapi waktu tak jelas -> serahkan ke AI
   }
