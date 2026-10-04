@@ -17,7 +17,7 @@ Asisten AI multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. Dibangun de
 | Layanan | Tautan / Kontak | Keterangan |
 | :--- | :--- | :--- |
 | **Telegram Bot** | [@chatkita_bot](https://t.me/chatkita_bot) | Siap digunakan 24/7 |
-| **WhatsApp Bot** | [+62 838-7464-0066](https://wa.me/6283874640066) | Dukungan WhatsApp Cloud API & Multi-Device |
+| **WhatsApp Bot** | [+62 838-7464-0066](https://wa.me/6283874640066) | Dukungan resmi WhatsApp Cloud API (Obrolan Pribadi) |
 | **Landing Page** | [free-chatbot-ai.vercel.app](https://free-chatbot-ai.vercel.app) | Beranda informasi produk & panduan |
 | **Dashboard** | [free-chatbot-ai.vercel.app/dashboard](https://free-chatbot-ai.vercel.app/dashboard) | Monitoring & telemetri sistem |
 
@@ -96,10 +96,6 @@ Catatan kuota penting:
   ```bash
   npm run dev
   ```
-- **Bot WhatsApp (Multi-Device Pindai QR di Terminal):**
-  ```bash
-  npm run whatsapp
-  ```
 - **Validasi Kode TypeScript:**
   ```bash
   npm run typecheck
@@ -114,7 +110,7 @@ Catatan kuota penting:
 ## Penerapan Produksi (Deployment)
 
 - **Telegram & Dashboard**: Hubungkan repositori ke **Vercel**, masukkan Environment Variables, dan daftarkan webhook Telegram ke endpoint `/api/webhook`.
-- **WhatsApp 24/7 Mandiri**: Jalankan perintah `npm run whatsapp` pada cloud container (seperti Render, Koyeb, atau VPS). Sesi login otomatis tersimpan di Supabase sehingga tidak perlu pindai ulang saat restart.
+- **WhatsApp Cloud API**: Terintegrasi langsung di **Vercel Serverless** pada endpoint `/api/whatsapp`, siap menerima webhook pesan masuk Meta Cloud API untuk obrolan pribadi 24/7 tanpa membutuhkan server VPS.
 - **Basis Data**: Jalankan skrip SQL pada folder `sql/` di SQL Editor Supabase secara berurutan untuk inisialisasi skema, keamanan RLS, dan pelacakan kuota token harian (wajib menjalankan `migrate_v18_daily_token_tracking.sql` agar pembatasan TPD Groq tersinkron lintas instance).
 
 Dokumentasi arsitektur mendalam dan riwayat teknis versi dikelola secara internal dan tidak dipublikasikan di repositori ini.
