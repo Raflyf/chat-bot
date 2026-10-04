@@ -61,13 +61,13 @@ Bot juga memahami permintaan tanpa format perintah:
 
 | Yang Anda ketik | Yang terjadi |
 | :--- | :--- |
-| *"catat pengeluaran 50rb buat makan"* | Bot konfirmasi → catat setelah Anda balas *iya* |
-| *"tambah tugas penting bayar listrik"* | Bot konfirmasi → tambah tugas prioritas tinggi |
-| *"ingatkan saya besok jam 8 rapat"* | Bot konfirmasi → jadwalkan pengingat |
+| *"catat pengeluaran 50rb buat makan"* | Bot langsung mencatat keuangan |
+| *"tambah tugas penting bayar listrik"* | Bot langsung menambah tugas prioritas tinggi |
+| *"ingatkan saya besok jam 8 rapat"* | Bot langsung menjadwalkan pengingat |
 | *"berapa sisa uang saya"* | Bot jawab dari data nyata (tidak mengarang) |
 | *"tugas saya apa aja"* | Bot tampilkan daftar tugas |
 
-**Catatan:** Setiap pencatatan lewat bahasa alami **dikonfirmasi lebih dulu** — bot tidak langsung menyimpan, agar tidak salah catat. Obrolan biasa (mis. *"aku tadi makan enak banget"*) **tidak** ikut tercatat.
+**Catatan:** Pencatatan lewat bahasa alami **langsung disimpan** (tanpa balasan konfirmasi *iya/tidak*) — permintaan pemilik produk: *"ya tidak nya ini di hilangkan saja, buat dengan deteksi langsung saja"*. Deteksi niat tetap konservatif (4 lapis penyaring), sehingga obrolan biasa (mis. *"aku tadi makan enak banget"*) **tidak** ikut tercatat. Bila salah catat, hapus dengan `/hapus <id>`.
 
 ---
 
@@ -118,7 +118,7 @@ Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key yang 
 - **Basis Data**: Jalankan skrip SQL pada folder `sql/` di SQL Editor Supabase secara berurutan. Yang wajib:
   - `migrate_v18_daily_token_tracking.sql` — pelacakan kuota token harian (TPD) lintas instance.
   - `migrate_v22_personal_notes.sql` — tabel fitur pencatatan (`notes`, `todos`, `expenses`, `habits`, `habit_logs`).
-  - `migrate_v23_pending_confirmations.sql` — konfirmasi tertunda lintas instance serverless (opsional; tanpa ini bot memakai fallback di tabel `messages`).
+  - `migrate_v23_pending_confirmations.sql` — **tidak lagi dipakai** (konfirmasi *iya/tidak* dihapus 04 Okt 2026; pencatatan kini langsung disimpan). Aman dilewati.
 - **Pengingat Tepat Waktu**: tiga lapisan pemicu yang saling melengkapi:
   1. **cron-job.org** (UTAMA, gratis) — memanggil `/api/cron/reminders` **tiap 1 menit**. Setup: `sql/CARA_SETUP_CRONJOB_ORG.md`. Hasil terukur: pengingat terkirim dalam ~40 detik.
   2. **GitHub Actions** — workflow `.github/workflows/reminders.yml`, 3 jadwal bergeser (cadangan).
