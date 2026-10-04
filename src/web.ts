@@ -1320,6 +1320,18 @@ export async function searchWeb(query: string, previousContext?: string): Promis
         // Pola 1: "cuaca/suhu [di] <kota>" — prefix opsional "di/untuk/kota/daerah".
         // Lookahead hanya kata pengisi PENUH (bukan sufiks huruf) supaya nama kota tidak
         // terpotong: "suhu surabaya sekarang" -> "surabaya", bukan "suraba".
+        // BUG BESAR YANG DIPERBAIKI (04 Okt, terbukti dari produksi):
+        // Kueri "infokan cuaca hari ini" -> pola lama menangkap kata "hari" sebagai
+        // NAMA KOTA, lalu bot mengambil cuaca kota "Hari" (wttr.in -> Heria, ROMANIA)
+        // dan menjawab 7°C/48%/4km/jam dengan yakin. Angka itu PERSIS data Romania.
+        // Perbaikan: kata waktu/umum TIDAK BOLEH dianggap nama kota.
+        const KATA_BUKAN_KOTA = new Set([
+          'hari', 'ini', 'sekarang', 'skrg', 'dong', 'nih', 'ya', 'sih', 'deh',
+          'kak', 'bang', 'berapa', 'derajat', 'gimana', 'gmn', 'apa', 'yang',
+          'pagi', 'siang', 'sore', 'malam', 'besok', 'kemarin', 'nanti', 'lusa',
+          'dingin', 'panas', 'gerah', 'hujan', 'cerah', 'berawan', 'mendung',
+          'cuaca', 'suhu', 'temperatur', 'sekarang', 'tolong', 'coba', 'dong',
+        ]);
         const mWeather = cleanQuery.match(
           /\b(?:cuaca|suhu|temperatur)\s+(?:di\s+|untuk\s+|kota\s+|daerah\s+)?([A-Za-z][A-Za-z.'-]{2,25})(?:\s+(?:hari\s+ini|sekarang|dong|nih|ya|sih|deh|kak|bang))?/i,
         );
@@ -1337,15 +1349,36 @@ export async function searchWeb(query: string, previousContext?: string): Promis
           .replace(/\b(?:hari\s*ini|sekarang|dong|nih|ya|sih|deh|kak|bang|berapa|derajat)\b/gi, '')
           .replace(/\s+/g, ' ')
           .trim();
+        // TOLAK bila hasilnya kata waktu/umum, bukan nama tempat (lihat KATA_BUKAN_KOTA).
+        // Tanpa ini, "cuaca hari ini" -> kota "Hari" -> cuaca Romania (bug nyata 04 Okt).
+        if (city && KATA_BUKAN_KOTA.has(city.toLowerCase())) {
+          city = '';
+        }
         city = city ? toTitle(city) : '';
         const weatherTargets = city ? [city] : [];
-        // Bila kota tidak disebut, coba lokasi dari riwayat percakapan ("saya di X").
-        // Case-insensitive (temuan c) + dukung kata pengisi setelah nama kota.
+        // Bila kota tidak disebut, cari lokasi user dari riwayat percakapan.
+        // Diperluas (04 Okt): sebelumnya hanya pola "aku/saya di X" dan HANYA dari
+        // previousContext. Kini juga memeriksa pola sebutan kota lain ("tinggal di",
+        // "di X", "orang X") dan seluruh riwayat, supaya pertanyaan seperti
+        // "infokan cuaca hari ini" tetap memakai kota user (mis. Cianjur), bukan kosong.
         if (weatherTargets.length === 0 && typeof previousContext === 'string') {
-          const mLoc = previousContext.match(
-            /\b(?:aku|saya|gue|gw)\s+(?:tinggal\s+)?(?:di|lagi\s+di)\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
-          );
-          if (mLoc) weatherTargets.push(toTitle(mLoc[1].trim()));
+          const POLA_LOKASI = [
+            /\b(?:aku|saya|gue|gw|kami|kita)\s+(?:tinggal\s+|domisili\s+|lagi\s+)?(?:di|dari)\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
+            /\b(?:tinggal|domisili|mukim)\s+(?:di|dari)\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
+            /\borang\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
+            /\bdi\s+([A-Za-z][A-Za-z.'-]{2,24})\b/i,
+          ];
+          for (const pola of POLA_LOKASI) {
+            const mLoc = previousContext.match(pola);
+            if (mLoc && mLoc[1]) {
+              const kandidat = mLoc[1].trim();
+              // Tolak bila yang tertangkap kata umum (bukan nama tempat).
+              if (!KATA_BUKAN_KOTA.has(kandidat.toLowerCase())) {
+                weatherTargets.push(toTitle(kandidat));
+                break;
+              }
+            }
+          }
         }
         for (const target of weatherTargets.slice(0, 2)) {
           fetches.push(
