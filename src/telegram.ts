@@ -4,6 +4,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
+import { tanganiPencatatan } from './notes.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -287,6 +288,26 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       await handleRemind(bot, chatId, args, 'telegram', isGroup ? senderName : undefined);
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
+    }
+
+    // 3a-2. PENCATATAN PRIBADI (catatan, tugas, keuangan, kebiasaan)
+    // Dua jalur: perintah / eksplisit & deteksi niat bahasa alami.
+    // Keduanya dikonfirmasi dulu sebelum disimpan.
+    if (text) {
+      const catatCtx = await getContext(chatKey, msgSentAt);
+      const hasilCatat = await tanganiPencatatan(text, String(chatId), catatCtx, {
+        actor: isGroup ? senderName : undefined,
+        platform: 'telegram',
+      });
+      if (hasilCatat.ditangani) {
+        await sendTelegramMessageSafe(bot, chatId, hasilCatat.reply);
+        if (msgId) void markMessageProcessed('telegram', msgId);
+        await saveMessage({
+          platform: 'telegram', chat_id: chatKey, role: 'assistant',
+          content: hasilCatat.reply, via: `notes/${hasilCatat.jalur}`,
+        }).catch(() => undefined);
+        return;
+      }
     }
 
     // 3b. Perintah /reset atau /clear atau reset sesi (konfirmasi 100% dinamis — ZERO teks statis)

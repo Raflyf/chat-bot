@@ -14,6 +14,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
+import { tanganiPencatatan } from './notes.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -719,6 +720,28 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
     if (messageId) void markMessageProcessed('whatsapp', messageId);
     return;
+  }
+
+  // ── PENCATATAN PRIBADI (catatan, tugas, keuangan, kebiasaan) ──
+  // Dua jalur: (A) perintah / eksplisit, (B) deteksi niat dari bahasa alami.
+  // Keduanya DIKONFIRMASI dulu sebelum disimpan (permintaan user: aman dulu).
+  {
+    const catatCtx = await getContext(chatKey, msgSentAt);
+    const targetChat = remoteJid.replace(/@.*$/, '');
+    // WhatsApp (Baileys) tidak menyediakan nama tampilan pengirim secara andal.
+    // Di grup, pakai nomor pengirim (participant) sebagai pemisah identitas;
+    // di chat privat tidak perlu (semua catatan milik satu orang).
+    const actorGrup = isGroup ? (m.key.participant || m.participant || undefined)?.replace(/@.*$/, '') : undefined;
+    const hasil = await tanganiPencatatan(text, targetChat, catatCtx, { actor: actorGrup, platform: 'whatsapp' });
+    if (hasil.ditangani) {
+      await sendWhatsAppMessageSafe(sock, remoteJid, hasil.reply);
+      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      void saveMessage({
+        platform: 'whatsapp', chat_id: chatKey, role: 'assistant',
+        content: hasil.reply, via: `notes/${hasil.jalur}`,
+      });
+      return;
+    }
   }
 
   // Berikan indikator sedang mengetik (composing)
