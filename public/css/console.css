@@ -87,12 +87,14 @@
   color-scheme: dark;
 
   /* Warna penyedia: penanda DATA, sama di konsol dan landing page. */
-  --p-xkiro: #4da3ff;
+  --p-dreamprompting: #38bdf8;
   --p-cloudflare: #f6821f;
-  --p-groq: #f55036;
+  --p-nvidia: #76b900;
   --p-openrouter: #a78bfa;
-  --p-dahl: #2dd4bf;
+  --p-groq: #f55036;
   --p-gemini: #fbbf24;
+  --p-dahl: #2dd4bf;
+  --p-xkiro: #4da3ff;
 
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -132,12 +134,14 @@
 
   color-scheme: light;
 
-  --p-xkiro: #0a6fd8;
+  --p-dreamprompting: #0284c7;
   --p-cloudflare: #b85f0a;
-  --p-groq: #c93a20;
+  --p-nvidia: #4d7c0f;
   --p-openrouter: #6d4ac4;
-  --p-dahl: #0f766e;
+  --p-groq: #c93a20;
   --p-gemini: #9a6a00;
+  --p-dahl: #0f766e;
+  --p-xkiro: #0a6fd8;
 }
 
 
@@ -1209,13 +1213,14 @@ td:nth-child(1) { font-variant-numeric: normal; }
   grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
 }
 
-/* Pemetaan warna provider untuk kartu model di matriks */
-.model-matrix-card[data-provider="xkiro"]      { --card-provider-color: var(--p-xkiro); }
-.model-matrix-card[data-provider="cloudflare"] { --card-provider-color: var(--p-cloudflare); }
-.model-matrix-card[data-provider="groq"]       { --card-provider-color: var(--p-groq); }
-.model-matrix-card[data-provider="openrouter"] { --card-provider-color: var(--p-openrouter); }
-.model-matrix-card[data-provider="dahl"]       { --card-provider-color: var(--p-dahl); }
-.model-matrix-card[data-provider="gemini"]     { --card-provider-color: var(--p-gemini); }
+.model-matrix-card[data-provider="dreamprompting"] { --card-provider-color: var(--p-dreamprompting); }
+.model-matrix-card[data-provider="cloudflare"]     { --card-provider-color: var(--p-cloudflare); }
+.model-matrix-card[data-provider="nvidia"]         { --card-provider-color: var(--p-nvidia); }
+.model-matrix-card[data-provider="openrouter"]     { --card-provider-color: var(--p-openrouter); }
+.model-matrix-card[data-provider="groq"]           { --card-provider-color: var(--p-groq); }
+.model-matrix-card[data-provider="gemini"]         { --card-provider-color: var(--p-gemini); }
+.model-matrix-card[data-provider="dahl"]           { --card-provider-color: var(--p-dahl); }
+.model-matrix-card[data-provider="xkiro"]          { --card-provider-color: var(--p-xkiro); }
 
 .model-matrix-card {
   position: relative;
@@ -1608,12 +1613,14 @@ header.header-scrolled .nav-inner {
   flex: none;
   background: var(--provider-color, var(--accent));
 }
-.provider-card[data-provider="xkiro"]      { --provider-color: var(--p-xkiro); }
-.provider-card[data-provider="cloudflare"] { --provider-color: var(--p-cloudflare); }
-.provider-card[data-provider="groq"]       { --provider-color: var(--p-groq); }
-.provider-card[data-provider="openrouter"] { --provider-color: var(--p-openrouter); }
-.provider-card[data-provider="dahl"]       { --provider-color: var(--p-dahl); }
-.provider-card[data-provider="gemini"]     { --provider-color: var(--p-gemini); }
+.provider-card[data-provider="dreamprompting"] { --provider-color: var(--p-dreamprompting); }
+.provider-card[data-provider="cloudflare"]     { --provider-color: var(--p-cloudflare); }
+.provider-card[data-provider="nvidia"]         { --provider-color: var(--p-nvidia); }
+.provider-card[data-provider="openrouter"]     { --provider-color: var(--p-openrouter); }
+.provider-card[data-provider="groq"]           { --provider-color: var(--p-groq); }
+.provider-card[data-provider="gemini"]         { --provider-color: var(--p-gemini); }
+.provider-card[data-provider="dahl"]           { --provider-color: var(--p-dahl); }
+.provider-card[data-provider="xkiro"]          { --provider-color: var(--p-xkiro); }
 
 /* Garis aksen tipis di tepi atas kartu, memakai warna penyedia. */
 .provider-card { position: relative; overflow: hidden; }
@@ -2152,13 +2159,14 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   color: var(--ok);
 }
 
-/* Tag penyedia: satu warna per penyedia, konsisten dengan landing page. */
-.tag-xkiro { color: #4da3ff; background: rgba(77, 163, 255, 0.1); border: 1px solid rgba(77, 163, 255, 0.28); }
+.tag-dreamprompting { color: #38bdf8; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.28); }
 .tag-cloudflare { color: #f6821f; background: rgba(246, 130, 31, 0.1); border: 1px solid rgba(246, 130, 31, 0.28); }
-.tag-groq { color: #f55036; background: rgba(245, 80, 54, 0.1); border: 1px solid rgba(245, 80, 54, 0.28); }
+.tag-nvidia { color: #76b900; background: rgba(118, 185, 0, 0.1); border: 1px solid rgba(118, 185, 0, 0.28); }
 .tag-openrouter { color: #a78bfa; background: rgba(167, 139, 250, 0.1); border: 1px solid rgba(167, 139, 250, 0.28); }
-.tag-dahl { color: #2dd4bf; background: rgba(45, 212, 191, 0.1); border: 1px solid rgba(45, 212, 191, 0.28); }
+.tag-groq { color: #f55036; background: rgba(245, 80, 54, 0.1); border: 1px solid rgba(245, 80, 54, 0.28); }
 .tag-gemini { color: #fbbf24; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.28); }
+.tag-dahl { color: #2dd4bf; background: rgba(45, 212, 191, 0.1); border: 1px solid rgba(45, 212, 191, 0.28); }
+.tag-xkiro { color: #4da3ff; background: rgba(77, 163, 255, 0.1); border: 1px solid rgba(77, 163, 255, 0.28); }
 
 /* Pagination bar di riwayat percakapan */
 .pagination-info {

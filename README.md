@@ -37,18 +37,21 @@ Asisten AI multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. Dibangun de
 
 ---
 
-## Arsitektur Provider (Failover 6 Tier)
+## Arsitektur Provider (Failover 7 Tier)
 
-Sistem merutekan setiap percakapan melalui enam tingkat provider dengan failover otomatis. Bila seluruh model dalam satu tier gagal, timeout, atau menyentuh batas kuota, rantai berpindah ke tier berikutnya tanpa intervensi manual.
+Sistem merutekan setiap percakapan melalui tujuh tingkat provider dengan failover otomatis. Bila seluruh model dalam satu tier gagal, timeout, atau menyentuh batas kuota, rantai berpindah ke tier berikutnya tanpa intervensi manual.
 
-| Tier | Provider | Peran Utama |
-| :--- | :--- | :--- |
-| 1 | xKiro Gateway | Jalur utama teks; model vision tersedia sebagai cadangan rantai multimodal |
-| 2 | OpenRouter | Jalur teks & parser dokumen PDF |
-| 3 | Groq Cloud | Inferensi LPU ultra-cepat, transkripsi suara, & vision terdepan |
-| 4 | Cloudflare Workers AI | Teks, vision, & transkripsi cadangan |
-| 5 | Google Gemini | Konteks 1M, vision, dokumen PDF, video & audio native |
-| 6 | Dahl Global | Pool token besar sebagai jaring pengaman akhir |
+| Tier | Provider | Model Utama | Cadangan | Peran Utama |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | DreamPrompting | Qwen 3.6 27B (`groq/qwen/qwen3.6-27b`) | GPT-OSS 120B (`groq/openai/gpt-oss-120b`) | Primer teks ultra-cepat ~370ms (100 RPM) |
+| 2 | Cloudflare Workers AI | Qwen 3.8 27B (`@cf/qwen/qwen3.8-27b`) | Nemotron 3 120B & GPT-OSS 20B | Teks terdistribusi & vision multi-model |
+| 3 | NVIDIA NIM | Diffusion Gemma 26B (`google/diffusiongemma-26b-a4b-it`) | Llama 3.2 11B Vision Instruct | Akselerasi NIM microservices ~590ms |
+| 4 | OpenRouter | Nemotron 3 Ultra 550B Free (`nvidia/nemotron-3-ultra-550b-a55b:free`) | Ling 3.0 Flash Sante Free (`inclusionai/ling-3.0-flash-sante:free`) | Jalur model raksasa 550B & cepat free tier |
+| 5 | Groq Cloud | Qwen 3.8 27B (`qwen/qwen3.8-27b`) | GPT-OSS 120B (`openai/gpt-oss-120b`) | Inferensi LPU ~370ms, transkripsi Whisper Turbo |
+| 6 | Google Gemini | Gemini 3.8 Flash (`gemini-3.8-flash`) | Gemini 3.1 Flash Lite (`gemini-3.1-flash-lite`) | Konteks 1M, dokumen PDF, video, audio native |
+| 7 | Dahl Global | DeepSeek V4 Flash 0731 (`deepseek-ai/DeepSeek-V4-Flash-0731`) | GLM 5.3 Flash (`zai-org/GLM-5.3-Flash`) | Jaring pengaman akhir 1 Miliar Token Pool |
+
+xKiro Gateway tetap dipertahankan secara khusus sebagai cadangan darurat pencarian web real-time (`/search`) dan rantai vision multimodal.
 
 Di dalam setiap tier, model yang rata-rata merespons lambat diturunkan prioritasnya secara otomatis, sehingga request berikutnya mencoba model cadangan yang lebih gesit terlebih dahulu.
 

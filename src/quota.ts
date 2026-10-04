@@ -7,7 +7,15 @@
 import crypto from 'crypto';
 import { db } from './db.js';
 
-export type ProviderKind = 'dahl' | 'groq' | 'gemini' | 'cloudflare' | 'openrouter' | 'xkiro';
+export type ProviderKind =
+  | 'dreamprompting'
+  | 'cloudflare'
+  | 'nvidia'
+  | 'openrouter'
+  | 'groq'
+  | 'gemini'
+  | 'dahl'
+  | 'xkiro';
 
 /**
  * Kind khusus untuk WEB SEARCH xKiro.

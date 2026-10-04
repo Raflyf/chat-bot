@@ -597,6 +597,7 @@ function openAiDelta(json: unknown): StreamDelta {
   const j = json as {
     choices?: Array<{
       delta?: {
+        role?: string | null;
         content?: string | null;
         /** Gaya OpenAI/xKiro: {"reasoning": "..."} */
         reasoning?: string | null;
@@ -621,6 +622,8 @@ function openAiDelta(json: unknown): StreamDelta {
   // bekerja. Ini membuang tier yang sebenarnya sehat.
   const reasoningText = delta.reasoning ?? delta.reasoning_content ?? delta.thinking;
   if (typeof reasoningText === 'string' && reasoningText.length > 0) out.active = true;
+  // Sinyal aktif awal: chunk pembuka dengan role membuktikan upstream telah merespon
+  if (delta.role) out.active = true;
   return out;
 }
 
@@ -1127,35 +1130,24 @@ const BASE_GEN_TIGHT = {
 
 function steps(): Step[] {
   return [
-    // --- TIER 1: xKiro Gateway (primer teks) ---
+    // --- TIER 1: DreamPrompting (100 RPM, rolling free tier) ---
+    // User instruction: Primary Qwen, Backup GPT; reasoning/thinking none untuk minimal token per chat (<8000)
     {
-      kind: 'xkiro',
-      keys: config.pools.xkiro,
-      models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
-      cap: config.dailyCap.xkiro,
-      maxPromptTokens: 0, // tidak ada batas ITPM ketat yang diketahui
+      kind: 'dreamprompting',
+      keys: config.pools.dreamprompting,
+      models: [config.models.dpPrimary, ...config.models.dpBackup],
+      cap: config.dailyCap.dreamprompting,
+      maxPromptTokens: 6800,
       run: (k, m, msgs, t) => {
-        return openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
-          // DIUBAH 25 Sep (temuan uji benchmark Cohere): 'minimal' membuat model
-          // Cohere membakar SELURUH anggaran token di penalaran internal lalu
-          // mengembalikan content KOSONG (finish_reason 'length') — terukur 6 dari
-          // 9 request gagal. 'none' menyelesaikannya: 3/3 sukses, output normal.
-          // Catatan lama soal MiniMax M3 tidak lagi relevan (MiniMax sudah keluar
-          // dari rantai teks xKiro sejak instruksi user 21 Sep).
+        const dpMsgs = trimMessagesToTokenBudget(msgs, 6800);
+        return openAiChat('https://dreamprompting.com/api/v1', k, m, dpMsgs, BASE_GEN_TIGHT.maxTokens, {
+          reasoning_effort: 'none',
           reasoning: { effort: 'none' },
-          // Parameter bersama (F5) — konsisten dengan tier lain.
           ...BASE_GEN,
         }, t);
       },
     },
-    // --- TIER 2: Cloudflare Workers AI (KEPATUHAN SEMPURNA 4/4) ---
-    // DINAIKKAN ke Tier 2 (20 Sep) berdasarkan UJI KEPATUHAN LIVE: satu-satunya
-    // provider dengan hasil SEMPURNA MENYELURUH — 4 dari 4 model patuh penuh pada
-    // aturan inti (tidak sebut diri bot, tidak bocorkan proses berpikir, tidak pakai
-    // template CS, tidak ada narasi aksi, emoji wajar, panjang wajar).
-    // Latensi terukur: glm-4.7-flash 1224ms (tercepat) s/d llama-3.3-70b 3163ms.
-    // Kapasitas: 3 key x 10.000 Neuron/hari — dipakai lebih dulu sampai habis, lalu
-    // otomatis jatuh ke tier berikutnya (guard cap sudah menangani).
+    // --- TIER 2: Cloudflare Workers AI (Kepatuhan terbukti 4/4) ---
     {
       kind: 'cloudflare',
       keys: config.pools.cloudflare,
@@ -1164,52 +1156,26 @@ function steps(): Step[] {
       maxPromptTokens: 0,
       run: (k, m, msgs, t) => cloudflareChat(k, m, msgs, t),
     },
-    // --- TIER 3: Groq Cloud API (KEPATUHAN SEMPURNA 2/2 + TERCEPAT) ---
-    // UJI KEPATUHAN LIVE: qwen3.8-27b & gpt-oss-120b = PATUH SEMPURNA, dan keduanya
-    // adalah model TERCEPAT dari seluruh pool (763-1202ms).
-    // KETERBATASAN: ITPM ketat 7.000 (429 terbukti) — untuk prompt besar provider ini
-    // otomatis DILEWATI oleh guard maxPromptTokens, jadi tidak pernah jadi bottleneck.
+    // --- TIER 3: NVIDIA NIM (1.000 free credits / key) ---
     {
-      kind: 'groq',
-      keys: config.pools.groq,
-      models: [config.models.groqPrimary, ...config.models.groqBackup],
-      cap: config.dailyCap.groq,
-      // LIMIT GROQ — dua sumber, dan yang dipakai adalah yang EMPIRIS:
-      //   Console Groq menampilkan : 30 RPM | 8K TPM | 1K RPD | 200K TPD
-      //   429 dari API menyebut    : "Limit 7000" (diuji 4 ukuran prompt, konsisten)
-      // Guard memakai 7000 karena itulah ambang yang BENAR-BENAR menolak request.
-      //
-      // Guard TPM Groq (audit v0.79): batas nyata TPM Groq Free = 8.000 token
-      // (input + output dalam satu request). Output dijatah 800 token, jadi anggaran
-      // input maksimum = 8.000 - 800 - 400 (margin 429) = 6.800.
-      //
-      // Sebelumnya nilai ini 9.500 (1,4x dari batas efektif) dengan alasan "trim di run
-      // akan memangkas". Itu KELIRU untuk dua kasus nyata yang terbukti saat audit:
-      //   (a) prompt sistem saja sudah ~5.754 token dan TIDAK bisa dipangkas trim;
-      //   (b) pesan user dengan konteks web hasil scraping bisa 7.500+ token, dan trim
-      //       lama hanya membuang riwayat — bukan isi pesan terakhir — sehingga prompt
-      //       tetap melebihi batas dan request DIJAMIN 429.
-      // Setelah trim diperbaiki (tahap 2 memangkas isi pesan terakhir), anggaran 6.800
-      // kini benar-benar bisa dicapai. Guard diset sama dengan anggaran trim supaya
-      // provider hanya dilewati bila prompt memang tidak bisa diselamatkan.
-      maxPromptTokens: 6800,
+      kind: 'nvidia',
+      keys: config.pools.nvidia,
+      models: [config.models.nvidiaPrimary, ...config.models.nvidiaBackup],
+      cap: config.dailyCap.nvidia,
+      maxPromptTokens: 0,
       run: (k, m, msgs, t) => {
-        // Pangkas pesan agar total (prompt + output 800) benar-benar di bawah limit ketat Groq 8K TPM
-        // (6.800 + 800 = 7.600, menyisakan margin 400 token agar tidak mudah kena 429).
-        const groqMsgs = trimMessagesToTokenBudget(msgs, 6800);
-        return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, BASE_GEN_TIGHT.maxTokens, {
-          reasoning_effort: 'none',
-          // Parameter bersama (F5). frequency sedikit lebih tinggi dari tier lain
-          // karena Qwen kecil mudah mengulang — didokumentasikan, bukan angka liar.
+        // DiffusionGemma mendukung reasoning_effort 'none'; Llama 3.2 Vision menolaknya (HTTP 400).
+        const extraReasoning = m.includes('diffusiongemma')
+          ? { reasoning_effort: 'none', chat_template_kwargs: { enable_thinking: false } }
+          : { chat_template_kwargs: { enable_thinking: false } };
+        return openAiChat('https://integrate.api.nvidia.com/v1', k, m, msgs, undefined, {
+          ...extraReasoning,
           ...BASE_GEN,
-          frequency_penalty: 0.3,
         }, t);
       },
     },
-    // --- TIER 4: OpenRouter (free models — cadangan luas) ---
-    // INSTRUKSI USER (21 Sep): primary = nex-agi/nex-n2.5-mini:free (uji: 3/3 lolos,
-    // 506ms = tercepat di katalog OR). Backup: ling-3.0-flash-fin (1041ms, 3/3 lolos).
-    // Kuota per-key 50 request :free/hari -> lapisan cadangan sebelum Dahl & Gemini.
+    // --- TIER 4: OpenRouter (free models) ---
+    // User instruction: Primary Nemotron Ultra, Backup Ling; reasoning none untuk minimal token
     {
       kind: 'openrouter',
       keys: config.pools.openrouter,
@@ -1218,19 +1184,41 @@ function steps(): Step[] {
       maxPromptTokens: 0,
       run: (k, m, msgs, t) =>
         openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, {
-          // Thinking off (keputusan user): 3,5 dtk -> ~1 dtk, output tetap bersih.
           reasoning: { effort: 'none' },
+          reasoning_effort: 'none',
+          ...BASE_GEN,
         }, t),
     },
-    // --- TIER 5: Dahl Global (SALDO BESAR 1 MILIAR TOKEN — penyelamat jangka panjang) ---
-    // INSTRUKSI USER (21 Sep): primary = deepseek-ai/DeepSeek-V4-Flash-0731.
-    // KENAPA PENTING: saldo 10 key x 100M = 1 MILIAR token (bukan kuota harian),
-    // TIDAK ada rate limit ITPM ketat, latensi p50 ~0,23 dtk. Penyelamat ketika semua
-    // kuota harian (Cloudflare/Groq/Gemini) habis.
-    // BACKUP = KOSONG (bukan kelalaian): uji lanjutan 21 Sep membuktikan 2 model lain Dahl
-    // TIDAK LAYAK — GLM-5.3-Flash membalas KOSONG selama 27,6 dtk, MiniMax-M2.7
-    // membocorkan <think>. Lebih baik failover langsung ke Gemini daripada membuang
-    // waktu rantai ke backup yang terbukti rusak.
+    // --- TIER 5: Groq Cloud API (LPU Ultra-Fast Inference) ---
+    // Prompt & output dijaga <8000 token; reasoning none pada Qwen, low pada GPT-OSS
+    {
+      kind: 'groq',
+      keys: config.pools.groq,
+      models: [config.models.groqPrimary, ...config.models.groqBackup],
+      cap: config.dailyCap.groq,
+      maxPromptTokens: 6800,
+      run: (k, m, msgs, t) => {
+        const groqMsgs = trimMessagesToTokenBudget(msgs, 6800);
+        // Groq menolak reasoning_effort 'none' pada model reasoning (mis. openai/gpt-oss-120b harus low).
+        // Model Qwen mendukung 'none' untuk 0 token reasoning.
+        const extraReasoning = m.includes('gpt-oss') ? { reasoning_effort: 'low' } : { reasoning_effort: 'none' };
+        return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, BASE_GEN_TIGHT.maxTokens, {
+          ...extraReasoning,
+          ...BASE_GEN,
+          frequency_penalty: 0.3,
+        }, t);
+      },
+    },
+    // --- TIER 6: Google Gemini API (1M Konteks) ---
+    {
+      kind: 'gemini',
+      keys: config.pools.gemini,
+      models: [config.models.geminiPrimary, ...config.models.geminiBackup],
+      cap: config.dailyCap.gemini,
+      maxPromptTokens: 0,
+      run: (k, m, msgs, t) => geminiChat(k, m, msgs, t),
+    },
+    // --- TIER 7: Dahl Global (Saldo 1 Miliar Token) ---
     {
       kind: 'dahl',
       keys: config.pools.dahl,
@@ -1240,23 +1228,10 @@ function steps(): Step[] {
       run: (k, m, msgs, t) => {
         return openAiChat(config.dahlProxyUrl, k, m, msgs, BASE_GEN_TIGHT.maxTokens, {
           reasoning_effort: 'none',
-          // Parameter bersama (F5).
+          chat_template_kwargs: { enable_thinking: false },
           ...BASE_GEN,
         }, t);
       },
-    },
-    // --- TIER 6: Google Gemini API (1M konteks — lapisan terakhir) ---
-    // UJI KEPATUHAN LIVE (dengan thinkingBudget:0 sesuai konfig produksi): gemini-3.8-flash
-    // 3506ms & gemini-3.5-flash 11210ms — keduanya PATUH SEMPURNA.
-    // Diletakkan terakhir karena: (a) hanya 1 key (1.500 RPD), (b) gemini-3.5-flash
-    // lambat (11 dtk), (c) berguna sebagai jaring terakhir dengan konteks 1M.
-    {
-      kind: 'gemini',
-      keys: config.pools.gemini,
-      models: [config.models.geminiPrimary, ...config.models.geminiBackup],
-      cap: config.dailyCap.gemini,
-      maxPromptTokens: 0, // 1M TPM — jauh di atas kebutuhan
-      run: (k, m, msgs, t) => geminiChat(k, m, msgs, t),
     },
   ];
 }
@@ -1269,6 +1244,20 @@ function steps(): Step[] {
  */
 function visionSteps(all: Step[], msgs?: ChatMsg[]): Step[] {
   const byKind = new Map(all.map((s) => [s.kind, s]));
+  if (!byKind.has('xkiro') && config.pools.xkiro.length > 0) {
+    byKind.set('xkiro', {
+      kind: 'xkiro',
+      keys: config.pools.xkiro,
+      models: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
+      cap: config.dailyCap.xkiro,
+      maxPromptTokens: 0,
+      run: (k, m, msgs, t) => openAiChat('https://api.xkiro.com/v1', k, m, msgs, undefined, {
+        reasoning: { effort: 'minimal' },
+        reasoning_effort: 'low',
+        ...BASE_GEN,
+      }, t),
+    });
+  }
   const out: Step[] = [];
 
   // Format gambar yang dikirim di request ini (dari data URL: data:image/webp;base64,...).

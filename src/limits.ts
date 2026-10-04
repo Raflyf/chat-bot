@@ -315,6 +315,43 @@ export function dahlDocumentedLimits(): LiveLimit {
   };
 }
 
+/**
+ * DreamPrompting: 100 RPM (terkonfirmasi dari header x-ratelimit-limit: 100),
+ * rolling 24h free requests.
+ */
+export function dreampromptingDocumentedLimits(): LiveLimit {
+  return {
+    requestsPerDay: 1000,
+    tokensPerDay: null,
+    tokensPerMinute: null,
+    requestsUsedToday: null,
+    tokensUsedToday: null,
+    requestsRemaining: null,
+    tokensRemaining: null,
+    officialLabel: '100 RPM • Rolling 24h Free Tier (DreamPrompting)',
+    source: 'endpoint resmi dreamprompting.com/api/v1 (header x-ratelimit-limit: 100)',
+    isLive: false,
+  };
+}
+
+/**
+ * NVIDIA NIM: 1.000 Free Credits per key untuk inferensi model akselerasi NIM.
+ */
+export function nvidiaDocumentedLimits(): LiveLimit {
+  return {
+    requestsPerDay: 1000,
+    tokensPerDay: null,
+    tokensPerMinute: null,
+    requestsUsedToday: null,
+    tokensUsedToday: null,
+    requestsRemaining: null,
+    tokensRemaining: null,
+    officialLabel: '1.000 Free Credits / Key (NVIDIA NIM)',
+    source: 'dokumentasi resmi NVIDIA NIM integrate.api.nvidia.com',
+    isLive: false,
+  };
+}
+
 // ============================================================================
 // CACHE HASIL PROBE LIMIT (temuan audit v0.79 — F3)
 // ============================================================================

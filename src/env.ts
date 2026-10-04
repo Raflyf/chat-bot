@@ -56,107 +56,71 @@ export const config = {
   // Bila kosong: pakai DAHL_BASE_URL (endpoint langsung) atau default resmi Dahl.
   dahlProxyUrl: cleanStr('DAHL_PROXY_URL') || cleanStr('DAHL_BASE_URL') || 'https://inference.dahl.global/v1',
   pools: {
-    dahl: csv('DAHL_KEYS'),
+    dreamprompting: csv('DREAMPROMPTING_KEYS'),
+    cloudflare: csv('CLOUDFLARE_KEYS'),
+    nvidia: csv('NVIDIA_KEYS'),
+    openrouter: csv('OPENROUTER_KEYS'),
     groq: csv('GROQ_KEYS'),
     gemini: csv('GEMINI_KEYS'),
-    cloudflare: csv('CLOUDFLARE_KEYS'),
-    openrouter: csv('OPENROUTER_KEYS'),
+    dahl: csv('DAHL_KEYS'),
     xkiro: csv('XKIRO_KEYS'),
   },
   cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
   models: {
-    // Tier 1: xKiro Gateway (Qwen 3.8 Max — DIPULIHKAN sebagai primary 26 Sep 2026)
-    //
-    // KEPUTUSAN USER (26 Sep 2026): Cohere Command A+ DIKEMBALIKAN ke Qwen.
-    // Alasan (bukan selera — hasil benchmark head-to-head 6 prompt produksi):
-    //   "tes"          -> Cohere "Oke, aku siap dengarmu" (kaku, CS) | Qwen "Masuk kok." (natural)
-    //   "halo bot"     -> Cohere "semoga harimu menyenangkan!" (template) | Qwen "Halo juga, gimana kabarmu?"
-    //   "kamu bisa apa"-> Cohere KOSONG (bug output) | Qwen jawaban lengkap
-    //   "lagi ngapain" -> Cohere mengaku "dengerin musik" (halusinasi diri) | Qwen jujur santai
-    // Cohere memang lebih cepat (1,2-3,0 dtk vs 2,8-4,4 dtk) TAPI konsisten kaku ala
-    // customer service, sesekali kosong, dan berhalusinasi soal dirinya sendiri.
-    // Persona natural = prioritas utama bot ini, jadi Qwen kembali memimpin.
-    xkiroPrimary: 'qwen/qwen3.8-max:free',
-    // Backup SEMUA Qwen (aturan terdokumentasi: "cukup dari qwen saja").
-    // Cohere Command A DIKELUARKAN dari rantai teks 26 Sep — kalau ia tetap di
-    // backup, setiap Qwen gagal/timeout user akan menerima balasan bergaya Cohere
-    // yang kaku (persis yang dikeluhkan). Cohere tetap dipakai di visionChain
-    // (Command A Vision) karena di sana keunggulannya nyata: OCR tabel 4/4 akurat.
-    xkiroBackup: [
-      'qwen/qwen3.7-max:free',
-      'qwen/qwen3.6-max-preview:free',
+    // Tier 1: DreamPrompting (100 RPM, Rolling Free Tier)
+    // Model Utama: groq/qwen/qwen3.6-27b (teruji cepat dan patuh penuh)
+    // Cadangan: groq/openai/gpt-oss-120b (penalaran kuat)
+    dpPrimary: 'groq/qwen/qwen3.6-27b',
+    dpBackup: [
+      'groq/openai/gpt-oss-120b',
     ],
-    // Tier 2: OpenRouter (model :free).
-    // AUDIT 20 Sep 2026: 'deepseek/deepseek-v4-flash-0731:free' SUDAH TIDAK ADA di
-    // katalog OpenRouter (dicek live: 446 model, NOL model deepseek :free) -> setiap
-    // request 404 dan membuang waktu rantai. Diganti dengan model yang TERVERIFIKASI
-    // ada DAN diuji live (HTTP 200):
-    //   - nex-agi/nex-n2.5-pro:free (context 262K, sudah terbukti di produksi)
-    //   - nvidia/nemotron-3.5-lightning:free (context 1M)
-    // INSTRUKSI USER (21 Sep): primary = nex-agi/nex-n2.5-mini:free.
-    // UJI LANJUTAN 21 Sep: nex-n2.5-mini lolos 3/3 prompt (P2/P3/P4), 0 pelanggaran,
-    // latensi 506ms = TERCEPAT di seluruh katalog OpenRouter.
-    // nex-n2.5-pro DITURUNKAN ke backup: 18,4 detik (terlambat) di uji v1.
-    // Backup dipilih dari hasil uji: ling-3.0-flash-fin (1041ms, 3/3 lolos) --
-    // hanya 1 backup (user: "cukup 1, maksimal 2 bila masih layak").
-    orPrimary: 'nex-agi/nex-n2.5-mini:free',
-    orBackup: ['inclusionai/ling-3.0-flash-fin:free'],
-    // Tier 3: Groq Cloud API (LPU Ultra-Fast Inference)
-    // UJI KEPATUHAN 20 Sep: qwen3.8-27b & gpt-oss-120b = PATUH SEMPURNA + tercepat
-    // (763-1202ms). Dua model ini adalah yang paling patuh dari SEMUA provider.
-    // UJI LANJUTAN 21 Sep: groq/qwen3.8-27b lolos 3/3 prompt, 0 pelanggaran, 370ms =
-    // TERCEPAT dari seluruh 89 model yang diuji. gpt-oss-120b juga 3/3 (878ms).
-    groqPrimary: 'qwen/qwen3.8-27b',
-    groqBackup: ['openai/gpt-oss-120b'],
+
     // Tier 2: Cloudflare Workers AI
-    // UJI KEPATUHAN 20 Sep: 4/4 model PATUH SEMPURNA.
-    // PRIMARY = qwen3.8-27b (PERMINTAAN USER 20 Sep: "coba model dari cf jangan glm, pake
-    // qwen aja"). Alasan tambahan: glm-4.7-flash terbukti membuat tebakan kontradiktif
-    // ("hewan paling suka diam" -> jawaban "si Lebah") dan respons aneh ("Pertahankan!").
-    // INSTRUKSI USER (21 Sep): primary = @cf/qwen/qwen3.8-27b (bukan glm lagi).
-    // UJI LANJUTAN 21 Sep: cf/qwen3.8-27b lolos P2 & P4, tapi GAGAL P3 (menjawab "12 jam"
-    // untuk soal yang jawabannya 6) -- dicatat sebagai kelemahan yang diterima karena
-    // user menetapkannya sebagai primary.
-    // BACKUP dipilih dari yang lolos 3/3 + tercepat (user: maksimal 2):
-    //   @cf/nvidia/nemotron-3-120b-a12b (891ms, 3/3) -- tercepat & lolos penuh
-    //   @cf/openai/gpt-oss-20b (1227ms, 3/3)
     cfPrimary: '@cf/qwen/qwen3.8-27b',
     cfBackup: ['@cf/nvidia/nemotron-3-120b-a12b', '@cf/openai/gpt-oss-20b'],
-    // Model vision Cloudflare (sinkron dengan rantai vision runtime): Qwen & Gemma via
-    // endpoint OpenAI-compat /ai/v1, LLaVA via endpoint native /ai/run (byte array).
     cfVision: [
       '@cf/meta/llama-4-scout-17b-16e-instruct',
       '@cf/mistralai/mistral-small-3.1-24b-instruct',
       '@cf/qwen/qwen3.8-27b',
     ],
-    // Tier 5: Google Gemini API (1M Konteks)
-    // INSTRUKSI USER (21 Sep): primary = gemini-3.8-flash.
-    // UJI LANJUTAN 21 Sep: gemini-3.8-flash lolos P2 & P4, GAGAL P3 (jawaban kosong).
-    // BACKUP: gemini-3.1-flash-lite (1106ms, 3/3 lolos) -- jauh lebih cepat dari
-    // 3.5-flash (9714ms) dan lolos penuh. Hanya 1 backup (user: cukup 1).
+
+    // Tier 3: NVIDIA NIM (1.000 Free Credits / key)
+    // Model Utama: google/diffusiongemma-26b-a4b-it (590ms)
+    // Cadangan: meta/llama-3.2-11b-vision-instruct (711ms, multimodal & reasoning)
+    nvidiaPrimary: 'google/diffusiongemma-26b-a4b-it',
+    nvidiaBackup: [
+      'meta/llama-3.2-11b-vision-instruct',
+    ],
+
+    // Tier 4: OpenRouter (model :free)
+    // Model Utama: nvidia/nemotron-3-ultra-550b-a55b:free (1M konteks, 409ms)
+    // Cadangan: inclusionai/ling-3.0-flash-sante:free (262K konteks, 723ms)
+    orPrimary: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    orBackup: ['inclusionai/ling-3.0-flash-sante:free'],
+
+    // Tier 5: Groq Cloud API (LPU Ultra-Fast Inference)
+    groqPrimary: 'qwen/qwen3.8-27b',
+    groqBackup: ['openai/gpt-oss-120b'],
+
+    // Tier 6: Google Gemini API (1M Konteks)
     geminiPrimary: 'gemini-3.8-flash',
     geminiBackup: ['gemini-3.1-flash-lite'],
-    // Model Gemini khusus jalur VISION. gemini-3.8-flash dikecualikan: terbukti hang ~60s
-    // tanpa token saat menerima gambar (uji live), jadi tetap primer teks saja.
-    // DIROMBAK 21 Sep: 3.1-flash-lite terbukti BENAR+TERCEPAT (1213ms gambar, 3429ms PDF);
-    // 3.5-flash-lite DIBUANG (HTTP 400 "invalid argument" saat gambar/PDF).
-    // Urutan: cepat -> lambat (3.6-flash terakhir karena 12,5 dtk).
     geminiVision: ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.6-flash'],
-    // Tier 6: Dahl Global API (1B Token Pool - latensi ~0,22s)
-    // UJI KEPATUHAN 20 Sep: DeepSeek-V4-Flash = 2164ms, hanya emoji berlebihan (sudah
-    // dibatasi sanitizer). MiniMax-M2.7 DIHAPUS dari backup teks: membocorkan <think>,
-    // 58 kata, 17 detik (instruksi user: "minimax hilangkan dari backup text, simpan
-    // di multimodal saja" — MiniMax tetap dipakai di jalur vision).
-    // UJI LANJUTAN 21 Sep (2 prompt berbeda):
-    //   deepseek-ai/DeepSeek-V4-Flash-0731 -> 1536ms, v1 bersih (empati+helpful), tapi
-    //     GAGAL P2/P3/P4 saat concurrency penuh (HTTP 429 "concurrency capacity").
-    //   zai-org/GLM-5.3-Flash   -> KOSONG 27,6 DETIK (tidak layak jadi backup).
-    //   MiniMaxAI/MiniMax-M2.7  -> 5993ms tapi MEMBOCORKAN <think> (tidak layak).
-    // KEPUTUSAN: Dahl hanya 1 model teks (DeepSeek). Bila gagal, failover LANGSUNG ke
-    // tier berikutnya (Gemini) -- lebih baik daripada membuang waktu ke backup yang
-    // terbukti kosong/bocor. MiniMax tetap dipakai di jalur VISION.
+
+    // Tier 7: Dahl Global API (1B Token Pool)
+    // Model Utama: deepseek-ai/DeepSeek-V4-Flash-0731
+    // Cadangan: zai-org/GLM-5.3-Flash (teruji live HTTP 200, 1.794ms)
     dahlPrimary: 'deepseek-ai/DeepSeek-V4-Flash-0731',
-    dahlBackup: [],
+    dahlBackup: [
+      'zai-org/GLM-5.3-Flash',
+    ],
+
+    // Provider Cadangan & Multimodal / Search: xKiro Gateway
+    xkiroPrimary: 'qwen/qwen3.8-max:free',
+    xkiroBackup: [
+      'qwen/qwen3.7-max:free',
+      'qwen/qwen3.6-max-preview:free',
+    ],
     // Rantai vision eksplisit. DIROMBAK 21 Sep berdasarkan UJI GAMBAR NYATA (2 blok
     // biru/kuning): model yang terbukti BENAR + cepat didahulukan, yang membalas KOSONG
     // atau error 400 DIBUANG (bukan ditebak):
@@ -223,7 +187,7 @@ export const config = {
       // memakai kuota provider lain. Catatan: model ini TIDAK punya batas token ketat.
       { kind: 'xkiro', model: 'qwen/qwen3.8-omni-flash:free' },
     ] as Array<{
-      kind: 'dahl' | 'groq' | 'gemini' | 'cloudflare' | 'openrouter' | 'xkiro';
+      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'xkiro';
       model: string;
     }>,
   },
@@ -253,12 +217,12 @@ export const config = {
     process.env.BOT_PROFILE ??
     'Asisten AI umum berbahasa Indonesia. Cerdas, adaptif, jujur, dan berwawasan luas.',
   // Waktu tunggu respon koneksi/header API key (jika mati/429/error, langsung failover cepat)
-  connectTimeoutMs: num('CONNECT_TIMEOUT_MS', 5000),
+  connectTimeoutMs: num('CONNECT_TIMEOUT_MS', 6000),
   // Waktu tunggu model berpikir & menyelesaikan generasi teks lengkap (aman untuk batas serverless Vercel)
   timeoutMs: num('REQUEST_TIMEOUT_MS', 35000),
   // FASE 1 (model TIDAK merespon): batas menunggu token pertama. Sesingkat mungkin —
   // begitu terlampaui, langsung failover tanpa menunggu model yang menggantung.
-  firstTokenTimeoutMs: num('FIRST_TOKEN_TIMEOUT_MS', 4000),
+  firstTokenTimeoutMs: num('FIRST_TOKEN_TIMEOUT_MS', 7000),
   // FASE 2 (model SUDAH merespon & menyusun jawaban): batas jeda antar-chunk. Dilamakan
   // agar model reasoning panjang tidak terputus saat sedang menyusun jawaban.
   streamIdleTimeoutMs: num('STREAM_IDLE_TIMEOUT_MS', 30000),
@@ -283,28 +247,26 @@ export const config = {
   cacheTtlMs: num('CACHE_TTL_MS', 3600000),
   isServerless: process.env.VERCEL === '1' || !!process.env.AWS_LAMBDA_FUNCTION_NAME,
   dailyCap: {
-    dahl: num('DAILY_CAP_DAHL', 5000),
-    // Selaras limit resmi platform: Groq Free Tier 1.000 RPD/key
-    groq: num('DAILY_CAP_GROQ', 1000),
-    // Selaras limit resmi platform: Gemini Free Tier 1.500 RPD/key
-    gemini: num('DAILY_CAP_GEMINI', 1500),
-    // KOREKSI AUDIT v0.79 (F8): default diselaraskan dengan angka yang TERBUKTI dari
-    // endpoint (limits.ts). Sebelumnya cloudflare 300 & openrouter 180 — OpenRouter
-    // sebenarnya 50 req/hari untuk model :free (3,6x lebih ketat!), jadi deploy tanpa
-    // .env akan menabrak 429 jauh sebelum guard memblokir.
+    dreamprompting: num('DAILY_CAP_DREAMPROMPTING', 1000),
     cloudflare: num('DAILY_CAP_CLOUDFLARE', 120),
+    nvidia: num('DAILY_CAP_NVIDIA', 1000),
     openrouter: num('DAILY_CAP_OPENROUTER', 50),
+    groq: num('DAILY_CAP_GROQ', 1000),
+    gemini: num('DAILY_CAP_GEMINI', 1500),
+    dahl: num('DAILY_CAP_DAHL', 5000),
     xkiro: num('DAILY_CAP_XKIRO', 500),
   },
   // Batas TOKEN per hari (TPD) per key. 0 = tidak dibatasi.
   // Groq Free Tier resmi: 200K TPD untuk qwen3.8-27b & qwen3.6-27b
   // (tercapai jauh lebih cepat daripada RPD 1.000 pada ~2.5K token/call).
   dailyTokenCap: {
-    dahl: numAllowZero('DAILY_TOKEN_CAP_DAHL', 0),
+    dreamprompting: numAllowZero('DAILY_TOKEN_CAP_DREAMPROMPTING', 0),
+    cloudflare: numAllowZero('DAILY_TOKEN_CAP_CLOUDFLARE', 0),
+    nvidia: numAllowZero('DAILY_TOKEN_CAP_NVIDIA', 0),
+    openrouter: numAllowZero('DAILY_TOKEN_CAP_OPENROUTER', 0),
     groq: numAllowZero('DAILY_TOKEN_CAP_GROQ', 200000),
     gemini: numAllowZero('DAILY_TOKEN_CAP_GEMINI', 0),
-    cloudflare: numAllowZero('DAILY_TOKEN_CAP_CLOUDFLARE', 0),
-    openrouter: numAllowZero('DAILY_TOKEN_CAP_OPENROUTER', 0),
+    dahl: numAllowZero('DAILY_TOKEN_CAP_DAHL', 0),
     xkiro: numAllowZero('DAILY_TOKEN_CAP_XKIRO', 0),
   },
   // Cap token PER-KEY (urut sama dengan urutan key di pool). Dipakai bila tiap key
@@ -312,11 +274,13 @@ export const config = {
   // sementara key #2/#3 hanya 500.000. Format env: "1000000,500000,500000".
   // Bila kosong, semua key memakai dailyTokenCap[kind].
   dailyTokenCapPerKey: {
-    dahl: numList('DAILY_TOKEN_CAP_PER_KEY_DAHL'),
+    dreamprompting: numList('DAILY_TOKEN_CAP_PER_KEY_DREAMPROMPTING'),
+    cloudflare: numList('DAILY_TOKEN_CAP_PER_KEY_CLOUDFLARE'),
+    nvidia: numList('DAILY_TOKEN_CAP_PER_KEY_NVIDIA'),
+    openrouter: numList('DAILY_TOKEN_CAP_PER_KEY_OPENROUTER'),
     groq: numList('DAILY_TOKEN_CAP_PER_KEY_GROQ'),
     gemini: numList('DAILY_TOKEN_CAP_PER_KEY_GEMINI'),
-    cloudflare: numList('DAILY_TOKEN_CAP_PER_KEY_CLOUDFLARE'),
-    openrouter: numList('DAILY_TOKEN_CAP_PER_KEY_OPENROUTER'),
+    dahl: numList('DAILY_TOKEN_CAP_PER_KEY_DAHL'),
     xkiro: numList('DAILY_TOKEN_CAP_PER_KEY_XKIRO'),
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
@@ -359,11 +323,13 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
     throw new Error('SUPABASE_URL terisi tetapi SUPABASE_KEY / SUPABASE_SERVICE_ROLE_KEY kosong.');
   }
   const totalKeys =
-    config.pools.dahl.length +
+    config.pools.dreamprompting.length +
+    config.pools.cloudflare.length +
+    config.pools.nvidia.length +
+    config.pools.openrouter.length +
     config.pools.groq.length +
     config.pools.gemini.length +
-    config.pools.cloudflare.length +
-    config.pools.openrouter.length +
+    config.pools.dahl.length +
     config.pools.xkiro.length;
   if (totalKeys === 0) throw new Error('Semua pool key kosong. Isi minimal satu provider di .env.');
 }

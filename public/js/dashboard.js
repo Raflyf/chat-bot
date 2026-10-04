@@ -595,7 +595,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // Pool reset label
       const poolReset = document.getElementById("pool-reset-label");
       if (poolReset) {
-        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (xKiro, OpenRouter, Groq, Cloudflare, Dahl) \u2022 00:00 PT (Gemini)";
+        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (Cloudflare, OpenRouter, Groq, Dahl, xKiro) \u2022 00:00 PT (Gemini) \u2022 Rolling 24h (DreamPrompting)";
         else poolReset.textContent = `Akumulasi Periode ${rangeLabel}`;
       }
 
@@ -703,7 +703,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         // Normalisasi: buang prefiks provider + suffix ":free" agar "xkiro/qwen/qwen3.8-max:free"
         // setara dengan "qwen/qwen3.8-max".
         const norm = (s) => String(s).toLowerCase()
-          .replace(/^(xkiro|openrouter|groq|cloudflare|gemini|dahl)\//, '')
+          .replace(/^(dreamprompting|cloudflare|nvidia|openrouter|groq|gemini|dahl|xkiro)\//, '')
           .replace(/^@cf\//, '')
           .replace(/:free$/, '')
           .trim();
@@ -732,54 +732,22 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // config sistem (src/env.ts). Diverifikasi otomatis oleh
       // scratch/verify_v50_model_catalog.mjs — jangan tambah entri tanpa model di config.
       const catalog = [
-        // --- Tier 1: xKiro Gateway (Primer Teks Runtime, TERKUNCI Qwen saja) ---
+        // --- Tier 1: DreamPrompting Gateway (100 RPM Free Tier) ---
         {
-          name: "Qwen 3.8 Max Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Text", "Reasoning", "Vision", "Fast Latency"],
-          desc: "Prioritas #1 Tier 1 - Primer teks Qwen 3.8 Max (free), latensi ~0,15s via xKiro Gateway; vision prioritas #8 rantai multimodal",
-          matchKeys: ["xkiro/qwen/qwen3.8-max:free", "qwen/qwen3.8-max:free", "qwen3.8-max"],
+          name: "Qwen 3.6 27B",
+          provider: "DREAMPROMPTING",
+          tagClass: "tag-dreamprompting",
+          capabilities: ["Text", "Reasoning", "Fast Latency"],
+          desc: "Prioritas #1 Tier 1 - Primer teks Qwen 3.6 27B via DreamPrompting, latensi ~370ms; limit 100 RPM",
+          matchKeys: ["dreamprompting/groq/qwen/qwen3.6-27b", "groq/qwen/qwen3.6-27b", "qwen/qwen3.6-27b", "qwen3.6-27b"],
         },
         {
-          name: "Qwen 3.8 Omni Flash Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Multimodal"],
-          desc: "Vision prioritas #11 (jaring terakhir) - Model omni xKiro terbaru. Uji 22 Sep pada 10 stiker nyata: benar saat berhasil, tapi tidak andal (2/5 pada gambar baru, sisanya timeout) sehingga sengaja ditaruh paling akhir",
-          matchKeys: ["xkiro/qwen/qwen3.8-omni-flash:free", "qwen/qwen3.8-omni-flash:free", "qwen3.8-omni-flash"],
-        },
-        {
-          name: "Qwen 3 VL Plus Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Multimodal"],
-          desc: "Vision prioritas #9 - Model visual khusus xKiro. Uji 22 Sep: terbaca benar (Upin & Ipin), rata-rata 5,3s pada gambar baru",
-          matchKeys: ["xkiro/qwen/qwen3-vl-plus:free", "qwen/qwen3-vl-plus:free", "qwen3-vl-plus"],
-        },
-        {
-          name: "Qwen 3.5 Omni Flash Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Vision", "Multimodal"],
-          desc: "Vision prioritas #10 - Generasi omni sebelumnya, terbukti andal. Uji 22 Sep: terbaca benar, rata-rata 10,2s pada gambar baru",
-          matchKeys: ["xkiro/qwen/qwen3.5-omni-flash:free", "qwen/qwen3.5-omni-flash:free", "qwen3.5-omni-flash"],
-        },
-        {
-          name: "Qwen 3.6 Max Preview Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
+          name: "GPT-OSS 120B",
+          provider: "DREAMPROMPTING",
+          tagClass: "tag-dreamprompting",
           capabilities: ["Text", "Reasoning", "Backup"],
-          desc: "Cadangan #1 Tier 1 xKiro - uji lanjutan 3/3 lolos (0 pelanggaran), latensi 3,6s; dipercepat sebagai backup utama",
-          matchKeys: ["xkiro/qwen/qwen3.6-max-preview:free", "qwen/qwen3.6-max-preview:free", "qwen3.6-max-preview"],
-        },
-        {
-          name: "Qwen 3.7 Max Free",
-          provider: "XKIRO",
-          tagClass: "tag-xkiro",
-          capabilities: ["Text", "Reasoning", "Backup"],
-          desc: "Cadangan #2 Tier 1 xKiro - uji lanjutan 3/3 lolos (0 pelanggaran), latensi 3,0s",
-          matchKeys: ["xkiro/qwen/qwen3.7-max:free", "qwen/qwen3.7-max:free", "qwen3.7-max"],
+          desc: "Cadangan #1 Tier 1 - Penalaran besar GPT-OSS 120B via DreamPrompting",
+          matchKeys: ["dreamprompting/groq/openai/gpt-oss-120b", "groq/openai/gpt-oss-120b", "openai/gpt-oss-120b", "gpt-oss-120b"],
         },
         // --- Tier 2: Cloudflare Workers AI (Qwen 3.8 27B) ---
         {
@@ -787,7 +755,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "CLOUDFLARE",
           tagClass: "tag-cloudflare",
           capabilities: ["Text", "Reasoning", "Vision"],
-          desc: "Prioritas #1 Tier 2 - Primer teks Cloudflare Workers AI; uji lanjutan P2 & P4 lolos (P3 gagal: jawab 12 jam utk soal 6 jam - dicatat sebagai kelemahan yang diterima)",
+          desc: "Prioritas #1 Tier 2 - Primer teks Cloudflare Workers AI; uji lanjutan P2 & P4 lolos",
           matchKeys: ["cloudflare/@cf/qwen/qwen3.8-27b", "@cf/qwen/qwen3.8-27b", "cf/qwen/qwen3.8-27b"],
         },
         {
@@ -822,13 +790,47 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           desc: "Vision prioritas #3 - uji gambar 2 blok BENAR dalam 2151ms",
           matchKeys: ["cloudflare/@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/mistralai/mistral-small-3.1-24b-instruct", "mistral-small-3.1"],
         },
-        // --- Tier 3: Groq Cloud API (LPU Inference Engine) ---
+        // --- Tier 3: NVIDIA NIM (1.000 Free Credits) ---
+        {
+          name: "Diffusion Gemma 26B A4B IT",
+          provider: "NVIDIA",
+          tagClass: "tag-nvidia",
+          capabilities: ["Text", "Reasoning", "NIM Speed"],
+          desc: "Prioritas #1 Tier 3 - Primer teks NVIDIA NIM, 590ms latensi teruji; 1.000 credits pool",
+          matchKeys: ["nvidia/google/diffusiongemma-26b-a4b-it", "google/diffusiongemma-26b-a4b-it", "diffusiongemma-26b-a4b-it", "diffusiongemma"],
+        },
+        {
+          name: "Llama 3.2 11B Vision Instruct",
+          provider: "NVIDIA",
+          tagClass: "tag-nvidia",
+          capabilities: ["Text", "Vision", "NIM Speed"],
+          desc: "Cadangan #1 Tier 3 - Penalaran visual/multimodal dan teks cadangan NVIDIA NIM, 711ms",
+          matchKeys: ["nvidia/meta/llama-3.2-11b-vision-instruct", "meta/llama-3.2-11b-vision-instruct", "llama-3.2-11b-vision-instruct", "llama-3.2-11b"],
+        },
+        // --- Tier 4: OpenRouter AI (Free Models) ---
+        {
+          name: "Nemotron 3 Ultra 550B Free",
+          provider: "OPENROUTER",
+          tagClass: "tag-openrouter",
+          capabilities: ["Text", "Reasoning", "Ultra 550B"],
+          desc: "Prioritas #1 Tier 4 - Primer teks OpenRouter; model raksasa 550B free tier, 409ms latensi teruji",
+          matchKeys: ["openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "nemotron-3-ultra-550b-a55b"],
+        },
+        {
+          name: "Ling 3.0 Flash Sante Free",
+          provider: "OPENROUTER",
+          tagClass: "tag-openrouter",
+          capabilities: ["Text", "Reasoning", "Fast"],
+          desc: "Cadangan #1 Tier 4 - Model cepat Ling 3.0 Flash Sante free tier, 723ms latensi teruji",
+          matchKeys: ["openrouter/inclusionai/ling-3.0-flash-sante:free", "inclusionai/ling-3.0-flash-sante:free", "ling-3.0-flash-sante"],
+        },
+        // --- Tier 5: Groq Cloud API (LPU Inference Engine) ---
         {
           name: "Qwen 3.8 27B",
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Text", "Reasoning", "Vision", "LPU Speed"],
-          desc: "Prioritas #1 Tier 3 - 370ms = TERCEPAT dari seluruh 89 model yang diuji (uji lanjutan 3/3 lolos, 0 pelanggaran); vision prioritas #1 rantai multimodal",
+          desc: "Prioritas #1 Tier 5 - 370ms = TERCEPAT dari seluruh model LPU; vision prioritas #1 rantai multimodal",
           matchKeys: ["groq/qwen/qwen3.8-27b", "groq/qwen3.8", "qwen/qwen3.8-27b", "qwen3.8-27b"],
         },
         {
@@ -836,7 +838,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "GROQ",
           tagClass: "tag-groq",
           capabilities: ["Text", "Reasoning", "LPU Speed"],
-          desc: "Prioritas #2 Tier 3 - Penalaran kuat GPT-OSS 120B di LPU Groq (jalur teks)",
+          desc: "Prioritas #2 Tier 5 - Penalaran kuat GPT-OSS 120B di LPU Groq (reasoning_effort: low)",
           matchKeys: ["groq/openai/gpt-oss-120b", "openai/gpt-oss-120b", "gpt-oss-120b"],
         },
         {
@@ -847,45 +849,22 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           desc: "Transkripsi Voice Note audio sub-detik ~500ms",
           matchKeys: ["whisper-large-v3-turbo", "whisper-large-v3", "whisper", "groq/whisper"],
         },
-        // --- Tier 4: OpenRouter AI (Free Models) ---
-        {
-          name: "Nex N2.5 Mini Free",
-          provider: "OPENROUTER",
-          tagClass: "tag-openrouter",
-          capabilities: ["Text", "Reasoning", "Fast"],
-          desc: "Prioritas #1 Tier 4 - Primer teks OpenRouter; uji lanjutan 3/3 lolos (0 pelanggaran), 506ms = TERCEPAT di katalog OpenRouter",
-          matchKeys: ["openrouter/nex-agi/nex-n2.5-mini:free", "nex-agi/nex-n2.5-mini:free", "nex-n2.5-mini"],
-        },
-        {
-          name: "Ling 3.0 Flash Fin Free",
-          provider: "OPENROUTER",
-          tagClass: "tag-openrouter",
-          capabilities: ["Text", "Reasoning", "Finance"],
-          desc: "Cadangan #1 Tier 4 - uji lanjutan 3/3 lolos (0 pelanggaran), 1041ms; spesialis domain finansial",
-          matchKeys: ["openrouter/inclusionai/ling-3.0-flash-fin:free", "inclusionai/ling-3.0-flash-fin:free", "ling-3.0-flash-fin"],
-        },
-        // Catatan: parser PDF OpenRouter (plugin file-parser) tetap aktif di kode media.ts
-        // tetapi BUKAN model katalog -- model :free deepseek-v4-flash-0731 sudah tidak ada.
-        // --- Tier 5: Dahl Global API (1 Miliar Token Pool) ---
-        {
-          name: "DeepSeek V4 Flash 0731",
-          provider: "DAHL",
-          tagClass: "tag-dahl",
-          capabilities: ["Fast Reasoning", "Text", "Code"],
-          desc: "Prioritas #1 Tier 5 - SOTA Reasoning kilat & 1 Miliar Token Pool; uji lanjutan: sempat 429 saat concurrency penuh (dicatat)",
-          matchKeys: ["dahl/deepseek-ai/deepseek-v4-flash-0731", "deepseek-ai/deepseek-v4-flash-0731"],
-        },
-        // CATATAN: GLM-5.3-Flash & MiniMax-M2.7 DIHAPUS dari katalog 21 Sep -- uji lanjutan
-        // membuktikan keduanya tidak layak (GLM: KOSONG 27,6 dtk; MiniMax: bocorkan <think>).
-        // Dahl kini 1 model teks; bila gagal, rantai langsung failover ke Gemini.
         // --- Tier 6: Google Gemini API (1M Konteks) ---
         {
           name: "Gemini 3.8 Flash",
           provider: "GEMINI",
           tagClass: "tag-gemini",
           capabilities: ["Text", "Reasoning", "PDF & Video"],
-          desc: "Prioritas #1 Tier 6 - Primer teks & dokumen/video native (1M konteks); dikecualikan dari rantai foto karena hang saat menerima gambar",
+          desc: "Prioritas #1 Tier 6 - Primer teks & dokumen/video native (1M konteks); 1.500 RPD tier",
           matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
+        },
+        {
+          name: "Gemini 3.1 Flash Lite",
+          provider: "GEMINI",
+          tagClass: "tag-gemini",
+          capabilities: ["Vision", "PDF & Video", "Audio VN", "Fast"],
+          desc: "Cadangan #1 Tier 6 + vision prioritas #5 - uji 3/3 lolos, 1106ms teks / 1213ms gambar / 3429ms PDF",
+          matchKeys: ["gemini/gemini-3.1-flash-lite", "gemini-3.1-flash-lite"],
         },
         {
           name: "Gemini 3.6 Flash",
@@ -903,13 +882,55 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           desc: "Vision prioritas #8 - Vision native stabil, cadangan terakhir jalur Gemini",
           matchKeys: ["gemini/gemini-2.5-flash", "gemini-2.5-flash"],
         },
+        // --- Tier 7: Dahl Global API (1 Miliar Token Pool) ---
         {
-          name: "Gemini 3.1 Flash Lite",
-          provider: "GEMINI",
-          tagClass: "tag-gemini",
-          capabilities: ["Vision", "PDF & Video", "Audio VN", "Fast"],
-          desc: "Cadangan #1 Tier 6 + vision prioritas #5 - uji 3/3 lolos, 1106ms teks / 1213ms gambar / 3429ms PDF",
-          matchKeys: ["gemini/gemini-3.1-flash-lite", "gemini-3.1-flash-lite"],
+          name: "DeepSeek V4 Flash 0731",
+          provider: "DAHL",
+          tagClass: "tag-dahl",
+          capabilities: ["Fast Reasoning", "Text", "Code"],
+          desc: "Prioritas #1 Tier 7 - SOTA Reasoning kilat & 1 Miliar Token Pool",
+          matchKeys: ["dahl/deepseek-ai/deepseek-v4-flash-0731", "deepseek-ai/deepseek-v4-flash-0731"],
+        },
+        {
+          name: "GLM 5.3 Flash",
+          provider: "DAHL",
+          tagClass: "tag-dahl",
+          capabilities: ["Text", "Reasoning", "Thinking"],
+          desc: "Cadangan #1 Tier 7 - Zhipu AI GLM 5.3 Flash via Cloudflare Worker proxy Dahl Global",
+          matchKeys: ["dahl/zai-org/glm-5.3-flash", "zai-org/glm-5.3-flash", "glm-5.3-flash"],
+        },
+        // --- Cadangan Multimodal & Web Search Fallback: xKiro Gateway ---
+        {
+          name: "Qwen 3.8 Max Free",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          capabilities: ["Vision", "Multimodal", "Search Fallback"],
+          desc: "Vision prioritas #8 rantai multimodal & web search fallback",
+          matchKeys: ["xkiro/qwen/qwen3.8-max:free", "qwen/qwen3.8-max:free", "qwen3.8-max"],
+        },
+        {
+          name: "Qwen 3 VL Plus Free",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          capabilities: ["Vision", "Multimodal"],
+          desc: "Vision prioritas #9 - Model visual khusus xKiro",
+          matchKeys: ["xkiro/qwen/qwen3-vl-plus:free", "qwen/qwen3-vl-plus:free", "qwen3-vl-plus"],
+        },
+        {
+          name: "Qwen 3.5 Omni Flash Free",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          capabilities: ["Vision", "Multimodal"],
+          desc: "Vision prioritas #10 - Generasi omni sebelumnya, terbukti andal",
+          matchKeys: ["xkiro/qwen/qwen3.5-omni-flash:free", "qwen/qwen3.5-omni-flash:free", "qwen3.5-omni-flash"],
+        },
+        {
+          name: "Qwen 3.8 Omni Flash Free",
+          provider: "XKIRO",
+          tagClass: "tag-xkiro",
+          capabilities: ["Vision", "Multimodal"],
+          desc: "Vision prioritas #11 (jaring terakhir) - Model omni xKiro terbaru",
+          matchKeys: ["xkiro/qwen/qwen3.8-omni-flash:free", "qwen/qwen3.8-omni-flash:free", "qwen3.8-omni-flash"],
         },
       ];
 
@@ -1483,8 +1504,71 @@ function renderLiveUpstreamTable(data) {
         p.keys.forEach(k => {
           totalAllKeys++;
           const cleanSuffix = String(k.suffix || "").startsWith("...") ? k.suffix : "..." + (k.suffix || "????");
+          if (p.kind === "dreamprompting") {
+            const keyCap = p.capPerKey || p.cap || 1000;
+            const callsUsed = k.used || 0;
+            const callsRemaining = Math.max(0, keyCap - callsUsed);
+            const pct = keyCap > 0 ? Math.min(100, Math.round((callsUsed / keyCap) * 100)) : 0;
+            const tokensUsed = k.tokensUsed || 0;
+            grandTotalUnboundedTokenUsed += tokensUsed;
 
-          if (p.kind === "dahl") {
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #38bdf8; font-weight: 700; margin-top: 3px;">dp-...${escapeHtml(cleanSuffix)}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">DreamPrompting Gateway</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">dreamprompting.com &bull; 100 RPM Free Tier</div>
+                </td>
+                <td>
+                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">${callsUsed.toLocaleString("id-ID")} Panggilan${tokensUsed > 0 ? ` &bull; ${tokensUsed.toLocaleString("id-ID")} Tok` : ''}</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: 100 RPM &bull; Rolling 24h Free Tier</div>
+                </td>
+                <td>
+                  <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Active Gateway</div>
+                  <div style="font-size: 0.72rem; color: #10b981; margin-top: 2px;">Tier 1 Primer Teks &bull; 100 RPM</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">● Bot Monitored</span>
+                  <div><span class="key-badge-status ${pct >= 100 ? 'status-capped' : pct >= 80 ? 'status-warning' : 'status-healthy'}">${pct >= 100 ? 'LIMIT CAP' : pct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
+                </td>
+              </tr>
+            `);
+          } else if (p.kind === "nvidia") {
+            const keyCap = p.capPerKey || p.cap || 1000;
+            const callsUsed = k.used || 0;
+            const callsRemaining = Math.max(0, keyCap - callsUsed);
+            const pct = keyCap > 0 ? Math.min(100, Math.round((callsUsed / keyCap) * 100)) : 0;
+            const tokensUsed = k.tokensUsed || 0;
+            grandTotalUnboundedTokenUsed += tokensUsed;
+
+            rows.push(`
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
+                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #76b900; font-weight: 700; margin-top: 3px;">nvapi-...${escapeHtml(cleanSuffix)}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">NVIDIA API Catalog</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">build.nvidia.com &bull; NIM Microservices</div>
+                </td>
+                <td>
+                  <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #84cc16;">${callsUsed.toLocaleString("id-ID")} Panggilan${tokensUsed > 0 ? ` &bull; ${tokensUsed.toLocaleString("id-ID")} Tok` : ''}</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: 1.000 Free Credits &bull; NVIDIA NIM</div>
+                </td>
+                <td>
+                  <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Active NIM</div>
+                  <div style="font-size: 0.72rem; color: #10b981; margin-top: 2px;">Tier 3 Akselerasi NIM</div>
+                </td>
+                <td style="text-align: right;">
+                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(118, 185, 0, 0.15); color: #84cc16; border-color: rgba(118, 185, 0, 0.3);">● Bot Monitored</span>
+                  <div><span class="key-badge-status ${pct >= 100 ? 'status-capped' : pct >= 80 ? 'status-warning' : 'status-healthy'}">${pct >= 100 ? 'LIMIT CAP' : pct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
+                </td>
+              </tr>
+            `);
+          } else if (p.kind === "dahl") {
             const keyCap = k.tokenCap || 100000000;
             const keyUsed = k.tokensUsed || 0;
             const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);

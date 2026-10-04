@@ -28,6 +28,8 @@ import {
   fetchCloudflareLimits,
   geminiDocumentedLimits,
   dahlDocumentedLimits,
+  dreampromptingDocumentedLimits,
+  nvidiaDocumentedLimits,
   type LiveLimit,
 } from '../src/limits.js';
 
@@ -191,6 +193,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       result.set('openrouter', or);
       result.set('groq', gq);
       result.set('cloudflare', cf);
+      const dp = new Map<string, LiveLimit>();
+      for (const k of config.pools.dreamprompting) dp.set(k, dreampromptingDocumentedLimits());
+      result.set('dreamprompting', dp);
+      const nv = new Map<string, LiveLimit>();
+      for (const k of config.pools.nvidia) nv.set(k, nvidiaDocumentedLimits());
+      result.set('nvidia', nv);
       // Gemini & Dahl: tidak ada endpoint kuota publik -> pakai dokumentasi resmi,
       // ditandai isLive:false agar dashboard jujur soal sumbernya.
       const gm = new Map<string, LiveLimit>();
@@ -441,7 +449,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Atribusi provider dari string via. Format bisa berlapis (mis. "local-parser/groq/qwen/...",
     // "dynamic-pdf-error/gemini/..."), jadi cari segmen path yang cocok dengan provider resmi —
     // bukan hanya segmen pertama — agar token tetap terhitung ke pool yang benar.
-    const KNOWN_PROVIDER_KINDS = ['groq', 'gemini', 'cloudflare', 'openrouter', 'dahl', 'xkiro'];
+    const KNOWN_PROVIDER_KINDS = ['dreamprompting', 'cloudflare', 'nvidia', 'openrouter', 'groq', 'gemini', 'dahl', 'xkiro'];
     const extractProviderKind = (via: string): string => {
       const segments = via.toLowerCase().split('/');
       return segments.find((s) => KNOWN_PROVIDER_KINDS.includes(s)) || '';
@@ -508,29 +516,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const totalComputedTokensPeriod = grandTotalRealTokens + (Math.max(0, totalModelCalls - grandTotalCallsWithRealTokens) * overallAvgTokens);
 
     // Daftar model aktif sistem untuk memfilter histori DB lama yang sudah didepresiasi
-    // Urutan mengikuti rantai failover teks runtime v0.67: xKiro > Cloudflare > Groq >
-    // OpenRouter > Dahl > Gemini (sesuai instruksi user 21 Sep).
+    // Urutan mengikuti rantai failover teks runtime 7 Tier:
+    // DreamPrompting > Cloudflare > NIM > OpenRouter > Groq > Gemini > Dahl.
     const activeSystemModels = [
-      // Tier 1: xKiro (Qwen saja - instruksi user)
-      config.models.xkiroPrimary,
-      ...config.models.xkiroBackup,
+      // Tier 1: DreamPrompting
+      config.models.dpPrimary,
+      ...config.models.dpBackup,
       // Tier 2: Cloudflare Workers AI (teks + seluruh model vision)
       config.models.cfPrimary,
       ...config.models.cfBackup,
       ...config.models.cfVision,
-      // Tier 3: Groq
-      config.models.groqPrimary,
-      ...config.models.groqBackup,
+      // Tier 3: NVIDIA NIM
+      config.models.nvidiaPrimary,
+      ...config.models.nvidiaBackup,
       // Tier 4: OpenRouter
       config.models.orPrimary,
       ...config.models.orBackup,
-      // Tier 5: Dahl Global
-      config.models.dahlPrimary,
-      ...config.models.dahlBackup,
+      // Tier 5: Groq
+      config.models.groqPrimary,
+      ...config.models.groqBackup,
       // Tier 6: Gemini (teks + model vision khusus)
       config.models.geminiPrimary,
       ...config.models.geminiBackup,
       ...config.models.geminiVision,
+      // Tier 7: Dahl Global
+      config.models.dahlPrimary,
+      ...config.models.dahlBackup,
+      // Provider Cadangan & Multimodal / Search
+      config.models.xkiroPrimary,
+      ...config.models.xkiroBackup,
       // Rantai vision eksplisit (model yang bisa muncul sebagai `via`)
       ...config.models.visionChain.map((v) => v.model),
       'whisper-large-v3-turbo',
@@ -579,9 +593,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }))
       .sort((a, b) => b.count - a.count);
 
-    // 4. Bangun status Pool per Provider & tiap API Key (6 Tier Resmi Runtime Sistem)
+    // 4. Bangun status Pool per Provider & tiap API Key (7 Tier Resmi Runtime Sistem)
     const providerDefs: Array<{
-      kind: 'dahl' | 'groq' | 'gemini' | 'cloudflare' | 'openrouter' | 'xkiro';
+      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'xkiro';
       displayName: string;
       keys: string[];
       cap: number;
@@ -597,30 +611,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       allModels: string[];
     }> = [
       {
-        kind: 'xkiro',
-        displayName: 'xKiro Gateway',
-        keys: config.pools.xkiro,
-        cap: config.dailyCap.xkiro,
-        tokenCapPerKey: config.dailyTokenCap.xkiro || 5000000,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.xkiro,
+        kind: 'dreamprompting',
+        displayName: 'DreamPrompting',
+        keys: config.pools.dreamprompting,
+        cap: config.dailyCap.dreamprompting,
+        tokenCapPerKey: config.dailyTokenCap.dreamprompting,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.dreamprompting,
+        tokenLimitType: 'requests_tpm',
+        tokenLimitLabel: '100 RPM • Rolling 24h Free Tier',
+        resetCycle: 'Rolling 24h',
+        contextWindow: '131.072 Token (131K)',
+        primaryModel: config.models.dpPrimary,
+        backupModel: config.models.dpBackup.join(' / '),
+        allModels: [config.models.dpPrimary, ...config.models.dpBackup],
+      },
+      {
+        kind: 'cloudflare',
+        displayName: 'Cloudflare Workers AI',
+        keys: config.pools.cloudflare,
+        cap: config.dailyCap.cloudflare,
+        tokenCapPerKey: config.dailyTokenCap.cloudflare,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.cloudflare,
         tokenLimitType: 'daily_cap',
-        // Label dibangun dari cap per-key NYATA (key1 1jt, key2/3 500k) — bukan angka
-        // seragam 5jt yang tidak pernah cocok dengan dashboard penyedia (temuan user).
-        tokenLimitLabel: (() => {
-          const caps = config.dailyTokenCapPerKey.xkiro.filter((c) => c > 0);
-          if (caps.length === 0) return '500.000 Token/hari/key (per-key, sesuai dashboard xKiro)';
-          const min = Math.min(...caps);
-          const max = Math.max(...caps);
-          const fmt = (n: number) => n.toLocaleString('id-ID');
-          return min === max
-            ? `${fmt(min)} Token/hari/key`
-            : `${fmt(min)}-${fmt(max)} Token/hari/key (bervariasi per key)`;
-        })(),
+        tokenLimitLabel: '10.000 Neuron/hari/key (Free Tier resmi)',
         resetCycle: 'Harian (00:00 UTC)',
         contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.xkiroPrimary,
-        backupModel: config.models.xkiroBackup.join(' / '),
-        allModels: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
+        primaryModel: config.models.cfPrimary,
+        backupModel: config.models.cfBackup.join(' / '),
+        allModels: [config.models.cfPrimary, ...config.models.cfBackup, ...config.models.cfVision],
+      },
+      {
+        kind: 'nvidia',
+        displayName: 'NVIDIA NIM',
+        keys: config.pools.nvidia,
+        cap: config.dailyCap.nvidia,
+        tokenCapPerKey: config.dailyTokenCap.nvidia,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.nvidia,
+        tokenLimitType: 'daily_cap',
+        tokenLimitLabel: '1.000 Free Credits / Key (NVIDIA NIM)',
+        resetCycle: 'Kredit Akun NIM',
+        contextWindow: '131.072 Token (131K)',
+        primaryModel: config.models.nvidiaPrimary,
+        backupModel: config.models.nvidiaBackup.join(' / '),
+        allModels: [config.models.nvidiaPrimary, ...config.models.nvidiaBackup],
       },
       {
         kind: 'openrouter',
@@ -632,7 +665,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         tokenLimitType: 'requests_tpm',
         tokenLimitLabel: 'Bebas Kuota Harian (Model :free • Rate Limit 50-1.000 RPD)',
         resetCycle: 'Harian (00:00 UTC)',
-        contextWindow: '131.072 Token (131K)',
+        contextWindow: '1.000.000 Token (1M)',
         primaryModel: config.models.orPrimary,
         backupModel: config.models.orBackup.join(' / '),
         allModels: [config.models.orPrimary, ...config.models.orBackup],
@@ -651,23 +684,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         primaryModel: config.models.groqPrimary,
         backupModel: config.models.groqBackup.join(' / '),
         allModels: [config.models.groqPrimary, ...config.models.groqBackup, 'whisper-large-v3-turbo'],
-      },
-      {
-        kind: 'cloudflare',
-        displayName: 'Cloudflare Workers AI',
-        keys: config.pools.cloudflare,
-        cap: config.dailyCap.cloudflare,
-        tokenCapPerKey: config.dailyTokenCap.cloudflare,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.cloudflare,
-        tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '10.000 Neuron/hari/key (Free Tier resmi)',
-        resetCycle: 'Harian (00:00 UTC)',
-        contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.cfPrimary,
-        backupModel: config.models.cfBackup.join(' / '),
-        // cfVision sudah tercakup lewat cfBackup (llama-4-scout, mistral-small) + primary,
-        // tapi tetap disertakan agar model vision yang muncul sebagai `via` dikenali aktif.
-        allModels: [config.models.cfPrimary, ...config.models.cfBackup, ...config.models.cfVision],
       },
       {
         kind: 'gemini',
@@ -699,6 +715,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         backupModel: config.models.dahlBackup.join(' / '),
         allModels: [config.models.dahlPrimary, ...config.models.dahlBackup],
       },
+      ...(config.pools.xkiro.length > 0 ? [{
+        kind: 'xkiro' as const,
+        displayName: 'xKiro Gateway (Cadangan)',
+        keys: config.pools.xkiro,
+        cap: config.dailyCap.xkiro,
+        tokenCapPerKey: config.dailyTokenCap.xkiro || 5000000,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.xkiro,
+        tokenLimitType: 'daily_cap' as const,
+        tokenLimitLabel: 'Cadangan Web Search & Vision (500K Token/key)',
+        resetCycle: 'Harian (00:00 UTC)',
+        contextWindow: '131.072 Token (131K)',
+        primaryModel: config.models.xkiroPrimary,
+        backupModel: config.models.xkiroBackup.join(' / '),
+        allModels: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
+      }] : []),
     ];
 
     let totalPoolKeys = 0;
