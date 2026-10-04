@@ -762,20 +762,138 @@ export function formatDaftarKebiasaan(rows: Array<{ id: number; name: string; st
  * berikutnya ("iya"/"tidak") diproses di sini tanpa memanggil AI.
  * Disimpan di memori proses (cukup — konfirmasi hanya bertahan beberapa detik).
  */
-// ── KONFIRMASI TERTUNDA DIHAPUS (04 Okt 2026) ──
+// ── KONFIRMASI TERTUNDA (dikembalikan 04 Okt 2026, versi lebih baik) ──
 //
-// Pemilik produk meminta konfirmasi "iya/tidak" dihilangkan:
-// "kalo bisa ya tidak nya ini di hilangkan saja, buat dengan deteksi langsung saja"
+// RIWAYAT KEPUTUSAN:
+// 1. Awalnya konfirmasi "iya/tidak" dipakai untuk SEMUA pencatatan.
+// 2. Sempat DIHAPUS TOTAL (permintaan awal pemilik produk).
+// 3. DIPERJELAS lagi: konfirmasi dihilangkan HANYA untuk PENGINGAT, karena
+//    "remind itu kan berpacu waktu, jika hanya 1 menit maka waktu akan habis
+//    oleh balasan ya/tidak". Untuk catatan/tugas/keuangan, konfirmasi TETAP ADA
+//    (aman, hindari salah catat, tidak terikat waktu).
 //
-// Sebelumnya ada tabel `pending_confirmations` + Map memori + 4 fungsi
-// (simpanKonfirmasi, ambilKonfirmasi, buangKonfirmasi, lupakanKonfirmasiMemori)
-// untuk menanyakan "Balas iya untuk simpan, tidak untuk batal".
-// Sekarang pencatatan LANGSUNG disimpan lewat simpanDariNiat().
-//
-// Deteksi niat tetap konservatif (4 lapis penyaring) sehingga risiko salah catat
-// kecil; bila tetap salah, user bisa menghapus dengan /hapus <id>.
+// Penyimpanan: DATABASE (tabel pending_confirmations, migrasi v23) agar bertahan
+// lintas instance Vercel serverless, dengan fallback ke tabel `messages`
+// (via='system/pending-confirmation') bila tabel v23 belum dibuat, lalu ke
+// memori proses sebagai lapisan terakhir.
 
-// (jawabanKonfirmasi DIHAPUS 04 Okt 2026 — konfirmasi iya/tidak dihilangkan.)
+interface KonfirmasiTertunda {
+  niat: NiatTerdeteksi;
+  actor?: string;
+  platform: string;
+  at: number;
+}
+const konfirmasiTertunda = new Map<string, KonfirmasiTertunda>();
+const KONFIRMASI_TTL_MS = 10 * 60_000; // 10 menit
+
+/** Simpan konfirmasi tertunda (DB dulu; memori sebagai fallback). */
+async function simpanKonfirmasi(
+  chatId: string, niat: NiatTerdeteksi, opts: { actor?: string; platform: string },
+): Promise<void> {
+  konfirmasiTertunda.set(chatId, { niat, actor: opts.actor, platform: opts.platform, at: Date.now() });
+  const c = db();
+  if (!c) return;
+  try {
+    await c.rpc('set_pending_confirmation', {
+      p_chat_id: chatId,
+      p_platform: opts.platform,
+      p_actor: opts.actor ?? null,
+      p_niat: niat as unknown as Record<string, unknown>,
+    });
+    return;
+  } catch {
+    // Tabel v23 belum ada -> cadangan di tabel `messages`
+    try {
+      await c.from('messages').delete()
+        .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
+      await c.from('messages').insert({
+        platform: opts.platform,
+        chat_id: chatId,
+        role: 'user',
+        content: JSON.stringify(niat),
+        via: 'system/pending-confirmation',
+      });
+    } catch {
+      // best-effort: memori tetap dipakai
+    }
+  }
+}
+
+/** Ambil konfirmasi tertunda (DB dulu; memori sebagai cadangan). */
+async function ambilKonfirmasi(
+  chatId: string,
+): Promise<{ niat: NiatTerdeteksi; actor?: string; platform: string } | null> {
+  const c = db();
+  if (c) {
+    try {
+      const { data } = await c.rpc('take_pending_confirmation', { p_chat_id: chatId });
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row && row.niat) {
+        konfirmasiTertunda.delete(chatId);
+        return {
+          niat: row.niat as NiatTerdeteksi,
+          actor: (row.actor as string | null) ?? undefined,
+          platform: (row.platform as string) ?? 'whatsapp',
+        };
+      }
+    } catch {
+      // Tabel v23 belum ada -> cadangan `messages`
+      try {
+        const { data: rows } = await c.from('messages')
+          .select('content,platform')
+          .eq('chat_id', chatId)
+          .eq('via', 'system/pending-confirmation')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        const r0 = (rows ?? [])[0] as { content?: string; platform?: string } | undefined;
+        if (r0?.content) {
+          await c.from('messages').delete()
+            .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
+          konfirmasiTertunda.delete(chatId);
+          return {
+            niat: JSON.parse(r0.content) as NiatTerdeteksi,
+            actor: undefined,
+            platform: r0.platform ?? 'whatsapp',
+          };
+        }
+      } catch {
+        // lanjut ke memori
+      }
+    }
+  }
+  const mem = konfirmasiTertunda.get(chatId);
+  if (mem) {
+    konfirmasiTertunda.delete(chatId);
+    if (Date.now() - mem.at > KONFIRMASI_TTL_MS) return null;
+    return { niat: mem.niat, actor: mem.actor, platform: mem.platform };
+  }
+  return null;
+}
+
+/** Buang konfirmasi tertunda (user bilang "tidak"). */
+async function buangKonfirmasi(chatId: string): Promise<void> {
+  konfirmasiTertunda.delete(chatId);
+  const c = db();
+  if (!c) return;
+  try {
+    await c.rpc('clear_pending_confirmation', { p_chat_id: chatId });
+  } catch {
+    try {
+      await c.from('messages').delete()
+        .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
+    } catch {
+      // best-effort
+    }
+  }
+}
+
+/** Deteksi jawaban konfirmasi singkat ("iya"/"tidak"). */
+function jawabanKonfirmasi(teks: string): 'ya' | 'tidak' | null {
+  const t = teks.trim().toLowerCase().replace(/[.!?]+$/, '');
+  if (/^(ya|iya|y|yes|ok|oke|okey|boleh|simpan|gas|sip|lanjut|betul|benar|setuju|yoi|yup)$/.test(t)) return 'ya';
+  if (/^(tidak|tdk|gak|ga|gk|nggak|ngga|no|batal|cancel|jangan|salah|gausah|gak usah|ga usah|skip)$/.test(t)) return 'tidak';
+  return null;
+}
 
 /** Bentuk entri dari niat yang sudah dikonfirmasi. */
 async function simpanDariNiat(
@@ -839,12 +957,27 @@ export async function tanganiPencatatan(
   const s = teks.trim();
   const low = s.toLowerCase();
 
-  // ── 0. KONFIRMASI DIHAPUS (04 Okt 2026) ──
-  // Dulu di sini diperiksa jawaban "iya"/"tidak" untuk konfirmasi tertunda.
-  // Sekarang pencatatan LANGSUNG disimpan (permintaan pemilik produk:
-  // "kalo bisa ya tidak nya ini di hilangkan saja, buat dengan deteksi langsung saja"),
-  // sehingga pesan "ya"/"tidak" diperlakukan sebagai obrolan biasa dan
-  // diteruskan ke AI — bukan dipaksa menjadi perintah.
+  // ── 0. Jawaban konfirmasi tertunda ──
+  // Dipakai untuk CATATAN / TUGAS / KEUANGAN saja (pengingat langsung disimpan,
+  // lihat penjelasan di bagian B). Dibaca dari DATABASE agar bertahan lintas
+  // instance Vercel serverless.
+  const jawabAwal = jawabanKonfirmasi(low);
+  if (jawabAwal) {
+    const tertunda = await ambilKonfirmasi(chatId);
+    if (tertunda) {
+      if (jawabAwal === 'ya') {
+        const r = await simpanDariNiat(chatId, tertunda.niat, {
+          actor: tertunda.actor ?? opts.actor,
+          platform: tertunda.platform ?? opts.platform,
+        });
+        return { ditangani: true, reply: r.pesan, jalur: 'konfirmasi-ya' };
+      }
+      // 'tidak'
+      return { ditangani: true, reply: 'Oke, tidak dicatat. 👍', jalur: 'konfirmasi-tidak' };
+    }
+    // Tidak ada konfirmasi tertunda: pesan "ya"/"tidak" ini obrolan biasa,
+    // biarkan diteruskan ke AI.
+  }
 
   // ── A. PERINTAH EKSPLISIT (/) ──
 
@@ -852,10 +985,10 @@ export async function tanganiPencatatan(
   let m = low.match(/^\/(?:catat|note|notes)\s+([\s\S]+)/);
   if (m) {
     const isi = s.replace(/^\/(?:catat|note|notes)\s+/i, '').trim();
-    const r = await simpanDariNiat(chatId,
+    await simpanKonfirmasi(chatId,
       { kind: 'note', yakin: 1, data: { content: isi }, ringkas: `Catatan: "${isi.slice(0, 80)}"` },
       { actor: opts.actor, platform: opts.platform });
-    return { ditangani: true, reply: r.pesan, jalur: 'perintah-catat' };
+    return { ditangani: true, reply: `Simpan catatan ini?\n"${isi.slice(0, 200)}"\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`, jalur: 'perintah-catat' };
   }
 
   // /todo <isi>  atau  /tugas <isi>
@@ -864,10 +997,10 @@ export async function tanganiPencatatan(
     const isi = s.replace(/^\/(?:todo|tugas|task)\s+/i, '').trim();
     const prio = /penting|urgent|segera/.test(low) ? 1 : 2;
     const due = parseWaktuAlami(low);
-    const r = await simpanDariNiat(chatId,
+    await simpanKonfirmasi(chatId,
       { kind: 'todo', yakin: 1, data: { task: isi, priority: prio, due_at: due?.toISOString() ?? null }, ringkas: `Tugas: "${isi}"` },
       { actor: opts.actor, platform: opts.platform });
-    return { ditangani: true, reply: r.pesan, jalur: 'perintah-todo' };
+    return { ditangani: true, reply: `Tambah tugas ini?\n"${isi.slice(0, 200)}"\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`, jalur: 'perintah-todo' };
   }
 
   // /uang <nominal> [keterangan]   |   /masuk <nominal> [ket]
@@ -881,12 +1014,12 @@ export async function tanganiPencatatan(
     }
     const kind: ExpenseKind = mIn ? 'in' : 'out';
     const kategori = tebakKategori(isi);
-    const r = await simpanDariNiat(chatId, {
+    await simpanKonfirmasi(chatId, {
         kind: 'expense', yakin: 1,
         data: { amount: nominal, kind, category: kategori, note: isi },
         ringkas: `${kind === 'in' ? 'Pemasukan' : 'Pengeluaran'} Rp${nominal.toLocaleString('id-ID')} (${kategori})`,
       }, { actor: opts.actor, platform: opts.platform });
-    return { ditangani: true, reply: r.pesan, jalur: 'perintah-uang' };
+    return { ditangani: true, reply: `Catat ini?\n${kind === 'in' ? '💰 Pemasukan' : '💸 Pengeluaran'} *Rp${nominal.toLocaleString('id-ID')}* (${kategori})\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`, jalur: 'perintah-uang' };
   }
 
   // /rekap [hari]
@@ -936,21 +1069,30 @@ export async function tanganiPencatatan(
 
   // ── B. DETEKSI NIAT BAHASA ALAMI ──
   //
-  // PERUBAHAN (04 Okt 2026, permintaan pemilik produk):
-  // "kalo bisa ya tidak nya ini di hilangkan saja, buat dengan deteksi langsung saja"
-  // Sebelumnya bot menanyakan "Balas *iya* untuk simpan, *tidak* untuk batal"
-  // setiap kali mendeteksi niat. Sekarang: LANGSUNG SIMPAN, tanpa konfirmasi.
-  //
-  // Risiko yang dimitigasi: deteksi niat sudah konservatif (4 lapis penyaring —
-  // wajib ada kata perintah di awal/akhir, tolak penanda obrolan, tolak
-  // pertanyaan, isi harus jelas). Bila salah simpan, user masih bisa
-  // menghapusnya dengan `/hapus <id>`.
+  // ATURAN KONFIRMASI (diperjelas 04 Okt 2026):
+  // - PENGINGAT  -> LANGSUNG SIMPAN, tanpa konfirmasi.
+  //   Alasan (permintaan pemilik produk): "remind itu kan berpacu waktu, jika
+  //   hanya 1 menit maka waktu akan habis oleh balasan ya/tidak". Kalau user
+  //   minta "ingatkan 1 menit lagi" lalu bot balas "balas iya untuk simpan",
+  //   waktu 1 menit itu terpakai untuk tanya-jawab sehingga pengingat jadi telat
+  //   atau tidak berguna. Jadi pengingat harus langsung tersimpan.
+  // - CATATAN / TUGAS / KEUANGAN -> tetap KONFIRMASI dulu (aman, hindari salah
+  //   catat; tidak terikat waktu).
   const niat = deteksiNiat(s);
   if (niat) {
-    const r = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform });
+    const iniPengingat = niat.kind === 'note' && Boolean(niat.data.pengingat);
+
+    if (iniPengingat) {
+      // Pengingat: langsung simpan (tidak boleh ada balasan tanya-jawab).
+      const r = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform });
+      return { ditangani: true, reply: r.pesan, jalur: `niat-${niat.kind}` };
+    }
+
+    // Catatan / tugas / keuangan: konfirmasi dulu.
+    await simpanKonfirmasi(chatId, niat, { actor: opts.actor, platform: opts.platform });
     return {
       ditangani: true,
-      reply: r.pesan,
+      reply: `Sepertinya kamu mau mencatat:\n*${niat.ringkas}*\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`,
       jalur: `niat-${niat.kind}`,
     };
   }

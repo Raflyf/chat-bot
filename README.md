@@ -61,13 +61,17 @@ Bot juga memahami permintaan tanpa format perintah:
 
 | Yang Anda ketik | Yang terjadi |
 | :--- | :--- |
-| *"catat pengeluaran 50rb buat makan"* | Bot langsung mencatat keuangan |
-| *"tambah tugas penting bayar listrik"* | Bot langsung menambah tugas prioritas tinggi |
-| *"ingatkan saya besok jam 8 rapat"* | Bot langsung menjadwalkan pengingat |
+| *"catat pengeluaran 50rb buat makan"* | Bot konfirmasi → catat setelah Anda balas *iya* |
+| *"tambah tugas penting bayar listrik"* | Bot konfirmasi → tambah tugas prioritas tinggi |
+| *"ingatkan saya besok jam 8 rapat"* | **Langsung** dijadwalkan (tanpa konfirmasi) |
 | *"berapa sisa uang saya"* | Bot jawab dari data nyata (tidak mengarang) |
 | *"tugas saya apa aja"* | Bot tampilkan daftar tugas |
 
-**Catatan:** Pencatatan lewat bahasa alami **langsung disimpan** (tanpa balasan konfirmasi *iya/tidak*) — permintaan pemilik produk: *"ya tidak nya ini di hilangkan saja, buat dengan deteksi langsung saja"*. Deteksi niat tetap konservatif (4 lapis penyaring), sehingga obrolan biasa (mis. *"aku tadi makan enak banget"*) **tidak** ikut tercatat. Bila salah catat, hapus dengan `/hapus <id>`.
+**Catatan konfirmasi:**
+- **Pengingat** → **langsung disimpan** tanpa balasan *iya/tidak*. Alasannya: pengingat berpacu waktu — bila user minta *"ingatkan 1 menit lagi"*, waktu 1 menit itu habis terpakai tanya-jawab sehingga pengingatnya jadi telat.
+- **Catatan / tugas / keuangan** → **dikonfirmasi dulu** (*"Balas iya untuk simpan, tidak untuk batal"*). Aman, tidak terikat waktu.
+
+Deteksi niat tetap konservatif (4 lapis penyaring), sehingga obrolan biasa (mis. *"aku tadi makan enak banget"*) **tidak** ikut tercatat.
 
 ---
 
