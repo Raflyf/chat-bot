@@ -442,6 +442,17 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     let cachedDashboardData = null;
     const statsCache = new Map();
     const datasetCache = new Map();
+    // VARIABEL YANG HILANG (dipulihkan 04 Okt 2026).
+    //
+    // Ketiga variabel ini DULU ada (terlihat di riwayat git commit 740e8db~1,
+    // baris 2119-2121), tetapi ikut terhapus saat fungsi renderTokenMatrix
+    // dihapus. Akibatnya renderDatasetTable() melempar:
+    //   ReferenceError: DATASET_PAGE_SIZE is not defined
+    // (terlihat di Console Firefox user) sehingga riwayat percakapan TIDAK PERNAH
+    // tampil — tabel menggantung di status memuat.
+    let currentDatasetPage = 1;
+    const DATASET_PAGE_SIZE = 5;
+    let cachedDatasetPairs = [];
 
     function setTimeRange(range) {
       currentTimeRange = range;
@@ -2054,7 +2065,7 @@ function renderLiveUpstreamTable(data) {
               console.warn("Transient 401 pada /api/dataset terdeteksi, sesi tetap valid.");
               setHtmlIfChanged(tbodyEl, `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:2.5rem;">
                 Server menolak permintaan sementara (401). Sesi Anda masih valid.<br>
-                <button type="button" class="btn btn-ghost btn-sm" style="margin-top:0.75rem;" onclick="fetchDataset(true)">Coba lagi</button>
+                <button type="button" class="btn btn-ghost btn-sm" style="margin-top:0.75rem;" data-action="retry-dataset">Coba lagi</button>
               </td></tr>`);
               if (infoEl0) infoEl0.textContent = "Gagal memuat — klik Coba lagi";
               return;
@@ -2069,7 +2080,7 @@ function renderLiveUpstreamTable(data) {
           // Status HTTP lain (500/502/504): tampilkan kode + tombol coba lagi.
           setHtmlIfChanged(tbodyEl, `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:2.5rem;">
             Gagal memuat riwayat (HTTP ${res.status}).<br>
-            <button type="button" class="btn btn-ghost btn-sm" style="margin-top:0.75rem;" onclick="fetchDataset(true)">Coba lagi</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="margin-top:0.75rem;" data-action="retry-dataset">Coba lagi</button>
           </td></tr>`);
           if (infoEl0) infoEl0.textContent = `Gagal memuat (HTTP ${res.status})`;
           return;
@@ -2088,11 +2099,27 @@ function renderLiveUpstreamTable(data) {
           : "Gagal menghubungi server.";
         setHtmlIfChanged(tbodyEl, `<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:2.5rem;">
           ${pesan}<br>
-          <button type="button" class="btn btn-ghost btn-sm" style="margin-top:0.75rem;" onclick="fetchDataset(true)">Coba lagi</button>
+          <button type="button" class="btn btn-ghost btn-sm" style="margin-top:0.75rem;" data-action="retry-dataset">Coba lagi</button>
         </td></tr>`);
         if (infoEl0) infoEl0.textContent = pesan;
       }
     }
+
+    // Event delegation untuk tombol "Coba lagi" pada tabel riwayat.
+    //
+    // KENAPA TIDAK PAKAI onclick INLINE: CSP situs memakai `script-src 'self'`
+    // yang MEMBLOKIR event handler inline. Terlihat di Console Firefox user:
+    //   "Content-Security-Policy: blocked an event handler (script-src-attr)
+    //    ... violates 'script-src self'"
+    // Akibatnya tombol "Coba lagi" TIDAK berfungsi saat diklik.
+    // Delegasi event di bawah ini tidak melanggar CSP.
+    document.addEventListener("click", (e) => {
+      const el = e.target && e.target.closest ? e.target.closest("[data-action='retry-dataset']") : null;
+      if (el) {
+        e.preventDefault();
+        fetchDataset(true);
+      }
+    });
 
     function renderDatasetTable() {
       const tbody = document.getElementById("dataset-tbody");
