@@ -1344,6 +1344,10 @@ async function opencodeChat(
         tools: fingerprintNested(),
         tool_choice: 'none',
         stream: true,
+        // Minta upstream menyertakan usage (token asli) di akhir stream —
+        // tanpa ini angka token di dashboard memakai estimasi panjang teks
+        // yang jauh lebih kecil dari kenyataan (bug 04 Okt).
+        stream_options: { include_usage: true },
         // Model OpenCode jalur chat/completions memakai chat_template_kwargs
         // untuk mematikan thinking (pola sama dengan provider lain).
         chat_template_kwargs: { enable_thinking: false },
@@ -1378,6 +1382,17 @@ async function opencodeChat(
     const dec = new TextDecoder();
     let buf = '';
     let out = '';
+    // USAGE ASLI dari upstream (DIPERBAIKI 04 Okt).
+    //
+    // BUG LAMA: opencodeChat selalu mengembalikan tokens {0,0,0} dengan alasan
+    // "OpenCode tidak mengirim usage pada stream". Itu SALAH — endpoint
+    // /responses mengirim event `response.completed` yang memuat:
+    //   { input_tokens, output_tokens, total_tokens, output_tokens_details }
+    // Akibat bug itu dashboard menghitung token dengan ESTIMASI panjang teks
+    // (panjang/3.8) sehingga angkanya jauh lebih kecil dari kenyataan
+    // (mis. 2.419 tk padahal sesungguhnya ~8.000 karena prompt sistem panjang).
+    // Kini usage asli dibaca dan dilaporkan apa adanya.
+    let usageAsli: { prompt: number; completion: number; total: number } | undefined;
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -1389,18 +1404,26 @@ async function opencodeChat(
         const d = l.slice(5).trim();
         if (!d || d === '[DONE]') continue;
         try {
-          // Dua bentuk respons yang harus didukung:
+          // Tiga bentuk respons yang harus didukung:
           //  1. /chat/completions (OpenAI) -> choices[0].delta.content
-          //  2. /responses (OpenAI Responses API, dipakai muse-spark) ->
-          //     event "response.output_text.delta" dengan field `delta` (string)
+          //  2. /responses (Responses API) -> event "response.output_text.delta"
+          //     dengan field `delta` (string)
+          //  3. /responses "response.completed" -> response.usage (usage ASLI)
           // BUG YANG DIPERBAIKI (04 Okt): dulu `if (!out && typeof j.delta...)`
           // sehingga begitu `out` terisi 1 karakter, SELURUH delta berikutnya
           // diabaikan -> jawaban terpotong ("Halo! Saya", "Halo! Kab").
-          // Sekarang kedua bentuk digabung tanpa syarat.
           const j = JSON.parse(d) as {
             choices?: Array<{ delta?: { content?: string } }>;
             delta?: string | { content?: string };
             type?: string;
+            usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+            response?: {
+              usage?: {
+                input_tokens?: number;
+                output_tokens?: number;
+                total_tokens?: number;
+              };
+            };
           };
           const dariChoices = j.choices?.[0]?.delta?.content || '';
           const dariDelta =
@@ -1410,6 +1433,24 @@ async function opencodeChat(
                 ? j.delta.content || ''
                 : '';
           out += dariChoices || dariDelta;
+
+          // Bentuk usage A: gaya OpenAI (chat/completions) — usage di root.
+          if (j.usage && typeof j.usage.total_tokens === 'number') {
+            usageAsli = {
+              prompt: Number(j.usage.prompt_tokens) || 0,
+              completion: Number(j.usage.completion_tokens) || 0,
+              total: Number(j.usage.total_tokens) || 0,
+            };
+          }
+          // Bentuk usage B: gaya Responses API — usage di dalam response.completed.
+          const ru = j.response?.usage;
+          if (ru && typeof ru.total_tokens === 'number') {
+            usageAsli = {
+              prompt: Number(ru.input_tokens) || 0,
+              completion: Number(ru.output_tokens) || 0,
+              total: Number(ru.total_tokens) || 0,
+            };
+          }
         } catch {
           // potongan tidak lengkap
         }
@@ -1418,9 +1459,10 @@ async function opencodeChat(
     reader.cancel().catch(() => {});
     const text = out.trim();
     if (!text) throw new Error('EMPTY_REPLY');
-    // ProviderResult.tokens berbentuk {prompt, completion, total}. OpenCode tidak
-    // mengirim usage pada stream, jadi diisi 0 (dicatat sebagai estimasi di lapisan atas).
-    return { text, tokens: { prompt: 0, completion: 0, total: 0 } };
+    // Kembalikan USAGE ASLI dari upstream bila tersedia (bug lama: selalu 0).
+    // Bila upstream tidak mengirim usage, baru 0 — dan lapisan atas boleh
+    // mengestimasi. Tetapi dengan perbaikan ini, angka token jadi akurat.
+    return { text, tokens: usageAsli ?? { prompt: 0, completion: 0, total: 0 } };
   } finally {
     clearTimeout(timer);
   }
