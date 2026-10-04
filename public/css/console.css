@@ -95,6 +95,7 @@
   --p-gemini: #fbbf24;
   --p-dahl: #2dd4bf;
   --p-xkiro: #4da3ff;
+  --p-opencode: #E87040;
 
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -142,6 +143,7 @@
   --p-gemini: #9a6a00;
   --p-dahl: #0f766e;
   --p-xkiro: #0a6fd8;
+  --p-opencode: #c9542a;
 }
 
 
@@ -1621,6 +1623,7 @@ header.header-scrolled .nav-inner {
 .provider-card[data-provider="gemini"]         { --provider-color: var(--p-gemini); }
 .provider-card[data-provider="dahl"]           { --provider-color: var(--p-dahl); }
 .provider-card[data-provider="xkiro"]          { --provider-color: var(--p-xkiro); }
+.provider-card[data-provider="opencode"]        { --provider-color: var(--p-opencode); }
 
 /* Garis aksen tipis di tepi atas kartu, memakai warna penyedia. */
 .provider-card { position: relative; overflow: hidden; }

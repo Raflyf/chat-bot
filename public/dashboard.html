@@ -288,12 +288,12 @@
             <button type="button" class="pill-filter-btn active" data-provider="all">Semua</button>
             <button type="button" class="pill-filter-btn" data-provider="dreamprompting">DreamPrompting</button>
             <button type="button" class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
-            <button type="button" class="pill-filter-btn" data-provider="nvidia">NVIDIA NIM</button>
+            <button type="button" class="pill-filter-btn" data-provider="opencode">OpenCode</button>
             <button type="button" class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
+            <button type="button" class="pill-filter-btn" data-provider="nvidia">NVIDIA NIM</button>
             <button type="button" class="pill-filter-btn" data-provider="groq">Groq</button>
             <button type="button" class="pill-filter-btn" data-provider="gemini">Gemini</button>
             <button type="button" class="pill-filter-btn" data-provider="dahl">Dahl</button>
-            <button type="button" class="pill-filter-btn" data-provider="xkiro">xKiro</button>
           </div>
           <select id="key-status-filter" class="filter-select" aria-label="Filter status kunci">
             <option value="all">Semua status</option>
@@ -350,15 +350,20 @@
         </div>
       </div>
 
-      <!-- Web search xKiro: kuota TERPISAH dari kuota token.
+      <!-- Web search: kuota TERPISAH dari kuota token.
            Diletakkan tepat di bawah ringkasan upstream karena sifatnya sama:
            informasi kapasitas yang menentukan apakah bot masih bisa mencari
            di internet. Tanpa panel ini, angka token terlihat aman padahal
-           jatah pencarian bisa sudah menipis. -->
+           jatah pencarian bisa sudah menipis.
+
+           DIPERBARUI 04 Okt 2026: xKiro DIHAPUS (8 akun disuspend permanen 403).
+           Pencarian kini memakai mesin cadangan tanpa kuota (Bing RSS + sumber
+           publik) yang selalu tersedia. Panel ini tetap dipertahankan untuk
+           menampilkan status mesin pencari bila kuota terbatas dipakai lagi. -->
       <div class="websearch-panel" id="websearch-panel">
         <div class="websearch-head">
           <div>
-            <div class="websearch-title">Web search xKiro</div>
+            <div class="websearch-title">Web search</div>
             <div class="websearch-sub" id="websearch-sub">Menunggu data</div>
           </div>
         </div>
@@ -392,8 +397,8 @@
           </div>
         </div>
         <div class="websearch-foot" id="websearch-foot">
-          Web search memakai kuota terpisah dari kuota token. Bila jatah xKiro habis,
-          bot otomatis memakai mesin pencari cadangan yang tanpa kuota.
+          Web search memakai kuota terpisah dari kuota token. Saat ini bot memakai
+          mesin pencari cadangan tanpa kuota (selalu tersedia).
         </div>
       </div>
 
@@ -537,12 +542,12 @@
             <option value="">Semua model</option>
             <option value="dreamprompting">DreamPrompting</option>
             <option value="cloudflare">Cloudflare</option>
-            <option value="nvidia">NVIDIA NIM</option>
+            <option value="opencode">OpenCode</option>
             <option value="openrouter">OpenRouter</option>
+            <option value="nvidia">NVIDIA NIM</option>
             <option value="groq">Groq</option>
             <option value="gemini">Gemini</option>
             <option value="dahl">Dahl Global</option>
-            <option value="xkiro">xKiro</option>
           </select>
         </div>
         <div class="filter-spacer"></div>
