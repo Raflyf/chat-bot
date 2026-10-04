@@ -79,23 +79,43 @@ export async function checkDueReminders(
     // BATAS AMAN: cron-job.org timeout 30 detik dan Vercel maxDuration 30 detik
     // untuk endpoint cron. Karena itu tunggu maksimum dibatasi 20 detik (sisakan
     // 10 detik untuk proses kirim + respons).
+    //
+    // PENTING — MENUNGGU HANYA BILA TIDAK ADA YANG SUDAH JATUH TEMPO.
+    // BUG YANG DIPERBAIKI (04 Okt 2026, temuan pemilik produk: "kalo gitu yg lama
+    // jadi nunggu nya dong?"): versi pertama menunggu TANPA memeriksa apakah ada
+    // pengingat yang SUDAH telat. Akibatnya, bila ada pengingat telat 5 menit DAN
+    // satu lagi jatuh tempo 15 detik lagi, pengingat yang sudah telat itu IKUT
+    // TERTUNDA 15 detik — padahal seharusnya langsung dikirim.
+    // Sekarang: kalau ada yang sudah jatuh tempo, kirim SEGERA (jangan menunggu).
     const TUNGGU_MAKS_MS = 20_000;
     try {
-      const batasCek = new Date(Date.now() + TUNGGU_MAKS_MS + 2000).toISOString();
-      const { data: hampir } = await c
+      // 1) Ada yang SUDAH jatuh tempo? -> jangan menunggu, kirim sekarang.
+      const { data: sudahTelat } = await c
         .from('reminders')
-        .select('due_at')
+        .select('id')
         .eq('status', 'pending')
-        .gt('due_at', new Date().toISOString())   // belum jatuh tempo
-        .lte('due_at', batasCek)                  // tapi sangat dekat
-        .order('due_at', { ascending: true })
+        .lte('due_at', new Date().toISOString())
         .limit(1);
-      const terdekat = (hampir ?? [])[0] as { due_at?: string } | undefined;
-      if (terdekat?.due_at) {
-        const selisih = new Date(terdekat.due_at).getTime() - Date.now();
-        if (selisih > 0 && selisih <= TUNGGU_MAKS_MS) {
-          console.log(`[remind] Menunggu ${Math.round(selisih / 1000)}s agar pengingat terkirim tepat waktu.`);
-          await new Promise((r) => setTimeout(r, selisih + 200)); // +200ms margin
+      const adaYangTelat = ((sudahTelat ?? []) as unknown[]).length > 0;
+
+      if (!adaYangTelat) {
+        // 2) Tidak ada yang telat -> boleh menunggu yang HAMPIR jatuh tempo.
+        const batasCek = new Date(Date.now() + TUNGGU_MAKS_MS + 2000).toISOString();
+        const { data: hampir } = await c
+          .from('reminders')
+          .select('due_at')
+          .eq('status', 'pending')
+          .gt('due_at', new Date().toISOString())   // belum jatuh tempo
+          .lte('due_at', batasCek)                  // tapi sangat dekat
+          .order('due_at', { ascending: true })
+          .limit(1);
+        const terdekat = (hampir ?? [])[0] as { due_at?: string } | undefined;
+        if (terdekat?.due_at) {
+          const selisih = new Date(terdekat.due_at).getTime() - Date.now();
+          if (selisih > 0 && selisih <= TUNGGU_MAKS_MS) {
+            console.log(`[remind] Menunggu ${Math.round(selisih / 1000)}s agar pengingat terkirim tepat waktu.`);
+            await new Promise((r) => setTimeout(r, selisih + 200)); // +200ms margin
+          }
         }
       }
     } catch {
@@ -200,7 +220,16 @@ export async function checkDueReminders(
         // Tiga contoh konkret diberikan sebagai acuan (bukan template wajib) agar
         // model paham BENTUK yang diinginkan, sementara kalimatnya tetap bebas.
         try {
-          const gen = await autoReply(
+          // BATAS WAKTU 6 DETIK untuk generate teks.
+          //
+          // MASALAH NYATA (04 Okt 2026): uji menunjukkan pembuatan teks pengingat
+          // bisa makan ~9 detik (antrean provider + balapan model). Itu MENUNDA
+          // pengiriman, padahal pengingat yang sudah telat harus dikirim SEGERA.
+          // Bila model tidak menjawab dalam 6 detik, kirim saja teks asli dari
+          // user (item.message) — isi pengingatnya tetap benar, hanya gayanya
+          // yang tidak diperhalus. Lebih baik tepat waktu daripada cantik tapi telat.
+          const gen = await Promise.race([
+            autoReply(
             `TUGAS: Kamu sedang MENGIRIM PENGINGAT yang sudah dijadwalkan user sebelumnya. ` +
             `Isi pengingat user: "${item.message}".\n\n` +
             `ATURAN KERAS:\n` +
@@ -225,7 +254,10 @@ export async function checkDueReminders(
             `- "⏰ Woy, waktunya login game nih!"\n` +
             `- "Pengingat: jangan lupa minum obat ya 💊"\n\n` +
             `Sekarang tulis pengingatnya:`,
-          );
+            ),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('batas-waktu-generate')), 6000)),
+          ]);
           if (gen.reply.trim()) deliveryText = gen.reply;
         } catch {
           // kirim teks pengingat user apa adanya
