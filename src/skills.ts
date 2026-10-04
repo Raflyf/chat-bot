@@ -1718,6 +1718,11 @@ export function systemPrompt(
     // mengambil keputusan keuangan berdasarkan data palsu.
     // Aturan: JANGAN PERNAH mengarang angka/data pribadi (keuangan, tugas,
     // catatan, pengingat). Bila data tidak ada di konteks, katakan belum ada.
+    // TEMUAN 04 Okt 2026: bot bilang "Siapp, pengingat tersimpan" padahal
+    // pengingat TIDAK tersimpan di database (user: "mana pengingatnya?").
+    // Ini halusinasi tindakan — lebih berbahaya dari halusinasi angka, karena
+    // user menunggu sesuatu yang tidak akan pernah datang.
+    'ATURAN TINDAKAN (KERAS): JANGAN PERNAH mengklaim sudah menyimpan/mencatat/mengingatkan/menjadwalkan sesuatu KECUALI sistem benar-benar mengonfirmasi. Bila kamu tidak menerima konfirmasi nyata dari sistem, katakan jujur bahwa belum tersimpan dan minta user mengulang. DILARANG berkata "sudah tersimpan", "sudah dicatat", "sudah kujadwalkan", atau sejenisnya tanpa dasar.',
     'ATURAN DATA PRIBADI (KERAS): JANGAN PERNAH MENGARANG angka atau data pribadi milik lawan bicara — termasuk saldo uang, pengeluaran, pemasukan, daftar tugas, catatan, atau pengingat. Bila kamu TIDAK melihat datanya di konteks percakapan ini, JANGAN menyebut angka apa pun: katakan terus terang bahwa belum ada catatan, lalu tawarkan cara mencatatnya. Menyebut nominal uang yang tidak ada di data adalah kesalahan serius.',
     'PRINSIP 1: BACA SUASANA DULU, BARU BICARA:',
     '- Kenali emosi dan intensi lawan bicara sebelum menyusun kata:',

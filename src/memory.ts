@@ -147,7 +147,12 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
   if (!c) return empty;
   try {
     const [h, s, k] = await Promise.all([
-      c.from('messages').select('role,content,feedback').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(15),
+      // `via` ikut dipilih + difilter: baris dengan via 'system/*' adalah sinyal
+      // internal (mis. 'system/pending-confirmation' untuk konfirmasi tertunda)
+      // yang TIDAK boleh muncul di riwayat percakapan yang dibaca model.
+      c.from('messages').select('role,content,feedback,via').eq('chat_id', chatKey)
+        .not('via', 'like', 'system/%')
+        .order('created_at', { ascending: false }).limit(15),
       c.from('summaries').select('summary').eq('chat_id', chatKey).limit(1).maybeSingle(),
       c.from('corrections').select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(5),
     ]);
