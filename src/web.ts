@@ -2,7 +2,7 @@
 // Menggabungkan Google News Global & ID, Bing News, Hacker News, Wikipedia (ID/EN), arXiv, serta Deep Webpage Scraper & Jina Reader.
 // Diadaptasi dari arsitektur teruji Terminal AI Portofolio Rafly Firmansyah.
 import { getKnowledge, saveKnowledge } from './knowledge.js';
-import { xkiroWebSearch, xkiroWebFetch, xkiroWebAvailable, type XkiroSearchResult } from './xkiro_web.js';
+// (xKiro DIHAPUS 04 Okt 2026 — semua akun disuspend permanen 403)
 
 /** SSRF & Private Network Shield: mencegah scraping ke localhost, metadata cloud, atau IP privat. */
 export function isSafePublicUrl(urlString: string): boolean {
@@ -991,45 +991,16 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     }
   })();
 
-  // 1b. xKiro WEB SEARCH — PRIORITAS UTAMA (permintaan pemilik produk 24 Sep 2026).
+  // 1b. PENCARIAN WEB — sepenuhnya memakai mesin gratis.
   //
-  // Alasan urutan ini (bukan asumsi, hasil uji langsung):
-  // - Kualitas: kueri "harga beras premium hari ini" -> 5/5 hasil relevan
-  //   ("Harga Beras Premium Hari Ini di Indonesia — Per Provinsi | Econiq.id"),
-  //   sementara mesin gratis sering hanya memberi deskripsi generik.
-  // - `search_domain_filter` benar-benar bekerja (uji lama: 5/5 hasil dari domain diminta).
-  // - Hasilnya bersih & luas, jadi penelusuran bot lebih dalam di percobaan pertama.
-  // - Kuota: TERUKUR 10 pencarian/kunci/hari (kunci #1 membalas HTTP 429 pada percobaan
-  //   ke-11), dan kuota dihitung PER KUNCI (7 kunci lain tetap HTTP 200 setelah kunci #1
-  //   habis) -> 8 kunci = ~80 pencarian/hari. Cukup untuk jadi lapisan utama, dan
-  //   otomatis turun ke mesin gratis begitu kuota habis (tidak ada waktu terbuang:
-  //   modul xkiro_web menonaktifkan kunci yang habis selama 1 jam).
+  // CATATAN (04 Okt 2026): lapisan pencarian xKiro DIHAPUS — semua 8 akun
+  // disuspend permanen (HTTP 403 error 1010). Pencarian kini sepenuhnya memakai
+  // mesin gratis (Bing RSS/HTML, Google News, feed media, Wikipedia, HN) yang
+  // TANPA KUOTA dan selalu tersedia, jadi tidak ada kehilangan kemampuan.
   //
-  // Mesin gratis (Bing RSS/HTML, Google News, feed media, Wikipedia, HN) TETAP berjalan
-  // di bawah ini sebagai lapisan pelengkap — bukan dihapus — supaya bot tidak pernah
-  // kehabisan sumber saat kuota xKiro habis.
-  if (xkiroWebAvailable()) {
-    try {
-      const xr: XkiroSearchResult[] = await xkiroWebSearch(cleanQuery, {
-        maxResults: 10,
-        country: 'ID',
-        recency: strictFreshNews ? 'day' : isNewsLike ? 'week' : undefined,
-      });
-      for (const it of xr) {
-        if (it.url && isSafePublicUrl(it.url)) discoveredUrls.add(it.url);
-        addSnippet(
-          it.source ? `xKiro/${it.source}` : 'xKiro Web',
-          it.title,
-          it.snippet,
-          it.publishedDate || '',
-          it.url,
-          92, // prioritas: di atas Bing Web (55), Bing News (62), xKiro lama (88); di bawah feed topik yang cocok judul (120)
-        );
-      }
-    } catch {
-      // Prioritas boleh gagal: mesin gratis di bawah tetap mengambil alih.
-    }
-  }
+  // Sebelumnya xKiro dipakai sebagai pelengkap berkuota (~80 pencarian/hari).
+  // Karena providernya mati, blok pemanggilannya dibuang dan mesin gratis di
+  // bawah ini menjadi satu-satunya sumber — tetap berjalan seperti semula.
 
   // 2. Formulasi Kueri Entitas Multi-Engine dengan Anaphora Resolution
   const searchQueries = formulateSmartSearchQueries(cleanQuery, previousContext);
@@ -1757,34 +1728,11 @@ export async function searchWeb(query: string, previousContext?: string): Promis
     const scrapeResults = await Promise.allSettled(
       scrapeTargets.map((url) => scrapeWebpage(url).then((content) => ({ url, content })))
     );
-    // Cadangan pembacaan halaman lewat xKiro: pengambil kita sendiri gagal pada situs yang
-    // memblokir bot atau butuh render JavaScript. xKiro /v1/fetch mengembalikan markdown
-    // bersih (uji: halaman detik.com berhasil, 9.838 karakter). Tetap opsional — kalau
-    // kuota habis, hasil gratis yang sudah ada tidak terpengaruh.
-    if (xkiroWebAvailable()) {
-      const failedUrls = scrapeResults
-        .map((r, idx) => ({ r, url: scrapeTargets[idx] }))
-        .filter((x) => x.r.status === 'fulfilled' && (!(x.r.value as { content?: string }).content || (x.r.value as { content?: string }).content!.length < 200))
-        .map((x) => x.url)
-        .slice(0, 3);
-      if (failedUrls.length > 0) {
-        try {
-          const fetched = await xkiroWebFetch(failedUrls, 8000);
-          for (const f of fetched) {
-            if (!f.content || f.content.length < 200 || f.error) continue;
-            const clean = cleanStr(f.content).slice(0, 6000);
-            if (clean.length < 200) continue;
-            structuredSnippets.push({
-              text: `[Isi Halaman Web (xKiro)${f.title ? ` — ${f.title}` : ''} | Sumber: ${f.url}]: ${clean}`,
-              timestamp: Date.now(),
-              score: 95, // isi halaman penuh: di atas semua snippet pendek
-            });
-          }
-        } catch {
-          // Opsional: kegagalan tidak boleh mengganggu hasil yang sudah ada.
-        }
-      }
-    }
+    // CATATAN (04 Okt 2026): cadangan pembacaan halaman lewat xKiro DIHAPUS —
+    // semua 8 akun xKiro disuspend permanen (HTTP 403 error 1010), jadi tidak
+    // ada gunanya dipertahankan. Pengambil halaman kita sendiri (scrapeWebpage)
+    // sudah menangani kasus normal; bila situs memblokir bot, hasilnya memang
+    // kosong dan itu wajar.
     // Kumpulkan tautan internal same-host dari halaman yang berhasil dibaca → crawl 1 level
     const followLinks: string[] = [];
     for (const result of scrapeResults) {

@@ -63,7 +63,6 @@ export const config = {
     groq: csv('GROQ_KEYS'),
     gemini: csv('GEMINI_KEYS'),
     dahl: csv('DAHL_KEYS'),
-    xkiro: csv('XKIRO_KEYS'),
     opencode: csv('OPENCODE_KEYS'),
   },
   cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
@@ -121,12 +120,8 @@ export const config = {
       'zai-org/GLM-5.3-Flash',
     ],
 
-    // Provider Cadangan & Multimodal / Search: xKiro Gateway
-    xkiroPrimary: 'qwen/qwen3.8-max:free',
-    xkiroBackup: [
-      'qwen/qwen3.7-max:free',
-      'qwen/qwen3.6-max-preview:free',
-    ],
+    // CATATAN (04 Okt 2026): xKiro DIHAPUS — semua 8 akun disuspend permanen
+    // (HTTP 403 error 1010). Entri xkiroPrimary/xkiroBackup dihapus dari sini.
     // Rantai vision eksplisit. DIROMBAK 21 Sep berdasarkan UJI GAMBAR NYATA (2 blok
     // biru/kuning): model yang terbukti BENAR + cepat didahulukan, yang membalas KOSONG
     // atau error 400 DIBUANG (bukan ditebak):
@@ -203,7 +198,7 @@ export const config = {
       // saat berhasil ("Ipin dari Upin & Ipin", "anak kucing menangis") dan tidak
       // memakai kuota provider lain. Catatan: model ini TIDAK punya batas token ketat.
     ] as Array<{
-      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'xkiro' | 'opencode';
+      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'opencode';
       model: string;
     }>,
   },
@@ -278,7 +273,6 @@ export const config = {
     groq: num('DAILY_CAP_GROQ', 1000),
     gemini: num('DAILY_CAP_GEMINI', 1500),
     dahl: num('DAILY_CAP_DAHL', 5000),
-    xkiro: num('DAILY_CAP_XKIRO', 500),
     opencode: num('DAILY_CAP_OPENCODE', 1000),
   },
   // Batas TOKEN per hari (TPD) per key. 0 = tidak dibatasi.
@@ -293,7 +287,6 @@ export const config = {
     groq: numAllowZero('DAILY_TOKEN_CAP_GROQ', 200000),
     gemini: numAllowZero('DAILY_TOKEN_CAP_GEMINI', 0),
     dahl: numAllowZero('DAILY_TOKEN_CAP_DAHL', 0),
-    xkiro: numAllowZero('DAILY_TOKEN_CAP_XKIRO', 0),
   },
   // Cap token PER-KEY (urut sama dengan urutan key di pool). Dipakai bila tiap key
   // punya limit BERBEDA — kasus nyata xKiro: key #1 limit 1.000.000 token/hari
@@ -308,7 +301,6 @@ export const config = {
     groq: numList('DAILY_TOKEN_CAP_PER_KEY_GROQ'),
     gemini: numList('DAILY_TOKEN_CAP_PER_KEY_GEMINI'),
     dahl: numList('DAILY_TOKEN_CAP_PER_KEY_DAHL'),
-    xkiro: numList('DAILY_TOKEN_CAP_PER_KEY_XKIRO'),
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
@@ -357,6 +349,7 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
     config.pools.groq.length +
     config.pools.gemini.length +
     config.pools.dahl.length +
-    config.pools.xkiro.length;
+    config.pools.opencode.length;
+
   if (totalKeys === 0) throw new Error('Semua pool key kosong. Isi minimal satu provider di .env.');
 }

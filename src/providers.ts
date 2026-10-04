@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { config } from './env.js';
 import { isKeyAllowed, keyUsed, keyTokensUsed, keyTokensUsedToday, keyRequestsUsedToday, keyTokenAbsolute, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
-import { xkiroChatWithSearch } from './xkiro_web.js';
+// (xKiro DIHAPUS 04 Okt 2026 — semua akun disuspend permanen 403)
 
 // --- CIRCUIT BREAKER & ADAPTIVE KEY ROUTING (LATENCY OPTIMIZER) ---
 const keyCooldownMap = new Map<string, number>(); // `${kind}:${keyHash}` -> timestamp cooldown
@@ -23,82 +23,21 @@ function recordKeySuccess(kind: ProviderKind, key: string, model: string): void 
   modelCooldownMap.delete(`${kind}:${model}`);
 }
 
-interface XkiroKeyStatus {
-  remaining: number;
-  expiresAt: number;
-}
-const xkiroUsageCache = new Map<string, XkiroKeyStatus>();
+// (xKiro DIHAPUS 04 Okt 2026 — 8 akun disuspend permanen 403.
+//  Blok syncXkiroUsage & isXkiroKeyAvailable dihapus karena tidak ada lagi yang
+//  memakainya. msUntilDailyResetUtc TETAP dipertahankan: dipakai Cloudflare
+//  (kuota neuron harian) dan Groq (limit harian) untuk cooldown sampai reset UTC.)
 
 /**
- * Sisa milidetik sampai reset kuota harian xKiro pada 00.00 UTC (07.00 WIB), plus 5 menit margin.
- * Terbukti empiris: reset terjadi pada 00.00 UTC (07.00 WIB), bukan tengah malam waktu lokal WIB.
+ * Sisa milidetik sampai reset kuota harian pada 00.00 UTC (07.00 WIB), plus 5 menit margin.
+ * Dipakai Cloudflare (neuron harian) & Groq (limit harian). Terbukti empiris:
+ * reset terjadi pada 00.00 UTC, bukan tengah malam waktu lokal WIB.
  */
 function msUntilDailyResetUtc(): number {
   const nowMs = Date.now();
   const dayMs = 86_400_000;
   const nextReset = (Math.floor(nowMs / dayMs) + 1) * dayMs;
   return Math.max(60_000, nextReset + 5 * 60_000 - nowMs);
-}
-
-/**
- * Ambil status kuota dari endpoint /v1/usage xKiro (gratis, tanpa bakar kuota chat).
- * Menyimpan pemakaian riil ke Supabase provider_quota (keyTokenAbsolute) sehingga
- * instance baru serverless langsung tahu sisa kuota tanpa perlu menabrak 429 dulu.
- */
-async function syncXkiroUsage(key: string): Promise<number | null> {
-  try {
-    const res = await fetch('https://api.xkiro.com/v1/usage', {
-      headers: { Authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      free_tokens?: { used_today?: number; limit_per_day?: number; remaining?: number };
-    };
-    const ft = data.free_tokens;
-    if (!ft || typeof ft.remaining !== 'number') return null;
-
-    const used = ft.used_today ?? 0;
-    const remaining = ft.remaining;
-    const limit = ft.limit_per_day ?? 0;
-    const kh = keyHash(key);
-
-    keyTokenAbsolute('xkiro', key, used);
-
-    if (remaining <= 0) {
-      const cd = Date.now() + msUntilDailyResetUtc();
-      keyCooldownMap.set(`xkiro:${kh}`, cd);
-      xkiroUsageCache.set(kh, { remaining: 0, expiresAt: cd });
-      console.warn(
-        `[xkiro] Key ...${kh} kuota habis (${used.toLocaleString()}/${limit.toLocaleString()} token). Cooldown sampai reset UTC.`,
-      );
-    } else {
-      xkiroUsageCache.set(kh, { remaining, expiresAt: Date.now() + 15 * 60_000 });
-    }
-    return remaining;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Cek cepat apakah key xKiro masih punya sisa token sebelum dipanggil.
- * Memakai cache in-memory (15 menit untuk key sehat, s/d reset UTC untuk key habis).
- * Jika belum ada di cache, probe ke /v1/usage (timeout 3s).
- */
-async function isXkiroKeyAvailable(key: string): Promise<boolean> {
-  const kh = keyHash(key);
-  const now = Date.now();
-  const cached = xkiroUsageCache.get(kh);
-  if (cached && now < cached.expiresAt) {
-    return cached.remaining > 0;
-  }
-
-  const remaining = await syncXkiroUsage(key);
-  if (remaining === null) {
-    return true; // Fallback jika endpoint error/timeout: jangan blokir key
-  }
-  return remaining > 0;
 }
 
 function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
@@ -208,16 +147,6 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
     for (const other of config.pools.dreamprompting) {
       keyCooldownMap.set(`dreamprompting:${keyHash(other)}`, cd);
     }
-    return;
-  }
-
-  // RATE LIMIT xKiro: reset pada 00.00 UTC (07.00 WIB). Bukan rate limit 60s sementara.
-  // Cooldown sampai reset UTC + 5 menit, dan sinkronkan usage ke DB/cache.
-  if (kind === 'xkiro' && rates) {
-    const cd = Date.now() + msUntilDailyResetUtc();
-    keyCooldownMap.set(kh, cd);
-    xkiroUsageCache.set(keyHash(key), { remaining: 0, expiresAt: cd });
-    void syncXkiroUsage(key);
     return;
   }
 
@@ -1953,12 +1882,7 @@ export async function chat(
         }
         if (!keyAllowed) continue;
 
-        // Pre-check xKiro: skip key yang kuota hariannya sudah habis (remaining = 0)
-        // tanpa membuang waktu dan koneksi menabrak 429 upstream.
-        if (step.kind === 'xkiro') {
-          const available = await isXkiroKeyAvailable(key);
-          if (!available) continue;
-        }
+        // (Pre-check xKiro DIHAPUS 04 Okt 2026 — providernya sudah tidak ada.)
         const remainingMs = deadline - Date.now();
         if (remainingMs < 1500) {
           lastError = 'CHAIN_DEADLINE';
@@ -2083,49 +2007,17 @@ export async function chat(
     if (anyModelAttempted) break;
   }
   // ------------------------------------------------------------------------
-  // JARING TERAKHIR: xKiro chat + pencarian web.
+  // CATATAN (04 Okt 2026): JARING TERAKHIR xKiro DIHAPUS.
   //
-  // Dipakai HANYA di sini, setelah seluruh rantai 6 tier gagal. Alasannya:
-  // jalur ini memakai 1 kuota pencarian yang sama dengan /v1/search, sedangkan
-  // model kita sendiri lebih hemat (pencarian saja, jawaban disusun model kita).
-  // Jadi ia bukan pengganti rantai, melainkan penopang terakhir agar pengguna
-  // tetap mendapat jawaban berbasis data web alih-alih pesan gangguan.
+  // Blok ini dulu memanggil xkiroChatWithSearch() sebagai penopang terakhir
+  // setelah seluruh rantai tier gagal. Karena xKiro DIHAPUS (8 akun disuspend
+  // permanen, HTTP 403 error 1010), blok itu tidak mungkin berhasil lagi —
+  // mempertahankannya hanya menambah waktu tunggu yang sia-sia sebelum error
+  // asli dilempar ke pemanggil.
   //
-  // Terverifikasi langsung: `qwen/qwen3.5-omni-plus:free` menjawab 1.369 karakter
-  // dengan 3 sumber dalam ~9,8 detik (24 Sep 2026).
-  //
-  // PENTING: bila pencariannya sendiri tidak jalan (kuota habis / rate limit),
-  // provider menyertakan `notice` berisi kalimat siap-tampil. Kita pakai kalimat
-  // itu apa adanya — jangan mengarang pesan sendiri, dan jangan menyajikan
-  // jawaban dari memori seolah-olah hasil pencarian.
+  // Kini bila seluruh rantai gagal, error asli dari rantai utama langsung
+  // dilaporkan (lebih jujur dan lebih cepat).
   // ------------------------------------------------------------------------
-  if (!needVision) {
-    try {
-      const pesanSederhana = messages
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => ({ role: m.role, content: typeof m.content === 'string' ? m.content : '' }))
-        .filter((m) => m.content);
-      if (pesanSederhana.length > 0) {
-        const hasilXkiro = await xkiroChatWithSearch(pesanSederhana, { count: 5 });
-        if (hasilXkiro && hasilXkiro.text) {
-          // Bila pencarian TIDAK berjalan, provider memberi `notice`. Kita
-          // teruskan sebagai catatan singkat agar pengguna tahu jawaban ini
-          // tidak berbasis hasil web — kejujuran lebih penting daripada terlihat mulus.
-          const catatan = hasilXkiro.searchStatus === 'ok' || !hasilXkiro.notice
-            ? ''
-            : `\n\n_${hasilXkiro.notice}_`;
-          return {
-            text: hasilXkiro.text + catatan,
-            via: `xkiro-chat/${hasilXkiro.model}`,
-            tokens: hasilXkiro.tokens,
-          };
-        }
-      }
-    } catch {
-      // Diamkan: ini sudah jalur terakhir. Kegagalannya tidak boleh menutupi
-      // error asli dari rantai utama yang informasinya lebih berguna.
-    }
-  }
 
   throw new Error(`ALL_PROVIDERS_FAILED:${lastError}`);
 }

@@ -42,73 +42,8 @@ function numOrNull(v: unknown): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/**
- * xKiro Gateway: GET /v1/usage per key.
- * Mengembalikan limit & pemakaian PER-KEY (tiap key bisa berbeda limitnya).
- */
-async function fetchXkiroLimitsUncached(keys: string[]): Promise<Map<string, LiveLimit>> {
-  const out = new Map<string, LiveLimit>();
-  await Promise.all(
-    keys.map(async (key) => {
-      try {
-        const res = await fetch('https://api.xkiro.com/v1/usage', {
-          headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-        });
-        // KOREKSI AUDIT (04 Okt): sebelumnya `if (!res.ok) return;` membuat key yang
-        // AKUN-NYA DISUSPEND tampak "tidak ada data" — dashboard lalu menampilkan
-        // fallback .env seolah sehat, padahal provider itu MATI TOTAL.
-        // Terverifikasi live: GET /v1/usage -> 403 account_suspended
-        // ("operating multiple accounts to get around free-tier limits").
-        // Sekarang kondisi gagal ditampilkan jujur di dashboard.
-        if (!res.ok) {
-          let alasan = `HTTP ${res.status}`;
-          try {
-            const e = (await res.json()) as { error?: { code?: string; message?: string } };
-            if (e.error?.code) alasan = e.error.code;
-            if (e.error?.message) alasan += ` — ${e.error.message.slice(0, 120)}`;
-          } catch {
-            // biarkan alasan = HTTP <status>
-          }
-          out.set(key, {
-            requestsPerDay: null,
-            tokensPerDay: null,
-            tokensPerMinute: null,
-            requestsUsedToday: null,
-            tokensUsedToday: null,
-            requestsRemaining: null,
-            tokensRemaining: null,
-            officialLabel: `TIDAK AKTIF: ${alasan}`,
-            source: 'api.xkiro.com/v1/usage (gagal)',
-            isLive: true,
-          });
-          return;
-        }
-        const j = (await res.json()) as {
-          free_tokens?: { used_today?: number; limit_per_day?: number; remaining?: number };
-        };
-        const used = numOrNull(j.free_tokens?.used_today);
-        const limit = numOrNull(j.free_tokens?.limit_per_day);
-        const remaining = numOrNull(j.free_tokens?.remaining);
-        out.set(key, {
-          requestsPerDay: null,
-          tokensPerDay: limit,
-          tokensPerMinute: null,
-          requestsUsedToday: null,
-          tokensUsedToday: used,
-          requestsRemaining: null,
-          tokensRemaining: remaining,
-          officialLabel: limit !== null ? `${limit.toLocaleString('id-ID')} Token/hari` : 'Kuota token harian',
-          source: 'api.xkiro.com/v1/usage',
-          isLive: true,
-        });
-      } catch {
-        // biarkan kosong -> dashboard pakai fallback .env
-      }
-    }),
-  );
-  return out;
-}
+// (fetchXkiroLimitsUncached DIHAPUS 04 Okt 2026 — xKiro disuspend permanen 403,
+//  jadi tidak ada gunanya memanggil endpoint usage-nya lagi.)
 
 /**
  * OpenRouter: GET /auth/key.
@@ -514,7 +449,6 @@ export function nvidiaDocumentedLimits(): LiveLimit {
 // tetap jauh lebih hemat daripada probe tiap refresh dashboard.
 const LIMIT_CACHE_TTL_MS: Record<string, number> = {
   groq: 30 * 60 * 1000,
-  xkiro: 5 * 60 * 1000,
   openrouter: 5 * 60 * 1000,
   cloudflare: 5 * 60 * 1000,
   // DreamPrompting: endpoint kuota gratis & ringan -> 5 menit.
@@ -553,10 +487,6 @@ export function clearLimitCache(): void {
 // Pembungkus publik: tiap fungsi probe WAJIB lewat cache (temuan F3).
 // Signature dipertahankan agar pemanggil (api/stats.ts) tidak perlu diubah.
 // ---------------------------------------------------------------------------
-export async function fetchXkiroLimits(keys: string[]): Promise<Map<string, LiveLimit>> {
-  return withLimitCache('xkiro', `xkiro:${keys.length}`, () => fetchXkiroLimitsUncached(keys));
-}
-
 export async function fetchOpenRouterLimits(keys: string[]): Promise<Map<string, LiveLimit>> {
   return withLimitCache('openrouter', `openrouter:${keys.length}`, () => fetchOpenRouterLimitsUncached(keys));
 }

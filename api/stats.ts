@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { config } from '../src/env.js';
 import { db } from '../src/db.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
-import { xkiroSearchStatus, xkiroSearchStatusAsync } from '../src/xkiro_web.js';
+// (xKiro DIHAPUS 04 Okt 2026 — semua akun disuspend permanen 403)
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -22,7 +22,6 @@ const APP_VERSION = (() => {
   }
 })();
 import {
-  fetchXkiroLimits,
   fetchOpenRouterLimits,
   fetchGroqLimits,
   fetchCloudflareLimits,
@@ -117,31 +116,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const c = db();
 
   try {
-    // Siapkan live usage fetch dari remote provider API (xKiro & OpenRouter) secara paralel
-    const xkiroLivePromises = config.pools.xkiro.map(async (k) => {
-      try {
-        const res = await fetch('https://api.xkiro.com/v1/usage', {
-          headers: { Authorization: `Bearer ${k}`, Accept: 'application/json' },
-          signal: AbortSignal.timeout(2800),
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as {
-          user?: { name?: string; email?: string };
-          free_tokens?: { used_today?: number; limit_per_day?: number; remaining?: number };
-        };
-        return {
-          key: k,
-          userName: data.user?.name || null,
-          userEmail: data.user?.email || null,
-          usedToday: Number(data.free_tokens?.used_today) || 0,
-          limitPerDay: Number(data.free_tokens?.limit_per_day) || 5000000,
-          remaining: Number(data.free_tokens?.remaining) || 0,
-        };
-      } catch {
-        return null;
-      }
-    });
-
     const orLivePromises = config.pools.openrouter.map(async (k) => {
       try {
         const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
@@ -185,18 +159,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const limitsPromise = (async (): Promise<Map<string, Map<string, LiveLimit>>> => {
       const result = new Map<string, Map<string, LiveLimit>>();
       // SEMUA provider yang punya endpoint kuota dipanggil LIVE (paralel):
-      //   xKiro, OpenRouter, Groq, Cloudflare, DreamPrompting.
+      //   OpenRouter, Groq, Cloudflare, DreamPrompting.
+      // (xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.)
       // DreamPrompting ditambahkan 04 Okt setelah ditemukan endpoint
       // /api/v1/quota yang mengembalikan JSON limit + sisa (sebelumnya dikira
       // tidak ada endpoint sehingga memakai angka dokumentasi).
-      const [xk, or, gq, cf, dpLive] = await Promise.all([
-        fetchXkiroLimits(config.pools.xkiro).catch(() => new Map<string, LiveLimit>()),
+      const [or, gq, cf, dpLive] = await Promise.all([
         fetchOpenRouterLimits(config.pools.openrouter).catch(() => new Map<string, LiveLimit>()),
         fetchGroqLimits(config.pools.groq, config.models.groqPrimary).catch(() => new Map<string, LiveLimit>()),
         fetchCloudflareLimits(config.pools.cloudflare, config.cloudflareAccountId).catch(() => new Map<string, LiveLimit>()),
         fetchDreamPromptingLimits(config.pools.dreamprompting).catch(() => new Map<string, LiveLimit>()),
       ]);
-      result.set('xkiro', xk);
       result.set('openrouter', or);
       result.set('groq', gq);
       result.set('cloudflare', cf);
@@ -222,18 +195,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     })();
 
     const liveFetchPromise = Promise.all([
-      Promise.all(xkiroLivePromises),
       Promise.all(orLivePromises),
     ]);
-
-    type XkiroLiveItem = {
-      key: string;
-      userName: string | null;
-      userEmail: string | null;
-      usedToday: number;
-      limitPerDay: number;
-      remaining: number;
-    } | null;
 
     type OrLiveItem = {
       key: string;
@@ -243,7 +206,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       limitRemaining: number | null;
     } | null;
 
-    let xkiroLiveResults: XkiroLiveItem[] = [];
     let orLiveResults: OrLiveItem[] = [];
     let liveLimitsMap = new Map<string, Map<string, LiveLimit>>();
     let todayQuotasData: Array<{ kind: string; key_suffix: string; used: number; tokens_used?: number }> = [];
@@ -360,28 +322,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       userMsgs = userMsgsRes as any;
       waMonthlyMsgs = waMonthlyMsgsRes as any;
 
-      xkiroLiveResults = liveResults[0];
-      orLiveResults = liveResults[1];
+      orLiveResults = liveResults[0];
       liveLimitsMap = liveLimits;
       todayQuotasData = ((dbTodayQuotaRes as any)?.data as any[]) || [];
     } else {
-      const [xk, or] = await liveFetchPromise;
-      xkiroLiveResults = xk;
+      const [or] = await liveFetchPromise;
       orLiveResults = or;
       liveLimitsMap = await limitsPromise;
     }
 
-    const xkiroSyncMap = new Map<string, {
-      key: string;
-      userName: string | null;
-      userEmail: string | null;
-      usedToday: number;
-      limitPerDay: number;
-      remaining: number;
-    }>();
-    for (const r of xkiroLiveResults) {
-      if (r) xkiroSyncMap.set(r.key, r);
-    }
+    // (xkiroSyncMap DIHAPUS 04 Okt 2026 — xKiro disuspend permanen 403.)
 
     const orSyncMap = new Map<string, {
       key: string;
@@ -452,7 +402,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       cloudflare: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       opencode: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       openrouter: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
-      xkiro: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
     };
 
     let grandTotalRealTokens = 0;
@@ -461,7 +410,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Atribusi provider dari string via. Format bisa berlapis (mis. "local-parser/groq/qwen/...",
     // "dynamic-pdf-error/gemini/..."), jadi cari segmen path yang cocok dengan provider resmi —
     // bukan hanya segmen pertama — agar token tetap terhitung ke pool yang benar.
-    const KNOWN_PROVIDER_KINDS = ['dreamprompting', 'cloudflare', 'nvidia', 'openrouter', 'groq', 'gemini', 'dahl', 'xkiro', 'opencode'];
+    const KNOWN_PROVIDER_KINDS = ['dreamprompting', 'cloudflare', 'nvidia', 'openrouter', 'groq', 'gemini', 'dahl', 'opencode'];
     const extractProviderKind = (via: string): string => {
       const segments = via.toLowerCase().split('/');
       return segments.find((s) => KNOWN_PROVIDER_KINDS.includes(s)) || '';
@@ -616,7 +565,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // 4. Bangun status Pool per Provider & tiap API Key (7 Tier Resmi Runtime Sistem)
     const providerDefs: Array<{
-      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'xkiro' | 'opencode';
+      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'opencode';
       displayName: string;
       keys: string[];
       cap: number;
@@ -764,21 +713,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         backupModel: config.models.dahlBackup.join(' / '),
         allModels: [config.models.dahlPrimary, ...config.models.dahlBackup],
       },
-      ...(config.pools.xkiro.length > 0 ? [{
-        kind: 'xkiro' as const,
-        displayName: 'xKiro Gateway (Cadangan)',
-        keys: config.pools.xkiro,
-        cap: config.dailyCap.xkiro,
-        tokenCapPerKey: config.dailyTokenCap.xkiro || 5000000,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.xkiro,
-        tokenLimitType: 'daily_cap' as const,
-        tokenLimitLabel: 'Cadangan Web Search & Vision (500K Token/key)',
-        resetCycle: 'Harian (00:00 UTC)',
-        contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.xkiroPrimary,
-        backupModel: config.models.xkiroBackup.join(' / '),
-        allModels: [config.models.xkiroPrimary, ...config.models.xkiroBackup],
-      }] : []),
+      // (Blok pool xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.)
     ];
 
     let totalPoolKeys = 0;
@@ -838,7 +773,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         // RPD live per key (OpenRouter: free_model_daily_requests; Groq: header).
         const liveRpdCap = liveLimit?.requestsPerDay ?? 0;
 
-        const xkLive = p.kind === 'xkiro' ? xkiroSyncMap.get(k) : null;
+        const xkLive = null; // (xKiro dihapus 04 Okt 2026)
         const orLive = p.kind === 'openrouter' ? orSyncMap.get(k) : null;
 
         // Token riil per key dari DB (kolom tokens_used) — sumber valid untuk TPD.
@@ -893,13 +828,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           : (todayTokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayTokenQuotaMap.get(`${p.kind}:${suffix}`) || 0) || tokensUsed;
         let tokenPercent = tokenCap > 0 ? Math.min(100, Math.round((tokensForPercent / tokenCap) * 100)) : 0;
 
-        if (xkLive) {
-          // Menggunakan data sinkronisasi langsung dari web server xKiro (global di semua apps)
-          tokensUsed = xkLive.usedToday;
-          tokenCap = xkLive.limitPerDay;
-          remainingTokens = xkLive.remaining;
-          tokenPercent = tokenCap > 0 ? Math.min(100, Math.round((tokensUsed / tokenCap) * 100)) : 0;
-        }
+        // (Blok xkLive DIHAPUS 04 Okt 2026 — xKiro disuspend permanen 403.
+        //  Dulu di sini nilai token diambil dari live sync xKiro.)
 
         // Cap RPD efektif: endpoint live menang; kalau tidak ada, pakai .env.
         // Untuk rentang "Semua", cap tetap HARIAN (kuota provider harian) — bukan cap
@@ -950,12 +880,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           avgTokensPerChat: providerAvgTokens,
           status,
           // "Live synced" = ada data langsung dari endpoint provider — baik pemakaian
-          // (xKiro/OpenRouter) maupun batas kuota (Groq/Cloudflare via header). Sebelumnya
-          // hanya xKiro & OpenRouter yang ditandai, sehingga Groq/Cloudflare tampak
-          // "tidak tersinkron" padahal limitnya diambil live dari header respons.
-          isLiveSynced: !!xkLive || !!orLive || (liveLimit?.isLive ?? false),
-          liveUserName: xkLive?.userName ?? null,
-          liveUserEmail: xkLive?.userEmail ?? null,
+          // (OpenRouter) maupun batas kuota (Groq/Cloudflare via header).
+          // (xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.)
+          isLiveSynced: !!orLive || (liveLimit?.isLive ?? false),
+          liveUserName: null,
+          liveUserEmail: null,
           liveRemainingTokens: remainingTokens,
           liveUsageUsd: orLive?.usageUsd ?? null,
           liveDailyUsageUsd: orLive?.usageDailyUsd ?? null,
@@ -972,15 +901,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }, 0);
       const poolPercent = totalPoolCap > 0 ? Math.min(100, Math.round((poolUsed / totalPoolCap) * 100)) : 0;
       
-      const isAnyLiveSynced = keysDetail.some((kd) => kd.isLiveSynced);
       const anyRealTokenData = keysDetail.some((kd) => kd.isRealTokenData);
       let poolTokensUsed = 0;
-      if (p.kind === 'xkiro' && isAnyLiveSynced) {
-        // xKiro: pakai data live dari API (akurat, global semua app) untuk tiap key.
-        for (const kd of keysDetail) {
-          poolTokensUsed += kd.tokensUsed;
-        }
-      } else if (anyRealTokenData) {
+      // (Cabang khusus xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.
+      //  Dua cabang di bawah sudah mencakup semua kasus yang tersisa.)
+      if (anyRealTokenData) {
         // Prioritas data token riil dari DB (valid untuk TPD & pelaporan)
         for (const kd of keysDetail) {
           poolTokensUsed += kd.tokensUsed;
@@ -1032,7 +957,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         avgTokensPerChat: providerAvgTokens,
         realUsageCalls: pStats.callsWithRealTokens,
         realTokensUsed: pStats.realTokens,
-        isLiveSynced: isAnyLiveSynced,
+        isLiveSynced: keysDetail.some((kd) => kd.isLiveSynced),
         lastUsedAt: lastUsedByProvider[p.kind] || null,
         keys: keysDetail,
       };
@@ -1126,81 +1051,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       modelsBreakdown,
       mediaCounts,
       version: APP_VERSION,
-      // Pemakaian WEB SEARCH xKiro — kuota terpisah dari kuota token.
-      // Batas 10 pencarian/kunci/hari diukur langsung dari respons provider
-      // (kunci membalas 429 pada pencarian ke-11), bukan dari dokumentasi.
+      // Pemakaian WEB SEARCH (kuota terpisah dari kuota token).
       //
-      // Angka "terpakai" diambil dari DATABASE (persisten lintas instance),
-      // bukan dari penghitung in-memory yang selalu 0 di serverless.
-      // Bila DB tidak tersedia, nilainya null dan dashboard menampilkannya
-      // sebagai tanda pisah — lebih jujur daripada menampilkan 0.
-      webSearch: (() => {
-        // ------------------------------------------------------------------
-        // STATUS JUJUR DARI DB (perbaikan 25 Sep).
-        //
-        // Masalah terukur: dashboard menampilkan "8/8 kunci siap pakai,
-        // 0/160 terpakai, 100% jatah tersisa" padahal SEMUA 8 kunci xKiro
-        // membalas HTTP 402 "Insufficient wallet balance — please top up".
-        // Pemilik produk bingung kenapa web search tidak terpakai.
-        //
-        // Akar: status lama dihitung dari Map in-memory yang KOSONG setiap
-        // instance Vercel baru -> kunci mati selalu tampak sehat.
-        //
-        // Perbaikan: bangun peta pemakaian per-kunci dari DB (yang mencatat
-        // 402 lewat catatKunciHabis), lalu hitung status dari data itu.
-        // ------------------------------------------------------------------
-        const pemakaianPerKunci = new Map<string, number>();
-        for (const q of webSearchSource) {
-          if (q.kind !== 'xkiro-search') continue;
-          if (q.key_suffix) pemakaianPerKunci.set(q.key_suffix, Number(q.used) || 0);
-        }
-        const s = pemakaianPerKunci.size > 0
-          ? xkiroSearchStatusAsync(pemakaianPerKunci)
-          : xkiroSearchStatus();
-        const capTotal = s.keysTotal * s.capPerKey;
-        const usedFromDb = webSearchUsedToday;
-
-        // ------------------------------------------------------------------
-        // CACAT YANG DIPERBAIKI (temuan 24 Sep): "terpakai" dan "sisa" dulu
-        // dihitung dari SUMBER BERBEDA, sehingga bisa saling bertentangan.
-        //
-        // Contoh nyata yang terukur: terpakai 86 (dari catatan DB) tetapi sisa
-        // 160 (dari 8 kunci x cap 20) — padahal total kapasitas hanya 160.
-        // Artinya 86 + 160 = 246 > 160: angka yang tidak mungkin, dan pemilik
-        // melihat panel yang bertentangan dengan dirinya sendiri.
-        //
-        // Penyebabnya: `remainingFromKeys` menganggap SEMUA kunci masih penuh
-        // (tidak memperhitungkan pemakaian), sementara `usedToday` menghitung
-        // pemakaian nyata. Keduanya benar sendiri-sendiri, salah kalau dipasangkan.
-        //
-        // ATURAN SEKARANG: satu sumber untuk kedua angka.
-        //   - Bila provider melaporkan sisa (otoritatif): sisa = laporan provider,
-        //     terpakai = kapasitas - sisa. Keduanya konsisten by construction.
-        //   - Bila tidak ada laporan: terpakai = catatan DB, sisa = kapasitas -
-        //     catatan DB (dengan batas bawah 0). Juga konsisten.
-        // ------------------------------------------------------------------
-        const adaLaporan = s.reportedKeys > 0;
-        const sisaDariProvider = adaLaporan ? s.remainingEstimatedTotal : null;
-        const usedDariProvider = sisaDariProvider !== null
-          ? Math.max(0, capTotal - sisaDariProvider)
-          : null;
-
-        const usedTerbaik = usedDariProvider !== null ? usedDariProvider : usedFromDb;
-        // Sisa DIHITUNG dari angka terpakai yang sama, bukan dari rumus terpisah.
-        // Ini yang menjamin usedToday + remainingToday <= capTotal selalu benar.
-        const sisaTerbaik = Math.max(0, capTotal - usedTerbaik);
-
-        return {
-          ...s,
-          usedToday: usedTerbaik,
-          usedPercent: capTotal > 0 ? Math.min(100, Math.round((usedTerbaik / capTotal) * 100)) : 0,
-          remainingToday: sisaTerbaik,
-          // Sumber angka ditampilkan agar pemilik tahu seberapa akurat datanya.
-          // Kedua angka kini berasal dari sumber yang SAMA (tidak campur).
-          usedSource: usedDariProvider !== null ? "provider" : "catatan-db",
-          remainingSource: usedDariProvider !== null ? "provider" : "catatan-db",
-        };
-      })(),
+      // CATATAN (04 Okt 2026): panel ini dulu melacak kuota xKiro (8 kunci x 20
+      // pencarian/hari). Karena xKiro DIHAPUS (semua akun disuspend permanen 403),
+      // pelacakan kuota berbayar itu tidak lagi relevan.
+      //
+      // Pencarian kini sepenuhnya memakai mesin gratis tanpa kuota (Bing RSS/HTML,
+      // Google News, feed media, Wikipedia, HN). Karena tidak ada kuota, panel ini
+      // melaporkan status "tanpa batas" secara jujur — bukan angka palsu.
+      webSearch: {
+        keysTotal: 0,
+        keysAvailable: 0,
+        keysCoolingDown: 0,
+        capPerKey: 0,
+        capTotal: 0,
+        usedToday: 0,
+        usedPercent: 0,
+        remainingToday: 0,
+        usedSource: 'tanpa-kuota',
+        remainingSource: 'tanpa-kuota',
+        unlimited: true,
+        note: 'Pencarian memakai mesin gratis tanpa kuota (Bing RSS/HTML, Google News, feed media, Wikipedia, HN).',
+      },
     });
   } catch (err) {
     console.error('[api/stats] Gagal mengumpulkan metrik:', err);

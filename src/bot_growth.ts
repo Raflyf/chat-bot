@@ -101,65 +101,9 @@ const TRUSTED_DOMAINS: Record<MemoryKind, string[]> = {
   professional: ['ojk.go.id', 'pajak.go.id', 'kemenkeu.go.id', 'cnbcindonesia.com', 'kontan.co.id'],
 };
 
-/**
- * Cari lewat xKiro /v1/search dengan filter domain.
- *
- * Keunggulan dibanding pencarian kita sendiri: hasilnya JSON terstruktur
- * (url/title/snippet/source/publishedDate), jadi URL sumber langsung bisa
- * dipakai tanpa mengurai teks, dan filter domain membuat sumbernya terarah.
- *
- * Kuota: 20 pencarian/hari per kunci (kita punya beberapa kunci). Kalau satu
- * kunci habis, kunci berikutnya dicoba. Kalau semua habis atau gagal, kembalikan
- * null supaya pemanggil memakai pencarian gratis kita sebagai cadangan.
- */
-async function searchViaXKiro(query: string, domains: string[]): Promise<string[] | null> {
-  const keys = (process.env.XKIRO_KEYS || '')
-    .split(',')
-    .map((k) => k.trim())
-    .filter(Boolean);
-  if (keys.length === 0) return null;
+// (Fungsi searchViaXKiro DIHAPUS 04 Okt 2026 — xKiro disuspend permanen 403.
+//  Pencarian kini memakai mesin gratis lewat searchWeb() yang tanpa kuota.)
 
-  // Rotasi kunci supaya kuota 20/hari/kunci terpakai merata.
-  const start = Math.floor(Date.now() / 60000) % keys.length;
-
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[(start + i) % keys.length];
-    try {
-      const res = await fetch('https://api.xkiro.com/v1/search', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'xkiro/web-search',
-          query,
-          max_results: 10,
-          search_domain_filter: domains,
-        }),
-        signal: AbortSignal.timeout(12000),
-      });
-
-      // Kuota habis / kunci ditolak -> coba kunci berikutnya.
-      if (res.status === 429 || res.status === 402 || res.status === 403) continue;
-      if (!res.ok) continue;
-
-      const data: any = await res.json();
-      const results: any[] = Array.isArray(data?.results) ? data.results : [];
-      const urls = results
-        .map((r) => r?.url)
-        .filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
-
-      if (urls.length > 0) {
-        console.log(
-          `[bot_growth] xKiro search: ${urls.length} URL terarah (kuota sisa ${data?.usage?.remainingToday ?? '?'}).`,
-        );
-        return urls;
-      }
-      return null;
-    } catch {
-      // Kunci ini gagal (jaringan/timeout) -> coba kunci berikutnya.
-    }
-  }
-  return null;
-}
 
 /**
  * Baca isi halaman dengan batas lebih besar dari `scrapeWebpage`.
@@ -281,18 +225,12 @@ export async function growMemory(kind: MemoryKind): Promise<number> {
     for (const q of queries.slice(0, maxQueries)) {
       try {
         // TAHAP 1: cari untuk mendapat daftar URL sumber.
-        // Jalur utama: xKiro search + filter domain (hasil terarah, sedikit
-        // buangan). Cadangan: pencarian gratis kita (Bing/DuckDuckGo) yang
-        // tanpa batas kuota, untuk saat kuota xKiro habis atau sedang gagal.
-        let urls: string[] = [];
-        const viaXKiro = await searchViaXKiro(q, TRUSTED_DOMAINS[kind] ?? []);
-        if (viaXKiro && viaXKiro.length > 0) {
-          urls = viaXKiro.slice(0, 3);
-        } else {
-          const searchText = await searchWeb(q);
-          if (!searchText) continue;
-          urls = extractUrlsFromSearch(searchText, 3);
-        }
+        // Pencarian memakai mesin gratis kita (Bing RSS/HTML, DuckDuckGo, feed
+        // media, Wikipedia) yang TANPA KUOTA dan selalu tersedia.
+        // (Jalur xKiro DIHAPUS 04 Okt 2026 — semua akun disuspend permanen 403.)
+        const searchText = await searchWeb(q);
+        if (!searchText) continue;
+        const urls = extractUrlsFromSearch(searchText, 3);
         if (urls.length === 0) {
           console.warn(`[bot_growth] Tidak ada URL dari pencarian "${q}".`);
           continue;

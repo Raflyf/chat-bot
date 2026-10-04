@@ -15,22 +15,12 @@ export type ProviderKind =
   | 'groq'
   | 'gemini'
   | 'dahl'
-  | 'xkiro'
   | 'opencode';
+// CATATAN (04 Okt 2026): 'xkiro' DIHAPUS dari union ini — semua 8 akun
+// disuspend permanen (HTTP 403 error 1010). 'xkiro-search' juga dihapus karena
+// web search kini memakai mesin gratis tanpa kuota.
 
-/**
- * Kind khusus untuk WEB SEARCH xKiro.
- *
- * Dipisah dari 'xkiro' karena web search memakai kuota yang berbeda dari chat
- * completion: 10 pencarian/kunci/hari, sedangkan chat dibatasi token. Kalau
- * digabung, pencarian akan ikut menaikkan hitungan "panggilan API" dan membuat
- * persentase pemakaian token terlihat salah.
- *
- * Dicatat ke tabel `provider_quota` yang sama supaya angkanya PERSISTEN — bukan
- * penghitung in-memory yang selalu 0 di serverless (tiap request bisa instance
- * berbeda).
- */
-export type QuotaKind = ProviderKind | 'xkiro-search';
+export type QuotaKind = ProviderKind;
 
 interface Counter {
   date: string;
