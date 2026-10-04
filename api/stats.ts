@@ -26,6 +26,7 @@ import {
   fetchOpenRouterLimits,
   fetchGroqLimits,
   fetchCloudflareLimits,
+  fetchDreamPromptingLimits,
   geminiDocumentedLimits,
   dahlDocumentedLimits,
   dreampromptingDocumentedLimits,
@@ -183,18 +184,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Groq 8000 TPM (bukan 200K TPD). Sumber kebenaran = endpoint provider.
     const limitsPromise = (async (): Promise<Map<string, Map<string, LiveLimit>>> => {
       const result = new Map<string, Map<string, LiveLimit>>();
-      const [xk, or, gq, cf] = await Promise.all([
+      // SEMUA provider yang punya endpoint kuota dipanggil LIVE (paralel):
+      //   xKiro, OpenRouter, Groq, Cloudflare, DreamPrompting.
+      // DreamPrompting ditambahkan 04 Okt setelah ditemukan endpoint
+      // /api/v1/quota yang mengembalikan JSON limit + sisa (sebelumnya dikira
+      // tidak ada endpoint sehingga memakai angka dokumentasi).
+      const [xk, or, gq, cf, dpLive] = await Promise.all([
         fetchXkiroLimits(config.pools.xkiro).catch(() => new Map<string, LiveLimit>()),
         fetchOpenRouterLimits(config.pools.openrouter).catch(() => new Map<string, LiveLimit>()),
         fetchGroqLimits(config.pools.groq, config.models.groqPrimary).catch(() => new Map<string, LiveLimit>()),
         fetchCloudflareLimits(config.pools.cloudflare, config.cloudflareAccountId).catch(() => new Map<string, LiveLimit>()),
+        fetchDreamPromptingLimits(config.pools.dreamprompting).catch(() => new Map<string, LiveLimit>()),
       ]);
       result.set('xkiro', xk);
       result.set('openrouter', or);
       result.set('groq', gq);
       result.set('cloudflare', cf);
+      // DreamPrompting: pakai data LIVE bila ada; fallback dokumentasi per key
+      // hanya untuk key yang tidak terjawab endpoint.
       const dp = new Map<string, LiveLimit>();
-      for (const k of config.pools.dreamprompting) dp.set(k, dreampromptingDocumentedLimits());
+      for (const k of config.pools.dreamprompting) {
+        dp.set(k, dpLive.get(k) ?? dreampromptingDocumentedLimits());
+      }
       result.set('dreamprompting', dp);
       const nv = new Map<string, LiveLimit>();
       for (const k of config.pools.nvidia) nv.set(k, nvidiaDocumentedLimits());

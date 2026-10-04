@@ -355,33 +355,116 @@ export function dahlDocumentedLimits(): LiveLimit {
 }
 
 /**
- * DreamPrompting: AUDIT LIVE 04 Okt.
+ * DreamPrompting: AUDIT LIVE 04 Okt — DITEMUKAN endpoint kuota JSON resmi!
  *
- * KOREKSI PENTING: label lama "100 RPM • Rolling 24h Free Tier" dengan
- * requestsPerDay: 1000 SALAH. Diuji ke endpoint nyata, pesan 429 menyatakan:
- *   "Daily token quota reached (504,797 of 500,000 tokens in the last 24 hours).
- *    It is summed across every key on your account and frees up on a rolling
- *    24 hour window."
- * Fakta terverifikasi:
- *   1. Batas NYATA = 500.000 TOKEN per rolling 24 jam (bukan 1.000 request).
- *   2. Kuota DIJUMLAH semua key pada satu akun (bukan per key).
- *   3. Reset bergulir 24 jam (bukan reset tengah malam).
- *   4. Endpoint kuota (/v1/usage, /v1/quota, /v1/me, /v1/limits) = 404 HTML,
- *      jadi sisa token TIDAK bisa dibaca dari API — hanya dari pesan 429.
- * Sumber: pesan error endpoint dreamprompting.com/api/v1 (bukan dokumentasi).
+ * Endpoint: GET https://dreamprompting.com/api/v1/quota
+ * Respons terverifikasi (bukan asumsi):
+ *   {
+ *     "daily_quota": {
+ *       "allowed": false,
+ *       "limit": 5000, "remaining": 4907, "used": 93,      <- REQUEST
+ *       "scope": "account",
+ *       "tokens": { "limit": 500000, "remaining": 0, "used": 504797 }  <- TOKEN
+ *     },
+ *     "key": "Default",
+ *     "limits": { "max_input_tokens_per_request": 32000, "max_tokens_per_response": 8192 },
+ *     "rate_limit": { "limit": 100, "remaining": 100, "reset_seconds": 0 }
+ *   }
+ *
+ * Fakta penting:
+ *   - Kuota berlaku per AKUN ("scope": "account"), bukan per key.
+ *   - Dua batas berjalan bersamaan: 5.000 REQUEST/hari DAN 500.000 TOKEN/hari.
+ *   - Ada rate limit 100 request/menit.
+ *   - Sisa kuota BISA dibaca live dari endpoint ini (sebelumnya disangka tidak bisa).
+ */
+async function fetchDreamPromptingLimitsUncached(keys: string[]): Promise<Map<string, LiveLimit>> {
+  const out = new Map<string, LiveLimit>();
+  await Promise.all(
+    keys.map(async (key) => {
+      try {
+        const res = await fetch('https://dreamprompting.com/api/v1/quota', {
+          headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        if (!res.ok) {
+          out.set(key, {
+            requestsPerDay: null, tokensPerDay: null, tokensPerMinute: null,
+            requestsUsedToday: null, tokensUsedToday: null,
+            requestsRemaining: null, tokensRemaining: null,
+            officialLabel: `TIDAK AKTIF: HTTP ${res.status}`,
+            source: 'dreamprompting.com/api/v1/quota (gagal)',
+            isLive: true,
+          });
+          return;
+        }
+        const j = (await res.json()) as {
+          daily_quota?: {
+            limit?: number; remaining?: number; used?: number;
+            scope?: string;
+            requests?: { limit?: number; remaining?: number; used?: number };
+            tokens?: { limit?: number; remaining?: number; used?: number };
+          };
+          rate_limit?: { limit?: number; remaining?: number };
+          limits?: { max_input_tokens_per_request?: number; max_tokens_per_response?: number };
+        };
+        const dq = j.daily_quota || {};
+        const req = dq.requests || {};
+        const tok = dq.tokens || {};
+        const rl = j.rate_limit || {};
+        const scope = dq.scope === 'account' ? 'akun' : (dq.scope || 'key');
+
+        const reqLimit = numOrNull(req.limit);
+        const reqUsed = numOrNull(req.used);
+        const reqRemaining = numOrNull(req.remaining);
+        const tokLimit = numOrNull(tok.limit);
+        const tokUsed = numOrNull(tok.used);
+        const tokRemaining = numOrNull(tok.remaining);
+
+        // Label ringkas namun lengkap — semua angka dari endpoint.
+        const bagian: string[] = [];
+        if (reqLimit !== null) bagian.push(`${reqLimit.toLocaleString('id-ID')} req/hari (sisa ${reqRemaining?.toLocaleString('id-ID') ?? '?'})`);
+        if (tokLimit !== null) bagian.push(`${tokLimit.toLocaleString('id-ID')} token/hari (sisa ${tokRemaining?.toLocaleString('id-ID') ?? '?'})`);
+        if (rl.limit !== null && rl.limit !== undefined) bagian.push(`${rl.limit} req/menit`);
+        const maks = j.limits?.max_input_tokens_per_request;
+        if (maks) bagian.push(`maks ${maks.toLocaleString('id-ID')} token input/request`);
+
+        out.set(key, {
+          requestsPerDay: reqLimit,
+          tokensPerDay: tokLimit,
+          tokensPerMinute: rl.limit ?? null,
+          requestsUsedToday: reqUsed,
+          tokensUsedToday: tokUsed,
+          requestsRemaining: reqRemaining,
+          tokensRemaining: tokRemaining,
+          officialLabel: `[${scope}] ${bagian.join(' • ')}`,
+          source: 'dreamprompting.com/api/v1/quota (endpoint resmi)',
+          isLive: true,
+        });
+      } catch {
+        // biarkan kosong -> dashboard pakai fallback dokumentasi
+      }
+    }),
+  );
+  return out;
+}
+
+/**
+ * DreamPrompting: fallback dokumentasi bila endpoint kuota gagal.
+ *
+ * Batas terverifikasi: 500.000 token/24 jam (dijumlah semua key, scope akun)
+ * dan 5.000 request/hari. Sumber: respons /api/v1/quota + pesan 429.
  */
 export function dreampromptingDocumentedLimits(): LiveLimit {
   return {
-    requestsPerDay: null,
-    // Batas token per rolling 24 jam, DIJUMLAH semua key pada akun.
+    requestsPerDay: 5000,
     tokensPerDay: 500_000,
-    tokensPerMinute: null,
+    tokensPerMinute: 100,
     requestsUsedToday: null,
     tokensUsedToday: null,
     requestsRemaining: null,
     tokensRemaining: null,
-    officialLabel: '500.000 token/24 jam (rolling, dijumlah semua key) • kuota token, bukan RPD',
-    source: 'pesan 429 endpoint dreamprompting.com/api/v1 (terverifikasi 04 Okt)',
+    officialLabel: '5.000 req/hari • 500.000 token/hari • 100 req/menit (scope akun)',
+    source: 'dreamprompting.com/api/v1/quota (fallback dokumentasi)',
     isLive: false,
   };
 }
@@ -427,6 +510,8 @@ const LIMIT_CACHE_TTL_MS: Record<string, number> = {
   xkiro: 5 * 60 * 1000,
   openrouter: 5 * 60 * 1000,
   cloudflare: 5 * 60 * 1000,
+  // DreamPrompting: endpoint kuota gratis & ringan -> 5 menit.
+  dreamprompting: 5 * 60 * 1000,
 };
 
 interface LimitCacheEntry {
@@ -480,4 +565,13 @@ export async function fetchCloudflareLimits(
   return withLimitCache('cloudflare', `cloudflare:${keys.length}:${accountId}`, () =>
     fetchCloudflareLimitsUncached(keys, accountId),
   );
+}
+
+
+/**
+ * DreamPrompting: pembungkus publik dengan cache (5 menit).
+ * Endpoint /api/v1/quota mengembalikan limit + sisa request & token.
+ */
+export async function fetchDreamPromptingLimits(keys: string[]): Promise<Map<string, LiveLimit>> {
+  return withLimitCache('dreamprompting', `dreamprompting:${keys.length}`, () => fetchDreamPromptingLimitsUncached(keys));
 }
