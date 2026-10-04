@@ -8,7 +8,8 @@ import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStic
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
-import { saveReminderToDb } from './remind.js';
+import { saveReminderToDb, checkDueReminders } from './remind.js';
+import { tanganiPencatatan } from './notes.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
 const PROMPT_VERSION = 'v0.66.0';
@@ -284,6 +285,33 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
   const entries = body.entry;
   if (!Array.isArray(entries)) return;
+
+  // ── LAZY-CHECK PENGINGAT (DITAMBAHKAN 04 Okt 2026) ──
+  // KENAPA DI SINI (dan bukan di whatsapp_baileys.ts):
+  // PRODUKSI memakai WhatsApp CLOUD API (webhook Meta -> api/whatsapp.ts ->
+  // fungsi ini). Modul whatsapp_baileys.ts TIDAK dipakai di produksi, sehingga
+  // lazy-check yang dulu ditaruh di sana TIDAK PERNAH BERJALAN — itulah sebab
+  // pengingat tidak pernah terkirim meski kodenya "ada".
+  //
+  // CARA KERJA: setiap webhook pesan masuk, periksa pengingat yang sudah jatuh
+  // tempo lalu kirim sekarang. Dijalankan tanpa await (fire-and-forget) agar
+  // tidak menambah latensi balasan.
+  //
+  // LAPISAN PENGIRIMAN PENGINGAT (berlapis):
+  //   1. GitHub Actions tiap 5 menit (utama, tepat waktu)
+  //   2. Lazy-check ini (cadangan saat ada aktivitas pesan)
+  //   3. startReminderWorker (bila bot dijalankan lokal)
+  void (async () => {
+    try {
+      await checkDueReminders(async (chatId, text, platform) => {
+        if (platform === 'telegram') return; // Telegram ditangani webhook-nya sendiri
+        const cleanTo = String(chatId).replace(/@.*$/, '').replace(/^\+/, '');
+        await sendWhatsAppCloudMessageSafe(cleanTo, text);
+      });
+    } catch (err) {
+      console.warn('[remind] Lazy-check gagal:', String((err as Error)?.message ?? err).slice(0, 120));
+    }
+  })();
 
   for (const entry of entries) {
     const changes = entry.changes;
@@ -659,6 +687,30 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           await sendWhatsAppCloudMessageSafe(from, reply);
           void markMessageProcessed('whatsapp', messageId);
           continue;
+        }
+
+        // ── PENCATATAN PRIBADI (catatan, tugas, keuangan, kebiasaan) ──
+        // DITAMBAHKAN 04 Okt 2026. Dua jalur: (A) perintah / eksplisit,
+        // (B) deteksi niat dari bahasa alami. Keduanya DIKONFIRMASI dulu
+        // sebelum disimpan (permintaan user: aman — hindari salah catat).
+        //
+        // PENTING: blok ini HARUS ada di whatsapp_cloud.ts, bukan hanya di
+        // whatsapp_baileys.ts — PRODUKSI memakai Cloud API (webhook Meta),
+        // sehingga kode di baileys TIDAK PERNAH berjalan.
+        {
+          const catatCtx = await getContext(chatKey, msgSentAt);
+          const hasil = await tanganiPencatatan(text, String(from), catatCtx, {
+            platform: 'whatsapp',
+          });
+          if (hasil.ditangani) {
+            await sendWhatsAppCloudMessageSafe(from, hasil.reply);
+            void markMessageProcessed('whatsapp', messageId);
+            void saveMessage({
+              platform: 'whatsapp', chat_id: chatKey, role: 'assistant',
+              content: hasil.reply, via: `notes/${hasil.jalur}`,
+            }).catch(() => undefined);
+            continue;
+          }
         }
 
         // 1. Ambil riwayat percakapan (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
