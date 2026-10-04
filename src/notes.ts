@@ -620,7 +620,11 @@ export function formatDaftarTugas(rows: TugasRingkas[]): string {
 }
 
 export function formatRekapUang(r: RekapUang, hari: number): string {
-  const rp = (n: number) => `Rp${Math.round(n).toLocaleString('id-ID')}`;
+  // Format Rupiah TANPA spasi: "Rp20.000" (bukan "Rp20. 000").
+  // `toLocaleString('id-ID')` bisa menyisipkan spasi tipis (U+00A0/U+202F) yang
+  // tampil seperti spasi di WhatsApp. Karena itu hasilnya dibersihkan eksplisit.
+  const rp = (n: number) =>
+    `Rp${Math.round(n).toLocaleString('id-ID').replace(/[\u00A0\u202F\s]/g, '')}`;
   const baris = [`*Rekap ${hari} hari terakhir*`, `Masuk   : ${rp(r.masuk)}`, `Keluar  : ${rp(r.keluar)}`, `Selisih : ${rp(r.selisih)}`];
   const keluarKat = r.perKategori.filter((x) => x.kind === 'out').slice(0, 8);
   if (keluarKat.length) {
@@ -830,6 +834,16 @@ export async function tanganiPencatatan(
     return { ditangani: true, reply: a || b || c ? `🗑️ #${id} dihapus.` : `#${id} tidak ditemukan.`, jalur: 'perintah-hapus' };
   }
 
+  // ── B0. PERTANYAAN (jawab dari DATABASE, JANGAN dikirim ke AI) ──
+  // Temuan 04 Okt: "berapa sisa uang saya" pernah dijawab AI dengan ANGKA
+  // KARANGAN (Rp20.000) padahal tabel kosong. Pertanyaan seperti ini HARUS
+  // dijawab di sini dari data nyata, bukan diserahkan ke model.
+  const jenisTanya = deteksiPertanyaan(s);
+  if (jenisTanya) {
+    const jawab = await jawabPertanyaan(jenisTanya, chatId);
+    return { ditangani: true, reply: jawab, jalur: `tanya-${jenisTanya}` };
+  }
+
   // ── B. DETEKSI NIAT BAHASA ALAMI ──
   const niat = deteksiNiat(s);
   if (niat) {
@@ -843,4 +857,79 @@ export async function tanganiPencatatan(
   }
 
   return { ditangani: false, reply: '', jalur: '' };
+}
+
+// ============================================================================
+// DETEKSI PERTANYAAN — jawab dari DATABASE, bukan dari "pengetahuan" model
+// ============================================================================
+
+/**
+ * KENAPA INI PENTING (temuan nyata 04 Okt 2026):
+ * User bertanya "berapa sisa uang saya" padahal tabel `expenses` KOSONG (0 baris).
+ * Bot menjawab "Sisa uang kamu tinggal Rp20.000 dari pemasukan 100 ribu dikurangi
+ * pengeluaran 80 ribu" — ANGKA KARANGAN. Halusinasi data keuangan itu berbahaya:
+ * user bisa mengambil keputusan salah berdasarkan angka palsu.
+ *
+ * Sebabnya: pertanyaan seperti itu TIDAK melewati modul ini sama sekali — langsung
+ * dikirim ke model AI, dan model "menjawab" dengan mengarang.
+ *
+ * Solusi: deteksi pertanyaan keuangan/tugas/catatan di sini, jawab dari DATABASE.
+ * Bila data kosong, katakan JUJUR bahwa belum ada catatan — jangan mengarang.
+ */
+export function deteksiPertanyaan(teks: string): 'keuangan' | 'tugas' | 'catatan' | null {
+  const s = teks.toLowerCase().trim();
+  if (s.length < 5 || s.length > 200) return null;
+
+  // Pertanyaan keuangan: "berapa sisa uang", "total pengeluaran", "rekap", "saldo"
+  if (
+    /\b(berapa|brp|total|rekap|sisa|saldo|jumlah)\b/.test(s) &&
+    /\b(uang|duit|pengeluaran|pemasukan|belanja|budget|keuangan|tabungan|cash|dompet)\b/.test(s)
+  ) return 'keuangan';
+  // "pengeluaranku berapa", "uangku sisa berapa", "duitku berapa"
+  if (/\b(uang|duit|pengeluaran|pemasukan|belanja|keuangan|saldo|tabungan|budget)(ku|saya|gue|aku)?\b/.test(s) &&
+      /\b(berapa|brp|total|rekap|sisa|saldo|jumlah)\b/.test(s)) return 'keuangan';
+  if (/^\/?(rekap|saldo|keuangan|dompet|kas)\b/.test(s)) return 'keuangan';
+
+  // Pertanyaan tugas: "tugas saya apa", "apa yang harus dikerjakan", "list tugas"
+  if (
+    /\b(apa|apa aja|apa saja|list|daftar|lihat|tampilkan|cek)\b/.test(s) &&
+    /\b(tugas|todo|to-do|task|kerjaan|pekerjaan|pr)\b/.test(s)
+  ) return 'tugas';
+  if (/\b(tugas|todo)(ku|saya|gue|aku)\b/.test(s)) return 'tugas';
+
+  // Pertanyaan catatan: "catatanku apa", "lihat catatan"
+  if (
+    /\b(apa|apa aja|apa saja|list|daftar|lihat|tampilkan|cek)\b/.test(s) &&
+    /\b(catatan|note|notes|jurnal)\b/.test(s)
+  ) return 'catatan';
+  if (/\b(catatan|jurnal)(ku|saya|gue|aku)\b/.test(s)) return 'catatan';
+
+  return null;
+}
+
+/** Jawab pertanyaan dari DATABASE (tanpa AI, tanpa halusinasi). */
+export async function jawabPertanyaan(
+  jenis: 'keuangan' | 'tugas' | 'catatan',
+  chatId: string,
+  hari: number = 30,
+): Promise<string> {
+  if (jenis === 'keuangan') {
+    const r = await rekapUang(chatId, hari);
+    if (r.masuk === 0 && r.keluar === 0 && r.perKategori.length === 0) {
+      return `Belum ada catatan keuangan sama sekali.\n\nKalau mau mencatat, kirim misalnya:\n• /uang 50000 makan siang\n• /masuk 5000000 gaji\natau ketik biasa: "catat pengeluaran 25rb buat bensin".`;
+    }
+    return formatRekapUang(r, hari);
+  }
+  if (jenis === 'tugas') {
+    const t = await daftarTugas(chatId, true);
+    if (!t.length) {
+      return 'Belum ada tugas yang tercatat. 🎉\n\nKalau mau menambah, kirim misalnya: /todo beli susu';
+    }
+    return `*Tugas kamu (${t.length}):*\n${formatDaftarTugas(t)}`;
+  }
+  const c = await daftarCatatan(chatId, 10);
+  if (!c.length) {
+    return 'Belum ada catatan tersimpan.\n\nKalau mau mencatat, kirim misalnya: /catat resep nasi goreng';
+  }
+  return `*Catatan terakhir (${c.length}):*\n${formatDaftarCatatan(c)}`;
 }

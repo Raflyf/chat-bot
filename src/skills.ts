@@ -207,6 +207,22 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
 
   let out = text;
 
+  // 0. NORMALISASI FORMAT RUPIAH (temuan 04 Okt 2026).
+  //    Gejala: bot menulis "Rp20. 000" — ada SPASI setelah titik ribuan.
+  //    Penyebab: model kadang menyisipkan spasi tipis (U+00A0 / U+202F) atau
+  //    spasi biasa di tengah angka. Di WhatsApp tampak seperti "Rp20. 000".
+  //    Perbaikan: rapikan semua nominal "Rp<angka>" agar titik ribuan rapat.
+  //    Contoh: "Rp20. 000" -> "Rp20.000", "Rp 1. 500. 000" -> "Rp1.500.000".
+  out = out.replace(/(?:Rp|IDR|rp)\.?\s*([\d][\d\s.,\u00A0\u202F]*)/g, (_m, angka: string) => {
+    // Buang semua spasi (termasuk spasi tipis) di dalam deret angka.
+    let bersih = angka.replace(/[\s\u00A0\u202F]/g, '');
+    // Buang titik/koma di ujung (sisa kalimat), lalu rapikan pemisah ribuan.
+    bersih = bersih.replace(/[.,]+$/, '');
+    // Bila memakai koma sebagai desimal (mis. "20,5") biarkan; kalau titik ribuan
+    // dipisah koma (mis. "20.000,50") tetap dipertahankan apa adanya.
+    return `Rp${bersih}`;
+  });
+
   // 1. Hapus tag <think>...</think> atau <thought>...</thought> di posisi mana pun (tertutup maupun tidak)
   out = out.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/gi, '').trim();
   if (/<(?:think|thought)>/i.test(out)) {
@@ -1695,6 +1711,14 @@ export function systemPrompt(
     'Kamu adalah sahabat karib sejati sekaligus partner diskusi cerdas serbabisa (polymath companion) di WhatsApp dan Telegram. Interaksimu selayaknya manusia sejati: hangat, luwes, peka rasa, berwawasan luas, humoris, dan membaca suasana lawan bicara secara mendalam.',
     '- IDENTITAS TEKNIS (ATURAN KERAS, SELALU BERLAKU): JANGAN PERNAH menyebut dirimu dengan nama model/teknologi AI apa pun (Qwen, GPT, Claude, Gemini, Llama, DeepSeek, dsb) — kamu adalah FreeAIBot. Jika ditanya "kamu model apa", jawab santai sebagai FreeAIBot. Saat membahas model AI pihak ketiga di dunia (berita/diskusi), boleh menyebut namanya — tapi JANGAN mengaku dirimu salah satunya.',
     '',
+    // ANTI-HALUSINASI DATA PRIBADI (temuan nyata 04 Okt 2026).
+    // User bertanya "berapa sisa uang saya" padahal tabel expenses KOSONG (0 baris).
+    // Bot menjawab "Sisa uang kamu tinggal Rp20.000 dari pemasukan 100 ribu
+    // dikurangi pengeluaran 80 ribu" — ANGKA KARANGAN. Ini berbahaya: user bisa
+    // mengambil keputusan keuangan berdasarkan data palsu.
+    // Aturan: JANGAN PERNAH mengarang angka/data pribadi (keuangan, tugas,
+    // catatan, pengingat). Bila data tidak ada di konteks, katakan belum ada.
+    'ATURAN DATA PRIBADI (KERAS): JANGAN PERNAH MENGARANG angka atau data pribadi milik lawan bicara — termasuk saldo uang, pengeluaran, pemasukan, daftar tugas, catatan, atau pengingat. Bila kamu TIDAK melihat datanya di konteks percakapan ini, JANGAN menyebut angka apa pun: katakan terus terang bahwa belum ada catatan, lalu tawarkan cara mencatatnya. Menyebut nominal uang yang tidak ada di data adalah kesalahan serius.',
     'PRINSIP 1: BACA SUASANA DULU, BARU BICARA:',
     '- Kenali emosi dan intensi lawan bicara sebelum menyusun kata:',
     '  * ISENG / BERCANDA / ROASTING / SLANG SANTAI: suasana tongkrongan. Satu celetukan lepas 5-15 kata, tertawa akrab, atau roasting balik dengan ramah layaknya sohib yang percaya diri.',
