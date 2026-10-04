@@ -140,20 +140,54 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
      }
    }
 
-   // RATE LIMIT DREAMPROMPTING (temuan 04 Okt): kuota dihitung per AKUN dengan
-  // jendela BERGULIR 24 JAM, bukan reset tengah malam dan bukan per key.
-  // Pesan 429-nya: "Daily token quota reached (...). It is summed across every key
-  // on your account and frees up on a rolling 24 hour window."
+   // RATE LIMIT DREAMPROMPTING (temuan 04 Okt).
   //
-  // BUG YANG DIPERBAIKI: sebelumnya jatuh ke aturan umum `if (rates)` -> cooldown
-  // hanya 60 DETIK, padahal resetnya 24 jam. Akibatnya SETIAP request membuang waktu
-  // mencoba tier 1 yang sudah habis, lalu 429 lagi, berulang tanpa henti.
-  // Sekarang: cooldown 24 jam + margin 5 menit (per AKUN, karena scope-nya akun —
-  // jadi SEMUA key DreamPrompting diistirahatkan bersamaan, bukan satu per satu).
-  if (kind === 'dreamprompting' && rates && /daily|quota|token|limit|rolling/i.test(msg)) {
-    const cd = Date.now() + (24 * 60 * 60_000) + 5 * 60_000;
+  // Kuota dihitung per AKUN, jendela BERGULIR. Pesan 429:
+  // "Daily token quota reached (...). It is summed across every key on your
+  //  account and frees up on a rolling 24 hour window."
+  //
+  // PENTING (koreksi atas asumsi awal): durasi cooldown TIDAK BOLEH di-hardcode
+  // 24 jam. Endpoint menyediakan waktu reset sendiri dan nilainya BERUBAH:
+  //   header  x-ratelimit-reset        -> sisa DETIK sampai jendela rate limit pulih
+  //   JSON    rate_limit.reset_seconds -> idem (detik)
+  // Untuk kuota HARIAN yang habis, endpoint tidak mengirim sisa detiknya; pada
+  // kondisi itu barulah kita pakai jendela bergulir 24 jam sebagai perkiraan —
+  // dan itu dicatat sebagai estimasi, bukan angka pasti.
+  if (kind === 'dreamprompting' && rates) {
+    // 1. Coba baca reset dari error (header retry-after / x-ratelimit-reset).
+    const retryAfterRaw = (err as { retryAfter?: string | null })?.retryAfter;
+    const resetHeader = (err as { rateLimitReset?: string | number | null })?.rateLimitReset;
+    let detikReset: number | null = null;
+    const parseDetik = (v: unknown): number | null => {
+      if (v === null || v === undefined) return null;
+      const s = String(v).trim();
+      if (!s) return null;
+      // Format "45" (detik) atau "5m45.6s" / "105ms".
+      const mnt = s.match(/(\d+)\s*m(?!s)/i);
+      const dtk = s.match(/([\d.]+)\s*s/i);
+      const ms = s.match(/([\d.]+)\s*ms/i);
+      let total = 0;
+      let ada = false;
+      if (mnt) { total += Number(mnt[1]) * 60; ada = true; }
+      if (dtk && !ms) { total += Number(dtk[1]); ada = true; }
+      if (ms) { total += Number(ms[1]) / 1000; ada = true; }
+      if (!ada) {
+        const n = Number(s);
+        if (Number.isFinite(n)) { total = n; ada = true; }
+      }
+      return ada ? Math.max(1, Math.ceil(total)) : null;
+    };
+    detikReset = parseDetik(retryAfterRaw) ?? parseDetik(resetHeader);
+
+    // 2. Bila endpoint tidak memberi sisa detik (kuota harian habis), pakai
+    //    jendela bergulir 24 jam sebagai perkiraan + margin 5 menit.
+    const kuotaHarian = /daily|quota|token/i.test(msg);
+    const durasiMs = detikReset !== null
+      ? detikReset * 1000
+      : (kuotaHarian ? 24 * 60 * 60_000 + 5 * 60_000 : 60_000);
+
+    const cd = Date.now() + durasiMs;
     // Istirahatkan SEMUA key DreamPrompting: kuota milik akun, bukan key.
-    // Menandai satu key saja membuat key lain tetap dicoba dan 429 berulang.
     for (const other of config.pools.dreamprompting) {
       keyCooldownMap.set(`dreamprompting:${keyHash(other)}`, cd);
     }
@@ -398,9 +432,13 @@ async function fetchJsonWithLifecycle(
     let errBody = '';
     try { errBody = await res.text(); } catch {}
     const retryAfter = res.headers.get('retry-after');
-    const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null };
+    // Beberapa provider (mis. DreamPrompting) mengirim SISA DETIK di header
+    // `x-ratelimit-reset` — dipakai untuk cooldown ADAPTIF, bukan tebakan.
+    const rateLimitReset = res.headers.get('x-ratelimit-reset');
+    const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null; rateLimitReset?: string | null };
     err.code = 'RATE_LIMITED';
     err.retryAfter = retryAfter;
+    err.rateLimitReset = rateLimitReset;
     throw err;
   }
   if (!res.ok) {
@@ -519,9 +557,11 @@ async function streamSse(
       let errBody = '';
       try { errBody = await res.text(); } catch {}
       const retryAfter = res.headers.get('retry-after');
-      const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null };
+      const rateLimitReset = res.headers.get('x-ratelimit-reset');
+      const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null; rateLimitReset?: string | null };
       err.code = 'RATE_LIMITED';
       err.retryAfter = retryAfter;
+      err.rateLimitReset = rateLimitReset;
       throw err;
     }
     if (!res.ok) {

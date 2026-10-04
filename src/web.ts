@@ -1356,29 +1356,59 @@ export async function searchWeb(query: string, previousContext?: string): Promis
         }
         city = city ? toTitle(city) : '';
         const weatherTargets = city ? [city] : [];
-        // Bila kota tidak disebut, cari lokasi user dari riwayat percakapan.
-        // Diperluas (04 Okt): sebelumnya hanya pola "aku/saya di X" dan HANYA dari
-        // previousContext. Kini juga memeriksa pola sebutan kota lain ("tinggal di",
-        // "di X", "orang X") dan seluruh riwayat, supaya pertanyaan seperti
-        // "infokan cuaca hari ini" tetap memakai kota user (mis. Cianjur), bukan kosong.
-        if (weatherTargets.length === 0 && typeof previousContext === 'string') {
-          const POLA_LOKASI = [
-            /\b(?:aku|saya|gue|gw|kami|kita)\s+(?:tinggal\s+|domisili\s+|lagi\s+)?(?:di|dari)\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
-            /\b(?:tinggal|domisili|mukim)\s+(?:di|dari)\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
-            /\borang\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
-            /\bdi\s+([A-Za-z][A-Za-z.'-]{2,24})\b/i,
-          ];
-          for (const pola of POLA_LOKASI) {
-            const mLoc = previousContext.match(pola);
-            if (mLoc && mLoc[1]) {
-              const kandidat = mLoc[1].trim();
-              // Tolak bila yang tertangkap kata umum (bukan nama tempat).
-              if (!KATA_BUKAN_KOTA.has(kandidat.toLowerCase())) {
-                weatherTargets.push(toTitle(kandidat));
-                break;
+        // Bila kota tidak disebut, ambil lokasi user dari MEMORI (ctx.corrections).
+        //
+        // KASUS NYATA 04 Okt: user sudah punya data lokasi tersimpan —
+        //   "Lokasi/domisili pengguna: Cianjur, Jawa Barat / WIB"
+        //   "Lokasi pengguna berada di koordinat (-6.8591, 107.1232)"
+        // — tetapi bot tetap menjawab JAKARTA. Penyebab: kode hanya mencari pola
+        // percakapan ("aku tinggal di X"), sedangkan lokasi tersimpan dalam format
+        // memori yang berbeda. Akibatnya lokasi yang SUDAH DIKETAHUI diabaikan.
+        //
+        // Sekarang: baca langsung dari ctx.corrections (sumber otoritatif), lalu
+        // baru fallback ke pola percakapan.
+        if (weatherTargets.length === 0) {
+          // Prioritas 1: format memori "Lokasi/domisili pengguna: <Kota>, ..."
+          // previousContext memuat gabungan riwayat + ringkasan + corrections
+          // (dibangun pemanggil), jadi format memori lokasi ikut terbaca di sini.
+          const memoriLokasi = typeof previousContext === 'string' ? previousContext : '';
+          const mLokasiMemori = memoriLokasi.match(
+            /(?:lokasi|domisili)\s*(?:\/\s*domisili)?\s*(?:pengguna|user)?\s*[:\-]\s*([A-Za-z][A-Za-z .'-]{2,30}?)(?:\s*[,/]|\s*$|\s+-\s)/i,
+          );
+          if (mLokasiMemori && mLokasiMemori[1]) {
+            const kandidat = mLokasiMemori[1].trim().replace(/\s+(?:jawa|wib|zona|waktu).*$/i, '').trim();
+            if (kandidat && !KATA_BUKAN_KOTA.has(kandidat.toLowerCase())) {
+              weatherTargets.push(toTitle(kandidat));
+            }
+          }
+          // Prioritas 2: pola percakapan ("aku tinggal di X") dari riwayat.
+          if (weatherTargets.length === 0 && typeof previousContext === 'string') {
+            const POLA_LOKASI = [
+              /\b(?:aku|saya|gue|gw|kami|kita)\s+(?:tinggal\s+|domisili\s+|lagi\s+)?(?:di|dari)\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
+              /\b(?:tinggal|domisili|mukim)\s+(?:di|dari)\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
+              /\borang\s+([A-Za-z][A-Za-z.'-]{2,24})/i,
+            ];
+            for (const pola of POLA_LOKASI) {
+              const mLoc = previousContext.match(pola);
+              if (mLoc && mLoc[1]) {
+                const kandidat = mLoc[1].trim();
+                if (!KATA_BUKAN_KOTA.has(kandidat.toLowerCase())) {
+                  weatherTargets.push(toTitle(kandidat));
+                  break;
+                }
               }
             }
           }
+        }
+        // Bila lokasi TIDAK diketahui sama sekali: JANGAN mengarang kota (mis. Jakarta).
+        // Permintaan user 04 Okt: lebih baik TANYAKAN lokasi daripada salah kota.
+        // Sinyal ini dipakai prompt persona agar bot bertanya, bukan menebak.
+        if (weatherTargets.length === 0) {
+          structuredSnippets.unshift({
+            text: '[LOKASI USER BELUM DIKETAHUI]: Pertanyaan ini soal cuaca, tetapi kota user belum ada di memori maupun riwayat. JANGAN menebak kota mana pun (apalagi Jakarta sebagai default). TANYAKAN dulu dengan santai dia sedang di kota mana, baru bisa dicek cuacanya.',
+            timestamp: Date.now() + 3_500_000_000,
+            score: 130,
+          });
         }
         for (const target of weatherTargets.slice(0, 2)) {
           fetches.push(

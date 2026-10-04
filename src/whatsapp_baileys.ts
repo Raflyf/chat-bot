@@ -739,7 +739,18 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     let webResults: string | null = null;
     // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch):
     // lanjutan topik berita wajib ditelusuri walau pesannya pendek.
-    const prevContextTeks = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+    //
+    // PENTING (perbaikan 04 Okt): konteks WAJIB memuat `corrections` (memori
+    // jangka panjang), bukan hanya 3 pesan terakhir. Kasus nyata: lokasi user
+    // ("Lokasi/domisili pengguna: Cianjur") tersimpan di corrections, tetapi
+    // searchWeb hanya menerima history sehingga kota user tidak terbaca dan bot
+    // menjawab cuaca JAKARTA. Ringkasan percakapan ikut disertakan karena
+    // lokasi kadang tersimpan di sana.
+    const prevContextTeks = [
+      context?.history?.slice(-3)?.map(h => h.content).join(' ') || '',
+      context?.summary || '',
+      ...(context?.corrections || []),
+    ].filter(Boolean).join(' ');
     if (needsSearch(text, prevContextTeks)) {
       try {
         const prevContext = prevContextTeks;
