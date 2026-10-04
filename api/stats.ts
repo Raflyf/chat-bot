@@ -661,19 +661,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         allModels: [config.models.cfPrimary, ...config.models.cfBackup, ...config.models.cfVision],
       },
       {
-        kind: 'nvidia',
-        displayName: 'NVIDIA NIM',
-        keys: config.pools.nvidia,
-        cap: config.dailyCap.nvidia,
-        tokenCapPerKey: config.dailyTokenCap.nvidia,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.nvidia,
+        kind: 'opencode',
+        displayName: 'OpenCode Free',
+        keys: config.pools.opencode,
+        cap: config.dailyCap.opencode,
+        tokenCapPerKey: config.dailyTokenCap.opencode,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.opencode,
         tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '1.000 Free Credits / Key (NVIDIA NIM)',
-        resetCycle: 'Kredit Akun NIM',
-        contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.nvidiaPrimary,
-        backupModel: config.models.nvidiaBackup.join(' / '),
-        allModels: [config.models.nvidiaPrimary, ...config.models.nvidiaBackup],
+        // OpenCode Free: TIDAK BISA LIVE-SYNCED. Diuji 04 Okt ke 10 endpoint kandidat
+        // (/zen/v1/usage, /quota, /limits, /me, /account, /key, /credits, /api/v1/...)
+        // -> SEMUA 404; header respons chat juga TIDAK memuat info kuota/limit.
+        // Karena itu dashboard memakai catatan internal bot (dihitung dari pemakaian
+        // nyata), ditandai "Bot Monitored" — bukan "Live Synced" — agar jujur.
+        tokenLimitLabel: 'Tanpa API key (Bearer public) • kuota per sesi di upstream • 8.000 token/respons',
+        resetCycle: 'Rolling (per sesi)',
+        contextWindow: '1.000.000 Token (1M)',
+        primaryModel: config.models.opencodePrimary,
+        backupModel: config.models.opencodeBackup.join(' / '),
+        allModels: [config.models.opencodePrimary, ...config.models.opencodeBackup],
       },
       {
         kind: 'openrouter',
@@ -689,6 +694,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         primaryModel: config.models.orPrimary,
         backupModel: config.models.orBackup.join(' / '),
         allModels: [config.models.orPrimary, ...config.models.orBackup],
+      },
+      {
+        kind: 'nvidia',
+        displayName: 'NVIDIA NIM',
+        keys: config.pools.nvidia,
+        cap: config.dailyCap.nvidia,
+        tokenCapPerKey: config.dailyTokenCap.nvidia,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.nvidia,
+        tokenLimitType: 'daily_cap',
+        tokenLimitLabel: '1.000 Free Credits / Key (NVIDIA NIM)',
+        resetCycle: 'Kredit Akun NIM',
+        contextWindow: '131.072 Token (131K)',
+        primaryModel: config.models.nvidiaPrimary,
+        backupModel: config.models.nvidiaBackup.join(' / '),
+        allModels: [config.models.nvidiaPrimary, ...config.models.nvidiaBackup],
       },
       {
         kind: 'groq',
@@ -734,26 +754,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         primaryModel: config.models.dahlPrimary,
         backupModel: config.models.dahlBackup.join(' / '),
         allModels: [config.models.dahlPrimary, ...config.models.dahlBackup],
-      },
-      {
-        kind: 'opencode',
-        displayName: 'OpenCode Free',
-        keys: config.pools.opencode,
-        cap: config.dailyCap.opencode,
-        tokenCapPerKey: config.dailyTokenCap.opencode,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.opencode,
-        tokenLimitType: 'daily_cap',
-        // OpenCode Free: TIDAK BISA LIVE-SYNCED. Diuji 04 Okt ke 10 endpoint kandidat
-        // (/zen/v1/usage, /quota, /limits, /me, /account, /key, /credits, /api/v1/...)
-        // -> SEMUA 404; header respons chat juga TIDAK memuat info kuota/limit.
-        // Karena itu dashboard memakai catatan internal bot (dihitung dari pemakaian
-        // nyata), ditandai "Bot Monitored" — bukan "Live Synced" — agar jujur.
-        tokenLimitLabel: 'Tanpa API key (Bearer public) • kuota per sesi di upstream • 8.000 token/respons',
-        resetCycle: 'Rolling (per sesi)',
-        contextWindow: '1.000.000 Token (1M)',
-        primaryModel: config.models.opencodePrimary,
-        backupModel: config.models.opencodeBackup.join(' / '),
-        allModels: [config.models.opencodePrimary, ...config.models.opencodeBackup],
       },
       ...(config.pools.xkiro.length > 0 ? [{
         kind: 'xkiro' as const,
