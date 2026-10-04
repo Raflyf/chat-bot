@@ -144,13 +144,11 @@ export const config = {
       // Tiga model berikut diukur langsung dan terbukti BERFUNGSI + CEPAT:
       //   openrouter/nemotron-3-nano-omni-free  441ms  benar + taat instruksi (TERCEPAT)
       //   nvidia/llama-3.2-11b-vision-instruct  769ms  benar (kurang taat format)
-      //   openrouter/space-bunny-alpha         2112ms  benar + taat
       { kind: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
       { kind: 'nvidia', model: 'meta/llama-3.2-11b-vision-instruct' },
-      { kind: 'openrouter', model: 'stealth/space-bunny-alpha' },
       // DITAMBAHKAN 04 Okt (uji nyata): OpenCode ternyata BISA VISION.
       // Diuji dengan gambar nyata — 4 model menjawab BENAR & taat instruksi:
-      //   big-pickle       1261ms | space-bunny-free  1301ms
+      //   big-pickle       1261ms
       //   mimo-v2.5-free   1536ms | mimo-v2.6-flash   1821ms
       // CATATAN: muse-spark-1.3 (model utama OpenCode) TIDAK bisa vision —
       // dia menjawab "Saya cek dulu gambarnya..." alih-alih membacanya.
