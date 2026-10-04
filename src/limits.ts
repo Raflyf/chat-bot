@@ -319,26 +319,28 @@ export function geminiDocumentedLimits(): LiveLimit {
 }
 
 /**
- * Dahl: halaman resmi menyatakan "First 100M tokens free"; tidak ada endpoint JSON
- * untuk sisa saldo. Ditandai isLive: false agar tidak mengklaim lebih dari yang diketahui.
+ * Dahl: AUDIT LIVE 04 Okt — 10/10 key TERVERIFIKASI bisa inference (HTTP 200).
+ *
+ * Endpoint yang diuji: /v1/usage, /v1/me, /v1/credits, /v1/balance, /v1/quota
+ * -> semua mengembalikan HTML (bukan JSON), /v1/account -> 401.
+ * Jadi sisa saldo token TIDAK diekspos lewat API — hanya lewat dashboard akun.
+ * Karena itu isLive: false (jujur: angka dari dashboard, bukan endpoint).
  */
 export function dahlDocumentedLimits(): LiveLimit {
   return {
     // SUMBER VALID (dashboard akun Dahl, dikonfirmasi user 20 Sep 2026):
     //   "On keys: 100.0M   Total: 100.0M"  -> saldo akun 100 juta token
-    //   key "chatbot" (dahl_Kiv...YNRcXK = key #10 di pool) -> kuota "100M/100M"
     //   "Tokens are charged only for successful responses. Errors such as 429, 402,
     //    and technical failures do not consume your balance."
     //
-    // Kesimpulan dari sumber resmi ini:
+    // Kesimpulan dari sumber resmi + audit endpoint:
     // 1. Kuota 100M token per key TERKONFIRMASI (bukan asumsi).
     // 2. Model billing Dahl = SALDO TOKEN (pool), BUKAN rate limit harian ->
     //    karena itu RPD memang tidak berlaku (bukan "tidak diketahui").
-    // 3. Endpoint API tidak mengekspos sisa saldo (audit: /v1/usage, /v1/me,
-    //    /v1/credits, /v1/balance, /v1/account = HTML/401) -> sisa saldo hanya
-    //    bisa dilihat di dashboard akun.
-    // 4. DIUJI EMPIRIS: ke-10 key Dahl di pool SEMUANYA bisa inference (HTTP 200),
-    //    jadi tidak ada key tanpa saldo — tidak perlu ada penanganan khusus.
+    // 3. Endpoint API tidak mengekspos sisa saldo -> sisa hanya di dashboard akun.
+    // 4. DIUJI EMPIRIS 04 Okt: ke-10 key Dahl di pool SEMUANYA inference HTTP 200
+    //    dengan model deepseek-ai/DeepSeek-V4-Flash-0731 (usage terukur: 148 token).
+    //    Jadi tidak ada key tanpa saldo.
     requestsPerDay: null,
     tokensPerDay: 100_000_000,
     tokensPerMinute: null,
@@ -346,27 +348,40 @@ export function dahlDocumentedLimits(): LiveLimit {
     tokensUsedToday: null,
     requestsRemaining: null,
     tokensRemaining: null,
-    officialLabel: 'Saldo 100M Token/key (dashboard akun Dahl) • tanpa batas RPD',
+    officialLabel: 'Saldo 100M Token/key (dashboard akun Dahl) • tanpa batas RPD • 10/10 key aktif',
     source: 'dashboard akun inference.dahl.global/account — saldo token, bukan rate limit harian',
     isLive: false,
   };
 }
 
 /**
- * DreamPrompting: 100 RPM (terkonfirmasi dari header x-ratelimit-limit: 100),
- * rolling 24h free requests.
+ * DreamPrompting: AUDIT LIVE 04 Okt.
+ *
+ * KOREKSI PENTING: label lama "100 RPM • Rolling 24h Free Tier" dengan
+ * requestsPerDay: 1000 SALAH. Diuji ke endpoint nyata, pesan 429 menyatakan:
+ *   "Daily token quota reached (504,797 of 500,000 tokens in the last 24 hours).
+ *    It is summed across every key on your account and frees up on a rolling
+ *    24 hour window."
+ * Fakta terverifikasi:
+ *   1. Batas NYATA = 500.000 TOKEN per rolling 24 jam (bukan 1.000 request).
+ *   2. Kuota DIJUMLAH semua key pada satu akun (bukan per key).
+ *   3. Reset bergulir 24 jam (bukan reset tengah malam).
+ *   4. Endpoint kuota (/v1/usage, /v1/quota, /v1/me, /v1/limits) = 404 HTML,
+ *      jadi sisa token TIDAK bisa dibaca dari API — hanya dari pesan 429.
+ * Sumber: pesan error endpoint dreamprompting.com/api/v1 (bukan dokumentasi).
  */
 export function dreampromptingDocumentedLimits(): LiveLimit {
   return {
-    requestsPerDay: 1000,
-    tokensPerDay: null,
+    requestsPerDay: null,
+    // Batas token per rolling 24 jam, DIJUMLAH semua key pada akun.
+    tokensPerDay: 500_000,
     tokensPerMinute: null,
     requestsUsedToday: null,
     tokensUsedToday: null,
     requestsRemaining: null,
     tokensRemaining: null,
-    officialLabel: '100 RPM • Rolling 24h Free Tier (DreamPrompting)',
-    source: 'endpoint resmi dreamprompting.com/api/v1 (header x-ratelimit-limit: 100)',
+    officialLabel: '500.000 token/24 jam (rolling, dijumlah semua key) • kuota token, bukan RPD',
+    source: 'pesan 429 endpoint dreamprompting.com/api/v1 (terverifikasi 04 Okt)',
     isLive: false,
   };
 }
