@@ -628,9 +628,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         cap: config.dailyCap.dreamprompting,
         tokenCapPerKey: config.dailyTokenCap.dreamprompting,
         tokenCapPerKeyList: config.dailyTokenCapPerKey.dreamprompting,
-        tokenLimitType: 'requests_tpm',
-        tokenLimitLabel: '100 RPM • Rolling 24h Free Tier',
-        resetCycle: 'Rolling 24h',
+        // DIPERBAIKI 04 Okt: label lama "100 RPM • Rolling 24h Free Tier" SALAH.
+        // Endpoint /api/v1/quota menyatakan: 5.000 req/hari DAN 500.000 token/hari,
+        // scope AKUN (bukan per key), dengan rate limit 100 req/menit.
+        // Dua batas berjalan bersamaan — mana yang habis lebih dulu mengikat.
+        tokenLimitType: 'daily_cap',
+        tokenLimitLabel: '5.000 req/hari • 500.000 token/hari (scope akun) • 100 req/menit',
+        resetCycle: 'Rolling 24 jam',
         contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.dpPrimary,
         backupModel: config.models.dpBackup.join(' / '),
@@ -643,8 +647,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         cap: config.dailyCap.cloudflare,
         tokenCapPerKey: config.dailyTokenCap.cloudflare,
         tokenCapPerKeyList: config.dailyTokenCapPerKey.cloudflare,
+        // DIPERBAIKI 04 Okt: Cloudflare membatasi NEURON (bukan request/token biasa).
+        // Kasus nyata: 3 key tampak "51% OPTIMAL" dari sisi request, padahal kuota
+        // neuron SUDAH HABIS dan semua request 429. Label harus menegaskan neuron
+        // sebagai batas utama, dan pemakaian neuron dihitung dari data nyata.
         tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '10.000 Neuron/hari/key (Free Tier resmi)',
+        tokenLimitLabel: '10.000 Neuron/hari (batas utama) • 1.200 req/5 menit (rate limit)',
         resetCycle: 'Harian (00:00 UTC)',
         contextWindow: '131.072 Token (131K)',
         primaryModel: config.models.cfPrimary,

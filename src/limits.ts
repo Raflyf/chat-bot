@@ -279,11 +279,18 @@ async function fetchCloudflareLimitsUncached(
           tokensUsedToday: null,
           requestsRemaining: null,
           tokensRemaining: null,
+          // JUJUR SOAL DUA BATAS (temuan 04 Okt):
+          // Cloudflare punya DUA batas yang berjalan bersamaan:
+          //   1. Rate limit per jendela (dari header ratelimit-policy) — 1.200 req/5 menit
+          //   2. Kuota NEURON harian — 10.000 neuron/hari (ini yang PALING SERING habis)
+          // Kasus nyata: 3 key tampak "51% OPTIMAL" (request) padahal neuron SUDAH
+          // habis dan semua request membalas 429 "used up your daily free allocation
+          // of 10,000 neurons". Label harus menyebut neuron agar tidak menyesatkan.
           officialLabel:
             quota !== null
-              ? `Rate limit ${quota.toLocaleString('id-ID')} req/${windowLabel} • 10.000 Neuron/hari (dokumentasi)`
-              : 'Rate limit per jendela • 10.000 Neuron/hari (dokumentasi)',
-          source: 'api.cloudflare.com header ratelimit-policy (rate limit)',
+              ? `Rate limit ${quota.toLocaleString('id-ID')} req/${windowLabel} • kuota NEURON 10.000/hari (yang biasanya habis lebih dulu)`
+              : 'Rate limit per jendela • kuota NEURON 10.000/hari (biasanya habis lebih dulu)',
+          source: 'api.cloudflare.com header ratelimit-policy (rate limit) + kuota neuron (dokumentasi resmi)',
           isLive: true,
         });
       } catch {

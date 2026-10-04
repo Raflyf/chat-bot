@@ -1510,6 +1510,13 @@ function renderLiveUpstreamTable(data) {
             const callsRemaining = Math.max(0, keyCap - callsUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((callsUsed / keyCap) * 100)) : 0;
             const tokensUsed = k.tokensUsed || 0;
+            // DreamPrompting punya DUA batas (request DAN token, scope akun).
+            // Status memakai metrik binding dari backend supaya jujur: token bisa
+            // 100% habis walau request baru 2% (kasus nyata 04 Okt).
+            const tokenPctDp = typeof k.tokenPercent === "number" ? k.tokenPercent : 0;
+            const bindingPct = typeof k.bindingPercent === "number"
+              ? k.bindingPercent
+              : Math.max(pct, tokenPctDp);
             grandTotalUnboundedTokenUsed += tokensUsed;
 
             rows.push(`
@@ -1520,19 +1527,19 @@ function renderLiveUpstreamTable(data) {
                 </td>
                 <td>
                   <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">DreamPrompting Gateway</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">dreamprompting.com &bull; 100 RPM Free Tier</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">dreamprompting.com</div>
                 </td>
                 <td>
                   <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">${callsUsed.toLocaleString("id-ID")} Panggilan${tokensUsed > 0 ? ` &bull; ${tokensUsed.toLocaleString("id-ID")} Tok` : ''}</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: 100 RPM &bull; Rolling 24h Free Tier</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '5.000 req/hari &bull; 500.000 token/hari'}</div>
                 </td>
                 <td>
-                  <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Active Gateway</div>
-                  <div style="font-size: 0.72rem; color: #10b981; margin-top: 2px;">Tier 1 Primer Teks &bull; 100 RPM</div>
+                  <div style="font-size: 0.92rem; font-weight: 700; color: ${bindingPct >= 100 ? '#f87171' : '#34d399'};">${bindingPct >= 100 ? 'KUOTA HABIS' : 'Active Gateway'}</div>
+                  <div style="font-size: 0.72rem; color: ${bindingPct >= 100 ? '#f87171' : '#10b981'}; margin-top: 2px;">${bindingPct >= 100 ? 'Tunggu reset (rolling 24 jam)' : 'Tier 1 Primer Teks'}</div>
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">● Bot Monitored</span>
-                  <div><span class="key-badge-status ${pct >= 100 ? 'status-capped' : pct >= 80 ? 'status-warning' : 'status-healthy'}">${pct >= 100 ? 'LIMIT CAP' : pct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
+                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">${k.limitIsLive ? '● Live Synced' : '● Bot Monitored'}</span>
+                  <div><span class="key-badge-status ${bindingPct >= 100 ? 'status-capped' : bindingPct >= 80 ? 'status-warning' : 'status-healthy'}">${bindingPct >= 100 ? (k.bindingMetric === 'tokens' ? 'LIMIT TOKEN' : 'LIMIT REQ') : bindingPct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
                 </td>
               </tr>
             `);
@@ -1556,7 +1563,7 @@ function renderLiveUpstreamTable(data) {
                 </td>
                 <td>
                   <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #84cc16;">${callsUsed.toLocaleString("id-ID")} Panggilan${tokensUsed > 0 ? ` &bull; ${tokensUsed.toLocaleString("id-ID")} Tok` : ''}</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: 1.000 Free Credits &bull; NVIDIA NIM</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.000 Free Credits/key'}</div>
                 </td>
                 <td>
                   <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Active NIM</div>
@@ -1596,7 +1603,7 @@ function renderLiveUpstreamTable(data) {
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: 100M Token/key &bull; 5.000 RPD</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : 'Saldo 100M Token/key'}</div>
                 </td>
                 <td>
                   <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
@@ -1749,6 +1756,15 @@ function renderLiveUpstreamTable(data) {
             const keyUsed = k.used || 0;
             const keyRemaining = Math.max(0, keyCap - keyUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((keyUsed / keyCap) * 100)) : 0;
+            // NEURON (temuan 04 Okt): Cloudflare membatasi NEURON, bukan hanya request.
+            // Dashboard sebelumnya hanya menampilkan persen request sehingga tampak
+            // "51% OPTIMAL" padahal kuota neuron SUDAH HABIS (semua request 429).
+            // Sekarang status memakai metrik BINDING (mana yang lebih dulu habis),
+            // memakai field bindingPercent/bindingMetric dari backend.
+            const tokenPctCf = typeof k.tokenPercent === "number" ? k.tokenPercent : 0;
+            const bindingPct = typeof k.bindingPercent === "number"
+              ? k.bindingPercent
+              : Math.max(pct, tokenPctCf);
 
             grandTotalCloudflareRpd += keyCap;
             grandTotalCloudflareUsed += keyUsed;
@@ -1771,15 +1787,16 @@ function renderLiveUpstreamTable(data) {
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} RPD (~10K Neuron/hari) &bull; Bot Monitored</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${k.officialLimitLabel ? escapeHtml(k.officialLimitLabel) : `${keyCap.toLocaleString("id-ID")} RPD`} &bull; ${k.limitIsLive ? 'Live Synced' : 'Bot Monitored'}</div>
                 </td>
                 <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
-                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Kuota Harian (RPD)</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: ${bindingPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${bindingPct >= 100 ? 'HABIS' : keyRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 0.72rem; color: ${bindingPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${bindingPct >= 100 ? '● Kuota habis (tunggu reset harian)' : '● Sisa Kuota Harian (RPD)'}</div>
+                  ${typeof k.tokensUsed === "number" && k.tokensUsed > 0 ? `<div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">${k.tokensUsed.toLocaleString("id-ID")} token terpakai</div>` : ''}
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px;">● Bot Monitored</span>
-                  <div><span class="key-badge-status ${pct >= 100 ? 'status-capped' : pct >= 80 ? 'status-warning' : 'status-healthy'}">${pct >= 100 ? 'LIMIT RPD' : pct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
+                  <span class="badge-bot-sync" style="margin-bottom: 4px;">${k.limitIsLive ? '● Live Synced' : '● Bot Monitored'}</span>
+                  <div><span class="key-badge-status ${bindingPct >= 100 ? 'status-capped' : bindingPct >= 80 ? 'status-warning' : 'status-healthy'}">${bindingPct >= 100 ? (k.bindingMetric === 'tokens' ? 'LIMIT NEURON/TOKEN' : 'LIMIT RPD') : bindingPct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
                 </td>
               </tr>
             `);
@@ -1796,7 +1813,7 @@ function renderLiveUpstreamTable(data) {
                 </td>
                 <td>
                   <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #38bdf8;">${(k.used || 0).toLocaleString("id-ID")} Panggilan</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: 1.500 RPD &bull; 1M TPM Tier</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.500 RPD/key'} &bull; ${k.limitIsLive ? 'Live Synced' : 'dokumentasi resmi'}</div>
                 </td>
                 <td>
                   <div style="font-size: 0.92rem; font-weight: 700; color: #34d399;">Uncapped Daily</div>
