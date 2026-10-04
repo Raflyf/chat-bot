@@ -467,6 +467,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
         const mime = m.message?.stickerMessage?.mimetype || 'image/webp';
+        // CATATAN PENTING (diverifikasi 04 Okt dari tipe proto Baileys):
+        // protokol WhatsApp TIDAK mengirim field `emoji` pada StickerMessage
+        // (IStickerMessage hanya punya url/mimetype/dimensi/contextInfo/dll).
+        // Jadi parameter emoji memang TIDAK BISA diisi untuk WhatsApp — ini
+        // batasan protokol, bukan bug kode. Emoji hanya tersedia di Telegram
+        // (msg.sticker.emoji). Karena itu analisis stiker WhatsApp sepenuhnya
+        // bergantung pada VISION terhadap gambar, dan prompt vision sudah
+        // memuat aturan "amati isi stiker dengan teliti".
         const context = await getContext(chatKey, msgSentAt);
 
         await saveMessage({
