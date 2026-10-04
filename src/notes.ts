@@ -280,21 +280,27 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     if (pola.test(s)) return null;
   }
 
-  // ── L1. WAJIB dimulai kata perintah (setelah kata pengantar opsional) ──
-  //    Buang pengantar dulu, lalu cek awal kalimat.
+  // ── L1. WAJIB ada kata perintah (boleh di AWAL atau di AKHIR kalimat) ──
   //
-  // BUG YANG DIPERBAIKI (04 Okt 2026): sebelumnya memakai template literal
-  //   new RegExp(`^\\s*\\/?(${KATA_PERINTAH})\\b`, 'i')
-  // Di dalam template literal, `\\s` menghasilkan `\s`... TAPI karena string ini
-  // ditulis di dalam backtick, `\\s` menjadi `\s` yang BENAR — namun setelah
-  // melalui proses penulisan ulang file, escape-nya bisa menjadi `s` literal,
-  // sehingga regex mencari huruf "s" alih-alih whitespace dan SELALU GAGAL.
-  // Akibatnya SEMUA deteksi niat mati (termasuk "ingatkan besok jam 8").
-  // Perbaikan: pakai RegExp yang dibangun dari string biasa (bukan template
-  // bertingkat) + alternasi yang sudah di-escape eksplisit.
-  const tanpaPengantar = asli.replace(PENGANTAR_BOLEH, '');
-  const polaAwal = new RegExp('^\\s*\\/?(' + KATA_PERINTAH + ')\\b', 'i');
-  if (!polaAwal.test(tanpaPengantar)) return null;
+  // BUG YANG DIPERBAIKI (04 Okt 2026, temuan pemilik produk):
+  //   "1 menit lagi saya mau login, ingatkan"  -> TIDAK dikenali
+  //   "login 1 menit lagi, tolong ingatkan"    -> TIDAK dikenali
+  // Padahal itu cara bicara alami orang Indonesia: perintah diletakkan di
+  // BELAKANG kalimat. Versi lama hanya menerima kata perintah di AWAL, sehingga
+  // permintaan seperti itu jatuh ke AI dan pengingat tidak dibuat.
+  //
+  // Perbaikan: terima kata perintah di awal ATAU di akhir kalimat.
+  //
+  // BUG SEBELUMNYA (juga diperbaiki di sini): regex dibangun dari template
+  // literal sehingga `\\s` bisa rusak menjadi huruf `s` setelah file ditulis
+  // ulang — membuat regex SELALU GAGAL. Kini dibangun dari string biasa.
+  const tanpaPengantar = asli.replace(PENGANTAR_BOLEH, '').trim();
+  const KATA_PERINTAH_AKHIR = '(?:tolong\\s+)?(' + KATA_PERINTAH + ')';
+  const polaAwal = new RegExp('^\\s*\\/?' + '(' + KATA_PERINTAH + ')\\b', 'i');
+  // Kata perintah di akhir kalimat (boleh didahului koma / spasi / kata "tolong").
+  const polaAkhir = new RegExp('[,\\s]+' + KATA_PERINTAH_AKHIR + '\\s*[.!]*\\s*$', 'i');
+  const adaKataPerintah = polaAwal.test(tanpaPengantar) || polaAkhir.test(tanpaPengantar);
+  if (!adaKataPerintah) return null;
 
   // ── L4. Ambil isi & klasifikasikan ──
   const nominal = parseNominal(s);
@@ -312,8 +318,11 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     };
   }
 
-  // 4b. PENGINGAT — wajib ada kata ingatkan/ingetin/remind + waktu jelas
-  const perintahIngat = /^\s*\/?(ingatkan|ingetin|remind)\b/i.test(tanpaPengantar);
+  // 4b. PENGINGAT — kata ingatkan/ingetin/remind boleh di AWAL atau AKHIR
+  // (mis. "1 menit lagi saya mau login, ingatkan" — cara bicara alami).
+  const perintahIngat =
+    /^\s*\/?(ingatkan|ingetin|remind)\b/i.test(tanpaPengantar) ||
+    /[,\s]+(?:tolong\s+)?(ingatkan|ingetin|remind)\s*[.!]*\s*$/i.test(tanpaPengantar);
   if (perintahIngat) {
     const kapan = parseWaktuAlami(s);
     if (kapan) {
@@ -326,6 +335,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       // PAKAI TEKS ASLI sebagai isi pengingat (lebih baik daripada menolak).
       let pesan = asli
         .replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '')
+        .replace(/[,\s]+(?:tolong\s+)?(ingatkan|ingetin|remind)\s*[.!]*\s*$/i, '')
         .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
         .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
         .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')

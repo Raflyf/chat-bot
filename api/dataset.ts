@@ -265,13 +265,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       query = query.lte('created_at', endDateIso);
     }
 
-    const { data: messages, error } = await query;
+    const { data: messagesRaw, error } = await query;
 
     if (error) {
       console.error('[api/dataset] Database query error:', error);
       res.status(500).json({ ok: false, error: 'Gagal mengambil riwayat pesan dari database.' });
       return;
     }
+
+    // ── BUANG BARIS SISTEM DARI RIWAYAT (perbaikan 04 Okt 2026) ──
+    //
+    // MASALAH: riwayat dashboard menampilkan sampah internal sehingga tabel
+    // terlihat "rusak" dan filter model ikut tercemar:
+    //   - system/reset        -> "[SESSION_RESET]" (penanda potong riwayat)
+    //   - notes/niat-note     -> "Sepertinya kamu mau mencatat: ..." (konfirmasi)
+    //   - notes/konfirmasi-ya -> "✅ Pengingat disimpan ..." (balasan internal)
+    //   - notes/perintah-*    -> balasan perintah internal
+    //
+    // Filter dilakukan DI SINI (JavaScript), bukan lewat `.or()` PostgREST:
+    // sintaks `.or('via.is.null,via.not.like...')` diuji TIDAK menyaring apa pun
+    // (sampah tetap 20 baris), jadi penyaringan yang dapat diandalkan adalah di
+    // kode. Baris user dengan `via` NULL tetap dipertahankan (itu normal).
+    const isBarisSistem = (via: unknown): boolean => {
+      const v = String(via ?? '');
+      return v.startsWith('system/') || v.startsWith('notes/');
+    };
+    const messages = (messagesRaw || []).filter((m: { via?: string | null }) => !isBarisSistem(m.via));
 
     // Rekonstruksi pasangan prompt user dan jawaban bot
     const rawList = (messages || []).slice().reverse();
