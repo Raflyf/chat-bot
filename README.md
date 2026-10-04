@@ -122,7 +122,7 @@ Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key yang 
 - **Basis Data**: Jalankan skrip SQL pada folder `sql/` di SQL Editor Supabase secara berurutan. Yang wajib:
   - `migrate_v18_daily_token_tracking.sql` — pelacakan kuota token harian (TPD) lintas instance.
   - `migrate_v22_personal_notes.sql` — tabel fitur pencatatan (`notes`, `todos`, `expenses`, `habits`, `habit_logs`).
-  - `migrate_v23_pending_confirmations.sql` — **tidak lagi dipakai** (konfirmasi *iya/tidak* dihapus 04 Okt 2026; pencatatan kini langsung disimpan). Aman dilewati.
+  - `migrate_v23_pending_confirmations.sql` — konfirmasi tertunda lintas instance serverless (dipakai untuk catatan/tugas/keuangan). Tanpa migrasi ini bot memakai fallback di tabel `messages` — tetap bekerja.
 - **Pengingat Tepat Waktu**: tiga lapisan pemicu yang saling melengkapi:
   1. **cron-job.org** (UTAMA, gratis) — memanggil `/api/cron/reminders` **tiap 1 menit**. Setup: `sql/CARA_SETUP_CRONJOB_ORG.md`. Hasil terukur: pengingat terkirim dalam ~40 detik.
   2. **GitHub Actions** — workflow `.github/workflows/reminders.yml`, 3 jadwal bergeser (cadangan).
