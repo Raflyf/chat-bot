@@ -841,10 +841,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         // 10.000 neuron -> salah lapor "HABIS" (padahal ~573 neuron saja).
         const adalahNeuron = Boolean((p as { __neuron?: boolean }).__neuron);
         const modelNeuron = String((p as { __modelNeuron?: string }).__modelNeuron || '');
-        // Konversi: asumsikan 80% token adalah input (prompt besar) & 20% output.
-        // Estimasi konservatif (lebih tinggi dari kenyataan) supaya tidak menyesatkan.
+        // ── KONVERSI NEURON AKURAT (perbaikan 06 Okt 2026) ──
+        // SEBELUMNYA memakai ASUMSI 80% input / 20% output. Diukur dari data nyata
+        // (kolom prompt_tokens & completion_tokens di tabel messages), komposisi
+        // sebenarnya untuk Cloudflare adalah ~99% input / ~1% output — jadi asumsi
+        // 20% output MENYALAHKAN dan angka neuron jadi terlalu besar.
+        //   Data nyata: input 66.132 token, output 495 token (10 balasan)
+        //   Akurat: 2.849 neuron  |  Asumsi 80/20: 3.803 neuron  (33% lebih besar)
+        // SEKARANG memakai prompt_tokens & completion_tokens NYATA bila tersedia.
+        const statKey = p.kind as keyof typeof providerTokenStats;
+        const statNya = providerTokenStats[statKey];
+        const adaDataNyata = Boolean(statNya && statNya.promptTokens > 0);
         const neuronTerpakai = adalahNeuron
-          ? hitungNeuron(Math.round(tokensUsed * 0.8), Math.round(tokensUsed * 0.2), modelNeuron)
+          ? (adaDataNyata
+              // Akurat: pakai komposisi input/output sebenarnya.
+              ? hitungNeuron(statNya.promptTokens, statNya.completionTokens, modelNeuron)
+              // Fallback: komposisi yang lebih realistis (99% input, 1% output)
+              // daripada asumsi lama 80/20 yang terbukti terlalu tinggi.
+              : hitungNeuron(Math.round(tokensUsed * 0.99), Math.round(tokensUsed * 0.01), modelNeuron))
           : tokensUsed;
         const neuronCap = adalahNeuron ? NEURON_HARIAN_GRATIS : tokenCap;
         const sisaNeuron = Math.max(0, neuronCap - neuronTerpakai);

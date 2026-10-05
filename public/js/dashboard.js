@@ -106,18 +106,27 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     // "Token" — termasuk untuk Cloudflare yang satuannya NEURON. Akibatnya
     // ringkasan menampilkan "4K Token / 30K Token" padahal labelnya
     // "Pemakaian neuron". Sekarang satuan bisa diberikan sebagai argumen.
+    // BUG YANG DIPERBAIKI (06 Okt 2026 — LAPORAN PEMILIK PRODUK):
+    // "pemakaian total nya tidak akurat, kenapa 4K neuron padahal belum sampai 4k"
+    //
+    // SEBAB: `maximumFractionDigits: 0` MEMBULATKAN 3.803 menjadi 3,8 -> "4K",
+    // sehingga angka terlihat lebih besar dari kenyataan (menyesatkan).
+    //
+    // PERBAIKAN: angka di bawah 100.000 ditampilkan UTUH (3.803), bukan dibulatkan.
+    // Hanya angka besar (>= 100.000) yang disingkat, dan itu pun 1 desimal
+    // sehingga tetap akurat (mis. 1,2M bukan 1M).
     function formatTokens(num, satuan) {
       const u = satuan || "Token";
-      if (!num || isNaN(num) || num <= 0) return `0 ${u}`;
-      if (num >= 1000000) {
-        const val = (num / 1000000).toLocaleString("id-ID", { maximumFractionDigits: 1 });
-        return `${val}M ${u}`;
-      }
-      if (num >= 1000) {
-        const val = (num / 1000).toLocaleString("id-ID", { maximumFractionDigits: 0 });
+      const n = Number(num);
+      if (!n || isNaN(n) || n <= 0) return `0 ${u}`;
+      // Akurat sampai 99.999 (tampil penuh dengan pemisah ribuan).
+      if (n < 100000) return `${n.toLocaleString("id-ID")} ${u}`;
+      if (n < 1000000) {
+        const val = (n / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 });
         return `${val}K ${u}`;
       }
-      return `${num.toLocaleString("id-ID")} ${u}`;
+      const val = (n / 1000000).toLocaleString("id-ID", { maximumFractionDigits: 1 });
+      return `${val}M ${u}`;
     }
 
     // =========================================================================
