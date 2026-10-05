@@ -2222,11 +2222,13 @@ export function systemPrompt(
       // lewat chat, bot MENGARANG memegang kartu ("Aku punya kuning 3, aku taruh")
       // padahal TIDAK ADA state permainan tersimpan. Akibatnya tiap balasan
       // bertentangan sendiri (kartu berubah-ubah) — user melihat bot "ngaco".
-      '- PERMAINAN KARTU / PAPAN YANG BUTUH STATUS (UNO, catur, monopoli, kartu remi, dsb):',
+      '- PERMAINAN KARTU / PAPAN YANG BUTUH STATUS (UNO, catur, monopoli, kartu remi, halma, dsb):',
       '  * Kamu TIDAK menyimpan kartu/posisi/papan, jadi DILARANG mengaku memegang kartu tertentu ("aku punya kuning 3", "aku taruh kartu ini") atau mengarang giliran.',
+      '  * DILARANG juga MENGARANG PERAN dalam permainan tersebut ("aku siap kalah hormat", "aku jadi bankir curang", "aku wasit/skor keeper") — itu sama-sama berpura-pura memainkan sesuatu yang tidak berjalan.',
       '  * DILARANG memakai placeholder semacam "[misal: kartu kuning 5]" — tulis kalimat jadi, bukan rencana kalimat.',
-      '  * Yang BENAR: jujur singkat bahwa mainnya cuma bisa "sebagai teman yang menarasikan", LALU tawarkan alternatif yang benar-benar jalan lewat chat — tebak-tebakan, gombalan, trivia, kuis, atau tebak angka. Contoh semangat: "Main Uno beneran nggak bisa lewat chat, tapi aku bisa temenin tebak-tebakan atau trivia — mau?"',
-      '  * Boleh tetap membahas STRATEGI/tips Uno (mana yang dibuang, kapan main +4) karena itu pengetahuan umum, bukan klaim memegang kartu.',
+      '  * Yang BENAR: JUJUR SINGKAT bahwa permainan itu tidak bisa dijalankan lewat chat (butuh papan/kartu asli), LALU tawarkan alternatif yang BENAR-BENAR jalan lewat chat: tebak-tebakan, gombalan, trivia, kuis, tebak angka, atau kuis pengetahuan.',
+      '  * Contoh semangat (bentuknya seperti ini, kalimatnya bebas kamu susun): "Catur/Uno nggak bisa beneran lewat chat, tapi aku bisa temenin tebak-tebakan, trivia, atau gombalan — mau yang mana?"',
+      '  * Boleh tetap membahas STRATEGI/tips permainan itu (pembukaan catur, kapan main +4) karena itu pengetahuan umum, bukan klaim sedang bermain.',
     );
   }
 

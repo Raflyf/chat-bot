@@ -298,7 +298,7 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
  * (setelah kata pengantar opsional). Prinsipnya: HANYA kalimat PERINTAH yang
  * boleh dicatat, bukan pertanyaan, bukan cerita, bukan obrolan.
  */
-const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|remind|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary';
+const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|remind|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres';
 
 /** Kata pengantar yang BOLEH mendahului perintah (bukan penanda obrolan). */
 const PENGANTAR_BOLEH = /^\s*(tolong|coba|bisa|boleh|please|pls|mau|aku\s+mau|saya\s+mau|aku\s+pengen|saya\s+pengen|aku\s+ingin|saya\s+ingin|aku\s+pingin|saya\s+pingin|gw\s+mau|gue\s+mau|aku\s+mo|saya\s+mo)\s+/i;
@@ -399,6 +399,31 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       yakin: 0.92,
       data: { amount: nominal, kind, category: tebakKategori(s), note: asli },
       ringkas: `${kind === 'in' ? 'Pemasukan' : 'Pengeluaran'} Rp${nominal.toLocaleString('id-ID')} (${tebakKategori(s)})`,
+    };
+  }
+
+  // 4a2. BARANG / BELANJA — dipetakan ke CATATAN dengan tag 'belanja'.
+  // Temuan uji 05 Okt 2026: "tambah barang beras lima kilo" TIDAK dikenali karena
+  // kata "barang" ikut dibuang sebagai kata perintah sehingga isi jadi kosong.
+  // Sekarang: kenali kata barang/belanja/stok/inventaris, lalu simpan isinya
+  // sebagai catatan ber-tag 'belanja' (tidak perlu tabel baru).
+  const perintahBarang = /\b(?:barang|belanja|belanjaan|stok|inventaris|shopping)\b/i.test(tanpaPengantar);
+  if (perintahBarang) {
+    // Buang kata perintah + kata "barang/belanja", sisanya jadi isi.
+    let isiBarang = asli
+      .replace(/^\s*\/?(?:catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|barang|belanja|belanjaan|stok|inventaris|shopping)\b\s*/i, '')
+      .replace(/\b(?:barang|belanja|belanjaan|stok|inventaris|shopping)\b\s*/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    // Bila hanya "tambah barang" tanpa isi -> minta isinya.
+    if (isiBarang.length < 2) {
+      return null; // biarkan AI menanyakan barang apa
+    }
+    return {
+      kind: 'note',
+      yakin: 0.9,
+      data: { content: isiBarang, tags: ['belanja'] },
+      ringkas: `Barang: "${isiBarang.slice(0, 80)}"`,
     };
   }
 
@@ -515,7 +540,7 @@ export async function daftarCatatan(chatId: string, limit = 10): Promise<Catatan
   if (!c) return [];
   try {
     const { data, error } = await c.from('notes')
-      .select('id, title, content, created_at')
+      .select('id, title, content, tags, created_at')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -531,7 +556,7 @@ export async function cariCatatan(chatId: string, kata: string, limit = 10): Pro
   if (!c) return [];
   try {
     const { data, error } = await c.from('notes')
-      .select('id, title, content, created_at')
+      .select('id, title, content, tags, created_at')
       .eq('chat_id', chatId)
       .ilike('content', `%${kata}%`)
       .order('created_at', { ascending: false })
@@ -1003,6 +1028,7 @@ async function simpanDariNiat(
   }
   const id = await simpanCatatan(chatId, String(d.content || ''), {
     actor: opts.actor, platform: opts.platform,
+    tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
   });
   return id
     ? { ok: true, pesan: `✅ Catatan disimpan (#${id}) — ${niat.ringkas}` }
@@ -1108,6 +1134,29 @@ export async function tanganiPencatatan(
     return { ditangani: true, reply: `*Catatan terakhir:*\n${formatDaftarCatatan(c)}`, jalur: 'perintah-catatan' };
   }
 
+  // /barang <isi>  atau  /belanja <isi>  — daftar barang/belanja (pakai tabel notes
+  // dengan tag khusus 'belanja', agar tidak perlu tabel baru).
+  m = low.match(/^\/(?:barang|belanja|stok|shopping)\s+([\s\S]+)/);
+  if (m) {
+    const isi = s.replace(/^\/(?:barang|belanja|stok|shopping)\s+/i, '').trim();
+    const r = await simpanDariNiat(chatId,
+      { kind: 'note', yakin: 1, data: { content: isi, tags: ['belanja'] }, ringkas: `Barang: "${isi.slice(0, 80)}"` },
+      { actor: opts.actor, platform: opts.platform });
+    return { ditangani: true, reply: r.pesan, jalur: 'perintah-barang' };
+  }
+
+  // /barang  atau  /belanja  (tanpa isi) — tampilkan daftar
+  if (/^\/(?:barang|belanja|stok|shopping)$/.test(low)) {
+    const list = await daftarCatatan(chatId, 20);
+    const barang = list.filter((x) => Array.isArray((x as { tags?: string[] }).tags) && (x as { tags?: string[] }).tags!.includes('belanja'));
+    const dipakai = barang.length ? barang : list;
+    return {
+      ditangani: true,
+      reply: `*Daftar barang/belanja:*\n${formatDaftarCatatan(dipakai)}`,
+      jalur: 'perintah-barang-list',
+    };
+  }
+
   // /selesai <id>  |  /hapus <id>
   m = low.match(/^\/selesai\s+(\d+)/);
   if (m) {
@@ -1121,6 +1170,31 @@ export async function tanganiPencatatan(
     const b = a ? false : await hapusCatatan(chatId, id);
     const c = a || b ? false : await hapusUang(chatId, id);
     return { ditangani: true, reply: a || b || c ? `🗑️ #${id} dihapus.` : `#${id} tidak ditemukan.`, jalur: 'perintah-hapus' };
+  }
+
+  // ── A2. HAPUS / SELESAI LEWAT BAHASA ALAMI (agar bisa lewat Voice Note) ──
+  // Orang yang berbicara tidak mengetik "/hapus 5" — mereka bilang
+  // "hapus tugas nomor lima" atau "tandai selesai nomor tiga".
+  // BUG YANG DIPERBAIKI (05 Okt 2026): sebelumnya hanya format "/hapus <id>"
+  // yang dikenali, sehingga lewat VN tidak bisa menghapus.
+  {
+    // Angka boleh DIGIT ("nomor 5") atau KATA ("nomor satu") — orang yang
+    // berbicara lewat Voice Note tidak mengetik angka.
+    const lowAngka = angkaKataKeDigit(low);
+    const mHapus = lowAngka.match(/\b(?:hapus|buang|hilangkan|delete)\s+(?:tugas|catatan|barang|belanja|nomor|no|yang)?\s*(?:nomor|no|#)?\s*(\d+)\b/);
+    const mSelesai = lowAngka.match(/\b(?:selesai|selesaikan|sudah|udah|done|beres)\s+(?:tugas|nomor|no|#)?\s*(\d+)\b/);
+    if (mSelesai) {
+      const id = Number(mSelesai[1]);
+      const okk = await selesaikanTugas(chatId, id);
+      return { ditangani: true, reply: okk ? `✅ Tugas #${id} selesai!` : `Tugas #${id} tidak ditemukan.`, jalur: 'niat-selesai' };
+    }
+    if (mHapus) {
+      const id = Number(mHapus[1]);
+      const a = await hapusTugas(chatId, id);
+      const b = a ? false : await hapusCatatan(chatId, id);
+      const cc = a || b ? false : await hapusUang(chatId, id);
+      return { ditangani: true, reply: a || b || cc ? `🗑️ #${id} dihapus.` : `#${id} tidak ditemukan.`, jalur: 'niat-hapus' };
+    }
   }
 
   // ── B0. PERTANYAAN (jawab dari DATABASE, JANGAN dikirim ke AI) ──
