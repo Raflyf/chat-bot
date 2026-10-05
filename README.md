@@ -178,8 +178,11 @@ lalu dikonfirmasi.
 | Endpoint | Fungsi |
 |---|---|
 | `GET /api/health` | Status sistem (200 sehat / 503 bermasalah) — untuk UptimeRobot |
-| `POST /api/cron/backup` | Backup 7 tabel penting ke Supabase Storage (harian) |
-| `POST /api/cron/arsip` | Arsipkan pesan >90 hari (harian) |
+| `POST /api/cron/backup` | Backup 7 tabel ke Supabase Storage bucket `backups` (harian) |
+| `POST /api/cron/arsip` | Arsipkan pesan >90 hari ke `messages_archive` (harian) |
+
+Panduan pemasangan: `sql/CARA_SETUP_CRON_HARIAN.md` (cron-job.org / GitHub Actions).
+Bucket `backups` sudah dibuat — backup pertama berisi 7 file (530 KB).
 
 ## 📦 Migrasi Database
 
