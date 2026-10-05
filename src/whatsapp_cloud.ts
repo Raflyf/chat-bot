@@ -453,6 +453,38 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               let webResults: string | null = null;
               // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
               const prevContextVn = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+
+              // ── BUG YANG DIPERBAIKI (05 Okt 2026) ──
+              // MASALAH: Voice Note LANGSUNG dikirim ke autoReply(), MELEWATI
+              // tanganiPencatatan(). Akibatnya permintaan seperti
+              // "ingatkan saya satu menit lagi untuk login" (lewat VN) TIDAK
+              // tersimpan ke database, tetapi AI MENGARANG balasan
+              // "✅ Pengingat disimpan" — pengingat tidak pernah datang.
+              // (Terbukti dari CSV evaluasi: id 2268, 05 Okt 22:05, VN berisi
+              //  "ingatkan saya satu menit lagi untuk login", tapi tabel
+              //  `reminders` tidak punya baris itu.)
+              //
+              // PERBAIKAN: hasil transkripsi VN diperlakukan SAMA seperti pesan
+              // teks — diperiksa dulu oleh tanganiPencatatan() (pengingat,
+              // catatan, tugas, keuangan, pertanyaan). Bila ditangani, balas
+              // hasilnya dan berhenti (jangan diteruskan ke AI).
+              const hasilCatatVn = await tanganiPencatatan(transcription, String(from), context, {
+                platform: 'whatsapp',
+              });
+              if (hasilCatatVn.ditangani) {
+                await sendWhatsAppCloudMessageSafe(from, hasilCatatVn.reply);
+                void markMessageProcessed('whatsapp', messageId);
+                await saveMessage({
+                  platform: 'whatsapp',
+                  chat_id: chatKey,
+                  role: 'assistant',
+                  content: hasilCatatVn.reply,
+                  via: `notes/${hasilCatatVn.jalur}`,
+                });
+                noteExchange(chatKey);
+                continue;
+              }
+
               if (needsSearch(transcription, prevContextVn)) {
                 try {
                   const prevContext = prevContextVn;

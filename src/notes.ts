@@ -161,14 +161,70 @@ export function tebakKategori(teks: string): string {
  * Mendukung: "besok jam 8", "nanti jam 15:30", "hari ini jam 7 pagi",
  *           "3 hari lagi", "senin depan", "30 menit lagi".
  */
+/**
+ * Ubah angka yang ditulis dengan KATA menjadi digit.
+ *
+ * BUG YANG DIPERBAIKI (05 Okt 2026, temuan dari CSV evaluasi):
+ * Voice Note "ingatkan saya SATU menit lagi untuk login" TIDAK dikenali, karena
+ * parseWaktuAlami() hanya menerima digit (`\d+`). Transkripsi suara sering
+ * menghasilkan angka KATA ("satu", "dua", "lima"), jadi permintaan lewat VN
+ * gagal dibuatkan pengingat — dan AI lalu mengarang "pengingat disimpan".
+ *
+ * Mendukung: satu..dua belas, belasan (sebelas..sembilan belas), puluhan
+ * (dua puluh..sembilan puluh), setengah, se- (sejam, semenit), dan campuran
+ * ("satu setengah jam").
+ */
+function angkaKataKeDigit(teks: string): string {
+  const satuan: Record<string, number> = {
+    nol: 0, kosong: 0, satu: 1, se: 1, dua: 2, tiga: 3, empat: 4, lima: 5,
+    enam: 6, tujuh: 7, delapan: 8, sembilan: 9, sepuluh: 10, sebelas: 11,
+  };
+  const belasan: Record<string, number> = {
+    sebelas: 11, duabelas: 12, 'dua belas': 12, tigabelas: 13, 'tiga belas': 13,
+    empatbelas: 14, 'empat belas': 14, limabelas: 15, 'lima belas': 15,
+    enambelas: 16, 'enam belas': 16, tujuhbelas: 17, 'tujuh belas': 17,
+    delapanbelas: 18, 'delapan belas': 18, sembilanbelas: 19, 'sembilan belas': 19,
+  };
+  const puluhan: Record<string, number> = {
+    sepuluh: 10, duapuluh: 20, 'dua puluh': 20, tigapuluh: 30, 'tiga puluh': 30,
+    empatpuluh: 40, 'empat puluh': 40, limapuluh: 50, 'lima puluh': 50,
+    enampuluh: 60, 'enam puluh': 60, tujuhpuluh: 70, 'tujuh puluh': 70,
+    delapanpuluh: 80, 'delapan puluh': 80, sembilanpuluh: 90, 'sembilan puluh': 90,
+  };
+
+  let t = teks;
+
+  // 1) "setengah jam" / "setengah menit" -> 0.5 satuan
+  t = t.replace(/\bsetengah\s*(menit|jam|hari|minggu|bulan)\b/g, '0.5 $1');
+  // 2) "sejam"/"semenit"/"sehari"/"seminggu" -> 1 satuan
+  t = t.replace(/\bse(menit|jam|hari|minggu|bulan|detik)\b/g, '1 $1');
+
+  // 3) belasan & puluhan (frasa dua kata lebih dulu)
+  const frasa = [...Object.keys(belasan), ...Object.keys(puluhan)]
+    .filter((k) => k.includes(' '))
+    .sort((a, b) => b.length - a.length);
+  for (const f of frasa) {
+    t = t.replace(new RegExp(`\\b${f}\\b`, 'g'), String((belasan[f] ?? puluhan[f])));
+  }
+  // 4) kata tunggal
+  for (const [k, v] of Object.entries({ ...satuan, ...belasan, ...puluhan })) {
+    if (k.includes(' ')) continue;
+    t = t.replace(new RegExp(`\\b${k}\\b`, 'g'), String(v));
+  }
+  // 5) "dua puluh lima" -> setelah langkah 3 jadi "20 lima"; gabung "20 5" -> 25
+  t = t.replace(/\b(\d0)\s+(\d)\b/g, (_m, a, b) => String(Number(a) + Number(b)));
+
+  return t;
+}
+
 export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date | null {
-  const s = teks.toLowerCase().trim();
+  const s = angkaKataKeDigit(teks.toLowerCase().trim());
   const hasil = new Date(sekarang.getTime());
 
-  // "N menit lagi" / "N jam lagi" / "N hari lagi"
-  const mJeda = s.match(/(\d+)\s*(menit|jam|hari|minggu|bulan)\s*(lagi|kemudian|kedepan)?/);
+  // "N menit lagi" / "N jam lagi" / "N hari lagi" — N boleh angka atau kata.
+  const mJeda = s.match(/(\d+(?:[.,]\d+)?)\s*(menit|jam|hari|minggu|bulan)\s*(lagi|kemudian|kedepan)?/);
   if (mJeda) {
-    const n = Number(mJeda[1]);
+    const n = Number(String(mJeda[1]).replace(',', '.'));
     const satuan = mJeda[2];
     const ms =
       satuan === 'menit' ? n * 60_000
