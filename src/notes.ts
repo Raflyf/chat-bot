@@ -417,13 +417,23 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       // lalu `pesan.length >= 3` gagal -> return null -> pengingat tidak dibuat.
       // Sekarang: buang kata perintah & kata waktu, lalu bila hasilnya kosong,
       // PAKAI TEKS ASLI sebagai isi pengingat (lebih baik daripada menolak).
+      //
+      // BUG YANG DIPERBAIKI (05 Okt 2026, temuan uji): pembersih hanya membuang
+      // angka DIGIT, sehingga "satu menit lagi" tetap tertinggal di pesan:
+      //   "ingatkan saya SATU MENIT LAGI untuk login" -> pesan "saya satu menit lagi untuk login"
+      // (padahal "1 menit lagi" -> "saya untuk login"). Sekarang angka KATA
+      // ikut dibuang agar hasilnya konsisten.
+      const ANGKA_KATA = '(?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh|sebelas|dua\\s*belas|tiga\\s*belas|empat\\s*belas|lima\\s*belas|enam\\s*belas|tujuh\\s*belas|delapan\\s*belas|sembilan\\s*belas|dua\\s*puluh|tiga\\s*puluh|empat\\s*puluh|lima\\s*puluh|enam\\s*puluh|tujuh\\s*puluh|delapan\\s*puluh|sembilan\\s*puluh|setengah|se)';
       let pesan = asli
         .replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '')
         .replace(/[,\s]+(?:tolong\s+)?(ingatkan|ingetin|remind)\s*[.!]*\s*$/i, '')
         .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
         .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
         .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
-        .replace(/\b\d+\s*(menit|jam|hari|minggu|bulan)\s*(lagi|kemudian)?\b/gi, '')
+        // "N menit lagi" — N boleh digit ATAU angka kata
+        .replace(new RegExp(`\\b(?:\\d+|${ANGKA_KATA})\\s*(menit|jam|hari|minggu|bulan)\\s*(lagi|kemudian|kedepan)?\\b`, 'gi'), '')
+        // sisa "lagi" yang menggantung (mis. "buat login lagi")
+        .replace(/\blagi\b/gi, '')
         .replace(/\s{2,}/g, ' ')
         .trim();
       // Bila pesan kosong (mis. "ingatkan besok jam 8" tanpa keterangan lain),
