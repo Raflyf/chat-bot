@@ -674,13 +674,23 @@ function openAiDelta(json: unknown): StreamDelta {
 }
 
 function openAiUsage(json: unknown): ProviderResult['tokens'] | undefined {
-  const u = (json as { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } }).usage;
-  if (!u) return undefined;
-  return {
-    prompt: Number(u.prompt_tokens) || 0,
-    completion: Number(u.completion_tokens) || 0,
-    total: Number(u.total_tokens) || 0,
+  const j = json as {
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    // GROQ: mengirim usage di DUA tempat — `usage` (standar) DAN `x_groq.usage`.
+    // BUG YANG DIPERBAIKI (06 Okt 2026): sebelumnya hanya membaca `usage`, sehingga
+    // ketika Groq menaruh angkanya di `x_groq.usage` (atau sebaliknya), token
+    // TIDAK TERCATAT -> kolom tokens_used = 0 -> dashboard menampilkan token
+    // yang tidak akurat (laporan pemilik produk: "perhitungan tokennya tidak akurat").
+    x_groq?: { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } };
   };
+  const u = j.usage ?? j.x_groq?.usage;
+  if (!u) return undefined;
+  const prompt = Number(u.prompt_tokens) || 0;
+  const completion = Number(u.completion_tokens) || 0;
+  const total = Number(u.total_tokens) || 0;
+  // Tolak usage kosong (semua nol) agar tidak menimpa data nyata dengan 0.
+  if (prompt === 0 && completion === 0 && total === 0) return undefined;
+  return { prompt, completion, total };
 }
 
 /** Ekstraksi delta format Gemini SSE (parts[].text; part thought hanya sinyal aktif). */

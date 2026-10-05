@@ -13,7 +13,7 @@
       "maxDuration": 30
     },
     "api/stats.ts": {
-      "maxDuration": 15
+      "maxDuration": 45
     },
     "api/dataset.ts": {
       "maxDuration": 20

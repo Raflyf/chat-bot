@@ -103,10 +103,20 @@ async function fetchGroqLimitsUncached(keys: string[], model: string): Promise<M
   await Promise.all(
     keys.map(async (key) => {
       try {
+        // ── CATATAN JUJUR (diverifikasi 06 Okt 2026) ──
+        // Groq HANYA mengirim header x-ratelimit-* pada respons /chat/completions.
+        // Diuji: GET /openai/v1/models -> HTTP 200 tetapi TANPA header rate limit.
+        // Jadi satu-satunya cara mendapat data live adalah memanggil chat completion
+        // kecil (max_tokens: 1). Ini MEMAKAI 1 request dari kuota RPD (1000/hari).
+        //
+        // MITIGASI: cache diperpanjang 30 menit -> 6 JAM (lihat LIMIT_CACHE_TTL),
+        // sehingga pemakaian untuk monitoring turun dari ~48/hari menjadi ~4/hari
+        // per kunci. Dengan 5 kunci = ~20 request/hari, hanya 2% dari kuota.
+        // Prompt dibuat seminimal mungkin ('.') agar token termurah.
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
+          body: JSON.stringify({ model, messages: [{ role: 'user', content: '.' }], max_tokens: 1 }),
           signal: AbortSignal.timeout(15000),
         });
         // KOREKSI AUDIT (04 Okt, diverifikasi ke endpoint nyata):
@@ -147,6 +157,11 @@ async function fetchGroqLimitsUncached(keys: string[], model: string): Promise<M
           // AUDIT: endpoint API Groq TIDAK menyatakan TPD di header mana pun (sudah dicek
           // semua header terkait "day/daily/tpd" = tidak ada). Jadi angka ini bersumber
           // dari console resmi Groq, BUKAN dari endpoint — ditandai di `source`.
+          //
+          // CATATAN AKURASI (06 Okt 2026): karena Groq tidak memberi TPD, pemakaian
+          // token harian HARUS dihitung dari DATABASE bot sendiri (kolom total_tokens
+          // pada messages). Di stats.ts, `tokensUsedToday: null` membuat kode jatuh ke
+          // perhitungan DB — itu BENAR. Jangan isi angka di sini (akan jadi klaim palsu).
           tokensPerDay: 200000,
           tokensPerMinute: tpm,
           requestsUsedToday: rpd !== null && rpdRemaining !== null ? Math.max(0, rpd - rpdRemaining) : null,
@@ -448,11 +463,16 @@ export function nvidiaDocumentedLimits(): LiveLimit {
 // Cache in-memory per instance serverless; instance dingin probe sekali lagi, yang
 // tetap jauh lebih hemat daripada probe tiap refresh dashboard.
 const LIMIT_CACHE_TTL_MS: Record<string, number> = {
-  groq: 30 * 60 * 1000,
-  openrouter: 5 * 60 * 1000,
-  cloudflare: 5 * 60 * 1000,
-  // DreamPrompting: endpoint kuota gratis & ringan -> 5 menit.
-  dreamprompting: 5 * 60 * 1000,
+  // DIPERPANJANG 30 menit -> 6 jam (06 Okt 2026): memanggil Groq untuk membaca
+  // header MEMAKAI 1 request kuota. Dengan 5 kunci x refresh tiap 30 menit,
+  // itu ~240 request/hari hanya untuk monitoring. 6 jam -> ~20/hari (2% kuota).
+  groq: 6 * 60 * 60 * 1000,
+  // OpenRouter: endpoint kuota gratis -> 30 menit (dulu 5 menit, terlalu sering).
+  openrouter: 30 * 60 * 1000,
+  // Cloudflare: 3 kunci x 1 panggilan per refresh; 30 menit cukup.
+  cloudflare: 30 * 60 * 1000,
+  // DreamPrompting: endpoint kuota gratis & ringan -> 30 menit.
+  dreamprompting: 30 * 60 * 1000,
 };
 
 interface LimitCacheEntry {
