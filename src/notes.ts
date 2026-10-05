@@ -112,10 +112,19 @@ export interface RekapUang {
  * Mendukung: 50000, 50.000, 50rb, 50 ribu, 1jt, 1,5jt, 2 juta, 10k.
  */
 export function parseNominal(teks: string): number | null {
-  const s = teks.toLowerCase().replace(/\s+/g, ' ').trim();
+  // BUG YANG DIPERBAIKI (05 Okt 2026): sebelumnya hanya menerima DIGIT, sehingga
+  // "dua puluh ribu" / "lima ratus ribu" (cara bicara lewat Voice Note) GAGAL
+  // diparsing. Sekarang angka KATA dikonversi lebih dulu (satu..sembilan,
+  // belasan, puluhan, ratusan), termasuk gabungan ("dua puluh lima ribu").
+  const s = angkaKataKeDigit(teks.toLowerCase()).replace(/\s+/g, ' ').trim();
+
+  // "N ratus" / "N puluh" -> gabungkan (mis. "20 lima ribu" -> "25 ribu")
+  let s2 = s
+    .replace(/\b(\d+)\s*ratus\s*(\d+)?\b/g, (_m, a, b) => String(Number(a) * 100 + (b ? Number(b) : 0)))
+    .replace(/\b(\d+)\s*puluh\s*(\d+)?\b/g, (_m, a, b) => String(Number(a) * 10 + (b ? Number(b) : 0)));
 
   // Pola dengan satuan: "50rb", "50 ribu", "1jt", "1,5 juta", "10k"
-  const m = s.match(/(\d+(?:[.,]\d+)?)\s*(rb|ribu|k|jt|juta|m|miliar|milyar)\b/);
+  const m = s2.match(/(\d+(?:[.,]\d+)?)\s*(rb|ribu|k|jt|juta|m|miliar|milyar)\b/);
   if (m) {
     const angka = Number(m[1].replace(',', '.'));
     if (!Number.isFinite(angka)) return null;
@@ -128,7 +137,7 @@ export function parseNominal(teks: string): number | null {
   }
 
   // Pola angka biasa: "50.000" atau "50000" atau "1.234.567"
-  const m2 = s.match(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/);
+  const m2 = s2.match(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/);
   if (m2) {
     const bersih = m2[1].replace(/\./g, '');
     const n = Number(bersih);
@@ -299,7 +308,7 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
  * (setelah kata pengantar opsional). Prinsipnya: HANYA kalimat PERINTAH yang
  * boleh dicatat, bukan pertanyaan, bukan cerita, bukan obrolan.
  */
-const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|remind|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres';
+const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|ingat|remind|reminder|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres|tandai|set|bikin|buat|jadwalkan|siapkan|tolong-ingat|jangan-lupa';
 
 /** Kata pengantar yang BOLEH mendahului perintah (bukan penanda obrolan). */
 const PENGANTAR_BOLEH = /^\s*(tolong|coba|bisa|boleh|please|pls|mau|aku\s+mau|saya\s+mau|aku\s+pengen|saya\s+pengen|aku\s+ingin|saya\s+ingin|aku\s+pingin|saya\s+pingin|gw\s+mau|gue\s+mau|aku\s+mo|saya\s+mo)\s+/i;
@@ -1249,7 +1258,141 @@ export async function tanganiPencatatan(
     };
   }
 
+  // ── C. NIAT IMPLISIT (tanpa kata kunci eksplisit) ──
+  //
+  // MASALAH (temuan pemilik produk 05 Okt 2026):
+  // "kalo perintah user tidak ada kata eksplisit dari sistem yg kamu buat ini
+  //  gimna? misalnya simpan data ini atau yg lainnya"
+  //
+  // Deteksi deterministik di atas HANYA mengenali kata kunci baku (catat, simpan,
+  // tambah, ingatkan, ...). Bila user memakai kalimat lain — mis.
+  //   "tolong dicatat ya aku habis 50rb"     (kata "dicatat" tidak baku)
+  //   "jangan lupa besok aku ada rapat"      (tidak ada kata perintah)
+  //   "set reminder buat besok pagi"         ("set reminder" bahasa campur)
+  // — permintaan itu LOLOS ke AI, dan AI hanya menjawab obrolan tanpa menyimpan.
+  //
+  // SOLUSI: bila tidak ada niat eksplisit DAN teksnya mengandung sinyal
+  // "permintaan aksi" (kata minta/permintaan + objek data), jalankan detektor
+  // CADANGAN yang lebih longgar — tapi TETAP meminta konfirmasi user sebelum
+  // menyimpan, supaya salah tangkap tidak langsung mengotori database.
+  const niatImplisit = deteksiNiatImplisit(s);
+  if (niatImplisit) {
+    // Pengingat langsung simpan (berpacu waktu); lainnya konfirmasi.
+    const iniPengingat = niatImplisit.kind === 'note' && Boolean(niatImplisit.data.pengingat);
+    if (iniPengingat) {
+      const r = await simpanDariNiat(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
+      return { ditangani: true, reply: r.pesan, jalur: `implisit-${niatImplisit.kind}` };
+    }
+    await simpanKonfirmasi(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
+    return {
+      ditangani: true,
+      reply: `Sepertinya kamu mau mencatat:\n*${niatImplisit.ringkas}*\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`,
+      jalur: `implisit-${niatImplisit.kind}`,
+    };
+  }
+
   return { ditangani: false, reply: '', jalur: '' };
+}
+
+/**
+ * Deteksi niat CADANGAN — lebih longgar dari `deteksiNiat`, untuk kalimat yang
+ * tidak memakai kata kunci baku.
+ *
+ * BEDA dengan deteksiNiat: fungsi ini TIDAK mewajibkan kata perintah di awal.
+ * Sebagai gantinya ia mencari POLA kalimat yang jelas-jelas permintaan aksi
+ * terhadap data, mis.:
+ *   "tolong dicatat aku habis 50rb buat makan"   -> pengeluaran
+ *   "jangan lupa besok aku ada rapat jam 9"      -> pengingat
+ *   "set reminder 10 menit lagi"                 -> pengingat
+ *   "aku perlu beli susu"                        -> tugas
+ *
+ * Tetap KONSERVATIF: tanpa sinyal permintaan yang jelas, mengembalikan null
+ * (biar diteruskan ke AI sebagai obrolan biasa).
+ */
+export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
+  const asli = teks.trim();
+  const s = asli.toLowerCase();
+  if (s.length < 5 || s.length > 400) return null;
+
+  // Harus ada sinyal "permintaan aksi" — kalau tidak, ini obrolan biasa.
+  const sinyalMinta =
+    /\b(?:tolong|please|pls|mohon|bantu|bantuin|bisa|bisakah|boleh|coba|cek|masukin|input|daftarkan|list|set|pasang|buatkan|bikinin|jadwalkan|siapkan|tandai|mark)\b/i.test(s) ||
+    /\b(?:jangan\s*lupa|jgn\s*lupa|jngn\s*lupa|ingat\s*ya|catat\s*ya|dicatat|tercatat|notes?\s*:)/i.test(s) ||
+    // "aku perlu ...", "aku harus ..." — permintaan implisit untuk dicatat sebagai tugas
+    /\b(?:aku|saya|gue|gw|kita)\s+(?:perlu|harus|kudu|mesti|pengen|pengin|mau|ingin)\s+\w+/i.test(s);
+  if (!sinyalMinta) return null;
+
+  // Tolak kalau jelas obrolan/pertanyaan (agar tidak salah tangkap).
+  if (/\?$/.test(s)) return null;
+  if (/\b(?:apa|apakah|apaan|berapa|brp|kenapa|mengapa|gimana|bagaimana|kok|emang|memang)\b/i.test(s)) return null;
+  // "tadi" menandakan masa lalu -> biasanya obrolan, TAPI tetap boleh bila user
+  // JELAS meminta dicatat ("tolong dicatat ... tadi"). Jadi hanya tolak bila
+  // tidak ada kata minta catat eksplisit.
+  const mintaCatatEksplisit = /\b(?:tolong\s+)?(?:catat|dicatat|tercatat|simpan|masukin|input|bantu\s+catat)\b/i.test(s);
+  if (!mintaCatatEksplisit && /\b(?:tadi|kemarin|barusan|baru\s*aja|td)\b/i.test(s)) return null;
+
+  // a) PENGINGAT: ada kata ingat/lupa/reminder + waktu jelas
+  if (/\b(?:ingat|ingatkan|ingetin|lupa|remind|reminder|pengingat)\b/i.test(s)) {
+    const kapan = parseWaktuAlami(s);
+    if (kapan) {
+      let pesan = asli
+        .replace(/^\s*\/?(?:tolong|please|pls|mohon|bantu|bantuin|coba|set|pasang|buatkan|bikinin|jadwalkan|siapkan)\s+/i, '')
+        .replace(/\b(?:jangan\s*lupa|jgn\s*lupa|jngn\s*lupa|ingat\s*ya|ingatkan|ingetin|ingat|remind(?:er)?|pengingat)\b/gi, '')
+        .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
+        .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
+        .replace(/\b\d+\s*(menit|jam|hari|minggu|bulan)\s*(lagi|kemudian)?\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      if (pesan.length < 3) pesan = asli;
+      return {
+        kind: 'note', yakin: 0.7,
+        data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
+        ringkas: `Pengingat "${pesan}" pada ${formatWaktuUser(kapan)} WIB`,
+      };
+    }
+  }
+
+  // b) KEUANGAN: ada nominal + konteks uang (kata "catat/dicatat" juga cukup).
+  const nominal = parseNominal(s);
+  const konteksUang = /\b(?:keluar|masuk|beli|bayar|habis|abis|dapat|dapet|gaji|belanja|jajan|ongkos|biaya|pendapatan|pemasukan|pengeluaran|income|expense|uang|duit|rupiah|rp)\b/i.test(s);
+  // Sinyal "minta catat" + ada nominal -> anggap keuangan (tanpa wajib kata uang).
+  const mintaCatat = /\b(?:catat|dicatat|tercatat|simpan|masukin|input)\b/i.test(s);
+  if (nominal && (konteksUang || mintaCatat)) {
+    const kind: ExpenseKind = /\b(?:masuk|dapat|dapet|gaji|pendapatan|pemasukan|income)\b/i.test(s) ? 'in' : 'out';
+    const kategori = tebakKategori(s);
+    return {
+      kind: 'expense', yakin: 0.7,
+      data: { amount: nominal, kind, category: kategori, note: asli },
+      ringkas: `${kind === 'in' ? 'Pemasukan' : 'Pengeluaran'} Rp${nominal.toLocaleString('id-ID')} (${kategori})`,
+    };
+  }
+
+  // c) TUGAS: ada kata perlu/harus/mesti + KATA KERJA apa pun (lebih longgar),
+  //    atau ada kata "tugas/todo" + isi.
+  const mTugas = asli.match(/\b(?:aku|saya|gue|gw|kita)?\s*(?:perlu|harus|kudu|mesti|pengen|pengin|mau|ingin)\s+([a-z]{3,20}\s+[\s\S]{2,80})/i);
+  if (mTugas && !/\b(?:tidur|makan|minum|istirahat|jalan|pulang|pergi|main|nonton|dengar|lihat|tahu|tau|coba)\b/i.test(mTugas[1].split(' ')[0])) {
+    const isi = mTugas[0].trim();
+    return {
+      kind: 'todo', yakin: 0.65,
+      data: { task: isi, priority: 2, due_at: null },
+      ringkas: `Tugas: "${isi}"`,
+    };
+  }
+
+  // d) CATATAN: "simpan/tulis/dicatat" + isi jelas
+  const mCatat = asli.match(/\b(?:simpan|dicatat|tercatat|tulis(?:kan)?|masukin|input(?:kan)?)\b\s*(?:ini|nih|dong)?[:\s]+([\s\S]{4,200})/i);
+  if (mCatat) {
+    const isi = mCatat[1].trim();
+    if (isi.length >= 4) {
+      return {
+        kind: 'note', yakin: 0.65,
+        data: { content: isi },
+        ringkas: `Catatan: "${isi.slice(0, 80)}"`,
+      };
+    }
+  }
+
+  return null;
 }
 
 // ============================================================================
