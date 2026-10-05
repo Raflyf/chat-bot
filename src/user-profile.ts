@@ -23,6 +23,7 @@
 import { db } from './db.js';
 import {
   detectUserCountry, detectLocation, detectUserLocationDeclaration,
+  registerPembacaProfil,
   type LocationMatch,
 } from './timezone.js';
 
@@ -176,12 +177,14 @@ export async function tentukanProfilWaktu(
   if (deklarasi) {
     const profil = profilDariLokasi(deklarasi);
     await simpanProfilWaktu(chatId, platform, profil);
+    setCacheProfil(chatId, profil);
     return { profil, perluTanya: false, perluKonfirmasi: false, pertanyaan: '' };
   }
 
   // 1. Sudah ada profil tersimpan.
   const tersimpan = await ambilProfilWaktu(chatId);
   if (tersimpan) {
+    setCacheProfil(chatId, tersimpan);
     return {
       profil: tersimpan,
       perluTanya: false,
@@ -204,6 +207,7 @@ export async function tentukanProfilWaktu(
       terverifikasi: false,
     };
     await simpanProfilWaktu(chatId, platform, profil);
+    setCacheProfil(chatId, profil);
     return {
       profil,
       perluTanya: false,
@@ -254,3 +258,47 @@ export function waktuDiZona(zone: string, d: Date = new Date()): string {
     return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short' });
   }
 }
+
+
+// ============================================================================
+// CACHE SINKRON (untuk dipakai buildUniversalTimePrompt yang sinkron)
+// ============================================================================
+//
+// `buildUniversalTimePrompt()` di skills.ts dipanggil secara SINKRON, sementara
+// profil waktu ada di DATABASE (async). Solusinya: `tentukanProfilWaktu()`
+// mengisi cache ini setiap ada pesan masuk, lalu pembaca sinkron mengambilnya.
+// Cache di-key per chatId; entri lama dibersihkan otomatis (batas 500).
+const cacheProfil = new Map<string, { profil: ProfilWaktu; at: number }>();
+const CACHE_TTL_MS = 10 * 60_000;
+
+/** Isi cache (dipanggil tentukanProfilWaktu). */
+export function setCacheProfil(chatId: string, profil: ProfilWaktu | null): void {
+  if (!profil) {
+    cacheProfil.delete(chatId);
+    return;
+  }
+  cacheProfil.set(chatId, { profil, at: Date.now() });
+  if (cacheProfil.size > 500) {
+    const palingLama = [...cacheProfil.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+    if (palingLama) cacheProfil.delete(palingLama[0]);
+  }
+}
+
+/** Baca cache (sinkron). Mengembalikan null bila belum ada / kadaluarsa. */
+export function getCacheProfil(chatId?: string): ProfilWaktu | null {
+  if (!chatId) return null;
+  const e = cacheProfil.get(chatId);
+  if (!e) return null;
+  if (Date.now() - e.at > CACHE_TTL_MS) {
+    cacheProfil.delete(chatId);
+    return null;
+  }
+  return e.profil;
+}
+
+// Daftarkan pembaca cache ke timezone.ts (agar buildUniversalTimePrompt sinkron
+// bisa membaca profil waktu user tanpa circular import).
+registerPembacaProfil((chatKey) => {
+  const p = getCacheProfil(chatKey);
+  return p ? { timezone: p.timezone, label: p.label } : null;
+});

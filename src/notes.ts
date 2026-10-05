@@ -291,6 +291,21 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
     return d;
   }
 
+  // BAGIAN HARI tanpa jam eksplisit: "nanti malam", "malam ini", "pagi ini",
+  // "besok pagi", "sore nanti". Jam default: subuh 4, pagi 7, siang 12,
+  // sore 16, malam 19. DIPERLUAS 05 Okt 2026 — sebelumnya "jangan lupa nanti
+  // malam bayar utang" tidak dikenali karena hanya ada kata bagian hari.
+  const mBagianHari = s.match(/\b(subuh|pagi|siang|sore|petang|malam)\b/);
+  if (mBagianHari && !/(?:jam|pukul)\s*\d/.test(s)) {
+    const jamDefault: Record<string, number> = { subuh: 4, pagi: 7, siang: 12, sore: 16, petang: 16, malam: 19 };
+    const j = jamDefault[mBagianHari[1]];
+    const d = new Date(sekarang.getTime());
+    d.setHours(j, 0, 0, 0);
+    // Bila jam itu sudah lewat hari ini -> besok.
+    if (d.getTime() <= sekarang.getTime()) d.setDate(d.getDate() + 1);
+    return d;
+  }
+
   // Jam: "jam 8", "jam 08:30", "pukul 15.00", "8 pagi", "7 malam"
   const mJam = s.match(/(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?/);
   let jam: number | null = null;
@@ -335,7 +350,7 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
  * (setelah kata pengantar opsional). Prinsipnya: HANYA kalimat PERINTAH yang
  * boleh dicatat, bukan pertanyaan, bukan cerita, bukan obrolan.
  */
-const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|ingat|remind|reminder|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres|tandai|set|bikin|buat|jadwalkan|siapkan|tolong-ingat|jangan-lupa';
+const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|ingat|remind|reminder|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres|tandai|set|bikin|buat|jadwalkan|siapkan|beli|bayar|jajan|ongkos|biaya|habis|abis|dapat|dapet|gaji|transferan|harus|perlu|kudu|mesti';
 
 /** Kata pengantar yang BOLEH mendahului perintah (bukan penanda obrolan). */
 const PENGANTAR_BOLEH = /^\s*(tolong|coba|bisa|boleh|please|pls|mau|aku\s+mau|saya\s+mau|aku\s+pengen|saya\s+pengen|aku\s+ingin|saya\s+ingin|aku\s+pingin|saya\s+pingin|gw\s+mau|gue\s+mau|aku\s+mo|saya\s+mo)\s+/i;
@@ -1515,7 +1530,12 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
     /\b(?:tolong|please|pls|mohon|bantu|bantuin|bisa|bisakah|boleh|coba|cek|masukin|input|daftarkan|list|set|pasang|buatkan|bikinin|jadwalkan|siapkan|tandai|mark)\b/i.test(s) ||
     /\b(?:jangan\s*lupa|jgn\s*lupa|jngn\s*lupa|ingat\s*ya|catat\s*ya|dicatat|tercatat|notes?\s*:)/i.test(s) ||
     // "aku perlu ...", "aku harus ..." — permintaan implisit untuk dicatat sebagai tugas
-    /\b(?:aku|saya|gue|gw|kita)\s+(?:perlu|harus|kudu|mesti|pengen|pengin|mau|ingin)\s+\w+/i.test(s);
+    /\b(?:aku|saya|gue|gw|kita)\s+(?:perlu|harus|kudu|mesti|pengen|pengin|mau|ingin)\s+\w+/i.test(s) ||
+    // DIPERLUAS (05 Okt 2026): kalimat pencatatan sehari-hari tanpa kata "catat".
+    //   "beli kopi 25rb", "bayar listrik 350000", "jajan gorengan 10k",
+    //   "dapat gaji lima juta", "harus beli galon"
+    /\b(?:beli|bayar|jajan|ongkos|habis|abis|dapat|dapet|gaji|belanja|transferan|bonus|thr|parkir|bensin|tagihan|sewa|cicilan|utang|hutang|pengeluaran|pemasukan|pengeluaranku|pemasukanku)\b/i.test(s) ||
+    /^\s*(?:harus|perlu|kudu|mesti)\s+\w+/i.test(s);
   if (!sinyalMinta) return null;
 
   // Tolak kalau jelas obrolan/pertanyaan (agar tidak salah tangkap).
@@ -1525,7 +1545,10 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   // JELAS meminta dicatat ("tolong dicatat ... tadi"). Jadi hanya tolak bila
   // tidak ada kata minta catat eksplisit.
   const mintaCatatEksplisit = /\b(?:tolong\s+)?(?:catat|dicatat|tercatat|simpan|masukin|input|bantu\s+catat)\b/i.test(s);
-  if (!mintaCatatEksplisit && /\b(?:tadi|kemarin|barusan|baru\s*aja|td)\b/i.test(s)) return null;
+  // Transaksi masa lalu yang JELAS ("tadi beli bensin lima puluh ribu") tetap dicatat
+  // bila ada nominal + kata transaksi. Tanpa nominal, "tadi" = obrolan biasa.
+  const transaksiJelas = /\b(?:beli|bayar|jajan|ongkos|habis|abis|dapat|dapet|gaji|belanja|transferan|parkir|bensin|tagihan|cicilan|utang)\b/i.test(s) && parseNominal(s) !== null;
+  if (!mintaCatatEksplisit && !transaksiJelas && /\b(?:tadi|kemarin|barusan|baru\s*aja|td)\b/i.test(s)) return null;
 
   // a) PENGINGAT: ada kata ingat/lupa/reminder + waktu jelas
   if (/\b(?:ingat|ingatkan|ingetin|lupa|remind|reminder|pengingat)\b/i.test(s)) {
@@ -1548,12 +1571,24 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
     }
   }
 
-  // b) KEUANGAN: ada nominal + konteks uang (kata "catat/dicatat" juga cukup).
+  // b) KEUANGAN: ada nominal + konteks uang.
+  //
+  // DIPERLUAS (05 Okt 2026): sebelumnya butuh kata "catat" ATAU kata uang baku.
+  // Sekarang cukup nominal + kata kerja transaksi umum (beli/bayar/jajan/ongkos/
+  // habis/dapat/gaji/dll) — cara orang mencatat pengeluaran sehari-hari.
+  // Tetap AMAN karena wajib ada NOMINAL (angka/uang), jadi obrolan seperti
+  // "aku tadi makan enak" tidak ikut tertangkap.
   const nominal = parseNominal(s);
-  const konteksUang = /\b(?:keluar|masuk|beli|bayar|habis|abis|dapat|dapet|gaji|belanja|jajan|ongkos|biaya|pendapatan|pemasukan|pengeluaran|income|expense|uang|duit|rupiah|rp)\b/i.test(s);
+  const konteksUang = /\b(?:keluar|masuk|beli|bayar|habis|abis|dapat|dapet|gaji|belanja|jajan|ongkos|biaya|pendapatan|pemasukan|pengeluaran|income|expense|uang|duit|rupiah|rp|transferan|kiriman|bonus|thr|parkir|bensin|tarif|sewa|tagihan|listrik|air|internet|pulsa|kuota|obat|dokter|sekolah|spp|kontrakan|kos|utang|hutang|cicilan|cicil)\b/i.test(s);
   // Sinyal "minta catat" + ada nominal -> anggap keuangan (tanpa wajib kata uang).
-  const mintaCatat = /\b(?:catat|dicatat|tercatat|simpan|masukin|input)\b/i.test(s);
-  if (nominal && (konteksUang || mintaCatat)) {
+  const mintaCatat = /\b(?:catat|dicatat|tercatat|simpan|masukin|input|tulis)\b/i.test(s);
+  // Sinyal uang KUAT (kata satuan uang) -> cukup dengan nominal saja.
+  // CATATAN: pola lama `\b(?:rb|ribu|k)\b` GAGAL untuk "100rb" karena tidak ada
+  // batas kata antara "100" dan "rb". Sekarang memakai pola angka+satuan langsung.
+  const satuanUangKuat = /\d+\s*(?:rb|ribu|k|jt|juta|miliar|milyar)\b|\b(?:rupiah|rp)\s*\d/i.test(s);
+  // Kata "pengeluaran/pemasukan/pengeluaranku/pemasukanku" + nominal -> pasti keuangan.
+  const kataPengeluaran = /\b(?:pengeluaran|pemasukan|pengeluaranku|pemasukanku|belanjaku|jajananku|uang\s*keluar|uang\s*masuk|total\s*keluar|total\s*masuk)\b/i.test(s);
+  if (nominal && (konteksUang || mintaCatat || satuanUangKuat || kataPengeluaran)) {
     const kind: ExpenseKind = /\b(?:masuk|dapat|dapet|gaji|pendapatan|pemasukan|income)\b/i.test(s) ? 'in' : 'out';
     const kategori = tebakKategori(s);
     return {
@@ -1565,7 +1600,20 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
 
   // c) TUGAS: ada kata perlu/harus/mesti + KATA KERJA apa pun (lebih longgar),
   //    atau ada kata "tugas/todo" + isi.
-  const mTugas = asli.match(/\b(?:aku|saya|gue|gw|kita)?\s*(?:perlu|harus|kudu|mesti|pengen|pengin|mau|ingin)\s+([a-z]{3,20}\s+[\s\S]{2,80})/i);
+  // KATA KEINGINAN ("pengen/pengin/mau/ingin") BUKAN tugas — itu obrolan/angan-angan.
+  // Temuan uji 05 Okt 2026: "aku pengen beli mobil" salah diklasifikasi jadi tugas.
+  // Hanya KEWAJIBAN ("perlu/harus/kudu/mesti") yang dianggap tugas.
+  const mTugas = asli.match(/\b(?:aku|saya|gue|gw|kita)?\s*(?:perlu|harus|kudu|mesti)\s+([a-z]{3,20}\s+[\s\S]{2,80})/i);
+  // Varian tanpa subjek: "harus beli galon", "perlu bayar pajak"
+  const mTugasPolos = asli.match(/^\s*(?:perlu|harus|kudu|mesti)\s+([a-z]{3,20}\s+[\s\S]{2,80})/i);
+  if (mTugasPolos && !mTugas) {
+    const isi = mTugasPolos[0].trim();
+    return {
+      kind: 'todo', yakin: 0.65,
+      data: { task: isi, priority: 2, due_at: null },
+      ringkas: `Tugas: "${isi}"`,
+    };
+  }
   if (mTugas && !/\b(?:tidur|makan|minum|istirahat|jalan|pulang|pergi|main|nonton|dengar|lihat|tahu|tau|coba)\b/i.test(mTugas[1].split(' ')[0])) {
     const isi = mTugas[0].trim();
     return {

@@ -416,12 +416,21 @@ export function buildUniversalTimePrompt(
   const profileLoc = detectLocation(profileOrHistoryText);
   const userDeclaringLoc = detectUserLocationDeclaration(userPrompt);
   const askingTime = isAskingTime(userPrompt);
+
+  // ── PROFIL WAKTU TERSIMPAN (zona per-user dari database) ──
+  // Dibaca dari cache sinkron yang diisi `tentukanProfilWaktu()` (src/user-profile.ts)
+  // setiap ada pesan masuk. Ini membuat jawaban jam memakai zona USER, bukan WIB.
+  // Import dinamis dihindari agar tidak circular; cache diakses lewat registry global.
+  const profilTersimpan = ambilProfilCache(chatKey);
   // Hanya WhatsApp yang chat key-nya memuat nomor telepon asli (wa_<jid>).
   // ID numerik Telegram BUKAN nomor telepon — ID seperti "1073..." jangan sampai
   // dibaca sebagai kode negara +1 (AS/Kanada) yang membuat zona waktu salah.
   const detectedUserCountry = /^wa[_:]/i.test(chatKey) ? detectUserCountry(chatKey) : null;
 
-  const targetZone = profileLoc?.zone || detectedUserCountry?.zone || 'Asia/Jakarta';
+  // PRIORITAS ZONA: profil tersimpan (paling akurat) > lokasi di pesan > kode negara.
+  // CATATAN (05 Okt 2026): sebelumnya default-nya selalu WIB, sehingga user di
+  // zona lain mendapat waktu yang salah. Sekarang profil tersimpan didahulukan.
+  const targetZone = profilTersimpan?.timezone || userDeclaringLoc?.zone || profileLoc?.zone || detectedUserCountry?.zone || 'Asia/Jakarta';
   const sentTime = msgSentAt instanceof Date && !isNaN(msgSentAt.getTime()) ? formatInZone(msgSentAt, targetZone) : null;
 
   // KASUS 1: PENGGUNA TIDAK BERTANYA JAM DAN TIDAK MENYATAKAN LOKASI
@@ -501,6 +510,21 @@ export function buildUniversalTimePrompt(
     return parts.join('\n');
   }
 
+  // 3b-0. Pengguna bertanya jam DAN profil waktunya tersimpan di DATABASE.
+  //       Ini jalur paling akurat — pakai zona user langsung.
+  if (profilTersimpan) {
+    const locTime = formatInZone(now, profilTersimpan.timezone);
+    parts.push(`[WAKTU & KALENDER GLOBAL (UNIVERSAL REAL-TIME CLOCK)]:`);
+    parts.push(`- Waktu Universal Standar: ${utc}`);
+    parts.push(`- ZONA WAKTU PENGGUNA (TERSIMPAN): ${profilTersimpan.label} (${profilTersimpan.timezone})`);
+    parts.push(`  * Jam di lokasi pengguna: ${locTime.time.slice(0, 5)} ${locTime.tzName} (${locTime.full})`);
+    parts.push(`[DIREKTIF]:`);
+    parts.push(`- Jawab LANGSUNG jam di lokasi pengguna (${locTime.time.slice(0, 5)} ${locTime.tzName}), to-the-point dan santai.`);
+    parts.push(`- DILARANG memakai WIB bila zona pengguna bukan WIB.`);
+    parts.push(`- DILARANG menanyakan kota/lokasi lagi — sudah tersimpan dan diingat.`);
+    return parts.join('\n');
+  }
+
   // 3b. Pengguna bertanya "jam berapa sekarang?" dan lokasinya sudah tersimpan di profil/riwayat
   if (profileLoc) {
     const locTime = formatInZone(now, profileLoc.zone);
@@ -533,4 +557,26 @@ export function buildUniversalTimePrompt(
   parts.push(`- DILARANG kalimat template hafalan dan DILARANG menjabarkan daftar pulau/provinsi panjang seperti buku pelajaran.`);
 
   return parts.join('\n');
+}
+
+
+// ── REGISTRY PROFIL WAKTU (menghindari circular import) ──
+// user-profile.ts meng-REGISTER pembaca cache di sini saat modul dimuat,
+// sehingga timezone.ts bisa membacanya tanpa mengimpor user-profile.ts
+// (yang justru mengimpor timezone.ts).
+type PembacaProfil = (chatKey?: string) => { timezone: string; label: string } | null;
+let pembacaProfilCache: PembacaProfil | null = null;
+
+/** Dipanggil user-profile.ts saat modul dimuat. */
+export function registerPembacaProfil(fn: PembacaProfil): void {
+  pembacaProfilCache = fn;
+}
+
+/** Ambil profil waktu dari cache (null bila belum tersedia). */
+export function ambilProfilCache(chatKey?: string): { timezone: string; label: string } | null {
+  try {
+    return pembacaProfilCache ? pembacaProfilCache(chatKey) : null;
+  } catch {
+    return null;
+  }
 }
