@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { config } from './env.js';
+import { cooldownMemori, setCooldown, hapusCooldown, mulaiHidrasiLatar } from './cooldown.js';
 import { isKeyAllowed, keyUsed, keyTokensUsed, keyTokensUsedToday, keyRequestsUsedToday, keyTokenAbsolute, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
 // (xKiro DIHAPUS 04 Okt 2026 — semua akun disuspend permanen 403)
 
@@ -13,13 +14,52 @@ const keyCooldownMap = new Map<string, number>(); // `${kind}:${keyHash}` -> tim
 const keyRotationIndexMap = new Map<ProviderKind, number>();
 const modelCooldownMap = new Map<string, number>(); // `${kind}:${model}` -> timestamp cooldown
 
+
+// ── JEMBATAN COOLDOWN PERSISTEN (audit 05 Okt 2026) ──
+// `keyCooldownMap` lama tetap ada sebagai cache memori (jalur cepat), TAPI setiap
+// penulisan juga dikirim ke `src/cooldown.ts` agar bertahan lintas instance
+// Vercel serverless. Pembacaan memakai nilai memori bila ada; bila kosong (cold
+// start), cooldown.ts sudah menghidrasi dari database.
+function setCooldownPersist(kunciLama: string, untilMs: number, alasan = ''): void {
+  keyCooldownMap.set(kunciLama, untilMs);
+  const i = kunciLama.indexOf(':');
+  if (i > 0) {
+    const kind = kunciLama.slice(0, i);
+    const keyHash = kunciLama.slice(i + 1);
+    setCooldown(kind, keyHash, untilMs, '', alasan);
+  }
+}
+
+function getCooldownPersist(kunciLama: string): number {
+  const dariMemori = keyCooldownMap.get(kunciLama) || 0;
+  if (dariMemori) return dariMemori;
+  const i = kunciLama.indexOf(':');
+  if (i > 0) {
+    const kind = kunciLama.slice(0, i);
+    const keyHash = kunciLama.slice(i + 1);
+    return cooldownMemori(kind, keyHash, '');
+  }
+  return 0;
+}
+
+function hapusCooldownPersist(kunciLama: string): void {
+  keyCooldownMap.delete(kunciLama);
+  const i = kunciLama.indexOf(':');
+  if (i > 0) {
+    hapusCooldown(kunciLama.slice(0, i), kunciLama.slice(i + 1), '');
+  }
+}
+
+// Hidrasi cooldown dari database (sekali, di belakang) saat modul dimuat.
+mulaiHidrasiLatar();
+
 function keyHash(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
 }
 
 function recordKeySuccess(kind: ProviderKind, key: string, model: string): void {
   // Tidak ada lagi sticky key: rotasi ditangani getOrderedKeys (round-robin).
-  keyCooldownMap.delete(`${kind}:${keyHash(key)}`);
+  hapusCooldownPersist(`${kind}:${keyHash(key)}`);
   modelCooldownMap.delete(`${kind}:${model}`);
 }
 
@@ -55,7 +95,7 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   // sebelum lanjut ke tier berikutnya.
   // Perbaikan: cooldown 6 jam untuk pola ini supaya tier dilewati, bukan diulang.
   if (/concurrency capacity|Paid accounts are admitted first|insufficient_quota|Insufficient wallet balance/i.test(msg)) {
-    keyCooldownMap.set(kh, Date.now() + 6 * 60 * 60_000);
+    setCooldownPersist(kh, Date.now() + 6 * 60 * 60_000, 'rpd');
     return;
   }
 
@@ -69,7 +109,7 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   if (kind === 'cloudflare' && /neurons|daily free allocation|4006|workers paid/i.test(msg)) {
     const cd = Date.now() + msUntilDailyResetUtc();
     for (const other of config.pools.cloudflare) {
-      keyCooldownMap.set(`cloudflare:${keyHash(other)}`, cd);
+      setCooldownPersist(`cloudflare:${keyHash(other)}`, cd, 'neuron');
     }
     return;
   }
@@ -86,12 +126,12 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
      // - Cloudflare juga ada response body khusus.
      const isTempLimit = /try again in|requests per minute|tokens per minute/i.test(msg) || (err as any)?.retryAfter;
      if (isTempLimit) {
-       keyCooldownMap.set(kh, Date.now() + 60_000); // 1 menit untuk TPM
+       setCooldownPersist(kh, Date.now() + 60_000, 'tpm'); // 1 menit untuk TPM
        return;
      } else if (/daily|quota|limit|insufficient/i.test(msg)) {
        // Limit harian -> cooldown sampai reset UTC
        const cd = Date.now() + msUntilDailyResetUtc();
-       keyCooldownMap.set(kh, cd);
+       setCooldownPersist(kh, cd, 'quota');
        return;
      }
    }
@@ -145,7 +185,7 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
     const cd = Date.now() + durasiMs;
     // Istirahatkan SEMUA key DreamPrompting: kuota milik akun, bukan key.
     for (const other of config.pools.dreamprompting) {
-      keyCooldownMap.set(`dreamprompting:${keyHash(other)}`, cd);
+      setCooldownPersist(`dreamprompting:${keyHash(other)}`, cd, 'rpd');
     }
     return;
   }
@@ -158,13 +198,13 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
 
   // Jika 401/403 atau CreditsError (kunci salah / izin ditolak / kredit akun habis), cooldown 5 menit
   if (msg.includes('PROVIDER_401') || msg.includes('PROVIDER_403') || msg.includes('CreditsError')) {
-    keyCooldownMap.set(kh, Date.now() + 300_000);
+    setCooldownPersist(kh, Date.now() + 300_000, 'error');
     return;
   }
 
   // Jika timeout koneksi atau hang, cooldown 2 menit agar request berikutnya langsung ke kunci sehat
   if (msg === 'CONNECT_TIMEOUT' || msg === 'THINKING_TIMEOUT') {
-    keyCooldownMap.set(kh, Date.now() + 120_000);
+    setCooldownPersist(kh, Date.now() + 120_000, 'error');
     return;
   }
 }
@@ -233,7 +273,7 @@ export function getOrderedKeys(kind: ProviderKind, keys: string[]): string[] {
 
   for (const k of keys) {
     const kh = `${kind}:${keyHash(k)}`;
-    const cd = keyCooldownMap.get(kh) || 0;
+    const cd = getCooldownPersist(kh);
     if (now < cd) {
       cooling.push(k);
     } else {
@@ -1639,7 +1679,7 @@ async function balapanModelDalamTier(
           throw lastErr;
         }
         if (m === ERR_NO_FIRST_TOKEN) {
-          keyCooldownMap.set(`${step.kind}:${keyHash(key)}`, Date.now() + 120_000);
+          setCooldownPersist(`${step.kind}:${keyHash(key)}`, Date.now() + 120_000, 'error');
           continue;
         }
         if (m === ERR_STREAM_IDLE) {
@@ -1934,7 +1974,7 @@ export async function chat(
             );
             // recordKeyFailure sudah dipanggil di atas; pastikan key ini beristirahat
             // cukup lama (bukan 60 detik) karena antrian provider bisa panjang.
-            keyCooldownMap.set(`${step.kind}:${keyHash(key)}`, Date.now() + 120_000);
+            setCooldownPersist(`${step.kind}:${keyHash(key)}`, Date.now() + 120_000, 'error');
             slowKeyCount++;
             // Bila SEMUA key untuk model ini sudah dicoba dan tetap lambat, baru
             // anggap model tidak responsif (failover ke model berikutnya).

@@ -20,6 +20,15 @@
     },
     "api/admin-otp.ts": {
       "maxDuration": 15
+    },
+    "api/health.ts": {
+      "maxDuration": 10
+    },
+    "api/cron/backup.ts": {
+      "maxDuration": 60
+    },
+    "api/cron/arsip.ts": {
+      "maxDuration": 30
     }
   },
   "headers": [

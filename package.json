@@ -10,7 +10,8 @@
     "whatsapp:prod": "node dist/whatsapp_baileys.js",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit --project tsconfig.typecheck.json"
+    "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
+    "test": "node --test tests/"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.0",

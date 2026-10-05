@@ -30,6 +30,7 @@ import { tanganiGame } from './games/index.js';
 import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
 import { tentukanProfilWaktu, berkaitanDenganWaktu, waktuDiZona } from './user-profile.js';
 import { detectUserLocationDeclaration } from './timezone.js';
+import { deteksiPengulangan, labelUlang } from './reminder-repeat.js';
 
 /**
  * Format tanggal+jam dalam ZONA WAKTU USER (default WIB / Asia/Jakarta).
@@ -187,7 +188,7 @@ export function tebakKategori(teks: string): string {
  * (dua puluh..sembilan puluh), setengah, se- (sejam, semenit), dan campuran
  * ("satu setengah jam").
  */
-function angkaKataKeDigit(teks: string): string {
+export function angkaKataKeDigit(teks: string): string {
   const satuan: Record<string, number> = {
     nol: 0, kosong: 0, satu: 1, se: 1, dua: 2, tiga: 3, empat: 4, lima: 5,
     enam: 6, tujuh: 7, delapan: 8, sembilan: 9, sepuluh: 10, sebelas: 11,
@@ -211,6 +212,14 @@ function angkaKataKeDigit(teks: string): string {
   t = t.replace(/\bsetengah\s*(menit|jam|hari|minggu|bulan)\b/g, '0.5 $1');
   // 2) "sejam"/"semenit"/"sehari"/"seminggu" -> 1 satuan
   t = t.replace(/\bse(menit|jam|hari|minggu|bulan|detik)\b/g, '1 $1');
+  // 2b) "seratus"/"seribu"/"sejuta"/"semiliar" -> 100 / 1000 / 1000000 / 1000000000
+  //     BUG YANG DIPERBAIKI (temuan test otomatis 05 Okt 2026): sebelumnya
+  //     "seratus ribu" GAGAL (null) karena hanya "se" + satuan waktu didukung.
+  t = t.replace(/\bseratus\b/g, '100')
+       .replace(/\bseribu\b/g, '1000')
+       .replace(/\bsejuta\b/g, '1000000')
+       .replace(/\bsemiliar\b/g, '1000000000')
+       .replace(/\bsemilyar\b/g, '1000000000');
 
   // 3) belasan & puluhan (frasa dua kata lebih dulu)
   const frasa = [...Object.keys(belasan), ...Object.keys(puluhan)]
@@ -288,6 +297,19 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
     // Bila jam selesai < jam mulai, berarti lewat tengah malam.
     if (selesai.getTime() <= d.getTime()) selesai.setDate(selesai.getDate() + 1);
     Object.defineProperty(d, 'selesai', { value: selesai, enumerable: false });
+    return d;
+  }
+
+  // TANGGAL BULANAN: "tanggal 1", "tgl 15" -> tanggal itu, jam 08:00 (default).
+  // Temuan uji 05 Okt 2026: "ingatkan tiap tanggal 1 bayar listrik" gagal karena
+  // "tanggal 1" tidak dikenali (tidak ada jam) sehingga jatuh ke deteksi keuangan.
+  const mTanggal = s.match(/\b(?:tanggal|tgl)\s+(\d{1,2})\b/);
+  if (mTanggal) {
+    const tgl = Math.min(31, Math.max(1, Number(mTanggal[1])));
+    const d = new Date(sekarang.getTime());
+    d.setHours(8, 0, 0, 0);
+    d.setDate(tgl);
+    if (d.getTime() <= sekarang.getTime()) d.setMonth(d.getMonth() + 1, tgl);
     return d;
   }
 
@@ -441,6 +463,43 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   // ── L4. Ambil isi & klasifikasikan ──
   const nominal = parseNominal(s);
 
+  // 4a3. PENGINGAT BERULANG didahulukan.
+  // Temuan uji 05 Okt 2026: "ingatkan tiap tanggal 1 bayar listrik" salah
+  // ditangkap sebagai KEUANGAN (Rp1) karena ada kata "bayar" + angka 1, padahal
+  // itu pengingat berulang. Bila ada kata perintah INGAT + penanda pengulangan,
+  // blok pengingat di bawah yang menangani.
+  const adaPerintahIngat = /\b(?:ingatkan|ingetin|ingat|remind|reminder|pengingat)\b/i.test(asli);
+  const adaPengulangan = /\b(?:tiap|setiap|saban)\s+(?:hari|minggu|bulan|tahun|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|tanggal|hari\s+kerja)\b|\b(?:harian|mingguan|bulanan|tahunan)\b/i.test(asli);
+  if (adaPerintahIngat && adaPengulangan) {
+    const kapanUlang = parseWaktuAlami(asli);
+    if (kapanUlang) {
+      const ulang0 = deteksiPengulangan(asli);
+      let pesan0 = asli
+        .replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '')
+        .replace(/\b(?:tiap|setiap|saban)\s+(?:hari\s+kerja|hari|minggu|bulan|tahun)\b/gi, '')
+        .replace(/\b(?:tiap|setiap|saban)\s+(?:minggu|senin|selasa|rabu|kamis|jumat|jum'at|sabtu)\b/gi, '')
+        .replace(/\b(?:tiap|setiap|saban)\s+tanggal\s+\d{1,2}\b/gi, '')
+        .replace(/\b(?:harian|mingguan|bulanan|tahunan|weekday)\b/gi, '')
+        .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      if (pesan0.length < 3) pesan0 = asli;
+      return {
+        kind: 'note',
+        yakin: 0.92,
+        data: {
+          pengingat: true,
+          due_at: kapanUlang.toISOString(),
+          due_selesai: null,
+          message: pesan0,
+          repeat_kind: ulang0?.kind ?? 'daily',
+          repeat_value: ulang0?.value ?? null,
+        },
+        ringkas: `Pengingat "${pesan0}" pada ${formatWaktuUser(kapanUlang)}${ulang0 ? ` (${ulang0.label})` : ''}`,
+      };
+    }
+  }
+
   // 4a. KEUANGAN — wajib ada nominal
   const adaKataUang = /\b(uang|duit|pengeluaran|pemasukan|belanja|bayar|beli|habis|keluar|masuk|gaji|bonus|dapat|terima|honor|fee|pendapatan|jajan|ongkos|biaya|tarif)\b/.test(s);
   const perintahUang = /^\s*\/?(uang|keluar|masuk|pengeluaran|pemasukan)\b/i.test(tanpaPengantar);
@@ -503,6 +562,12 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       const ANGKA_KATA = '(?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh|sebelas|dua\\s*belas|tiga\\s*belas|empat\\s*belas|lima\\s*belas|enam\\s*belas|tujuh\\s*belas|delapan\\s*belas|sembilan\\s*belas|dua\\s*puluh|tiga\\s*puluh|empat\\s*puluh|lima\\s*puluh|enam\\s*puluh|tujuh\\s*puluh|delapan\\s*puluh|sembilan\\s*puluh|setengah|se)';
       let pesan = asli
         .replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '')
+        // Kata PENGULANGAN dibuang dari pesan (aturan berulang sudah disimpan
+        // di kolom terpisah). Temuan uji: "tiap hari minum obat" -> "minum obat".
+        .replace(/\b(?:tiap|setiap|saban)\s+(?:hari\s+kerja|hari|minggu|bulan|tahun)\b/gi, '')
+        .replace(/\b(?:tiap|setiap|saban)\s+(?:minggu|senin|selasa|rabu|kamis|jumat|jum'at|sabtu)\b/gi, '')
+        .replace(/\b(?:tiap|setiap|saban)\s+tanggal\s+\d{1,2}\b/gi, '')
+        .replace(/\b(?:harian|mingguan|bulanan|tahunan|weekday)\b/gi, '')
         .replace(/[,\s]+(?:tolong\s+)?(ingatkan|ingetin|remind)\s*[.!]*\s*$/i, '')
         .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
         // Rentang waktu ("dari jam 9 sampai jam 10") dibuang UTUH lebih dulu.
@@ -520,6 +585,8 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       if (pesan.length < 3) {
         pesan = asli.replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '').trim() || asli;
       }
+      // PENGINGAT BERULANG (fitur baru 05 Okt 2026): "tiap hari jam 7", "tiap Senin jam 9".
+      const ulang = deteksiPengulangan(s);
       // Rentang waktu: sertakan jam selesai bila user menyebutkannya.
       const selesai = (kapan as Date & { selesai?: Date }).selesai;
       const jamTeks = selesai
@@ -533,8 +600,10 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
           due_at: kapan.toISOString(),
           due_selesai: selesai ? selesai.toISOString() : null,
           message: pesan,
+          repeat_kind: ulang?.kind ?? 'none',
+          repeat_value: ulang?.value ?? null,
         },
-        ringkas: `Pengingat "${pesan}" pada ${jamTeks}`,
+        ringkas: `Pengingat "${pesan}" pada ${jamTeks}${ulang ? ` (${ulang.label})` : ''}`,
       };
     }
     return null; // perintah ingatkan tapi waktu tak jelas -> serahkan ke AI
@@ -1097,6 +1166,9 @@ async function simpanDariNiat(
     const hasil = await simpanReminderCerdas(
       chatId, String(d.message || 'Pengingat'), new Date(String(d.due_at)),
       opts.platform === 'telegram' ? 'telegram' : 'whatsapp',
+      d.repeat_kind && d.repeat_kind !== 'none'
+        ? { repeat_kind: String(d.repeat_kind), repeat_value: d.repeat_value ? String(d.repeat_value) : null }
+        : undefined,
     );
     if (!hasil.ok) {
       return { ok: false, pesan: '⚠️ Gagal menyimpan pengingat. Coba lagi nanti ya.' };

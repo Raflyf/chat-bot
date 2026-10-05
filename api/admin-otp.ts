@@ -1,3 +1,4 @@
+import { cekRateLimit } from '../src/rate_limit.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from '../src/env.js';
 import { db } from '../src/db.js';
@@ -36,6 +37,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   try {
     // 1. GET AUTH STATE
     if (action === 'get_auth_state' || (!action && req.method === 'GET')) {
+      // RATE LIMIT (audit 05 Okt 2026): endpoint status bisa dipantau terus-menerus
+      // untuk melihat kapan lockout berakhir. Batasi 30 permintaan / menit / IP.
+      const rl = cekRateLimit(`otp-status:${clientIp}`, 30, 60_000);
+      if (!rl.boleh) {
+        res.setHeader('Retry-After', String(rl.resetDalamDetik));
+        res.status(429).json({
+          success: false,
+          message: `Terlalu banyak permintaan. Coba lagi dalam ${rl.resetDalamDetik} detik.`,
+        });
+        return;
+      }
       const state = await getPublicAuthState(clientIp);
       res.status(200).json({
         success: true,
@@ -48,6 +60,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     if (action === 'verify_pin') {
       if (req.method !== 'POST') {
         res.status(405).json({ success: false, message: 'Method Not Allowed' });
+        return;
+      }
+
+      // RATE LIMIT lapis kedua (audit 05 Okt 2026): selain lockout PIN, batasi
+      // 10 percobaan / menit / IP agar brute force tidak bisa menggilir instance.
+      const rlPin = cekRateLimit(`otp-pin:${clientIp}`, 10, 60_000);
+      if (!rlPin.boleh) {
+        res.setHeader('Retry-After', String(rlPin.resetDalamDetik));
+        res.status(429).json({
+          success: false,
+          message: `Terlalu banyak percobaan. Coba lagi dalam ${rlPin.resetDalamDetik} detik.`,
+        });
         return;
       }
 
@@ -71,7 +95,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         duration_ms: 15 * 60 * 1000,
         is_locked: result.isLocked,
         locked_until: result.lockedUntil,
-        lockout_attempts: result.lockoutAttempts,
+        // `lockout_attempts` DIHAPUS dari respons (audit 05 Okt 2026): jumlah
+        // percobaan gagal tidak perlu diketahui klien dan membantu penyerang
+        // menghitung timing brute force. `remaining_attempts` tetap ada karena
+        // dipakai halaman login (public/js/dashboard.js) untuk memberi tahu user sah.
         remaining_attempts: result.remainingAttempts,
         message: result.message,
       });

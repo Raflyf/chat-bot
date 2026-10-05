@@ -3,6 +3,8 @@ import { autoReply } from './skills.js';
 import { db } from './db.js';
 import { config } from './env.js';
 import { kemiripanPesan, AMBANG_MIRIP, TOLERANSI_WAKTU_MENIT } from './reminder-dedup.js';
+import { berikutnya, type AturanUlang } from './reminder-repeat.js';
+import { ambilProfilWaktu } from './user-profile.js';
 
 export interface ReminderItem {
   id: number;
@@ -73,6 +75,7 @@ export async function simpanReminderCerdas(
   message: string,
   dueAt: Date,
   platform: 'telegram' | 'whatsapp' = 'telegram',
+  ulang?: { repeat_kind: string; repeat_value: string | null },
 ): Promise<HasilSimpanReminder> {
   const c = db();
   if (!c) return { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Database tidak tersedia.' };
@@ -133,13 +136,26 @@ export async function simpanReminderCerdas(
     }
 
     // 4. Baru / berbeda -> simpan sebagai pengingat baru.
-    const { error } = await c.from('reminders').insert({
-      chat_id: chatId,
-      message,
-      due_at: dueIso,
-      status: 'pending',
-      platform,
-    });
+    //    Kolom berulang (v27) disertakan HANYA bila ada, supaya tetap bekerja
+    //    walau migrasi v27 belum dijalankan (fallback: insert tanpa kolom itu).
+    const barisDasar: Record<string, unknown> = {
+      chat_id: chatId, message, due_at: dueIso, status: 'pending', platform,
+    };
+    const barisUlang = ulang && ulang.repeat_kind && ulang.repeat_kind !== 'none'
+      ? { ...barisDasar, repeat_kind: ulang.repeat_kind, repeat_value: ulang.repeat_value }
+      : barisDasar;
+
+    let { error } = await c.from('reminders').insert(barisUlang);
+    // Fallback: kolom v27 belum ada (kode PGRST204 / 42703) -> insert tanpa kolom itu.
+    const kolomTidakAda = (e: unknown): boolean => {
+      const kode = (e as { code?: string })?.code || '';
+      const pesan = String((e as { message?: string })?.message || '');
+      return kode === 'PGRST204' || kode === '42703' || /repeat_kind|column/i.test(pesan);
+    };
+    if (error && barisUlang !== barisDasar && kolomTidakAda(error)) {
+      const retry = await c.from('reminders').insert(barisDasar);
+      error = retry.error;
+    }
     if (error) return { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Gagal menyimpan pengingat.' };
     return {
       ok: true,
@@ -245,6 +261,17 @@ async function susunTeksPengingat(
  * Cek dan kirim semua reminder yang jatuh tempo dengan atomic claim (CAS).
  * Mencegah duplikasi pesan saat cron dan worker berjalan beriringan.
  */
+
+/** Zona waktu untuk sebuah chat (dari profil user, fallback WIB). */
+async function zonaWaktuChat(chatId: string): Promise<string> {
+  try {
+    const p = await ambilProfilWaktu(chatId);
+    return p?.timezone || 'Asia/Jakarta';
+  } catch {
+    return 'Asia/Jakarta';
+  }
+}
+
 export async function checkDueReminders(
   sendFn: (chatId: string, text: string, platform?: 'telegram' | 'whatsapp') => Promise<unknown>,
 ): Promise<number> {
@@ -333,18 +360,41 @@ export async function checkDueReminders(
       .lte('due_at', staleThreshold);
 
     // 2. Ambil pengingat yang jatuh tempo
-    const { data, error } = await c
-      .from('reminders')
-      .select('id, chat_id, message, due_at, status, platform, lease_until, created_at')
-      .eq('status', 'pending')
-      .lte('due_at', now)
-      .order('due_at', { ascending: true })
-      .limit(50);
+    // Kolom berulang (v27) diambil bila ada. Bila migrasi v27 belum dijalankan,
+    // query dengan kolom itu GAGAL -> fallback ke kolom dasar.
+    const KOLOM_DASAR = 'id, chat_id, message, due_at, status, platform, lease_until, created_at';
+    const KOLOM_LENGKAP = `${KOLOM_DASAR}, repeat_kind, repeat_value, repeat_until, repeat_count`;
+    // Tipe dibuat longgar (Record) agar tidak bentrok saat kolom v27 belum ada.
+    let data: Array<Record<string, unknown>> | null = null;
+    let error: unknown = null;
+    {
+      const h1 = await c
+        .from('reminders')
+        .select(KOLOM_LENGKAP)
+        .eq('status', 'pending')
+        .lte('due_at', now)
+        .order('due_at', { ascending: true })
+        .limit(50);
+      if (!h1.error) {
+        data = (h1.data ?? []) as Array<Record<string, unknown>>;
+      } else {
+        const h2 = await c
+          .from('reminders')
+          .select(KOLOM_DASAR)
+          .eq('status', 'pending')
+          .lte('due_at', now)
+          .order('due_at', { ascending: true })
+          .limit(50);
+        data = (h2.data ?? []) as Array<Record<string, unknown>>;
+        error = h2.error;
+      }
+    }
 
     if (error || !data || data.length === 0) return 0;
 
     let processed = 0;
-    for (const item of data as ReminderItem[]) {
+    for (const itemRaw of data) {
+      const item = itemRaw as unknown as ReminderItem & { repeat_kind?: string; repeat_value?: string | null; repeat_until?: string | null; repeat_count?: number };
       // Atomic claim dengan lease_until 10 menit tanpa memodifikasi due_at asli (B4)
       const leaseExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
       let claimSuccess = false;
@@ -390,8 +440,38 @@ export async function checkDueReminders(
           created_at: item.created_at,
         });
         await sendFn(item.chat_id, deliveryText, item.platform);
-        // Tandai selesai (sent) HANYA setelah pesan benar-benar sukses terkirim (C1)
-        await c.from('reminders').update({ status: 'sent', lease_until: null }).eq('id', item.id);
+
+        // ── PENGINGAT BERULANG (fitur baru 05 Okt 2026) ──
+        // Bila punya aturan pengulangan, JANGAN ditandai 'sent' (itu akan
+        // menghentikannya). Sebaliknya, hitung kemunculan berikutnya lalu
+        // perbarui due_at dan kembalikan status ke 'pending'.
+        const it = item;
+        const kindUlang = it.repeat_kind && it.repeat_kind !== 'none' ? it.repeat_kind : 'none';
+
+        if (kindUlang !== 'none') {
+          const aturan: AturanUlang = {
+            repeat_kind: kindUlang as AturanUlang['repeat_kind'],
+            repeat_value: it.repeat_value ?? null,
+            repeat_until: it.repeat_until ?? null,
+            repeat_count: it.repeat_count ?? 0,
+          };
+          const zona = await zonaWaktuChat(item.chat_id);
+          const next = berikutnya(new Date(item.due_at), aturan, zona);
+          if (next) {
+            await c.from('reminders').update({
+              due_at: next.toISOString(),
+              status: 'pending',
+              lease_until: null,
+              repeat_count: (it.repeat_count ?? 0) + 1,
+            }).eq('id', item.id);
+          } else {
+            // Lewat batas akhir -> hentikan.
+            await c.from('reminders').update({ status: 'sent', lease_until: null }).eq('id', item.id);
+          }
+        } else {
+          // Tandai selesai (sent) HANYA setelah pesan benar-benar sukses terkirim (C1)
+          await c.from('reminders').update({ status: 'sent', lease_until: null }).eq('id', item.id);
+        }
         processed++;
       } catch (err) {
         console.error(`[remind] gagal kirim reminder id ${item.id}:`, err);
