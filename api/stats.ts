@@ -900,7 +900,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           tokensPerMinute: liveLimit?.tokensPerMinute ?? null,
           bindingPercent,
           bindingMetric,
-          tokensUsed,
+          // Untuk provider NEURON (Cloudflare), kirim NEURON terpakai sebagai
+          // `tokensUsed` agar frontend menampilkan satuan yang SAMA dengan cap.
+          // (Sebelumnya token 14.000 dibandingkan dengan cap neuron 10.000 ->
+          //  tampil "14.000 / 10.000" yang mencampur satuan.)
+          tokensUsed: adalahNeuron ? neuronTerpakai : tokensUsed,
           tokenCap,
           tokenPercent,
           // NEURON (perbaikan 06 Okt 2026): khusus Cloudflare, tampilkan neuron
@@ -909,6 +913,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           neuronUsed: adalahNeuron ? neuronTerpakai : undefined,
           neuronCap: adalahNeuron ? neuronCap : undefined,
           balasanTersisa: adalahNeuron ? balasanTersisa : undefined,
+          // Satuan untuk KEY INI (agar frontend menulis "neuron", bukan "Token").
+          satuanToken: adalahNeuron ? 'neuron' : 'token',
           isRealTokenData,
           tokenLimitType: p.tokenLimitType,
           tokenLimitLabel: p.tokenLimitLabel,

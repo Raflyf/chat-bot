@@ -102,17 +102,22 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
     }
 
-    function formatTokens(num) {
-      if (!num || isNaN(num) || num <= 0) return "0 Token";
+    // BUG YANG DIPERBAIKI (06 Okt 2026): fungsi ini SELALU menempelkan kata
+    // "Token" — termasuk untuk Cloudflare yang satuannya NEURON. Akibatnya
+    // ringkasan menampilkan "4K Token / 30K Token" padahal labelnya
+    // "Pemakaian neuron". Sekarang satuan bisa diberikan sebagai argumen.
+    function formatTokens(num, satuan) {
+      const u = satuan || "Token";
+      if (!num || isNaN(num) || num <= 0) return `0 ${u}`;
       if (num >= 1000000) {
         const val = (num / 1000000).toLocaleString("id-ID", { maximumFractionDigits: 1 });
-        return `${val}M Token`;
+        return `${val}M ${u}`;
       }
       if (num >= 1000) {
         const val = (num / 1000).toLocaleString("id-ID", { maximumFractionDigits: 0 });
-        return `${val}K Token`;
+        return `${val}K ${u}`;
       }
-      return `${num.toLocaleString("id-ID")} Token`;
+      return `${num.toLocaleString("id-ID")} ${u}`;
     }
 
     // =========================================================================
@@ -1200,13 +1205,18 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
               // Angka saja sulit dibaca sekilas ("178.330 / 200.000 token (89%)"),
               // jadi ditambah bar tipis di bawah teks: panjangnya menunjukkan
               // porsi terpakai, warnanya mengikuti ambang yang sama dengan angka.
+              // BUG YANG DIPERBAIKI (06 Okt 2026): label DULU HARDCODE "Token",
+              // sehingga Cloudflare (satuan NEURON) tertulis "Token 14.000 / 10.000"
+              // — mencampur satuan. Sekarang label mengikuti satuan sebenarnya.
+              const satuanKey = (k.satuanToken === 'neuron') ? 'neuron' : 'Token';
+              const labelBatas = (k.satuanToken === 'neuron') ? 'BATAS NEURON' : 'BATAS TOKEN';
               tokenLine = `<div class="key-token-line">
                 <div class="key-token-head">
-                  <span class="key-token-label">Token</span>
+                  <span class="key-token-label">${satuanKey}</span>
                   <span style="color: ${tokenColor};">${(k.tokensUsed || 0).toLocaleString("id-ID")} / ${(k.tokenCap || 0).toLocaleString("id-ID")} (${tokenPct}%)</span>
-                  ${bindingIsToken && bindingPct >= 80 ? '<span class="key-token-binding">BATAS TOKEN</span>' : ""}
+                  ${bindingIsToken && bindingPct >= 80 ? `<span class="key-token-binding">${labelBatas}</span>` : ""}
                 </div>
-                <div class="key-token-bar" role="img" aria-label="Pemakaian token ${tokenPct} persen">
+                <div class="key-token-bar" role="img" aria-label="Pemakaian ${satuanKey} ${tokenPct} persen">
                   <span style="width: ${Math.min(100, tokenPct)}%; background: ${tokenColor};"></span>
                 </div>
               </div>`;
@@ -1264,7 +1274,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           ? `<div class="provider-token-block">
               <div class="provider-token-head">
                 <span class="provider-token-label">Pemakaian ${p.satuanToken === 'neuron' ? 'neuron' : 'token'}</span>
-                <span style="color: ${providerTokenColor};">${formatTokens(p.totalTokensUsed)} / ${formatTokens(p.totalTokenCap)} (${providerTokenPct}%)</span>
+                <span style="color: ${providerTokenColor};">${formatTokens(p.totalTokensUsed, p.satuanToken === 'neuron' ? 'neuron' : 'Token')} / ${formatTokens(p.totalTokenCap, p.satuanToken === 'neuron' ? 'neuron' : 'Token')} (${providerTokenPct}%)</span>
               </div>
               <div class="provider-token-bar" role="img" aria-label="Pemakaian token provider ${providerTokenPct} persen">
                 <span style="width: ${Math.min(100, providerTokenPct)}%; background: ${providerTokenColor};"></span>
