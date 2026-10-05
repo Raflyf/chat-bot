@@ -1058,7 +1058,6 @@ export async function updatePin(
 export async function getPublicAuthState(clientIp: string): Promise<{
   isLocked: boolean;
   lockedUntil: string | null;
-  lockoutAttempts: number;
   remainingAttempts: number;
   hasActiveOtp: boolean;
   targetEmailMasked: string;
@@ -1069,10 +1068,12 @@ export async function getPublicAuthState(clientIp: string): Promise<{
   const hasActiveOtp = !!(current.otpCodeHash && current.otpExpiresAt && new Date(current.otpExpiresAt).getTime() > now);
   const maskedEmail = TARGET_EMAIL.replace(/(.{3})(.*)(@.*)/, '$1***$3');
 
+  // `lockoutAttempts` DIHAPUS dari state publik (audit 05 Okt 2026): jumlah
+  // percobaan gagal tidak perlu diketahui klien dan membantu penyerang menghitung
+  // timing brute force. `remainingAttempts` tetap karena dipakai halaman login.
   return {
     isLocked,
     lockedUntil: isLocked ? current.lockedUntil : null,
-    lockoutAttempts: current.lockoutAttempts,
     remainingAttempts: Math.max(0, 5 - current.lockoutAttempts),
     hasActiveOtp,
     targetEmailMasked: maskedEmail,
