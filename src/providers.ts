@@ -734,9 +734,30 @@ async function openAiChat(
   const hasImage = messagesContainImage(messages);
   // Timeout koneksi adaptif: request berisi gambar (base64 besar) butuh waktu upload lebih lama.
   const connectMs = connectTimeoutMs ?? (hasImage ? config.visionConnectTimeoutMs : config.connectTimeoutMs);
+  // ── PROMPT CACHING (optimasi latency, 05 Okt 2026) ──
+  // System prompt (~5.700 token) dikirim ULANG setiap pesan. Provider yang
+  // mendukung caching akan menyimpan bagian ini sehingga tidak diproses ulang —
+  // menghemat token DAN waktu prefill (penyebab utama latency ~5 detik).
+  //
+  // Cara kerja: tandai blok system terakhir dengan `cache_control: { type: 'ephemeral' }`.
+  // Provider yang TIDAK mendukung akan mengabaikan field ini (tidak error).
+  // Diterapkan HANYA pada pesan system (bagian statis) — bukan pesan user.
+  let idxSystemTerakhir = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'system') { idxSystemTerakhir = i; break; }
+  }
+  const messagesDenganCache: ChatMsg[] = messages.map((m, i) => {
+    if (i !== idxSystemTerakhir || typeof m.content !== 'string') return m;
+    // Bentuk Anthropic-style cache_control pada blok teks (provider lain mengabaikan).
+    return {
+      role: m.role,
+      content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }],
+    } as unknown as ChatMsg;
+  });
+
   const body = {
     model,
-    messages,
+    messages: messagesDenganCache,
     max_tokens: maxTokensOverride ?? config.maxOutputTokens,
     // Default = parameter bersama (F5). Tier yang butuh nilai lain mengirim
     // extraBody eksplisit; lihat BASE_GEN di atas.

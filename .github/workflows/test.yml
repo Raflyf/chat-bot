@@ -1,0 +1,43 @@
+name: Test Otomatis
+
+# KENAPA: 36 test sudah dibuat (tests/), tetapi TIDAK ada yang menjalankannya
+# otomatis. Akibatnya regresi bisa lolos ke produksi tanpa terdeteksi.
+# Workflow ini menjalankan typecheck + test tiap push/PR ke main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  uji:
+    name: Typecheck & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@v4
+
+      - name: Siapkan Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Pasang dependensi
+        run: npm ci || npm install
+
+      - name: Typecheck (TypeScript)
+        run: npm run typecheck
+
+      - name: Jalankan test
+        run: npx tsx --test tests/*.test.mjs
+        env:
+          # Test memakai fungsi MURNI (tidak butuh DB/kredensial nyata).
+          # Nilai dummy agar modul yang membaca env saat impor tidak gagal.
+          SUPABASE_URL: 'https://contoh.supabase.co'
+          SUPABASE_SERVICE_KEY: 'dummy-untuk-test'
+          NODE_ENV: 'test'

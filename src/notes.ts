@@ -31,6 +31,7 @@ import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPenging
 import { tentukanProfilWaktu, berkaitanDenganWaktu, waktuDiZona } from './user-profile.js';
 import { detectUserLocationDeclaration } from './timezone.js';
 import { deteksiPengulangan, labelUlang } from './reminder-repeat.js';
+import { susunRingkasan, mintaRingkasan } from './ringkasan.js';
 
 /**
  * Format tanggal+jam dalam ZONA WAKTU USER (default WIB / Asia/Jakarta).
@@ -1473,6 +1474,18 @@ export async function tanganiPencatatan(
     const hasilGame = await tanganiGame(s, chatId, opts.platform);
     if (hasilGame.ditangani) {
       return { ditangani: true, reply: hasilGame.reply, jalur: hasilGame.jalur };
+    }
+  }
+
+  // ── A1b. RINGKASAN PERIODIK (/ringkasan) ──
+  //
+  // FITUR BARU (audit 05 Okt 2026): satu perintah menyajikan gambaran lengkap —
+  // keuangan, tugas, pengingat, catatan. Semua angka dari DATABASE (tidak dikarang).
+  {
+    const rk = mintaRingkasan(low);
+    if (rk) {
+      const teks = await susunRingkasan(chatId, { hari: rk.hari });
+      return { ditangani: true, reply: teks, jalur: 'ringkasan' };
     }
   }
 

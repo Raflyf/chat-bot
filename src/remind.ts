@@ -456,7 +456,18 @@ export async function checkDueReminders(
             repeat_count: it.repeat_count ?? 0,
           };
           const zona = await zonaWaktuChat(item.chat_id);
-          const next = berikutnya(new Date(item.due_at), aturan, zona);
+          let next = berikutnya(new Date(item.due_at), aturan, zona);
+          // ── CATCH-UP (05 Okt 2026) ──
+          // Bila cron sempat MATI berhari-hari, pengingat berulang tertinggal jauh.
+          // Jangan kirim bertubi-tubi (mis. 5x "minum obat" sekaligus) — kirim
+          // SEKALI, lalu LOMPATKAN jadwal ke kemunculan berikutnya setelah SEKARANG.
+          // Batas 30 iterasi (~1 bulan untuk harian) agar tidak menggantung.
+          let iterasi = 0;
+          const sekarang = Date.now();
+          while (next && next.getTime() <= sekarang && iterasi < 30) {
+            next = berikutnya(next, aturan, zona);
+            iterasi++;
+          }
           if (next) {
             await c.from('reminders').update({
               due_at: next.toISOString(),
