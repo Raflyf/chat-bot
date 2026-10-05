@@ -932,13 +932,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       const totalPoolCap = effectiveCapPerKey * p.keys.length;
       // Total cap token pool = JUMLAH cap tiap key (bukan cap seragam x jumlah key).
       // Untuk xKiro ini 1jt + 500k + 500k = 2jt (sebelumnya salah: 500k x 3 = 1,5jt).
+      // ── BUG YANG DIPERBAIKI (06 Okt 2026) ──
+      // LAPORAN PEMILIK PRODUK: ringkasan Cloudflare menampilkan "42K Token / 30K
+      // Token (100%)" padahal per-kunci sudah benar "14.000 / 10.000 (13%)".
+      //
+      // SEBAB: `kd.tokenCap` untuk Cloudflare berisi NEURON (10.000 per kunci),
+      // sehingga total = 30.000. Sementara `poolTokensUsed` berisi TOKEN (42.000).
+      // Membandingkan token dengan neuron = SALAH SATUAN (bug yang sama seperti
+      // sebelumnya, kali ini di tingkat RINGKASAN provider).
+      //
+      // PERBAIKAN: untuk provider ber-satuan NEURON, jumlahkan juga neuron terpakai
+      // per kunci agar pembandingannya setara.
+      const adalahProviderNeuron = Boolean((p as { __neuron?: boolean }).__neuron);
       const totalTokenPoolCap = keysDetail.reduce((acc, kd) => {
-        const capForRange = p.kind === 'dahl' ? kd.tokenCap : kd.tokenCap;
+        const capForRange = kd.tokenCap;
         return acc + (capForRange > 0 ? capForRange : 0);
       }, 0);
       const poolPercent = totalPoolCap > 0 ? Math.min(100, Math.round((poolUsed / totalPoolCap) * 100)) : 0;
       
       const anyRealTokenData = keysDetail.some((kd) => kd.isRealTokenData);
+      // Untuk provider NEURON (Cloudflare), jumlahkan NEURON terpakai (bukan token)
+      // agar pembandingan dengan cap neuron setara.
+      const poolNeuronUsed = adalahProviderNeuron
+        ? keysDetail.reduce((acc, kd) => acc + (Number((kd as { neuronUsed?: number }).neuronUsed) || 0), 0)
+        : 0;
       let poolTokensUsed = 0;
       // (Cabang khusus xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.
       //  Dua cabang di bawah sudah mencakup semua kasus yang tersisa.)
@@ -952,7 +969,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           ? providerComputedTokens
           : keysDetail.reduce((acc, kd) => acc + kd.tokensUsed, 0);
       }
-      const poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolTokensUsed / totalTokenPoolCap) * 100)) : 0;
+      // Untuk provider NEURON: pakai neuron (bukan token) sebagai pembanding.
+      const poolNilaiDipakai = adalahProviderNeuron && poolNeuronUsed > 0 ? poolNeuronUsed : poolTokensUsed;
+      const poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolNilaiDipakai / totalTokenPoolCap) * 100)) : 0;
       // Pemakaian HARIAN pool — agar header kartu bisa menampilkan konteks cap harian
       // tanpa mencampur akumulasi periode (temuan: "1728/1500" menyesatkan).
       const poolUsedToday = keysDetail.reduce((acc, kd) => acc + (kd.used || 0), 0);
@@ -987,7 +1006,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         tokenCapPerKey: effectiveTokenCapPerKey,
         tokenCapPerKeyList: p.tokenCapPerKeyList,
         totalTokenCap: totalTokenPoolCap,
-        totalTokensUsed: poolTokensUsed,
+        // Untuk provider NEURON (Cloudflare), kirim NEURON terpakai agar frontend
+        // menampilkan satuan yang sama dengan cap-nya (bug "42K/30K" 06 Okt 2026).
+        totalTokensUsed: adalahProviderNeuron && poolNeuronUsed > 0 ? poolNeuronUsed : poolTokensUsed,
+        satuanToken: adalahProviderNeuron ? 'neuron' : 'token',
         totalTokensRemaining: poolTokensRemaining,
         cappedKeys: poolCappedKeys,
         tokenPercent: poolTokenPercent,

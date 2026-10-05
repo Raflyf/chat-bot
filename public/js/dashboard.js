@@ -1263,7 +1263,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const tokenContextHtml = hasTokenContext
           ? `<div class="provider-token-block">
               <div class="provider-token-head">
-                <span class="provider-token-label">Pemakaian token</span>
+                <span class="provider-token-label">Pemakaian ${p.satuanToken === 'neuron' ? 'neuron' : 'token'}</span>
                 <span style="color: ${providerTokenColor};">${formatTokens(p.totalTokensUsed)} / ${formatTokens(p.totalTokenCap)} (${providerTokenPct}%)</span>
               </div>
               <div class="provider-token-bar" role="img" aria-label="Pemakaian token provider ${providerTokenPct} persen">
@@ -1788,7 +1788,13 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Harian (TPD) &bull; ${callsRemaining.toLocaleString("id-ID")} RPD</div>
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3);">● Bot Monitored</span>
+                  <!-- BUG YANG DIPERBAIKI (06 Okt 2026): badge ini DULU HARDCODE
+                       "● Bot Monitored" padahal Groq SUDAH live-synced (header
+                       x-ratelimit-* terbaca). Laporan pemilik produk: "groq masih
+                       bot monitored?" — sekarang mengikuti data sebenarnya. -->
+                  ${k.limitIsLive
+                    ? '<span class="badge-live-sync" style="margin-bottom: 4px;">● Live Synced</span>'
+                    : '<span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3);">● Bot Monitored</span>'}
                   <div><span class="key-badge-status ${statusClass}">${statusText}</span></div>
                 </td>
               </tr>
