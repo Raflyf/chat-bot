@@ -321,7 +321,13 @@ export function detectUserLocationDeclaration(text?: string): LocationMatch | nu
   }
 
   // Cek pola kalimat penanda lokasi diri (wajib diikuti preposisi tempat: di, ke, daerah, tinggal di, posisi di, berada di)
-  const selfMatch = q.match(/\b(?:saya|aku|gua|gw|kami|posisi|tinggal|rumah|domisili|lagi|sedang|berada|dari)\s+(?:di|ke|daerah|tinggal di|posisi di|berada di)\s+([a-z\s]+)/i);
+  // BUG YANG DIPERBAIKI (05 Okt 2026): "aku sekarang di jayapura" TIDAK terdeteksi
+  // karena kata "sekarang" menyela antara subjek dan "di". Sekarang pengisi
+  // (sekarang, skrg, kini, saat ini, udah, sudah, pindah, kerja, kuliah, sekolah,
+  // nginap, menginap, liburan, tugas) diizinkan di antara keduanya.
+  const selfMatch = q.match(
+    /\b(?:saya|aku|gua|gw|kami|posisi|tinggal|rumah|domisili|lagi|sedang|berada|dari)\s+(?:sekarang|skrg|kini|saat\s*ini|udah|sudah|pindah|kerja|kuliah|sekolah|nginap|menginap|liburan|tugas)?\s*(?:di|ke|daerah|tinggal di|posisi di|berada di)\s+([a-z\s]+)/i,
+  );
   if (selfMatch) {
     const matched = detectLocation(selfMatch[1]);
     if (matched) return matched;

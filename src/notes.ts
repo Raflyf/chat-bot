@@ -28,6 +28,8 @@ import { db } from './db.js';
 import { formatInZone } from './timezone.js';
 import { tanganiGame } from './games/index.js';
 import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
+import { tentukanProfilWaktu, berkaitanDenganWaktu, waktuDiZona } from './user-profile.js';
+import { detectUserLocationDeclaration } from './timezone.js';
 
 /**
  * Format tanggal+jam dalam ZONA WAKTU USER (default WIB / Asia/Jakarta).
@@ -43,7 +45,7 @@ import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPenging
  * (bila pemanggil punya info lokasi) atau default Asia/Jakarta (WIB), karena
  * mayoritas pengguna bot ini di Indonesia.
  */
-function formatWaktuUser(d: Date, zone = 'Asia/Jakarta'): string {
+function formatWaktuUser(d: Date, zone = zonaWaktuAktif()): string {
   try {
     return d.toLocaleString('id-ID', {
       timeZone: zone,
@@ -506,8 +508,8 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       // Rentang waktu: sertakan jam selesai bila user menyebutkannya.
       const selesai = (kapan as Date & { selesai?: Date }).selesai;
       const jamTeks = selesai
-        ? `${formatWaktuUser(kapan)}–${new Date(selesai).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' })} WIB`
-        : `${formatWaktuUser(kapan)} WIB`;
+        ? `${formatWaktuUser(kapan)}–${new Date(selesai).toLocaleTimeString('id-ID', { timeZone: zonaWaktuAktif(), hour: '2-digit', minute: '2-digit' })}`
+        : `${formatWaktuUser(kapan)}`;
       return {
         kind: 'note',
         yakin: 0.9,
@@ -535,7 +537,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         kind: 'todo',
         yakin: 0.9,
         data: { task: isi, priority: prioritas, due_at: due ? due.toISOString() : null },
-        ringkas: `Tugas: "${isi}"${due ? ` (tenggat ${formatWaktuUser(due)} WIB)` : ''}`,
+        ringkas: `Tugas: "${isi}"${due ? ` (tenggat ${formatWaktuUser(due)})` : ''}`,
       };
     }
   }
@@ -861,7 +863,7 @@ export function formatDaftarTugas(rows: TugasRingkas[]): string {
   const label = (p: number) => (p === 1 ? '🔴' : p === 3 ? '🟢' : '🟡');
   return rows.map((r) => {
     const due = r.due_at
-      ? ` — tenggat ${formatWaktuUser(new Date(r.due_at))} WIB`
+      ? ` — tenggat ${formatWaktuUser(new Date(r.due_at))}`
       : '';
     return `${label(r.priority)} #${r.id} ${r.task}${due}`;
   }).join('\n');
@@ -922,6 +924,18 @@ interface KonfirmasiTertunda {
   at: number;
 }
 const konfirmasiTertunda = new Map<string, KonfirmasiTertunda>();
+
+// ── ZONA WAKTU AKTIF ──
+// Diisi oleh tanganiPencatatan() untuk setiap permintaan, berdasarkan profil
+// user yang tersimpan di database. Default WIB HANYA sebagai jaring terakhir
+// (bila pemanggil lupa mengisi) — bukan lagi asumsi utama.
+let zonaAktif = 'Asia/Jakarta';
+// Catatan konfirmasi zona (diisi saat zona masih tebakan dari nomor telepon).
+let catatanKonfirmasiZona = '';
+function zonaWaktuAktif(): string { return zonaAktif; }
+function setZonaAktif(z: string | undefined | null): void {
+  zonaAktif = z && z.trim() ? z : 'Asia/Jakarta';
+}
 const KONFIRMASI_TTL_MS = 10 * 60_000; // 10 menit
 
 /** Simpan konfirmasi tertunda (DB dulu; memori sebagai fallback). */
@@ -1078,11 +1092,11 @@ async function simpanDariNiat(
     const mulai = new Date(String(d.due_at));
     const selesaiIso = d.due_selesai ? String(d.due_selesai) : '';
     const jamTeks = selesaiIso
-      ? `${formatWaktuUser(mulai)}–${new Date(selesaiIso).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' })} WIB`
-      : `${formatWaktuUser(mulai)} WIB`;
+      ? `${formatWaktuUser(mulai)}–${new Date(selesaiIso).toLocaleTimeString('id-ID', { timeZone: zonaWaktuAktif(), hour: '2-digit', minute: '2-digit' })}`
+      : `${formatWaktuUser(mulai)}`;
     return {
       ok: true,
-      pesan: `✅ Pengingat disimpan — Pengingat "${hasil.pesan}" pada ${jamTeks}${tambahan}`,
+      pesan: `✅ Pengingat disimpan — Pengingat "${hasil.pesan}" pada ${jamTeks}${tambahan}${catatanKonfirmasiZona}`,
     };
   }
   const id = await simpanCatatan(chatId, String(d.content || ''), {
@@ -1106,7 +1120,9 @@ export async function tanganiPencatatan(
   opts: { actor?: string; platform: string },
 ): Promise<{ ditangani: boolean; reply: string; jalur: string }> {
   const s = teks.trim();
+  const asli = teks.trim();
   const low = s.toLowerCase();
+  catatanKonfirmasiZona = '';
 
   // ── 0. Jawaban konfirmasi tertunda ──
   // Dipakai untuk CATATAN / TUGAS / KEUANGAN saja (pengingat langsung disimpan,
@@ -1231,6 +1247,54 @@ export async function tanganiPencatatan(
     return { ditangani: true, reply: a || b || c ? `🗑️ #${id} dihapus.` : `#${id} tidak ditemukan.`, jalur: 'perintah-hapus' };
   }
 
+  // ── A0a. PROFIL WAKTU USER (zona waktu per-user, permanen) ──
+  //
+  // MASALAH (temuan pemilik produk 05 Okt 2026): "jangan salah membaca waktu user
+  // sedang berada... misal sistem defaultnya WIB, jika user di belahan waktu lain
+  // maka jadi tidak sama waktunya. Jadi jika ada user baru masuk, saat menanyakan
+  // waktu / menyuruh mengingatkan / apapun yang berhubungan dengan waktu, jangan
+  // sok tau dan asal jawab defaultnya — tanya dulu user di zona mana, lalu simpan
+  // di database agar tidak pernah lupa. Jika sudah diketahui, tidak usah ditanya."
+  //
+  // ALUR:
+  // 1. Bila pesan menyebut lokasi ("aku di Makassar") -> simpan profil (paling akurat).
+  // 2. Bila pesan berkaitan WAKTU (tanya jam / minta pengingat / jadwal):
+  //    a. Profil sudah ada & terverifikasi -> pakai, TIDAK tanya lagi.
+  //    b. Profil belum ada -> TANYA dulu, JANGAN asal pakai WIB.
+  // 3. Zona profil dipakai untuk semua tampilan waktu (formatWaktuUser).
+  {
+    // Simpan pesan user APA ADANYA untuk deteksi (bukan yang sudah dinormalisasi).
+    const keputusan = await tentukanProfilWaktu(chatId, opts.platform, asli);
+    setZonaAktif(keputusan.profil?.timezone);
+
+    // Bila user BARU menyebut lokasinya (dan bukan permintaan lain), balas
+    // pengakuan singkat — sebelumnya balasan kosong sehingga terasa bot diam.
+    const adaDeklarasiBaru = detectUserLocationDeclaration(asli) !== null;
+    if (adaDeklarasiBaru && !berkaitanDenganWaktu(asli)) {
+      const p = keputusan.profil;
+      const waktuSekarang = p ? waktuDiZona(p.timezone) : '';
+      return {
+        ditangani: true,
+        reply:
+          `Oke, aku catat kamu di *${p?.label ?? 'lokasi itu'}* ya${waktuSekarang ? ` — di sana sekarang ${waktuSekarang}` : ''}. ` +
+          `Mulai sekarang semua pengingat & jam aku sesuaikan ke zona itu, nggak perlu kasih tahu lagi. 👍`,
+        jalur: 'deklarasi-lokasi',
+      };
+    }
+
+    // Bila berkaitan waktu DAN zona belum diketahui -> tanya dulu (jangan sok tahu).
+    if (keputusan.perluTanya && berkaitanDenganWaktu(asli)) {
+      return { ditangani: true, reply: keputusan.pertanyaan, jalur: 'tanya-zona-waktu' };
+    }
+
+    // Bila zona masih TEBAKAN dari nomor telepon, sisipkan catatan konfirmasi
+    // di akhir balasan (tidak menghalangi, hanya mengingatkan).
+    if (keputusan.perluKonfirmasi && keputusan.profil && berkaitanDenganWaktu(asli)) {
+      catatanKonfirmasiZona =
+        `\n\n_Catatan: aku pakai zona *${keputusan.profil.label}*. Kalau bukan, bilang saja "aku di <kota>" ya._`;
+    }
+  }
+
   // ── A1. UBAH / UNDUR / BATALKAN PENGINGAT ──
   //
   // MASALAH (temuan pemilik produk 05 Okt 2026): "jika user bilang waktu rapat
@@ -1262,12 +1326,12 @@ export async function tanganiPencatatan(
           return {
             ditangani: true,
             reply: okBatal
-              ? `🗑️ Pengingat "${target.message}" (${formatWaktuUser(new Date(target.due_at))} WIB) sudah dibatalkan.`
+              ? `🗑️ Pengingat "${target.message}" (${formatWaktuUser(new Date(target.due_at))}) sudah dibatalkan.`
               : '⚠️ Gagal membatalkan pengingat. Coba lagi ya.',
             jalur: 'ubah-batal',
           };
         }
-        const daftarB = daftar.map((r, i) => `${i + 1}. "${r.message}" — ${formatWaktuUser(new Date(r.due_at))} WIB`).join('\n');
+        const daftarB = daftar.map((r, i) => `${i + 1}. "${r.message}" — ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
         return {
           ditangani: true,
           reply: `Pengingat aktif kamu:\n${daftarB}\n\nSebutkan yang mana, mis. *batalin rapat*.`,
@@ -1294,8 +1358,9 @@ export async function tanganiPencatatan(
             reply: [
               `✅ Pengingat ${label} (TIDAK dobel — yang lama diperbarui).`,
               ``,
-              `*Sebelumnya:* "${target.message}" — ${formatWaktuUser(new Date(target.due_at))} WIB`,
-              `*Sekarang :* "${target.message}" — ${formatWaktuUser(waktuBaru)} WIB`,
+              `*Sebelumnya:* "${target.message}" — ${formatWaktuUser(new Date(target.due_at))}`,
+              `*Sekarang :* "${target.message}" — ${formatWaktuUser(waktuBaru)}`,
+              catatanKonfirmasiZona,
             ].join('\n'),
             jalur: 'ubah-undur',
           };
@@ -1304,7 +1369,7 @@ export async function tanganiPencatatan(
       }
 
       // Tidak bisa hitung waktu baru -> tanya user (jangan mengarang).
-      const daftarTeks = daftar.map((r, i) => `${i + 1}. "${r.message}" — ${formatWaktuUser(new Date(r.due_at))} WIB`).join('\n');
+      const daftarTeks = daftar.map((r, i) => `${i + 1}. "${r.message}" — ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
       return {
         ditangani: true,
         reply: `Pengingat aktif kamu:\n${daftarTeks}\n\nSebutkan waktu barunya, mis. *undur rapat jadi jam 10* atau *undur satu jam*.`,
@@ -1478,7 +1543,7 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
       return {
         kind: 'note', yakin: 0.7,
         data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
-        ringkas: `Pengingat "${pesan}" pada ${formatWaktuUser(kapan)} WIB`,
+        ringkas: `Pengingat "${pesan}" pada ${formatWaktuUser(kapan)}`,
       };
     }
   }
