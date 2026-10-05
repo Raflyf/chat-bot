@@ -26,6 +26,7 @@
  */
 import { db } from './db.js';
 import { formatInZone } from './timezone.js';
+import { tanganiGame } from './games/index.js';
 
 /**
  * Format tanggal+jam dalam ZONA WAKTU USER (default WIB / Asia/Jakarta).
@@ -1170,6 +1171,17 @@ export async function tanganiPencatatan(
     const b = a ? false : await hapusCatatan(chatId, id);
     const c = a || b ? false : await hapusUang(chatId, id);
     return { ditangani: true, reply: a || b || c ? `🗑️ #${id} dihapus.` : `#${id} tidak ditemukan.`, jalur: 'perintah-hapus' };
+  }
+
+  // ── A0. PERMAINAN (mesin game nyata, state tersimpan di DB) ──
+  // Diletakkan PALING AWAL agar saat permainan aktif, semua pesan berikutnya
+  // (mis. "merah 5", "e2 e4", "3 5") diperlakukan sebagai LANGKAH permainan —
+  // bukan sebagai perintah catat/pengingat.
+  {
+    const hasilGame = await tanganiGame(s, chatId, opts.platform);
+    if (hasilGame.ditangani) {
+      return { ditangani: true, reply: hasilGame.reply, jalur: hasilGame.jalur };
+    }
   }
 
   // ── A2. HAPUS / SELESAI LEWAT BAHASA ALAMI (agar bisa lewat Voice Note) ──
