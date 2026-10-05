@@ -83,7 +83,7 @@ export async function simpanReminderCerdas(
     const batas = new Date(new Date(dueIso).getTime() + TOLERANSI_WAKTU_MENIT * 60_000).toISOString();
     const batasBawah = new Date(new Date(dueIso).getTime() - TOLERANSI_WAKTU_MENIT * 60_000).toISOString();
     const { data: dekat } = await c.from('reminders')
-      .select('id, message')
+      .select('id, message, due_at')
       .eq('chat_id', chatId)
       .eq('status', 'pending')
       .gte('due_at', batasBawah)
@@ -116,6 +116,22 @@ export async function simpanReminderCerdas(
       // Gagal update -> jatuh ke insert biasa di bawah
     }
 
+    // 3b. Cek BENTROK dengan pengingat lain pada waktu yang sama/berdekatan.
+    //     Bukan duplikat (isinya beda), tapi waktunya bertabrakan -> beri tahu user
+    //     supaya dia sadar ada dua agenda berdekatan. Tetap DISIMPAN (bukan ditolak),
+    //     karena user mungkin memang ingin dua pengingat.
+    let peringatanBentrok = '';
+    const daftarDekat = (dekat ?? []) as Array<{ id: number; message: string; due_at?: string }>;
+    if (daftarDekat.length > 0) {
+      const namaDekat = daftarDekat.map((r) => {
+        const jam = r.due_at
+          ? new Date(r.due_at).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' })
+          : '?';
+        return `"${r.message}" (${jam})`;
+      });
+      peringatanBentrok = `\n\n⚠️ _Catatan: waktunya berdekatan dengan pengingat lain — ${namaDekat.join(', ')}. Pastikan tidak bentrok ya._`;
+    }
+
     // 4. Baru / berbeda -> simpan sebagai pengingat baru.
     const { error } = await c.from('reminders').insert({
       chat_id: chatId,
@@ -130,8 +146,8 @@ export async function simpanReminderCerdas(
       aksi: 'baru',
       pesan: message,
       keterangan: palingMirip
-        ? `Pengingat ditambahkan (beda dengan "${palingMirip.message}" yang sudah ada).`
-        : '',
+        ? `Pengingat ditambahkan (beda dengan "${palingMirip.message}" yang sudah ada).${peringatanBentrok}`
+        : peringatanBentrok.trim(),
     };
   } catch {
     // Fallback: insert langsung (perilaku lama) agar tetap tersimpan.

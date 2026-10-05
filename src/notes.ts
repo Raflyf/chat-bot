@@ -264,6 +264,30 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
     }
   }
 
+  // RENTANG WAKTU: "jam 9 sampai jam 10" / "jam 9-10" / "jam 9 s/d 10" /
+  // "dari jam 9 sampai 10" / "jam 9 hingga 11".
+  // Dukungan ditambahkan 05 Okt 2026 (temuan pemilik produk). Sebelumnya jam
+  // SELESAI dibuang begitu saja, sehingga pesan jadi "saya akan rapat dari sampai".
+  // Jam selesai disimpan di properti non-enumerable agar tidak mengubah tipe Date.
+  const mRentang = s.match(
+    /(?:dari\s+)?(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(?:sampai|sampai\s+dengan|s\/d|sd|hingga|sampai\s+jam|-|–|sampai\s+pukul)\s*(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?/,
+  );
+  if (mRentang) {
+    const j1 = Number(mRentang[1]);
+    const men1 = mRentang[2] ? Number(mRentang[2]) : 0;
+    const j2 = Number(mRentang[3]);
+    const men2 = mRentang[4] ? Number(mRentang[4]) : 0;
+    const d = new Date(sekarang.getTime());
+    d.setHours(j1, men1, 0, 0);
+    if (d.getTime() <= sekarang.getTime()) d.setDate(d.getDate() + 1);
+    const selesai = new Date(d.getTime());
+    selesai.setHours(j2, men2, 0, 0);
+    // Bila jam selesai < jam mulai, berarti lewat tengah malam.
+    if (selesai.getTime() <= d.getTime()) selesai.setDate(selesai.getDate() + 1);
+    Object.defineProperty(d, 'selesai', { value: selesai, enumerable: false });
+    return d;
+  }
+
   // Jam: "jam 8", "jam 08:30", "pukul 15.00", "8 pagi", "7 malam"
   const mJam = s.match(/(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?/);
   let jam: number | null = null;
@@ -463,6 +487,8 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         .replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '')
         .replace(/[,\s]+(?:tolong\s+)?(ingatkan|ingetin|remind)\s*[.!]*\s*$/i, '')
         .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
+        // Rentang waktu ("dari jam 9 sampai jam 10") dibuang UTUH lebih dulu.
+        .replace(/(?:dari\s+)?(?:jam|pukul)\s*\d{1,2}(?:[:.]\d{2})?\s*(?:sampai(?:\s+dengan)?|s\/d|sd|hingga|-|–|sampai\s+pukul|sampai\s+jam)\s*(?:jam|pukul)?\s*\d{1,2}(?:[:.]\d{2})?/gi, '')
         .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
         .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
         // "N menit lagi" — N boleh digit ATAU angka kata
@@ -476,11 +502,21 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       if (pesan.length < 3) {
         pesan = asli.replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '').trim() || asli;
       }
+      // Rentang waktu: sertakan jam selesai bila user menyebutkannya.
+      const selesai = (kapan as Date & { selesai?: Date }).selesai;
+      const jamTeks = selesai
+        ? `${formatWaktuUser(kapan)}–${new Date(selesai).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' })} WIB`
+        : `${formatWaktuUser(kapan)} WIB`;
       return {
         kind: 'note',
         yakin: 0.9,
-        data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
-        ringkas: `Pengingat "${pesan}" pada ${formatWaktuUser(kapan)} WIB`,
+        data: {
+          pengingat: true,
+          due_at: kapan.toISOString(),
+          due_selesai: selesai ? selesai.toISOString() : null,
+          message: pesan,
+        },
+        ringkas: `Pengingat "${pesan}" pada ${jamTeks}`,
       };
     }
     return null; // perintah ingatkan tapi waktu tak jelas -> serahkan ke AI
@@ -1036,10 +1072,16 @@ async function simpanDariNiat(
       return { ok: false, pesan: '⚠️ Gagal menyimpan pengingat. Coba lagi nanti ya.' };
     }
     // Laporan JUJUR: bedakan "baru" vs "diperbarui" (anti-dobel).
-    const tambahan = hasil.keterangan ? `\n_${hasil.keterangan}_` : '';
+    const tambahan = hasil.keterangan ? `\n${hasil.keterangan.startsWith('\n') ? hasil.keterangan : '_' + hasil.keterangan + '_'}` : '';
+    // Bila user menyebut RENTANG waktu ("jam 9 sampai jam 10"), tampilkan keduanya.
+    const mulai = new Date(String(d.due_at));
+    const selesaiIso = d.due_selesai ? String(d.due_selesai) : '';
+    const jamTeks = selesaiIso
+      ? `${formatWaktuUser(mulai)}–${new Date(selesaiIso).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' })} WIB`
+      : `${formatWaktuUser(mulai)} WIB`;
     return {
       ok: true,
-      pesan: `✅ Pengingat disimpan — Pengingat "${hasil.pesan}" pada ${formatWaktuUser(new Date(String(d.due_at)))} WIB${tambahan}`,
+      pesan: `✅ Pengingat disimpan — Pengingat "${hasil.pesan}" pada ${jamTeks}${tambahan}`,
     };
   }
   const id = await simpanCatatan(chatId, String(d.content || ''), {
