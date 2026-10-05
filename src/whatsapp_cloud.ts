@@ -729,9 +729,14 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // PENTING: blok ini HARUS ada di whatsapp_cloud.ts, bukan hanya di
         // whatsapp_baileys.ts — PRODUKSI memakai Cloud API (webhook Meta),
         // sehingga kode di baileys TIDAK PERNAH berjalan.
+        // OPTIMASI (05 Okt 2026): `getContext` diambil SEKALI di sini lalu dipakai
+        // ulang untuk pencatatan DAN autoReply di bawah (sebelumnya dipanggil dua
+        // kali: di blok ini dan di langkah 1). Fast-path cache membuat yang kedua
+        // murah, tetapi menghindari pemanggilan ganda tetap menghemat overhead.
+        let contextBersama: Awaited<ReturnType<typeof getContext>> | null = null;
         {
-          const catatCtx = await getContext(chatKey, msgSentAt);
-          const hasil = await tanganiPencatatan(text, String(from), catatCtx, {
+          contextBersama = await getContext(chatKey, msgSentAt);
+          const hasil = await tanganiPencatatan(text, String(from), contextBersama, {
             platform: 'whatsapp',
           });
           if (hasil.ditangani) {
@@ -745,8 +750,8 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           }
         }
 
-        // 1. Ambil riwayat percakapan (fast-path 0ms in-memory cache jika sesi aktif, atau Supabase)
-        const context = await getContext(chatKey, msgSentAt);
+        // 1. Riwayat percakapan — pakai hasil yang SUDAH diambil di atas (tanpa query ulang).
+        const context = contextBersama ?? await getContext(chatKey, msgSentAt);
 
         // 2. Update cache in-memory & sinkronkan teks riil user ke database (non-blocking agar tidak menunda autoReply)
         updateContextCache(chatKey, 'user', text);
@@ -793,10 +798,11 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           sticker &&
           reply.trim() &&
           edgyOk &&
+          moodOk &&
           turnsSinceSticker >= STICKER_MIN_TURNS_SINCE_LAST &&
           sticker !== prevStickerEmoji &&
           hasStickerForEmoji(sticker) &&
-          allowStickerForChat(`wa:$ moodOk &&{chatKey}`)
+          allowStickerForChat(`wa:${chatKey}`)
         ) {
           const sent = await sendWhatsAppCloudStickerSafe(from, sticker);
           if (!sent) {
@@ -818,7 +824,11 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               ? `${reply}\n[Stiker terkirim: ${sticker}]`
               : reply,
         );
-        await saveMessage({
+        // OPTIMASI (05 Okt 2026): balasan SUDAH terkirim ke user di atas, jadi
+        // menyimpan ke DB TIDAK perlu ditunggu. Dulu di-`await` -> menambah
+        // ~645ms sebelum handler selesai (memblokir pesan berikutnya).
+        // Sekarang non-blocking (fire-and-forget) dengan penanganan error.
+        void saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',

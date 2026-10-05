@@ -832,10 +832,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       sticker &&
       reply.trim() &&
       edgyOk &&
+      moodOk &&
       turnsSinceSticker >= STICKER_MIN_TURNS_SINCE_LAST &&
       sticker !== prevStickerEmoji &&
       hasStickerForEmoji(sticker) &&
-      allowStickerForChat(`wa:$ moodOk &&{chatKey}`)
+      allowStickerForChat(`wa:${chatKey}`)
     ) {
       const sent = await sendWhatsAppStickerSafe(sock, remoteJid, sticker);
       if (!sent) {

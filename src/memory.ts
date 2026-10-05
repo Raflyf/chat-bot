@@ -23,7 +23,16 @@ interface CachedContext {
 }
 
 const contextCache = new Map<string, CachedContext>();
-const CONTEXT_TTL_MS = 25000; // 25 detik (jendela percakapan cepat aktif)
+// OPTIMASI (05 Okt 2026): 25s -> 60s. Diukur: satu query DB ke Supabase butuh
+// 244-800ms (jaringan), dan getContext memakai 3 query paralel. Dalam obrolan
+// aktif (balas dalam <1 menit), TTL 60 detik membuat pesan kedua dan seterusnya
+// HAMPIR TANPA query DB -> menghemat ~600-1000ms per balasan.
+//
+// KEAMANAN DATA: cache ini HANYA mempercepat BACA riwayat percakapan. Setiap
+// penulisan (saveMessage) tetap langsung ke database, dan cache diperbarui
+// segera lewat updateContextCache() setelah pesan diproses. Jadi tidak ada
+// risiko "kehilangan" pesan — hanya menghindari baca berulang yang sama.
+const CONTEXT_TTL_MS = 60000; // 60 detik (jendela percakapan cepat aktif)
 
 /**
  * Lock per-chat: serialisasi pemrosesan pesan dalam satu chat agar balasan tidak

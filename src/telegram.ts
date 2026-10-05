@@ -706,10 +706,11 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       sticker &&
       reply.trim() &&
       edgyOk &&
+      moodOk &&
       turnsSinceSticker >= STICKER_MIN_TURNS_SINCE_LAST &&
       sticker !== prevStickerEmoji &&
       hasStickerForEmoji(sticker) &&
-      allowStickerForChat(`tg:$ moodOk &&{chatKey}`)
+      allowStickerForChat(`tg:${chatKey}`)
     ) {
       const sent = await sendTelegramStickerSafe(bot, chatId, sticker);
       if (!sent) {
