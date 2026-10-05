@@ -10,6 +10,62 @@ import { getOrGrowMemory, needsGrowth, growMemory } from './bot_growth.js';
 import { markMemoryUsed, isMemoryRelevant } from './bot_memory.js';
 import { RIDDLE_SEED, GOMBAL_SEED } from './riddles.js';
 
+/* ============================================================================
+ * PETA NAVIGASI skills.ts (dibuat otomatis 05 Okt 2026)
+ * ============================================================================
+ * File ini SENGAJA monolit: prompt persona harus dibaca UTUH oleh model, dan
+ * memecahnya secara fisik berisiko mengubah urutan/isi blok yang memengaruhi
+ * perilaku bot. Untuk navigasi, gunakan peta di bawah.
+ *
+ * ALUR PEMAKAIAN:
+ *   autoReply()                      -> titik masuk balasan
+ *     -> systemPrompt()              -> MERAKIT prompt (persona + konteks + waktu)
+ *     -> buildMessages()             -> susun pesan ke provider
+ *     -> sanitizeAssistantOutput()   -> BERSIHKAN balasan sebelum dikirim
+ *          -> cleanMathAndNoise()    -> buang noise matematika/tanda
+ *          -> enforceUniversalRules()-> aturan universal (tag, placeholder)
+ *          -> dedupeSentences()      -> buang kalimat berulang
+ *          -> stripInventedUrls()    -> buang URL karangan
+ *
+ * FUNGSI PENTING (baris):
+ *      14  stripDurableMarkers
+ *      18  todayStr
+ *      22  redactOutput
+ *      57  stripInventedUrls
+ *     189  isOwnerChatKey
+ *     205  cleanMathAndNoise
+ *     896  leadingInterjection
+ *     904  stripLeadingInterjection
+ *     915  avoidRepeatedOpening
+ *     934  hasAudioClaim
+ *     939  stripAudioClaims
+ *     948  isAudioInput
+ *     979  userAskedAboutMedia
+ *     986  stripMediaNarration
+ *    1002  extractStickerTag
+ *    1027  similarityScore
+ *    1060  extractRiddleTag
+ *    1093  isTsvExtraction
+ *    1104  sanitizeAssistantOutput
+ *    1185  stripProtocolLeak
+ *    1229  tegakkanAntiMengiyakanKlaim
+ *    1275  enforceUniversalRules
+ *    1409  scrubInventedJargon
+ *    1438  dedupeSentences
+ *    1577  splitMessageSmart
+ *    1631  systemPrompt
+ *    2482  wait
+ *    2487  chatRetry
+ *    2518  isTruncatedReply
+ *    2580  continueIfTruncated
+ *    2653  buildMessages
+ *    2785  autoReply
+ *    3576  dynamicNotice
+ *    3605  bersihkanArtefakEkstraksi
+ *    3641  describeImage
+ * ========================================================================= */
+
+
 /** Buang SEMUA penanda internal durable (stiker + kunci jawaban) dari teks riwayat. */
 function stripDurableMarkers(text: string): string {
   return stripRiddleMarker(stripStickerMarker(text));

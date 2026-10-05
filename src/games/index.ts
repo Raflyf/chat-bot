@@ -35,6 +35,15 @@ export async function ambilGame(chatId: string): Promise<{ kind: string; state: 
     const { data, error } = await c.rpc('get_game_state', { p_chat_id: chatId });
     const row = Array.isArray(data) ? data[0] : data;
     if (!error && row && row.kind) {
+      // Auto-expire: permainan yang menggantung >2 jam dianggap ditinggalkan.
+      // Tanpa ini, permainan lama terus menelan pesan baru (bug ditemukan uji
+      // regresi 05 Okt 2026: "halo apa kabar" dijawab "Nggak ada kartu itu").
+      const diperbarui = row.updated_at ? new Date(String(row.updated_at)).getTime() : 0;
+      const umurJam = diperbarui ? (Date.now() - diperbarui) / 3_600_000 : 0;
+      if (umurJam > 2) {
+        await akhiriGame(chatId);
+        return null;
+      }
       return { kind: String(row.kind), state: (row.state ?? {}) as Record<string, unknown> };
     }
   } catch {
@@ -178,6 +187,30 @@ export async function tanganiGame(
   // 2. Ada permainan AKTIF? -> proses langkahnya lebih dulu
   const aktif = await ambilGame(chatId);
   if (aktif) {
+    // ── BUG YANG DIPERBAIKI (05 Okt 2026) ──
+    // Permainan yang MENGGANTUNG menelan SEMUA pesan berikutnya: user menyapa
+    // "halo apa kabar" tetapi dijawab "Nggak ada kartu itu di tanganmu" karena
+    // sistem masih menganggapnya langkah UNO. Ini membingungkan.
+    //
+    // Sekarang: pesan yang JELAS bukan langkah permainan (sapaan, pertanyaan
+    // umum, obrolan panjang) otomatis MENGAKHIRI permainan dan diteruskan ke AI.
+    const jelasBukanLangkah =
+      // Sapaan / obrolan umum
+      /^\s*(?:halo|hai|hi|hei|hello|assalamualaikum|pagi|siang|sore|malam|apa kabar|kabar|kamu siapa|siapa kamu)\b/i.test(low) ||
+      // Pertanyaan umum (kata tanya) yang bukan bagian permainan
+      /\b(?:apa kabar|kamu siapa|lagi ngapain|bisa bantu|tolong jelaskan|apa itu|bagaimana cara|kenapa|mengapa)\b/i.test(low) ||
+      // Kalimat panjang (>80 char) hampir pasti obrolan, bukan langkah permainan
+      low.length > 80;
+    // Pengecualian: permainan yang memang menerima kalimat bebas
+    // (hangman menerima tebakan kata; kuis/tebakangka menerima angka).
+    const terimaBebas = ['hangman', 'kuis', 'tebakangka'].includes(aktif.kind);
+
+    if (jelasBukanLangkah && !terimaBebas) {
+      await akhiriGame(chatId);
+      // Diteruskan ke modul lain (bukan ditangani di sini).
+      return { ditangani: false, reply: '', jalur: '' };
+    }
+
     // Minta berhenti / ganti game
     if (mintaBerhenti(low)) {
       await akhiriGame(chatId);

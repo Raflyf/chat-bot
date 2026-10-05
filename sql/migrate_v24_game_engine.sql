@@ -67,12 +67,12 @@ $$;
 -- RPC: ambil state permainan aktif (tanpa menghapus)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.get_game_state(p_chat_id text)
-RETURNS TABLE (kind text, state jsonb, status text, move_count integer)
+RETURNS TABLE (kind text, state jsonb, status text, move_count integer, updated_at timestamptz)
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT g.kind, g.state, g.status, g.move_count
+    SELECT g.kind, g.state, g.status, g.move_count, g.updated_at
     FROM public.game_sessions g
     WHERE g.chat_id = p_chat_id
       AND g.status = 'active'

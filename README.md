@@ -138,3 +138,50 @@ Dokumentasi arsitektur mendalam dan riwayat teknis versi dikelola secara interna
 
 Didistribusikan di bawah lisensi resmi [MIT License](LICENSE).  
 Hak Cipta (c) 2026 **Rafly Firmansyah**.
+
+## 🧪 Test Otomatis
+
+```bash
+npm test
+```
+
+36 test menutup fungsi inti: parsing waktu & uang, anti-duplikat pengingat,
+16 mesin game, aturan catur, minimax tic-tac-toe, pengingat berulang, rate limiter.
+Test ini sudah beberapa kali menemukan bug nyata sebelum sampai ke user.
+
+## ⏰ Pengingat Berulang
+
+Bot mendukung pengingat yang terulang otomatis:
+
+| Ucapan | Arti |
+|---|---|
+| *"ingatkan tiap hari jam 7 minum obat"* | setiap hari 07.00 |
+| *"ingatkan tiap Senin jam 9 rapat"* | setiap Senin 09.00 |
+| *"ingatkan tiap tanggal 1 bayar listrik"* | setiap tanggal 1 |
+| *"ingatkan tiap hari kerja jam 8 absen"* | Senin–Jumat 08.00 |
+
+Pengingat berulang **tidak menumpuk baris** — satu aturan, dijadwalkan ulang otomatis.
+
+## 🌍 Zona Waktu per-User
+
+Sistem **tidak** mengasumsikan WIB. Untuk user baru yang belum dikenal:
+
+> *"Sebelum aku jawab soal waktu, aku perlu tahu kamu ada di zona mana dulu ya —
+> soalnya jam di Indonesia beda-beda (WIB, WITA, WIT)."*
+
+Setelah user menyebut lokasinya (*"aku di Makassar"*), zona disimpan permanen dan
+**tidak ditanya lagi**. Untuk nomor luar Indonesia, zona ditebak dari kode negara
+lalu dikonfirmasi.
+
+## 🩺 Monitoring & Backup
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /api/health` | Status sistem (200 sehat / 503 bermasalah) — untuk UptimeRobot |
+| `POST /api/cron/backup` | Backup 7 tabel penting ke Supabase Storage (harian) |
+| `POST /api/cron/arsip` | Arsipkan pesan >90 hari (harian) |
+
+## 📦 Migrasi Database
+
+Lihat `sql/CARA_MIGRASI_v25-v29.md` untuk migrasi terbaru (semua opsional —
+sistem tetap bekerja tanpa itu, tapi fitur barunya belum aktif penuh).
