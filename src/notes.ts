@@ -27,6 +27,7 @@
 import { db } from './db.js';
 import { formatInZone } from './timezone.js';
 import { tanganiGame } from './games/index.js';
+import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
 
 /**
  * Format tanggal+jam dalam ZONA WAKTU USER (default WIB / Asia/Jakarta).
@@ -1228,6 +1229,88 @@ export async function tanganiPencatatan(
     const b = a ? false : await hapusCatatan(chatId, id);
     const c = a || b ? false : await hapusUang(chatId, id);
     return { ditangani: true, reply: a || b || c ? `🗑️ #${id} dihapus.` : `#${id} tidak ditemukan.`, jalur: 'perintah-hapus' };
+  }
+
+  // ── A1. UBAH / UNDUR / BATALKAN PENGINGAT ──
+  //
+  // MASALAH (temuan pemilik produk 05 Okt 2026): "jika user bilang waktu rapat
+  // di undur 1 jam jadi jam 10 sampai jam 11, atau hanya bilang di undur satu
+  // jam, maka apa yg terjadi? apakah bot akan menghapus yg sebelumnya jam 9 atau
+  // akan jadi 2?"
+  //
+  // SEBELUMNYA: permintaan ini LOLOS ke AI -> pengingat lama TETAP ADA (jadi 2),
+  // dan AI bisa mengarang "sudah diundur" padahal tidak. Sekarang ditangani
+  // dengan benar: pengingat lama DIUBAH (bukan ditambah).
+  {
+    const permintaan = deteksiPermintaanUbah(s);
+    if (permintaan) {
+      const daftar = await daftarPengingatPending(chatId);
+      if (daftar.length === 0) {
+        return {
+          ditangani: true,
+          reply: 'Belum ada pengingat aktif yang bisa diubah/dibatalkan. Ketik misalnya *ingatkan besok jam 9 ada rapat* dulu ya.',
+          jalur: 'ubah-tanpa-target',
+        };
+      }
+
+      const target = pilihTarget(permintaan, daftar);
+
+      // BATAL -> batalkan pengingat yang dituju.
+      if (permintaan.aksi === 'batal') {
+        if (target) {
+          const okBatal = await batalkanPengingat(target.id);
+          return {
+            ditangani: true,
+            reply: okBatal
+              ? `🗑️ Pengingat "${target.message}" (${formatWaktuUser(new Date(target.due_at))} WIB) sudah dibatalkan.`
+              : '⚠️ Gagal membatalkan pengingat. Coba lagi ya.',
+            jalur: 'ubah-batal',
+          };
+        }
+        const daftarB = daftar.map((r, i) => `${i + 1}. "${r.message}" — ${formatWaktuUser(new Date(r.due_at))} WIB`).join('\n');
+        return {
+          ditangani: true,
+          reply: `Pengingat aktif kamu:\n${daftarB}\n\nSebutkan yang mana, mis. *batalin rapat*.`,
+          jalur: 'ubah-batal-tanya',
+        };
+      }
+
+      // UNDUR / MAJUKAN / GESER -> hitung waktu baru.
+      let waktuBaru: Date | null = permintaan.waktuBaru ?? null;
+      if (!waktuBaru && target) {
+        const selisih = permintaan.selisihMenit;
+        if (selisih !== null) {
+          const arah = permintaan.aksi === 'majukan' ? -1 : 1;
+          waktuBaru = new Date(new Date(target.due_at).getTime() + arah * selisih * 60_000);
+        }
+      }
+
+      if (target && waktuBaru) {
+        const okUbah = await ubahPengingat(target.id, waktuBaru);
+        if (okUbah) {
+          const label = permintaan.aksi === 'majukan' ? 'dimajukan' : 'diundur';
+          return {
+            ditangani: true,
+            reply: [
+              `✅ Pengingat ${label} (TIDAK dobel — yang lama diperbarui).`,
+              ``,
+              `*Sebelumnya:* "${target.message}" — ${formatWaktuUser(new Date(target.due_at))} WIB`,
+              `*Sekarang :* "${target.message}" — ${formatWaktuUser(waktuBaru)} WIB`,
+            ].join('\n'),
+            jalur: 'ubah-undur',
+          };
+        }
+        return { ditangani: true, reply: '⚠️ Gagal mengubah pengingat. Coba lagi ya.', jalur: 'ubah-gagal' };
+      }
+
+      // Tidak bisa hitung waktu baru -> tanya user (jangan mengarang).
+      const daftarTeks = daftar.map((r, i) => `${i + 1}. "${r.message}" — ${formatWaktuUser(new Date(r.due_at))} WIB`).join('\n');
+      return {
+        ditangani: true,
+        reply: `Pengingat aktif kamu:\n${daftarTeks}\n\nSebutkan waktu barunya, mis. *undur rapat jadi jam 10* atau *undur satu jam*.`,
+        jalur: 'ubah-tanya',
+      };
+    }
   }
 
   // ── A0. PERMAINAN (mesin game nyata, state tersimpan di DB) ──
