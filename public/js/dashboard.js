@@ -1836,7 +1836,12 @@ function renderLiveUpstreamTable(data) {
                 <td>
                   <div style="font-size: 1.05rem; font-weight: 800; color: ${bindingPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${bindingPct >= 100 ? 'HABIS' : keyRemaining.toLocaleString("id-ID")}</div>
                   <div style="font-size: 0.72rem; color: ${bindingPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${bindingPct >= 100 ? '● Kuota habis (tunggu reset harian)' : '● Sisa Kuota Harian (RPD)'}</div>
-                  ${typeof k.tokensUsed === "number" && k.tokensUsed > 0 ? `<div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">${k.tokensUsed.toLocaleString("id-ID")} token terpakai</div>` : ''}
+                  ${typeof k.neuronUsed === "number" && k.neuronUsed > 0
+                    ? `<div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">${k.neuronUsed.toLocaleString("id-ID")} neuron terpakai (≈ ${(k.tokensUsed || 0).toLocaleString("id-ID")} token)</div>`
+                    : (typeof k.tokensUsed === "number" && k.tokensUsed > 0 ? `<div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">${k.tokensUsed.toLocaleString("id-ID")} token terpakai</div>` : '')}
+                  ${typeof k.balasanTersisa === "number" && k.balasanTersisa > 0
+                    ? `<div style="font-size: 0.66rem; color: #34d399; margin-top: 2px;">≈ ${k.balasanTersisa.toLocaleString("id-ID")} balasan lagi</div>`
+                    : ''}
                 </td>
                 <td style="text-align: right;">
                   <span class="badge-bot-sync" style="margin-bottom: 4px;">${k.limitIsLive ? '● Live Synced' : '● Bot Monitored'}</span>

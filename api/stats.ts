@@ -1,3 +1,4 @@
+import { hitungNeuron, neuronPerBalasanKhas, sisaBalasan, NEURON_HARIAN_GRATIS, tarifModel } from '../src/neuron.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import { config } from '../src/env.js';
@@ -572,7 +573,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       tokenCapPerKey: number;
       /** Cap token per-key bila tiap key berbeda (mis. xKiro key1 1jt vs key2/3 500k). */
       tokenCapPerKeyList: number[];
-      tokenLimitType: 'daily_cap' | 'requests_tpm' | 'monthly_credits';
+      tokenLimitType: 'daily_cap' | 'requests_tpm' | 'monthly_credits' | 'neuron' | 'neuron';
       tokenLimitLabel: string;
       resetCycle: string;
       contextWindow: string;
@@ -610,7 +611,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         // Kasus nyata: 3 key tampak "51% OPTIMAL" dari sisi request, padahal kuota
         // neuron SUDAH HABIS dan semua request 429. Label harus menegaskan neuron
         // sebagai batas utama, dan pemakaian neuron dihitung dari data nyata.
-        tokenLimitType: 'daily_cap',
+        tokenLimitType: 'neuron',
         tokenLimitLabel: '10.000 Neuron/hari (batas utama) • 1.200 req/5 menit (rate limit)',
         resetCycle: 'Harian (00:00 UTC)',
         contextWindow: '131.072 Token (131K)',
@@ -805,9 +806,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         // Karena itu kuota neuron diambil dari konfigurasi (DAILY_TOKEN_CAP_CLOUDFLARE),
         // yang memang satu-satunya sumber angka harian untuk provider ini.
         if (p.kind === 'cloudflare') {
-          tokenCap = perKeyTokenCap > 0
-            ? (daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
-            : effectiveTokenCapPerKey;
+          // ── BUG YANG DIPERBAIKI (06 Okt 2026) ──
+          // LAPORAN PEMILIK PRODUK: "masa baru 2 request sudah habis? kan cloudflare
+          // itu hitungannya NEURON, bukan token, betul tidak?"
+          //
+          // JAWABAN: BENAR. Sebelumnya `tokenCap` diisi 10.000 (angka NEURON dari
+          // .env) lalu dibandingkan dengan TOKEN nyata (mis. 14.000 token) ->
+          // dianggap "100% HABIS" padahal 14.000 token hanya ~573 neuron.
+          // Akibatnya dashboard salah lapor "KUOTA HABIS" dan key yang SEHAT
+          // (terbukti HTTP 200) tidak dipakai.
+          //
+          // SEKARANG: token DIKONVERSI ke neuron memakai tarif resmi per model,
+          // lalu dibandingkan dengan kuota neuron (10.000).
+          const modelUtama = String(config.models.cfPrimary || '');
+          const neuronPerBalasan = neuronPerBalasanKhas(modelUtama);
+          // Cap neuron harian (bukan token!).
+          tokenCap = NEURON_HARIAN_GRATIS;
+          // Tandai agar perhitungan di bawah memakai konversi neuron.
+          (p as { __neuron?: boolean }).__neuron = true;
+          (p as { __modelNeuron?: string }).__modelNeuron = modelUtama;
+          (p as { __neuronPerBalasan?: number }).__neuronPerBalasan = neuronPerBalasan;
         } else if (endpointAuthoritative) {
           tokenCap = perKeyTokenCap > 0
             ? (p.kind === 'dahl' ? perKeyTokenCap : daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
@@ -817,16 +835,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
             ? (p.kind === 'dahl' ? perKeyTokenCap : daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
             : effectiveTokenCapPerKey;
         }
+        // ── CLOUDFLARE: KONVERSI TOKEN -> NEURON (perbaikan 06 Okt 2026) ──
+        // Untuk Cloudflare, `tokenCap` berisi NEURON (10.000), jadi pemakaian
+        // harus dikonversi dulu. Tanpa ini, 14.000 token dibandingkan dengan
+        // 10.000 neuron -> salah lapor "HABIS" (padahal ~573 neuron saja).
+        const adalahNeuron = Boolean((p as { __neuron?: boolean }).__neuron);
+        const modelNeuron = String((p as { __modelNeuron?: string }).__modelNeuron || '');
+        // Konversi: asumsikan 80% token adalah input (prompt besar) & 20% output.
+        // Estimasi konservatif (lebih tinggi dari kenyataan) supaya tidak menyesatkan.
+        const neuronTerpakai = adalahNeuron
+          ? hitungNeuron(Math.round(tokensUsed * 0.8), Math.round(tokensUsed * 0.2), modelNeuron)
+          : tokensUsed;
+        const neuronCap = adalahNeuron ? NEURON_HARIAN_GRATIS : tokenCap;
+        const sisaNeuron = Math.max(0, neuronCap - neuronTerpakai);
+        const balasanTersisa = adalahNeuron ? sisaBalasan(sisaNeuron, modelNeuron) : 0;
+
         // Sisa dari endpoint bila tersedia (paling akurat — sudah memperhitungkan
         // pemakaian dari semua aplikasi di akun yang sama).
         let remainingTokens: number | null =
-          liveLimit?.tokensRemaining ?? (tokenCap > 0 ? Math.max(0, tokenCap - tokensUsed) : null);
-        // Token percent: sama — pakai data HARIAN. Saat rentang "Semua", xKiro tetap
-        // memakai live (sudah harian); provider lain pakai DB harian bila tersedia.
+          liveLimit?.tokensRemaining ?? (neuronCap > 0 ? sisaNeuron : null);
         const tokensForPercent = daysCount > 0 || liveLimit?.tokensUsedToday != null
-          ? tokensUsed
-          : (todayTokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayTokenQuotaMap.get(`${p.kind}:${suffix}`) || 0) || tokensUsed;
-        let tokenPercent = tokenCap > 0 ? Math.min(100, Math.round((tokensForPercent / tokenCap) * 100)) : 0;
+          ? neuronTerpakai
+          : (todayTokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayTokenQuotaMap.get(`${p.kind}:${suffix}`) || 0) || neuronTerpakai;
+        let tokenPercent = neuronCap > 0 ? Math.min(100, Math.round((tokensForPercent / neuronCap) * 100)) : 0;
 
         // (Blok xkLive DIHAPUS 04 Okt 2026 — xKiro disuspend permanen 403.
         //  Dulu di sini nilai token diambil dari live sync xKiro.)
@@ -872,6 +903,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           tokensUsed,
           tokenCap,
           tokenPercent,
+          // NEURON (perbaikan 06 Okt 2026): khusus Cloudflare, tampilkan neuron
+          // terpakai & perkiraan balasan tersisa — agar dashboard TIDAK lagi
+          // menyamakan neuron dengan token (dulu salah lapor "KUOTA HABIS").
+          neuronUsed: adalahNeuron ? neuronTerpakai : undefined,
+          neuronCap: adalahNeuron ? neuronCap : undefined,
+          balasanTersisa: adalahNeuron ? balasanTersisa : undefined,
           isRealTokenData,
           tokenLimitType: p.tokenLimitType,
           tokenLimitLabel: p.tokenLimitLabel,
