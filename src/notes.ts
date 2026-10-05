@@ -1027,14 +1027,20 @@ async function simpanDariNiat(
   }
   // note (termasuk pengingat bahasa alami)
   if (d.pengingat && d.due_at) {
-    const { saveReminderToDb } = await import('./remind.js');
-    const ok = await saveReminderToDb(
+    const { simpanReminderCerdas } = await import('./remind.js');
+    const hasil = await simpanReminderCerdas(
       chatId, String(d.message || 'Pengingat'), new Date(String(d.due_at)),
       opts.platform === 'telegram' ? 'telegram' : 'whatsapp',
     );
-    return ok
-      ? { ok: true, pesan: `✅ Pengingat disimpan — ${niat.ringkas}` }
-      : { ok: false, pesan: '⚠️ Gagal menyimpan pengingat. Coba lagi nanti ya.' };
+    if (!hasil.ok) {
+      return { ok: false, pesan: '⚠️ Gagal menyimpan pengingat. Coba lagi nanti ya.' };
+    }
+    // Laporan JUJUR: bedakan "baru" vs "diperbarui" (anti-dobel).
+    const tambahan = hasil.keterangan ? `\n_${hasil.keterangan}_` : '';
+    return {
+      ok: true,
+      pesan: `✅ Pengingat disimpan — Pengingat "${hasil.pesan}" pada ${formatWaktuUser(new Date(String(d.due_at)))} WIB${tambahan}`,
+    };
   }
   const id = await simpanCatatan(chatId, String(d.content || ''), {
     actor: opts.actor, platform: opts.platform,

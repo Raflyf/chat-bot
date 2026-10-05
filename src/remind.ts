@@ -2,6 +2,7 @@ import type TelegramBot from 'node-telegram-bot-api';
 import { autoReply } from './skills.js';
 import { db } from './db.js';
 import { config } from './env.js';
+import { kemiripanPesan, AMBANG_MIRIP, TOLERANSI_WAKTU_MENIT } from './reminder-dedup.js';
 
 export interface ReminderItem {
   id: number;
@@ -31,25 +32,119 @@ export interface ReminderItem {
 function waktuJatuhTempo(dueAt: Date): Date {
   return dueAt;
 }
+export interface HasilSimpanReminder {
+  /** Berhasil disimpan / diperbarui. */
+  ok: boolean;
+  /** 'baru' = ditambahkan, 'digabung' = pengingat lama diperbarui (anti-dobel). */
+  aksi: 'baru' | 'digabung' | 'gagal';
+  /** Pesan pengingat final yang tersimpan. */
+  pesan: string;
+  /** Untuk pesan balasan ke user (jujur soal apa yang terjadi). */
+  keterangan: string;
+}
+
 export async function saveReminderToDb(
   chatId: string,
   message: string,
   dueAt: Date,
   platform: 'telegram' | 'whatsapp' = 'telegram',
 ): Promise<boolean> {
+  const hasil = await simpanReminderCerdas(chatId, message, dueAt, platform);
+  return hasil.ok;
+}
+
+/**
+ * Simpan pengingat dengan DETEKSI DUPLIKAT.
+ *
+ * MASALAH (temuan pemilik produk 05 Okt 2026):
+ *   "misal ingatkan besok jam 9 ada rapat, lalu beberapa jam kemudian user
+ *    mengingatkan lagi 'jangan lupa besok jam 9 ada rapat', itu gimana?
+ *    apakah akan double atau di replace?"
+ * -> SEBELUMNYA: DOUBLE. User minta hal sama 3x -> dapat 3 pengingat.
+ *
+ * SEKARANG: bila waktu sama (selisih <= 5 menit) DAN isi mirip, pengingat lama
+ * DIPERBARUI (tidak dobel). Bila isi berbeda (mis. "antar anak"), tetap dibuat
+ * pengingat TERPISAH karena memang dua hal berbeda.
+ *
+ * Laporan jujur ke user: "sudah ada, saya perbarui" vs "ditambahkan".
+ */
+export async function simpanReminderCerdas(
+  chatId: string,
+  message: string,
+  dueAt: Date,
+  platform: 'telegram' | 'whatsapp' = 'telegram',
+): Promise<HasilSimpanReminder> {
   const c = db();
-  if (!c) return false;
+  if (!c) return { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Database tidak tersedia.' };
+  const dueIso = waktuJatuhTempo(dueAt).toISOString();
+
   try {
+    // 1. Cari pengingat PENDING yang waktunya dekat (<= TOLERANSI menit).
+    const batas = new Date(new Date(dueIso).getTime() + TOLERANSI_WAKTU_MENIT * 60_000).toISOString();
+    const batasBawah = new Date(new Date(dueIso).getTime() - TOLERANSI_WAKTU_MENIT * 60_000).toISOString();
+    const { data: dekat } = await c.from('reminders')
+      .select('id, message')
+      .eq('chat_id', chatId)
+      .eq('status', 'pending')
+      .gte('due_at', batasBawah)
+      .lte('due_at', batas)
+      .limit(10);
+
+    // 2. Cari yang isinya paling mirip.
+    let palingMirip: { id: number; message: string } | null = null;
+    let skorTerbaik = 0;
+    for (const r of (dekat ?? []) as Array<{ id: number; message: string }>) {
+      const skor = kemiripanPesan(message, r.message);
+      if (skor > skorTerbaik) { skorTerbaik = skor; palingMirip = r; }
+    }
+
+    // 3. Sangat mirip / mirip -> PERBARUI (anti-dobel).
+    if (palingMirip && skorTerbaik >= AMBANG_MIRIP) {
+      // Pilih pesan yang lebih INFORMATIF (lebih panjang) agar tidak kehilangan detail.
+      const pesanFinal = message.length >= palingMirip.message.length ? message : palingMirip.message;
+      const { error } = await c.from('reminders')
+        .update({ message: pesanFinal, due_at: dueIso })
+        .eq('id', palingMirip.id);
+      if (!error) {
+        return {
+          ok: true,
+          aksi: 'digabung',
+          pesan: pesanFinal,
+          keterangan: `Pengingat ini sudah ada (${palingMirip.message}) — sudah saya perbarui, tidak dobel.`,
+        };
+      }
+      // Gagal update -> jatuh ke insert biasa di bawah
+    }
+
+    // 4. Baru / berbeda -> simpan sebagai pengingat baru.
     const { error } = await c.from('reminders').insert({
       chat_id: chatId,
       message,
-      due_at: waktuJatuhTempo(dueAt).toISOString(),
+      due_at: dueIso,
       status: 'pending',
       platform,
     });
-    return !error;
+    if (error) return { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Gagal menyimpan pengingat.' };
+    return {
+      ok: true,
+      aksi: 'baru',
+      pesan: message,
+      keterangan: palingMirip
+        ? `Pengingat ditambahkan (beda dengan "${palingMirip.message}" yang sudah ada).`
+        : '',
+    };
   } catch {
-    return false;
+    // Fallback: insert langsung (perilaku lama) agar tetap tersimpan.
+    try {
+      const { error } = await c.from('reminders').insert({
+        chat_id: chatId, message, due_at: dueIso, status: 'pending', platform,
+      });
+      return error
+        ? { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Gagal menyimpan pengingat.' }
+        : { ok: true, aksi: 'baru', pesan: message, keterangan: '' };
+    } catch {
+      return { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Gagal menyimpan pengingat.' };
+    }
   }
 }
 
