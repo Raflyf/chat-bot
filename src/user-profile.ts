@@ -280,7 +280,16 @@ export function butuhLokasiAtauWaktu(teks: string): boolean {
     /\b(?:matahari|terbit|terbenam|senja|subuh|maghrib|imsak|sahur|berbuka|puasa|sholat|shalat|salat|kiblat|adzan|azan)\b/.test(s) ||
     // Lokasi/arah & perjalanan (HARUS berupa pertanyaan, bukan sekadar menyebut kata)
     /\b(?:arah|rute|jarak|macet|kemacetan|peta)\b/.test(s) ||
-    /\b(?:di\s*mana|dimana|ke\s*mana|dari\s*mana)\b/.test(s)
+    // ── DIPERBAIKI (06 Okt 2026) ──
+    // BUG: pola "dimana" terlalu luas sehingga pertanyaan RETORIS/bercanda ikut
+    // memicu tanya lokasi. Contoh nyata: "Emang kamu gaul dimana" -> bot malah
+    // bertanya "kamu di daerah mana?" (TIDAK NYAMBUNG, mengganggu obrolan).
+    //
+    // Sekarang hanya memicu bila memang menanyakan LOKASI NYATA: tempat tinggal,
+    // alamat, keberadaan, atau tujuan perjalanan.
+    /\b(?:tinggal|domisili|alamat|berada|lokasi(?:nya)?|posisi(?:nya)?)\s*(?:di\s*mana|dimana)\b/.test(s) ||
+    /\b(?:di\s*mana|dimana)\s+(?:kamu|kita|aku|saya|lu|gue|rumah|tempat|kota|daerah)\b/.test(s) ||
+    /\b(?:ke\s*mana|dari\s*mana)\b/.test(s)
   );
 }
 

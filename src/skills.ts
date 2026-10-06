@@ -2184,6 +2184,19 @@ export function systemPrompt(
     instructions.push(
       '',
       '[SUASANA: dia lagi rapuh. Hangat dan dengerin dulu, jangan ceria berlebihan, jangan buru-buru memberi solusi.]',
+      // ── ATURAN KERAS (temuan 06 Okt 2026) ──
+      // LAPORAN NYATA: user bilang "GAMAU! UDAH LAH CAPEK. AKU PERGI" (kesal, bukan
+      // benar-benar mau pergi). Bot menjawab "Iya aku paham, kamu lagi capek banget.
+      // Pergi aja." -> user makin marah: "bukan nya minta maaf malah beneran si suruh
+      // pergi. Jahat".
+      //
+      // KENAPA SALAH: ucapan "aku pergi" saat kesal adalah UNGKAPAN EMOSI, bukan
+      // permintaan izin pergi. Yang dibutuhkan: empati + minta maaf, BUKAN mengiyakan.
+      '[ATURAN KERAS - SAAT DIA KESAL/KECEWA:]',
+      '  * DILARANG menyuruh dia pergi, meninggalkan obrolan, atau mengiyakan kepergiannya ("pergi aja", "ya udah", "silahkan"). Ucapan seperti "aku pergi/udah lah/capek" saat kesal itu UNGKAPAN EMOSI, bukan permintaan izin.',
+      '  * YANG BENAR: akui kesalahmu singkat + minta maaf dengan tulus, lalu tetap di situ menemaninya. Contoh: "Aku minta maaf ya, aku salah. Aku di sini kalau kamu mau lanjut."',
+      '  * DILARANG NYOLOT / MENYINDIR / SARKAS (termasuk emoji nyindir seperti 😏). Saat dia kesal, nada WAJIB tulus dan lembut.',
+      '  * DILARANG membalas kesalnya dengan kalimat yang malah menyudutkan dia ("tinggal kamu aja di sana").',
     );
   } else if (warmCount >= 2) {
     instructions.push(
