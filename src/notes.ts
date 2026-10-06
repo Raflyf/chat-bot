@@ -1,5 +1,5 @@
 /**
- * PENCATATAN PRIBADI — catatan, tugas, keuangan, kebiasaan.
+ * PENCATATAN PRIBADI, catatan, tugas, keuangan, kebiasaan.
  *
  * KENAPA MODUL INI ADA (permintaan pemilik produk, 04 Okt 2026):
  *   "apakah bot nya bisa digunakan untuk mencatat dan mengingat sesuatu seperti
@@ -9,16 +9,16 @@
  *
  * Sebelumnya bot hanya punya /remind (pengingat berbasis menit) dan /salah
  * (preferensi personal). Modul ini menambah 4 kemampuan pencatatan:
- *   1. notes    — catatan bebas & jurnal (resep, ide, info penting)
- *   2. todos    — daftar tugas dengan prioritas & tenggat
- *   3. expenses — catatan pengeluaran/pemasukan + rekap
- *   4. habits   — kebiasaan berulang + streak
+ *   1. notes   , catatan bebas & jurnal (resep, ide, info penting)
+ *   2. todos   , daftar tugas dengan prioritas & tenggat
+ *   3. expenses, catatan pengeluaran/pemasukan + rekap
+ *   4. habits  , kebiasaan berulang + streak
  *
  * DUA CARA PAKAI (permintaan user: "bisa tanpa format /?"):
- *   A. Bahasa alami — "catat pengeluaran 50rb buat makan"
+ *   A. Bahasa alami, "catat pengeluaran 50rb buat makan"
  *      -> dideteksi `deteksiNiat()`, lalu DIKONFIRMASI dulu sebelum disimpan
- *         (permintaan user: "konfirmasi dulu (aman — hindari salah catat)").
- *   B. Perintah / — "/catat", "/todo", "/uang", "/rekap" (cepat & pasti)
+ *         (permintaan user: "konfirmasi dulu (aman, hindari salah catat)").
+ *   B. Perintah /, "/catat", "/todo", "/uang", "/rekap" (cepat & pasti)
  *
  * PRINSIP: modul ini TIDAK memanggil AI sendiri untuk hal yang bisa dipastikan
  * dengan pola. AI hanya dipakai di lapisan atas (skills.ts) bila perlu; di sini
@@ -28,7 +28,7 @@ import { db } from './db.js';
 import { formatInZone } from './timezone.js';
 import { tanganiGame } from './games/index.js';
 import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
-import { tentukanProfilWaktu, berkaitanDenganWaktu, waktuDiZona } from './user-profile.js';
+import { butuhLokasiAtauWaktu, tentukanProfilWaktu, berkaitanDenganWaktu, waktuDiZona } from './user-profile.js';
 import { detectUserLocationDeclaration } from './timezone.js';
 import { deteksiPengulangan, labelUlang } from './reminder-repeat.js';
 import { susunRingkasan, mintaRingkasan } from './ringkasan.js';
@@ -183,7 +183,7 @@ export function tebakKategori(teks: string): string {
  * Voice Note "ingatkan saya SATU menit lagi untuk login" TIDAK dikenali, karena
  * parseWaktuAlami() hanya menerima digit (`\d+`). Transkripsi suara sering
  * menghasilkan angka KATA ("satu", "dua", "lima"), jadi permintaan lewat VN
- * gagal dibuatkan pengingat — dan AI lalu mengarang "pengingat disimpan".
+ * gagal dibuatkan pengingat, dan AI lalu mengarang "pengingat disimpan".
  *
  * Mendukung: satu..dua belas, belasan (sebelas..sembilan belas), puluhan
  * (dua puluh..sembilan puluh), setengah, se- (sejam, semenit), dan campuran
@@ -244,7 +244,7 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
   const s = angkaKataKeDigit(teks.toLowerCase().trim());
   const hasil = new Date(sekarang.getTime());
 
-  // "N menit lagi" / "N jam lagi" / "N hari lagi" — N boleh angka atau kata.
+  // "N menit lagi" / "N jam lagi" / "N hari lagi", N boleh angka atau kata.
   const mJeda = s.match(/(\d+(?:[.,]\d+)?)\s*(menit|jam|hari|minggu|bulan)\s*(lagi|kemudian|kedepan)?/);
   if (mJeda) {
     const n = Number(String(mJeda[1]).replace(',', '.'));
@@ -255,7 +255,7 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
       : satuan === 'hari' ? n * 86_400_000
       : satuan === 'minggu' ? n * 7 * 86_400_000
       : n * 30 * 86_400_000;
-    // Bila ada jam eksplisit ("2 jam lagi jam 8"), abaikan — jeda lebih pasti.
+    // Bila ada jam eksplisit ("2 jam lagi jam 8"), abaikan, jeda lebih pasti.
     return new Date(sekarang.getTime() + ms);
   }
 
@@ -316,7 +316,7 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
 
   // BAGIAN HARI tanpa jam eksplisit: "nanti malam", "malam ini", "pagi ini",
   // "besok pagi", "sore nanti". Jam default: subuh 4, pagi 7, siang 12,
-  // sore 16, malam 19. DIPERLUAS 05 Okt 2026 — sebelumnya "jangan lupa nanti
+  // sore 16, malam 19. DIPERLUAS 05 Okt 2026, sebelumnya "jangan lupa nanti
   // malam bayar utang" tidak dikenali karena hanya ada kata bagian hari.
   const mBagianHari = s.match(/\b(subuh|pagi|siang|sore|petang|malam)\b/);
   if (mBagianHari && !/(?:jam|pukul)\s*\d/.test(s)) {
@@ -358,7 +358,7 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
 }
 
 // ============================================================================
-// DETEKSI NIAT (deterministik — tanpa AI, cepat, tanpa biaya token)
+// DETEKSI NIAT (deterministik, tanpa AI, cepat, tanpa biaya token)
 // ============================================================================
 
 /**
@@ -369,7 +369,7 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
  * daripada salah mencatat obrolan biasa.
  */
 /**
- * KATA PERINTAH UNIVERSAL — pesan WAJIB dimulai dengan salah satu kata ini
+ * KATA PERINTAH UNIVERSAL, pesan WAJIB dimulai dengan salah satu kata ini
  * (setelah kata pengantar opsional). Prinsipnya: HANYA kalimat PERINTAH yang
  * boleh dicatat, bukan pertanyaan, bukan cerita, bukan obrolan.
  */
@@ -379,7 +379,7 @@ const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|namba
 const PENGANTAR_BOLEH = /^\s*(tolong|coba|bisa|boleh|please|pls|mau|aku\s+mau|saya\s+mau|aku\s+pengen|saya\s+pengen|aku\s+ingin|saya\s+ingin|aku\s+pingin|saya\s+pingin|gw\s+mau|gue\s+mau|aku\s+mo|saya\s+mo)\s+/i;
 
 /**
- * PENANDA OBROLAN — bila ada salah satu, pesan DITOLAK (tidak dicatat).
+ * PENANDA OBROLAN, bila ada salah satu, pesan DITOLAK (tidak dicatat).
  * Ini yang mencegah obrolan biasa tercampur ke fitur pencatatan.
  */
 const PENANDA_OBROLAN: RegExp[] = [
@@ -414,7 +414,7 @@ function bersihkanIsi(teks: string, tambahan: RegExp[] = []): string {
 }
 
 /**
- * DETEKSI NIAT PENCATATAN — KETAT & UNIVERSAL (diperketat 04 Okt 2026).
+ * DETEKSI NIAT PENCATATAN, KETAT & UNIVERSAL (diperketat 04 Okt 2026).
  *
  * FILOSOFI: LEBIH BAIK MELEWATKAN daripada salah mencatat obrolan.
  * Karena itu ada 4 lapis penyaring yang harus LOLOS semua:
@@ -452,7 +452,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   //
   // BUG SEBELUMNYA (juga diperbaiki di sini): regex dibangun dari template
   // literal sehingga `\\s` bisa rusak menjadi huruf `s` setelah file ditulis
-  // ulang — membuat regex SELALU GAGAL. Kini dibangun dari string biasa.
+  // ulang, membuat regex SELALU GAGAL. Kini dibangun dari string biasa.
   const tanpaPengantar = asli.replace(PENGANTAR_BOLEH, '').trim();
   const KATA_PERINTAH_AKHIR = '(?:tolong\\s+)?(' + KATA_PERINTAH + ')';
   const polaAwal = new RegExp('^\\s*\\/?' + '(' + KATA_PERINTAH + ')\\b', 'i');
@@ -501,7 +501,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     }
   }
 
-  // 4a. KEUANGAN — wajib ada nominal
+  // 4a. KEUANGAN, wajib ada nominal
   const adaKataUang = /\b(uang|duit|pengeluaran|pemasukan|belanja|bayar|beli|habis|keluar|masuk|gaji|bonus|dapat|terima|honor|fee|pendapatan|jajan|ongkos|biaya|tarif)\b/.test(s);
   const perintahUang = /^\s*\/?(uang|keluar|masuk|pengeluaran|pemasukan)\b/i.test(tanpaPengantar);
   if (nominal && (perintahUang || adaKataUang)) {
@@ -514,7 +514,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     };
   }
 
-  // 4a2. BARANG / BELANJA — dipetakan ke CATATAN dengan tag 'belanja'.
+  // 4a2. BARANG / BELANJA, dipetakan ke CATATAN dengan tag 'belanja'.
   // Temuan uji 05 Okt 2026: "tambah barang beras lima kilo" TIDAK dikenali karena
   // kata "barang" ikut dibuang sebagai kata perintah sehingga isi jadi kosong.
   // Sekarang: kenali kata barang/belanja/stok/inventaris, lalu simpan isinya
@@ -539,8 +539,8 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     };
   }
 
-  // 4b. PENGINGAT — kata ingatkan/ingetin/remind boleh di AWAL atau AKHIR
-  // (mis. "1 menit lagi saya mau login, ingatkan" — cara bicara alami).
+  // 4b. PENGINGAT, kata ingatkan/ingetin/remind boleh di AWAL atau AKHIR
+  // (mis. "1 menit lagi saya mau login, ingatkan", cara bicara alami).
   const perintahIngat =
     /^\s*\/?(ingatkan|ingetin|remind)\b/i.test(tanpaPengantar) ||
     /[,\s]+(?:tolong\s+)?(ingatkan|ingetin|remind)\s*[.!]*\s*$/i.test(tanpaPengantar);
@@ -563,6 +563,13 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       const ANGKA_KATA = '(?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh|sebelas|dua\\s*belas|tiga\\s*belas|empat\\s*belas|lima\\s*belas|enam\\s*belas|tujuh\\s*belas|delapan\\s*belas|sembilan\\s*belas|dua\\s*puluh|tiga\\s*puluh|empat\\s*puluh|lima\\s*puluh|enam\\s*puluh|tujuh\\s*puluh|delapan\\s*puluh|sembilan\\s*puluh|setengah|se)';
       let pesan = asli
         .replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '')
+        // BUG YANG DIPERBAIKI (06 Okt 2026, temuan uji): kata ganti yang
+        // menggantung TIDAK dibuang, sehingga:
+        //   "ingatkan saya 3 menit lagi makan" -> pesan "saya makan"
+        //   "ingatkan saya 5 menit lagi minum obat" -> "saya minum obat"
+        // Sekarang "saya/aku/tolong/dong/nih/ya" di AWAL pesan dibuang agar
+        // isi pengingat bersih: "makan", "minum obat".
+        .replace(/^\s*(?:tolong|please|pls|saya|aku|gue|gw|kami|kita|dong|nih|ya|deh|sih)\s+/i, '')
         // Kata PENGULANGAN dibuang dari pesan (aturan berulang sudah disimpan
         // di kolom terpisah). Temuan uji: "tiap hari minum obat" -> "minum obat".
         .replace(/\b(?:tiap|setiap|saban)\s+(?:hari\s+kerja|hari|minggu|bulan|tahun)\b/gi, '')
@@ -575,7 +582,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         .replace(/(?:dari\s+)?(?:jam|pukul)\s*\d{1,2}(?:[:.]\d{2})?\s*(?:sampai(?:\s+dengan)?|s\/d|sd|hingga|-|–|sampai\s+pukul|sampai\s+jam)\s*(?:jam|pukul)?\s*\d{1,2}(?:[:.]\d{2})?/gi, '')
         .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
         .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
-        // "N menit lagi" — N boleh digit ATAU angka kata
+        // "N menit lagi", N boleh digit ATAU angka kata
         .replace(new RegExp(`\\b(?:\\d+|${ANGKA_KATA})\\s*(menit|jam|hari|minggu|bulan)\\s*(lagi|kemudian|kedepan)?\\b`, 'gi'), '')
         // sisa "lagi" yang menggantung (mis. "buat login lagi")
         .replace(/\blagi\b/gi, '')
@@ -610,7 +617,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     return null; // perintah ingatkan tapi waktu tak jelas -> serahkan ke AI
   }
 
-  // 4c. TUGAS — wajib ada kata tugas/todo/task
+  // 4c. TUGAS, wajib ada kata tugas/todo/task
   const perintahTodo = /^\s*\/?(todo|to-do|tugas|task)\b/i.test(tanpaPengantar);
   const sebutTodo = /\b(tugas|todo|to-do|task|kerjaan|pekerjaan|pr|daftar\s+kerjaan)\b/.test(s);
   if (perintahTodo || sebutTodo) {
@@ -627,7 +634,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     }
   }
 
-  // 4d. CATATAN — wajib kata catat/simpan/note/tulis/jurnal + isi cukup
+  // 4d. CATATAN, wajib kata catat/simpan/note/tulis/jurnal + isi cukup
   const perintahCatat = /^\s*\/?(catat|catet|simpan|note|notes|tulis|jurnal|diary)\b/i.test(tanpaPengantar);
   if (perintahCatat) {
     const isi = bersihkanIsi(asli);
@@ -645,7 +652,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
 }
 
 // ============================================================================
-// SIMPAN & AMBIL — CATATAN
+// SIMPAN & AMBIL, CATATAN
 // ============================================================================
 
 export async function simpanCatatan(
@@ -714,7 +721,7 @@ export async function hapusCatatan(chatId: string, id: number): Promise<boolean>
 }
 
 // ============================================================================
-// SIMPAN & AMBIL — TUGAS
+// SIMPAN & AMBIL, TUGAS
 // ============================================================================
 
 export async function simpanTugas(
@@ -777,7 +784,7 @@ export async function hapusTugas(chatId: string, id: number): Promise<boolean> {
 }
 
 // ============================================================================
-// SIMPAN & AMBIL — KEUANGAN
+// SIMPAN & AMBIL, KEUANGAN
 // ============================================================================
 
 export async function simpanUang(
@@ -855,7 +862,7 @@ export async function hapusUang(chatId: string, id: number): Promise<boolean> {
 }
 
 // ============================================================================
-// SIMPAN & AMBIL — KEBIASAAN
+// SIMPAN & AMBIL, KEBIASAAN
 // ============================================================================
 
 export async function simpanKebiasaan(chatId: string, name: string, targetPerDay = 1, opts?: { actor?: string; platform?: string }): Promise<number | null> {
@@ -931,13 +938,13 @@ export async function daftarKebiasaan(chatId: string): Promise<Array<{ id: numbe
 }
 
 // ============================================================================
-// FORMATTER (untuk balasan bot — teks rapi, tanpa AI)
+// FORMATTER (untuk balasan bot, teks rapi, tanpa AI)
 // ============================================================================
 
 export function formatDaftarCatatan(rows: CatatanRingkas[]): string {
   if (!rows.length) return 'Belum ada catatan.';
   return rows.map((r, i) => {
-    const judul = r.title ? `*${r.title}* — ` : '';
+    const judul = r.title ? `*${r.title}*, ` : '';
     const isi = r.content.length > 120 ? `${r.content.slice(0, 120)}…` : r.content;
     return `${i + 1}. ${judul}${isi}`;
   }).join('\n');
@@ -948,7 +955,7 @@ export function formatDaftarTugas(rows: TugasRingkas[]): string {
   const label = (p: number) => (p === 1 ? '🔴' : p === 3 ? '🟢' : '🟡');
   return rows.map((r) => {
     const due = r.due_at
-      ? ` — tenggat ${formatWaktuUser(new Date(r.due_at))}`
+      ? `, tenggat ${formatWaktuUser(new Date(r.due_at))}`
       : '';
     return `${label(r.priority)} #${r.id} ${r.task}${due}`;
   }).join('\n');
@@ -974,18 +981,18 @@ export function formatDaftarKebiasaan(rows: Array<{ id: number; name: string; st
   const hariIni = new Date().toISOString().slice(0, 10);
   return rows.map((r) => {
     const sudah = r.last_done_at?.slice(0, 10) === hariIni ? '✅' : '⬜';
-    return `${sudah} #${r.id} ${r.name} — streak ${r.streak} hari (terbaik ${r.best_streak})`;
+    return `${sudah} #${r.id} ${r.name}, streak ${r.streak} hari (terbaik ${r.best_streak})`;
   }).join('\n');
 }
 
 // ============================================================================
-// ORKESTRATOR — dipakai lapisan pesan (WhatsApp/Telegram)
+// ORKESTRATOR, dipakai lapisan pesan (WhatsApp/Telegram)
 // ============================================================================
 
 /**
  * Konfirmasi tertunda per chat: setelah bot menanyakan "simpan?", pesan
  * berikutnya ("iya"/"tidak") diproses di sini tanpa memanggil AI.
- * Disimpan di memori proses (cukup — konfirmasi hanya bertahan beberapa detik).
+ * Disimpan di memori proses (cukup, konfirmasi hanya bertahan beberapa detik).
  */
 // ── KONFIRMASI TERTUNDA (dikembalikan 04 Okt 2026, versi lebih baik) ──
 //
@@ -1013,7 +1020,7 @@ const konfirmasiTertunda = new Map<string, KonfirmasiTertunda>();
 // ── ZONA WAKTU AKTIF ──
 // Diisi oleh tanganiPencatatan() untuk setiap permintaan, berdasarkan profil
 // user yang tersimpan di database. Default WIB HANYA sebagai jaring terakhir
-// (bila pemanggil lupa mengisi) — bukan lagi asumsi utama.
+// (bila pemanggil lupa mengisi), bukan lagi asumsi utama.
 let zonaAktif = 'Asia/Jakarta';
 // Catatan konfirmasi zona (diisi saat zona masih tebakan dari nomor telepon).
 let catatanKonfirmasiZona = '';
@@ -1022,6 +1029,50 @@ function setZonaAktif(z: string | undefined | null): void {
   zonaAktif = z && z.trim() ? z : 'Asia/Jakarta';
 }
 const KONFIRMASI_TTL_MS = 10 * 60_000; // 10 menit
+
+// ── PERMINTAAN TERTUNDA KARENA ZONA WAKTU (perbaikan 06 Okt 2026) ──
+//
+// BUG YANG DIPERBAIKI: "kenapa setelah nanya jam, remind nya tidak dicatat lagi?
+// seharusnya kan langsung sekalian."
+//
+// SEBAB: saat user baru meminta pengingat tetapi zonanya belum diketahui, bot
+// menanyakan zona lalu `return` LANGSUNG, permintaan pengingat user HILANG.
+// Setelah user menjawab "cianjur", bot hanya menyimpan zona, pengingat TIDAK
+// pernah dibuat. User harus mengulang perintahnya (menyebalkan).
+//
+// SEKARANG: permintaan disimpan sementara; begitu zona diketahui, permintaan
+// itu DILANJUTKAN otomatis tanpa user mengulang.
+interface PermintaanTertunda {
+  teks: string;
+  platform: string;
+  actor?: string;
+  at: number;
+}
+const permintaanTertunda = new Map<string, PermintaanTertunda>();
+const PERMINTAAN_TERTUNDA_TTL_MS = 10 * 60_000; // 10 menit
+
+/** Simpan permintaan yang menunggu zona waktu. */
+function simpanPermintaanTertunda(
+  chatId: string, teks: string, platform: string, actor?: string,
+): void {
+  permintaanTertunda.set(chatId, { teks, platform, actor, at: Date.now() });
+}
+
+/** Ambil permintaan tertunda (bila belum kedaluwarsa). */
+function ambilPermintaanTertunda(chatId: string): PermintaanTertunda | null {
+  const v = permintaanTertunda.get(chatId);
+  if (!v) return null;
+  if (Date.now() - v.at > PERMINTAAN_TERTUNDA_TTL_MS) {
+    permintaanTertunda.delete(chatId);
+    return null;
+  }
+  return v;
+}
+
+/** Buang permintaan tertunda (sudah dilanjutkan / dibatalkan). */
+function buangPermintaanTertunda(chatId: string): void {
+  permintaanTertunda.delete(chatId);
+}
 
 /** Simpan konfirmasi tertunda (DB dulu; memori sebagai fallback). */
 async function simpanKonfirmasi(
@@ -1147,7 +1198,7 @@ async function simpanDariNiat(
       { actor: opts.actor, platform: opts.platform },
     );
     return id
-      ? { ok: true, pesan: `✅ Tercatat (#${id}) — ${niat.ringkas}` }
+      ? { ok: true, pesan: `✅ Tercatat (#${id}), ${niat.ringkas}` }
       : { ok: false, pesan: '⚠️ Gagal menyimpan ke database. Coba lagi nanti ya.' };
   }
   if (niat.kind === 'todo') {
@@ -1158,7 +1209,7 @@ async function simpanDariNiat(
       platform: opts.platform,
     });
     return id
-      ? { ok: true, pesan: `✅ Tugas dicatat (#${id}) — ${niat.ringkas}` }
+      ? { ok: true, pesan: `✅ Tugas dicatat (#${id}), ${niat.ringkas}` }
       : { ok: false, pesan: '⚠️ Gagal menyimpan tugas. Coba lagi nanti ya.' };
   }
   // note (termasuk pengingat bahasa alami)
@@ -1184,7 +1235,7 @@ async function simpanDariNiat(
       : `${formatWaktuUser(mulai)}`;
     return {
       ok: true,
-      pesan: `✅ Pengingat disimpan — Pengingat "${hasil.pesan}" pada ${jamTeks}${tambahan}${catatanKonfirmasiZona}`,
+      pesan: `✅ Pengingat disimpan, Pengingat "${hasil.pesan}" pada ${jamTeks}${tambahan}${catatanKonfirmasiZona}`,
     };
   }
   const id = await simpanCatatan(chatId, String(d.content || ''), {
@@ -1192,7 +1243,7 @@ async function simpanDariNiat(
     tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
   });
   return id
-    ? { ok: true, pesan: `✅ Catatan disimpan (#${id}) — ${niat.ringkas}` }
+    ? { ok: true, pesan: `✅ Catatan disimpan (#${id}), ${niat.ringkas}` }
     : { ok: false, pesan: '⚠️ Gagal menyimpan catatan. Coba lagi nanti ya.' };
 }
 
@@ -1205,8 +1256,8 @@ export async function tanganiPencatatan(
   teks: string,
   chatId: string,
   ctx: unknown,
-  opts: { actor?: string; platform: string },
-): Promise<{ ditangani: boolean; reply: string; jalur: string }> {
+  opts: { actor?: string; platform: string; lanjutkanTertunda?: boolean },
+): Promise<{ ditangani: boolean; reply: string; jalur: string; teruskanKeAi?: string }> {
   const s = teks.trim();
   const asli = teks.trim();
   const low = s.toLowerCase();
@@ -1297,7 +1348,7 @@ export async function tanganiPencatatan(
     return { ditangani: true, reply: `*Catatan terakhir:*\n${formatDaftarCatatan(c)}`, jalur: 'perintah-catatan' };
   }
 
-  // /barang <isi>  atau  /belanja <isi>  — daftar barang/belanja (pakai tabel notes
+  // /barang <isi>  atau  /belanja <isi> , daftar barang/belanja (pakai tabel notes
   // dengan tag khusus 'belanja', agar tidak perlu tabel baru).
   m = low.match(/^\/(?:barang|belanja|stok|shopping)\s+([\s\S]+)/);
   if (m) {
@@ -1308,7 +1359,7 @@ export async function tanganiPencatatan(
     return { ditangani: true, reply: r.pesan, jalur: 'perintah-barang' };
   }
 
-  // /barang  atau  /belanja  (tanpa isi) — tampilkan daftar
+  // /barang  atau  /belanja  (tanpa isi), tampilkan daftar
   if (/^\/(?:barang|belanja|stok|shopping)$/.test(low)) {
     const list = await daftarCatatan(chatId, 20);
     const barang = list.filter((x) => Array.isArray((x as { tags?: string[] }).tags) && (x as { tags?: string[] }).tags!.includes('belanja'));
@@ -1341,7 +1392,7 @@ export async function tanganiPencatatan(
   // sedang berada... misal sistem defaultnya WIB, jika user di belahan waktu lain
   // maka jadi tidak sama waktunya. Jadi jika ada user baru masuk, saat menanyakan
   // waktu / menyuruh mengingatkan / apapun yang berhubungan dengan waktu, jangan
-  // sok tau dan asal jawab defaultnya — tanya dulu user di zona mana, lalu simpan
+  // sok tau dan asal jawab defaultnya, tanya dulu user di zona mana, lalu simpan
   // di database agar tidak pernah lupa. Jika sudah diketahui, tidak usah ditanya."
   //
   // ALUR:
@@ -1355,31 +1406,92 @@ export async function tanganiPencatatan(
     const keputusan = await tentukanProfilWaktu(chatId, opts.platform, asli);
     setZonaAktif(keputusan.profil?.timezone);
 
+    // ── LANJUTKAN PERMINTAAN TERTUNDA (setelah zona baru diketahui) ──
+    // Bila ada permintaan yang menunggu zona, dan zona kini SUDAH diketahui,
+    // lanjutkan permintaan itu SEKARANG (tanpa user mengulang).
+    if (!keputusan.perluTanya && keputusan.profil) {
+      const tertunda = ambilPermintaanTertunda(chatId);
+      // Hanya lanjutkan bila pesan SEKARANG bukan permintaan baru yang berdiri
+      // sendiri (mis. user malah minta hal lain). Pesan pendek berisi lokasi
+      // ("cianjur") ATAU jawaban zona dianggap sebagai pemicu lanjutan.
+      const pesanIniDeklarasiLokasi = detectUserLocationDeclaration(asli) !== null;
+      const pesanIniSingkat = asli.trim().split(/\s+/).length <= 4;
+      if (tertunda && (pesanIniDeklarasiLokasi || pesanIniSingkat)) {
+        buangPermintaanTertunda(chatId);
+        // Jalankan ulang permintaan ASLI dengan zona yang sudah diketahui.
+        // `lanjutkanTertunda` mencegah rekursi tak terbatas.
+        const lanjut = await tanganiPencatatan(tertunda.teks, chatId, ctx, {
+          platform: tertunda.platform,
+          actor: tertunda.actor,
+          lanjutkanTertunda: true,
+        });
+        const p = keputusan.profil;
+        const waktuSekarang = waktuDiZona(p.timezone);
+        if (lanjut.ditangani) {
+          // Permintaan adalah PENCATATAN (pengingat/catatan/tugas/keuangan) yang
+          // sudah diproses ulang dengan zona benar -> kirim hasilnya.
+          const awalan = `Oke, aku catat kamu di *${p.label}* ya, di sana sekarang ${waktuSekarang}. Mulai sekarang jam aku sesuaikan ke zona itu. 👍\n\n`;
+          return {
+            ditangani: true,
+            reply: awalan + lanjut.reply,
+            jalur: 'lanjut-setelah-zona',
+          };
+        }
+        // Permintaan BUKAN pencatatan (mis. "cuaca hari ini") -> teruskan ke AI
+        // dengan konteks lokasi yang kini sudah tersimpan. PENTING: jangan
+        // dikembalikan sebagai "tidak ditangani" tanpa pesan, karena user akan
+        // merasa permintaannya hilang. Kita sisipkan awalan zona agar AI tahu
+        // konteksnya, lalu minta AI menjawab permintaan ASLI user.
+        return {
+          ditangani: true,
+          reply:
+            `Oke, aku catat kamu di *${p.label}* ya, di sana sekarang ${waktuSekarang}. ` +
+            `Aku lanjut jawab pertanyaanmu tadi: _${tertunda.teks.slice(0, 120)}_`,
+          jalur: 'lanjut-setelah-zona-ai',
+          // Penanda agar pemanggil (whatsapp_cloud/telegram) meneruskan ke AI
+          // dengan teks ASLI permintaan user (bukan teks pengantar ini).
+          teruskanKeAi: tertunda.teks,
+        };
+      }
+    }
+
+    // Bila zona masih TEBAKAN dari nomor telepon, sisipkan catatan konfirmasi
+    // di akhir balasan (tidak menghalangi, hanya mengingatkan).
+    if (keputusan.perluKonfirmasi && keputusan.profil && butuhLokasiAtauWaktu(asli)) {
+      catatanKonfirmasiZona =
+        `\n\n_Catatan: aku pakai zona *${keputusan.profil.label}*. Kalau bukan, bilang saja "aku di <kota>" ya._`;
+    }
+
     // Bila user BARU menyebut lokasinya (dan bukan permintaan lain), balas
-    // pengakuan singkat — sebelumnya balasan kosong sehingga terasa bot diam.
+    // pengakuan singkat, sebelumnya balasan kosong sehingga terasa bot diam.
     const adaDeklarasiBaru = detectUserLocationDeclaration(asli) !== null;
-    if (adaDeklarasiBaru && !berkaitanDenganWaktu(asli)) {
+    if (adaDeklarasiBaru && !butuhLokasiAtauWaktu(asli)) {
       const p = keputusan.profil;
       const waktuSekarang = p ? waktuDiZona(p.timezone) : '';
       return {
         ditangani: true,
         reply:
-          `Oke, aku catat kamu di *${p?.label ?? 'lokasi itu'}* ya${waktuSekarang ? ` — di sana sekarang ${waktuSekarang}` : ''}. ` +
+          `Oke, aku catat kamu di *${p?.label ?? 'lokasi itu'}* ya${waktuSekarang ? `, di sana sekarang ${waktuSekarang}` : ''}. ` +
           `Mulai sekarang semua pengingat & jam aku sesuaikan ke zona itu, nggak perlu kasih tahu lagi. 👍`,
         jalur: 'deklarasi-lokasi',
       };
     }
 
     // Bila berkaitan waktu DAN zona belum diketahui -> tanya dulu (jangan sok tahu).
-    if (keputusan.perluTanya && berkaitanDenganWaktu(asli)) {
-      return { ditangani: true, reply: keputusan.pertanyaan, jalur: 'tanya-zona-waktu' };
-    }
-
-    // Bila zona masih TEBAKAN dari nomor telepon, sisipkan catatan konfirmasi
-    // di akhir balasan (tidak menghalangi, hanya mengingatkan).
-    if (keputusan.perluKonfirmasi && keputusan.profil && berkaitanDenganWaktu(asli)) {
-      catatanKonfirmasiZona =
-        `\n\n_Catatan: aku pakai zona *${keputusan.profil.label}*. Kalau bukan, bilang saja "aku di <kota>" ya._`;
+    //
+    // PERBAIKAN (06 Okt 2026): SIMPAN permintaan user agar bisa DILANJUTKAN
+    // otomatis begitu zona diketahui. Dulu hanya `return` -> permintaan HILANG
+    // dan user harus mengulang ("kenapa remind-nya tidak dicatat lagi?").
+    // PERUMUMAN (06 Okt 2026): bukan hanya "waktu", tetapi SEMUA permintaan yang
+    // butuh lokasi/waktu (cuaca, kiblat, matahari, dll). Permintaan user DISIMPAN
+    // agar bisa dilanjutkan otomatis setelah lokasi diketahui.
+    if (keputusan.perluTanya && butuhLokasiAtauWaktu(asli) && !opts.lanjutkanTertunda) {
+      simpanPermintaanTertunda(chatId, asli, opts.platform, opts.actor);
+      return {
+        ditangani: true,
+        reply: `${keputusan.pertanyaan}\n\n_Tenang, permintaanmu aku simpan. Setelah kamu sebut kotanya, langsung aku proses ya._`,
+        jalur: 'tanya-zona-waktu',
+      };
     }
   }
 
@@ -1419,7 +1531,7 @@ export async function tanganiPencatatan(
             jalur: 'ubah-batal',
           };
         }
-        const daftarB = daftar.map((r, i) => `${i + 1}. "${r.message}" — ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
+        const daftarB = daftar.map((r, i) => `${i + 1}. "${r.message}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
         return {
           ditangani: true,
           reply: `Pengingat aktif kamu:\n${daftarB}\n\nSebutkan yang mana, mis. *batalin rapat*.`,
@@ -1444,10 +1556,10 @@ export async function tanganiPencatatan(
           return {
             ditangani: true,
             reply: [
-              `✅ Pengingat ${label} (TIDAK dobel — yang lama diperbarui).`,
+              `✅ Pengingat ${label} (TIDAK dobel, yang lama diperbarui).`,
               ``,
-              `*Sebelumnya:* "${target.message}" — ${formatWaktuUser(new Date(target.due_at))}`,
-              `*Sekarang :* "${target.message}" — ${formatWaktuUser(waktuBaru)}`,
+              `*Sebelumnya:* "${target.message}", ${formatWaktuUser(new Date(target.due_at))}`,
+              `*Sekarang :* "${target.message}", ${formatWaktuUser(waktuBaru)}`,
               catatanKonfirmasiZona,
             ].join('\n'),
             jalur: 'ubah-undur',
@@ -1457,7 +1569,7 @@ export async function tanganiPencatatan(
       }
 
       // Tidak bisa hitung waktu baru -> tanya user (jangan mengarang).
-      const daftarTeks = daftar.map((r, i) => `${i + 1}. "${r.message}" — ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
+      const daftarTeks = daftar.map((r, i) => `${i + 1}. "${r.message}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
       return {
         ditangani: true,
         reply: `Pengingat aktif kamu:\n${daftarTeks}\n\nSebutkan waktu barunya, mis. *undur rapat jadi jam 10* atau *undur satu jam*.`,
@@ -1468,7 +1580,7 @@ export async function tanganiPencatatan(
 
   // ── A0. PERMAINAN (mesin game nyata, state tersimpan di DB) ──
   // Diletakkan PALING AWAL agar saat permainan aktif, semua pesan berikutnya
-  // (mis. "merah 5", "e2 e4", "3 5") diperlakukan sebagai LANGKAH permainan —
+  // (mis. "merah 5", "e2 e4", "3 5") diperlakukan sebagai LANGKAH permainan -
   // bukan sebagai perintah catat/pengingat.
   {
     const hasilGame = await tanganiGame(s, chatId, opts.platform);
@@ -1479,7 +1591,7 @@ export async function tanganiPencatatan(
 
   // ── A1b. RINGKASAN PERIODIK (/ringkasan) ──
   //
-  // FITUR BARU (audit 05 Okt 2026): satu perintah menyajikan gambaran lengkap —
+  // FITUR BARU (audit 05 Okt 2026): satu perintah menyajikan gambaran lengkap -
   // keuangan, tugas, pengingat, catatan. Semua angka dari DATABASE (tidak dikarang).
   {
     const rk = mintaRingkasan(low);
@@ -1490,12 +1602,12 @@ export async function tanganiPencatatan(
   }
 
   // ── A2. HAPUS / SELESAI LEWAT BAHASA ALAMI (agar bisa lewat Voice Note) ──
-  // Orang yang berbicara tidak mengetik "/hapus 5" — mereka bilang
+  // Orang yang berbicara tidak mengetik "/hapus 5", mereka bilang
   // "hapus tugas nomor lima" atau "tandai selesai nomor tiga".
   // BUG YANG DIPERBAIKI (05 Okt 2026): sebelumnya hanya format "/hapus <id>"
   // yang dikenali, sehingga lewat VN tidak bisa menghapus.
   {
-    // Angka boleh DIGIT ("nomor 5") atau KATA ("nomor satu") — orang yang
+    // Angka boleh DIGIT ("nomor 5") atau KATA ("nomor satu"), orang yang
     // berbicara lewat Voice Note tidak mengetik angka.
     const lowAngka = angkaKataKeDigit(low);
     const mHapus = lowAngka.match(/\b(?:hapus|buang|hilangkan|delete)\s+(?:tugas|catatan|barang|belanja|nomor|no|yang)?\s*(?:nomor|no|#)?\s*(\d+)\b/);
@@ -1561,15 +1673,15 @@ export async function tanganiPencatatan(
   //  gimna? misalnya simpan data ini atau yg lainnya"
   //
   // Deteksi deterministik di atas HANYA mengenali kata kunci baku (catat, simpan,
-  // tambah, ingatkan, ...). Bila user memakai kalimat lain — mis.
+  // tambah, ingatkan, ...). Bila user memakai kalimat lain, mis.
   //   "tolong dicatat ya aku habis 50rb"     (kata "dicatat" tidak baku)
   //   "jangan lupa besok aku ada rapat"      (tidak ada kata perintah)
   //   "set reminder buat besok pagi"         ("set reminder" bahasa campur)
-  // — permintaan itu LOLOS ke AI, dan AI hanya menjawab obrolan tanpa menyimpan.
+  //, permintaan itu LOLOS ke AI, dan AI hanya menjawab obrolan tanpa menyimpan.
   //
   // SOLUSI: bila tidak ada niat eksplisit DAN teksnya mengandung sinyal
   // "permintaan aksi" (kata minta/permintaan + objek data), jalankan detektor
-  // CADANGAN yang lebih longgar — tapi TETAP meminta konfirmasi user sebelum
+  // CADANGAN yang lebih longgar, tapi TETAP meminta konfirmasi user sebelum
   // menyimpan, supaya salah tangkap tidak langsung mengotori database.
   const niatImplisit = deteksiNiatImplisit(s);
   if (niatImplisit) {
@@ -1591,7 +1703,7 @@ export async function tanganiPencatatan(
 }
 
 /**
- * Deteksi niat CADANGAN — lebih longgar dari `deteksiNiat`, untuk kalimat yang
+ * Deteksi niat CADANGAN, lebih longgar dari `deteksiNiat`, untuk kalimat yang
  * tidak memakai kata kunci baku.
  *
  * BEDA dengan deteksiNiat: fungsi ini TIDAK mewajibkan kata perintah di awal.
@@ -1610,11 +1722,11 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   const s = asli.toLowerCase();
   if (s.length < 5 || s.length > 400) return null;
 
-  // Harus ada sinyal "permintaan aksi" — kalau tidak, ini obrolan biasa.
+  // Harus ada sinyal "permintaan aksi", kalau tidak, ini obrolan biasa.
   const sinyalMinta =
     /\b(?:tolong|please|pls|mohon|bantu|bantuin|bisa|bisakah|boleh|coba|cek|masukin|input|daftarkan|list|set|pasang|buatkan|bikinin|jadwalkan|siapkan|tandai|mark)\b/i.test(s) ||
     /\b(?:jangan\s*lupa|jgn\s*lupa|jngn\s*lupa|ingat\s*ya|catat\s*ya|dicatat|tercatat|notes?\s*:)/i.test(s) ||
-    // "aku perlu ...", "aku harus ..." — permintaan implisit untuk dicatat sebagai tugas
+    // "aku perlu ...", "aku harus ...", permintaan implisit untuk dicatat sebagai tugas
     /\b(?:aku|saya|gue|gw|kita)\s+(?:perlu|harus|kudu|mesti|pengen|pengin|mau|ingin)\s+\w+/i.test(s) ||
     // DIPERLUAS (05 Okt 2026): kalimat pencatatan sehari-hari tanpa kata "catat".
     //   "beli kopi 25rb", "bayar listrik 350000", "jajan gorengan 10k",
@@ -1660,7 +1772,7 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   //
   // DIPERLUAS (05 Okt 2026): sebelumnya butuh kata "catat" ATAU kata uang baku.
   // Sekarang cukup nominal + kata kerja transaksi umum (beli/bayar/jajan/ongkos/
-  // habis/dapat/gaji/dll) — cara orang mencatat pengeluaran sehari-hari.
+  // habis/dapat/gaji/dll), cara orang mencatat pengeluaran sehari-hari.
   // Tetap AMAN karena wajib ada NOMINAL (angka/uang), jadi obrolan seperti
   // "aku tadi makan enak" tidak ikut tertangkap.
   const nominal = parseNominal(s);
@@ -1685,7 +1797,7 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
 
   // c) TUGAS: ada kata perlu/harus/mesti + KATA KERJA apa pun (lebih longgar),
   //    atau ada kata "tugas/todo" + isi.
-  // KATA KEINGINAN ("pengen/pengin/mau/ingin") BUKAN tugas — itu obrolan/angan-angan.
+  // KATA KEINGINAN ("pengen/pengin/mau/ingin") BUKAN tugas, itu obrolan/angan-angan.
   // Temuan uji 05 Okt 2026: "aku pengen beli mobil" salah diklasifikasi jadi tugas.
   // Hanya KEWAJIBAN ("perlu/harus/kudu/mesti") yang dianggap tugas.
   const mTugas = asli.match(/\b(?:aku|saya|gue|gw|kita)?\s*(?:perlu|harus|kudu|mesti)\s+([a-z]{3,20}\s+[\s\S]{2,80})/i);
@@ -1725,21 +1837,21 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
 }
 
 // ============================================================================
-// DETEKSI PERTANYAAN — jawab dari DATABASE, bukan dari "pengetahuan" model
+// DETEKSI PERTANYAAN, jawab dari DATABASE, bukan dari "pengetahuan" model
 // ============================================================================
 
 /**
  * KENAPA INI PENTING (temuan nyata 04 Okt 2026):
  * User bertanya "berapa sisa uang saya" padahal tabel `expenses` KOSONG (0 baris).
  * Bot menjawab "Sisa uang kamu tinggal Rp20.000 dari pemasukan 100 ribu dikurangi
- * pengeluaran 80 ribu" — ANGKA KARANGAN. Halusinasi data keuangan itu berbahaya:
+ * pengeluaran 80 ribu", ANGKA KARANGAN. Halusinasi data keuangan itu berbahaya:
  * user bisa mengambil keputusan salah berdasarkan angka palsu.
  *
- * Sebabnya: pertanyaan seperti itu TIDAK melewati modul ini sama sekali — langsung
+ * Sebabnya: pertanyaan seperti itu TIDAK melewati modul ini sama sekali, langsung
  * dikirim ke model AI, dan model "menjawab" dengan mengarang.
  *
  * Solusi: deteksi pertanyaan keuangan/tugas/catatan di sini, jawab dari DATABASE.
- * Bila data kosong, katakan JUJUR bahwa belum ada catatan — jangan mengarang.
+ * Bila data kosong, katakan JUJUR bahwa belum ada catatan, jangan mengarang.
  */
 export function deteksiPertanyaan(teks: string): 'keuangan' | 'tugas' | 'catatan' | null {
   const s = teks.toLowerCase().trim();

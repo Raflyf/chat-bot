@@ -300,13 +300,25 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         platform: 'telegram',
       });
       if (hasilCatat.ditangani) {
-        await sendTelegramMessageSafe(bot, chatId, hasilCatat.reply);
-        if (msgId) void markMessageProcessed('telegram', msgId);
-        await saveMessage({
-          platform: 'telegram', chat_id: chatKey, role: 'assistant',
-          content: hasilCatat.reply, via: `notes/${hasilCatat.jalur}`,
-        }).catch(() => undefined);
-        return;
+        // LANJUTAN KE AI (06 Okt 2026): permintaan non-pencatatan yang tertunda
+        // karena lokasi (mis. "cuaca hari ini") -> kirim pengantar, lalu lanjut
+        // proses permintaan ASLI lewat AI di bawah (jangan `return`).
+        if (hasilCatat.teruskanKeAi) {
+          await sendTelegramMessageSafe(bot, chatId, hasilCatat.reply);
+          await saveMessage({
+            platform: 'telegram', chat_id: chatKey, role: 'assistant',
+            content: hasilCatat.reply, via: `notes/${hasilCatat.jalur}`,
+          }).catch(() => undefined);
+          text = hasilCatat.teruskanKeAi;
+        } else {
+          await sendTelegramMessageSafe(bot, chatId, hasilCatat.reply);
+          if (msgId) void markMessageProcessed('telegram', msgId);
+          await saveMessage({
+            platform: 'telegram', chat_id: chatKey, role: 'assistant',
+            content: hasilCatat.reply, via: `notes/${hasilCatat.jalur}`,
+          }).catch(() => undefined);
+          return;
+        }
       }
     }
 

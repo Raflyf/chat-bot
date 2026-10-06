@@ -1,11 +1,11 @@
 /**
- * RINGKASAN PERIODIK — laporan bulanan/mingguan di chat.
+ * RINGKASAN PERIODIK, laporan bulanan/mingguan di chat.
  *
  * KENAPA (audit 05 Okt 2026): user harus membuka dashboard atau bertanya satu
  * per satu untuk tahu kondisi datanya. Dengan `/ringkasan`, satu perintah
  * menyajikan gambaran lengkap: keuangan, tugas, pengingat, catatan, game.
  *
- * Semua angka diambil dari DATABASE (bukan dikarang AI) — konsisten dengan
+ * Semua angka diambil dari DATABASE (bukan dikarang AI), konsisten dengan
  * aturan "jangan mengarang data pribadi".
  */
 import { rekapUang, daftarTugas, daftarCatatan } from './notes.js';
@@ -108,7 +108,7 @@ export async function susunRingkasan(chatId: string, opsi: OpsiRingkasan = {}): 
       const tandaUlang = ulang && ulang !== 'none'
         ? ` 🔁 ${labelUlang({ repeat_kind: ulang as never, repeat_value: (p as { repeat_value?: string | null }).repeat_value ?? null, repeat_until: null, repeat_count: 0 })}`
         : '';
-      baris.push(`   • ${p.message.slice(0, 40)} — ${tanggalRamah(p.due_at, zona)}${tandaUlang}`);
+      baris.push(`   • ${p.message.slice(0, 40)}, ${tanggalRamah(p.due_at, zona)}${tandaUlang}`);
     }
     if (pengingat.length > 5) baris.push(`   ... dan ${pengingat.length - 5} pengingat lain`);
   }
@@ -154,11 +154,11 @@ export function mintaRingkasan(teks: string): { hari: number } | null {
     return null;
   }
 
-  // Harus ada kata ringkas/rekap/laporan/summary — TAPI kata "laporan" saja tidak
+  // Harus ada kata ringkas/rekap/laporan/summary, TAPI kata "laporan" saja tidak
   // cukup (bisa bagian dari tugas). Wajib ada penanda permintaan data diri.
   const adaKataRingkas = /\b(?:ringkas(?:an)?|rekap|rangkum|summary|kesimpulan|overview)\b/.test(s);
   // "laporan" sah bila berdiri SENDIRI atau diikuti periode/keuangan
-  // ("laporan mingguan", "laporan bulanan") — tapi TIDAK bila jadi objek tugas
+  // ("laporan mingguan", "laporan bulanan"), tapi TIDAK bila jadi objek tugas
   // ("kirim laporan", "buat laporan mingguan ke bos").
   const adaLaporanSah = /\b(?:laporan|report)\b/.test(s) &&
     !/\b(?:kirim|serahkan|setor|kumpulkan|sampaikan|presentasi|tulis|buat(?:kan)?|bikin)\s+(?:ke|kepada|untuk|sama|sama)?\s*(?:bos|atasan|klien|guru|dosen|kantor|tim)?\s*(?:laporan|report)\b/.test(s) &&

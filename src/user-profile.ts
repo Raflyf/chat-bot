@@ -1,12 +1,12 @@
 /**
- * PROFIL WAKTU PENGGUNA — zona waktu per-user, permanen.
+ * PROFIL WAKTU PENGGUNA, zona waktu per-user, permanen.
  *
  * MASALAH (temuan pemilik produk 05 Okt 2026):
  * "jangan salah membaca waktu user sedang berada... misal sistem defaultnya WIB,
  *  jika user di belahan waktu lain maka jadi tidak sama waktunya. Jadi untuk
  *  mencegah itu jika ada user baru masuk ke database maka jika user menanyakan
  *  waktu, menyuruh mengingatkan, atau apapun yang berhubungan dengan waktu,
- *  jangan sok tau dan asal jawab defaultnya — langsung tanya pastikan user di
+ *  jangan sok tau dan asal jawab defaultnya, langsung tanya pastikan user di
  *  belahan bumi mana, lalu simpan di database agar tidak pernah lupa. Dan jika
  *  user id yang sudah diketahui zona waktunya, tidak usah ditanya lagi."
  *
@@ -218,13 +218,17 @@ export async function tentukanProfilWaktu(
 
   // 3. Indonesia (+62) -> zona TIDAK bisa ditebak (ada WIB/WITA/WIT).
   //    JANGAN asal pakai WIB. Harus tanya.
+  //
+  // PERTANYAAN DIPERUMUM (06 Okt 2026): dulu hanya menyebut "soal waktu",
+  // padahal pemicunya bisa CUACA ("cuaca hari ini gimana?"). Sekarang netral
+  // (lokasi/waktu) agar nyambung untuk semua konteks.
   return {
     profil: null,
     perluTanya: true,
     perluKonfirmasi: false,
     pertanyaan:
-      'Sebelum aku jawab soal waktu, aku perlu tahu kamu ada di zona mana dulu ya ' +
-      '— soalnya jam di Indonesia beda-beda (WIB, WITA, WIT) dan aku nggak mau salah.\n\n' +
+      'Sebelum aku jawab, aku perlu tahu kamu di daerah mana dulu ya, ' +
+      'soalnya jam dan cuaca di Indonesia beda-beda tergantung lokasinya.\n\n' +
       'Kamu di kota/daerah mana? (mis. *Cianjur*, *Makassar*, *Jayapura*)',
   };
 }
@@ -245,6 +249,38 @@ export function berkaitanDenganWaktu(teks: string): boolean {
     /\b(?:jam|pukul)\s*\d{1,2}\b/.test(s) ||
     // Ubah/batalkan jadwal
     /\b(?:undur|mundur|tunda|geser|majukan|jadwal|agenda)\b/.test(s)
+  );
+}
+
+/**
+ * ── PERBAIKAN (06 Okt 2026) — PERMINTAAN PEMILIK PRODUK ──
+ * "berlaku juga untuk semua, misal jika user baru menanyakan cuaca hari ini,
+ *  lalu bot menanyakan posisi, nah setelah itu lanjut carikan cuaca, jangan
+ *  malah tidak jadi dicarikan cuaca nya, dan itu berlaku ke semua pertanyaan
+ *  yang berkaitan waktu, tempat dan lainnya"
+ *
+ * MASALAH: `berkaitanDenganWaktu()` hanya mencakup waktu & pengingat. Pertanyaan
+ * seperti "cuaca hari ini" TIDAK terdeteksi, sehingga saat bot menanyakan lokasi,
+ * permintaannya TIDAK disimpan -> setelah user menjawab lokasi, cuaca tidak dicari.
+ *
+ * SEKARANG: fungsi ini mencakup SEMUA permintaan yang BUTUH LOKASI/WAKTU user:
+ *   - cuaca, suhu, hujan, prakiraan
+ *   - waktu, jam, tanggal, jadwal, pengingat
+ *   - arah/kiblat, matahari terbit/terbenam, puasa, sahur, berbuka
+ *   - dan pertanyaan lain yang jawabannya bergantung pada lokasi/waktu user.
+ */
+export function butuhLokasiAtauWaktu(teks: string): boolean {
+  // Semua yang berkaitan waktu sudah tercakup.
+  if (berkaitanDenganWaktu(teks)) return true;
+  const s = teks.toLowerCase();
+  return (
+    // Cuaca & iklim
+    /\b(?:cuaca|suhu|hujan|gerimis|panas|dingin|mendung|cerah|berawan|prakiraan|ramalan|bmkg|udara|kelembapan|angin)\b/.test(s) ||
+    // Matahari & waktu ibadah (bergantung lokasi)
+    /\b(?:matahari|terbit|terbenam|senja|subuh|maghrib|imsak|sahur|berbuka|puasa|sholat|shalat|salat|kiblat|adzan|azan)\b/.test(s) ||
+    // Lokasi/arah & perjalanan (HARUS berupa pertanyaan, bukan sekadar menyebut kata)
+    /\b(?:arah|rute|jarak|macet|kemacetan|peta)\b/.test(s) ||
+    /\b(?:di\s*mana|dimana|ke\s*mana|dari\s*mana)\b/.test(s)
   );
 }
 

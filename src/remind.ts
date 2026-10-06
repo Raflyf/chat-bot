@@ -113,7 +113,7 @@ export async function simpanReminderCerdas(
           ok: true,
           aksi: 'digabung',
           pesan: pesanFinal,
-          keterangan: `Pengingat ini sudah ada (${palingMirip.message}) — sudah saya perbarui, tidak dobel.`,
+          keterangan: `Pengingat ini sudah ada (${palingMirip.message}), sudah saya perbarui, tidak dobel.`,
         };
       }
       // Gagal update -> jatuh ke insert biasa di bawah
@@ -132,7 +132,7 @@ export async function simpanReminderCerdas(
           : '?';
         return `"${r.message}" (${jam})`;
       });
-      peringatanBentrok = `\n\n⚠️ _Catatan: waktunya berdekatan dengan pengingat lain — ${namaDekat.join(', ')}. Pastikan tidak bentrok ya._`;
+      peringatanBentrok = `\n\n⚠️ _Catatan: waktunya berdekatan dengan pengingat lain, ${namaDekat.join(', ')}. Pastikan tidak bentrok ya._`;
     }
 
     // 4. Baru / berbeda -> simpan sebagai pengingat baru.
@@ -181,11 +181,11 @@ export async function simpanReminderCerdas(
 }
 
 /**
- * Teks pengingat CADANGAN (tanpa AI) — dipakai HANYA bila AI gagal/timeout.
+ * Teks pengingat CADANGAN (tanpa AI), dipakai HANYA bila AI gagal/timeout.
  *
  * MASALAH YANG DIPERBAIKI (04 Okt 2026, protes pemilik produk):
  * Versi sebelumnya mengirim `item.message` APA ADANYA saat AI gagal, sehingga
- * user menerima pesan aneh seperti cuma "login" atau "buat masak nasi" —
+ * user menerima pesan aneh seperti cuma "login" atau "buat masak nasi" -
  * tanpa penanda bahwa itu pengingat. User: "jangan gitu dong, jadi aneh kalo
  * gitu responnya".
  *
@@ -231,7 +231,7 @@ async function susunTeksPengingat(
         `(contoh SALAH: "Istirahat yang nyenyak ya", "Jangan begadang terus", "Semangat ya!").\n` +
         `- DILARANG bertanya balik atau menambah obrolan baru.\n` +
         // BUG YANG DIPERBAIKI (04 Okt 2026): bot pernah menulis
-        // "waktunya login sesuai jadwalmu KEMARIN" — padahal pengingat dibuat
+        // "waktunya login sesuai jadwalmu KEMARIN", padahal pengingat dibuat
         // BARU SAJA. AI MENGARANG keterangan waktu karena tidak diberi tahu
         // kapan pengingat ini dibuat.
         `- Waktu SEKARANG: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'full', timeStyle: 'short' })} WIB.\n` +
@@ -295,12 +295,12 @@ export async function checkDueReminders(
     // untuk endpoint cron. Karena itu tunggu maksimum dibatasi 20 detik (sisakan
     // 10 detik untuk proses kirim + respons).
     //
-    // PENTING — MENUNGGU HANYA BILA TIDAK ADA YANG SUDAH JATUH TEMPO.
+    // PENTING, MENUNGGU HANYA BILA TIDAK ADA YANG SUDAH JATUH TEMPO.
     // BUG YANG DIPERBAIKI (04 Okt 2026, temuan pemilik produk: "kalo gitu yg lama
     // jadi nunggu nya dong?"): versi pertama menunggu TANPA memeriksa apakah ada
     // pengingat yang SUDAH telat. Akibatnya, bila ada pengingat telat 5 menit DAN
     // satu lagi jatuh tempo 15 detik lagi, pengingat yang sudah telat itu IKUT
-    // TERTUNDA 15 detik — padahal seharusnya langsung dikirim.
+    // TERTUNDA 15 detik, padahal seharusnya langsung dikirim.
     // Sekarang: kalau ada yang sudah jatuh tempo, kirim SEGERA (jangan menunggu).
     const TUNGGU_MAKS_MS = 20_000;
     try {
@@ -432,7 +432,7 @@ export async function checkDueReminders(
         // Teks pengingat disusun AI dengan gaya bot + BATAS WAKTU.
         //
         // Bila AI gagal/timeout, dipakai teks CADANGAN yang tetap wajar dibaca
-        // (mis. "⏰ Pengingat: Login"), BUKAN teks mentah user — protes pemilik
+        // (mis. "⏰ Pengingat: Login"), BUKAN teks mentah user, protes pemilik
         // produk: "jangan gitu dong, jadi aneh kalo gitu responnya".
         const deliveryText = await susunTeksPengingat({
           message: item.message,
@@ -459,7 +459,7 @@ export async function checkDueReminders(
           let next = berikutnya(new Date(item.due_at), aturan, zona);
           // ── CATCH-UP (05 Okt 2026) ──
           // Bila cron sempat MATI berhari-hari, pengingat berulang tertinggal jauh.
-          // Jangan kirim bertubi-tubi (mis. 5x "minum obat" sekaligus) — kirim
+          // Jangan kirim bertubi-tubi (mis. 5x "minum obat" sekaligus), kirim
           // SEKALI, lalu LOMPATKAN jadwal ke kemunculan berikutnya setelah SEKARANG.
           // Batas 30 iterasi (~1 bulan untuk harian) agar tidak menggantung.
           let iterasi = 0;
@@ -560,8 +560,8 @@ let workerInterval: NodeJS.Timeout | null = null;
 
 /**
  * Worker lokal untuk memproses reminder tiap 30 detik saat bot dijalankan di terminal.
- * WAJIB menghormati `platform` — chat_id WhatsApp (mis. '62812...') tidak boleh dikirim
- * ke Telegram (Number('62812...') menargetkan chat id Telegram yang salah — misdelivery).
+ * WAJIB menghormati `platform`, chat_id WhatsApp (mis. '62812...') tidak boleh dikirim
+ * ke Telegram (Number('62812...') menargetkan chat id Telegram yang salah, misdelivery).
  * sendWhatsApp opsional agar pemanggil WhatsApp-only tidak perlu impor Telegram.
  */
 export function startReminderWorker(

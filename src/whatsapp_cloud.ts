@@ -740,13 +740,30 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             platform: 'whatsapp',
           });
           if (hasil.ditangani) {
-            await sendWhatsAppCloudMessageSafe(from, hasil.reply);
-            void markMessageProcessed('whatsapp', messageId);
-            void saveMessage({
-              platform: 'whatsapp', chat_id: chatKey, role: 'assistant',
-              content: hasil.reply, via: `notes/${hasil.jalur}`,
-            }).catch(() => undefined);
-            continue;
+            // LANJUTAN KE AI (06 Okt 2026): bila permintaan user bukan pencatatan
+            // (mis. "cuaca hari ini") tetapi tertunda karena lokasi belum diketahui,
+            // notes.ts mengembalikan `teruskanKeAi` berisi permintaan ASLI.
+            // Kirim pengantar zona, lalu proses permintaan asli lewat AI di bawah.
+            if (hasil.teruskanKeAi) {
+              await sendWhatsAppCloudMessageSafe(from, hasil.reply);
+              void saveMessage({
+                platform: 'whatsapp', chat_id: chatKey, role: 'assistant',
+                content: hasil.reply, via: `notes/${hasil.jalur}`,
+              }).catch(() => undefined);
+              // Ganti teks yang akan diproses AI dengan permintaan ASLI user,
+              // supaya jawabannya benar-benar menjawab pertanyaan tadi.
+              text = hasil.teruskanKeAi;
+              updateContextCache(chatKey, 'user', text);
+              // Lanjut ke alur AI (jangan `continue`).
+            } else {
+              await sendWhatsAppCloudMessageSafe(from, hasil.reply);
+              void markMessageProcessed('whatsapp', messageId);
+              void saveMessage({
+                platform: 'whatsapp', chat_id: chatKey, role: 'assistant',
+                content: hasil.reply, via: `notes/${hasil.jalur}`,
+              }).catch(() => undefined);
+              continue;
+            }
           }
         }
 
