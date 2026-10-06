@@ -269,13 +269,16 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   //    spasi biasa di tengah angka. Di WhatsApp tampak seperti "Rp20. 000".
   //    Perbaikan: rapikan semua nominal "Rp<angka>" agar titik ribuan rapat.
   //    Contoh: "Rp20. 000" -> "Rp20.000", "Rp 1. 500. 000" -> "Rp1.500.000".
-  out = out.replace(/(?:Rp|IDR|rp)\.?\s*([\d][\d\s.,\u00A0\u202F]*)/g, (_m, angka: string) => {
-    // Buang semua spasi (termasuk spasi tipis) di dalam deret angka.
-    let bersih = angka.replace(/[\s\u00A0\u202F]/g, '');
-    // Buang titik/koma di ujung (sisa kalimat), lalu rapikan pemisah ribuan.
-    bersih = bersih.replace(/[.,]+$/, '');
-    // Bila memakai koma sebagai desimal (mis. "20,5") biarkan; kalau titik ribuan
-    // dipisah koma (mis. "20.000,50") tetap dipertahankan apa adanya.
+  // ── DIPERBAIKI (06 Okt 2026) ──
+  // BUG: pola lama `([\d][\d\s.,\u00A0\u202F]*)` menelan SPASI + KATA berikutnya,
+  // sehingga "Rp20. 000 dari pemasukan" menjadi "Rp20. 000dari pemasukan"
+  // (kata "dari" ikut termakan). Temuan dari chat nyata.
+  //
+  // SEKARANG: hanya deret angka + pemisah ribuan/desimal, dan spasi HANYA boleh
+  // di antara kelompok angka (mis. "1. 500. 000"), bukan sebelum kata biasa.
+  out = out.replace(/(?:Rp|IDR|rp)\.?\s*([\d]+(?:[\s\u00A0\u202F]?[.,][\s\u00A0\u202F]?[\d]+)*)/g, (_m, angka: string) => {
+    // Buang semua spasi di dalam deret angka; rapikan titik ribuan.
+    let bersih = angka.replace(/[\s\u00A0\u202F]/g, '').replace(/[.,]+$/, '');
     return `Rp${bersih}`;
   });
 
@@ -347,6 +350,27 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
         '',
       );
       out = out.trim();
+    }
+  }
+
+  // ── 2b. BOCOR PROSES BERPIKIR / ANALISIS DIRI (perbaikan 06 Okt 2026) ──
+  // LAPORAN NYATA dari chat: bot membalas dengan proses berpikirnya sendiri:
+  //   "Ngerespons pertanyaan jujur: kepo ke saya, mau tau sifat & rahasia saya
+  //    (analisis kepribadian 😆)"
+  // Itu bukan jawaban ke user — itu catatan internal model yang bocor.
+  //
+  // Ciri: dibuka label analisis + kata ganti orang ketiga tentang user
+  // ("user", "dia", "temanmu") atau kata "pertanyaan/permintaan/konteks" diikuti
+  // titik dua di AWAL balasan.
+  {
+    const bocorAnalisis =
+      /^\s*(?:\*{0,2})(?:Ngerespons|Nge-?respons|Merespons|Analisis|Menganalisis|Pertimbangan|Mempertimbangkan|Menimbang|Langkah\s*\d|Step\s*\d|Konteks|Context|Pemikiran|Berpikir|Thinking|Reasoning|User\s+(?:asks|said|wants|is)|The\s+user|Permintaan|Tujuan|Goal|Catatan\s+internal)\b[^\n]{0,200}/i;
+    if (bocorAnalisis.test(out.trim())) {
+      // Ambil kalimat SETELAH label analisis (jawaban sebenarnya), bila ada.
+      const baris = out.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+      const sisa = baris.filter((b) => !bocorAnalisis.test(b));
+      // Bila seluruh balasan hanya analisis -> kosongkan (autoReply regenerasi).
+      out = sisa.length && sisa.join(' ').length >= 8 ? sisa.join(' ') : '';
     }
   }
 
@@ -630,6 +654,31 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // autoReply meregenerasi balasan yang benar-benar menjawab.
   if (!/[\p{L}\p{N}]/u.test(out)) out = '';
 
+  // ── 7a. ANTI-BOCOR ATURAN PROMPT INTERNAL (perbaikan 06 Okt 2026) ──
+  // LAPORAN NYATA dari chat produksi:
+  //   USER: "Peak pala lu"
+  //   BOT : "Kecuali pengguna MENGIRIM emoji/stiker duluan (baru dibalas max 1),
+  //          atau momen emosional natural."
+  // Itu ATURAN SISTEM yang disalin mentah oleh model ke user — sangat memalukan
+  // dan membocorkan cara kerja internal. Prompt sudah melarang, tetapi model
+  // (terutama model kecil) kadang menyalin baris aturan dari konteks.
+  //
+  // Ciri kalimat aturan internal:
+  //   - menyebut "pengguna" sebagai pihak ketiga (bukan "kamu"/"lu")
+  //   - memuat kata teknis aturan: "DILARANG", "maksimal 1", "wajib", "aturan",
+  //     "kecuali", "momen emosional natural", "baru dibalas", "konteks", "prompt"
+  {
+    const aturanBocor =
+      /(?:^|[.!?\n]\s*)[^.!?\n]{0,160}\b(?:Kecuali\s+pengguna|pengguna\s+MENGIRIM|baru\s+dibalas|momen\s+emosional\s+natural|DILARANG\s+[a-z]|WAJIB\s+[a-z]|aturan(?:nya)?\s+(?:adalah|menyatakan|sistem)|sesuai\s+aturan|sesuai\s+prompt|dalam\s+prompt|instruksi\s+sistem|system\s+prompt)\b[^.!?\n]{0,160}[.!?]?/gi;
+    if (aturanBocor.test(out)) {
+      const sebelum = out;
+      out = out.replace(aturanBocor, '').replace(/\s{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      // Bila seluruh balasan hanya aturan bocor -> kosongkan agar diregenerasi.
+      if (!out || out.length < 6) out = '';
+      if (out !== sebelum) console.warn('[skills] Balasan memuat aturan prompt internal — dibersihkan.');
+    }
+  }
+
   // 7. Konversi Markdown Heading (### / ## / #) menjadi Bold WhatsApp (*Heading*)
   out = out.replace(/^\s*#{1,6}\s+(.+)$/gm, '*$1*');
 
@@ -661,6 +710,22 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   {
     const sebelum = out;
     out = out.replace(/(?:ada\s+yang\s+bisa\s+(?:saya\s+)?dibantu\s*\??)/gi, '');
+  // ── BOT NGOMONG SOAL DIRINYA SEBAGAI MESIN (perbaikan 06 Okt 2026) ──
+  // LAPORAN NYATA: bot menjawab "settingan pabriknya emang gini" dan
+  // "pasrah aja sama bawaan ginii" saat user bilang "Dongek = bodo".
+  // Itu metafora mesin/robot yang membuat bot terasa bukan teman, dan
+  // mengiyakan hinaan. Prompt sudah melarang, tetapi model tidak selalu patuh.
+  {
+    const metaMesin =
+      /[^.!?\n]{0,120}\b(?:settingan\s+pabrik|setelan\s+pabrik|bawaan\s+(?:pabrik|ginii?|gini)|default\s+pabrik|pabriknya|programnya\s+emang|sistemnya\s+emang|codingannya\s+emang)\b[^.!?\n]{0,120}[.!?]?/gi;
+    if (metaMesin.test(out)) {
+      const sebelum = out;
+      out = out.replace(metaMesin, '').replace(/\s{2,}/g, ' ').trim();
+      // Bila seluruh balasan cuma metafora mesin -> kosongkan agar diregenerasi.
+      if (!out || out.length < 6) out = '';
+      void sebelum;
+    }
+  }
     if (out !== sebelum && /^\s*(?:hai|halo|hei|hallo)[\s,.]*$/i.test(out)) out = '';
   }
   out = out.replace(/(?:namanya\s+juga\s+bot\s+yang\s+lagi\s+belajar[^.\n]*[.\n]?)/gi, '');

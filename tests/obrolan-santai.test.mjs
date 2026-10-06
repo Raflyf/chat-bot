@@ -99,3 +99,26 @@ test('lokasi: permintaan tertunda disimpan ke database', () => {
   assert.match(SRC, /pending_confirmations/, 'harus pakai tabel DB (bukan hanya memori)');
   assert.match(SRC, /_tunggu_zona/, 'harus ada penanda');
 });
+
+// ── 10. ANTI-BOCOR ATURAN PROMPT INTERNAL (temuan 06 Okt 2026, chat nyata) ──
+test('bocor: ada penegak anti-bocor aturan prompt', () => {
+  assert.match(SK, /aturanBocor/, 'harus ada penegak aturanBocor');
+  assert.ok(SK.includes('Kecuali'), 'harus menangkap kasus nyata');
+});
+
+test('bocor: prompt melarang menyalin aturan internal', () => {
+  const sk = SK;
+  assert.match(sk, /ANTI-BOCOR ATURAN PROMPT INTERNAL|aturanBocor/, 'harus ada aturan');
+});
+
+// ── 11. ANTI-BOCOR PROSES BERPIKIR ──
+test('bocor: ada penegak anti-bocor proses berpikir', () => {
+  assert.match(SK, /bocorAnalisis/, 'harus ada penegak bocorAnalisis');
+  assert.match(SK, /Ngerespons/, 'harus menangkap kasus nyata');
+});
+
+// ── 12. METAFORA MESIN ──
+test('meta: ada penegak anti-metafora mesin', () => {
+  assert.match(SK, /metaMesin/, 'harus ada penegak metaMesin');
+  assert.ok(SK.includes('settingan'), 'harus menangkap kasus nyata');
+});
