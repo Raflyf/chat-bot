@@ -111,6 +111,14 @@ export const verifyWhatsAppSignature = (signature: string | undefined, rawBody: 
 export async function sendWhatsAppCloudMessageSafe(
   to: string,
   text: string,
+  // ── BALAS (QUOTE) PESAN — perbaikan 06 Okt 2026 ──
+  // Bila diisi, pesan bot akan tampil sebagai BALASAN (quote) ke pesan itu,
+  // persis seperti manusia menekan "Reply" di WhatsApp.
+  //
+  // KAPAN DIPAKAI: saat balasan bot merujuk pesan TERTENTU di tengah obrolan
+  // yang ramai (mis. user membalas pesan lama), atau saat bot menjawab
+  // pertanyaan spesifik agar tidak ambigu.
+  replyToMessageId?: string,
 ): Promise<void> {
   if (!text || !config.whatsappToken || !config.whatsappPhoneNumberId) {
     console.warn('[wa-cloud] Token atau PhoneNumberId belum diset di environment.');
@@ -135,6 +143,11 @@ export async function sendWhatsAppCloudMessageSafe(
           to,
           type: 'text',
           text: { preview_url: false, body: chunk },
+          // Quote pesan (bila diminta). Meta memakai field `context.message_id`.
+          // Hanya untuk chunk PERTAMA (sisanya lanjutan, tidak perlu quote ulang).
+          ...(replyToMessageId && chunk === chunks[0]
+            ? { context: { message_id: replyToMessageId } }
+            : {}),
         }),
       });
 
@@ -905,9 +918,20 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             // biarkan; di bawah masih ada jaring terakhir
           }
         }
+        // ── KAPAN BOT MEMAKAI BALASAN (QUOTE)? (perbaikan 06 Okt 2026) ──
+        // Bot BISA membalas (quote) pesan seperti manusia menekan "Reply".
+        // Dipakai HANYA bila memang membantu kejelasan:
+        //   (a) User membalas pesan LAMA -> bot quote pesan user saat ini agar
+        //       jelas pesan mana yang dijawab (menghindari salah konteks).
+        //   (b) Balasan bot PENDEK & user tadi membalas pesan lama (kasus ambigu).
+        //
+        // TIDAK dipakai untuk obrolan biasa -> agar tidak berisik/penuh quote.
+        const perluQuote = Boolean(quotedText);
+        const idUntukQuote = perluQuote ? messageId : undefined;
+
         // Jaring terakhir: bila tetap kosong, jangan kirim apa pun (hindari pesan hampa).
         if (reply && reply.trim()) {
-          await sendWhatsAppCloudMessageSafe(from, reply);
+          await sendWhatsAppCloudMessageSafe(from, reply, idUntukQuote);
         } else {
           console.warn('[wa-cloud] Balasan tetap kosong — pesan tidak dikirim (menghindari pesan hampa).');
         }

@@ -42,12 +42,19 @@ export async function sendWhatsAppMessageSafe(
   sock: WASocket,
   jid: string,
   text: string,
+  // ── BALAS (QUOTE) PESAN — perbaikan 06 Okt 2026 ──
+  // Bila diisi, pesan bot tampil sebagai BALASAN (quote) ke pesan itu.
+  // Baileys memakai `{ quoted: WAMessage }` — jadi kita perlu pesan aslinya.
+  quotedMsg?: unknown,
 ): Promise<void> {
   if (!text) return;
   const chunks = splitMessageSmart(text, 4000);
 
   for (const chunk of chunks) {
-    await sock.sendMessage(jid, { text: chunk });
+    // Quote hanya untuk chunk PERTAMA.
+    const payload: Record<string, unknown> = { text: chunk };
+    if (quotedMsg && chunk === chunks[0]) payload.quoted = quotedMsg;
+    await sock.sendMessage(jid, payload as Parameters<typeof sock.sendMessage>[1]);
     if (chunks.length > 1) {
       await new Promise((r) => setTimeout(r, 200));
     }
@@ -891,7 +898,8 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const latencyMs = Date.now() - tStart;
 
     // 5. Kirim balasan ke WhatsApp secepat mungkin
-    await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+    // Balas (quote) pesan user HANYA bila dia membalas pesan lama (perbaikan 06 Okt 2026).
+    await sendWhatsAppMessageSafe(sock, remoteJid, reply, quotedText ? m : undefined);
     // Stiker balasan (opsional) — cooldown DURABLE (riwayat chat) + fast-path lokal.
     // Emoji "keras" (🖕/🤬/👊) hanya saat konteks bercanda (user bercanda/roasting dulu).
     const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text);

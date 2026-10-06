@@ -33,12 +33,22 @@ export async function sendTelegramMessageSafe(
   bot: TelegramBot,
   chatId: number,
   text: string,
+  // ── BALAS (QUOTE) PESAN — perbaikan 06 Okt 2026 ──
+  // Bila diisi, pesan bot tampil sebagai BALASAN (quote) ke pesan itu.
+  replyToMessageId?: number,
 ): Promise<void> {
   if (!text) return;
   const chunks = splitMessageSmart(text, 4000);
 
   for (const chunk of chunks) {
-    await bot.sendMessage(chatId, chunk);
+    // Quote hanya untuk chunk PERTAMA.
+    await bot.sendMessage(
+      chatId,
+      chunk,
+      replyToMessageId && chunk === chunks[0]
+        ? { reply_parameters: { message_id: replyToMessageId } }
+        : undefined,
+    );
     if (chunks.length > 1) {
       await new Promise((r) => setTimeout(r, 120));
     }
@@ -738,7 +748,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     const tStart = Date.now();
     const { reply, escalate, via, tokens, sticker, riddleAnswer } = await autoReply(promptText, ctx, web);
     const latencyMs = Date.now() - tStart;
-    await sendTelegramMessageSafe(bot, chatId, reply);
+    // Balas (quote) pesan user HANYA bila dia membalas pesan lama (perbaikan 06 Okt 2026).
+    // Menghindari salah konteks tanpa membuat setiap balasan penuh quote.
+    const idUntukQuoteTg = quotedText && msg.message_id ? msg.message_id : undefined;
+    await sendTelegramMessageSafe(bot, chatId, reply, idUntukQuoteTg);
     // Stiker balasan (opsional) — hormati cooldown DURABLE (riwayat chat) + fast-path lokal.
     // Emoji "keras" (🖕/🤬/👊) hanya boleh saat konteks bercanda (user bercanda/roasting dulu).
     const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text || rawText);
