@@ -11,6 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { sanitizeAssistantOutput } from '../src/skills.js';
 import { butuhLokasiAtauWaktu } from '../src/user-profile.js';
 
 const SRC = fs.readFileSync(new URL('../src/notes.ts', import.meta.url), 'utf8');
@@ -121,4 +122,21 @@ test('bocor: ada penegak anti-bocor proses berpikir', () => {
 test('meta: ada penegak anti-metafora mesin', () => {
   assert.match(SK, /metaMesin/, 'harus ada penegak metaMesin');
   assert.ok(SK.includes('settingan'), 'harus menangkap kasus nyata');
+});
+
+// ── 13. BANTER HARUS TETAP HIDUP (koreksi pemilik produk 06 Okt 2026) ──
+test('banter: prompt membolehkan banter santai', () => {
+  assert.ok(SK.includes('BANTER SANTAI DIPERBOLEHKAN'), 'prompt harus izinkan banter');
+  assert.ok(SK.includes('jangan di hilangkan'), 'harus catat permintaan pemilik');
+});
+
+test('banter: emoji tawa TIDAK dianggap sindiran', () => {
+  // 😂🤣😆 harus tetap boleh (tawa wajar), hanya 😏😒🙄 yang sindiran
+  assert.ok(SK.includes('😂🤣😆 TIDAK termasuk'), 'emoji tawa harus dikecualikan');
+});
+
+test('banter: uji perilaku — tawa wajar tidak dibuang', () => {
+  const t = 'Halah, jemping apaan tuh 😂';
+  const h = sanitizeAssistantOutput(t, 'Nenek lu jemping', [], false, false, false, null);
+  assert.ok(h.includes('😂'), 'emoji tawa harus tetap ada saat banter');
 });

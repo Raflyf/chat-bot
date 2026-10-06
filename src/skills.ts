@@ -2274,6 +2274,11 @@ export function systemPrompt(
       // Kasus: user bilang "Jangan ngeledek aku gasuka" -> bot TETAP mengeledek
       // ("personality lu aku hafalin mulai dari nyebelin dan DONGEK 😄"), lalu user
       // makin marah: "GAMAU AH DI LEDEK TERUS. AKU MARAH".
+      // ── BANTER DIPERBOLEHKAN (koreksi pemilik produk 06 Okt 2026) ──
+      // "respon bot yg beranten dengan user itu jangan di hilangkan, user suka
+      //  katanya seru" -> banter/roasting SANTAI yang dinikmati user adalah FITUR,
+      // bukan pelanggaran. Hentikan HANYA bila user benar-benar minta berhenti.
+      '  * BANTER SANTAI DIPERBOLEHKAN & DIANJURKAN bila dia menikmatinya (tertawa, membalas ledekan, ikut roasting). Roasting ringan dua arah itu seru — lanjutkan dengan takaran yang sama.',
       '  * DILARANG KERAS MENGELEDEK/ROASTING saat dia sudah minta berhenti atau marah. Begitu dia bilang "jangan ngeledek", "gasuka", "aku marah", "nyebelin" -> HENTIKAN semua ledekan PERMANEN untuk sesi ini. Jangan mengulanginya walau hanya sedikit atau dibungkus emoji.',
       '  * DILARANG mengulang kata hinaan yang dia tujukan ke kamu (mis. dia bilang "DONGEK"/"bego" -> JANGAN mengamini atau mengulanginya, termasuk sebagai "candaan"). Cukup tanggapi santai tanpa mengulang kata itu.',
       '  * Bila dia bilang "ulangi" setelah marah: minta maaflah ulang dengan kalimat BARU yang lebih tulus, JANGAN bercanda dan JANGAN menyebut "otak refresh" atau lelucon sejenis.',
@@ -3602,14 +3607,27 @@ export async function autoReply(
     // marah "GAMAU AH DI LEDEK TERUS. AKU MARAH".
     // Prompt sudah melarang, tetapi model tidak selalu patuh -> ditegakkan di kode.
     const userMintaStopLedek =
-      /\b(?:jangan|stop|berhenti|gausah|gausa|nggak\s*usah|gak\s*usah)\b[^.!?\n]{0,25}\b(?:ngeledek|ledek|ledekin|ngejek|ejek|roasting|nyindir|nyolot)\b/i.test(clean) ||
-      /\b(?:aku|saya)\s+(?:marah|kesal|tersinggung|gasuka|gak\s*suka|nggak\s*suka)\b/i.test(clean) ||
-      /\b(?:di\s*ledek\s*terus|diledek\s*terus|kebanyakan\s*ledek|nyebelin)\b/i.test(clean);
+      /(?:jangan|stop|berhenti|gausah|gausa|nggak\s*usah|gak\s*usah)[^.!?\n]{0,25}(?:ngeledek|ledek|ledekin|ngejek|ejek|roasting|nyindir|nyolot)/i.test(clean) ||
+      /(?:aku|saya|gue|gw)[^.!?\n]{0,12}(?:marah|kesal|tersinggung|gasuka|gak\s*suka|nggak\s*suka)/i.test(clean) ||
+      /(?:di\s*ledek\s*terus|diledek\s*terus|kebanyakan\s*ledek|nyebelin|ga\s*suka\s*di\s*ledek)/i.test(clean) ||
+      // Huruf kapital penuh + kata marah (mis. "AKU MARAH", "GAMAU AH")
+      /\b(?:GAMAU|MARAH|KESAL|BOSEN)\b/.test(clean);
     if (userMintaStopLedek) {
-      // Buang kalimat yang mengeledek / mengulang hinaan user.
+      // ── PENTING (koreksi pemilik produk 06 Okt 2026) ──
+      // "respon bot yg beranten dengan user itu jangan di hilangkan, user suka
+      //  katanya seru"
+      //
+      // Jadi penegak ini HANYA aktif ketika user BENAR-BENAR minta berhenti
+      // (di atas), dan HANYA membuang ledekan yang MENYERANG PRIBADI user.
+      //
+      // Yang TIDAK dibuang (biar banter tetap hidup):
+      //   - emoji tawa 😂🤣😆 (itu ekspresi wajar, bukan sindiran)
+      //   - celetukan ringan, plesetan, roasting yang user nikmati
+      //
+      // Yang DIBUANG hanya: hinaan langsung ke user + emoji sindiran 😏😒🙄.
       const ledekRe =
-        /\b(?:nyebelin|donge?k|bego|bodoh|tolol|goblok|idiot|dungu|otak\s*(?:lu|kamu|mu)|muka\s*(?:lu|kamu)|cringe|garing)\b/i;
-      const emojiNyindir = /[😏😒🙄😆😂🤣]/u;
+        /(?:nyebelin|donge?k|bego|bodoh|tolol|goblok|idiot|dungu|otak\s*(?:lu|kamu|mu)|muka\s*(?:lu|kamu))/i;
+      const emojiNyindir = /[😏😒🙄]/u;   // 😂🤣😆 TIDAK termasuk — itu tawa wajar
       const punyaLedek = ledekRe.test(reply) || emojiNyindir.test(reply);
       if (punyaLedek) {
         // Buang kalimat yang memuat ledekan; sisakan yang tulus.
