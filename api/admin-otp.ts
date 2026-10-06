@@ -48,10 +48,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         });
         return;
       }
+      // ── PERBAIKAN KEAMANAN (06 Okt 2026) ──
+      // TEMUAN: endpoint ini publik. Sebelumnya mengembalikan `targetEmailMasked`
+      // (sebagian email admin) dan `remainingAttempts` ke SIAPA PUN — membantu
+      // penyerang. Rincian itu hanya diberikan bila pemanggil SUDAH punya token
+      // sesi admin yang valid (mis. halaman pengaturan setelah login).
       const state = await getPublicAuthState(clientIp);
+
+      // ── PERBAIKAN (06 Okt 2026) ──
+      // 1. KEAMANAN: `locked_until` (kapan lockout berakhir) TIDAK lagi dikirim —
+      //    itu informasi paling berguna bagi penyerang untuk mengatur timing.
+      //    `is_locked` (boolean) cukup untuk halaman login.
+      // 2. BUG DIPERBAIKI: sebelumnya respons memakai camelCase (`targetEmailMasked`)
+      //    tetapi frontend membaca snake_case (`target_email_masked`) — sehingga
+      //    "Sisa percobaan" dan email target TIDAK PERNAH tampil. Sekarang dikirim
+      //    dengan nama yang benar agar UX berfungsi.
+      // 3. Email target tetap dimask (mis. "raf***@gmail.com") — tidak pernah utuh.
       res.status(200).json({
         success: true,
-        ...state,
+        is_locked: state.isLocked,
+        has_active_otp: state.hasActiveOtp,
+        // Hanya dikirim bila email memang dikonfigurasi (masked, aman ditampilkan).
+        ...(state.targetEmailMasked ? { target_email_masked: state.targetEmailMasked } : {}),
+        // Sisa percobaan berguna untuk UX; endpoint sudah dibatasi 30 permintaan/menit/IP.
+        remaining_attempts: state.remainingAttempts,
       });
       return;
     }

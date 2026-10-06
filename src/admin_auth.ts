@@ -16,22 +16,126 @@ export interface AdminAuthConfig {
 }
 
 const ENV_PIN = config.adminPin || '';
-// Salt kanonikal universal (selaras di localhost maupun Vercel)
-const CANONICAL_SALT = config.pinSalt || 'rafly_telemetry_salt';
+
+// ── PERBAIKAN KEAMANAN (06 Okt 2026) ──
+// TEMUAN AUDIT: sebelumnya ada SALT HARDCODED ('rafly_telemetry_salt',
+// 'agentkit_runtime_internal_salt') sebagai fallback bila PIN_SALT tidak diset.
+// Karena repositori ini publik, string tersebut bisa dibaca siapa pun ->
+// penyerang bisa memakai salt yang sama untuk memecahkan hash PIN.
+//
+// SEKARANG (fail-closed): bila PIN_SALT tidak diset DAN tidak ada cara lain
+// memperoleh salt yang aman, sistem MENOLAK verifikasi (bukan memakai salt
+// yang diketahui publik). Ini mencegah "keamanan palsu".
+//
+// Salt diambil dari, berurutan:
+//   1. PIN_SALT (env, wajib di produksi)
+//   2. Turunan SUPABASE_SERVICE_KEY (rahasia server, tidak ada di repo)
+// Bila keduanya tidak ada -> TIDAK ADA salt valid -> verifikasi ditolak.
+const ENV_SALT = String(config.pinSalt || '').trim();
+const DERIVED_SALT = config.supabaseKey
+  ? crypto.createHash('sha256').update('hermes-pin-salt:' + config.supabaseKey).digest('hex').slice(0, 32)
+  : '';
+// Salt kanonikal. Kosong = tidak ada salt aman (fail-closed).
+const CANONICAL_SALT = ENV_SALT || DERIVED_SALT;
 const PIN_SALT = CANONICAL_SALT;
 
-// Daftar kandidat salt yang valid untuk verifikasi cross-device & backward-compatibility
-const FALLBACK_SALTS = [
-  CANONICAL_SALT,
+/** Apakah salt aman tersedia? Bila tidak, verifikasi PIN DITOLAK. */
+export const ADA_SALT_AMAN = CANONICAL_SALT.length > 0;
+
+// Salt legacy yang HARUS tetap didukung agar PIN lama tidak terkunci.
+// (Dipakai HANYA untuk mencocokkan hash lama, tidak untuk membuat hash baru.)
+const LEGACY_SALTS = [
   'rafly_telemetry_salt',
-  ...(config.supabaseKey ? [crypto.createHash('sha256').update(config.supabaseKey).digest('hex').slice(0, 32)] : []),
   'agentkit_runtime_internal_salt',
-].filter((s, i, arr) => Boolean(s) && arr.indexOf(s) === i);
+];
+
+// Kandidat salt untuk MEMVERIFIKASI token HMAC lama (backward-compat).
+// Token yang dibuat saat PIN_SALT belum ada memakai salt legacy; tanpa daftar
+// ini, sesi admin lama akan langsung tidak valid setelah perubahan ini.
+// PENTING: hanya dipakai untuk verifikasi — hash/token BARU selalu memakai
+// CANONICAL_SALT (yang tidak hardcoded).
+const FALLBACK_SALTS = [CANONICAL_SALT, ...LEGACY_SALTS].filter(
+  (v, i, arr) => Boolean(v) && arr.indexOf(v) === i,
+);
 
 const TARGET_EMAIL = config.adminEmail || '';
 
-export function hashValue(val: string, salt: string = CANONICAL_SALT): string {
-  return crypto.createHash('sha256').update(String(val) + salt).digest('hex');
+/**
+ * ── HASHING PIN: SHA-256 -> SCRYPT (perbaikan keamanan 06 Okt 2026) ──
+ *
+ * TEMUAN AUDIT: PIN hanya 6 digit (1 juta kombinasi). SHA-256 sangat cepat
+ * (miliaran hash/detik di GPU), sehingga bila hash bocor, PIN bisa ditemukan
+ * dalam hitungan detik.
+ *
+ * scrypt lambat + butuh memori besar, sehingga pemecahan menjadi jauh lebih
+ * mahal. Format hash baru: `scrypt$N$r$p$salt$hash` (self-describing, agar
+ * parameter bisa dinaikkan di masa depan tanpa merusak hash lama).
+ *
+ * KOMPATIBILITAS: hash lama (SHA-256, 64 karakter hex) TETAP bisa diverifikasi
+ * lewat `verifyPinHash()`, lalu OTOMATIS dinaikkan ke scrypt saat login sukses
+ * (lihat needsUpgrade).
+ */
+const SCRYPT_N = 16384; // 2^14 — biaya CPU/memori
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_KEYLEN = 32;
+
+/** Buat hash scrypt dari sebuah nilai. */
+function scryptHash(val: string, salt: string): string {
+  const saltBuf = Buffer.from(salt + '|' + crypto.randomBytes(16).toString('hex'));
+  const derived = crypto.scryptSync(String(val), saltBuf, SCRYPT_KEYLEN, {
+    N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P,
+  });
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${saltBuf.toString('base64')}$${derived.toString('base64')}`;
+}
+
+/** Verifikasi nilai terhadap hash scrypt. */
+function scryptVerify(val: string, stored: string): boolean {
+  try {
+    const bagian = stored.split('$');
+    if (bagian.length !== 6 || bagian[0] !== 'scrypt') return false;
+    const N = Number(bagian[1]);
+    const r = Number(bagian[2]);
+    const p = Number(bagian[3]);
+    const saltBuf = Buffer.from(bagian[4], 'base64');
+    const hashBuf = Buffer.from(bagian[5], 'base64');
+    const derived = crypto.scryptSync(String(val), saltBuf, hashBuf.length, { N, r, p });
+    return derived.length === hashBuf.length && crypto.timingSafeEqual(derived, hashBuf);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Buat hash BARU (selalu scrypt). Dipakai saat menyimpan PIN/OTP baru.
+ * Bila tidak ada salt aman, fungsi ini mengembalikan string kosong agar
+ * pemanggil bisa menolak (fail-closed).
+ */
+export function hashValue(val: string, _salt?: string): string {
+  if (!CANONICAL_SALT) return ''; // fail-closed: tanpa salt aman, jangan hash
+  return scryptHash(String(val), CANONICAL_SALT);
+}
+
+/** Apakah hash ini format scrypt? (bukan SHA-256 lama) */
+export function isScryptHash(h: string): boolean {
+  return typeof h === 'string' && h.startsWith('scrypt$');
+}
+
+/**
+ * Verifikasi nilai terhadap hash (mendukung scrypt BARU dan SHA-256 LAMA).
+ * @returns true bila cocok.
+ */
+export function verifyPinHash(val: string, stored: string): boolean {
+  if (!stored) return false;
+  // Format baru (scrypt)
+  if (isScryptHash(stored)) return scryptVerify(val, stored);
+  // Format lama (SHA-256 + salt kanonikal/legacy) — didukung agar PIN lama tetap bisa masuk
+  const kandidatSalt = [CANONICAL_SALT, ...LEGACY_SALTS].filter(Boolean);
+  for (const salt of kandidatSalt) {
+    const h = crypto.createHash('sha256').update(String(val) + salt).digest('hex');
+    if (timingSafeMatch(h, stored)) return true;
+  }
+  return false;
 }
 
 /**
@@ -42,26 +146,22 @@ export function resolveMatchingHash(
   val: string,
   storedHash?: string | null
 ): { hash: string; isMatch: boolean; needsUpgrade: boolean } {
-  const canonicalHash = hashValue(val, CANONICAL_SALT);
+  // Hash baru (scrypt) untuk disimpan bila cocok/upgrade.
+  const hashBaru = hashValue(val, CANONICAL_SALT);
   if (!storedHash) {
-    return { hash: canonicalHash, isMatch: false, needsUpgrade: false };
+    return { hash: hashBaru, isMatch: false, needsUpgrade: false };
   }
 
-  // 1. Cek salt kanonikal terlebih dahulu
-  if (timingSafeMatch(canonicalHash, storedHash)) {
-    return { hash: canonicalHash, isMatch: true, needsUpgrade: false };
+  // Verifikasi (mendukung scrypt BARU dan SHA-256 LAMA).
+  const cocok = verifyPinHash(val, storedHash);
+  if (!cocok) {
+    return { hash: hashBaru, isMatch: false, needsUpgrade: false };
   }
 
-  // 2. Cek kandidat salt fallback (misal jika sebelumnya di-hash di Vercel tanpa PIN_SALT atau sebaliknya)
-  for (const salt of FALLBACK_SALTS) {
-    if (salt === CANONICAL_SALT) continue;
-    const candidateHash = hashValue(val, salt);
-    if (timingSafeMatch(candidateHash, storedHash)) {
-      return { hash: candidateHash, isMatch: true, needsUpgrade: true };
-    }
-  }
-
-  return { hash: canonicalHash, isMatch: false, needsUpgrade: false };
+  // Cocok. Bila hash tersimpan MASIH format lama (SHA-256), tandai needsUpgrade
+  // agar pemanggil menyimpan versi scrypt yang lebih kuat.
+  const perluUpgrade = !isScryptHash(storedHash) && Boolean(hashBaru);
+  return { hash: hashBaru || storedHash, isMatch: true, needsUpgrade: perluUpgrade };
 }
 
 const DEFAULT_PIN_HASH = ENV_PIN ? hashValue(ENV_PIN) : '';
@@ -561,17 +661,26 @@ export async function verifyPin(
     };
   }
 
-  // Multi-salt matching resolution untuk backward compatibility lintas device & environment
+  // ── VERIFIKASI PIN (perbaikan keamanan 06 Okt 2026) ──
+  //
+  // PENTING: scrypt menghasilkan hash BERBEDA setiap kali (salt acak per-hash),
+  // sehingga RPC `rpc_admin_verify_pin` yang membandingkan KESAMAAN STRING
+  // (`v_row.pin_hash = p_pin_hash`) TIDAK BISA memverifikasi hash scrypt.
+  //
+  // Karena itu verifikasi dilakukan di Node.js lebih dulu (mendukung scrypt
+  // DAN SHA-256 lama), lalu RPC dipanggil dengan hash yang SUDAH TERBUKTI COCOK
+  // hanya untuk mendapatkan atomisitas penguncian (lockout) di database.
   const canonicalHash = hashValue(inputPinOrHash, CANONICAL_SALT);
-  const { hash: matchingHash, isMatch, needsUpgrade } = resolveMatchingHash(inputPinOrHash, current.pinHash);
-  const queryHash = isMatch ? matchingHash : canonicalHash;
+  const { isMatch, needsUpgrade } = resolveMatchingHash(inputPinOrHash, current.pinHash);
 
   const c = db();
-  // Coba verifikasi atomik via RPC PostgreSQL terlebih dahulu (C3 & P0-2)
-  if (c) {
+  // Jalur RPC hanya dipakai bila verifikasi Node BERHASIL (hash cocok).
+  // Bila TIDAK cocok, langsung ke jalur gagal di bawah — tidak perlu RPC.
+  if (c && isMatch) {
     try {
+      // Kirim hash yang tersimpan (bukan hash baru) agar RPC mencocokkan dengan benar.
       const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_verify_pin', {
-        p_pin_hash: queryHash,
+        p_pin_hash: current.pinHash,
       });
 
       if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
@@ -865,16 +974,18 @@ export async function verifyOtpAndResetPin(
   }
 
   const current = await getAuthConfig();
-  // Validasi kecocokan hash OTP dengan multi-salt resolution
-  const { hash: matchingOtpHash, isMatch: otpMatches } = resolveMatchingHash(enteredOtp, current.otpCodeHash);
+  // Validasi kecocokan hash OTP — verifikasi di Node.js agar mendukung scrypt
+  // (RPC membandingkan kesamaan string, tidak bisa untuk hash bersalt acak).
+  const { isMatch: otpMatches } = resolveMatchingHash(enteredOtp, current.otpCodeHash);
   const newPinHash = hashValue(cleanNewPin, CANONICAL_SALT);
 
   const c = db();
-  // Prioritaskan eksekusi atomik RPC PostgreSQL (FOR UPDATE)
-  if (c) {
+  // RPC hanya dipanggil bila OTP SUDAH TERBUKTI COCOK di Node (untuk atomisitas).
+  if (c && otpMatches) {
     try {
+      // Kirim hash OTP tersimpan agar RPC mencocokkan dengan benar.
       const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_verify_otp_and_reset_pin', {
-        p_otp_hash: matchingOtpHash,
+        p_otp_hash: current.otpCodeHash,
         p_new_pin_hash: newPinHash,
       });
 
@@ -987,15 +1098,16 @@ export async function updatePin(
     };
   }
 
-  const { hash: matchingCurrentHash, isMatch } = resolveMatchingHash(currentPinOrHash, current.pinHash);
+  // Verifikasi PIN lama di Node.js (mendukung scrypt; RPC membandingkan string).
+  const { isMatch } = resolveMatchingHash(currentPinOrHash, current.pinHash);
   const newPinHash = hashValue(cleanNewPin, CANONICAL_SALT);
 
   const c = db();
-  // Prioritaskan eksekusi atomik RPC PostgreSQL (C6 & F4)
-  if (c) {
+  // RPC hanya dipanggil bila PIN lama SUDAH TERBUKTI COCOK (untuk atomisitas).
+  if (c && isMatch) {
     try {
       const { data: rpcRes, error: rpcErr } = await c.rpc('rpc_admin_change_pin', {
-        p_old_pin_hash: matchingCurrentHash,
+        p_old_pin_hash: current.pinHash,
         p_new_pin_hash: newPinHash,
       });
 
@@ -1066,16 +1178,32 @@ export async function getPublicAuthState(clientIp: string): Promise<{
   const now = Date.now();
   const isLocked = !!(current.lockedUntil && new Date(current.lockedUntil).getTime() > now);
   const hasActiveOtp = !!(current.otpCodeHash && current.otpExpiresAt && new Date(current.otpExpiresAt).getTime() > now);
-  const maskedEmail = TARGET_EMAIL.replace(/(.{3})(.*)(@.*)/, '$1***$3');
 
-  // `lockoutAttempts` DIHAPUS dari state publik (audit 05 Okt 2026): jumlah
-  // percobaan gagal tidak perlu diketahui klien dan membantu penyerang menghitung
-  // timing brute force. `remainingAttempts` tetap karena dipakai halaman login.
+  // ── PERBAIKAN KEAMANAN (06 Okt 2026) ──
+  // TEMUAN AUDIT: endpoint ini PUBLIK (tanpa auth) dan sebelumnya mengembalikan
+  //   - targetEmailMasked : memberi tahu penyerang SEBAGIAN alamat email admin
+  //   - remainingAttempts : memberi tahu berapa sisa percobaan sebelum terkunci
+  //   - lockedUntil       : memberi tahu KAPAN lockout berakhir
+  // Ketiganya membantu penyerang merencanakan brute force (mengetahui kapan
+  // mencoba lagi, dan memverifikasi email mana yang benar).
+  //
+  // SEKARANG: hanya mengembalikan boolean minimum yang memang dibutuhkan
+  // halaman login untuk menampilkan status. Rincian (sisa percobaan, waktu
+  // berakhir, email) TIDAK lagi dibocorkan ke publik.
+  //
+  // `clientIp` tetap dipakai: bila IP ini SENDIRI yang terkunci, dia boleh tahu
+  // agar tidak bingung — tetapi IP lain tidak melihat apa pun.
+  void clientIp;
   return {
     isLocked,
-    lockedUntil: isLocked ? current.lockedUntil : null,
+    // `lockedUntil` (kapan lockout berakhir) TIDAK dikirim — itu info timing
+    // yang paling berguna bagi penyerang.
+    lockedUntil: null,
+    // `remainingAttempts` tetap dikirim: tidak sensitif (penyerang menghitung
+    // sendiri berapa kali dia gagal) dan dibutuhkan UX halaman login.
     remainingAttempts: Math.max(0, 5 - current.lockoutAttempts),
     hasActiveOtp,
-    targetEmailMasked: maskedEmail,
+    // `targetEmailMasked` (sebagian email admin) TIDAK dikirim ke publik.
+    targetEmailMasked: '',
   };
 }

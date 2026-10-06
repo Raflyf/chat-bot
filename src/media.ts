@@ -6,6 +6,7 @@ import { keyUsed, isKeyAllowed, keyTokensUsed } from './quota.js';
 import { getOrderedKeys } from './providers.js';
 import mammoth from 'mammoth';
 import zlib from 'node:zlib';
+import { periksaBerkasAman } from './media_guard.js';
 
 // ============================================================================
 // PARSER EXCEL (.xlsx / .xlsm) TANPA DEPENDENSI EKSTERNAL
@@ -913,6 +914,17 @@ export async function extractDocumentText(
     lowerName.endsWith('.log')
   ) {
     console.warn(`[media] Percobaan membaca berkas sensitif diblokir: ${filename}`);
+    return null;
+  }
+
+  // ── PENJAGA BERKAS (audit keamanan 06 Okt 2026, parameter #18) ──
+  // Tanpa antivirus, kami menolak berkas yang jelas berbahaya LEBIH AWAL:
+  // ekstensi executable & magic bytes executable. Ini mencegah eksploitasi
+  // celah parser (mammoth/pdf) dan mencegah berkas berbahaya diteruskan ke
+  // layanan lain di masa depan. Berkas tetap hanya dibaca di memori.
+  const periksa = periksaBerkasAman(filename, buffer);
+  if (!periksa.boleh) {
+    console.warn(`[media] Berkas ditolak oleh penjaga: ${filename} — ${periksa.alasan}`);
     return null;
   }
 

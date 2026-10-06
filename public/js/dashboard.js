@@ -21,6 +21,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
     function setStoredSession(token, expTimestamp) {
       const exp = Number(expTimestamp) || (Date.now() + 15 * 60 * 1000);
+      // KEAMANAN (06 Okt 2026): token HANYA di sessionStorage — otomatis terhapus
+      // saat tab ditutup. TIDAK pernah di localStorage (yang bertahan permanen dan
+      // bisa dibaca skrip mana pun kapan saja). localStorage warisan dibersihkan.
       sessionStorage.setItem(SESSION_TOKEN_KEY, token);
       sessionStorage.setItem(SESSION_EXP_KEY, String(exp));
       try {

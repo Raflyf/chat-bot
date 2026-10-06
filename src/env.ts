@@ -313,7 +313,11 @@ export const config = {
   resendApiKey: cleanStr('RESEND_API_KEY'),
   resendFrom: cleanStr('RESEND_FROM') || 'ChatBot Security <notifications@resend.dev>',
   adminEmail: cleanStr('ADMIN_EMAIL'),
-  pinSalt: cleanStr('PIN_SALT') || 'rafly_telemetry_salt',
+  // PERBAIKAN KEAMANAN (06 Okt 2026): DULU ada fallback hardcoded
+  // 'rafly_telemetry_salt' yang bisa dibaca siapa pun dari repo publik.
+  // SEKARANG kosong bila tidak diset — admin_auth.ts akan menolak verifikasi
+  // (fail-closed) atau menurunkan salt dari SUPABASE_SERVICE_KEY.
+  pinSalt: cleanStr('PIN_SALT'),
   adminPin: cleanStr('ADMIN_PIN'),
 };
 
