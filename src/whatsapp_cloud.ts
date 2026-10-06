@@ -10,6 +10,7 @@ import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb, checkDueReminders } from './remind.js';
 import { tanganiPencatatan } from './notes.js';
+import { tangkapFaktaPersonal } from './user_facts.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
 const PROMPT_VERSION = 'v0.66.0';
@@ -744,6 +745,23 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // murah, tetapi menghindari pemanggilan ganda tetap menghemat overhead.
         let contextBersama: Awaited<ReturnType<typeof getContext>> | null = null;
         {
+          // ── TANGKAP FAKTA PERSONAL (permintaan pemilik produk 06 Okt 2026) ──
+          // "buat agar bot bisa menangkap personality, kesukaan, dan lainnya dari
+          //  user, simpan di database"
+          //
+          // DIAM-DIAM: tidak membalas apa pun ke user. Fakta tersimpan ke tabel
+          // `corrections` dengan penanda [FAKTA], lalu otomatis terbaca getContext()
+          // dan disuntikkan ke prompt sebagai konteks personal.
+          try {
+            const faktaBaru = await tangkapFaktaPersonal(String(from), text);
+            if (faktaBaru) {
+              console.log(`[wa-cloud] Fakta personal tersimpan: ${faktaBaru.kategori} = ${faktaBaru.fakta}`);
+              // Segarkan cache konteks agar fakta baru langsung terbaca di balasan ini.
+              contextBersama = null;
+            }
+          } catch (e) {
+            console.warn('[wa-cloud] Gagal menangkap fakta personal:', e);
+          }
           contextBersama = await getContext(chatKey, msgSentAt);
           const hasil = await tanganiPencatatan(text, String(from), contextBersama, {
             platform: 'whatsapp',

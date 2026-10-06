@@ -15,6 +15,7 @@ import { transcribeAudio, processIncomingDocument, processIncomingSticker, proce
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
+import { tangkapFaktaPersonal } from './user_facts.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -768,6 +769,8 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     // Di grup, pakai nomor pengirim (participant) sebagai pemisah identitas;
     // di chat privat tidak perlu (semua catatan milik satu orang).
     const actorGrup = isGroup ? (m.key.participant || m.participant || undefined)?.replace(/@.*$/, '') : undefined;
+    // Tangkap fakta personal (diam-diam) — lihat user_facts.ts.
+    try { await tangkapFaktaPersonal(targetChat, text); } catch { /* best-effort */ }
     const hasil = await tanganiPencatatan(text, targetChat, catatCtx, { actor: actorGrup, platform: 'whatsapp' });
     if (hasil.ditangani) {
       await sendWhatsAppMessageSafe(sock, remoteJid, hasil.reply);

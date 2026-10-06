@@ -5,6 +5,7 @@ import { transcribeAudio, processIncomingDocument, processIncomingSticker, proce
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
+import { tangkapFaktaPersonal } from './user_facts.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -295,6 +296,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     // Keduanya dikonfirmasi dulu sebelum disimpan.
     if (text) {
       const catatCtx = await getContext(chatKey, msgSentAt);
+      // Tangkap fakta personal (diam-diam) — lihat user_facts.ts.
+      try { await tangkapFaktaPersonal(String(chatId), text); } catch { /* best-effort */ }
       const hasilCatat = await tanganiPencatatan(text, String(chatId), catatCtx, {
         actor: isGroup ? senderName : undefined,
         platform: 'telegram',
