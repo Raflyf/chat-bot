@@ -13,6 +13,18 @@ export interface AdminAuthConfig {
   // Token yang sudah logout (dicabut). Token HMAC stateless tidak bisa di-invalidate
   // hanya dengan menghapus dari daftar aktif — daftar cabut ini yang membuat logout nyata.
   revokedTokens: Array<{ token: string; exp: number }>;
+  /**
+   * Hash PIN SEBELUMNYA (perbaikan 06 Okt 2026).
+   *
+   * KENAPA: token sesi HMAC terikat pada `pinHash`. Saat PIN di-upgrade dari
+   * SHA-256 ke scrypt, `pinHash` BERUBAH -> token yang baru saja diterbitkan
+   * langsung tidak valid -> "sesi terputus dalam 1 detik".
+   *
+   * SOLUSI: simpan hash lama di sini, dan verifikasi token terhadap SEMUA
+   * kandidat (hash sekarang + hash lama). Token tetap valid sampai kedaluwarsa.
+   * Dibatasi 3 entri terakhir agar tidak menumpuk.
+   */
+  previousPinHashes?: string[];
 }
 
 const ENV_PIN = config.adminPin || '';
@@ -278,6 +290,7 @@ export async function getAuthConfig(forceRefresh = false): Promise<AdminAuthConf
     if (!tableErr && tableData) {
       let sessionTokens: Array<{ token: string; exp: number }> = [];
       let revokedTokens: Array<{ token: string; exp: number }> = [];
+      let previousPinHashes: string[] = [];
       if (tableData.session_token) {
         try {
           const parsed = JSON.parse(tableData.session_token);
@@ -285,12 +298,16 @@ export async function getAuthConfig(forceRefresh = false): Promise<AdminAuthConf
             // Format lama: array token aktif saja
             sessionTokens = parsed.filter(s => s && s.token && Number(s.exp) > Date.now());
           } else if (parsed && typeof parsed === 'object') {
-            // Format baru: { active, revoked }
+            // Format baru: { active, revoked, prevPinHashes }
             if (Array.isArray(parsed.active)) {
               sessionTokens = parsed.active.filter((s: any) => s && s.token && Number(s.exp) > Date.now());
             }
             if (Array.isArray(parsed.revoked)) {
               revokedTokens = parsed.revoked.filter((s: any) => s && s.token && Number(s.exp) > Date.now());
+            }
+            // Hash PIN lama (agar token yang terbit sebelum upgrade tetap valid).
+            if (Array.isArray(parsed.prevPinHashes)) {
+              previousPinHashes = parsed.prevPinHashes.filter((h: unknown) => typeof h === 'string' && h).slice(0, 3);
             }
           }
         } catch {
@@ -328,6 +345,7 @@ export async function getAuthConfig(forceRefresh = false): Promise<AdminAuthConf
         otpExpiresAt: tableData.otp_expires_at || null,
         sessionTokens,
         revokedTokens,
+        previousPinHashes,
       };
       cachedAuthConfig = res;
       cachedAuthConfigTime = Date.now();
@@ -410,7 +428,16 @@ export async function saveAuthConfig(updates: Partial<AdminAuthConfig>): Promise
         locked_until: current.lockedUntil,
         otp_code_hash: current.otpCodeHash,
         otp_expires_at: current.otpExpiresAt,
-        session_token: JSON.stringify({ active: current.sessionTokens, revoked: current.revokedTokens }),
+        // previousPinHashes disimpan di JSON ini (tanpa perlu kolom/migrasi baru).
+        // Lihat catatan di interface AdminAuthConfig: token sesi terikat pada
+        // pinHash; saat PIN di-upgrade (SHA-256 -> scrypt), pinHash berubah dan
+        // token baru langsung tidak valid ("sesi putus dalam 1 detik"). Dengan
+        // menyimpan hash lama, token tetap valid sampai kedaluwarsa.
+        session_token: JSON.stringify({
+          active: current.sessionTokens,
+          revoked: current.revokedTokens,
+          prevPinHashes: (current.previousPinHashes ?? []).slice(0, 3),
+        }),
         session_expires_at: current.sessionTokens.length > 0
           ? new Date(Math.max(...current.sessionTokens.map(s => s.exp))).toISOString()
           : null,
@@ -483,16 +510,27 @@ export async function inspectSessionToken(token: string): Promise<{ valid: boole
 
     try {
       let signatureValid = false;
-      for (const salt of FALLBACK_SALTS) {
-        const hmacKey = crypto.createHash('sha256').update(salt + ':' + config.pinHash).digest();
-        const expectedSig = crypto.createHmac('sha256', hmacKey).update(payloadStr).digest('hex');
-        if (timingSafeMatch(signature, expectedSig)) {
-          signatureValid = true;
-          break;
+      // Kandidat hash PIN: yang SEKARANG + semua hash SEBELUMNYA (perbaikan
+      // 06 Okt 2026). Tanpa ini, upgrade SHA-256 -> scrypt membuat token yang
+      // baru diterbitkan langsung tidak valid (sesi putus dalam 1 detik).
+      const kandidatPinHash = Array.from(
+        new Set([config.pinHash, ...(config.previousPinHashes ?? [])].filter(Boolean)),
+      );
+      for (const pinHashKandidat of kandidatPinHash) {
+        for (const salt of FALLBACK_SALTS) {
+          const hmacKey = crypto.createHash('sha256').update(salt + ':' + pinHashKandidat).digest();
+          const expectedSig = crypto.createHmac('sha256', hmacKey).update(payloadStr).digest('hex');
+          if (timingSafeMatch(signature, expectedSig)) {
+            signatureValid = true;
+            break;
+          }
         }
+        if (signatureValid) break;
+      }
 
-        // Fallback jika config.pinHash dari DB berbeda dengan DEFAULT_PIN_HASH
-        if (DEFAULT_PIN_HASH && DEFAULT_PIN_HASH !== config.pinHash) {
+      // Fallback terakhir: hash dari env (ADMIN_PIN).
+      if (!signatureValid && DEFAULT_PIN_HASH) {
+        for (const salt of FALLBACK_SALTS) {
           const fallbackHmacKey = crypto.createHash('sha256').update(salt + ':' + DEFAULT_PIN_HASH).digest();
           const fallbackSig = crypto.createHmac('sha256', fallbackHmacKey).update(payloadStr).digest('hex');
           if (timingSafeMatch(signature, fallbackSig)) {
@@ -704,7 +742,16 @@ export async function verifyPin(
           ].slice(-10);
 
           await saveAuthConfig({
-            ...(needsUpgrade ? { pinHash: canonicalHash } : {}),
+            // UPGRADE PIN: simpan hash LAMA di previousPinHashes agar token yang
+            // baru diterbitkan tetap valid (perbaikan 06 Okt 2026: sesi putus
+            // dalam 1 detik karena pinHash berubah saat upgrade SHA-256->scrypt).
+            ...(needsUpgrade
+              ? {
+                  pinHash: canonicalHash,
+                  previousPinHashes: [current.pinHash, ...(current.previousPinHashes ?? [])]
+                    .filter(Boolean).slice(0, 3),
+                }
+              : {}),
             lockoutAttempts: 0,
             lockedUntil: null,
             sessionTokens: updatedTokens,
@@ -754,7 +801,15 @@ export async function verifyPin(
     ].slice(-10); // Simpan maks 10 sesi aktif
 
     await saveAuthConfig({
-      ...(needsUpgrade ? { pinHash: canonicalHash } : {}),
+      // Simpan hash lama agar token yang baru terbit tetap valid (lihat catatan
+      // di jalur RPC di atas).
+      ...(needsUpgrade
+        ? {
+            pinHash: canonicalHash,
+            previousPinHashes: [current.pinHash, ...(current.previousPinHashes ?? [])]
+              .filter(Boolean).slice(0, 3),
+          }
+        : {}),
       lockoutAttempts: 0,
       lockedUntil: null,
       sessionTokens: updatedTokens,
