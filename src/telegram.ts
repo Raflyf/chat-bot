@@ -145,6 +145,26 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       (msg.reply_to_message?.from?.username?.toLowerCase() === botUsername || !msg.reply_to_message?.from?.username)
     );
 
+    // ── PESAN YANG DI-REPLY USER (quoted message) — perbaikan 06 Okt 2026 ──
+    // KENAPA PERLU: user sering membalas pesan lama lalu bilang "ini maksudnya
+    // apa?" / "mau" tanpa menyebut konteksnya. Tanpa membaca isi
+    // `reply_to_message`, bot TIDAK TAHU pesan mana yang dimaksud -> jawaban ngawur.
+    //
+    // Telegram mengirim isi pesan yang dibalas di `msg.reply_to_message`
+    // (text / caption / jenis media).
+    const rtm = msg.reply_to_message as
+      | { text?: string; caption?: string; from?: { is_bot?: boolean }; sticker?: unknown; photo?: unknown; voice?: unknown; document?: unknown }
+      | undefined;
+    let quotedText = String(rtm?.text ?? rtm?.caption ?? '').trim();
+    if (!quotedText && rtm) {
+      // Tanpa teks: sebut jenis media yang dibalas (stiker/foto/voice/dokumen).
+      if (rtm.sticker) quotedText = '[stiker]';
+      else if (rtm.photo) quotedText = '[foto]';
+      else if (rtm.voice) quotedText = '[voice note]';
+      else if (rtm.document) quotedText = '[dokumen]';
+    }
+    const quotedFromBot = Boolean(rtm?.from?.is_bot);
+
     // Cek mention bot pada teks atau caption
     const hasMentionInText = mentionRegex.test(rawText);
     const hasMentionInCaption = mentionRegex.test(rawCaption);
@@ -677,7 +697,9 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     // Fast-path in-memory context (0ms saat aktif)
     const ctx = await getContext(chatKey, msgSentAt);
 
-    const promptText = isGroup ? `[Pesan di Grup dari ${senderName}]: ${text}` : text;
+    const promptText = (quotedText
+      ? `[Membalas ${quotedFromBot ? 'pesan KAMU (bot)' : 'pesan dia'}: "${quotedText.slice(0, 300)}"] `
+      : '') + (isGroup ? `[Pesan di Grup dari ${senderName}]: ${text}` : text);
     const savedUserContent = isGroup ? `[${senderName}]: ${text}` : text;
 
     // Update cache in-memory & pastikan pesan teks user tersimpan (non-blocking agar autoReply langsung jalan)

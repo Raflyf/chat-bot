@@ -222,6 +222,50 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     '';
   text = text.trim();
 
+  // ── PESAN YANG DI-REPLY USER (quoted message) — perbaikan 06 Okt 2026 ──
+  // KENAPA PERLU: user sering membalas pesan lama lalu bilang "ini maksudnya
+  // apa?" / "mau" tanpa menyebut konteksnya. Tanpa membaca `contextInfo`
+  // (quoted), bot TIDAK TAHU pesan mana yang dimaksud -> jawaban ngawur.
+  //
+  // Baileys menaruh pesan yang dibalas di `contextInfo.quotedMessage`
+  // (bisa conversation / extendedTextMessage.text / caption media).
+  const ctxInfo = (m.message?.extendedTextMessage?.contextInfo ||
+    m.message?.imageMessage?.contextInfo ||
+    m.message?.videoMessage?.contextInfo ||
+    m.message?.documentMessage?.contextInfo ||
+    (m.message as { contextInfo?: unknown } | undefined)?.contextInfo) as
+    | {
+        participant?: string;
+        quotedMessage?: {
+          conversation?: string;
+          extendedTextMessage?: { text?: string };
+          imageMessage?: { caption?: string };
+          videoMessage?: { caption?: string };
+          documentMessage?: { caption?: string };
+          stickerMessage?: unknown;
+          audioMessage?: unknown;
+        };
+      }
+    | undefined;
+  let quotedText = '';
+  let quotedFromBot = false;
+  if (ctxInfo?.quotedMessage) {
+    const qm = ctxInfo.quotedMessage;
+    quotedText = String(
+      qm.conversation || qm.extendedTextMessage?.text || qm.imageMessage?.caption || qm.videoMessage?.caption || qm.documentMessage?.caption || '',
+    ).trim();
+    if (!quotedText) {
+      if (qm.stickerMessage) quotedText = '[stiker]';
+      else if (qm.imageMessage) quotedText = '[foto]';
+      else if (qm.audioMessage) quotedText = '[voice note]';
+      else if (qm.documentMessage) quotedText = '[dokumen]';
+    }
+    // Pesan yang dibalas milik bot sendiri? (bandingkan nomor bot)
+    const botNum = String(config.whatsappPhoneNumber || '').replace(/\D/g, '');
+    const part = String(ctxInfo.participant || '').split('@')[0].split(':')[0];
+    quotedFromBot = Boolean(botNum && part && part.endsWith(botNum));
+  }
+
   const chatKey = 'wa_' + remoteJid;
   const messageId = m.key.id;
   // Klaim atomik anti-TOCTOU
@@ -824,7 +868,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
     // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
     const tStart = Date.now();
-    const { reply, via, tokens, sticker, riddleAnswer } = await autoReply(text, context, webResults);
+    // Sisipkan konteks pesan yang di-reply (bila ada) agar bot tahu apa yang dimaksud.
+    const promptFinal = quotedText
+      ? `[Membalas ${quotedFromBot ? 'pesan KAMU (bot)' : 'pesan dia'}: "${quotedText.slice(0, 300)}"] ${text}`
+      : text;
+    const { reply, via, tokens, sticker, riddleAnswer } = await autoReply(promptFinal, context, webResults);
     const latencyMs = Date.now() - tStart;
 
     // 5. Kirim balasan ke WhatsApp secepat mungkin

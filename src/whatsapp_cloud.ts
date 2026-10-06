@@ -337,6 +337,40 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         const msgSentAt = Number(m.timestamp) ? new Date(Number(m.timestamp) * 1000) : undefined;
 
         const chatKey = 'wa_' + from;
+
+        // ── PESAN YANG DI-REPLY USER (quoted message) — perbaikan 06 Okt 2026 ──
+        // KENAPA PERLU: user sering membalas pesan lama lalu bilang "ini maksudnya
+        // apa?" / "yang ini gimana?" tanpa menyebut konteksnya. Tanpa membaca
+        // `m.context`, bot TIDAK TAHU pesan mana yang dimaksud -> jawaban ngawur.
+        //
+        // Meta mengirim ini di `m.context`:
+        //   { from, id, quoted: { body/text, type, ... } }  atau
+        //   { from, id, forwarded, frequently_forwarded, ... } (tanpa isi teks)
+        const quoted = (m as unknown as { context?: { quoted?: Record<string, unknown>; from?: string; id?: string } }).context;
+        let quotedText = '';
+        let quotedFromBot = false;
+        if (quoted) {
+          const q = quoted.quoted || {};
+          const qAny = q as Record<string, unknown>;
+          quotedText = String(
+            qAny.body ??
+            (qAny.text as { body?: string } | undefined)?.body ??
+            qAny.caption ??
+            '',
+          ).trim();
+          // Bila quoted tidak punya teks (mis. stiker/gambar), sebut jenisnya.
+          if (!quotedText && typeof qAny.type === 'string') {
+            quotedText = `[${qAny.type}]`;
+          }
+          // Apakah pesan yang dibalas itu pesan BOT sendiri?
+          const botNumber = config.whatsappPhoneNumber || '';
+          quotedFromBot = Boolean(
+            (quoted.from && botNumber && String(quoted.from).replace(/\D/g, '').endsWith(String(botNumber).replace(/\D/g, ''))) ||
+            // Meta tidak selalu mengirim 'from' -> deteksi dari awalan teks bot.
+            /^(?:✅|🗑️|⚠️|📊|⏰|💰|📝|🎮|_)/.test(quotedText),
+          );
+        }
+
         let initialContent = `[${m.type || 'msg'}]`;
         if (m.type === 'text' && m.text?.body) {
           initialContent = m.text.body;
@@ -344,6 +378,13 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           initialContent = m.interactive?.button_reply?.title || m.interactive?.list_reply?.title || '[interactive]';
         } else if (m.type === 'image' && m.image?.caption) {
           initialContent = `[Gambar] ${m.image.caption}`;
+        }
+
+        // Sisipkan konteks balasan ke teks yang diproses AI (bila ada).
+        // Format eksplisit supaya model tahu INI pesan yang sedang dibalas.
+        if (quotedText) {
+          const label = quotedFromBot ? 'pesan KAMU (bot)' : 'pesan dia';
+          initialContent = `[Membalas ${label}: "${quotedText.slice(0, 300)}"] ${initialContent}`;
         }
         // Klaim atomik (zero TOCTOU): jika sudah pernah ada, drop langsung!
         if (!(await claimIncomingMessage('whatsapp', messageId, chatKey, initialContent))) continue;
