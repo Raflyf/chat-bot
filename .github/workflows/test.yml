@@ -24,7 +24,10 @@ jobs:
       - name: Siapkan Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # DISAMAKAN dengan package.json "engines.node": "22.x".
+          # Sebelumnya '20' -> beberapa API Node 22 tidak tersedia sehingga
+          # test gagal di CI walau lulus di lokal.
+          node-version: '22'
           cache: 'npm'
 
       - name: Pasang dependensi
@@ -34,10 +37,14 @@ jobs:
         run: npm run typecheck
 
       - name: Jalankan test
-        run: npx tsx --test tests/*.test.mjs
+        # Hanya test MURNI (tanpa DB). tests/integrasi.test.mjs dikecualikan
+        # karena memerlukan kredensial Supabase yang tidak ada di CI (test itu
+        # sudah otomatis SKIP bila DB tidak tersedia, tetapi kita kecualikan
+        # agar durasi CI stabil).
+        run: npx tsx --test tests/waktu.test.mjs tests/pengingat.test.mjs tests/game.test.mjs tests/berulang.test.mjs tests/rate-limit.test.mjs tests/neuron.test.mjs tests/usage-groq.test.mjs tests/format-angka.test.mjs tests/keamanan.test.mjs tests/lokasi-tertunda.test.mjs tests/presisi-waktu.test.mjs tests/zona-parse.test.mjs tests/nomor-tugas.test.mjs tests/selesai-nama.test.mjs tests/sesi-upgrade.test.mjs
         env:
-          # Test memakai fungsi MURNI (tidak butuh DB/kredensial nyata).
-          # Nilai dummy agar modul yang membaca env saat impor tidak gagal.
+          NODE_ENV: 'test'
+          # Test murni tidak butuh DB; nilai dummy agar modul yang membaca env
+          # saat impor tidak gagal.
           SUPABASE_URL: 'https://contoh.supabase.co'
           SUPABASE_SERVICE_KEY: 'dummy-untuk-test'
-          NODE_ENV: 'test'

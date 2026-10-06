@@ -735,7 +735,16 @@ export async function verifyPin(
         if (res.verified) {
           notePinFailureForIp(clientIp, now, true);
           // Selalu terbitkan session token dengan CANONICAL_SALT dan canonicalHash
-          const { token: sessionToken, exp: expiresAt } = createSessionToken(canonicalHash, 15 * 60 * 1000);
+          // ── KRITIS (perbaikan 06 Okt 2026) ──
+          // Token HARUS dibuat dengan hash yang TERSIMPAN di DB, bukan hash baru.
+          // scrypt memakai salt ACAK, sehingga `hashValue(pin)` menghasilkan hash
+          // BERBEDA setiap panggilan. Bila token dibuat dengan hash baru yang
+          // tidak tersimpan, verifikasi berikutnya (yang memakai config.pinHash)
+          // akan GAGAL -> sesi putus dalam <1 detik.
+          //   - needsUpgrade=true  -> hash baru akan disimpan -> pakai canonicalHash
+          //   - needsUpgrade=false -> hash lama tetap -> pakai current.pinHash
+          const hashUntukToken = needsUpgrade ? canonicalHash : current.pinHash;
+          const { token: sessionToken, exp: expiresAt } = createSessionToken(hashUntukToken, 15 * 60 * 1000);
           const updatedTokens = [
             ...current.sessionTokens.filter(s => Number(s.exp) > now),
             { token: sessionToken, exp: expiresAt }
@@ -792,8 +801,11 @@ export async function verifyPin(
   // Fallback JS Engine (Dual-Store / In-Memory)
   if (isMatch) {
     notePinFailureForIp(clientIp, now, true);
-    // Berhasil: buat session token kriptografis HMAC 15 menit dengan canonical hash
-    const { token: sessionToken, exp: expiresAt } = createSessionToken(canonicalHash, 15 * 60 * 1000);
+    // Berhasil: buat session token HMAC 15 menit dengan hash yang TERSIMPAN
+    // (lihat catatan KRITIS di jalur RPC: scrypt bersalt acak, jadi hash baru
+    //  TIDAK sama dengan yang di DB -> token langsung tidak valid).
+    const hashUntukToken = needsUpgrade ? canonicalHash : current.pinHash;
+    const { token: sessionToken, exp: expiresAt } = createSessionToken(hashUntukToken, 15 * 60 * 1000);
 
     const updatedTokens = [
       ...current.sessionTokens.filter(s => Number(s.exp) > now),
