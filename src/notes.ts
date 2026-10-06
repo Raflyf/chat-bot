@@ -667,6 +667,87 @@ export function panduanJenisSaja(teks: string): string | null {
   );
 }
 
+/**
+ * PANDUAN LENGKAP semua fitur bot (perbaikan 06 Okt 2026).
+ *
+ * KENAPA (permintaan pemilik produk): "jika ada user minta tutorial fitur atau
+ * cara pemakaian, atau bertanya bisa apa saja, berikan full apa yang bisa
+ * dilakukan bot, apa saja fitur yang bisa digunakan beserta cara pemakaiannya".
+ *
+ * Dipanggil saat user bertanya: "bisa apa saja", "tutorial", "cara pakai",
+ * "fitur apa", "help", "panduan", dsb.
+ */
+export function deteksiMintaPanduan(teks: string): boolean {
+  const t = teks.toLowerCase().trim();
+  return (
+    /\b(?:bisa|dapat|mampu)\s+(?:apa|ngapain|ngapain\s+aja|apa\s+aja|apa\s+saja)\b/.test(t) ||
+    /\b(?:fitur|kemampuan|kelebihan|fungsi)\s*(?:apa|apa\s+aja|apa\s+saja|nya)?\s*(?:aja|saja|apa)?\s*\??$/.test(t) ||
+    /\b(?:tutorial|cara\s+(?:pakai|pemakaian|gunakan|menggunakan|pake)|panduan|guide|help|bantuan|menu|perintah|command)\b/.test(t) ||
+    /\b(?:apa\s+(?:aja|saja)\s+yang\s+bisa|bisa\s+ngelakuin\s+apa|kamu\s+bisa\s+apa|bot\s+ini\s+bisa)\b/.test(t) ||
+    /^\s*\/(?:help|bantuan|panduan|menu|fitur|tutorial)\s*$/.test(t)
+  );
+}
+
+/** Teks panduan lengkap semua fitur. */
+export function teksPanduanLengkap(): string {
+  return (
+    '*Panduan FreeAIBot*\n' +
+    '_Semua fitur bisa dipakai dengan BAHASA ALAMI (ngobrol biasa) atau perintah / ._\n' +
+    '\n' +
+    '⏰ *PENGINGAT*\n' +
+    '• "ingatkan besok jam 9 rapat"\n' +
+    '• "ingatkan 15 menit lagi minum obat"\n' +
+    '• Berulang: "ingatkan tiap hari jam 6 pagi bangun"\n' +
+    '  (juga: tiap Senin, tiap tanggal 1, tiap hari kerja)\n' +
+    '• Ubah: "undur rapat jadi jam 10"\n' +
+    '• Batal: "hapus pengingat rapat"\n' +
+    '• Perintah: /remind 30 minum obat\n' +
+    '\n' +
+    '💰 *KEUANGAN*\n' +
+    '• "bayar makan 25rb" / "gajian 5 juta"\n' +
+    '• Beberapa sekaligus (tiap baris dipisah Enter):\n' +
+    '  "Pengeluaran:\n  Bayar Nopal 60rb\n  Beli rokok 75rb"\n' +
+    '• Lihat daftar: /uang\n' +
+    '• Hapus: /hapus-uang 2\n' +
+    '• Rekap: "berapa pengeluaran saya" atau /rekap 7\n' +
+    '• Perintah: /uang 25000 makan, /masuk 500000 gaji\n' +
+    '\n' +
+    '📝 *TUGAS*\n' +
+    '• "tambah tugas upload jurnal"\n' +
+    '• Selesai: "upload jurnal selesai"\n' +
+    '• Lihat: /tugas atau "tugas saya apa saja"\n' +
+    '• Hapus: /hapus 1\n' +
+    '• Perintah: /tugas beli susu\n' +
+    '\n' +
+    '📒 *CATATAN*\n' +
+    '• "catat nomor polisi B 1234 XYZ"\n' +
+    '• Lihat: /catatan\n' +
+    '• Perintah: /catat resep nasi goreng\n' +
+    '\n' +
+    '📊 *RINGKASAN*\n' +
+    '• "ringkasan" atau /ringkasan — lihat semua sekaligus\n' +
+    '\n' +
+    '🎮 *GAME DI CHAT*\n' +
+    '• "main uno", "main catur", "tebak kata", "tebak angka"\n' +
+    '• Tersedia: UNO, Capsa, Remi, Cangkulan, Gaple, Qiu-Qiu, Catur, Halma,\n' +
+    '  Tic-Tac-Toe, Tebak Kata, Tebak Angka, Dadu, Batu-Gunting-Kertas,\n' +
+    '  Suit Jawa, Monopoli (dadu), Kuis Pengetahuan\n' +
+    '• Berhenti: "berhenti"\n' +
+    '\n' +
+    '🔍 *RISET & MEDIA*\n' +
+    '• Tanya apa saja — bot cari data real-time dari internet\n' +
+    '• Kirim FOTO, VOICE NOTE, atau DOKUMEN (PDF/Word/Excel) untuk dibaca\n' +
+    '• Kirim gambar berisi tabel/struk — bot bisa ekstrak datanya\n' +
+    '\n' +
+    '⚙️ *LAIN-LAIN*\n' +
+    '• Zona waktu otomatis menyesuaikan lokasi kamu\n' +
+    '• /reset — hapus riwayat & preferensi obrolan\n' +
+    '• /salah <koreksi> — perbaiki preferensi personal\n' +
+    '\n' +
+    '_Tinggal ngobrol biasa aja, nggak harus hafal perintah._'
+  );
+}
+
 export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   const asli = teks.trim();
   const s = asli.toLowerCase();
@@ -1084,6 +1165,42 @@ export async function simpanTugas(
   } catch {
     return null;
   }
+}
+
+/** Daftar catatan keuangan terakhir (untuk menampilkan ID yang bisa dihapus). */
+export async function daftarUang(chatId: string, limit = 10): Promise<Array<{
+  id: number; amount: number; kind: string; category: string; note: string; created_at: string;
+}>> {
+  const c = db();
+  if (!c) return [];
+  try {
+    const { data, error } = await c.from('expenses')
+      .select('id, amount, kind, category, note, created_at')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return data as Array<{ id: number; amount: number; kind: string; category: string; note: string; created_at: string }>;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Format daftar keuangan + NOMOR URUT (agar bisa dihapus).
+ * Nomor urut per-user, dihitung dari urutan dibuat (stabil).
+ */
+export function formatDaftarUang(rows: Array<{
+  id: number; amount: number; kind: string; category: string; note: string; created_at: string;
+}>): string {
+  if (!rows.length) return 'Belum ada catatan keuangan.';
+  const baris = rows.map((r, i) => {
+    const tgl = new Date(r.created_at).toLocaleDateString('id-ID', { timeZone: zonaWaktuAktif(), day: '2-digit', month: 'short' });
+    const tanda = r.kind === 'in' ? '💰 Masuk' : '💸 Keluar';
+    const ket = r.note ? ` - ${r.note.slice(0, 30)}` : '';
+    return `${i + 1}. ${tanda} Rp${Math.round(r.amount).toLocaleString('id-ID')} (${r.category}) ${tgl}${ket}`;
+  });
+  return `${baris.join('\n')}\n\nHapus dengan: */hapus <nomor>*`;
 }
 
 export async function daftarTugas(chatId: string, hanyaBelumSelesai = true): Promise<TugasRingkas[]> {
@@ -1845,6 +1962,18 @@ export async function tanganiPencatatan(
     return { ditangani: true, reply: rTodo.pesan, jalur: 'perintah-todo' };
   }
 
+  // /uang  (tanpa isi) -> tampilkan daftar keuangan + nomor untuk dihapus.
+  // DITAMBAHKAN (06 Okt 2026): sebelumnya tidak ada cara melihat ID keuangan,
+  // sehingga user TIDAK BISA menghapus catatan keuangan yang salah.
+  if (/^\/(?:uang|duit|keuangan|expenses?|keluar|masuk)\s*$/.test(low)) {
+    const d = await daftarUang(chatId, 10);
+    return {
+      ditangani: true,
+      reply: `*Catatan keuangan terakhir:*\n${formatDaftarUang(d)}`,
+      jalur: 'perintah-uang-list',
+    };
+  }
+
   // /uang <nominal> [keterangan]   |   /masuk <nominal> [ket]
   m = low.match(/^\/(?:uang|keluar|out)\s+([\s\S]+)/);
   const mIn = low.match(/^\/(?:masuk|in|gaji)\s+([\s\S]+)/);
@@ -1924,17 +2053,53 @@ export async function tanganiPencatatan(
     const ok = await selesaikanTugas(chatId, idAsli);
     return { ditangani: true, reply: ok ? `✅ Tugas #${nomor} selesai!` : `Tugas #${nomor} tidak ditemukan.`, jalur: 'perintah-selesai' };
   }
+  // /hapus-uang <nomor> -> hapus catatan KEUANGAN berdasarkan nomor urut daftar.
+  m = low.match(/^\/(?:hapus-uang|hapusuang|hapus-keuangan)\s+(\d+)/);
+  if (m) {
+    const nomor = Number(m[1]);
+    const d = await daftarUang(chatId, 50);
+    const target = d[nomor - 1];
+    if (!target) {
+      return { ditangani: true, reply: `Catatan keuangan #${nomor} tidak ditemukan. Ketik */uang* untuk lihat daftarnya.`, jalur: 'perintah-hapus-uang-gagal' };
+    }
+    const ok = await hapusUang(chatId, target.id);
+    return {
+      ditangani: true,
+      reply: ok
+        ? `🗑️ Catatan keuangan #${nomor} (Rp${Math.round(target.amount).toLocaleString('id-ID')}) dihapus.`
+        : `Gagal menghapus catatan keuangan #${nomor}.`,
+      jalur: 'perintah-hapus-uang',
+    };
+  }
+
   m = low.match(/^\/hapus\s+(\d+)/);
   if (m) {
     const nomor = Number(m[1]);
     // Coba sebagai NOMOR URUT tugas lebih dulu (konsisten dengan tampilan daftar).
     const idTugas = await idDariNomorTugas(chatId, nomor);
     const a = idTugas !== null ? await hapusTugas(chatId, idTugas) : false;
-    // Bila bukan tugas, coba sebagai ID catatan/keuangan (tampilan keduanya
-    // memakai ID asli karena tidak dikelompokkan berurutan).
-    const b = a ? false : await hapusCatatan(chatId, nomor);
-    const c = a || b ? false : await hapusUang(chatId, nomor);
-    return { ditangani: true, reply: a || b || c ? `🗑️ #${nomor} dihapus.` : `#${nomor} tidak ditemukan.`, jalur: 'perintah-hapus' };
+    // CATATAN & KEUANGAN juga memakai NOMOR URUT daftar (terbaru dulu), agar
+    // user bisa menghapusnya. Sebelumnya keduanya memakai ID global sehingga
+    // /hapus <nomor> hampir selalu "tidak ditemukan".
+    let b = false;
+    if (!a) {
+      const dCat = await daftarCatatan(chatId, 50);
+      const targetCat = dCat[nomor - 1];
+      if (targetCat) b = await hapusCatatan(chatId, targetCat.id);
+    }
+    let c = false;
+    if (!a && !b) {
+      const dUang = await daftarUang(chatId, 50);
+      const targetUang = dUang[nomor - 1];
+      if (targetUang) c = await hapusUang(chatId, targetUang.id);
+    }
+    return {
+      ditangani: true,
+      reply: a || b || c
+        ? `🗑️ #${nomor} dihapus.`
+        : `#${nomor} tidak ditemukan. Ketik */tugas*, */catatan*, atau */uang* untuk lihat daftarnya.`,
+      jalur: 'perintah-hapus',
+    };
   }
 
   // ── A0a. PROFIL WAKTU USER (zona waktu per-user, permanen) ──
@@ -2268,6 +2433,14 @@ export async function tanganiPencatatan(
       const cc = a || b ? false : await hapusUang(chatId, nomor);
       return { ditangani: true, reply: a || b || cc ? `🗑️ #${nomor} dihapus.` : `#${nomor} tidak ditemukan.`, jalur: 'niat-hapus' };
     }
+  }
+
+  // ── B0a. MINTA PANDUAN/TUTORIAL (perbaikan 06 Okt 2026) ──
+  // Permintaan pemilik produk: "jika ada user minta tutorial fitur atau cara
+  // pemakaian, atau bertanya bisa apa saja, berikan full apa yang bisa
+  // dilakukan bot, apa saja fitur yang bisa digunakan beserta cara pakainya".
+  if (deteksiMintaPanduan(s)) {
+    return { ditangani: true, reply: teksPanduanLengkap(), jalur: 'panduan-lengkap' };
   }
 
   // ── B0. PERTANYAAN (jawab dari DATABASE, JANGAN dikirim ke AI) ──
