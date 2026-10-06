@@ -470,13 +470,34 @@ export function needsSearch(text: string, konteksPercakapan?: string): boolean {
   }
 
   // 9. Koding, matematika, rumus, atau konsep sains umum tanpa merujuk software rilis baru: LEWATI search
+  //
+  // ── DIPERBAIKI (06 Okt 2026) ──
+  // BUG: daftar konsep yang dilewati HANYA sains dasar (fotosintesis, gravitasi,
+  // OOP). Akibatnya pertanyaan "apa itu quantum computing", "apa itu RAG",
+  // "cara install nodejs", "siapa itu elon musk" TIDAK memicu penelusuran,
+  // padahal jawabannya lebih akurat bila diambil dari sumber terkini.
+  //
+  // SEKARANG: hanya lewati bila benar-benar pengetahuan umum STATIS (sains dasar
+  // yang tidak berubah). Selain itu -> cari (lebih akurat & ada sumber).
+  const konsepStatis =
+    /^(?:apa itu|jelaskan apa itu|pengertian|definisi)\s+(?:fotosintesis|gravitasi|mitokondria|osmosis|difusi|fotosintesa|hukum newton|teori relativitas|evolusi|dna|atom|molekul|sel|jantung|paru-paru|darah|matematika dasar|perkalian|pembagian|penjumlahan|pengurangan)\b/i.test(qNorm);
+  if (konsepStatis) return false;
+
+  // Minta MEMBUAT kode/script/fungsi (bukan mencari info) -> lewati search.
   if (
-    /^(?:buatkan|tuliskan|bikin|kode|script|fungsi|function|regex|sql query|algoritma)\s+/i.test(qNorm) ||
-    /\b(?:hitung|rumus|cara koding|cara buat fungsi|contoh koding)\b/i.test(qNorm) ||
-    /^(?:apa itu|jelaskan apa itu|pengertian|definisi)\s+(?:fotosintesis|gravitasi|mitokondria|oop|polimorfisme|rekursi|stack|queue)/i.test(qNorm)
+    /^(?:buatkan|tuliskan|bikin|bikinin|kode|script|fungsi|function|regex|sql query|algoritma)\s+/i.test(qNorm) ||
+    /\b(?:hitung|rumus|cara koding|cara buat fungsi|contoh koding|contoh program)\b/i.test(qNorm)
   ) {
     return false;
   }
+
+  // ── TAMBAHAN (06 Okt 2026): pertanyaan yang BUTUH data terkini/akurat ──
+  // "apa itu X", "siapa itu X", "cara X", "kenapa X", "perbedaan X dan Y",
+  // "rekomendasi X", "review X", "harga X", "jadwal X".
+  // Ini memicu pencarian agar jawaban bersumber, bukan dari ingatan model.
+  // (Blok "apa itu X" lama DIHAPUS di sini — digantikan blok yang lebih lengkap
+  //  di bawah, karena blok lama menangkap lebih dulu dengan pengecualian lemah,
+  //  sehingga "apa itu perasaanmu" ikut memicu pencarian.)
 
   // 9a. Topik pengetahuan faktual-dinamis (hukum, ekonomi, kesehatan, olahraga, hiburan,
   // sains terapan) + kata recency → wajib cari data terbaru agar tidak kaku/basi.
@@ -580,6 +601,70 @@ export function needsSearch(text: string, konteksPercakapan?: string): boolean {
     return true;
   }
 
+  // ── PERLUASAN (06 Okt 2026): lebih banyak cara orang bertanya ──
+  // Pemilik produk: "kalo bisa perluas, lebih bersih, lebih akurat, lebih valid".
+
+  // a. Pertanyaan dengan kata tanya + topik spesifik (bukan tentang diri sendiri).
+  //    "apa itu X", "siapa itu X", "kenapa X", "bagaimana X", "jelaskan X".
+  //    Dikecualikan: pertanyaan tentang bot/user sendiri, dan konsep statis.
+  if (
+    /^(?:apa|apakah|siapa|siapakah|kenapa|mengapa|bagaimana|gimana|jelaskan|jelasin|terangkan|info|informasi|kasih tau|kasih tahu|tau ga|tahu ga|tau nggak|tahu nggak)\b/i.test(qNorm) &&
+    /\b(?:itu|sih|tentang|soal|mengenai)\b/i.test(qNorm)
+  ) {
+    // Kecualikan pertanyaan tentang DIRI bot/user (perasaan, hobi, dll).
+    // CATATAN: "perasaanmu"/"hobimu"/"umurmu" memakai akhiran -mu, jadi pola
+    // harus mencakup bentuk berimbuhan, bukan hanya "perasaan".
+    // Kecualikan pertanyaan tentang DIRI bot/user (perasaan, hobi, dll).
+    // Pola memakai akhiran -mu/-ku yang lazim: "perasaanmu", "hobimu", "umurmu".
+    const tentangDiri =
+      /\b(?:kamu|aku|saya|gue|gw|bot\s+ini|dirimu|diriku|namamu|namaku)\b/i.test(qNorm) ||
+      /\b(?:perasaan|hobi|umur|usia|sifat|kesukaan|mimpi|pikiran|pendapat|perasaan|hati|nasib|takdir|mood|suasana\s+hati)(?:mu|ku|kita|nya)?\b/i.test(qNorm) ||
+      /\b(?:menurut(?:mu|ku|kamu)?|pendapat(?:mu|ku)?)\b/i.test(qNorm);
+    if (!tentangDiri) {
+      return true;
+    }
+  }
+
+  // b. Permintaan pencarian eksplisit.
+  if (
+    /\b(?:cari(?:kan|in)?|search(?:ing)?|googling|telusuri|cek(?:in)?|liat|lihat|tengok|cek\s+di|buka)\b/i.test(qNorm) &&
+    /\b(?:di\s+)?(?:internet|google|web|online|situs|website|sumber|berita|info)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
+  // c. Topik yang datanya berubah cepat / butuh validasi sumber.
+  if (
+    /\b(?:resep|tutorial|panduan|review|ulasan|perbandingan|perbedaan|spesifikasi|spek|harga|biaya|tarif|ongkos|tiket|alamat|lokasi|nomor\s+telepon|kontak|jadwal|cara\s+(?:daftar|pesan|beli|bayar|kirim|buat|pakai|install|menggunakan))\b/i.test(qNorm)
+  ) {
+    // Hanya bila menanyakan (bukan menyuruh membuat kode).
+    if (!/^(?:buatkan|tuliskan|bikin|kode|script|fungsi|regex|sql|algoritma)\b/i.test(qNorm)) {
+      return true;
+    }
+  }
+
+  // d. Nama orang/tokoh publik + kata tanya (siapa/umur/kabar/profil).
+  if (
+    /\b(?:profil|biografi|biodata|umur|usia|kekayaan|net\s*worth|kabar|kondisi|kesehatan|meninggal|wafat|menikah|pasangan|anak|karier|prestasi)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
+  // e. Pertanyaan "apakah ... benar/benar-benar" yang butuh verifikasi.
+  if (
+    /\b(?:benarkah|bener\s+gak|benar\s+gak|beneran|hoax|hoaks|fakta|mitos|valid|terpercaya|kredibel|sumbernya)\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
+  // f. Angka/data statistik yang butuh sumber.
+  // "berapa banyak X", "jumlah X", "total X" -> search (butuh data nyata).
+  if (
+    /\b(?:statistik|data|jumlah|total|persentase|berapa\s+banyak|seberapa\s+banyak|tertinggi|terendah|terbesar|terkecil|peringkat|ranking|daftar\s+(?:terbaik|teratas))\b/i.test(qNorm)
+  ) {
+    return true;
+  }
+
   // - FOLLOW-UP KONTEKSTUAL: pertanyaan lanjutan tentang sesuatu yang baru dibahas
   //   (biasanya web/halaman). Contoh nyata: user kirim link lalu tanya "coba lihat isi nya
   //   apa aja" / "ada model free apa aja" — tanpa deteksi ini, bot menjawab dari ingatan
@@ -643,7 +728,11 @@ export function extractCoreEntity(query: string, previousContext?: string): stri
     'carikan', 'cari', 'search', 'searching',
     'infokan', 'kasih tahu', 'kasih tau', 'beritahu', 'beritau',
     'sebutkan', 'jelaskan', 'ceritakan', 'tampilkan', 'berikan',
-    'yang', 'yg', 'itu', 'ini',
+    // 'itu' & 'ini' DIPERTAHANKAN bila bagian frasa waktu ("hari ini", "malam ini",
+    // "saat ini"). Menghapusnya membuat query rusak: "harga bitcoin hari ini"
+    // menjadi "harga bitcoin hari" -> hasil pencarian tidak akurat.
+    // Penghapusan dilakukan SETELAH frasa waktu dinormalisasi (lihat bawah).
+    'yang', 'yg',
     'menurutmu', 'menurut anda', 'menurut kamu',
     'ada', 'nggak', 'ngga', 'ga', 'gak', 'tidak', 'bukan',
     'sudah', 'udah', 'udh', 'belum', 'blm',
@@ -652,12 +741,38 @@ export function extractCoreEntity(query: string, previousContext?: string): stri
     'sama', 'dari', 'ke', 'di', 'dan', 'dengan', 'web nya',
   ];
 
+  // ── Normalisasi FRASA WAKTU lebih dulu (perbaikan 06 Okt 2026) ──
+  // "hari ini" -> "hari ini" (dipertahankan utuh, jangan sampai jadi "hari").
+  // Frasa ini penting agar hasil pencarian akurat & terkini.
+  q = q
+    .replace(/\bhari\s+ini\b/gi, ' hariini ')
+    .replace(/\bmalam\s+ini\b/gi, ' malamini ')
+    .replace(/\bsiang\s+ini\b/gi, ' siangini ')
+    .replace(/\bpagi\s+ini\b/gi, ' pagiini ')
+    .replace(/\bsore\s+ini\b/gi, ' soreini ')
+    .replace(/\bsaat\s+ini\b/gi, ' saatini ')
+    .replace(/\bminggu\s+ini\b/gi, ' mingguini ')
+    .replace(/\bbulan\s+ini\b/gi, ' bulanini ')
+    .replace(/\btahun\s+ini\b/gi, ' tahunini ');
+
   for (const sw of stopWords) {
     const reg = new RegExp(`\\b${sw.replace(/\s+/g, '\\s+')}\\b`, 'gi');
     q = q.replace(reg, ' ');
   }
 
   q = q.replace(/[^\w\s.-]/gi, ' ').replace(/\s+/g, ' ').trim();
+
+  // Kembalikan frasa waktu ke bentuk normal.
+  q = q
+    .replace(/\bhariini\b/gi, 'hari ini')
+    .replace(/\bmalamini\b/gi, 'malam ini')
+    .replace(/\bsiangini\b/gi, 'siang ini')
+    .replace(/\bpagiini\b/gi, 'pagi ini')
+    .replace(/\bsoreini\b/gi, 'sore ini')
+    .replace(/\bsaatini\b/gi, 'saat ini')
+    .replace(/\bmingguini\b/gi, 'minggu ini')
+    .replace(/\bbulanini\b/gi, 'bulan ini')
+    .replace(/\btahunini\b/gi, 'tahun ini');
 
   // 5. Resolusi anaphora: jika kueri sangat pendek (misal "kalo calude" -> "claude" atau "model terakhir")
   // dan ada konteks percakapan sebelumnya, sertakan kata kunci penting dari konteks sebelumnya
@@ -686,7 +801,22 @@ function isRecencyQuery(query: string): boolean {
 
 /** Deteksi apakah query tentang AI/teknologi */
 function isTechQuery(query: string): boolean {
-  return /\b(gpt|claude|calude|gemini|llm|ai|model|mistral|qwen|llama|deepseek|openai|anthropic|google|meta|nvidia|framework|library|sdk|api|github|release|versi|version|agentrouter|huggingface|ollama|groq|xkiro|openrouter)\b/i.test(query);
+  // ── DIPERBAIKI (06 Okt 2026) ──
+  // BUG: kata "ai" & "model" terlalu umum sehingga SEMUA query dianggap teknologi,
+  // lalu ditambahi kata "release" (Inggris) — merusak query non-teknis:
+  //   "harga bitcoin hari ini" -> "harga bitcoin hari release 2026" (ngawur).
+  //
+  // "ai" & "model" sekarang HANYA dianggap teknologi bila ada konteks teknologi
+  // di dekatnya (LLM, versi, rilis, nama brand, dsb).
+  const techKuat =
+    /\b(?:gpt|claude|calude|gemini|llm|mistral|qwen|llama|deepseek|openai|anthropic|nvidia|framework|library|sdk|github|agentrouter|huggingface|ollama|groq|xkiro|openrouter|chatgpt|snapdragon|rtx)\b/i.test(query);
+  if (techKuat) return true;
+
+  // "ai" / "model" + konteks teknologi -> teknologi.
+  const aiKonteks =
+    /\b(?:ai|model)\b/i.test(query) &&
+    /\b(?:llm|versi|version|rilis|release|launch|update|terbaru|latest|benchmark|parameter|token|open[- ]?source|api|gratis|free|murah|bagus|terbaik|banding|vs)\b/i.test(query);
+  return aiKonteks;
 }
 
 /**
@@ -780,19 +910,42 @@ export function formulateSmartSearchQueries(query: string, previousContext?: str
   const queries: string[] = [];
   if (targetSubject.length >= 2) {
     queries.push(targetSubject);
-    // Selalu anchor tahun untuk semua query
+    // Anchor tahun (berguna untuk topik yang berubah tiap tahun).
     queries.push(`${targetSubject} ${currentYear}`);
 
-    if (isRecencyQuery(query) || isTechQuery(query)) {
-      // Tambahkan versi English yang bersih untuk Bing & Google News EN
+    // ── DIPERBAIKI (06 Okt 2026) ──
+    // BUG: kata "release" ditambahkan ke SEMUA query (karena isTechQuery terlalu
+    // longgar), menghasilkan query ngawur untuk topik non-teknis:
+    //   "harga bitcoin hari ini" -> "harga bitcoin hari release 2026"
+    //
+    // SEKARANG: "release" HANYA untuk topik teknologi/produk yang memang punya
+    // siklus rilis. Topik lain memakai kata recency yang tepat (terbaru/hari ini).
+    const topikTeknologi = isTechQuery(query);
+    if (topikTeknologi) {
       const englishQ = extractEnglishTechQuery(query, currentYear);
-      if (englishQ) queries.push(englishQ);
-      else {
+      if (englishQ) {
+        queries.push(englishQ);
+      } else {
         const enSubj = targetSubject
           .replace(/\bterbaru\b/gi, 'latest')
           .replace(/\brilis\b/gi, 'release')
           .replace(/\bterakhir\b/gi, 'latest');
-        queries.push(`${enSubj} release ${currentYear}`);
+        // Hanya tambahkan "release" bila belum ada kata rilis/latest di subjek.
+        if (/\b(?:release|latest|rilis|launch)\b/i.test(enSubj)) {
+          queries.push(`${enSubj} ${currentYear}`);
+        } else {
+          queries.push(`${enSubj} latest ${currentYear}`);
+        }
+      }
+    } else if (isRecencyQuery(query)) {
+      // Topik non-teknologi yang butuh data terkini -> pakai kata recency yang
+      // benar (jangan "release"). Hindari DUPLIKASI bila subjek sudah memuat
+      // frasa waktu ("harga bitcoin hari ini hari ini").
+      const subj = targetSubject;
+      const sudahAdaWaktu = /\b(?:hari ini|malam ini|pagi ini|siang ini|sore ini|saat ini|minggu ini|bulan ini|tahun ini|terbaru|terkini|sekarang|besok|kemarin)\b/i.test(subj);
+      if (!sudahAdaWaktu) {
+        queries.push(`${subj} terbaru`);
+        queries.push(`${subj} hari ini`);
       }
     } else {
       queries.push(`${targetSubject} terbaru ${currentYear}`);
@@ -803,7 +956,17 @@ export function formulateSmartSearchQueries(query: string, previousContext?: str
     queries.push(`${raw} ${currentYear}`);
   }
 
-  return Array.from(new Set(queries)).filter((q) => q.length >= 2).slice(0, 4);
+  // Dedupe + bersihkan query yang punya kata berulang berdekatan
+  // ("hari ini hari ini") dan spasi ganda.
+  const bersih = queries
+    .map((q) =>
+      q
+        .replace(/\b(\w+)\s+\1\b/gi, '$1')            // kata dobel berdekatan
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter((q) => q.length >= 2);
+  return Array.from(new Set(bersih)).slice(0, 4);
 }
 
 /** Kompatibilitas fungsi keywords sebelumnya */
