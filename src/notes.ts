@@ -2491,10 +2491,29 @@ export async function tanganiPencatatan(
     // Pola B: "tugas <angka> selesai"    -> "tugas 1 selesai" (angka di TENGAH)
     //   BUG DIPERBAIKI (06 Okt 2026): "tugas 1 selesai" dulu ditawari MENCATAT
     //   tugas baru bernama "1 selesai" (lihat evaluasi CSV #2359).
+    // ── DIPERBAIKI (temuan nyata 06 Okt 2026) ──
+    // LAPORAN: "Nenek gua ma walao udah 1021 tahun emang masih jaya" -> bot
+    // menjawab "Tugas #1021 tidak ditemukan" (NGACO).
+    //
+    // AKAR: pola lama menerima kata "sudah"/"udah" sebagai penanda "selesai",
+    // sehingga "udah 1021 tahun" (keterangan UMUR) dianggap "tugas 1021 selesai".
+    //
+    // SEKARANG: "sudah/udah" HARUS diikuti kata "selesai/kelar/beres/tuntas"
+    // (bukan langsung angka), ATAU pakai kata "selesai/selesaikan/tandai" langsung.
+    // Pola 1: "<selesai> <nomor>"  -> "selesai 1", "selesaikan nomor 2"
+    // Pola 2: "tugas <nomor> selesai" -> "tugas 1 selesai" (angka di TENGAH)
+    // Pola 3: "sudah/udah selesai <nomor>" -> "udah selesai 1"
     const mSelesai =
-      lowAngka.match(/\b(?:selesai|selesaikan|sudah|udah|done|beres)\s+(?:tugas|nomor|no|#)?\s*(\d+)\b/) ||
-      lowAngka.match(/\btugas\s+(?:nomor\s+|no\s+|#)?(\d+)\s+(?:sudah\s+|udah\s+)?(?:selesai|kelar|beres|done|tuntas)\b/);
-    if (mSelesai) {
+      lowAngka.match(/\b(?:selesai|selesaikan|done|beres|kelar|tuntas)\s+(?:tugas|nomor|no|#)?\s*(\d+)\b/) ||
+      lowAngka.match(/\b(?:sudah|udah)\s+(?:selesai|kelar|beres|done|tuntas)\s+(?:tugas|nomor|no|#)?\s*(\d+)\b/) ||
+      lowAngka.match(/\btugas\s+(?:nomor\s+|no\s+|#)?(\d+)\s+(?:sudah\s+|udah\s+)?(?:selesai|kelar|beres|done|tuntas)\b/) ||
+      lowAngka.match(/\btandai\s+(?:tugas\s+)?(?:nomor\s+|no\s+|#)?(\d+)\s+(?:selesai|kelar|beres|done|tuntas)\b/);
+    // GUARD: jangan tangkap kalimat yang jelas BUKAN tentang tugas
+    // (keterangan umur/jumlah: "udah 1021 tahun", "punya 3 kucing").
+    const bukanTentangTugas =
+      /\b(?:tahun|bulan|hari|kali|orang|kucing|anak|ekor|buah|biji|ribu|juta|miliar)\b/.test(lowAngka) &&
+      !/\btugas\b/.test(lowAngka);
+    if (mSelesai && !bukanTentangTugas) {
       const id = Number(mSelesai[1]);
       // Nomor yang diketik user = NOMOR URUT per-user, bukan ID global.
       const idAsli = await idDariNomorTugas(chatId, id);
