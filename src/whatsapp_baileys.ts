@@ -736,7 +736,15 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       if (messageId) void markMessageProcessed('whatsapp', messageId);
       return;
     }
-    const dueAt = new Date(Date.now() + minutes * 60_000);
+    // PRESISI (06 Okt 2026): bulatkan ke awal menit lalu -5 detik, agar cron
+          // per menit mengirim TEPAT WAKTU (bukan ngaret 1 menit karena detik).
+          const dueAt = (() => {
+            const d = new Date(Date.now() + minutes * 60_000);
+            // Bulatkan ke BAWAH ke awal menit, lalu -5 detik, agar cron per menit
+            // mengirim pada MENIT YANG DIJANJIKAN (bukan ngaret 1 menit).
+            d.setSeconds(0, 0);
+            return new Date(d.getTime() - 5000);
+          })();
     const targetChat = remoteJid.replace(/@.*$/, '');
     const reminderSaved = await saveReminderToDb(targetChat, message, dueAt, 'whatsapp');
     const { reply } = await autoReply(

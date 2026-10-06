@@ -256,7 +256,26 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
       : satuan === 'minggu' ? n * 7 * 86_400_000
       : n * 30 * 86_400_000;
     // Bila ada jam eksplisit ("2 jam lagi jam 8"), abaikan, jeda lebih pasti.
-    return new Date(sekarang.getTime() + ms);
+    //
+    // PRESISI (perbaikan 06 Okt 2026): bulatkan ke AWAL MENIT lalu kurangi 5
+    // detik. Temuan pemilik produk: "set pengingat 12.48 tapi bot mengingatkan
+    // 12.49, ngaret 1 menit."
+    //
+    // SEBAB: due_at = 12:48:57 (ada detik). Cron berjalan tiap menit pada detik
+    // :00, jadi 12:48:00 BELUM melewati due_at (masih 57 detik) -> baru terkirim
+    // di 12:49:00 = terasa ngaret 1 menit.
+    //
+    // SEKARANG: dibulatkan ke BAWAH (floor) ke awal menit, lalu -5 detik.
+    // Contoh: 12:46:57 + 2 menit = 12:48:57 -> floor 12:48:00 -> -5s = 12:47:55.
+    //   - Bot MENJANJIKAN "12.48" (menit hasil floor) -> cron 12:48:00 sudah
+    //     melewati due_at -> terkirim pada 12.48 = SESUAI JANJI ✅
+    //   - Bila dibulatkan ke ATAS (ceil), due jadi 12:48:55 -> cron 12:49:00
+    //     yang mengirim -> NGARET 1 menit (inilah keluhan pemilik produk).
+    // PENTING: floor, bukan ceil — yang penting MENIT yang dijanjikan sama
+    // dengan menit pengiriman.
+    const target = new Date(sekarang.getTime() + ms);
+    target.setSeconds(0, 0);
+    return new Date(target.getTime() - 5000);
   }
 
   // Hari: hari ini / besok / lusa / senin..minggu
@@ -373,7 +392,7 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
  * (setelah kata pengantar opsional). Prinsipnya: HANYA kalimat PERINTAH yang
  * boleh dicatat, bukan pertanyaan, bukan cerita, bukan obrolan.
  */
-const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|ingat|remind|reminder|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres|tandai|set|bikin|buat|jadwalkan|siapkan|beli|bayar|jajan|ongkos|biaya|habis|abis|dapat|dapet|gaji|transferan|harus|perlu|kudu|mesti';
+const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|ingat|remind|reminder|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres|tandai|set|setel|bikin|buat|buatkan|bikinin|jadwal|jadwalkan|jadwalin|rutin|rutinin|atur|aturin|pasang|pasangkan|siapkan|beli|bayar|jajan|ongkos|biaya|habis|abis|dapat|dapet|gaji|transferan|harus|perlu|kudu|mesti|bangunkan|bangunin';
 
 /** Kata pengantar yang BOLEH mendahului perintah (bukan penanda obrolan). */
 const PENGANTAR_BOLEH = /^\s*(tolong|coba|bisa|boleh|please|pls|mau|aku\s+mau|saya\s+mau|aku\s+pengen|saya\s+pengen|aku\s+ingin|saya\s+ingin|aku\s+pingin|saya\s+pingin|gw\s+mau|gue\s+mau|aku\s+mo|saya\s+mo)\s+/i;
@@ -469,19 +488,46 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   // ditangkap sebagai KEUANGAN (Rp1) karena ada kata "bayar" + angka 1, padahal
   // itu pengingat berulang. Bila ada kata perintah INGAT + penanda pengulangan,
   // blok pengingat di bawah yang menangani.
-  const adaPerintahIngat = /\b(?:ingatkan|ingetin|ingat|remind|reminder|pengingat)\b/i.test(asli);
-  const adaPengulangan = /\b(?:tiap|setiap|saban)\s+(?:hari|minggu|bulan|tahun|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|tanggal|hari\s+kerja)\b|\b(?:harian|mingguan|bulanan|tahunan)\b/i.test(asli);
+  // DIPERLUAS (06 Okt 2026): permintaan pemilik produk —
+  // "buatkan jadwal rutin tiap jam 6 pagi harus bangun" tidak dikenali.
+  // Kata "jadwal/rutin/bangunkan/atur/pasang" juga menandakan permintaan pengingat.
+  const adaPerintahIngat = /\b(?:ingatkan|ingetin|ingat|remind|reminder|pengingat|jadwal|jadwalkan|jadwalin|rutin|rutinin|bangunkan|bangunin|atur|aturin|pasang|pasangkan|setel)\b/i.test(asli);
+  // DIPERLUAS: "tiap jam 6" (tanpa kata hari) juga pengulangan HARIAN.
+  const adaPengulangan = /\b(?:tiap|setiap|saban)\s+(?:hari|minggu|bulan|tahun|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|tanggal|hari\s+kerja|jam|pukul)\b|\b(?:harian|mingguan|bulanan|tahunan|rutin)\b/i.test(asli);
   if (adaPerintahIngat && adaPengulangan) {
     const kapanUlang = parseWaktuAlami(asli);
     if (kapanUlang) {
       const ulang0 = deteksiPengulangan(asli);
+      // BUG YANG DIPERBAIKI (06 Okt 2026): blok ini punya pembersih SENDIRI yang
+      // TIDAK membuang kata waktu seperti "pagi/siang/sore/malam", sehingga:
+      //   "ingatkan tiap hari jam 6 pagi bangun" -> pesan "pagi bangun" ❌
+      // (padahal blok 4b menghasilkan "bangun" yang benar).
+      // Sekarang pembersihnya DISAMAKAN dengan blok 4b: buang kata ganti,
+      // kata waktu (pagi/siang/sore/malam/subuh), dan hari.
       let pesan0 = asli
-        .replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '')
-        .replace(/\b(?:tiap|setiap|saban)\s+(?:hari\s+kerja|hari|minggu|bulan|tahun)\b/gi, '')
+        // Buang SEMUA kata perintah di AWAL (boleh beruntun, mis. "set pengingat").
+        .replace(/^(?:\s*\/?(?:ingatkan|ingetin|ingat|remind|reminder|pengingat|buatkan|buat|bikin|bikinin|jadwalkan|jadwalin|jadwal|rutinin|rutin|atur|aturin|pasang|pasangkan|setel|set|tolong|please|pls)\b\s*)+/i, '')
+        .replace(/^\s*(?:tolong|please|pls|saya|aku|gue|gw|kami|kita|dong|nih|ya|deh|sih)\s+/i, '')
+        // URUTAN PENTING (temuan uji 06 Okt 2026): buang "jam 6" DULU, baru "tiap".
+        // Bila terbalik, "tiap jam" terhapus lebih dulu -> angka "6" tertinggal
+        // (hasil kotor: "6 bangun").
+        .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
+        .replace(/\b(?:tiap|setiap|saban)\s+(?:hari\s+kerja|hari|minggu|bulan|tahun|jam|pukul)\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+(?:minggu|senin|selasa|rabu|kamis|jumat|jum'at|sabtu)\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+tanggal\s+\d{1,2}\b/gi, '')
-        .replace(/\b(?:harian|mingguan|bulanan|tahunan|weekday)\b/gi, '')
-        .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
+        .replace(/\b(?:harian|mingguan|bulanan|tahunan|weekday|rutin|rutinin)\b/gi, '')
+        // Kata waktu yang menggantung (temuan: "jam 6 PAGI bangun").
+        .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
+        .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
+        // "tiap/setiap/saban" yang menggantung.
+        .replace(/\b(?:tiap|setiap|saban)\b/gi, '')
+        // Kata perintah/sisa yang menggantung di TENGAH (mis. "pengingat rapat").
+        .replace(/\b(?:pengingat|reminder|jadwal|rutin|set|pasang|atur|buatkan|bikin)\b/gi, '')
+        // Sisa angka tunggal yang menggantung (mis. dari "tiap jam 6").
+        .replace(/^\s*\d{1,2}\s+/, '')
+        .replace(/\s{2,}/g, ' ')
+        // Kata perintah/sifat yang menggantung di TENGAH.
+        .replace(/\b(?:jadwal|jadwalkan|rutin|harus|wajib|perlu|mesti|kudu|bangunkan|bangunin)\b/gi, (m) => (m.toLowerCase() === 'harus' || m.toLowerCase() === 'wajib' ? ' ' : ' '))
         .replace(/\s{2,}/g, ' ')
         .trim();
       if (pesan0.length < 3) pesan0 = asli;
@@ -578,6 +624,9 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         .replace(/\b(?:harian|mingguan|bulanan|tahunan|weekday)\b/gi, '')
         .replace(/[,\s]+(?:tolong\s+)?(ingatkan|ingetin|remind)\s*[.!]*\s*$/i, '')
         .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
+        // Kata ganti & pengantar yang menggantung DI TENGAH setelah pembersihan
+        // (temuan 06 Okt 2026: "jam 6 pagi bangun" -> "pagi bangun" karena
+        // "pagi" tidak dibuang; sekarang dibuang di atas).
         // Rentang waktu ("dari jam 9 sampai jam 10") dibuang UTUH lebih dulu.
         .replace(/(?:dari\s+)?(?:jam|pukul)\s*\d{1,2}(?:[:.]\d{2})?\s*(?:sampai(?:\s+dengan)?|s\/d|sd|hingga|-|–|sampai\s+pukul|sampai\s+jam)\s*(?:jam|pukul)?\s*\d{1,2}(?:[:.]\d{2})?/gi, '')
         .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')

@@ -709,7 +709,15 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             void markMessageProcessed('whatsapp', messageId);
             continue;
           }
-          const dueAt = new Date(Date.now() + minutes * 60_000);
+          // PRESISI (06 Okt 2026): bulatkan ke awal menit lalu -5 detik, agar cron
+          // per menit mengirim TEPAT WAKTU (bukan ngaret 1 menit karena detik).
+          const dueAt = (() => {
+            const d = new Date(Date.now() + minutes * 60_000);
+            // Bulatkan ke BAWAH ke awal menit, lalu -5 detik, agar cron per menit
+            // mengirim pada MENIT YANG DIJANJIKAN (bukan ngaret 1 menit).
+            d.setSeconds(0, 0);
+            return new Date(d.getTime() - 5000);
+          })();
           const reminderSaved = await saveReminderToDb(from, message, dueAt, 'whatsapp');
           const { reply } = await autoReply(
             `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.` +
