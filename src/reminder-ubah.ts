@@ -100,7 +100,19 @@ export function deteksiPermintaanUbah(teks: string): PermintaanUbah | null {
   const adaUndur = /\b(?:undur|mundur|diundur|dimundur|tunda|ditunda|tolak\s*waktu|perpanjang|molor|telat)\b/.test(s);
   const adaMajukan = /\b(?:majukan|majuin|dimajukan|percepat|dipercepat|lebih\s*awal|lebih\s*cepat|geser\s*ke\s*lebih\s*awal)\b/.test(s);
   const adaGeser = /\b(?:geser|digeser|pindah|dipindah|ubah|diubah|ganti\s*jam|jadwal\s*baru|reschedule|rubah)\b/.test(s);
-  const adaBatal = /\b(?:batal(?:kan|in)?|dibatalkan|cancel|hapus\s*(?:pengingat|reminder)|buang\s*(?:pengingat|reminder))\b/.test(s);
+  // ── DIPERBAIKI (06 Okt 2026) ──
+  // BUG: pola lama butuh kata "pengingat"/"reminder" PERSIS setelah "hapus".
+  // Akibatnya "hapus jadwal rutin" / "hapus jadwal" TIDAK terdeteksi, sehingga
+  // pengingat berulang tetap ada walau user minta menghapusnya (temuan riwayat
+  // nyata: bot menjawab "Belum ada jadwal rutin yang tersimpan").
+  //
+  // SEKARANG: "hapus/buang/hilangkan/cancel" + salah satu objek jadwal
+  // (pengingat|reminder|jadwal|rutin|alarm|timer|jadwalnya).
+  const adaBatal =
+    /\b(?:batal(?:kan|in)?|dibatalkan|cancel)\b/.test(s) ||
+    /\b(?:hapus|buang|hilangkan|delete|remove)\s*(?:semua\s+)?(?:pengingat|reminder|jadwal|rutin|alarm|timer|jadwalnya|pengingatnya)\b/.test(s) ||
+    // "hapus jadwal rutin" / "hapus pengingat untuk bangun" (objek di TENGAH).
+    /\b(?:hapus|buang|hilangkan|delete)\b[\w\s]{0,20}\b(?:pengingat|reminder|jadwal|rutin|alarm|timer)\b/.test(s);
 
   if (!adaUndur && !adaMajukan && !adaGeser && !adaBatal) return null;
 

@@ -846,7 +846,12 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
           repeat_kind: ulang0?.kind ?? 'daily',
           repeat_value: ulang0?.value ?? null,
         },
-        ringkas: `Pengingat "${pesan0}" pada ${formatWaktuUser(kapanUlang)}${ulang0 ? ` (${ulang0.label})` : ''}`,
+        // Sebutkan pengulangan SECARA JELAS (temuan 06 Okt 2026): sebelumnya label
+        // ulang hanya disimpan di DB, tapi balasan tidak menyebutnya sehingga user
+        // tidak tahu pengingatnya berulang.
+        ringkas: ulang0
+          ? `Pengingat "${pesan0}" ${ulang0.label} mulai ${formatWaktuUser(kapanUlang)}`
+          : `Pengingat "${pesan0}" pada ${formatWaktuUser(kapanUlang)}`,
       };
     }
   }
@@ -1852,9 +1857,31 @@ async function simpanDariNiat(
     const jamTeks = selesaiIso
       ? `${formatWaktuUser(mulai)}–${new Date(selesaiIso).toLocaleTimeString('id-ID', { timeZone: zonaWaktuAktif(), hour: '2-digit', minute: '2-digit' })}`
       : `${formatWaktuUser(mulai)}`;
+    // Sebutkan PENGULANGAN secara eksplisit (temuan 06 Okt 2026): sebelumnya
+    // label ulang hanya tersimpan di DB, tapi balasan tidak menyebutnya sehingga
+    // user tidak tahu pengingatnya berulang ("tiap hari").
+    // Pakai labelUlang() yang sudah ada agar labelnya ramah & benar
+    // ("tiap hari", "tiap Senin", "tiap tanggal 1", "tiap hari kerja").
+    let teksUlang = '';
+    if (d.repeat_kind && d.repeat_kind !== 'none') {
+      try {
+        const { labelUlang } = await import('./reminder-repeat.js');
+        teksUlang = labelUlang({
+          repeat_kind: String(d.repeat_kind) as 'daily' | 'weekday' | 'weekly' | 'monthly' | 'yearly',
+          repeat_value: d.repeat_value ? String(d.repeat_value) : null,
+          repeat_until: null,
+          repeat_count: 0,
+        });
+      } catch {
+        teksUlang = 'berulang';
+      }
+    }
+    const labelUlang = teksUlang ? ` (${teksUlang})` : '';
     return {
       ok: true,
-      pesan: `✅ Pengingat disimpan, Pengingat "${hasil.pesan}" pada ${jamTeks}${tambahan}${catatanKonfirmasiZona}`,
+      pesan: labelUlang
+        ? `✅ Pengingat disimpan, "${hasil.pesan}"${labelUlang} mulai ${jamTeks}${tambahan}${catatanKonfirmasiZona}`
+        : `✅ Pengingat disimpan, "${hasil.pesan}" pada ${jamTeks}${tambahan}${catatanKonfirmasiZona}`,
     };
   }
   const id = await simpanCatatan(chatId, String(d.content || ''), {
