@@ -1517,7 +1517,24 @@ function tegakkanAntiMengiyakanKlaim(
   // mengutip sumbernya. Yang dilarang adalah mengiyakan TANPA data.
   if (adaDataInternet) return text;
 
-  // Apakah user menyodorkan KLAIM (bukan bertanya biasa)?
+  // ── JANGAN AKTIF UNTUK KONTEKS PERSONAL/EMOSIONAL (perbaikan 06 Okt 2026) ──
+  // LAPORAN NYATA: user bertanya "Katanya tadi suka aku?" -> bot menjawab seperti
+  // mesin fact-checker: "Aku belum nemu dasar yang jelas soal itu di data yang aku
+  // pegang. Kalau kamu punya sumbernya, boleh share — biar aku bantu cek bareng."
+  //
+  // AKAR: kata "katanya" memicu deteksi klaim, padahal itu PERTANYAAN PERSONAL
+  // (soal perasaan), bukan klaim faktual berita. Menjawab dengan "belum nemu dasar
+  // di data" membuat bot terasa dingin & tidak manusiawi.
+  //
+  // SEKARANG: penegak ini HANYA berlaku untuk klaim FAKTUAL (berita/kejadian),
+  // BUKAN untuk obrolan personal (perasaan, hubungan, kesukaan).
+  const konteksPersonal =
+    /\b(?:suka|cinta|sayang|rindu|kangen|benci|marah|kesal|senang|sedih|baper|naksir|gebetan|pacar|mantan|teman|sahabat|perasaan|hati|hatimu|hatiku)\b/i.test(
+      userPrompt,
+    );
+  if (konteksPersonal) return text;
+
+  // Apakah user menyodorkan KLAIM FAKTUAL (bukan bertanya biasa)?
   const userMenyodorkanKlaim =
     /\b(?:bukannya|bukanya|bukan\s*gara|katanya|kata\s+orang|kabarnya|kabarny|setahu\s+(?:aku|saya)|kayaknya|sepertinya|apa\s+benar|bener\s+gak|benar\s+gak|hoax|hoaks)\b/i.test(
       userPrompt,
@@ -1545,11 +1562,14 @@ function tegakkanAntiMengiyakanKlaim(
     .join(' ')
     .trim();
 
-  // Kalau tidak ada sisa yang berguna, beri pengakuan jujur (dinamis, bukan
-  // template kaku): menyatakan belum menemukan dasar klaimnya.
-  if (!sisa || sisa.length < 15) {
-    return 'Aku belum nemu dasar yang jelas soal itu di data yang aku pegang. Kalau kamu punya sumbernya, boleh share — biar aku bantu cek bareng.';
-  }
+  // ── ZERO TEKS STATIS (aturan keras pemilik produk) ──
+  // BUG YANG DIPERBAIKI (06 Okt 2026): versi lama mengembalikan teks HARDCODED
+  // "Aku belum nemu dasar yang jelas soal itu di data yang aku pegang..." — teks
+  // itu terasa seperti mesin dan muncul persis di chat nyata.
+  //
+  // SEKARANG: kembalikan KOSONG -> autoReply meregenerasi balasan yang benar-benar
+  // menjawab (dengan gaya manusia, bukan template fact-checker).
+  if (!sisa || sisa.length < 15) return '';
   return sisa;
 }
 
