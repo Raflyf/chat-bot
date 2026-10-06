@@ -790,7 +790,10 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     // Bila pesan memuat kata PEMASUKAN -> 'in'. Bila memuat kata PENGELUARAN
     // yang kuat -> 'out'. Bila ambigu (hanya "catat uang 150 ribu") -> tanya
     // dulu daripada menebak salah.
-    const kataMasuk = /\b(?:masuk|masukan|gaji|bonus|dapat|dapet|terima|menerima|pemasukan|honor|fee|pendapatan|ada|punya|mempunyai|saldo|sisa|tersisa|tersedia|simpanan|tabungan|pegang|bawa)\b/.test(s);
+    // DIPERLUAS (06 Okt 2026): "gajian", "gajiannya", "bonusan", "thr", "warisan",
+    // "cair", "komisi", "cashback", "refund" juga menandakan PEMASUKAN.
+    // Temuan: "gajian 5 juta" tidak dikenali (hanya "gaji" yang ada).
+    const kataMasuk = /\b(?:masuk|masukan|gaji|gajian|gajinya|gajiannya|bonus|bonusan|thr|dapat|dapet|terima|menerima|pemasukan|honor|fee|pendapatan|ada|punya|mempunyai|saldo|sisa|tersisa|tersedia|simpanan|tabungan|pegang|bawa|cair|komisi|cashback|refund|warisan|hadiah|untung|laba|profit)\b/.test(s);
     const kataKeluar = /\b(?:beli|bayar|bayarin|jajan|ongkos|biaya|habis|abis|keluar|pengeluaran|belanja|topup|top-up|isi\s+pulsa|kirim|transfer\s+ke)\b/.test(s);
     let kind: ExpenseKind;
     if (kataMasuk && !kataKeluar) kind = 'in';
@@ -2382,7 +2385,7 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
     // DIPERLUAS (05 Okt 2026): kalimat pencatatan sehari-hari tanpa kata "catat".
     //   "beli kopi 25rb", "bayar listrik 350000", "jajan gorengan 10k",
     //   "dapat gaji lima juta", "harus beli galon"
-    /\b(?:beli|bayar|jajan|ongkos|habis|abis|dapat|dapet|gaji|belanja|transferan|bonus|thr|parkir|bensin|tagihan|sewa|cicilan|utang|hutang|pengeluaran|pemasukan|pengeluaranku|pemasukanku)\b/i.test(s) ||
+    /\b(?:beli|bayar|jajan|ongkos|habis|abis|dapat|dapet|gaji|gajian|belanja|transferan|bonus|thr|parkir|bensin|tagihan|sewa|cicilan|utang|hutang|pengeluaran|pemasukan|pengeluaranku|pemasukanku|komisi|cashback|refund|warisan|hadiah)\b/i.test(s) ||
     /^\s*(?:harus|perlu|kudu|mesti)\s+\w+/i.test(s);
   if (!sinyalMinta) return null;
 
@@ -2437,7 +2440,14 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   // Kata "pengeluaran/pemasukan/pengeluaranku/pemasukanku" + nominal -> pasti keuangan.
   const kataPengeluaran = /\b(?:pengeluaran|pemasukan|pengeluaranku|pemasukanku|belanjaku|jajananku|uang\s*keluar|uang\s*masuk|total\s*keluar|total\s*masuk)\b/i.test(s);
   if (nominal && (konteksUang || mintaCatat || satuanUangKuat || kataPengeluaran)) {
-    const kind: ExpenseKind = /\b(?:masuk|dapat|dapet|gaji|pendapatan|pemasukan|income)\b/i.test(s) ? 'in' : 'out';
+    // ── DIPERLUAS (06 Okt 2026) ──
+    // Temuan: "bonus 2 juta" dicatat sebagai PENGELUARAN (salah). Daftar kata
+    // pemasukan di jalur implisit ini TIDAK sinkron dengan blok 4a — "bonus",
+    // "gajian", "thr", "cair", "komisi" tidak ada. Sekarang disamakan.
+    const kind: ExpenseKind =
+      /\b(?:masuk|masukan|dapat|dapet|terima|menerima|gaji|gajian|gajinya|gajiannya|bonus|bonusan|thr|pendapatan|pemasukan|income|honor|fee|saldo|sisa|tersisa|simpanan|tabungan|cair|komisi|cashback|refund|warisan|hadiah|untung|laba|profit)\b/i.test(s)
+        ? 'in'
+        : 'out';
     const kategori = tebakKategori(s);
     return {
       kind: 'expense', yakin: 0.7,
