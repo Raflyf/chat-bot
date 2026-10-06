@@ -873,10 +873,24 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     }
   }
 
+  // ── GERBANG: KATA PERINTAH PENGINGAT MENANG ATAS KEUANGAN (perbaikan 06 Okt 2026) ──
+  // LAPORAN NYATA: "oke ingatkan aku bayar listrik jam 9" -> dicatat sebagai
+  // PENGELUARAN Rp9 (karena "bayar" memicu blok keuangan lebih dulu, dan "9"
+  // dibaca sebagai nominal).
+  //
+  // AKAR: blok 4a KEUANGAN berjalan SEBELUM 4b PENGINGAT. Kata "bayar"/"beli"
+  // di dalam kalimat pengingat membuatnya salah masuk keuangan.
+  //
+  // SEKARANG: bila ada kata perintah PENGINGAT yang jelas (ingatkan/ingetin/remind
+  // + kata ganti/memori), LEWATI blok keuangan & barang -> langsung ke pengingat.
+  const adaPerintahIngatKuat =
+    /\b(?:ingatkan|ingetin|ingat|remind|reminder|pengingat)\b/i.test(tanpaPengantar) &&
+    !/\b(?:uang|duit|saldo|pengeluaran|pemasukan|catat\s+uang|nominal)\b/i.test(tanpaPengantar);
+
   // 4a. KEUANGAN, wajib ada nominal
   const adaKataUang = /\b(uang|duit|pengeluaran|pemasukan|belanja|bayar|beli|habis|keluar|masuk|gaji|bonus|dapat|terima|honor|fee|pendapatan|jajan|ongkos|biaya|tarif)\b/.test(s);
   const perintahUang = /^\s*\/?(uang|keluar|masuk|pengeluaran|pemasukan)\b/i.test(tanpaPengantar);
-  if (nominal && (perintahUang || adaKataUang)) {
+  if (!adaPerintahIngatKuat && nominal && (perintahUang || adaKataUang)) {
     // ── BUG YANG DIPERBAIKI (06 Okt 2026) ──
     // LAPORAN PEMILIK PRODUK: "catat uang saya ada 150 ribu" dianggap PENGELUARAN.
     //
