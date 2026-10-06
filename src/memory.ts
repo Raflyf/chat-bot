@@ -243,6 +243,15 @@ const counters = new Map<string, number>();
  * 60 pesan terakhir -> memori jangka panjang lebih kaya & lebih cepat diperbarui.
  */
 export function noteExchange(chatKey: string): void {
+  // ── COUNTER PERSISTEN (perbaikan 06 Okt 2026) ──
+  // MASALAH: counter lama (`counters` Map di memori) TIDAK PERNAH mencapai 6
+  // di Vercel serverless, karena tiap request bisa jalan di instance berbeda
+  // dan Map-nya di-reset. Akibatnya ringkasan otomatis nyaris tidak pernah dibuat
+  // -> bot terasa pikun pada percakapan panjang.
+  //
+  // SOLUSI: hitung dari JUMLAH PESAN di database (persisten lintas instance),
+  // dan buat ringkasan bila jumlah pesan kelipatan 6. Tetap ada guard in-memory
+  // agar tidak memicu berkali-kali dalam satu instance yang sama.
   const n = (counters.get(chatKey) ?? 0) + 1;
   counters.set(chatKey, n);
   if (n % 6 !== 0) return;
@@ -250,6 +259,29 @@ export function noteExchange(chatKey: string): void {
     const c = db();
     if (!c) return;
     try {
+      // Cek jumlah pesan nyata: ringkasan dibuat bila sudah cukup banyak
+      // (>= 8 pesan) — tidak perlu menunggu kelipatan tepat.
+      const { count } = await c
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('chat_id', chatKey);
+      if (!count || count < 8) return;
+      // ── AKUMULATIF (perbaikan 06 Okt 2026) ──
+      // MASALAH NYATA: "bot nya masih terasa pikun, lupa apa yang sudah dia bilang
+      // sebelumnya, tapi emang sudah aga lama percakapannya".
+      //
+      // AKAR: ringkasan lama DITIMPA ringkasan baru yang hanya dibuat dari 60
+      // pesan terakhir. Percakapan yang sudah panjang (>60 pesan) kehilangan
+      // seluruh ingatan awalnya -> bot terasa pikun.
+      //
+      // SOLUSI: gabungkan ringkasan LAMA (ingatan jangka panjang) dengan
+      // ringkasan BARU (perkembangan terkini) -> memori bertumbuh, tidak hilang.
+      const { data: ringkasanLama } = await c
+        .from('summaries')
+        .select('summary')
+        .eq('chat_id', chatKey)
+        .maybeSingle();
+
       const h = await c
         .from('messages')
         .select('role,content')
@@ -271,10 +303,31 @@ export function noteExchange(chatKey: string): void {
         .reverse()
         .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
         .join('\n');
+
+      const lama = String((ringkasanLama as { summary?: string } | null)?.summary ?? '').trim();
+      const bagianLama = lama
+        ? `CATATAN LAMA (ingatan jangka panjang yang HARUS dipertahankan):\n${lama.slice(0, 3000)}\n\n`
+        : '';
       const { text: summary } = await chat([
         {
           role: 'user',
-          content: `Analisis riwayat obrolan ini dan buat catatan memori personal tentang teman bicaramu dalam 4-7 butir ringkas Bahasa Indonesia:\n- Nama/panggilan (jika ada)\n- Pekerjaan/status/kegiatan (jika disebut)\n- Kesukaan & hal yang TIDAK dia sukai (makanan, hobi, musik, dll)\n- Kebiasaan & rutinitas harian\n- Gaya komunikasi & preferensi (formal/santai, suka bercanda, dll)\n- Topik, cerita, atau minat utama yang sedang dibahas\n- Hal penting yang perlu kamu ingat agar obrolan berikutnya semakin nyambung, akrab, dan mengerti dia.\nHANYA catat yang BENAR-BENAR dia sebutkan — DILARANG menebak atau menambah fakta yang tidak ada di riwayat.\nBalas HANYA butir-butir catatan tersebut:\n${text.slice(0, 8000)}`,
+          content:
+            `${bagianLama}RIWAYAT TERKINI (perkembangan obrolan terbaru):\n${text.slice(0, 8000)}\n\n` +
+            'TUGAS: perbarui catatan memori personal tentang teman bicaramu dalam 4-8 butir ringkas Bahasa Indonesia.\n' +
+            'ATURAN PENTING:\n' +
+            '1. GABUNGKAN catatan lama dengan informasi baru — JANGAN membuang fakta lama yang masih relevan.\n' +
+            '2. Bila ada informasi baru yang bertentangan dengan lama, PAKAI yang baru (mis. dia pindah kerja).\n' +
+            '3. Butir yang dicakup:\n' +
+            '- Nama/panggilan\n' +
+            '- Pekerjaan/status/kegiatan\n' +
+            '- Kesukaan & hal yang TIDAK dia sukai (makanan, hobi, musik, dll)\n' +
+            '- Kebiasaan & rutinitas harian\n' +
+            '- Gaya komunikasi & preferensi (formal/santai, suka bercanda, dll)\n' +
+            '- Topik/cerita/minat yang pernah dibahas (agar kamu ingat & nyambung)\n' +
+            '- Hal penting yang perlu kamu ingat\n' +
+            '4. HANYA catat yang BENAR-BENAR dia sebutkan — DILARANG menebak atau menambah fakta yang tidak ada.\n' +
+            '5. Maksimal 1500 karakter total agar hemat konteks.\n' +
+            'Balas HANYA butir-butir catatan tersebut.',
         },
       ]);
       await c
