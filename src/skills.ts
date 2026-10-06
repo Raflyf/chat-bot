@@ -2701,9 +2701,13 @@ export function systemPrompt(
   if (ctx?.summary) {
     instructions.push(
       '',
-      `[MEMORI LATAR BELAKANG (REFERENSI PASIF - ANTI-BOCOR)]:
+      `[MEMORI LATAR BELAKANG (REFERENSI AKTIF - PAKAI DENGAN BIJAK)]:
 ${ctx.summary}
-- Dilarang mengungkit topik dari memori jika tidak sedang dibahas. Fokus 100% pada konteks pesan terakhir!`,
+- Pakai memori ini agar obrolan NYAMBUNG dan kamu terasa benar-benar mengenalnya (nama, kesukaan, pekerjaan, kebiasaan, cerita lama).
+- JANGAN menanyakan hal yang SUDAH ADA di memori ini (mis. sudah tahu namanya, jangan tanya nama lagi).
+- Bila dia menyinggung topik yang pernah dibahas, sambungkan dengan ingatanmu itu — jangan bersikap seperti baru kenal.
+- DILARANG menyebut "memori", "catatan", "ringkasan", atau "database" ke dia. Pakai secara natural seperti teman yang memang ingat.
+- DILARANG membacakan SEMUA isi memori sekaligus, dan DILARANG mengungkit topik yang tidak sedang dibahas.`,
     );
   }
   const safeCorrections = (ctx?.corrections || [])
@@ -2972,7 +2976,14 @@ function buildMessages(
   picked?: PickedMemory | null,
 ): ChatMsg[] {
   const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt(ctx, web, clean, picked) }];
-  const rawHistory = [...(ctx?.history.slice(-15) ?? [])];
+  // ── DIPERBESAR (permintaan pemilik produk 06 Okt 2026) ──
+  // "tambahkan memory bot nya agar mengingat lebih banyak chat dan lebih pintar
+  //  tidak ngaco jawabannya"
+  //
+  // 15 -> 30 pesan terakhir. Dipilih 30 (bukan 40) karena sanitasi riwayat +
+  // system prompt sudah besar; 30 cukup untuk konteks obrolan yang nyambung
+  // tanpa melampaui batas token provider (Groq/DreamPrompting ~7.000).
+  const rawHistory = [...(ctx?.history.slice(-30) ?? [])];
 
   // Sanitasi riwayat percakapan asisten sebelum disuntikkan ke konteks model
   // Mencegah penularan loop peran lama, skrip panggung kurung siku, atau menu kaku

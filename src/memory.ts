@@ -159,11 +159,21 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
       // `via` ikut dipilih + difilter: baris dengan via 'system/*' adalah sinyal
       // internal (mis. 'system/pending-confirmation' untuk konfirmasi tertunda)
       // yang TIDAK boleh muncul di riwayat percakapan yang dibaca model.
+      // ── DIPERBESAR (permintaan pemilik produk 06 Okt 2026) ──
+      // "tambahkan memory bot nya agar mengingat lebih banyak chat dan lebih
+      //  pintar tidak ngaco jawabannya"
+      //
+      // SEBELUMNYA: 15 pesan terakhir + 5 koreksi. Terlalu sedikit -> bot cepat
+      // "lupa" konteks obrolan beberapa pesan lalu dan menjawab ngawur.
+      //
+      // SEKARANG: 40 pesan + 15 fakta/koreksi. Token tetap aman karena:
+      //   - prompt hanya memakai sebagian riwayat yang relevan (lihat skills.ts)
+      //   - ada ringkasan otomatis untuk percakapan yang lebih lama lagi
       c.from('messages').select('role,content,feedback,via').eq('chat_id', chatKey)
         .not('via', 'like', 'system/%')
-        .order('created_at', { ascending: false }).limit(15),
+        .order('created_at', { ascending: false }).limit(40),
       c.from('summaries').select('summary').eq('chat_id', chatKey).limit(1).maybeSingle(),
-      c.from('corrections').select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(5),
+      c.from('corrections').select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(15),
     ]);
     if (h.error) warnOnce('messages', h.error.message);
     if (s.error && s.error.code !== 'PGRST116') warnOnce('summaries', s.error.message);
@@ -222,11 +232,20 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
 
 const counters = new Map<string, number>();
 
-/** Dipanggil tiap pertukaran user. Tiap 8 pesan: distilasi memori & profil personal teman bicara secara adaptif (fire-and-forget). */
+/**
+ * Dipanggil tiap pertukaran user. Tiap 6 pesan: distilasi memori & profil personal
+ * teman bicara secara adaptif (fire-and-forget).
+ *
+ * DIPERBESAR (permintaan pemilik produk 06 Okt 2026):
+ *   "tambahkan memory bot nya agar mengingat lebih banyak chat dan lebih pintar
+ *    tidak ngaco jawabannya"
+ * Sebelumnya tiap 8 pesan dari 25 pesan terakhir; sekarang tiap 6 pesan dari
+ * 60 pesan terakhir -> memori jangka panjang lebih kaya & lebih cepat diperbarui.
+ */
 export function noteExchange(chatKey: string): void {
   const n = (counters.get(chatKey) ?? 0) + 1;
   counters.set(chatKey, n);
-  if (n % 8 !== 0) return;
+  if (n % 6 !== 0) return;
   void (async () => {
     const c = db();
     if (!c) return;
@@ -236,7 +255,7 @@ export function noteExchange(chatKey: string): void {
         .select('role,content')
         .eq('chat_id', chatKey)
         .order('created_at', { ascending: false })
-        .limit(25);
+        .limit(60);
       if (h.error || !h.data?.length) return;
       const rawMessages = h.data as Array<{ role: string; content: string }>;
       // Hormati checkpoint reset: potong pesan sebelum [SESSION_RESET]
@@ -255,7 +274,7 @@ export function noteExchange(chatKey: string): void {
       const { text: summary } = await chat([
         {
           role: 'user',
-          content: `Analisis riwayat obrolan ini dan buat catatan memori personal tentang teman bicaramu dalam 3-5 butir ringkas Bahasa Indonesia:\n- Nama/panggilan (jika ada)\n- Gaya komunikasi & preferensi\n- Topik, cerita, atau minat utama yang sedang dibahas\n- Hal penting yang perlu kamu ingat agar obrolan berikutnya semakin nyambung, akrab, dan mengerti dia.\nBalas HANYA butir-butir catatan tersebut:\n${text.slice(0, 4000)}`,
+          content: `Analisis riwayat obrolan ini dan buat catatan memori personal tentang teman bicaramu dalam 4-7 butir ringkas Bahasa Indonesia:\n- Nama/panggilan (jika ada)\n- Pekerjaan/status/kegiatan (jika disebut)\n- Kesukaan & hal yang TIDAK dia sukai (makanan, hobi, musik, dll)\n- Kebiasaan & rutinitas harian\n- Gaya komunikasi & preferensi (formal/santai, suka bercanda, dll)\n- Topik, cerita, atau minat utama yang sedang dibahas\n- Hal penting yang perlu kamu ingat agar obrolan berikutnya semakin nyambung, akrab, dan mengerti dia.\nHANYA catat yang BENAR-BENAR dia sebutkan — DILARANG menebak atau menambah fakta yang tidak ada di riwayat.\nBalas HANYA butir-butir catatan tersebut:\n${text.slice(0, 8000)}`,
         },
       ]);
       await c
