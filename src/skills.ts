@@ -601,6 +601,35 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   });
   out = out.replace(/[ \t]{2,}/g, ' ');
 
+  // ── 6b. BUANG TAWARAN LANJUTAN PERMAINAN (temuan 06 Okt 2026) ──
+  // LAPORAN: bot berulang kali menawari "Mau lanjut tebak-tebakan?" sehingga
+  // terdengar seperti mesin dan mengganggu. Prompt sudah melarang, tetapi model
+  // tidak selalu patuh -> ditegakkan di kode.
+  // Pola dibatasi ke AKHIR kalimat/baris agar kalimat wajar sebelumnya tidak ikut
+  // terbuang (mis. "Hai, ada yang bisa dibantu?" TIDAK boleh terpotong).
+  const tawaranLanjutan = [
+    /\s*\b(?:mau|lanjut|lanjutkan|gimana|mending)\b[^.!?\n]{0,40}\b(?:tebak(?:\s*-?\s*tebakan)?|tebakan|gombal(?:an)?|pantun|main\s+lagi|kuis|hitung-hitungan)\b[^.!?\n]*\??/gi,
+    /\s*\b(?:kamu|lu|kalian)\s+pilih\b[^.!?\n]*\??/gi,
+    /\s*\bmau\s+ke\s+mana\b[^.!?\n]*\??/gi,
+    /\s*\bmau\s+ngobrol(?:in)?\s+(?:apa|soal\s+apa)\b[^.!?\n]*\??/gi,
+    /\s*\bmau\s+bahas\s+apa\b[^.!?\n]*\??/gi,
+    /\s*\b(?:atau\s+)?langsung\s+ke\s+[^.!?\n]{0,30}\?/gi,
+    // "Lanjut?" / "Lanjut ya?" berdiri sendiri di akhir (tawaran lanjutan).
+    /[\s,]*\b(?:lanjut|lanjutkan|continue)\s*(?:ya|dong|deh|gak|ga|nggak)?\s*\?\s*$/gi,
+  ];
+  for (const re of tawaranLanjutan) out = out.replace(re, '');
+  out = out
+    .replace(/\s{2,}/g, ' ')
+    // Buang sisa nomor/butir menggantung ("3." / "3.") akibat kalimat yang dibuang.
+    .replace(/^\s*\d+\s*[.)]{1,2}\s*$/gm, '')
+    .replace(/^\s*[-*•]\s*$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^[\s,]+/, '')
+    .trim();
+  // Bila hasilnya kosong (seluruh isi hanyalah tawaran) -> kosongkan agar
+  // autoReply meregenerasi balasan yang benar-benar menjawab.
+  if (!/[\p{L}\p{N}]/u.test(out)) out = '';
+
   // 7. Konversi Markdown Heading (### / ## / #) menjadi Bold WhatsApp (*Heading*)
   out = out.replace(/^\s*#{1,6}\s+(.+)$/gm, '*$1*');
 
@@ -626,7 +655,14 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
 
   // 11. Bersihkan boilerplate penutup CS / bot klise / rengekan defensif bot jika lolos dari model
   out = out.replace(/\n*(?:jika\s+(?:kamu|anda)\s+membutuhkan\s+bantuan\s+lebih\s+lanjut[^.\n]*[.\n]?)/gi, '');
-  out = out.replace(/(?:ada\s+yang\s+bisa\s+(?:saya\s+)?dibantu\s*\??)/gi, '');
+  // Buang frasa layanan-pelanggan. Bila hasilnya tinggal sapaan menggantung
+  // ("Hai," / "Halo,") -> biarkan kosong agar autoReply meregenerasi balasan utuh
+  // (lebih baik daripada mengirim "Hai," yang menggantung).
+  {
+    const sebelum = out;
+    out = out.replace(/(?:ada\s+yang\s+bisa\s+(?:saya\s+)?dibantu\s*\??)/gi, '');
+    if (out !== sebelum && /^\s*(?:hai|halo|hei|hallo)[\s,.]*$/i.test(out)) out = '';
+  }
   out = out.replace(/(?:namanya\s+juga\s+bot\s+yang\s+lagi\s+belajar[^.\n]*[.\n]?)/gi, '');
   out = out.replace(/(?:aku\s+kan\s+cuma\s+bot\s+yang[^.\n]*[.\n]?)/gi, '');
   out = out.replace(/(?:aku\s+cuma\s+pacar\s+fiktif(?:nya)?[^.\n]*[.\n]?)/gi, '');
@@ -968,6 +1004,67 @@ function stripLeadingInterjection(text: string): string {
  * bila balasan dibuka interjeksi filler yang sudah dipakai di balasan-balasan
  * sebelumnya, interjeksi itu dibuang agar tidak berpola. Berlapis (mis. "Eh, waduh...").
  */
+/**
+ * COOLDOWN EMOJI LINTAS-PESAN (perbaikan 06 Okt 2026).
+ *
+ * LAPORAN NYATA: bot memakai emoji (😊😄😂) di HAMPIR SETIAP balasan:
+ *   "Hai, ada yang bisa dibagi? 😊"
+ *   "Coba deh dulu! 😂"
+ *   "Aku cuma ikutan main-main, tenang! 😄"
+ *   "Aku lagi standby, siap ngobrol sama kamu kapan aja! 😊"
+ * Terlihat seperti mesin, tidak profesional, dan mengganggu.
+ *
+ * Aturan prompt "maksimal 1 emoji, seminimal mungkin" tidak cukup karena model
+ * berganti tiap pesan (failover). Jadi ditegakkan di KODE: bila 2 balasan
+ * terakhir sudah memakai emoji, balasan ini DIBERSIHKAN dari emoji.
+ *
+ * @param text balasan yang akan dikirim
+ * @param riwayat riwayat percakapan (untuk menghitung emoji terakhir)
+ */
+function batasiEmojiLintasPesan(text: string, riwayat?: Array<{ role: string; content: unknown }>): string {
+  if (!text) return text;
+  try {
+    const balasanAsisten = (riwayat ?? [])
+      .filter((h) => h && h.role === 'assistant' && typeof h.content === 'string')
+      .slice(-2);
+    const emojiRe = /\p{Extended_Pictographic}/gu;
+    const pakaiEmoji = balasanAsisten.filter((h) => emojiRe.test(String(h.content))).length;
+
+    // ── PRINSIP (koreksi pemilik produk 06 Okt 2026) ──
+    // "untuk emot itu jangan di hilangkan, tapi di minimalisir berdasarkan suasana"
+    //
+    // Emoji TIDAK PERNAH dihapus total. Yang dilakukan:
+    //   1. MAKSIMAL 1 emoji per balasan (sudah dijaga sanitizer).
+    //   2. Bila 2 balasan terakhir sudah memakai emoji -> tunda emoji di balasan
+    //      ini (tidak dipakai) supaya tidak beruntun di SETIAP pesan.
+    //      Ini "menunda", bukan "melarang" — balasan berikutnya boleh beremoji lagi.
+    //   3. Jangan memakai emoji yang SAMA dua kali beruntun.
+    if (pakaiEmoji >= 2) {
+      // Tunda emoji untuk balasan ini. TETAPI bila balasan PENDEK (<= 8 kata,
+      // biasanya sapaan/reaksi ringan) dan hanya punya 1 emoji, biarkan —
+      // itu wajar dan hidup. Yang dicegah adalah emoji di SETIAP balasan panjang.
+      const kataCount = text.split(/\s+/).filter(Boolean).length;
+      const jumlahEmoji = (text.match(emojiRe) ?? []).length;
+      if (kataCount <= 8 && jumlahEmoji <= 1) return text;
+      return text.replace(emojiRe, '').replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim();
+    }
+    if (pakaiEmoji === 1) {
+      const emojiTerakhir = String(balasanAsisten[0]?.content ?? '').match(emojiRe) ?? [];
+      const terpakai = new Set(emojiTerakhir);
+      let sudah = 0;
+      return text.replace(emojiRe, (m) => {
+        sudah++;
+        // Maksimal 1 emoji, dan jangan ulangi emoji yang sama dengan balasan lalu.
+        if (sudah > 1 || terpakai.has(m)) return '';
+        return m;
+      }).replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim();
+    }
+  } catch {
+    // abaikan; kembalikan teks apa adanya
+  }
+  return text;
+}
+
 function avoidRepeatedOpening(text: string, recentOpenings?: string[]): string {
   if (!text || !recentOpenings || recentOpenings.length === 0) return text;
   const used = new Set(recentOpenings.filter(Boolean).map((s) => s.trim().toLowerCase()));
@@ -1880,6 +1977,13 @@ export function systemPrompt(
       '    -> HANYA LEMPARKAN SETUP DULU. Setup WAJIB kalimat tanya lengkap yang berdiri sendiri (ada kata tanya + tanda tanya) — DILARANG klausa gantung. Variasikan kata pembukanya antar pesan.',
       '    -> WAJIB SISIPKAN TAG JAWABAN di akhir setup: [[jawab:<jawaban benar>]]. Tag ini otomatis dibuang sistem (tidak terlihat temanmu) — fungsinya agar penilaian tebakan selalu jujur walau model berganti. Contoh: "Coba tebak, buah apa yang paling jago nyanyi? [[jawab:Apel]]". DILARANG membocorkan isinya.',
       '    -> STANDAR MUTU (ATURAN KERAS): jawaban WAJIB hal NYATA yang bisa disebutkan (benda, hewan, buah, profesi, tempat, kata) — DILARANG karangan ("orang aring", "buah lilin"). Alasan tebakan WAJIB bisa dijelaskan 1 kalimat yang MASUK AKAL (biasanya permainan kata/plesetan wajar).',
+      // ── ATURAN BENTUK TEBAKAN (temuan 06 Okt 2026) ──
+      // LAPORAN: user minta "tebak tebakan yang seru", bot malah memberi
+      // "Kenapa wortel baik untuk mata?" — itu PERTANYAAN PENGETAHUAN UMUM,
+      // bukan tebak-tebakan. Jawabannya fakta nyata, tidak ada unsur kejutan/plesetan.
+      '    -> WAJIB BERBENTUK TEKA-TEKI, BUKAN PERTANYAAN PENGETAHUAN UMUM. Ciri teka-teki yang benar: ada unsur PLESETAN/permainan kata/kejutan, dan jawabannya TIDAK bisa ditebak dari fakta biasa. Contoh BENAR: "Hewan apa yang membawa rumahnya?" (Siput) — plesetan "rumah"=cangkang. Contoh SALAH: "Kenapa wortel baik untuk mata?" (jawabannya fakta gizi biasa, bukan teka-teki), "Apa ibu kota Jepang?" (itu kuis pengetahuan).',
+      '    -> DILARANG memberi pertanyaan yang jawabannya sudah diketahui umum (fakta sains, geografi, sejarah, gizi). Itu KUIS, bukan tebak-tebakan seru.',
+      '    -> Bila ragu, pakai pola teka-teki klasik: "X apa yang Y?" (hewan apa yang…, benda apa yang…, apa yang…).',
       '    -> UJI KONSISTENSI SEBELUM KIRIM (WAJIB, temuan 20 Sep 22:09): cek "Apakah jawabanku TIDAK bertentangan dengan sifat alaminya?" Contoh GAGAL: "hewan paling suka DIAM?" dijawab "Lebah" (lebah bersenggut — jelas bertentangan). Contoh BENAR: "hewan yang membawa rumahnya?" -> "Siput". Bila bertentangan, PILIH TEBAKAN LAIN. Nama jawaban wajib wajar & berdiri sendiri ("Lebah", BUKAN "Si Lebah").',
       '    -> DILARANG membocorkan jawaban/punchline di pesan setup!',
       '    -> Tunggu respon temanmu:',
@@ -1889,6 +1993,14 @@ export function systemPrompt(
       '       3b. KEJUJURAN MUTLAK: DILARANG mengakui tebakan SALAH sebagai BENAR, dan DILARANG mengarang alasan palsu untuk membenarkannya. Benar hanya bila sama/bersinonim dengan kunci. Bila ragu: bilang belum tepat secara santai.',
       '       3c. HINT/PETUNJUK (ATURAN KERAS): petunjuk WAJIB konsisten dengan jawaban terkunci — DILARANG mengarang petunjuk yang bertentangan (jawaban "katak" tapi bilang "dekat sesuatu yang keluar dari mulut"). Bila tidak tahu pasti: JANGAN beri petunjuk spesifik. Lebih baik tanpa petunjuk daripada petunjuk palsu.',
       '       4. BENAR: Akui sportif dan santai bahwa tebakannya kena, dengan gayamu sendiri. SELESAI tanpa menawarkan tebakan baru.',
+      '       5. MENOLAK / TIDAK MAU LANJUT ("gausa tebak tebakan", "aku pusing", "udahan", "stop", "gak usah"): HENTIKAN permainan SEKETIKA dan HORMATI. DILARANG memberi tebakan baru, DILARANG menawarkan "mau lanjut?", DILARANG membujuk. Jawab langsung permintaan barunya dengan santai dan biasa.',
+      // ── ATURAN KERAS (temuan 06 Okt 2026) ──
+      // LAPORAN NYATA: user bilang "Gausa tebak tebakan ah aku pusing" lalu minta
+      // hitungan, tetapi bot MALAH memberi tebakan baru ("Nenek siapa yang melompat?").
+      // Juga bot berulang kali menawari "Mau lanjut tebak-tebakan?" — MENGANGGU.
+      '  * DILARANG KERAS MENAWARKAN LANJUTAN PERMAINAN. Jangan tulis "Mau lanjut tebak-tebakan?", "Lanjut?", "Mau main lagi?", "Kamu pilih", "Mau ke mana?", atau ajakan sejenis. Itu terdengar seperti mesin, bukan teman.',
+      '  * BILA USER MENGALIHKAN TOPIK (minta hitungan, tanya fakta, curhat, minta hal lain): LANGSUNG jawab permintaannya. DILARANG menyisipkan tebakan/gombalan di balasan itu. DILARANG menawarkan kembali topik lama.',
+      '  * BILA USER BILANG TIDAK MAU / TOLAK / KESAL / PUSING: sudahi permainan, jawab singkat dan wajar, tanpa drama dan tanpa tawaran.',
       '- REAKSI GOMBALAN & HUMOR PEDE SANTAI:',
       '  * Diledek/ditolak/dikritik ("ga nyambung", "garing", "cringe"): tetap santai dan percaya diri tanpa meratap atau kasar — balas celetukan santai atau banter ringan. DILARANG merajuk/pasif-agresif (lihat PRINSIP 1: "DIKATAKAN GARING").',
       '  * Diminta ganti ("ganti", "yang lain dong"): berikan yang BERBEDA dan JAUH LEBIH MASUK AKAL. HANYA setup-nya saja dulu.',
@@ -2354,7 +2466,25 @@ export function systemPrompt(
   const lastAssistantHasLockedAnswer =
     (typeof lastAssistantMsgRaw === 'string' && /\[Jawaban:/.test(lastAssistantMsgRaw)) ||
     (looksLikeOngoingRiddleFeedback && !!historyRiddleAnswer);
+  // ── FIX KRITIS (06 Okt 2026) ──
+  // LAPORAN: user bilang "Gausa tebak tebakan ah aku pusing" + minta matematika,
+  // tetapi bot MALAH memberi tebakan baru ("Nenek siapa yang melompat?").
+  //
+  // SEBAB: `isPendingRiddleOrGombal` hanya melihat balasan ASISTEN sebelumnya,
+  // TIDAK pernah memeriksa apakah USER menolak/menyuruh berhenti. Begitu mode
+  // tebakan aktif, bot tidak bisa keluar walau user memintanya berkali-kali.
+  //
+  // SEKARANG: bila user MENOLAK tebakan (atau minta hal lain yang jelas), mode
+  // tebakan DIPAKSA berhenti — jangan lanjutkan permainan.
+  const userMenolakTebakan =
+    /\b(?:gausah|ga\s*usah|gak\s*usah|nggak\s*usah|jangan|stop|berhenti|udahan|skip|cukup|udah\s*(?:ah|deh|lah)?|gausa|gausah)\b[^.!?\n]{0,30}\b(?:tebak(?:\s*-?\s*tebakan)?|tebak\s*tebakan|gombal(?:an)?|pantun|kuis|main)\b/i.test(userPromptText) ||
+    /\b(?:aku\s+)?(?:pusing|bosen|bosan|capek|muak|males|malas|gak\s*mau|ga\s*mau|nggak\s*mau|tidak\s*mau)\b[^.!?\n]{0,25}\b(?:tebak|tebakan|gombal|pantun|main|kuis)\b/i.test(userPromptText) ||
+    /\b(?:tebak(?:\s*-?\s*tebakan)?|tebakan|gombal(?:an)?|pantun)\b[^.!?\n]{0,25}\b(?:nya)?\s*(?:udah|udahan|cukup|stop|berhenti|jangan|gausah|gausa)\b/i.test(userPromptText) ||
+    // Minta hal lain yang jelas (matematika, tugas, dll) -> bukan lanjutan tebakan.
+    /\b(?:hitung|matematika|berapa\s+hasil|jawab\s+aku|[0-9]\s*[+\-*/x×]\s*[0-9])\b/i.test(userPromptText);
+
   const isPendingRiddleOrGombal =
+    !userMenolakTebakan &&
     !isGombalAppreciation &&
     typeof lastAssistantMsg === 'string' &&
     !/\b(?:tebakanku|bener\s+kan\s+tebakanku)\b/i.test(lastAssistantMsg) &&
@@ -2972,6 +3102,10 @@ export async function autoReply(
       let stickerEmoji = firstExtract.sticker;
       let riddleAnswer = firstRiddle.answer;
     let reply = sanitizeAssistantOutput(text, clean, recentOpenings, false, professionalContext, !!web, web);
+    // Cooldown emoji lintas-pesan (perbaikan 06 Okt 2026): bila 2 balasan terakhir
+    // sudah memakai emoji, balasan ini dibersihkan dari emoji agar tidak terkesan
+    // mesin/berlebihan. Lihat batasiEmojiLintasPesan().
+    reply = batasiEmojiLintasPesan(reply, ctx?.history);
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
     const replyWords = reply.split(/\s+/).filter(Boolean).length;
@@ -3046,6 +3180,31 @@ export async function autoReply(
       const promptRiddleQ = (pickedForTurn?.question || '').toLowerCase();
       const promptRiddleA = pickedForTurn?.answer || '';
       const matchScore = promptRiddleQ ? similarityScore(reply.toLowerCase(), promptRiddleQ) : 0;
+
+      // ── DETEKSI TEBAKAN PALSU (perbaikan 06 Okt 2026) ──
+      // LAPORAN NYATA: user minta "tebak tebakan yang seru", bot malah memberi
+      // "Kenapa wortel baik untuk mata?" — itu PERTANYAAN PENGETAHUAN UMUM
+      // (jawabannya fakta gizi), BUKAN teka-teki. Tidak ada unsur plesetan/kejutan.
+      //
+      // Ciri pertanyaan pengetahuan umum: diawali "kenapa/mengapa/apa ibu kota/
+      // siapa presiden/berapa jumlah" + jawabannya fakta yang sudah diketahui.
+      const tebakanPalsu =
+        /^(?:kenapa|mengapa)\s+(?:\w+\s+){0,3}(?:baik|bagus|berguna|penting|berbahaya|enak|manis|pahit|besar|kecil|tinggi|mahal|murah|kuat|lemah|panas|dingin)\b/i.test(reply.trim()) ||
+        /^(?:apa|siapa|berapa|kapan|di\s*mana|dimana)\s+(?:ibu\s*kota|presiden|menteri|jumlah|total|harga|hasil|nama|arti|tanggal|tahun)\b/i.test(reply.trim()) ||
+        // Pertanyaan yang jawabannya fakta umum & tidak ada permainan kata.
+        /\b(?:vitamin|kandungan|gizi|nutrisi|manfaat\s+kesehatan|kandungan\s+gizi|fungsi\s+organ|proses\s+\w+\s+pada\s+tubuh)\b/i.test(reply);
+
+      if (tebakanPalsu && !promptRiddleQ) {
+        // Tidak ada acuan bank -> ambil tebakan asli dari memori.
+        const pengganti = await getOrGrowMemory('riddle', { excludeAnswers: [] });
+        if (pengganti) {
+          console.warn(`[skills] Tebakan palsu (pertanyaan pengetahuan umum) — diganti: "${pengganti.question}"`);
+          const sebelumGanti = reply;
+          reply = pengganti.question;
+          riddleAnswer = pengganti.answer;
+          void sebelumGanti;
+        }
+      }
 
       if (promptRiddleA && matchScore >= 0.5) {
         // Pertanyaan cocok dengan yang kita kirim. Pakai kunci dari memori.
