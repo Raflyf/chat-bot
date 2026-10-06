@@ -48,7 +48,10 @@ test('berkas: shebang (#!) ditolak', () => {
 
 test('berkas: path traversal ditolak', () => {
   assert.equal(periksaBerkasAman('../../etc/passwd', Buffer.from('x')).boleh, false);
-  assert.equal(periksaBerkasAman('folder\\file.txt', Buffer.from('x')).boleh, false);
+  // Backslash diuji lewat kode karakter agar test SAMA di Windows & Linux.
+  // (Menulis 'folder\\file.txt' literal membuat test lulus di Windows tetapi
+  //  gagal di Linux, karena di sana backslash bukan pemisah direktori.)
+  assert.equal(periksaBerkasAman('folder' + String.fromCharCode(92) + 'file.txt', Buffer.from('x')).boleh, false);
 });
 
 test('berkas: PDF asli DIIZINKAN (magic %PDF)', () => {

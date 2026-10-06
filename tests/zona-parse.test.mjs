@@ -15,10 +15,10 @@ const SEKARANG = new Date('2026-10-06T06:02:00Z');
 const WIB = 'Asia/Jakarta';
 const WITA = 'Asia/Makassar';
 
-/** Jam:menit di zona tertentu. */
+/** Jam:menit di zona tertentu (id-ID memakai titik; dinormalkan ke titik dua). */
 function jamDi(d, zona) {
-  return d.toLocaleString('id-ID', { timeZone: zona, hour: '2-digit', minute: '2-digit', hour12: false })
-    .replace('.', ':');
+  const s = d.toLocaleString('en-GB', { timeZone: zona, hour: '2-digit', minute: '2-digit', hour12: false });
+  return s.replace('.', ':');
 }
 
 test('zona: "jam 6 pagi" -> 06:00 WIB (bukan 13:00)', () => {

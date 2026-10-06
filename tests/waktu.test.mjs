@@ -7,6 +7,10 @@ import assert from 'node:assert/strict';
 import { parseWaktuAlami, parseNominal, angkaKataKeDigit } from '../src/notes.js';
 
 const JKT = (d) => d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'short', timeStyle: 'short' });
+/** Jam di zona WIB (TIDAK tergantung zona mesin — CI berjalan di UTC). */
+const jamWIB = (d) => Number(d.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false }));
+const jamWIBStr = (d) => d.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+
 
 test('parseNominal: digit & satuan', () => {
   assert.equal(parseNominal('50000'), 50000);
@@ -64,23 +68,23 @@ test('parseWaktuAlami: jam absolut', () => {
   const now = new Date('2026-10-05T06:00:00+07:00');
   const d = parseWaktuAlami('jam 9', now);
   assert.ok(d);
-  assert.equal(d.getHours(), 9);
+  assert.equal(jamWIB(d), 9);
 });
 
 test('parseWaktuAlami: rentang waktu (jam 9 sampai jam 10)', () => {
   const now = new Date('2026-10-05T06:00:00+07:00');
   const d = parseWaktuAlami('jam 9 sampai jam 10', now);
   assert.ok(d);
-  assert.equal(d.getHours(), 9);
+  assert.equal(jamWIB(d), 9);
   assert.ok(d.selesai, 'harus punya properti selesai');
-  assert.equal(d.selesai.getHours(), 10);
+  assert.equal(jamWIB(d.selesai), 10);
 });
 
 test('parseWaktuAlami: bagian hari tanpa jam', () => {
   const now = new Date('2026-10-05T06:00:00+07:00');
   const d = parseWaktuAlami('nanti malam', now);
   assert.ok(d);
-  assert.equal(d.getHours(), 19);
+  assert.equal(jamWIB(d), 19);
 });
 
 test('parseWaktuAlami: teks tanpa waktu -> null', () => {
