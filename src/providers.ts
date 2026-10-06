@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { config } from './env.js';
 import { cooldownMemori, setCooldown, hapusCooldown, mulaiHidrasiLatar } from './cooldown.js';
+import { hitungNeuron } from './neuron.js';
 import { isKeyAllowed, keyUsed, keyTokensUsed, keyTokensUsedToday, keyRequestsUsedToday, keyTokenAbsolute, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
 // (xKiro DIHAPUS 04 Okt 2026 — semua akun disuspend permanen 403)
 
@@ -1650,6 +1651,53 @@ function visionSteps(all: Step[], msgs?: ChatMsg[]): Step[] {
  *
  * Bila raceModels=0, fungsi ini tidak dipakai (jalur sekuensial lama tetap ada).
  */
+/**
+ * Cek apakah sebuah key boleh dipakai, dengan SATUAN YANG BENAR per provider.
+ *
+ * MASALAH NYATA (06 Okt 2026): "knapa model cloudflare tidak terpakai ya?
+ * langsung lompat ke opencode? padahal di monitoring belum limit"
+ *
+ * AKAR: `DAILY_TOKEN_CAP_CLOUDFLARE=10000` dibandingkan dengan TOKEN, padahal
+ * Cloudflare membatasi NEURON. 15.841 token ≈ 633 neuron dari 10.000 kuota
+ * (baru ~6%), tetapi guard menganggapnya HABIS -> Cloudflare selalu dilewati.
+ *
+ * Helper ini memusatkan logika agar KEDUA jalur (balapan & sekuensial) konsisten.
+ */
+async function cekKeyBolehDipakai(
+  step: Step,
+  key: string,
+  allowCoolingPass: boolean,
+): Promise<boolean> {
+  try {
+    const perKeyCaps = config.dailyTokenCapPerKey[step.kind] || [];
+    const keyIndex = step.keys.indexOf(key);
+    const keyTokenCap =
+      keyIndex >= 0 && keyIndex < perKeyCaps.length
+        ? perKeyCaps[keyIndex]
+        : config.dailyTokenCap[step.kind] || 0;
+
+    // Cloudflare: batasnya NEURON -> konversi token ke neuron lebih dulu.
+    if (step.kind === 'cloudflare' && keyTokenCap > 0) {
+      const tokensHariIni = keyTokensUsedToday('cloudflare', key);
+      const modelCf = step.models[0] || '';
+      const neuronTerpakai = hitungNeuron(tokensHariIni * 0.8, tokensHariIni * 0.2, modelCf);
+      if (neuronTerpakai >= keyTokenCap) {
+        if (!allowCoolingPass) {
+          console.warn(
+            `[providers] Lewati cloudflare: neuron ~${neuronTerpakai} >= batas ${keyTokenCap} (dari ${tokensHariIni} token).`,
+          );
+        }
+        return false;
+      }
+      return await isKeyAllowed(step.kind, key, step.cap, 0);
+    }
+    return await isKeyAllowed(step.kind, key, step.cap, keyTokenCap);
+  } catch (quotaErr) {
+    console.warn(`[providers] Gagal cek kuota key ${step.kind} (${String((quotaErr as Error)?.message ?? quotaErr).slice(0, 80)}). Lanjut tanpa guard kuota.`);
+    return true;
+  }
+}
+
 async function balapanModelDalamTier(
   step: Step,
   models: string[],
@@ -1672,18 +1720,8 @@ async function balapanModelDalamTier(
     let lastErr: Error = new Error('NO_KEY');
     for (const key of candidateKeys) {
       if (controller.signal.aborted) throw new Error('RACE_ABORTED');
-      let keyAllowed = true;
-      try {
-        const perKeyCaps = config.dailyTokenCapPerKey[step.kind] || [];
-        const keyIndex = step.keys.indexOf(key);
-        const keyTokenCap =
-          keyIndex >= 0 && keyIndex < perKeyCaps.length
-            ? perKeyCaps[keyIndex]
-            : config.dailyTokenCap[step.kind] || 0;
-        keyAllowed = await isKeyAllowed(step.kind, key, step.cap, keyTokenCap);
-      } catch {
-        keyAllowed = true;
-      }
+      // Cek kuota dengan satuan benar (Cloudflare=neuron). Lihat cekKeyBolehDipakai().
+      const keyAllowed = await cekKeyBolehDipakai(step, key, allowCoolingPass);
       if (!keyAllowed) continue;
       const remainingMs = deadline - Date.now();
       if (remainingMs < 1500) throw new Error('CHAIN_DEADLINE');
@@ -1937,20 +1975,8 @@ export async function chat(
         // try/catch: kegagalan DB kuota (mis. URL Supabase buruk) tidak boleh membatalkan
         // seluruh rantai failover — tanpa ini satu error DB melempar keluar dari chat() (audit H2).
         let keyAllowed = true;
-        try {
-          // Cap token per-key bila dikonfigurasi (limit tiap key bisa berbeda — kasus xKiro:
-          // key #1 1jt token vs key #2/#3 500k). Fallback ke cap seragam provider.
-          const perKeyCaps = config.dailyTokenCapPerKey[step.kind] || [];
-          const keyIndex = step.keys.indexOf(key);
-          const keyTokenCap =
-            keyIndex >= 0 && keyIndex < perKeyCaps.length
-              ? perKeyCaps[keyIndex]
-              : config.dailyTokenCap[step.kind] || 0;
-          keyAllowed = await isKeyAllowed(step.kind, key, step.cap, keyTokenCap);
-        } catch (quotaErr) {
-          console.warn(`[providers] Gagal cek kuota key ${step.kind} (${String((quotaErr as Error)?.message ?? quotaErr).slice(0, 80)}). Lanjut tanpa guard kuota.`);
-          keyAllowed = true;
-        }
+        // Cek kuota dengan satuan benar (Cloudflare=neuron). Lihat cekKeyBolehDipakai().
+        keyAllowed = await cekKeyBolehDipakai(step, key, allowCoolingPass);
         if (!keyAllowed) continue;
 
         // (Pre-check xKiro DIHAPUS 04 Okt 2026 — providernya sudah tidak ada.)
