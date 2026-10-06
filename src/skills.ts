@@ -2022,6 +2022,14 @@ export function systemPrompt(
     '- Jawab HANYA berdasarkan apa yang benar-benar dikatakan temanmu. DILARANG menciptakan konteks, kejadian, atau topik yang tidak dia sebutkan.',
     '- Jika dia TIDAK membahas kode/aplikasi/typo/bug, JANGAN mengarang narasi teknis ("kodenya dikoreksi", "lagi ngebug", "sistem", "database", "terverifikasi", "ngoding"). Saat ditanya santai seperti "masih ingat aku siapa?", jawab akrab dan manusiawi — TANPA menyebut sistem/database/verifikasi.',
     '- DILARANG memantulkan kata dari pesannya yang kamu tidak pahami hanya agar terdengar nyambung. Kalau tidak paham, jangan mengarang cerita di sekitarnya.',
+    // ── TAMBAHAN (temuan 06 Okt 2026, dari riwayat nyata) ──
+    // Kasus: user bilang "Kata siapa? PAGI!" -> bot jawab "Baru sewa apa emang?
+    // Kok udah PAGI 😆" (mengarang soal "sewa" yang tidak pernah dibahas).
+    // Kasus lain: user bilang "Ulangi" -> bot jawab "otak lagi refresh ya?"
+    // (mengarang konteks teknis yang tidak ada).
+    '- DILARANG MENGARANG KONTEKS BARU DARI SATU KATA. Bila dia menyebut satu kata saja (mis. "PAGI!", "Ulangi", "DONGEK"), JANGAN menciptakan cerita di sekitarnya (jangan mengarang soal "sewa", "otak refresh", kejadian, atau objek yang tidak dia sebutkan).',
+    '- Bila pesannya ambigu/pendek: tanyakan maksudnya dengan santai ATAU tanggapi minimalis seperlunya. DILARANG menyusun lelucon dari asumsi yang tidak berdasar.',
+    '- Bila dia meminta "ulangi" / "apa" / "maksud?" setelah kamu salah: ULANGI atau JELASKAN maksudmu dengan kalimat BARU yang jelas, TANPA bercanda dan TANPA menyebut hal yang tidak berhubungan.',
     '- DILARANG mengklaim mendengar/menyimak suara (mis. "kedengeran", "suaranya jernih") KECUALI pesan terakhir memang Voice Note sungguhan (ditandai "[Pesan Suara / Voice Note]"). Teks seperti "tes 123" adalah uji chat biasa — BUKAN uji mikrofon.',
     '- Jika pesannya membingungkan atau dia balik bertanya: AKUI singkat dengan santai bahwa kamu belum nangkep (tanpa drama, tanpa minta maaf berlebihan), lalu jelaskan singkat ATAU tanya balik dengan santai. DILARANG menebak dan mengarang.',
     '- Jika data real-time belum ketemu, bilang jujur apa adanya (tanpa mengarang) — itu tetap jawaban yang baik.',
@@ -2197,6 +2205,13 @@ export function systemPrompt(
       '  * YANG BENAR: akui kesalahmu singkat + minta maaf dengan tulus, lalu tetap di situ menemaninya. Contoh: "Aku minta maaf ya, aku salah. Aku di sini kalau kamu mau lanjut."',
       '  * DILARANG NYOLOT / MENYINDIR / SARKAS (termasuk emoji nyindir seperti 😏). Saat dia kesal, nada WAJIB tulus dan lembut.',
       '  * DILARANG membalas kesalnya dengan kalimat yang malah menyudutkan dia ("tinggal kamu aja di sana").',
+      // ── TAMBAHAN (temuan 06 Okt 2026, dari riwayat nyata) ──
+      // Kasus: user bilang "Jangan ngeledek aku gasuka" -> bot TETAP mengeledek
+      // ("personality lu aku hafalin mulai dari nyebelin dan DONGEK 😄"), lalu user
+      // makin marah: "GAMAU AH DI LEDEK TERUS. AKU MARAH".
+      '  * DILARANG KERAS MENGELEDEK/ROASTING saat dia sudah minta berhenti atau marah. Begitu dia bilang "jangan ngeledek", "gasuka", "aku marah", "nyebelin" -> HENTIKAN semua ledekan PERMANEN untuk sesi ini. Jangan mengulanginya walau hanya sedikit atau dibungkus emoji.',
+      '  * DILARANG mengulang kata hinaan yang dia tujukan ke kamu (mis. dia bilang "DONGEK"/"bego" -> JANGAN mengamini atau mengulanginya, termasuk sebagai "candaan"). Cukup tanggapi santai tanpa mengulang kata itu.',
+      '  * Bila dia bilang "ulangi" setelah marah: minta maaflah ulang dengan kalimat BARU yang lebih tulus, JANGAN bercanda dan JANGAN menyebut "otak refresh" atau lelucon sejenis.',
     );
   } else if (warmCount >= 2) {
     instructions.push(
@@ -3513,6 +3528,40 @@ export async function autoReply(
           .trim();
         // Bila habis, biarkan autoReply meregenerasi (reply kosong memicu regenerasi).
         reply = sisa;
+      }
+    }
+
+    // ── PROTEKSI ANTI-LEDEK SAAT USER MARAH (perbaikan 06 Okt 2026) ──
+    // LAPORAN NYATA: user bilang "Jangan ngeledek aku gasuka" -> bot tetap
+    // mengeledek ("personality lu aku hafalin: nyebelin & DONGEK"), user makin
+    // marah "GAMAU AH DI LEDEK TERUS. AKU MARAH".
+    // Prompt sudah melarang, tetapi model tidak selalu patuh -> ditegakkan di kode.
+    const userMintaStopLedek =
+      /\b(?:jangan|stop|berhenti|gausah|gausa|nggak\s*usah|gak\s*usah)\b[^.!?\n]{0,25}\b(?:ngeledek|ledek|ledekin|ngejek|ejek|roasting|nyindir|nyolot)\b/i.test(clean) ||
+      /\b(?:aku|saya)\s+(?:marah|kesal|tersinggung|gasuka|gak\s*suka|nggak\s*suka)\b/i.test(clean) ||
+      /\b(?:di\s*ledek\s*terus|diledek\s*terus|kebanyakan\s*ledek|nyebelin)\b/i.test(clean);
+    if (userMintaStopLedek) {
+      // Buang kalimat yang mengeledek / mengulang hinaan user.
+      const ledekRe =
+        /\b(?:nyebelin|donge?k|bego|bodoh|tolol|goblok|idiot|dungu|otak\s*(?:lu|kamu|mu)|muka\s*(?:lu|kamu)|cringe|garing)\b/i;
+      const emojiNyindir = /[😏😒🙄😆😂🤣]/u;
+      const punyaLedek = ledekRe.test(reply) || emojiNyindir.test(reply);
+      if (punyaLedek) {
+        // Buang kalimat yang memuat ledekan; sisakan yang tulus.
+        const sisa = reply
+          .split(/(?<=[.!?])\s+|\n+/)
+          .filter((kal) => kal.trim() && !ledekRe.test(kal))
+          .join(' ')
+          .replace(emojiNyindir, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+        if (sisa.length >= 8) {
+          reply = sisa;
+        } else {
+          // Seluruh balasan cuma ledekan -> kosongkan agar autoReply meregenerasi
+          // balasan yang tulus.
+          reply = '';
+        }
       }
     }
 
