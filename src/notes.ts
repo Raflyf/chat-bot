@@ -1910,6 +1910,86 @@ export async function tanganiPencatatan(
     // Angka boleh DIGIT ("nomor 5") atau KATA ("nomor satu"), orang yang
     // berbicara lewat Voice Note tidak mengetik angka.
     const lowAngka = angkaKataKeDigit(low);
+
+    // ── SELESAIKAN TUGAS LEWAT BAHASA ALAMI (perbaikan 06 Okt 2026) ──
+    //
+    // LAPORAN PEMILIK PRODUK: "tugas upload jurnal selesai" -> bot MALAH
+    // menawari mencatat tugas baru, padahal user ingin MENYELESAIKAN.
+    //
+    // SEBAB: deteksi selesai HANYA mengenali pola "<kata selesai> <angka>"
+    // (mis. "selesai 1"). Kalimat alami tanpa angka tidak dikenali.
+    //
+    // SEKARANG: kenali juga pola:
+    //   a. "tugas <nama> selesai"     -> selesai (nama di akhir)
+    //   b. "<nama> selesai"           -> selesai
+    //   c. "selesai tugas <nama>"     -> selesai (nama di akhir)
+    //   d. "selesaikan <nama>"
+    // Nama tugas dicocokkan dengan daftar tugas user (kemiripan teks).
+
+    // Pola "tugas X selesai" / "X sudah selesai" / "selesai tugas X" TANPA angka.
+    const mSelesaiNama = low.match(
+      /^(?:tugas\s+)?(.+?)\s+(?:sudah\s+|udah\s+)?(?:selesai|kelar|beres|done|tuntas|selesaikan)\s*[.!]*$/i,
+    ) || low.match(
+      /^(?:selesai(?:kan)?|tandai\s+selesai|sudah\s+selesai|udah\s+selesai)\s+(?:tugas\s+)?(.+?)\s*[.!]*$/i,
+    );
+    // GUARD: jangan tangkap cerita masa lalu ("aku tadi selesai makan").
+    // Kata waktu lampau menandakan user BERCERITA, bukan menyuruh menyelesaikan.
+    const ceritaLampau = /\b(tadi|kemarin|barusan|baru\s+aja|td|tadi\s+kan|sudah\s+aku|aku\s+sudah\s+selesai\s+\w+\s+tadi)\b/.test(low);
+    if (mSelesaiNama && !ceritaLampau) {
+      const mentah = mSelesaiNama[1].trim()
+        .replace(/^tugas\s+/i, '').replace(/\s+tugas$/i, '').trim();
+      // Buat DUA kandidat: (a) apa adanya, (b) tanpa kata kerja umum di depan.
+      // Penting: "upload jurnal selesai" -> jangan buang "upload" (itu bagian
+      // nama tugas!). Kita coba keduanya agar cocok paling tepat.
+      const tanpaKataKerja = mentah
+        .replace(/^(?:beli|buat|bikin|kerjakan|mengerjakan|mengurus|urus|kirim|bayar|hubungi|telepon|telpon|baca|tulis)\s+/i, '')
+        .trim();
+      const kandidatNama = Array.from(new Set([mentah, tanpaKataKerja]))
+        .filter((n) => n.length >= 2 && !/^\d+$/.test(n));
+
+      if (kandidatNama.length > 0) {
+        const tugasUser = await daftarTugas(chatId, true);
+        // Cocokkan bertingkat: SAMA PERSIS dulu, baru mengandung.
+        let kandidat: (typeof tugasUser)[number] | undefined;
+        for (const nama of kandidatNama) {
+          const b = nama.toLowerCase().trim();
+          kandidat = tugasUser.find((t) => t.task.toLowerCase().trim() === b);
+          if (kandidat) break;
+        }
+        if (!kandidat) {
+          for (const nama of kandidatNama) {
+            const b = nama.toLowerCase().trim();
+            kandidat = tugasUser.find((t) => {
+              const a = t.task.toLowerCase().trim();
+              return a.includes(b) || b.includes(a);
+            });
+            if (kandidat) break;
+          }
+        }
+        const namaTugas = mentah;
+        if (kandidat) {
+          const okk = await selesaikanTugas(chatId, kandidat.id);
+          if (okk) {
+            return {
+              ditangani: true,
+              reply: `✅ Tugas *#${kandidat.nomor ?? kandidat.id} ${kandidat.task}* selesai! 👍`,
+              jalur: 'niat-selesai-nama',
+            };
+          }
+        } else if (tugasUser.length > 0) {
+          // Ada tugas tapi namanya tidak cocok -> beri tahu daftar agar user bisa pilih.
+          return {
+            ditangani: true,
+            reply:
+              `Tidak ada tugas bernama *"${namaTugas}"* yang belum selesai.\n\n` +
+              `*Tugas kamu:*\n${formatDaftarTugas(tugasUser)}\n\n` +
+              `Ketik misalnya: *selesai ${tugasUser[0].nomor ?? tugasUser[0].id}*`,
+            jalur: 'niat-selesai-tidak-cocok',
+          };
+        }
+      }
+    }
+
     const mHapus = lowAngka.match(/\b(?:hapus|buang|hilangkan|delete)\s+(?:tugas|catatan|barang|belanja|nomor|no|yang)?\s*(?:nomor|no|#)?\s*(\d+)\b/);
     const mSelesai = lowAngka.match(/\b(?:selesai|selesaikan|sudah|udah|done|beres)\s+(?:tugas|nomor|no|#)?\s*(\d+)\b/);
     if (mSelesai) {
