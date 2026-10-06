@@ -2256,7 +2256,19 @@ export function systemPrompt(
     recentUserMsgs.filter((m) => annoyRe.test(m) && !warmRe.test(m)).length +
     (annoyRe.test(userPromptText) && !warmRe.test(userPromptText) ? 1 : 0);
   const warmCount = recentUserMsgs.filter((m) => warmRe.test(m)).length;
-  const sadRecent = recentUserMsgs.slice(-2).some((m) => sadRe.test(m)) || sadRe.test(userPromptText);
+  // ── KELUHAN FISIK (temuan nyata 06 Okt 2026) ──
+  // LAPORAN: user mengeluh "Aku pilek" / "Aku sakit kaki" / "Aku pusing", tetapi
+  // bot menjawab "Duh, angetin badan dulu aja sana." lalu "Sakit gitu sih bub,
+  // gih bub." — MENYURUH PERGI saat user sedang sakit. Empati salah total.
+  //
+  // AKAR: pola sadRe hanya memuat emosi (sedih/capek/galau), TIDAK memuat
+  // keluhan FISIK. Jadi bot tidak tahu user sedang sakit.
+  const sakitFisikRe =
+    /\b(?:pilek|flu|batuk|demam|panas\s*dalam|meriang|masuk\s*angin|pusing|sakit\s*(?:kepala|perut|kaki|tangan|punggung|gigi|mata|tenggorokan|pinggang|badan|dada|leher|lutut)|mual|muntah|diare|mencret|sesak|nggak\s*enak\s*badan|gak\s*enak\s*badan|ngantuk\s*banget|kecapekan|kelelahan|pegal|pegel|kram|nyeri|geger|migrain|asma|alergi|biduran|panas\s*dingin)\b/i;
+  const sadRecent =
+    recentUserMsgs.slice(-2).some((m) => sadRe.test(m) || sakitFisikRe.test(m)) ||
+    sadRe.test(userPromptText) ||
+    sakitFisikRe.test(userPromptText);
   // annoyActive = trajektori kesal beruntun (2+ pesan); dipakai juga oleh guard komplain gombalan
   const annoyActive = annoyCount >= 2;
   if (annoyActive) {
@@ -2267,7 +2279,17 @@ export function systemPrompt(
   } else if (sadRecent) {
     instructions.push(
       '',
-      '[SUASANA: dia lagi rapuh. Hangat dan dengerin dulu, jangan ceria berlebihan, jangan buru-buru memberi solusi.]',
+      '[SUASANA: dia lagi rapuh/sakit. Hangat dan dengerin dulu, jangan ceria berlebihan, jangan buru-buru memberi solusi.]',
+      // ── ATURAN KERAS SAAT DIA SAKIT (temuan 06 Okt 2026) ──
+      // LAPORAN: user mengeluh "Aku pilek" / "Aku sakit kaki" / "Aku pusing",
+      // bot menjawab "Duh, angetin badan dulu aja sana." lalu "Sakit gitu sih
+      // bub, gih bub." -> MENYURUH PERGI saat dia sakit. Empati salah total.
+      '[ATURAN KERAS - SAAT DIA MENGELUH SAKIT/KURANG FIT:]',
+      '  * DILARANG menyuruh dia pergi ("sana", "gih", "bub", "istirahat sana", "tidur sana"). Itu terdengar mengusir, bukan menyayangi.',
+      '  * DILARANG meremehkan keluhannya ("sakit gitu sih", "cuma pilek doang", "lebay").',
+      '  * YANG BENAR: tunjukkan perhatian TULUS dengan kalimat sendiri — tanyakan bagian mana yang paling tidak enak, atau beri satu saran ringan yang menenangkan (istirahat, minum hangat, kompres). Tetap hangat, tidak menggurui, tidak panjang.',
+      '  * Contoh nada yang tepat: "Duh, pilek plus pusing tuh nyiksa banget. Istirahat dulu ya, minum anget biar enakan."',
+      '  * Bila dia mengeluh BEBERAPA keluhan sekaligus (pilek + sakit kaki + pusing), tanggapi SEMUANYA sebagai satu kesatuan — jangan abaikan salah satunya.',
       // ── ATURAN KERAS (temuan 06 Okt 2026) ──
       // LAPORAN NYATA: user bilang "GAMAU! UDAH LAH CAPEK. AKU PERGI" (kesal, bukan
       // benar-benar mau pergi). Bot menjawab "Iya aku paham, kamu lagi capek banget.
@@ -3674,6 +3696,29 @@ export async function autoReply(
           // balasan yang tulus.
           reply = '';
         }
+      }
+    }
+
+    // ── PENEGAK: JANGAN MENGUSIR SAAT DIA SAKIT (perbaikan 06 Okt 2026) ──
+    // LAPORAN NYATA: user mengeluh "Aku pilek / sakit kaki / pusing" -> bot:
+    // "Duh, angetin badan dulu aja sana." + "Sakit gitu sih bub, gih bub."
+    // Kalimat "sana"/"gih"/"bub" terdengar MENGUSIR, bukan menyayangi.
+    const sakitFisikRe2 =
+      /\b(?:pilek|flu|batuk|demam|panas\s*dalam|meriang|masuk\s*angin|pusing|sakit\s*(?:kepala|perut|kaki|tangan|punggung|gigi|mata|tenggorokan|pinggang|badan|dada|leher|lutut)|mual|muntah|diare|mencret|sesak|nggak\s*enak\s*badan|gak\s*enak\s*badan|kecapekan|kelelahan|pegal|pegel|kram|nyeri|geger|migrain|asma|alergi|biduran|panas\s*dingin)\b/i;
+    const diaSakitFisik = sakitFisikRe2.test(clean);
+    if (diaSakitFisik) {
+      const usirRe =
+        /\b(?:gih\s+bub|gih\s+sana|sana\s+aja|pergi\s+sana|sakit\s+gitu\s+sih|cuma\s+(?:pilek|pusing|sakit)\s+doang|lebay|manja\s+banget)\b/i;
+      if (usirRe.test(reply)) {
+        const sisa = reply
+          .split(/(?<=[.!?])\s+|\n+/)
+          .filter((kal) => kal.trim() && !usirRe.test(kal))
+          .join(' ')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+        // Bila seluruh balasan cuma kalimat mengusir -> kosongkan agar diregenerasi.
+        reply = sisa.length >= 10 ? sisa : '';
+        if (!reply) console.warn('[skills] Balasan mengusir saat user sakit — diregenerasi.');
       }
     }
 
