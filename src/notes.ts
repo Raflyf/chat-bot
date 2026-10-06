@@ -28,7 +28,7 @@ import { db } from './db.js';
 import { formatInZone } from './timezone.js';
 import { tanganiGame } from './games/index.js';
 import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
-import { butuhLokasiAtauWaktu, tentukanProfilWaktu, berkaitanDenganWaktu, waktuDiZona } from './user-profile.js';
+import { ambilProfilWaktu, getCacheProfil, butuhLokasiAtauWaktu, tentukanProfilWaktu, berkaitanDenganWaktu, waktuDiZona } from './user-profile.js';
 import { detectUserLocationDeclaration } from './timezone.js';
 import { deteksiPengulangan, labelUlang } from './reminder-repeat.js';
 import { susunRingkasan, mintaRingkasan } from './ringkasan.js';
@@ -240,8 +240,92 @@ export function angkaKataKeDigit(teks: string): string {
   return t;
 }
 
-export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date | null {
+// ── HELPER ZONA WAKTU (perbaikan 06 Okt 2026) ──
+//
+// BUG BESAR YANG DIPERBAIKI: "buatkan jadwal rutin tiap jam 6 pagi" tersimpan
+// sebagai 06:00 UTC (= 13:00 WIB), bukan 06:00 WIB.
+//
+// SEBAB: `Date.setHours(6)` memakai zona waktu SERVER. Di Vercel (UTC), itu
+// berarti 06:00 UTC. Di lokal (WIB) kebetulan benar, sehingga bug tidak terlihat
+// saat diuji lokal. Di produksi, SEMUA pengingat jam menjadi meleset.
+//
+// PERBAIKAN: semua perhitungan jam dilakukan di ZONA WAKTU USER, bukan server.
+
+/** Offset zona (ms) pada waktu tertentu: waktuLokal - waktuUTC. */
+function offsetZona(ms: number, zona: string): number {
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: zona, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    const map: Record<string, string> = {};
+    for (const p of dtf.formatToParts(new Date(ms))) map[p.type] = p.value;
+    const asUTC = Date.UTC(
+      Number(map.year), Number(map.month) - 1, Number(map.day),
+      Number(map.hour) % 24, Number(map.minute), Number(map.second),
+    );
+    return asUTC - ms;
+  } catch {
+    return 0;
+  }
+}
+
+/** Ambil komponen tanggal & waktu di ZONA tertentu dari sebuah Date. */
+function komponenDiZona(d: Date, zona: string): { y: number; mo: number; d: number; h: number; mi: number } {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: zona, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+  const map: Record<string, string> = {};
+  for (const p of dtf.formatToParts(d)) map[p.type] = p.value;
+  return {
+    y: Number(map.year), mo: Number(map.month), d: Number(map.day),
+    h: Number(map.hour) % 24, mi: Number(map.minute),
+  };
+}
+
+/**
+ * Buat Date dari komponen waktu di ZONA tertentu.
+ * Menggeser hari secara aman (mis. tanggal 31 + 1 hari -> bulan berikutnya).
+ */
+function dariKomponenZona(
+  y: number, mo: number, d: number, h: number, mi: number, zona: string,
+): Date {
+  // Normalisasi lewat Date.UTC (menangani overflow tanggal/bulan otomatis).
+  let ms = Date.UTC(y, mo - 1, d, h, mi, 0, 0);
+  // Koreksi SATU KALI: kurangi offset zona. Diverifikasi:
+  //   Date.UTC(2026,9,6,6,0) = 06:00Z -> -7j = 23:00Z (tgl 5) = 06:00 WIB ✅
+  // CATATAN: JANGAN dikoreksi dua kali. Percobaan sebelumnya memakai dua
+  // koreksi dan menghasilkan 16:00Z = 23:00 WIB (SALAH, selisih 10 jam).
+  // Koreksi berulang hanya diperlukan untuk zona dengan DST dan menghitung
+  // offset dari waktu yang SUDAH dikoreksi — di sini satu kali sudah tepat
+  // untuk WIB/WITA/WIT (tanpa DST).
+  ms -= offsetZona(ms, zona);
+  return new Date(ms);
+}
+
+/** Geser sebuah Date sebanyak N hari DI ZONA tertentu (aman saat ganti bulan). */
+function geserHariDiZona(d: Date, hari: number, zona: string): Date {
+  const k = komponenDiZona(d, zona);
+  return dariKomponenZona(k.y, k.mo, k.d + hari, k.h, k.mi, zona);
+}
+
+/** Set jam:menit pada sebuah Date DI ZONA tertentu. */
+function setJamDiZona(d: Date, h: number, mi: number, zona: string): Date {
+  const k = komponenDiZona(d, zona);
+  return dariKomponenZona(k.y, k.mo, k.d, h, mi, zona);
+}
+
+export function parseWaktuAlami(
+  teks: string,
+  sekarang: Date = new Date(),
+  zonaZona?: string,
+): Date | null {
   const s = angkaKataKeDigit(teks.toLowerCase().trim());
+  // Zona waktu untuk perhitungan jam. Prioritas: argumen > zona user aktif > WIB.
+  const zona = zonaZona || (typeof zonaAktif === 'string' && zonaAktif ? zonaAktif : 'Asia/Jakarta');
   const hasil = new Date(sekarang.getTime());
 
   // "N menit lagi" / "N jam lagi" / "N hari lagi", N boleh angka atau kata.
@@ -309,13 +393,11 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
     const men1 = mRentang[2] ? Number(mRentang[2]) : 0;
     const j2 = Number(mRentang[3]);
     const men2 = mRentang[4] ? Number(mRentang[4]) : 0;
-    const d = new Date(sekarang.getTime());
-    d.setHours(j1, men1, 0, 0);
-    if (d.getTime() <= sekarang.getTime()) d.setDate(d.getDate() + 1);
-    const selesai = new Date(d.getTime());
-    selesai.setHours(j2, men2, 0, 0);
+    let d = setJamDiZona(sekarang, j1, men1, zona);
+    if (d.getTime() <= sekarang.getTime()) d = geserHariDiZona(d, 1, zona);
+    let selesai = setJamDiZona(d, j2, men2, zona);
     // Bila jam selesai < jam mulai, berarti lewat tengah malam.
-    if (selesai.getTime() <= d.getTime()) selesai.setDate(selesai.getDate() + 1);
+    if (selesai.getTime() <= d.getTime()) selesai = geserHariDiZona(selesai, 1, zona);
     Object.defineProperty(d, 'selesai', { value: selesai, enumerable: false });
     return d;
   }
@@ -326,10 +408,11 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
   const mTanggal = s.match(/\b(?:tanggal|tgl)\s+(\d{1,2})\b/);
   if (mTanggal) {
     const tgl = Math.min(31, Math.max(1, Number(mTanggal[1])));
-    const d = new Date(sekarang.getTime());
-    d.setHours(8, 0, 0, 0);
-    d.setDate(tgl);
-    if (d.getTime() <= sekarang.getTime()) d.setMonth(d.getMonth() + 1, tgl);
+    const k = komponenDiZona(sekarang, zona);
+    let d = dariKomponenZona(k.y, k.mo, tgl, 8, 0, zona);
+    if (d.getTime() <= sekarang.getTime()) {
+      d = dariKomponenZona(k.y, k.mo + 1, tgl, 8, 0, zona);
+    }
     return d;
   }
 
@@ -341,10 +424,9 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
   if (mBagianHari && !/(?:jam|pukul)\s*\d/.test(s)) {
     const jamDefault: Record<string, number> = { subuh: 4, pagi: 7, siang: 12, sore: 16, petang: 16, malam: 19 };
     const j = jamDefault[mBagianHari[1]];
-    const d = new Date(sekarang.getTime());
-    d.setHours(j, 0, 0, 0);
+    let d = setJamDiZona(sekarang, j, 0, zona);
     // Bila jam itu sudah lewat hari ini -> besok.
-    if (d.getTime() <= sekarang.getTime()) d.setDate(d.getDate() + 1);
+    if (d.getTime() <= sekarang.getTime()) d = geserHariDiZona(d, 1, zona);
     return d;
   }
 
@@ -362,18 +444,19 @@ export function parseWaktuAlami(teks: string, sekarang: Date = new Date()): Date
 
   if (geserHari === null && jam === null) return null;
 
-  if (geserHari !== null) hasil.setDate(hasil.getDate() + geserHari);
+  let hasilZ = hasil;
+  if (geserHari !== null) hasilZ = geserHariDiZona(hasilZ, geserHari, zona);
   if (jam !== null) {
-    hasil.setHours(jam, menit, 0, 0);
+    hasilZ = setJamDiZona(hasilZ, jam, menit, zona);
   } else if (geserHari !== null) {
     // Tanpa jam eksplisit → default 08:00 pagi
-    hasil.setHours(8, 0, 0, 0);
+    hasilZ = setJamDiZona(hasilZ, 8, 0, zona);
   }
   // Bila hasil sudah lewat (mis. "jam 8" tapi sekarang 9 malam) → besok
-  if (hasil.getTime() <= sekarang.getTime() && geserHari === null) {
-    hasil.setDate(hasil.getDate() + 1);
+  if (hasilZ.getTime() <= sekarang.getTime() && geserHari === null) {
+    hasilZ = geserHariDiZona(hasilZ, 1, zona);
   }
-  return hasil;
+  return hasilZ;
 }
 
 // ============================================================================
@@ -523,11 +606,15 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         .replace(/\b(?:tiap|setiap|saban)\b/gi, '')
         // Kata perintah/sisa yang menggantung di TENGAH (mis. "pengingat rapat").
         .replace(/\b(?:pengingat|reminder|jadwal|rutin|set|pasang|atur|buatkan|bikin)\b/gi, '')
+        // Kata sambung yang menggantung (temuan 06 Okt 2026: "untuk bangun").
+        .replace(/\b(?:untuk|buat|agar|supaya|biar|demi|sambil|sembari)\b/gi, '')
         // Sisa angka tunggal yang menggantung (mis. dari "tiap jam 6").
         .replace(/^\s*\d{1,2}\s+/, '')
         .replace(/\s{2,}/g, ' ')
         // Kata perintah/sifat yang menggantung di TENGAH.
-        .replace(/\b(?:jadwal|jadwalkan|rutin|harus|wajib|perlu|mesti|kudu|bangunkan|bangunin)\b/gi, (m) => (m.toLowerCase() === 'harus' || m.toLowerCase() === 'wajib' ? ' ' : ' '))
+        .replace(/\b(?:jadwal|jadwalkan|rutin|harus|wajib|perlu|mesti|kudu|bangunkan|bangunin)\b/gi, ' ')
+        // Kata sambung yang menggantung (temuan 06 Okt 2026: "untuk bangun").
+        .replace(/\b(?:untuk|buat|agar|supaya|biar|demi|sambil|sembari)\b/gi, ' ')
         .replace(/\s{2,}/g, ' ')
         .trim();
       if (pesan0.length < 3) pesan0 = asli;
@@ -637,10 +724,20 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         .replace(/\blagi\b/gi, '')
         .replace(/\s{2,}/g, ' ')
         .trim();
-      // Bila pesan kosong (mis. "ingatkan besok jam 8" tanpa keterangan lain),
-      // pakai teks asli yang sudah dibersihkan kata perintahnya.
+      // Bila pesan kosong (mis. "ingatkan jam 8 malam" tanpa keterangan lain),
+      // JANGAN pakai teks asli mentah (akan berisi kata waktu: "jam 8 malam").
+      // Buang kata perintah + kata waktu; bila tetap kosong, pakai kata generik
+      // yang jujur ("pengingat") daripada menampilkan frasa waktu yang aneh.
       if (pesan.length < 3) {
-        pesan = asli.replace(/^\s*\/?(ingatkan|ingetin|remind)\b\s*/i, '').trim() || asli;
+        const sisaBersih = asli
+          .replace(/^\s*\/?(ingatkan|ingetin|ingat|remind|reminder|pengingat)\b\s*/i, '')
+          .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
+          .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
+          .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
+          .replace(/\b\d{1,2}\s*(menit|jam|hari|minggu|bulan)\b/gi, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+        pesan = sisaBersih.length >= 3 ? sisaBersih : 'pengingat';
       }
       // PENGINGAT BERULANG (fitur baru 05 Okt 2026): "tiap hari jam 7", "tiap Senin jam 9".
       const ulang = deteksiPengulangan(s);
@@ -1301,6 +1398,22 @@ async function simpanDariNiat(
  * Mengembalikan { ditangani: true, reply } bila pesan sudah diurus di sini
  * (pemanggil TIDAK boleh meneruskannya ke AI), atau { ditangani: false }.
  */
+/**
+ * Ambil profil zona user: cache sinkron lebih dulu (0 ms), lalu DB bila kosong.
+ * Dipakai di AWAL tanganiPencatatan agar parseWaktuAlami tahu zona user.
+ */
+async function ambilProfilCacheAtauDb(chatId: string): Promise<{ timezone: string } | null> {
+  const dariCache = getCacheProfil(chatId);
+  if (dariCache?.timezone) return dariCache;
+  try {
+    const dariDb = await ambilProfilWaktu(chatId);
+    if (dariDb?.timezone) return dariDb;
+  } catch {
+    // abaikan
+  }
+  return null;
+}
+
 export async function tanganiPencatatan(
   teks: string,
   chatId: string,
@@ -1311,6 +1424,22 @@ export async function tanganiPencatatan(
   const asli = teks.trim();
   const low = s.toLowerCase();
   catatanKonfirmasiZona = '';
+
+  // ── ZONA WAKTU DI-SET DI AWAL (perbaikan 06 Okt 2026) ──
+  //
+  // BUG BESAR: `setZonaAktif()` dulu dipanggil JAUH di bawah (blok A0a, baris
+  // ~1543), sedangkan `parseWaktuAlami()` sudah dipakai LEBIH DULU (baris 581+).
+  // Akibatnya perhitungan jam memakai zona default (WIB) ATAU zona server:
+  //   "buatkan jadwal rutin tiap jam 6 pagi" -> tersimpan 13:00 (server UTC),
+  //   bukan 06:00 WIB. Diuji lokal (WIB) kebetulan benar -> bug tak terlihat.
+  //
+  // SEKARANG zona diambil & dipasang di AWAL, sebelum parsing waktu apa pun.
+  try {
+    const profilAwal = await ambilProfilCacheAtauDb(chatId);
+    if (profilAwal?.timezone) setZonaAktif(profilAwal.timezone);
+  } catch {
+    // fallback: zonaAktif tetap default (WIB)
+  }
 
   // ── 0. Jawaban konfirmasi tertunda ──
   // Dipakai untuk CATATAN / TUGAS / KEUANGAN saja (pengingat langsung disimpan,
