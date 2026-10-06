@@ -2664,6 +2664,22 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   const mTugas = asli.match(/\b(?:aku|saya|gue|gw|kita)?\s*(?:perlu|harus|kudu|mesti)\s+([a-z]{3,20}\s+[\s\S]{2,80})/i);
   // Varian tanpa subjek: "harus beli galon", "perlu bayar pajak"
   const mTugasPolos = asli.match(/^\s*(?:perlu|harus|kudu|mesti)\s+([a-z]{3,20}\s+[\s\S]{2,80})/i);
+
+  // ── PENJAGA: "harus" + KATA GANTI ORANG KEDUA = obrolan, BUKAN tugas ──
+  // TEMUAN NYATA (06 Okt 2026): "Lu harus paksa gue baru gue mau jawab" salah
+  // dicatat sebagai TUGAS ("harus paksa gue baru gue mau jawab").
+  //
+  // Ciri obrolan (bukan tugas):
+  //   - subjek/kata gantinya ORANG KEDUA (lu/kamu/elo/anda/kau) -> itu ucapan
+  //     ke BOT, bukan kewajiban user sendiri.
+  //   - kata kerja bermakna perintah sosial: paksa, bilang, jawab, jawabnya,
+  //     gitu, gini, diam, pergi, tinggal, ikut, coba, tebak, ledek, gombal.
+  const obrolanBukanTugas =
+    /\b(?:lu|lo|loe|elo|kamu|kaw|anda|kau|kmu)\s+(?:harus|perlu|kudu|mesti)\b/i.test(asli) ||
+    /\b(?:harus|perlu|kudu|mesti)\s+(?:paksa|dipaksa|bilang|jawab|jawabnya|gitu|gini|diam|pergi|tinggal|ikut|coba|tebak|ledek|gombal|ngerti|ngerti|paham|tau|tahu|percaya|setuju|iya|mau|bisa|boleh)\b/i.test(asli);
+  if (obrolanBukanTugas) {
+    return null;
+  }
   if (mTugasPolos && !mTugas) {
     const isi = mTugasPolos[0].trim();
     return {

@@ -4106,6 +4106,31 @@ export async function describeImage(
       // tidak bisa cek cuaca) dijawab "Wahahaha, lucu banget!" — salah total karena model
       // hanya melihat gambarnya, bukan tulisannya.
       '1. LANGKAH PERTAMA — BACA TEKS/NULISAN DI STIKER: banyak stiker memuat tulisan. Jika ada teks, ITULAH makna utama stiker dan wajib jadi dasar balasanmu. Contoh: stiker bertulisan "DONGO Sejak Lahir" = sindiran/ejekan (dongo = bodoh), bukan lelucon lucu — balas dengan menyadari sindirannya secara santai/self-deprecating, BUKAN tertawa "lucu banget".',
+      // ── ATURAN KERAS (temuan nyata 06 Okt 2026) ──
+      // LAPORAN 1: user kirim stiker "SATIR / SAYANG PADAMU TIADA AKHIR", minta
+      //   "isi stikernya apa" -> bot: "tulisan kecil susah kebaca 😂" -> user:
+      //   "Mata lu mines ya".
+      // LAPORAN 2: user kirim stiker kucing pegang mawar -> bot: "itu kucingnya
+      //   sampe kaget" -> SALAH TOTAL (kucingnya tidak kaget, ekspresinya datar).
+      //
+      // AKAR: model MELIHAT gambar tapi TIDAK TELITI, lalu menebak ekspresi/isi
+      // yang tidak ada. Ini merusak kepercayaan.
+      '1b. DILARANG KERAS bilang tulisan stiker "kecil", "susah dibaca", "nggak kebaca", "buram", atau "kayaknya ada tulisan tapi tidak jelas". Kalau ada tulisan, BACA dan SEBUTKAN isinya dengan yakin.',
+      '1c. Bila user MEMINTA eksplisit ("isi stikernya apa", "tulisannya apa", "coba baca"): sebutkan TEKSNYA apa adanya + maknanya singkat.',
+      '1d. DILARANG MENEBAK EKSPRESI/EMOSI YANG TIDAK TERLIHAT. Amati WAJAH & sikapnya dulu: mata datar = datar/santai, bukan kaget; mata melotot = kaget. Kalau ragu, JANGAN sebut ekspresi apa pun — cukup reaksi netral yang aman.',
+      '1e. DILARANG KERAS menyebut hal yang tidak ada di stiker (mis. "sampe kaget", "ketawa", "nangis") hanya karena kebiasaan. Salah sebut = jawaban gagal.',
+      // ── ATURAN KERAS (temuan nyata 06 Okt 2026) ──
+      // LAPORAN: user kirim stiker bertulisan "SATIR / SAYANG PADAMU TIADA AKHIR",
+      // lalu minta "Coba itu isi stikernya apa". Bot menjawab:
+      //   "Itu stiker kucing lucu, kayaknya ada kata-katanya juga tapi kecil
+      //    banget susah kebaca 😂"
+      // User kesal: "Mata lu mines ya".
+      //
+      // KENAPA SALAH: teks di stiker itu JELAS. Mengaku "susah dibaca" =
+      // mengecewakan user dan terlihat tidak becus. Kalau user MEMINTA membaca
+      // isi stiker, teks itu WAJIB dibaca dan disebutkan.
+      '1b. DILARANG KERAS bilang tulisan stiker "kecil", "susah dibaca", "nggak kebaca", "buram", atau "kayaknya ada tulisan tapi tidak jelas". Kalau ada tulisan, BACA dan SEBUTKAN isinya (atau intinya) dengan yakin. Mengaku tidak bisa membaca padahal tulisannya ada = jawaban gagal.',
+      '1c. Bila user MEMINTA eksplisit ("isi stikernya apa", "tulisannya apa", "coba baca"): sebutkan TEKSNYA apa adanya (boleh dikutip) + maknanya singkat. Itu permintaan jelas, jadi boleh menyebut isi (bukan narasi terlarang).',
       '2. JIKA TIDAK ADA TEKS: barulah dasarkan balasan pada GAMBAR dan KONSEP stiker (emosi/maksud yang tergambar: sindiran, kesal, kaget, sedih, lucu, dll).',
       // KASUS NYATA 04 Okt 02:25: user kirim stiker AYAM + love. Bot jawab
       // "angsa jomblo siap dilamar" (salah spesies), lalu saat dikoreksi
@@ -4311,6 +4336,31 @@ export async function describeImage(
     }
   }
 
+  // ── PENEGAK: BACA TEKS STIKER (perbaikan 06 Okt 2026) ──
+  // LAPORAN NYATA: user kirim stiker bertulisan "SATIR / SAYANG PADAMU TIADA AKHIR"
+  // lalu minta "isi stikernya apa". Bot menjawab "tulisannya kecil susah kebaca 😂"
+  // -> user kesal "Mata lu mines ya".
+  //
+  // Bila user MEMINTA membaca isi stiker tetapi bot mengaku tidak bisa, itu GAGAL.
+  // Solusi: buang kalimat "tidak bisa membaca", sisakan/minta jawaban yang benar.
+  const mintaBacaStiker =
+    /\b(?:isi(?:nya)?|tulisan(?:nya)?|teks(?:nya)?|kata(?:-kata)?(?:nya)?|baca|bacain|bacakan|coba\s+lihat|apa\s+tulisannya)\b/i.test(caption || '') ||
+    /\b(?:isi|tulisan|teks|kata|baca)\b[^.!?\n]{0,20}\b(?:stiker|stikernya|gambar|gambarnya|ini)\b/i.test(caption || '');
+  const mengakuTakBisaBaca =
+    /\b(?:kecil(?:\s+banget)?|susah\s+(?:dibaca|kebaca)|nggak\s+(?:kebaca|bisa\s+dibaca)|tidak\s+(?:kebaca|bisa\s+dibaca)|buram|kurang\s+jelas|gak\s+jelas\s+bacaannya|kayaknya\s+ada\s+(?:tulisan|kata)\s+tapi)\b/i.test(reply);
+  if (mengakuTakBisaBaca) {
+    // Buang kalimat yang mengaku tidak bisa membaca.
+    const sisaKalimat = reply
+      .split(/(?<=[.!?])\s+|\n+/)
+      .filter((kal) => kal.trim() && !/(?:kecil|susah\s+(?:dibaca|kebaca)|nggak\s+(?:kebaca|bisa\s+dibaca)|tidak\s+(?:kebaca|bisa\s+dibaca)|buram|kurang\s+jelas)/i.test(kal))
+      .join(' ')
+      .trim();
+    // Bila seluruh balasan hanya keluhan itu -> kosongkan agar diregenerasi.
+    reply = sisaKalimat.length >= 10 ? sisaKalimat : '';
+    if (!reply) console.warn('[skills] Bot mengaku tidak bisa membaca teks stiker — diregenerasi.');
+  }
+  void mintaBacaStiker;
+
   if (isSticker) {
     // 1. Bersihkan pembuka template klise stiker
     reply = reply.replace(/^(?:Wah,\s*)?stiker\s+(?:ini\s+)?(?:seru|lucu|keren|kocak|menarik|banget|apaan)[^.!?\n]*[.!?\n]+\s*/i, '');
@@ -4318,14 +4368,39 @@ export async function describeImage(
     reply = reply.replace(/#[a-zA-Z0-9_-]+/g, '');
     reply = reply.replace(/[🐾🤖]/gu, '');
 
-    // 2. Jika model masih melantur membuat banyak paragraf / kalimat panjang, ambil kalimat pertama saja
-    const sentences = reply.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
-    if (sentences.length > 1) {
-      reply = sentences[0].trim();
+    // ── PENEGAK: JANGAN MENGAKU TAK BISA BACA (perbaikan 06 Okt 2026) ──
+    // LAPORAN NYATA: user kirim stiker bertulisan "SATIR / SAYANG PADAMU TIADA
+    // AKHIR", minta "isi stikernya apa" -> bot: "tulisan kecil susah kebaca 😂"
+    // -> user kesal "Mata lu mines ya".
+    // Kalau teksnya ada, WAJIB dibaca. Mengaku tidak bisa = jawaban gagal.
+    const mengakuTakBisaBaca =
+      /\b(?:kecil(?:\s+banget)?|susah\s+(?:dibaca|kebaca)|nggak\s+(?:kebaca|bisa\s+dibaca)|tidak\s+(?:kebaca|bisa\s+dibaca)|buram|kurang\s+jelas\s+bacaannya)\b/i.test(reply);
+    if (mengakuTakBisaBaca) {
+      const sisaKalimat = reply
+        .split(/(?<=[.!?])\s+|\n+/)
+        .filter((kal) => kal.trim() && !/\b(?:kecil|susah\s+(?:dibaca|kebaca)|nggak\s+(?:kebaca|bisa\s+dibaca)|tidak\s+(?:kebaca|bisa\s+dibaca)|buram|kurang\s+jelas)\b/i.test(kal))
+        .join(' ')
+        .trim();
+      reply = sisaKalimat.length >= 10 ? sisaKalimat : '';
+      if (!reply) console.warn('[skills] Bot mengaku tidak bisa membaca teks stiker — diregenerasi.');
     }
-    // 3. Batasi panjang maksimal 120 karakter untuk respon stiker
-    if (reply.length > 120) {
-      reply = reply.slice(0, 120).replace(/\s+\S*$/, '').trim();
+
+    // ── 2. DIPERBAIKI (06 Okt 2026) ──
+    // BUG: dulu balasan stiker DIPOTONG ke kalimat PERTAMA saja + maksimal 120
+    // karakter. Akibatnya balasan yang wajar (mis. menyebutkan isi tulisan stiker)
+    // terpotong separuh dan terasa aneh.
+    //
+    // SEKARANG: pertahankan balasan utuh bila user MEMINTA membaca isi stiker
+    // (butuh ruang menyebutkan teksnya). Untuk reaksi biasa, tetap dibatasi wajar
+    // (maks 2 kalimat / 200 karakter) supaya tidak melantur.
+    const sentences = reply.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
+    if (mintaBacaStiker) {
+      // Permintaan membaca isi: beri ruang sampai 3 kalimat & 300 karakter.
+      if (sentences.length > 3) reply = sentences.slice(0, 3).join(' ').trim();
+      if (reply.length > 300) reply = reply.slice(0, 300).replace(/\s+\S*$/, '').trim();
+    } else {
+      if (sentences.length > 2) reply = sentences.slice(0, 2).join(' ').trim();
+      if (reply.length > 200) reply = reply.slice(0, 200).replace(/\s+\S*$/, '').trim();
     }
     // 4. Fallback terakhir: pakai emoji asli dari stiker user (konten dinamis milik user).
     // Tanpa emoji → balasan dibiarkan kosong; TIDAK ada teks template statis.
