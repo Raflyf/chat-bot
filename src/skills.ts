@@ -1047,7 +1047,25 @@ const FILLER_INTERJECTIONS = new Set([
   'eh', 'ehh', 'ehhh', 'ehhhh', 'waduh', 'aduh', 'aduhh', 'hmm', 'hmmm', 'hm',
   'oh', 'ooh', 'ohh', 'loh', 'lho', 'lah', 'lahh', 'astaga', 'buset', 'duh', 'duhh',
   'yah', 'wah', 'nah', 'tuh', 'heh', 'beh', 'ih', 'ihh',
+  // ── DITAMBAHKAN (temuan nyata 06 Okt 2026) ──
+  // LAPORAN: "knapa pake halah awalannya? terlalu banyak menggunakan kata halah
+  // di respon yg tidak perlu halah juga".
+  // "halah" dipakai bot sebagai pembuka di BANYAK balasan, padahal tidak selalu pas
+  // (mis. saat user sedang sakit). Ditambahkan ke daftar agar cooldown
+  // anti-pembuka-berulang bisa mendeteksi & membuangnya bila terlalu sering.
+  'halah', 'hala', 'halahh', 'haduh', 'haduhh', 'yaelah', 'yaelahh', 'yailah',
+  'hadeuh', 'aduhai', 'walah', 'walahh', 'alah', 'alahh',
 ]);
+
+/**
+ * Interjeksi yang sering OTOMATIS ditambahkan model sebagai pembuka, padahal
+ * tidak selalu pas dengan suasana. "halah" termasuk yang paling sering salah
+ * tempat (mis. saat user mengeluh sakit).
+ *
+ * Daftar ini dipakai untuk MEMBATASI frekuensinya: bila 2 balasan terakhir sudah
+ * memakai salah satunya, balasan berikutnya tidak boleh memakainya lagi.
+ */
+const INTERJEKSI_BERLEBIHAN = new Set(['halah', 'hala', 'yaelah', 'yaelahh', 'yailah', 'alah']);
 
 /** Ambil interjeksi pembuka bila berupa filler murni (mis. "Eh," → "eh"); null bila bukan. */
 function leadingInterjection(text: string): string | null {
@@ -1126,6 +1144,51 @@ function batasiEmojiLintasPesan(text: string, riwayat?: Array<{ role: string; co
     }
   } catch {
     // abaikan; kembalikan teks apa adanya
+  }
+  return text;
+}
+
+/**
+ * COOLDOWN INTERJEKSI BERLEBIHAN (perbaikan 06 Okt 2026).
+ *
+ * LAPORAN NYATA: "knapa pake halah awalannya? terlalu banyak menggunakan kata
+ * halah di respon yg tidak perlu halah juga".
+ *
+ * MASALAH: model sering membuka balasan dengan "Halah, ..." — termasuk saat user
+ * mengeluh sakit ("Halah, udah ya jangan sakit-sakit lagi dong bub") yang terasa
+ * tidak peka. Aturan prompt saja tidak cukup karena model berganti tiap pesan.
+ *
+ * SOLUSI: bila 2 balasan terakhir sudah memakai interjeksi berlebihan, balasan
+ * ini DIBERSIHKAN dari interjeksi itu (kalimatnya tetap utuh).
+ *
+ * PENTING: ini PEMBATASAN, bukan larangan total — "halah" tetap boleh dipakai
+ * saat memang pas (mis. dibecandain), hanya tidak setiap pesan.
+ */
+function batasiInterjeksiBerlebihan(
+  text: string,
+  riwayat?: Array<{ role: string; content: unknown }>,
+): string {
+  if (!text) return text;
+  try {
+    const balasanAsisten = (riwayat ?? [])
+      .filter((h) => h && h.role === 'assistant' && typeof h.content === 'string')
+      .slice(-2);
+    const pakaiInterjeksi = balasanAsisten.filter((h) => {
+      const kata = String(h.content).trim().toLowerCase().match(/^([a-z]+)\b/)?.[1] ?? '';
+      return INTERJEKSI_BERLEBIHAN.has(kata);
+    }).length;
+    // Bila 2 balasan terakhir sudah memakai -> buang interjeksi di balasan ini.
+    if (pakaiInterjeksi >= 2) {
+      const m = text.trim().match(/^([A-Za-z]+)\b([,!.]?\s*)/);
+      if (m && INTERJEKSI_BERLEBIHAN.has(m[1].toLowerCase())) {
+        const sisa = text.trim().slice(m[0].length).trim();
+        if (sisa.length >= 6) {
+          return sisa.charAt(0).toUpperCase() + sisa.slice(1);
+        }
+      }
+    }
+  } catch {
+    // abaikan
   }
   return text;
 }
@@ -1991,6 +2054,11 @@ export function systemPrompt(
     '',
     'PRINSIP 2: BAHASA SEPERTI MANUSIA ASLI DI WHATSAPP:',
     '- Hidupkan intonasi dengan kata seru dan partikel gaul yang kontekstual (waduh, lahh, astaga, buset, kan, dong, sih, nih, deh) plus jeda "...". Variasikan pembuka tiap pesan.',
+      // ── DITAMBAHKAN (temuan nyata 06 Okt 2026) ──
+      // LAPORAN: "knapa pake halah awalannya? terlalu banyak menggunakan kata
+      // halah di respon yg tidak perlu halah juga".
+      '  * JANGAN menjadikan "halah"/"alah"/"yaelah" pembuka di SETIAP balasan. Pakai paling banyak sesekali (mis. saat dibecandain), dan DILARANG memakainya saat dia sedang sedih, sakit, kesal, atau curhat — itu terasa tidak peka.',
+      '  * Variasikan pembuka: kadang langsung ke isi jawaban tanpa kata seru sama sekali. Balasan tanpa pembuka justru terasa lebih dewasa & tulus.',
     '- VARIASI PEMBUKA (ATURAN KERAS): DILARANG membuka beberapa pesan berturut-turut dengan kata seru yang sama (mis. "Eh", "Waduh", "Hmm", "Oke", "Aduh"). Periksa balasan-balasanmu sebelumnya di riwayat obrolan: bila kata seru itu sudah kamu pakai di pesan sebelumnya, pakai kata seru lain yang berbeda atau langsung masuk ke inti kalimat tanpa kata seru. Kata seru yang diulang-ulang membuatmu terdengar seperti robot berpola.',
     '- TAWA ITU PROPORSIONAL, BUKAN HIASAN (ATURAN KERAS):',
     '  * JANGAN pernah memakai kata tawa (wkwk, haha, hehe, ckck, kwkwk) jika lawan bicaramu TIDAK tertawa/bercanda lebih dulu di pesannya.',
@@ -3255,6 +3323,9 @@ export async function autoReply(
     // sudah memakai emoji, balasan ini dibersihkan dari emoji agar tidak terkesan
     // mesin/berlebihan. Lihat batasiEmojiLintasPesan().
     reply = batasiEmojiLintasPesan(reply, ctx?.history);
+    // Cooldown interjeksi berlebihan (perbaikan 06 Okt 2026): "halah" dkk tidak
+    // boleh muncul di SETIAP balasan. Lihat batasiInterjeksiBerlebihan().
+    reply = batasiInterjeksiBerlebihan(reply, ctx?.history);
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
     const replyWords = reply.split(/\s+/).filter(Boolean).length;
