@@ -65,3 +65,7 @@ logs/
 
 # Git backup folders
 .git-backup-*/
+
+# Dokumentasi internal (JANGAN di repo publik):
+# berisi detail keamanan (nama salt, tabel tanpa RLS, langkah mitigasi).
+DOKUMENTASI_KEAMANAN.md
