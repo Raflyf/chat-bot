@@ -891,9 +891,27 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           }
         }
 
+        // ── SISIPKAN KONTEKS PESAN YANG DI-REPLY (temuan pemilik produk 06 Okt 2026) ──
+        // "padahal user tag reply yg kalo ada 2 awas ya itu bukan begitu mksd nya,
+        //  tapi botnya kaya ga bisa melihat apa yg di tag reply user jadi ga nyambung"
+        //
+        // AKAR: `quotedText` hanya disisipkan ke `initialContent` (untuk klaim DB),
+        // TETAPI teks yang dikirim ke AI diambil ULANG dari `m.text.body`, sehingga
+        // penanda "[Membalas ...]" HILANG -> bot tidak tahu pesan mana yang dibalas.
+        //
+        // CATATAN: disisipkan DI SINI (bukan di atas) supaya deteksi perintah
+        // (/remind, /salah, /reset) tetap membaca teks ASLI tanpa penanda.
+        const textUntukAi = quotedText
+          ? `[Membalas ${
+              quotedPengirim === 'bot' ? 'pesan KAMU (bot)'
+              : quotedPengirim === 'lain' ? 'pesan ORANG LAIN'
+              : 'pesan DIA SENDIRI (bukan kamu, bukan orang lain)'
+            }: "${quotedText.slice(0, 300)}"] ${text}`
+          : text;
+
         // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
         const tStart = Date.now();
-        const { reply: replyAwal, via, tokens, sticker, riddleAnswer } = await autoReply(text, context, webResults);
+        const { reply: replyAwal, via, tokens, sticker, riddleAnswer } = await autoReply(textUntukAi, context, webResults);
         let reply = replyAwal;
         const latencyMs = Date.now() - tStart;
 
