@@ -2679,6 +2679,23 @@ export function systemPrompt(
     /\b(?:gausah|ga\s*usah|gak\s*usah|nggak\s*usah|jangan|stop|berhenti|udahan|skip|cukup|udah\s*(?:ah|deh|lah)?|gausa|gausah)\b[^.!?\n]{0,30}\b(?:tebak(?:\s*-?\s*tebakan)?|tebak\s*tebakan|gombal(?:an)?|pantun|kuis|main)\b/i.test(userPromptText) ||
     /\b(?:aku\s+)?(?:pusing|bosen|bosan|capek|muak|males|malas|gak\s*mau|ga\s*mau|nggak\s*mau|tidak\s*mau)\b[^.!?\n]{0,25}\b(?:tebak|tebakan|gombal|pantun|main|kuis)\b/i.test(userPromptText) ||
     /\b(?:tebak(?:\s*-?\s*tebakan)?|tebakan|gombal(?:an)?|pantun)\b[^.!?\n]{0,25}\b(?:nya)?\s*(?:udah|udahan|cukup|stop|berhenti|jangan|gausah|gausa)\b/i.test(userPromptText) ||
+    // "stop tebakannya" (kata berhenti DULU, lalu objeknya) — temuan uji 06 Okt.
+    /\b(?:stop|berhenti|udahan|skip|jangan|cukup|gausah|gausa)\b[^.!?\n]{0,20}\b(?:tebak(?:\s*-?\s*tebakan)?|tebakan|gombal(?:an)?|pantun|kuis)\b/i.test(userPromptText) ||
+    // ── DITAMBAHKAN (temuan nyata 06 Okt 2026) ──
+    // LAPORAN: "Kamu kenapa si suka banget tebak²an sama aku.. aku padahal minta
+    // di dongeng in. malah di kasi tebak tebakan" -> bot TETAP memberi tebakan baru
+    // ("Benda apa yang kalau disambung akan lebih pendek daripada diputus?").
+    //
+    // KENAPA LOLOS: pola lama hanya menangkap "jangan/stop + tebakan". Keluhan
+    // berbentuk PERTANYAAN ("kenapa si suka banget tebak-tebakan") tidak tertangkap.
+    //
+    // SEKARANG: keluhan/pertanyaan soal kebiasaan memberi tebakan + permintaan
+    // hal lain (dongeng/cerita/curhat/obrolan biasa) juga menghentikan mode tebakan.
+    /\b(?:kenapa|kok|knp|knapa|ngapain|gimana)\b[^.!?\n]{0,30}\b(?:suka\s+banget|suka\s+bgt|sering|melulu|terus|mulu|terus-terusan|suka)\b[^.!?\n]{0,20}\b(?:tebak(?:\s*-?\s*tebakan)?|tebakan|gombal(?:an)?|pantun)\b/i.test(userPromptText) ||
+    /\b(?:tebak(?:\s*-?\s*tebakan)?|tebakan|gombal(?:an)?|pantun)\b[^.!?\n]{0,30}\b(?:sama\s+aku|ke\s+aku|terus|melulu|mulu|terus-terusan|sih)\b/i.test(userPromptText) ||
+    // Minta hal lain yang JELAS: dongeng/cerita/curhat/nyanyi/obrolan biasa.
+    /\b(?:minta|pengen|pingin|mau|kepingin|pengin)\b[^.!?\n]{0,25}\b(?:di\s*)?(?:dongeng(?:in|kan)?|cerita(?:in|kan)?|curhat|nyanyi|bahas|obrol|ngobrol|ngobrolin|temani)\b/i.test(userPromptText) ||
+    /\b(?:di\s*)?dongeng(?:in|kan)?\b/i.test(userPromptText) ||
     // Minta hal lain yang jelas (matematika, tugas, dll) -> bukan lanjutan tebakan.
     /\b(?:hitung|matematika|berapa\s+hasil|jawab\s+aku|[0-9]\s*[+\-*/x×]\s*[0-9])\b/i.test(userPromptText);
 
@@ -3096,6 +3113,25 @@ function buildMessages(
       let skip = false;
 
       if (/Oke deh, kalo kamu nggak mau jadi pacar|pacar\s+fiktif/i.test(content)) skip = true;
+      // ── ANTI-KONTAMINASI MEMORI (temuan nyata 06 Okt 2026) ──
+      // MASALAH: "makin ngaco respon bot nya" + "tercemar oleh memori sepertinya
+      // jadi rusak". Balasan bot yang SALAH ikut tersimpan di riwayat, lalu
+      // dikirim kembali ke model sebagai contoh -> bot MENIRU kesalahannya sendiri.
+      //
+      // Contoh nyata yang tercemar:
+      //   "Belum ada jadwal rutin yang tersimpan..."  (padahal ADA)
+      //   "Sepertinya kamu mau mencatat: ... Balas iya" (konfirmasi lama)
+      //   "Iyaa beneran nihh, sokk atuh mau nanya apa? 😁" (gaya norak berlebihan)
+      //
+      // SEKARANG: balasan buruk seperti itu DIBUANG dari riwayat (bukan diganti
+      // teks statis) agar tidak ditiru model di giliran berikutnya.
+      if (/Belum ada jadwal rutin yang tersimpan/i.test(content)) skip = true;
+      if (/Sepertinya kamu mau mencatat[\s\S]{0,80}Balas \*iya\* untuk simpan/i.test(content)) skip = true;
+      if (/Balas \*iya\* untuk simpan, \*tidak\* untuk batal/i.test(content)) skip = true;
+      // Gaya norak berlebihan (huruf dobel + partikel gaul berlebihan).
+      if (/\b(?:sokk|sok|bisaa|beneran nihh|dongg|atuh)\b[\s\S]{0,20}\b(?:atuh|dongg|nihh|sokk)\b/i.test(content) && content.length < 120) skip = true;
+      // Balasan yang memakai kata "Halah" sebagai pembuka (akan ditiru terus).
+      if (/^\s*halah\b/i.test(content)) skip = true;
       if (/si botak|si kumis|teknologi canggih banget|siapa yang ngelawak aku|cuma bot yang dibuat sama Rafly|ngerasa aneh-aneh|masih bodo-bodoan/i.test(content)) skip = true;
       if (/kucing selalu ngintip layar laptop|debugging dari jauh|butuh syntax untuk hidup/i.test(content)) skip = true;
       if (/maaf ya kalo bikin lu nangis|bikin lu nangis/i.test(content)) skip = true;
