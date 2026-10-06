@@ -804,11 +804,37 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
         // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
         const tStart = Date.now();
-        const { reply, via, tokens, sticker, riddleAnswer } = await autoReply(text, context, webResults);
+        const { reply: replyAwal, via, tokens, sticker, riddleAnswer } = await autoReply(text, context, webResults);
+        let reply = replyAwal;
         const latencyMs = Date.now() - tStart;
 
         // 5. Kirim balasan ke WhatsApp pengguna secepat mungkin
-        await sendWhatsAppCloudMessageSafe(from, reply);
+        //
+        // PENJAGA ANTI-KOSONG (perbaikan 06 Okt 2026):
+        // TEMUAN EVALUASI: ada balasan yang terkirim KOSONG (via '-') ketika
+        // SEMUA provider gagal (`autoReply` mengembalikan reply: ''). User
+        // melihat bot "diam" tanpa penjelasan. Sekarang bila balasan kosong,
+        // JANGAN kirim pesan kosong — minta model menyusun pemberitahuan
+        // singkat secara DINAMIS (tanpa teks template statis).
+        if (!reply || !reply.trim()) {
+          console.warn('[wa-cloud] Balasan kosong dari autoReply — meminta pemberitahuan dinamis.');
+          try {
+            const { dynamicNotice } = await import('./skills.js');
+            const pemberitahuan = await dynamicNotice(
+              'Semua layanan model sedang tidak bisa dihubungi. Sampaikan singkat, santai, dan jujur bahwa kamu sedang ada gangguan teknis sebentar dan minta user mencoba lagi sebentar lagi. JANGAN pakai kalimat template kaku.',
+              context,
+            );
+            if (pemberitahuan && pemberitahuan.trim()) reply = pemberitahuan.trim();
+          } catch {
+            // biarkan; di bawah masih ada jaring terakhir
+          }
+        }
+        // Jaring terakhir: bila tetap kosong, jangan kirim apa pun (hindari pesan hampa).
+        if (reply && reply.trim()) {
+          await sendWhatsAppCloudMessageSafe(from, reply);
+        } else {
+          console.warn('[wa-cloud] Balasan tetap kosong — pesan tidak dikirim (menghindari pesan hampa).');
+        }
         // Stiker balasan (opsional) — cooldown DURABLE (riwayat chat) + fast-path lokal.
         // Emoji "keras" (🖕/🤬/👊) hanya saat konteks bercanda (user bercanda/roasting dulu).
         const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text);

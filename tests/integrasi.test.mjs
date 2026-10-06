@@ -50,20 +50,19 @@ test('integrasi: alur pencatatan & klasifikasi', { skip: LEWATI && pesanLewati }
   assert.equal(r1.ditangani, true, 'pengingat harus ditangani');
   assert.match(r1.reply, /Pengingat disimpan/i, 'pengingat harus langsung tersimpan');
 
-  // 2. Pengeluaran perlu konfirmasi
+  // 2. Pengeluaran LANGSUNG tersimpan (tanpa konfirmasi ya/tidak).
+  //    Perbaikan 06 Okt 2026: konfirmasi dihilangkan atas permintaan pemilik
+  //    produk (user merasa terganggu oleh tanya "Balas iya untuk simpan").
   const r2 = await tanganiPencatatan('catat pengeluaran lima puluh ribu buat makan', CHAT, {}, { platform: 'whatsapp' });
   assert.equal(r2.ditangani, true);
-  assert.match(r2.reply, /Balas \*iya\*/i, 'keuangan harus konfirmasi');
+  assert.match(r2.reply, /Tercatat/i, 'keuangan harus LANGSUNG tersimpan');
+  assert.ok(!/Balas \*iya\*/i.test(r2.reply), 'tidak boleh ada konfirmasi ya/tidak');
 
-  // 3. Konfirmasi "ya" -> tersimpan
-  const r3 = await tanganiPencatatan('ya', CHAT, {}, { platform: 'whatsapp' });
-  assert.match(r3.reply, /Tercatat|tersimpan/i, 'setelah ya harus tersimpan');
-
-  // 4. Obrolan biasa TIDAK ditangani (lolos ke AI)
+  // 3. Obrolan biasa TIDAK ditangani (lolos ke AI)
   const r4 = await tanganiPencatatan('halo apa kabar', CHAT, {}, { platform: 'whatsapp' });
   assert.equal(r4.ditangani, false, 'obrolan biasa harus lolos ke AI');
 
-  // 5. Ringkasan bekerja
+  // 4. Ringkasan bekerja
   const r5 = await tanganiPencatatan('/ringkasan', CHAT, {}, { platform: 'whatsapp' });
   assert.equal(r5.jalur, 'ringkasan');
   assert.match(r5.reply, /Keuangan/i);

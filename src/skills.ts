@@ -2276,6 +2276,15 @@ export function systemPrompt(
       '- Temanmu sedang membahas game, ngajak main bareng (mabar / permabaran / login game):',
       '  * Tanggapi antusias, santai, dan seru layaknya sohib tongkrongan sesama anak game! Tanyakan lagi mau main game apa (ML, PUBG, FF, GTA, Valorant, dll) atau role/hero apa yang mau dipakai.',
       '  * DILARANG KERAS menolak kaku atau merendahkan diri dengan berkata "aku cuma bot"! Posisikan dirimu sebagai suporter setia, komentator seru, atau peracik strategi/build di chat.',
+      // ── KEJUJURAN SOAL MABAR (perbaikan 06 Okt 2026) ──
+      // LAPORAN PEMILIK PRODUK (temuan evaluasi chat nyata):
+      //   User: "alaah, kamu ganyata"
+      //   Bot : "Nyata lah, tinggal coba aja kapan-kapan."  <-- MENGARANG
+      // Bot TIDAK PUNYA akun game dan TIDAK BISA ikut mabar ML/PUBG/FF/dll.
+      // Mengaku bisa = kebohongan yang membuat user merasa dibohongi.
+      '  * MABAR GAME EKSTERNAL (ML/PUBG/FF/Valorant/Genshin/Roblox/GTA, dll): kamu TIDAK PUNYA akun game dan TIDAK BISA ikut bermain. DILARANG KERAS mengaku bisa mabar, mengaku punya akun/ID game, mengajak "tinggal gasin party", atau bilang "nyata lah, coba aja".',
+      '    -> YANG BENAR: akui terus terang dengan gaya santai & percaya diri bahwa kamu cuma bisa nemenin di chat — jadi komentator, kasih strategi/build/hero, atau bahas meta. Contoh: "Wkwk aku mah cuma bisa jadi komentator setiamu, gas main aja nanti cerita hasilnya."',
+      '    -> Bila dia mengejek karena itu ("ah cemen", "gabisa mabar"): terima dengan santai dan bangga, jangan mengelak dan jangan mengarang kemampuan.',
       '  * JIKA DIA MENGEJEK ("ah cemen", "cupu", "payah"): Roasting balik dengan santai, lucu, dan percaya diri khas anak tongkrongan (ledek balik rank/skill-nya atau tawarkan pantau dari chat).',
       '  * KATA "LOGIN" / "LOGINN": Pahami ini 100% adalah ajakan masuk game / buka game bareng, BUKAN login akun sistem/developer!',
       // DIPERBARUI 05 Okt 2026: MESIN GAME SUDAH ADA (src/games/).
@@ -3291,6 +3300,47 @@ export async function autoReply(
             .join(' ')
             .trim();
         }
+      }
+    }
+
+    // ── PROTEKSI ANTI-KLAIM MABAR PALSU (perbaikan 06 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: bot bilang "Nyata lah, tinggal coba aja kapan-kapan"
+    // saat diajak mabar ML. Bot TIDAK PUNYA akun game & TIDAK BISA mabar — klaim
+    // seperti itu kebohongan. Karena model sering tidak patuh, ditegakkan di KODE.
+    const mabarClaimRe =
+      /\b(?:nyata\s*lah|beneran|bisa\s+(?:kok|dong|banget)|boleh\s+(?:kok|dong)|siap\s+(?:gas|mabar)|gas\s+(?:mabar|party|main)|tinggal\s+(?:gas|ajak|coba)|coba\s+aja|ajak\s+aja|mabar\s+(?:sama|bareng|yuk|ayo|sini)|main\s+bareng\s+(?:yuk|ayo|sama)|party\s*(?:yuk|ayo)?|add\s+(?:id|akun)|id\s+(?:game|ml|ku)\s*[:=]|username\s+(?:game|ml))\b/i;
+    // Hanya periksa bila konteks pesan user memang soal game/mabar.
+    const konteksMabar =
+      /\b(?:mabar|main\s+bareng|party|rank|hero|skin|mlbb|mobile\s+legends?|pubg|free\s*fire|valorant|genshin|roblox|dota|cs\s*2|ff|game)\b/i.test(clean);
+    if (konteksMabar && mabarClaimRe.test(reply)) {
+      try {
+        const fixMsgs: ChatMsg[] = [
+          ...buildMessages(clean, ctx, web, pickedForTurn),
+          {
+            role: 'user',
+            content:
+              'Kamu barusan salah: kamu TIDAK PUNYA akun game dan TIDAK BISA mabar. Ralat singkat dengan gayamu sendiri (santai & percaya diri): akui kamu hanya bisa menemani di chat (jadi komentator/kasih strategi). DILARANG mengaku bisa mabar atau menyuruh "coba aja".',
+          },
+        ];
+        const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
+        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web, web);
+        if (fixReply.trim() && !mabarClaimRe.test(fixReply)) {
+          reply = fixReply;
+        } else if (fixReply.trim()) {
+          reply = fixReply;
+        }
+      } catch {
+        // lanjut ke pembersihan murni di bawah
+      }
+      // Bila masih mengklaim bisa mabar -> buang kalimatnya (jangan kirim klaim palsu).
+      if (mabarClaimRe.test(reply)) {
+        const sisa = reply
+          .split(/(?<=[.!?])\s+|\n+/)
+          .filter((s) => s.trim() && !mabarClaimRe.test(s))
+          .join(' ')
+          .trim();
+        // Bila habis, biarkan autoReply meregenerasi (reply kosong memicu regenerasi).
+        reply = sisa;
       }
     }
 

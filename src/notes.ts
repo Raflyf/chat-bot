@@ -551,6 +551,122 @@ function bersihkanIsi(teks: string, tambahan: RegExp[] = []): string {
  *
  * Bila salah satu lapis gagal -> null (pesan diteruskan ke AI sebagai obrolan).
  */
+/**
+ * Pecah pesan keuangan menjadi BEBERAPA item (perbaikan 06 Okt 2026).
+ *
+ * KENAPA: user sering menulis beberapa pengeluaran sekaligus dalam satu pesan:
+ *   "Pengeluaran:
+ *    Bayar Nopal 60rb
+ *    Bayar Faisa 50rb
+ *    Beli rokok + susu + kue + esteh 75rb"
+ * Sebelumnya hanya item PERTAMA (Rp60.000) yang dicatat, sisanya hilang.
+ *
+ * CARA: pecah per baris baru, lalu per pemisah ";" / " lalu " / " terus ".
+ * Hanya segmen yang memuat NOMINAL yang dianggap item.
+ */
+export function pecahItemKeuangan(teks: string): Array<{ teks: string; nominal: number }> {
+  // Buang baris pembuka yang hanya berisi kata jenis ("Pengeluaran:", "Pemasukan:")
+  const segmenAwal = teks
+    .split(/\r?\n/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+    // Pisahkan juga bila ada beberapa item dalam satu baris ("a 5rb; b 3rb").
+    .flatMap((baris) => baris.split(/\s*(?:;|\blalu\b|\bterus\b|\bdan\b(?=\s*[A-Za-z]))\s*/i))
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const hasil: Array<{ teks: string; nominal: number }> = [];
+  for (const seg of segmenAwal) {
+    // Baris pembuka tanpa nominal (mis. "Pengeluaran:") -> dilewati.
+    const n = parseNominal(seg);
+    if (n && n > 0) {
+      hasil.push({ teks: seg, nominal: n });
+    }
+  }
+  return hasil;
+}
+
+/**
+ * Bila user HANYA menyebut JENIS pencatatan tanpa isi nyata, kembalikan teks
+ * PETUNJUK cara mencatat (bukan menyimpan catatan bernama jenis itu).
+ *
+ * KENAPA (perbaikan 06 Okt 2026, temuan evaluasi chat nyata):
+ *   User mengetik "Catat keuangan" -> bot menyimpan catatan bernama "keuangan"
+ *   (tidak berguna). Seharusnya bot MEMBERI PETUNJUK cara mencatat yang benar.
+ *
+ * Contoh yang MEMICU petunjuk:  "catat keuangan", "catat uang", "tambah tugas",
+ *   "catat pengeluaran", "simpan catatan", "catat barang".
+ * Contoh yang TIDAK memicu (isi nyata): "catat pengeluaran 50rb buat makan",
+ *   "tambah tugas upload jurnal", "catat aku suka kopi".
+ */
+export function panduanJenisSaja(teks: string): string | null {
+  const t = teks.toLowerCase().trim();
+
+  // Harus berupa perintah pencatatan.
+  if (!/^\s*\/?(?:catat|catet|simpan|note|notes|tulis|jurnal|diary|tambah|tambahin|masukkan|input|ingatkan|ingetin|remind|todo|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|belanja|barang|stok|buat|buatkan|bikin|set|setel|pasang|atur)\b/i.test(t)) {
+    return null;
+  }
+
+  // Bila ada ANGKA/NOMINAL -> itu isi nyata, jangan beri petunjuk.
+  if (/\d/.test(t)) return null;
+  if (/\b(?:satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh|sebelas|seratus|seribu|juta|ribu|rb|jt)\b/.test(t)) return null;
+
+  // Buang kata perintah & kata jenis; sisanya harus KOSONG (atau sangat pendek).
+  const sisa = t
+    .replace(/^\s*\/?(?:catat|catet|simpan|note|notes|tulis|jurnal|diary)\b\s*/i, '')
+    .replace(/\b(?:tambah|tambahin|masukkan|input|buat|buatkan|bikin|set|setel|pasang|atur)\s+(?:tugas|todo|task|pengingat|reminder|jadwal|catatan)?\s*/gi, '')
+    .replace(/\b(?:ingatkan|ingetin|remind|pengingat)\b\s*/gi, '')
+    .replace(/\b(?:keuangan|uang|duit|finansial|finance)\b\s*/gi, '')
+    .replace(/\b(?:catatan|note|notes)\b\s*/gi, '')
+    .replace(/\b(?:tugas|todo|task|to-do)\b\s*/gi, '')
+    .replace(/\b(?:pengeluaran|pemasukan|keluar|masuk|belanja|belanjaan|barang|stok|inventaris)\b\s*/gi, '')
+    .replace(/\b(?:pengingat|reminder|jadwal|rutin)\b\s*/gi, '')
+    .replace(/\b(?:dong|ya|nih|tolong|saya|aku|mau|pengen|ingin)\b\s*/gi, '')
+    .replace(/[\s.,!?]+/g, ' ')
+    .trim();
+
+  // Masih ada isi bermakna -> bukan sekadar jenis.
+  if (sisa.length >= 3) return null;
+
+  // Tentukan panduan sesuai jenis yang disebut.
+  const bagian: string[] = [];
+  if (/\b(?:keuangan|uang|duit|finansial|finance|pengeluaran|pemasukan|keluar|masuk|belanja|bayar|beli)\b/.test(t)) {
+    bagian.push(
+      '*Catat keuangan*\n' +
+      '• /uang 50000 makan siang  (pengeluaran)\n' +
+      '• /masuk 500000 gaji  (pemasukan)\n' +
+      '• atau ketik langsung: "bayar makan 25rb"',
+    );
+  }
+  if (/\b(?:tugas|todo|task|to-do)\b/.test(t)) {
+    bagian.push(
+      '*Catat tugas*\n' +
+      '• /tugas upload jurnal\n' +
+      '• atau ketik langsung: "tambah tugas beli susu"',
+    );
+  }
+  if (/\b(?:pengingat|reminder|ingatkan|ingetin|remind|jadwal|rutin)\b/.test(t)) {
+    bagian.push(
+      '*Buat pengingat*\n' +
+      '• "ingatkan besok jam 9 rapat"\n' +
+      '• "ingatkan tiap hari jam 6 pagi bangun"  (berulang)',
+    );
+  }
+  if (/\b(?:catatan|note|notes|jurnal|diary)\b/.test(t) || bagian.length === 0) {
+    bagian.push(
+      '*Catat catatan*\n' +
+      '• /catat ide konten minggu depan\n' +
+      '• atau ketik langsung: "catat nomor polisi mobilku B 1234 XYZ"',
+    );
+  }
+
+  return (
+    'Hmm, aku belum tahu mau dicatat apa. Coba tulis isinya ya, contohnya:\n\n' +
+    bagian.join('\n\n') +
+    '\n\nBisa juga pakai */ringkasan* untuk lihat semua yang sudah tercatat.'
+  );
+}
+
 export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   const asli = teks.trim();
   const s = asli.toLowerCase();
@@ -681,6 +797,40 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     else if (kataKeluar && !kataMasuk) kind = 'out';
     else if (kataMasuk && kataKeluar) kind = 'out'; // keduanya -> anggap pengeluaran (lebih umum)
     else kind = 'out'; // ambigu tanpa penanda: default pengeluaran (perilaku lama)
+
+    // ── MULTI-ITEM (perbaikan 06 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: "Pengeluaran: Bayar Nopal 60rb / Bayar Faisa 50rb /
+    // Beli rokok + susu + kue + esteh 75rb" -> hanya Rp60.000 yang dicatat,
+    // dua item lain HILANG. Padahal user menulis BEBERAPA baris sekaligus.
+    //
+    // SEKARANG: pesan dipecah per BARIS (atau per pemisah ";" / " lalu "), dan
+    // setiap baris yang punya nominal disimpan sebagai catatan keuangan TERPISAH.
+    const barisItems = pecahItemKeuangan(asli);
+    if (barisItems.length > 1) {
+      const total = barisItems.reduce((a, b) => a + b.nominal, 0);
+      return {
+        kind: 'expense',
+        yakin: 0.93,
+        data: {
+          amount: barisItems[0].nominal,
+          kind,
+          category: tebakKategori(barisItems[0].teks),
+          note: barisItems[0].teks,
+          // Daftar lengkap untuk disimpan sebagai beberapa baris.
+          items: barisItems.map((it) => ({
+            amount: it.nominal,
+            kind,
+            category: tebakKategori(it.teks),
+            note: it.teks,
+          })),
+        },
+        ringkas:
+          `${kind === 'in' ? 'Pemasukan' : 'Pengeluaran'} ${barisItems.length} item ` +
+          `(total Rp${total.toLocaleString('id-ID')}): ` +
+          barisItems.map((it) => `Rp${it.nominal.toLocaleString('id-ID')}`).join(' + '),
+      };
+    }
+
     return {
       kind: 'expense',
       yakin: 0.92,
@@ -1303,27 +1453,90 @@ interface PermintaanTertunda {
 const permintaanTertunda = new Map<string, PermintaanTertunda>();
 const PERMINTAAN_TERTUNDA_TTL_MS = 10 * 60_000; // 10 menit
 
-/** Simpan permintaan yang menunggu zona waktu. */
-function simpanPermintaanTertunda(
+/**
+ * Simpan permintaan yang menunggu zona waktu.
+ *
+ * ── PENTING (perbaikan 06 Okt 2026) ──
+ * DISIMPAN KE DATABASE, bukan hanya memori. Di Vercel (serverless) setiap
+ * request bisa berjalan di INSTANCE BERBEDA, sehingga Map di memori HILANG
+ * antar-request. Itu sebabnya pengingat user tidak dilanjutkan setelah dia
+ * menjawab lokasi (temuan nyata di produksi).
+ *
+ * Memakai tabel `pending_confirmations` yang sudah ada, dengan penanda
+ * `kind: '_tunggu_zona'` agar tidak bentrok dengan konfirmasi niat biasa.
+ */
+async function simpanPermintaanTertunda(
   chatId: string, teks: string, platform: string, actor?: string,
-): void {
-  permintaanTertunda.set(chatId, { teks, platform, actor, at: Date.now() });
+): Promise<void> {
+  const v: PermintaanTertunda = { teks, platform, actor, at: Date.now() };
+  // Lapisan 1: memori (cepat, untuk instance yang sama).
+  permintaanTertunda.set(chatId, v);
+  // Lapisan 2: database (bertahan lintas instance serverless).
+  try {
+    const c = db();
+    if (c) {
+      await c.from('pending_confirmations').upsert({
+        chat_id: chatId,
+        platform,
+        actor: actor ?? null,
+        niat: { kind: '_tunggu_zona', teks, platform, actor: actor ?? null },
+        expires_at: new Date(Date.now() + PERMINTAAN_TERTUNDA_TTL_MS).toISOString(),
+      }, { onConflict: 'chat_id' });
+    }
+  } catch (e) {
+    console.warn('[notes] Gagal simpan permintaan tertunda ke DB:', e);
+  }
 }
 
-/** Ambil permintaan tertunda (bila belum kedaluwarsa). */
-function ambilPermintaanTertunda(chatId: string): PermintaanTertunda | null {
+/** Ambil permintaan tertunda (memori dulu, lalu database). */
+async function ambilPermintaanTertunda(chatId: string): Promise<PermintaanTertunda | null> {
+  // Lapisan 1: memori.
   const v = permintaanTertunda.get(chatId);
-  if (!v) return null;
-  if (Date.now() - v.at > PERMINTAAN_TERTUNDA_TTL_MS) {
-    permintaanTertunda.delete(chatId);
-    return null;
+  if (v && Date.now() - v.at <= PERMINTAAN_TERTUNDA_TTL_MS) return v;
+  if (v) permintaanTertunda.delete(chatId);
+
+  // Lapisan 2: database (instance berbeda / setelah cold start).
+  try {
+    const c = db();
+    if (!c) return null;
+    const { data } = await c
+      .from('pending_confirmations')
+      .select('niat, platform, actor, created_at, expires_at')
+      .eq('chat_id', chatId)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle();
+    if (data && (data.niat as { kind?: string })?.kind === '_tunggu_zona') {
+      const n = data.niat as { teks?: string };
+      if (n?.teks) {
+        const hasil: PermintaanTertunda = {
+          teks: n.teks,
+          platform: String(data.platform || 'whatsapp'),
+          actor: (data.actor as string) ?? undefined,
+          at: new Date(String(data.created_at)).getTime(),
+        };
+        permintaanTertunda.set(chatId, hasil); // isi cache memori
+        return hasil;
+      }
+    }
+  } catch (e) {
+    console.warn('[notes] Gagal ambil permintaan tertunda dari DB:', e);
   }
-  return v;
+  return null;
 }
 
 /** Buang permintaan tertunda (sudah dilanjutkan / dibatalkan). */
-function buangPermintaanTertunda(chatId: string): void {
+async function buangPermintaanTertunda(chatId: string): Promise<void> {
   permintaanTertunda.delete(chatId);
+  try {
+    const c = db();
+    if (c) {
+      await c.from('pending_confirmations').delete()
+        .eq('chat_id', chatId)
+        .eq('niat->>kind', '_tunggu_zona');
+    }
+  } catch {
+    // abaikan
+  }
 }
 
 /** Simpan konfirmasi tertunda (DB dulu; memori sebagai fallback). */
@@ -1441,6 +1654,38 @@ async function simpanDariNiat(
 ): Promise<{ ok: boolean; pesan: string }> {
   const d = niat.data;
   if (niat.kind === 'expense') {
+    // MULTI-ITEM (perbaikan 06 Okt 2026): bila pesan memuat beberapa item
+    // (mis. "Bayar Nopal 60rb / Bayar Faisa 50rb / Beli rokok 75rb"),
+    // simpan SEMUANYA, bukan hanya yang pertama.
+    const daftarItems = Array.isArray(d.items) && d.items.length > 1
+      ? (d.items as Array<{ amount: number; kind: string; category: string; note: string }>)
+      : null;
+
+    if (daftarItems) {
+      const ids: number[] = [];
+      for (const it of daftarItems) {
+        const id = await simpanUang(
+          chatId,
+          Number(it.amount) || 0,
+          (it.kind as ExpenseKind) || 'out',
+          String(it.category || 'lainnya'),
+          String(it.note || ''),
+          { actor: opts.actor, platform: opts.platform },
+        );
+        if (id) ids.push(id);
+      }
+      if (ids.length === 0) {
+        return { ok: false, pesan: '⚠️ Gagal menyimpan ke database. Coba lagi nanti ya.' };
+      }
+      // Laporkan JUJUR: sebutkan berapa item tersimpan & totalnya.
+      const total = daftarItems.reduce((a, b) => a + (Number(b.amount) || 0), 0);
+      return {
+        ok: true,
+        pesan: `✅ Tercatat ${ids.length} item (total Rp${total.toLocaleString('id-ID')}): ` +
+          daftarItems.map((it) => `Rp${Number(it.amount).toLocaleString('id-ID')}`).join(' + '),
+      };
+    }
+
     const id = await simpanUang(
       chatId,
       Number(d.amount) || 0,
@@ -1577,10 +1822,11 @@ export async function tanganiPencatatan(
   let m = low.match(/^\/(?:catat|note|notes)\s+([\s\S]+)/);
   if (m) {
     const isi = s.replace(/^\/(?:catat|note|notes)\s+/i, '').trim();
-    await simpanKonfirmasi(chatId,
+    // LANGSUNG SIMPAN (perbaikan 06 Okt 2026 — konfirmasi ya/tidak dihilangkan).
+    const rCatat = await simpanDariNiat(chatId,
       { kind: 'note', yakin: 1, data: { content: isi }, ringkas: `Catatan: "${isi.slice(0, 80)}"` },
       { actor: opts.actor, platform: opts.platform });
-    return { ditangani: true, reply: `Simpan catatan ini?\n"${isi.slice(0, 200)}"\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`, jalur: 'perintah-catat' };
+    return { ditangani: true, reply: rCatat.pesan, jalur: 'perintah-catat' };
   }
 
   // /todo <isi>  atau  /tugas <isi>
@@ -1589,10 +1835,11 @@ export async function tanganiPencatatan(
     const isi = s.replace(/^\/(?:todo|tugas|task)\s+/i, '').trim();
     const prio = /penting|urgent|segera/.test(low) ? 1 : 2;
     const due = parseWaktuAlami(low);
-    await simpanKonfirmasi(chatId,
+    // LANGSUNG SIMPAN (perbaikan 06 Okt 2026 — konfirmasi ya/tidak dihilangkan).
+    const rTodo = await simpanDariNiat(chatId,
       { kind: 'todo', yakin: 1, data: { task: isi, priority: prio, due_at: due?.toISOString() ?? null }, ringkas: `Tugas: "${isi}"` },
       { actor: opts.actor, platform: opts.platform });
-    return { ditangani: true, reply: `Tambah tugas ini?\n"${isi.slice(0, 200)}"\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`, jalur: 'perintah-todo' };
+    return { ditangani: true, reply: rTodo.pesan, jalur: 'perintah-todo' };
   }
 
   // /uang <nominal> [keterangan]   |   /masuk <nominal> [ket]
@@ -1606,12 +1853,13 @@ export async function tanganiPencatatan(
     }
     const kind: ExpenseKind = mIn ? 'in' : 'out';
     const kategori = tebakKategori(isi);
-    await simpanKonfirmasi(chatId, {
+    // LANGSUNG SIMPAN (perbaikan 06 Okt 2026).
+    const rUang = await simpanDariNiat(chatId, {
         kind: 'expense', yakin: 1,
         data: { amount: nominal, kind, category: kategori, note: isi },
         ringkas: `${kind === 'in' ? 'Pemasukan' : 'Pengeluaran'} Rp${nominal.toLocaleString('id-ID')} (${kategori})`,
       }, { actor: opts.actor, platform: opts.platform });
-    return { ditangani: true, reply: `Catat ini?\n${kind === 'in' ? '💰 Pemasukan' : '💸 Pengeluaran'} *Rp${nominal.toLocaleString('id-ID')}* (${kategori})\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`, jalur: 'perintah-uang' };
+    return { ditangani: true, reply: rUang.pesan, jalur: 'perintah-uang' };
   }
 
   // /rekap [hari]
@@ -1710,14 +1958,14 @@ export async function tanganiPencatatan(
     // Bila ada permintaan yang menunggu zona, dan zona kini SUDAH diketahui,
     // lanjutkan permintaan itu SEKARANG (tanpa user mengulang).
     if (!keputusan.perluTanya && keputusan.profil) {
-      const tertunda = ambilPermintaanTertunda(chatId);
+      const tertunda = await ambilPermintaanTertunda(chatId);
       // Hanya lanjutkan bila pesan SEKARANG bukan permintaan baru yang berdiri
       // sendiri (mis. user malah minta hal lain). Pesan pendek berisi lokasi
       // ("cianjur") ATAU jawaban zona dianggap sebagai pemicu lanjutan.
       const pesanIniDeklarasiLokasi = detectUserLocationDeclaration(asli) !== null;
       const pesanIniSingkat = asli.trim().split(/\s+/).length <= 4;
       if (tertunda && (pesanIniDeklarasiLokasi || pesanIniSingkat)) {
-        buangPermintaanTertunda(chatId);
+        await buangPermintaanTertunda(chatId);
         // Jalankan ulang permintaan ASLI dengan zona yang sudah diketahui.
         // `lanjutkanTertunda` mencegah rekursi tak terbatas.
         const lanjut = await tanganiPencatatan(tertunda.teks, chatId, ctx, {
@@ -1786,7 +2034,7 @@ export async function tanganiPencatatan(
     // butuh lokasi/waktu (cuaca, kiblat, matahari, dll). Permintaan user DISIMPAN
     // agar bisa dilanjutkan otomatis setelah lokasi diketahui.
     if (keputusan.perluTanya && butuhLokasiAtauWaktu(asli) && !opts.lanjutkanTertunda) {
-      simpanPermintaanTertunda(chatId, asli, opts.platform, opts.actor);
+      await simpanPermintaanTertunda(chatId, asli, opts.platform, opts.actor);
       return {
         ditangani: true,
         reply: `${keputusan.pertanyaan}\n\n_Tenang, permintaanmu aku simpan. Setelah kamu sebut kotanya, langsung aku proses ya._`,
@@ -1991,7 +2239,13 @@ export async function tanganiPencatatan(
     }
 
     const mHapus = lowAngka.match(/\b(?:hapus|buang|hilangkan|delete)\s+(?:tugas|catatan|barang|belanja|nomor|no|yang)?\s*(?:nomor|no|#)?\s*(\d+)\b/);
-    const mSelesai = lowAngka.match(/\b(?:selesai|selesaikan|sudah|udah|done|beres)\s+(?:tugas|nomor|no|#)?\s*(\d+)\b/);
+    // Pola A: "<kata selesai> <angka>"  -> "selesai 1", "selesaikan nomor 2"
+    // Pola B: "tugas <angka> selesai"    -> "tugas 1 selesai" (angka di TENGAH)
+    //   BUG DIPERBAIKI (06 Okt 2026): "tugas 1 selesai" dulu ditawari MENCATAT
+    //   tugas baru bernama "1 selesai" (lihat evaluasi CSV #2359).
+    const mSelesai =
+      lowAngka.match(/\b(?:selesai|selesaikan|sudah|udah|done|beres)\s+(?:tugas|nomor|no|#)?\s*(\d+)\b/) ||
+      lowAngka.match(/\btugas\s+(?:nomor\s+|no\s+|#)?(\d+)\s+(?:sudah\s+|udah\s+)?(?:selesai|kelar|beres|done|tuntas)\b/);
     if (mSelesai) {
       const id = Number(mSelesai[1]);
       // Nomor yang diketik user = NOMOR URUT per-user, bukan ID global.
@@ -2034,6 +2288,14 @@ export async function tanganiPencatatan(
   //   atau tidak berguna. Jadi pengingat harus langsung tersimpan.
   // - CATATAN / TUGAS / KEUANGAN -> tetap KONFIRMASI dulu (aman, hindari salah
   //   catat; tidak terikat waktu).
+  // ── PETUNJUK BILA HANYA JENIS TANPA ISI (perbaikan 06 Okt 2026) ──
+  // Temuan evaluasi: user mengetik "Catat keuangan" -> bot menyimpan catatan
+  // bernama "keuangan" (tidak berguna). Sekarang bot MEMBERI PETUNJUK.
+  const panduan = panduanJenisSaja(s);
+  if (panduan) {
+    return { ditangani: true, reply: panduan, jalur: 'panduan-jenis' };
+  }
+
   const niat = deteksiNiat(s);
   if (niat) {
     const iniPengingat = niat.kind === 'note' && Boolean(niat.data.pengingat);
@@ -2045,10 +2307,18 @@ export async function tanganiPencatatan(
     }
 
     // Catatan / tugas / keuangan: konfirmasi dulu.
-    await simpanKonfirmasi(chatId, niat, { actor: opts.actor, platform: opts.platform });
+    // ── LANGSUNG SIMPAN (perbaikan 06 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK (dari evaluasi CSV):
+    //   "Bisa langsung catat aja?" -> user MERASA terganggu oleh konfirmasi
+    //   ya/tidak. Sekarang catatan/tugas/keuangan LANGSUNG DISIMPAN.
+    //   (Pengingat memang sudah langsung simpan sejak sebelumnya.)
+    const hasilSimpan = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform });
+    if (!hasilSimpan.ok) {
+      return { ditangani: true, reply: hasilSimpan.pesan, jalur: `niat-${niat.kind}-gagal` };
+    }
     return {
       ditangani: true,
-      reply: `Sepertinya kamu mau mencatat:\n*${niat.ringkas}*\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`,
+      reply: hasilSimpan.pesan,
       jalur: `niat-${niat.kind}`,
     };
   }
@@ -2072,18 +2342,12 @@ export async function tanganiPencatatan(
   // menyimpan, supaya salah tangkap tidak langsung mengotori database.
   const niatImplisit = deteksiNiatImplisit(s);
   if (niatImplisit) {
-    // Pengingat langsung simpan (berpacu waktu); lainnya konfirmasi.
-    const iniPengingat = niatImplisit.kind === 'note' && Boolean(niatImplisit.data.pengingat);
-    if (iniPengingat) {
-      const r = await simpanDariNiat(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
-      return { ditangani: true, reply: r.pesan, jalur: `implisit-${niatImplisit.kind}` };
-    }
-    await simpanKonfirmasi(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
-    return {
-      ditangani: true,
-      reply: `Sepertinya kamu mau mencatat:\n*${niatImplisit.ringkas}*\n\nBalas *iya* untuk simpan, *tidak* untuk batal.`,
-      jalur: `implisit-${niatImplisit.kind}`,
-    };
+    // ── LANGSUNG SIMPAN (perbaikan 06 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: "konfirmasi ya tidaknya itu sangat mengganggu
+    // dan bikin kesal, coba hilangkan saja semua konfirmasi ya tidaknya".
+    // Sekarang SEMUA pencatatan langsung disimpan, termasuk niat implisit.
+    const r = await simpanDariNiat(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
+    return { ditangani: true, reply: r.pesan, jalur: `implisit-${niatImplisit.kind}` };
   }
 
   return { ditangani: false, reply: '', jalur: '' };
