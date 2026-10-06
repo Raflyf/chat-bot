@@ -349,6 +349,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         const quoted = (m as unknown as { context?: { quoted?: Record<string, unknown>; from?: string; id?: string } }).context;
         let quotedText = '';
         let quotedFromBot = false;
+        let quotedPengirim: 'bot' | 'diri' | 'lain' = 'diri';
         if (quoted) {
           const q = quoted.quoted || {};
           const qAny = q as Record<string, unknown>;
@@ -362,13 +363,25 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           if (!quotedText && typeof qAny.type === 'string') {
             quotedText = `[${qAny.type}]`;
           }
-          // Apakah pesan yang dibalas itu pesan BOT sendiri?
+          // Siapa pengirim pesan yang dibalas? Ada 3 kemungkinan:
+          //   'bot'   -> pesan bot sendiri
+          //   'diri'  -> pesan user SENDIRI (dia me-reply chat-nya sendiri)
+          //   'lain'  -> pesan orang lain (di grup)
           const botNumber = config.whatsappPhoneNumber || '';
-          quotedFromBot = Boolean(
-            (quoted.from && botNumber && String(quoted.from).replace(/\D/g, '').endsWith(String(botNumber).replace(/\D/g, ''))) ||
-            // Meta tidak selalu mengirim 'from' -> deteksi dari awalan teks bot.
-            /^(?:✅|🗑️|⚠️|📊|⏰|💰|📝|🎮|_)/.test(quotedText),
-          );
+          const norm = (x?: string) => String(x || '').replace(/\D/g, '');
+          const fromNum = norm(quoted.from);
+          if (fromNum && botNumber && fromNum.endsWith(norm(botNumber))) {
+            quotedPengirim = 'bot';
+          } else if (fromNum && norm(from) && fromNum === norm(from)) {
+            // Pengirim pesan yang dibalas == user yang sedang menulis -> pesan dia SENDIRI.
+            quotedPengirim = 'diri';
+          } else if (fromNum) {
+            quotedPengirim = 'lain';
+          } else {
+            // Meta tidak selalu mengirim 'from' -> tebak dari awalan teks bot.
+            quotedPengirim = /^(?:✅|🗑️|⚠️|📊|⏰|💰|📝|🎮|_)/.test(quotedText) ? 'bot' : 'diri';
+          }
+          quotedFromBot = quotedPengirim === 'bot';
         }
 
         let initialContent = `[${m.type || 'msg'}]`;
@@ -383,7 +396,11 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // Sisipkan konteks balasan ke teks yang diproses AI (bila ada).
         // Format eksplisit supaya model tahu INI pesan yang sedang dibalas.
         if (quotedText) {
-          const label = quotedFromBot ? 'pesan KAMU (bot)' : 'pesan dia';
+          // Label jelas agar bot tidak salah paham siapa yang menulis pesan itu.
+          const label =
+            quotedPengirim === 'bot' ? 'pesan KAMU (bot)'
+            : quotedPengirim === 'lain' ? 'pesan ORANG LAIN'
+            : 'pesan DIA SENDIRI (bukan kamu, bukan orang lain)';
           initialContent = `[Membalas ${label}: "${quotedText.slice(0, 300)}"] ${initialContent}`;
         }
         // Klaim atomik (zero TOCTOU): jika sudah pernah ada, drop langsung!

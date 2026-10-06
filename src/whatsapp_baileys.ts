@@ -249,6 +249,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     | undefined;
   let quotedText = '';
   let quotedFromBot = false;
+  let quotedPengirim: 'bot' | 'diri' | 'lain' = 'diri';
   if (ctxInfo?.quotedMessage) {
     const qm = ctxInfo.quotedMessage;
     quotedText = String(
@@ -260,10 +261,20 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       else if (qm.audioMessage) quotedText = '[voice note]';
       else if (qm.documentMessage) quotedText = '[dokumen]';
     }
-    // Pesan yang dibalas milik bot sendiri? (bandingkan nomor bot)
+    // Siapa pengirim pesan yang dibalas: 'bot' | 'diri' (user sendiri) | 'lain'.
     const botNum = String(config.whatsappPhoneNumber || '').replace(/\D/g, '');
     const part = String(ctxInfo.participant || '').split('@')[0].split(':')[0];
-    quotedFromBot = Boolean(botNum && part && part.endsWith(botNum));
+    const selfNum = String(remoteJid || '').split('@')[0].split(':')[0];
+    if (botNum && part && part.endsWith(botNum)) {
+      quotedPengirim = 'bot';
+    } else if (part && selfNum && part === selfNum) {
+      quotedPengirim = 'diri';
+    } else if (part) {
+      quotedPengirim = 'lain';
+    } else {
+      quotedPengirim = 'diri';
+    }
+    quotedFromBot = quotedPengirim === 'bot';
   }
 
   const chatKey = 'wa_' + remoteJid;
@@ -869,8 +880,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     // 4. Panggil model AI universal (Urutan rolling model dipertahankan 100%)
     const tStart = Date.now();
     // Sisipkan konteks pesan yang di-reply (bila ada) agar bot tahu apa yang dimaksud.
+    const quotedLabel =
+      quotedPengirim === 'bot' ? 'pesan KAMU (bot)'
+      : quotedPengirim === 'lain' ? 'pesan ORANG LAIN'
+      : 'pesan DIA SENDIRI (bukan kamu, bukan orang lain)';
     const promptFinal = quotedText
-      ? `[Membalas ${quotedFromBot ? 'pesan KAMU (bot)' : 'pesan dia'}: "${quotedText.slice(0, 300)}"] ${text}`
+      ? `[Membalas ${quotedLabel}: "${quotedText.slice(0, 300)}"] ${text}`
       : text;
     const { reply, via, tokens, sticker, riddleAnswer } = await autoReply(promptFinal, context, webResults);
     const latencyMs = Date.now() - tStart;

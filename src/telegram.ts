@@ -163,7 +163,14 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       else if (rtm.voice) quotedText = '[voice note]';
       else if (rtm.document) quotedText = '[dokumen]';
     }
-    const quotedFromBot = Boolean(rtm?.from?.is_bot);
+    // Siapa pengirim pesan yang dibalas: 'bot' | 'diri' (user sendiri) | 'lain'.
+    const rtmFrom = (rtm as { from?: { id?: number; is_bot?: boolean } } | undefined)?.from;
+    const quotedPengirim: 'bot' | 'diri' | 'lain' =
+      rtmFrom?.is_bot ? 'bot'
+      : rtmFrom?.id !== undefined && msg.from?.id !== undefined && rtmFrom.id === msg.from.id ? 'diri'
+      : rtmFrom ? 'lain'
+      : 'diri';
+    const quotedFromBot = quotedPengirim === 'bot';
 
     // Cek mention bot pada teks atau caption
     const hasMentionInText = mentionRegex.test(rawText);
@@ -697,8 +704,12 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     // Fast-path in-memory context (0ms saat aktif)
     const ctx = await getContext(chatKey, msgSentAt);
 
+    const quotedLabel =
+      quotedPengirim === 'bot' ? 'pesan KAMU (bot)'
+      : quotedPengirim === 'lain' ? 'pesan ORANG LAIN'
+      : 'pesan DIA SENDIRI (bukan kamu, bukan orang lain)';
     const promptText = (quotedText
-      ? `[Membalas ${quotedFromBot ? 'pesan KAMU (bot)' : 'pesan dia'}: "${quotedText.slice(0, 300)}"] `
+      ? `[Membalas ${quotedLabel}: "${quotedText.slice(0, 300)}"] `
       : '') + (isGroup ? `[Pesan di Grup dari ${senderName}]: ${text}` : text);
     const savedUserContent = isGroup ? `[${senderName}]: ${text}` : text;
 
