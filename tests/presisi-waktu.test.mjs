@@ -21,10 +21,15 @@ function waktuKirim(due) {
   return k;
 }
 
-/** Menit yang bot janjikan (dari due_at + 5 detik, yaitu pembulatan ke atas). */
+/**
+ * Menit yang DIJANJIKAN bot == menit due_at itu sendiri.
+ *
+ * CATATAN (perbaikan 06 Okt 2026): dulu ada -5 detik yang membuat due_at
+ * mundur ke menit sebelumnya (13:25:55), sehingga tampilan "13.25" berbeda
+ * dari pengiriman 13.26. Sekarang due_at tepat di :00 -> tampilan == pengiriman.
+ */
 function menitDijanjikan(due) {
-  const j = new Date(due.getTime() + 5000);
-  return `${j.getHours()}:${String(j.getMinutes()).padStart(2, '0')}`;
+  return `${due.getHours()}:${String(due.getMinutes()).padStart(2, '0')}`;
 }
 
 function menitKirim(due) {
@@ -35,7 +40,7 @@ function menitKirim(due) {
 test('presisi: "2 menit lagi" pada :57 -> janji == kirim (tidak ngaret)', () => {
   const now = new Date(2026, 9, 6, 12, 46, 57);
   const due = parseWaktuAlami('ingatkan 2 menit lagi makan', now);
-  assert.equal(due.getSeconds(), 55, 'detik due harus 55 (siap dikirim cron)');
+  assert.equal(due.getSeconds(), 0, 'detik due harus 0 (tepat di awal menit)');
   assert.equal(menitDijanjikan(due), menitKirim(due), 'menit janji harus sama dengan menit kirim');
 });
 
@@ -59,14 +64,14 @@ test('presisi: melewati tengah malam dengan benar', () => {
 test('presisi: "5 menit lagi" juga tepat', () => {
   const now = new Date(2026, 9, 6, 14, 20, 33);
   const due = parseWaktuAlami('ingatkan 5 menit lagi minum', now);
-  assert.equal(due.getSeconds(), 55);
+  assert.equal(due.getSeconds(), 0);
   assert.equal(menitDijanjikan(due), menitKirim(due));
 });
 
-test('presisi: due_at selalu pada detik 55 (siap cron)', () => {
+test('presisi: due_at selalu pada detik 0 (tepat awal menit)', () => {
   for (const [m, d] of [[1, 0], [2, 59], [10, 30], [60, 45]]) {
     const now = new Date(2026, 9, 6, 10, 0, d);
     const due = parseWaktuAlami(`ingatkan ${m} menit lagi tes`, now);
-    assert.equal(due.getSeconds(), 55, `${m} menit dari detik ${d} harus berakhir detik 55`);
+    assert.equal(due.getSeconds(), 0, `${m} menit dari detik ${d} harus berakhir detik 0`);
   }
 });

@@ -90,6 +90,20 @@ export interface TugasRingkas {
   priority: number;
   status: string;
   due_at?: string | null;
+  /**
+   * Nomor urut PER-USER (1, 2, 3, ...) berdasarkan urutan dibuat.
+   *
+   * KENAPA (perbaikan 06 Okt 2026): laporan pemilik produk —
+   * "kenapa baru menambahkan tugas satu tapi sudah #13?"
+   *
+   * SEBAB: kolom `id` adalah SERIAL global (auto-increment). Setiap tugas yang
+   * PERNAH dibuat menaikkan counter, termasuk tugas yang sudah dihapus. Jadi
+   * tugas pertama milik user bisa ber-ID #13.
+   *
+   * SEKARANG: yang DITAMPILKAN adalah `nomor` (urutan per-user), bukan `id`.
+   * `id` tetap dipakai di belakang layar untuk operasi database.
+   */
+  nomor?: number;
 }
 
 export interface UangRingkas {
@@ -349,17 +363,23 @@ export function parseWaktuAlami(
     // :00, jadi 12:48:00 BELUM melewati due_at (masih 57 detik) -> baru terkirim
     // di 12:49:00 = terasa ngaret 1 menit.
     //
-    // SEKARANG: dibulatkan ke BAWAH (floor) ke awal menit, lalu -5 detik.
-    // Contoh: 12:46:57 + 2 menit = 12:48:57 -> floor 12:48:00 -> -5s = 12:47:55.
-    //   - Bot MENJANJIKAN "12.48" (menit hasil floor) -> cron 12:48:00 sudah
-    //     melewati due_at -> terkirim pada 12.48 = SESUAI JANJI ✅
-    //   - Bila dibulatkan ke ATAS (ceil), due jadi 12:48:55 -> cron 12:49:00
-    //     yang mengirim -> NGARET 1 menit (inilah keluhan pemilik produk).
-    // PENTING: floor, bukan ceil — yang penting MENIT yang dijanjikan sama
-    // dengan menit pengiriman.
+    // SEKARANG: dibulatkan ke BAWAH (floor) ke awal menit, TANPA pengurangan.
+    // Contoh: 13:21:30 + 5 menit = 13:26:30 -> floor 13:26:00.
+    //
+    // MENGAPA TANPA -5 DETIK (perbaikan 06 Okt 2026):
+    //   Laporan: "bot mencatat 13.25, padahal dikirim 13.26" (beda 1 menit).
+    //   SEBAB: dulu ada -5 detik -> due 13:25:55 -> TAMPILAN "13.25" sedangkan
+    //   cron mengirim pada 13:26:00. Tampilan & pengiriman jadi TIDAK SINKRON.
+    //
+    //   -5 detik sebenarnya TIDAK diperlukan: cron berjalan tiap menit dan
+    //   dieksekusi sedikit SETELAH detik 0 (mis. 13:26:00.3), sehingga
+    //   `due_at (13:26:00) <= now (13:26:00.3)` bernilai BENAR -> terkirim
+    //   pada 13:26 = SESUAI TAMPILAN.
+    //
+    // HASIL: menit yang DITAMPILKAN == menit PENGIRIMAN (konsisten).
     const target = new Date(sekarang.getTime() + ms);
     target.setSeconds(0, 0);
-    return new Date(target.getTime() - 5000);
+    return target;
   }
 
   // Hari: hari ini / besok / lusa / senin..minggu
@@ -638,7 +658,29 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   const adaKataUang = /\b(uang|duit|pengeluaran|pemasukan|belanja|bayar|beli|habis|keluar|masuk|gaji|bonus|dapat|terima|honor|fee|pendapatan|jajan|ongkos|biaya|tarif)\b/.test(s);
   const perintahUang = /^\s*\/?(uang|keluar|masuk|pengeluaran|pemasukan)\b/i.test(tanpaPengantar);
   if (nominal && (perintahUang || adaKataUang)) {
-    const kind: ExpenseKind = /\b(masuk|gaji|bonus|dapat|terima|pemasukan|honor|fee|pendapatan)\b/.test(s) ? 'in' : 'out';
+    // ── BUG YANG DIPERBAIKI (06 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: "catat uang saya ada 150 ribu" dianggap PENGELUARAN.
+    //
+    // SEBAB: deteksi default ke 'out' bila tidak ada kata masuk/gaji/dapat. Padahal
+    // "uang SAYA ADA 150 ribu" itu MENYATAKAN SALDO/PEMASUKAN, bukan pengeluaran.
+    //
+    // PERBAIKAN: kenali kata yang menandakan PEMASUKAN/SALDO:
+    //   - ada, punya, punya uang, saldo, sisa, simpanan, tabungan, pegang,
+    //     bawa, tersedia, tersisa, dapat, terima, gaji, bonus, honor, fee,
+    //     pendapatan, masukan, masuk
+    // Kata yang menandakan PENGELUARAN tetap: beli, bayar, jajan, ongkos,
+    // biaya, habis (untuk belanja), keluar, pengeluaran.
+    //
+    // Bila pesan memuat kata PEMASUKAN -> 'in'. Bila memuat kata PENGELUARAN
+    // yang kuat -> 'out'. Bila ambigu (hanya "catat uang 150 ribu") -> tanya
+    // dulu daripada menebak salah.
+    const kataMasuk = /\b(?:masuk|masukan|gaji|bonus|dapat|dapet|terima|menerima|pemasukan|honor|fee|pendapatan|ada|punya|mempunyai|saldo|sisa|tersisa|tersedia|simpanan|tabungan|pegang|bawa)\b/.test(s);
+    const kataKeluar = /\b(?:beli|bayar|bayarin|jajan|ongkos|biaya|habis|abis|keluar|pengeluaran|belanja|topup|top-up|isi\s+pulsa|kirim|transfer\s+ke)\b/.test(s);
+    let kind: ExpenseKind;
+    if (kataMasuk && !kataKeluar) kind = 'in';
+    else if (kataKeluar && !kataMasuk) kind = 'out';
+    else if (kataMasuk && kataKeluar) kind = 'out'; // keduanya -> anggap pengeluaran (lebih umum)
+    else kind = 'out'; // ambigu tanpa penanda: default pengeluaran (perilaku lama)
     return {
       kind: 'expense',
       yakin: 0.92,
@@ -895,13 +937,76 @@ export async function daftarTugas(chatId: string, hanyaBelumSelesai = true): Pro
   const c = db();
   if (!c) return [];
   try {
-    let q = c.from('todos').select('id, task, priority, status, due_at').eq('chat_id', chatId);
-    if (hanyaBelumSelesai) q = q.eq('status', 'open');
-    const { data, error } = await q.order('priority', { ascending: true }).order('created_at', { ascending: true }).limit(50);
-    if (error || !data) return [];
-    return data as TugasRingkas[];
+    // Ambil SEMUA tugas user (semua status) agar nomor urut STABIL: tugas
+    // pertama tetap #1 meski ada tugas lain yang sudah selesai/dihapus.
+    // Tanpa ini, nomor berubah setiap ada tugas yang selesai (membingungkan).
+    const { data: semua, error } = await c
+      .from('todos')
+      .select('id, task, priority, status, due_at, created_at')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(200);
+    if (error || !semua) return [];
+
+    // Beri nomor urut per-user (1, 2, 3, ...).
+    const bernomor = (semua as Array<TugasRingkas & { created_at?: string }>).map((t, i) => ({
+      ...t,
+      nomor: i + 1,
+    }));
+
+    const hasil = hanyaBelumSelesai ? bernomor.filter((t) => t.status === 'open') : bernomor;
+    // Urutkan tampilan: prioritas lalu waktu dibuat.
+    hasil.sort((a, b) => (a.priority - b.priority) || ((a.nomor ?? 0) - (b.nomor ?? 0)));
+    return hasil.slice(0, 50);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Cari ID asli dari NOMOR URUT per-user (dipakai /selesai & /hapus).
+ * Nomor dihitung dari urutan `created_at` semua tugas user (stabil).
+ */
+/**
+ * Cari NOMOR URUT per-user dari sebuah ID tugas (kebalikan idDariNomorTugas).
+ * Dipakai untuk menampilkan "Tugas dicatat (#N)" dengan nomor yang konsisten.
+ */
+export async function nomorUrutTugas(chatId: string, id: number): Promise<number | null> {
+  const c = db();
+  if (!c) return null;
+  try {
+    const { data, error } = await c
+      .from('todos')
+      .select('id')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(200);
+    if (error || !data) return null;
+    const idx = (data as Array<{ id: number }>).findIndex((t) => t.id === id);
+    return idx >= 0 ? idx + 1 : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function idDariNomorTugas(chatId: string, nomor: number): Promise<number | null> {
+  const c = db();
+  if (!c) return null;
+  try {
+    const { data, error } = await c
+      .from('todos')
+      .select('id')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(200);
+    if (error || !data) return null;
+    if (nomor < 1 || nomor > data.length) return null;
+    return (data[nomor - 1] as { id: number }).id;
+  } catch {
+    return null;
   }
 }
 
@@ -1103,7 +1208,8 @@ export function formatDaftarTugas(rows: TugasRingkas[]): string {
     const due = r.due_at
       ? `, tenggat ${formatWaktuUser(new Date(r.due_at))}`
       : '';
-    return `${label(r.priority)} #${r.id} ${r.task}${due}`;
+    // Tampilkan NOMOR URUT per-user (bukan ID global yang bisa #13).
+    return `${label(r.priority)} #${r.nomor ?? r.id} ${r.task}${due}`;
   }).join('\n');
 }
 
@@ -1354,9 +1460,11 @@ async function simpanDariNiat(
       actor: opts.actor,
       platform: opts.platform,
     });
-    return id
-      ? { ok: true, pesan: `✅ Tugas dicatat (#${id}), ${niat.ringkas}` }
-      : { ok: false, pesan: '⚠️ Gagal menyimpan tugas. Coba lagi nanti ya.' };
+    if (!id) return { ok: false, pesan: '⚠️ Gagal menyimpan tugas. Coba lagi nanti ya.' };
+    // Tampilkan NOMOR URUT per-user (bukan ID global yang bisa #13 untuk tugas
+    // pertama). Lihat catatan di interface TugasRingkas.
+    const nomorTugas = await nomorUrutTugas(chatId, id);
+    return { ok: true, pesan: `✅ Tugas dicatat (#${nomorTugas ?? id}), ${niat.ringkas}` };
   }
   // note (termasuk pengingat bahasa alami)
   if (d.pengingat && d.due_at) {
@@ -1514,8 +1622,11 @@ export async function tanganiPencatatan(
     return { ditangani: true, reply: formatRekapUang(r, hari), jalur: 'perintah-rekap' };
   }
 
-  // /list  atau  /tugas-saya
-  if (/^\/(?:list|daftar|tugas-saya|todos?)$/.test(low)) {
+  // /list, /daftar, /tugas, /todos, /tugas-saya
+  //
+  // BUG YANG DIPERBAIKI (06 Okt 2026): "tugas" TIDAK ada di daftar, padahal
+  // pesan error kita sendiri menyuruh user mengetik */tugas*. Sekarang ditambah.
+  if (/^\/(?:list|daftar|tugas|tugas-saya|todo|todos|tugasku)$/.test(low)) {
     const t = await daftarTugas(chatId, true);
     return { ditangani: true, reply: `*Tugas kamu:*\n${formatDaftarTugas(t)}`, jalur: 'perintah-list' };
   }
@@ -1552,16 +1663,27 @@ export async function tanganiPencatatan(
   // /selesai <id>  |  /hapus <id>
   m = low.match(/^\/selesai\s+(\d+)/);
   if (m) {
-    const ok = await selesaikanTugas(chatId, Number(m[1]));
-    return { ditangani: true, reply: ok ? `✅ Tugas #${m[1]} selesai!` : `Tugas #${m[1]} tidak ditemukan.`, jalur: 'perintah-selesai' };
+    const nomor = Number(m[1]);
+    // Nomor yang diketik user adalah NOMOR URUT per-user (lihat daftarTugas),
+    // bukan ID global. Konversi dulu ke ID asli.
+    const idAsli = await idDariNomorTugas(chatId, nomor);
+    if (idAsli === null) {
+      return { ditangani: true, reply: `Tugas #${nomor} tidak ditemukan. Ketik */tugas* untuk melihat daftar.`, jalur: 'perintah-selesai' };
+    }
+    const ok = await selesaikanTugas(chatId, idAsli);
+    return { ditangani: true, reply: ok ? `✅ Tugas #${nomor} selesai!` : `Tugas #${nomor} tidak ditemukan.`, jalur: 'perintah-selesai' };
   }
   m = low.match(/^\/hapus\s+(\d+)/);
   if (m) {
-    const id = Number(m[1]);
-    const a = await hapusTugas(chatId, id);
-    const b = a ? false : await hapusCatatan(chatId, id);
-    const c = a || b ? false : await hapusUang(chatId, id);
-    return { ditangani: true, reply: a || b || c ? `🗑️ #${id} dihapus.` : `#${id} tidak ditemukan.`, jalur: 'perintah-hapus' };
+    const nomor = Number(m[1]);
+    // Coba sebagai NOMOR URUT tugas lebih dulu (konsisten dengan tampilan daftar).
+    const idTugas = await idDariNomorTugas(chatId, nomor);
+    const a = idTugas !== null ? await hapusTugas(chatId, idTugas) : false;
+    // Bila bukan tugas, coba sebagai ID catatan/keuangan (tampilan keduanya
+    // memakai ID asli karena tidak dikelompokkan berurutan).
+    const b = a ? false : await hapusCatatan(chatId, nomor);
+    const c = a || b ? false : await hapusUang(chatId, nomor);
+    return { ditangani: true, reply: a || b || c ? `🗑️ #${nomor} dihapus.` : `#${nomor} tidak ditemukan.`, jalur: 'perintah-hapus' };
   }
 
   // ── A0a. PROFIL WAKTU USER (zona waktu per-user, permanen) ──
@@ -1792,15 +1914,22 @@ export async function tanganiPencatatan(
     const mSelesai = lowAngka.match(/\b(?:selesai|selesaikan|sudah|udah|done|beres)\s+(?:tugas|nomor|no|#)?\s*(\d+)\b/);
     if (mSelesai) {
       const id = Number(mSelesai[1]);
-      const okk = await selesaikanTugas(chatId, id);
+      // Nomor yang diketik user = NOMOR URUT per-user, bukan ID global.
+      const idAsli = await idDariNomorTugas(chatId, id);
+      if (idAsli === null) {
+        return { ditangani: true, reply: `Tugas #${id} tidak ditemukan. Ketik */tugas* untuk melihat daftar.`, jalur: 'niat-selesai' };
+      }
+      const okk = await selesaikanTugas(chatId, idAsli);
       return { ditangani: true, reply: okk ? `✅ Tugas #${id} selesai!` : `Tugas #${id} tidak ditemukan.`, jalur: 'niat-selesai' };
     }
     if (mHapus) {
-      const id = Number(mHapus[1]);
-      const a = await hapusTugas(chatId, id);
-      const b = a ? false : await hapusCatatan(chatId, id);
-      const cc = a || b ? false : await hapusUang(chatId, id);
-      return { ditangani: true, reply: a || b || cc ? `🗑️ #${id} dihapus.` : `#${id} tidak ditemukan.`, jalur: 'niat-hapus' };
+      const nomor = Number(mHapus[1]);
+      // Coba sebagai NOMOR URUT tugas dulu (konsisten dengan tampilan daftar).
+      const idTugas = await idDariNomorTugas(chatId, nomor);
+      const a = idTugas !== null ? await hapusTugas(chatId, idTugas) : false;
+      const b = a ? false : await hapusCatatan(chatId, nomor);
+      const cc = a || b ? false : await hapusUang(chatId, nomor);
+      return { ditangani: true, reply: a || b || cc ? `🗑️ #${nomor} dihapus.` : `#${nomor} tidak ditemukan.`, jalur: 'niat-hapus' };
     }
   }
 

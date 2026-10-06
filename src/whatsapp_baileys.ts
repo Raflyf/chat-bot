@@ -740,10 +740,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           // per menit mengirim TEPAT WAKTU (bukan ngaret 1 menit karena detik).
           const dueAt = (() => {
             const d = new Date(Date.now() + minutes * 60_000);
-            // Bulatkan ke BAWAH ke awal menit, lalu -5 detik, agar cron per menit
-            // mengirim pada MENIT YANG DIJANJIKAN (bukan ngaret 1 menit).
+            // Bulatkan ke BAWAH ke awal menit (TANPA -5 detik) agar MENIT yang
+            // ditampilkan == MENIT pengiriman. Cron per menit dieksekusi sedikit
+            // setelah detik 0, sehingga `due_at <= now` tetap terpenuhi tepat waktu.
             d.setSeconds(0, 0);
-            return new Date(d.getTime() - 5000);
+            return d;
           })();
     const targetChat = remoteJid.replace(/@.*$/, '');
     const reminderSaved = await saveReminderToDb(targetChat, message, dueAt, 'whatsapp');

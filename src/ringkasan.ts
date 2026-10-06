@@ -92,7 +92,8 @@ export async function susunRingkasan(chatId: string, opsi: OpsiRingkasan = {}): 
   } else {
     for (const t of tugas.slice(0, 5)) {
       const prioritas = t.priority >= 3 ? '🔴' : t.priority === 2 ? '🟡' : '⚪';
-      baris.push(`   ${prioritas} #${t.id} ${t.task.slice(0, 50)}`);
+      // Pakai NOMOR URUT per-user (bukan ID global yang bisa #13).
+      baris.push(`   ${prioritas} #${(t as { nomor?: number }).nomor ?? t.id} ${t.task.slice(0, 50)}`);
     }
     if (tugas.length > 5) baris.push(`   ... dan ${tugas.length - 5} tugas lain`);
   }
