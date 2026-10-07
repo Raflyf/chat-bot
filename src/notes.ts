@@ -495,7 +495,21 @@ export function parseWaktuAlami(
  * (setelah kata pengantar opsional). Prinsipnya: HANYA kalimat PERINTAH yang
  * boleh dicatat, bukan pertanyaan, bukan cerita, bukan obrolan.
  */
-const KATA_PERINTAH = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|ingat|remind|reminder|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres|tandai|set|setel|bikin|buat|buatkan|bikinin|jadwal|jadwalkan|jadwalin|rutin|rutinin|atur|aturin|pasang|pasangkan|siapkan|beli|bayar|jajan|ongkos|biaya|habis|abis|dapat|dapet|gaji|transferan|harus|perlu|kudu|mesti|bangunkan|bangunin';
+// ── DIPERLUAS (temuan 07 Okt 2026) ──
+// BUG: "gajian 5 juta" DITOLAK karena "gajian" tidak ada (hanya "gaji").
+// Daftar ini HARUS sinkron dengan KATA_PERINTAH_UTAMA di deteksiNiat().
+const KATA_PERINTAH =
+  'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|' +
+  'ingatkan|ingetin|ingat|remind|reminder|pengingat|todo|to-do|tugas|task|' +
+  'uang|duit|keluar|masuk|masukan|pengeluaran|pemasukan|jurnal|diary|' +
+  'belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|' +
+  'hapus|buang|hilangkan|delete|remove|selesai|selesaikan|done|beres|tuntas|tandai|' +
+  'set|setel|bikin|buat|buatkan|bikinin|jadwal|jadwalkan|jadwalin|rutin|rutinin|' +
+  'atur|aturin|pasang|pasangkan|siapkan|' +
+  'beli|bayar|bayarin|jajan|ongkos|biaya|tarif|habis|abis|' +
+  'dapat|dapet|terima|gaji|gajian|gajinya|gajiannya|bonus|bonusan|thr|honor|fee|' +
+  'pendapatan|transferan|topup|top-up|' +
+  'harus|perlu|kudu|mesti|wajib|bangunkan|bangunin';
 
 /** Kata pengantar yang BOLEH mendahului perintah (bukan penanda obrolan). */
 const PENGANTAR_BOLEH = /^\s*(tolong|coba|bisa|boleh|please|pls|mau|aku\s+mau|saya\s+mau|aku\s+pengen|saya\s+pengen|aku\s+ingin|saya\s+ingin|aku\s+pingin|saya\s+pingin|gw\s+mau|gue\s+mau|aku\s+mo|saya\s+mo)\s+/i;
@@ -522,6 +536,17 @@ const PENANDA_OBROLAN: RegExp[] = [
   /\b(banget|bgt|loh|yah|yaudah|yaudahlah|wkwk|haha|hehe|xixi|hihi|kwkwk)\b/,
   /\b(aku\s+sudah|saya\s+sudah|udah\s+aku|sudah\s+aku)\b/,   // menyatakan sudah terjadi
   /\b(mungkin|kayaknya|sepertinya|sepertinya|rasanya|kayak\s+nya)\b/, // dugaan
+  // ── DITAMBAHKAN (temuan 07 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: "awas ketika dalam percakapan biasa dan user sedang
+  // curhat bahwa dia sudah gajian dan mendapat gaji 5 juta malah dicatat ke
+  // pemasukan".
+  //
+  // Kata PERASAAN/KONDISI menandakan CURHAT, bukan permintaan catat.
+  // Contoh: "duit aku tinggal 100rb nih sedih" -> JANGAN dicatat.
+  /\b(?:sedih|seneng|senang|bahagia|alhamdulillah|syukur|bersyukur|akhirnya|nasib|kasian|prihatin|bete|kesel|kesal|stress|stres|bingung|galau|bangkrut|bokek|kere|miskin|menyesal|nyesel)\b/i,
+  // Kata "duit/uang/saldo/tinggal/sisa" + nominal = laporan SALDO (curhat),
+  // bukan transaksi baru.
+  /\b(?:duit|uang|saldo|sisa|tinggal|tersisa)\b[^.!?\n]{0,15}\d/i,
 ];
 
 /** Kata pengantar yang HARUS dibuang sebelum mengambil isi. */
@@ -797,8 +822,26 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   // SEKARANG: kata perintah boleh didahului kata pengantar singkat.
   // ── DIPERBAIKI (07 Okt 2026): pengantar boleh DUA kata (oh iya, eh iya, oke deh).
   // Temuan: "oh iya ingetin aku setiap hari buat minum vitamin ya" ditolak di sini.
-  const KATA_PERINTAH_UTAMA = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|ingat|remind|reminder|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres|tandai|set|setel|bikin|buat|buatkan|bikinin|jadwal|jadwalkan|jadwalin|rutin|rutinin|atur|aturin|pasang|pasangkan|siapkan|beli|bayar|jajan|ongkos|biaya|habis|abis|dapat|dapet|gaji|transferan|harus|perlu|kudu|mesti|bangunkan|bangunin';
-  const PENGANTAR_UMUM = 'oh|eh|oke|ok|iya(?:h)?|ya|halo|hai|hei|wah|yuk|sip|siap|baik|baiklah|deh|dong|nih|tuh|jadi|nah|terus|trus|soalnya';
+  // ── DIPERLUAS (temuan 07 Okt 2026) ──
+// BUG: "gajian 5 juta" DITOLAK karena "gajian" tidak ada di daftar (hanya "gaji").
+// Ditambahkan: gajian, bonus, thr, pemasukan, dan kata transaksi lain.
+const KATA_PERINTAH_UTAMA =
+  'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|' +
+  'ingatkan|ingetin|ingat|remind|reminder|pengingat|todo|to-do|tugas|task|' +
+  'uang|duit|keluar|masuk|masukan|pengeluaran|pemasukan|jurnal|diary|' +
+  'belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|' +
+  'hapus|buang|hilangkan|delete|remove|selesai|selesaikan|done|beres|tuntas|tandai|' +
+  'set|setel|bikin|buat|buatkan|bikinin|jadwal|jadwalkan|jadwalin|rutin|rutinin|' +
+  'atur|aturin|pasang|pasangkan|siapkan|' +
+  'beli|bayar|bayarin|jajan|ongkos|biaya|tarif|habis|abis|' +
+  'dapat|dapet|terima|gaji|gajian|gajinya|gajiannya|bonus|bonusan|thr|honor|fee|' +
+  'pendapatan|transferan|topup|top-up|' +
+  'harus|perlu|kudu|mesti|wajib|bangunkan|bangunin';
+  // Pengantar boleh termasuk penanda PENGULANGAN ("tiap hari", "setiap hari").
+  const PENGANTAR_UMUM =
+    'oh|eh|oke|ok|iya(?:h)?|ya|halo|hai|hei|wah|yuk|sip|siap|baik|baiklah|' +
+    'deh|dong|nih|tuh|jadi|nah|terus|trus|soalnya|' +
+    '(?:tiap|setiap|saban)\\s+(?:hari|minggu|bulan|tahun|senin|selasa|rabu|kamis|jumat|jum\\\'at|sabtu)';
   const polaAwalDenganPengantar = new RegExp(
     `^\\s*\\/?(?:(?:${PENGANTAR_UMUM})\\s+){1,2}\\/?(?:${KATA_PERINTAH_UTAMA})\\b`,
     'i',
@@ -932,7 +975,11 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     !/\b(?:uang|duit|saldo|pengeluaran|pemasukan|catat\s+uang|nominal)\b/i.test(tanpaPengantar);
 
   // 4a. KEUANGAN, wajib ada nominal
-  const adaKataUang = /\b(uang|duit|pengeluaran|pemasukan|belanja|bayar|beli|habis|keluar|masuk|gaji|bonus|dapat|terima|honor|fee|pendapatan|jajan|ongkos|biaya|tarif)\b/.test(s);
+  // ── DIPERLUAS (temuan 07 Okt 2026) ──
+  // BUG: "gajian 5 juta" & "thr 1 juta" DITOLAK karena "gajian"/"thr" tidak ada
+  // di daftar kata uang. Padahal parseNominal sudah benar membaca nominalnya.
+  const adaKataUang =
+    /\b(?:uang|duit|pengeluaran|pemasukan|masukan|belanja|bayar|bayarin|beli|habis|abis|keluar|masuk|gaji|gajian|gajinya|gajiannya|bonus|bonusan|thr|dapat|dapet|terima|menerima|honor|fee|pendapatan|jajan|ongkos|biaya|tarif|topup|top-up|transferan|komisi|cashback|refund|warisan|hadiah|untung|laba|profit|cair)\b/.test(s);
   const perintahUang = /^\s*\/?(uang|keluar|masuk|pengeluaran|pemasukan)\b/i.test(tanpaPengantar);
   if (!adaPerintahIngatKuat && nominal && (perintahUang || adaKataUang)) {
     // ── BUG YANG DIPERBAIKI (06 Okt 2026) ──
@@ -2786,6 +2833,28 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
     /\b(?:beli|bayar|jajan|ongkos|habis|abis|dapat|dapet|gaji|gajian|belanja|transferan|bonus|thr|parkir|bensin|tagihan|sewa|cicilan|utang|hutang|pengeluaran|pemasukan|pengeluaranku|pemasukanku|komisi|cashback|refund|warisan|hadiah)\b/i.test(s) ||
     /^\s*(?:harus|perlu|kudu|mesti)\s+\w+/i.test(s);
   if (!sinyalMinta) return null;
+
+  // ── TOLAK CURHAT / LAPORAN PRIBADI (temuan 07 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: "awas ketika dalam percakapan biasa dan user sedang
+  // curhat bahwa dia sudah gajian dan mendapat gaji 5 juta malah dicatat ke
+  // pemasukan".
+  //
+  // AKAR: sinyalMinta menerima kata transaksi apa pun ("gajian", "dapet"), sehingga
+  // CURHAT ("alhamdulillah gajian 5 juta nih") ikut dicatat.
+  //
+  // SEKARANG: bila ada kata PERASAAN/KONDISI atau penanda cerita, TOLAK.
+  const curhatRe =
+    /\b(?:sedih|seneng|senang|bahagia|alhamdulillah|syukur|bersyukur|akhirnya|nasib|kasian|prihatin|bete|kesel|kesal|stress|stres|bingung|galau|bangkrut|bokek|kere|miskin|menyesal|nyesel|lumayan|senengnya|akhirnyaa)\b/i;
+  const ceritaRe =
+    /\b(?:tadi|kemarin|barusan|baru\s*aja|td|udah|sudah|akhirnya|katanya)\b/i;
+  const laporanSaldo = /\b(?:duit|uang|saldo|sisa|tinggal|tersisa|masuk\s+rekening|ke\s+rekening)\b[^.!?\n]{0,15}\d/i;
+  // "aku dapet bonus 2 juta, mau beliin ibu" -> niat/narasi, bukan permintaan catat.
+  const niatNaratif = /\b(?:mau|pengen|pingin|ingin)\s+(?:beliin|belikan|beli|kasih|kasi|traktir|bagi)\b/i;
+  // Penanda CERITA MASA LALU -> curhat. KECUALI bila user meminta catat eksplisit
+  // ("tolong catat tadi aku beli ...") atau transaksi jelas dengan nominal.
+  const mintaCatatImplisit = /\b(?:tolong|please|pls|mohon|bantu|bantuin|catat|dicatat|tercatat|simpan|masukin|input|note)\b/i.test(s);
+  const ceritaMasaLalu = ceritaRe.test(s) && !mintaCatatImplisit;
+  if (curhatRe.test(s) || laporanSaldo.test(s) || niatNaratif.test(s) || ceritaMasaLalu) return null;
 
   // Tolak kalau jelas obrolan/pertanyaan (agar tidak salah tangkap).
   if (/\?$/.test(s)) return null;
