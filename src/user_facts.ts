@@ -91,6 +91,18 @@ export function deteksiFaktaPersonal(teks: string): FaktaPersonal | null {
       return { kategori: 'nama', fakta: `Namanya ${v}` };
     }
   }
+  // ── "Nama kamu X" / "namamu X" (temuan 07 Okt 2026) ──
+  // User MENYEBUTKAN nama dirinya sambil mengoreksi bot ("Nama kamu Dhea, sesuai
+  // petunjuk hurufnya"). Ini tetap informasi nama yang berharga.
+  // "nama kamu X" / "namamu X" -> buang kata "kamu" di antara.
+  m = asli.match(new RegExp(`\\bnam(?:a|amu|a)\\s+(?:kamu\\s+|kau\\s+)?(?:itu\\s+)?(?:adalah\\s+)?(${NAMA_KATA})\\s*[,.]?`, 'i'));
+  if (m) {
+    const v = bersih(m[1]);
+    if (v && v.length >= 2 && !/^(?:apa|siapa|kamu|aku|saya|gue|gw|dia|nya|itu|ini|freeaibot|bot)$/i.test(v)) {
+      return { kategori: 'nama', fakta: `Namanya ${v}` };
+    }
+  }
+
   // "panggil aku X" — hanya bila TIDAK ada kata menolak.
   m = asli.match(/\b(?:panggil(?:an)?|dipanggil)\s+(?:aku\s+|saya\s+|gue\s+|gw\s+)?(?:aja\s+|saja\s+|dengan\s+)?([A-Za-z][A-Za-z'-]{1,24})\s*[.!?]?\s*$/i);
   if (m) {
@@ -114,7 +126,11 @@ export function deteksiFaktaPersonal(teks: string): FaktaPersonal | null {
   m = asli.match(/\b(?:aku|saya|gue|gw)\s+(?:suka|sukaa|doyan|demen|seneng|senang|gemar|hobi)\s+(?:banget\s+|sih\s+|sama\s+|sama\s+banget\s+)?([^.!?]{2,60})/i);
   if (m) {
     const v = bersih(m[1]);
-    if (v.length >= 2 && !/^(?:kamu|kau|lu|loe|elo|dia|nya|sama kamu|sama lo)$/i.test(v)) {
+    // ── GUARD (temuan nyata 07 Okt 2026) ──
+    // "Salah, tuh kamu ga inget aku suka buah apa" -> SALAH ditangkap sebagai
+    // "Suka buah apa". Itu PERTANYAAN (atau keluhan), bukan fakta kesukaan.
+    const ituPertanyaan = /\b(?:apa|apakah|apaan|berapa|siapa|kapan|dimana|gimana|bagaimana|kenapa|mengapa|kah)\b/i.test(v) || /\?/.test(asli);
+    if (v.length >= 2 && !ituPertanyaan && !/^(?:kamu|kau|lu|loe|elo|dia|nya|sama kamu|sama lo)$/i.test(v)) {
       return { kategori: 'kesukaan', fakta: `Suka ${v}` };
     }
   }

@@ -833,10 +833,25 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       // (padahal blok 4b menghasilkan "bangun" yang benar).
       // Sekarang pembersihnya DISAMAKAN dengan blok 4b: buang kata ganti,
       // kata waktu (pagi/siang/sore/malam/subuh), dan hari.
-      let pesan0 = asli
-        // Buang SEMUA kata perintah di AWAL (boleh beruntun, mis. "set pengingat").
-        .replace(/^(?:\s*\/?(?:ingatkan|ingetin|ingat|remind|reminder|pengingat|buatkan|buat|bikin|bikinin|jadwalkan|jadwalin|jadwal|rutinin|rutin|atur|aturin|pasang|pasangkan|setel|set|tolong|please|pls)\b\s*)+/i, '')
-        .replace(/^(?:\s*(?:tolong|please|pls|saya|aku|gue|gw|kami|kita|dong|nih|ya|deh|sih|iya(?:h)?|oke|ok|halo|hai|hei|wah|eh|yuk|sip|siap|baik|baiklah|oh|jadi|nah)\s+)+/i, '')
+      // ── LOOP PEMBERSIH (temuan 07 Okt 2026) ──
+      // "oh iya ingetin aku setiap hari ..." -> pembersih lama hanya jalan sekali
+      // sehingga "ingetin aku" tersisa di isi pengingat.
+      // Sekarang: buang pengantar & kata perintah BERGANTIAN sampai bersih.
+      const buangPengantarPerintah = (x: string): string => {
+        let prev = '';
+        let out = x;
+        let putaran = 0;
+        while (out !== prev && putaran < 6) {
+          prev = out;
+          out = out
+            .replace(/^\s*(?:\/?(?:oh|eh|oke|ok|iya(?:h)?|ya|halo|hai|hei|wah|yuk|sip|siap|baik|baiklah|deh|dong|nih|tuh|jadi|nah|terus|trus|tolong|please|pls|mohon|bantu|bantuin|coba)\b[\s,]*)+/i, '')
+            .replace(/^\s*(?:\/?(?:ingatkan|ingetin|ingat|remind|reminder|pengingat|buatkan|buat|bikin|bikinin|jadwalkan|jadwalin|jadwal|rutinin|rutin|atur|aturin|pasang|pasangkan|setel|set)\b\s*)+/i, '')
+            .replace(/^\s*(?:saya|aku|gue|gw|kami|kita)\s+/i, '');
+          putaran++;
+        }
+        return out;
+      };
+      let pesan0 = buangPengantarPerintah(asli)
         // Frasa gaul pengisi ("coba", "dong", "nih") yang menggantung di TENGAH.
         // DIPERBAIKI (06 Okt 2026): "coba di" HARUS dibuang SETELAH kata waktu,
         // karena "coba di jam 21.25" -> waktu dibuang dulu -> sisa "coba di".
@@ -871,6 +886,13 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         .replace(/\b(?:jadwal|jadwalkan|rutin|harus|wajib|perlu|mesti|kudu|bangunkan|bangunin)\b/gi, ' ')
         // Kata sambung yang menggantung (temuan 06 Okt 2026: "untuk bangun").
         .replace(/\b(?:untuk|buat|agar|supaya|biar|demi|sambil|sembari)\b/gi, ' ')
+        // ── FRASA PENGISI DARI JAWABAN LANJUTAN (temuan 07 Okt 2026) ──
+        // User menjawab pertanyaan jam: "setelah sarapan ya jam 7.30 atau jam 12.30
+        // oke sih" -> isi pengingat jadi "ingetin aku minum vitamin ya setelah
+        // sarapan ya atau oke" (kotor). Buang frasa waktu-makan & pengisi.
+        .replace(/\b(?:setelah|sesudah|sebelum|habis|abis|usai)\s+(?:sarapan|makan|bangun|tidur|mandi|sholat|salat)\b/gi, ' ')
+        .replace(/\b(?:oke|ok|sih|ya|deh|dong|nih|gitu|begitu|aja|saja|boleh|bisa)\b/gi, ' ')
+        .replace(/\b(?:atau|dan|serta)\b/gi, ' ')
         .replace(/\s{2,}/g, ' ')
         .trim();
       if (pesan0.length < 3) pesan0 = asli;
@@ -1035,7 +1057,12 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
     // "ingetin aku setiap hari buat minum vitamin" (tanpa jam) harus tetap
     // tersimpan — pakai jam default 08:00, lalu konfirmasi menyebut pengulangan.
     const ulangAwal = deteksiPengulangan(s);
-    const kapan = parseWaktuAlami(s) ?? (ulangAwal ? (() => { const d = new Date(); d.setHours(8, 0, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1); return d; })() : null);
+    const kapanMentah = parseWaktuAlami(s);
+    // ── PENGINGAT TANPA JAM (temuan 07 Okt 2026) ──
+    // "ingetin aku setiap hari buat minum vitamin" (tanpa jam) -> JANGAN pakai
+    // jam default diam-diam. Simpan state "menunggu jam", lalu TANYA jamnya.
+    // Bila user menjawab dengan jam, pengingat dibuat dari teks asli (lihat 0a).
+    const kapan = kapanMentah ?? (ulangAwal ? (() => { const d = new Date(); d.setHours(8, 0, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1); return d; })() : null);
     if (kapan) {
       // Bersihkan HANYA kata perintah + kata waktu, JANGAN sampai pesan kosong.
       //
@@ -1137,6 +1164,9 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
           message: pesan,
           repeat_kind: ulang?.kind ?? 'none',
           repeat_value: ulang?.value ?? null,
+          // Tanda: user minta pengingat berulang TANPA menyebut jam -> bot perlu
+          // menanyakan jam & menyimpan state (lihat tanganiPencatatan).
+          perlu_jam: !kapanMentah && Boolean(ulang),
         },
         ringkas: `Pengingat "${pesan}" pada ${jamTeks}${ulang ? ` (${ulang.label})` : ''}`,
       };
@@ -1674,6 +1704,16 @@ interface PermintaanTertunda {
   platform: string;
   actor?: string;
   at: number;
+  /**
+   * Jenis penantian:
+   *   'zona' -> menunggu lokasi/zona waktu (perilaku lama)
+   *   'jam'  -> menunggu JAM untuk sebuah pengingat (temuan 07 Okt 2026)
+   *
+   * LAPORAN: bot bertanya "kapan waktu yang pas?", user menjawab
+   * "setelah sarapan ya jam 7.30 atau jam 12.30 oke sih" -> TIDAK diproses,
+   * pengingat tidak pernah tersimpan.
+   */
+  jenis?: 'zona' | 'jam';
 }
 const permintaanTertunda = new Map<string, PermintaanTertunda>();
 const PERMINTAAN_TERTUNDA_TTL_MS = 10 * 60_000; // 10 menit
@@ -1691,9 +1731,9 @@ const PERMINTAAN_TERTUNDA_TTL_MS = 10 * 60_000; // 10 menit
  * `kind: '_tunggu_zona'` agar tidak bentrok dengan konfirmasi niat biasa.
  */
 async function simpanPermintaanTertunda(
-  chatId: string, teks: string, platform: string, actor?: string,
+  chatId: string, teks: string, platform: string, actor?: string, jenis: 'zona' | 'jam' = 'zona',
 ): Promise<void> {
-  const v: PermintaanTertunda = { teks, platform, actor, at: Date.now() };
+  const v: PermintaanTertunda = { teks, platform, actor, at: Date.now(), jenis };
   // Lapisan 1: memori (cepat, untuk instance yang sama).
   permintaanTertunda.set(chatId, v);
   // Lapisan 2: database (bertahan lintas instance serverless).
@@ -2039,6 +2079,32 @@ export async function tanganiPencatatan(
     if (profilAwal?.timezone) setZonaAktif(profilAwal.timezone);
   } catch {
     // fallback: zonaAktif tetap default (WIB)
+  }
+
+  // ── 0a. LANJUTAN PENGINGAT: jawaban berisi JAM saja (temuan 07 Okt 2026) ──
+  // LAPORAN: bot bertanya "kapan waktu yang pas buat pengingatnya?" lalu user
+  // menjawab "setelah sarapan ya jam 7.30 atau jam 12.30 oke sih" /
+  // "jam 7.30 pagi dan 12.30 siang ok camkan itu".
+  // Keduanya TIDAK diproses -> pengingat tidak pernah tersimpan.
+  //
+  // SEKARANG: bila ada permintaan pengingat yang MENUNGGU JAM, jawaban berisi
+  // jam dilanjutkan sebagai pengingat dari teks asli sebelumnya.
+  {
+    const adaJam = /(?:jam|pukul)\s*\d{1,2}([:.]\d{2})?|\b\d{1,2}([:.]\d{2})\s*(?:pagi|siang|sore|malam)/i.test(asli);
+    if (adaJam) {
+      const tertundaJam = await ambilPermintaanTertunda(chatId);
+      if (tertundaJam && tertundaJam.jenis === 'jam') {
+        await buangPermintaanTertunda(chatId);
+        // Gabungkan teks asli (permintaan) + jawaban jam -> deteksi ulang.
+        // Pembersihan isi diserahkan ke blok pengingat (4a3/4b) supaya konsisten.
+        const gabung = `${tertundaJam.teks} ${asli}`;
+        const niatGabung = deteksiNiat(gabung);
+        if (niatGabung && niatGabung.kind === 'note' && niatGabung.data.pengingat) {
+          const r = await simpanDariNiat(chatId, niatGabung, { actor: opts.actor, platform: opts.platform });
+          return { ditangani: true, reply: r.pesan, jalur: 'lanjut-pengingat-jam' };
+        }
+      }
+    }
   }
 
   // ── 0. Jawaban konfirmasi tertunda ──
@@ -2623,6 +2689,19 @@ export async function tanganiPencatatan(
     const iniPengingat = niat.kind === 'note' && Boolean(niat.data.pengingat);
 
     if (iniPengingat) {
+      // ── PENGINGAT TANPA JAM: TANYA JAM & SIMPAN STATE (temuan 07 Okt 2026) ──
+      // "oh iya ingetin aku setiap hari buat minum vitamin ya" (tanpa jam) ->
+      // dulu langsung disimpan dengan jam default (08:00) tanpa memberi tahu user.
+      // Sekarang: tanya jam dulu, simpan state 'jam' agar jawaban berikutnya
+      // ("jam 7.30 pagi dan 12.30 siang") langsung diproses.
+      if (niat.data.perlu_jam) {
+        await simpanPermintaanTertunda(chatId, asli, opts.platform, opts.actor, 'jam');
+        return {
+          ditangani: true,
+          reply: 'Oke, aku catat. Mau diingetin jam berapa? (mis. *jam 7.30 pagi* atau *jam 12.30 siang*)',
+          jalur: 'tanya-jam-pengingat',
+        };
+      }
       // Pengingat: langsung simpan (tidak boleh ada balasan tanya-jawab).
       const r = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform });
       return { ditangani: true, reply: r.pesan, jalur: `niat-${niat.kind}` };

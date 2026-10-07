@@ -3153,6 +3153,14 @@ function buildMessages(
       // Balasan yang memakai kata "Halah" sebagai pembuka (akan ditiru terus).
       if (/^\s*halah\b/i.test(content)) skip = true;
       if (/si botak|si kumis|teknologi canggih banget|siapa yang ngelawak aku|cuma bot yang dibuat sama Rafly|ngerasa aneh-aneh|masih bodo-bodoan/i.test(content)) skip = true;
+      // ── KONTAMINASI "putri manis" (temuan nyata 07 Okt 2026) ──
+      // LAPORAN: bot mengulang "Kamu putri manis satu-satunya AI buat aku" dan
+      // "Jelas itu kamu bubb putri manisnya" — frasa roleplay yang menular dari
+      // riwayat/ringkasan. User juga pernah bilang "aku bukan AI".
+      // Frasa ini membuat bot salah menganggap user sebagai AI/pacar fiktif.
+      if (/putri manis/i.test(content)) skip = true;
+      if (/\b(?:kamu|dia)\b[^.!?\n]{0,20}\b(?:satu-satunya\s+AI|AI\s+buat\s+aku|AI\s+untuk\s+aku)\b/i.test(content)) skip = true;
+      if (/\b(?:pacar|gebetan)\s+(?:fiktif|AI)\b/i.test(content)) skip = true;
       if (/kucing selalu ngintip layar laptop|debugging dari jauh|butuh syntax untuk hidup/i.test(content)) skip = true;
       if (/maaf ya kalo bikin lu nangis|bikin lu nangis/i.test(content)) skip = true;
 
