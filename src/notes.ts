@@ -509,7 +509,17 @@ const PENANDA_OBROLAN: RegExp[] = [
   /\b(apa|apakah|apaan|berapa|brp|kenapa|mengapa|gimana|bagaimana|kok|ya\s*kan|bukan\s*ya|emang|memang)\b/,
   /\b(tadi|kemarin|barusan|baru\s+aja|td|tadi\s+kan)\b/,     // cerita masa lalu
   /\b(katanya|kata\s+dia|kata\s+orang)\b/,                  // kabar dari orang
-  /\b(banget|bgt|sih|deh|dong|nih|loh|lah|kan|yah|yaudah|yaudahlah|wkwk|haha|hehe|xixi)\b/,
+  // ── DIPERBAIKI (temuan nyata 07 Okt 2026) ──
+  // LAPORAN: "oke deh ingetin aku bayar listrik jam 9" -> TIDAK tersimpan.
+  //
+  // AKAR: partikel "deh"/"dong"/"sih"/"nih" dll ada di daftar penanda obrolan,
+  // padahal partikel itu SERING dipakai dalam permintaan yang SAH
+  // ("ingetin aku dong", "catat deh", "tambahin sih").
+  //
+  // SEKARANG: penanda obrolan hanya untuk kata yang BENAR-BENAR menandakan
+  // obrolan (bukan perintah): tawa, "yaudah", seruan. Partikel permintaan
+  // (deh/dong/sih/nih/lah/tuh) DIBUANG dari daftar ini.
+  /\b(banget|bgt|loh|yah|yaudah|yaudahlah|wkwk|haha|hehe|xixi|hihi|kwkwk)\b/,
   /\b(aku\s+sudah|saya\s+sudah|udah\s+aku|sudah\s+aku)\b/,   // menyatakan sudah terjadi
   /\b(mungkin|kayaknya|sepertinya|sepertinya|rasanya|kayak\s+nya)\b/, // dugaan
 ];
@@ -785,8 +795,14 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   // coba di").
   //
   // SEKARANG: kata perintah boleh didahului kata pengantar singkat.
-  const polaAwalDenganPengantar =
-    /^\s*\/?(?:iya(?:h)?|oke|ok|halo|hai|hei|wah|eh|ya|yuk|sip|siap|baik|baiklah)\b[\s,]*\/?(?:catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|ingat|remind|reminder|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres|tandai|set|setel|bikin|buat|buatkan|bikinin|jadwal|jadwalkan|jadwalin|rutin|rutinin|atur|aturin|pasang|pasangkan|siapkan|beli|bayar|jajan|ongkos|biaya|habis|abis|dapat|dapet|gaji|transferan|harus|perlu|kudu|mesti|bangunkan|bangunin)\b/i;
+  // ── DIPERBAIKI (07 Okt 2026): pengantar boleh DUA kata (oh iya, eh iya, oke deh).
+  // Temuan: "oh iya ingetin aku setiap hari buat minum vitamin ya" ditolak di sini.
+  const KATA_PERINTAH_UTAMA = 'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|ingatkan|ingetin|ingat|remind|reminder|todo|to-do|tugas|task|uang|keluar|masuk|pengeluaran|pemasukan|jurnal|diary|belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|hapus|buang|hilangkan|selesai|selesaikan|done|beres|tandai|set|setel|bikin|buat|buatkan|bikinin|jadwal|jadwalkan|jadwalin|rutin|rutinin|atur|aturin|pasang|pasangkan|siapkan|beli|bayar|jajan|ongkos|biaya|habis|abis|dapat|dapet|gaji|transferan|harus|perlu|kudu|mesti|bangunkan|bangunin';
+  const PENGANTAR_UMUM = 'oh|eh|oke|ok|iya(?:h)?|ya|halo|hai|hei|wah|yuk|sip|siap|baik|baiklah|deh|dong|nih|tuh|jadi|nah|terus|trus|soalnya';
+  const polaAwalDenganPengantar = new RegExp(
+    `^\\s*\\/?(?:(?:${PENGANTAR_UMUM})\\s+){1,2}\\/?(?:${KATA_PERINTAH_UTAMA})\\b`,
+    'i',
+  );
   const adaKataPerintah =
     polaAwal.test(tanpaPengantar) ||
     polaAkhir.test(tanpaPengantar) ||
@@ -820,7 +836,7 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
       let pesan0 = asli
         // Buang SEMUA kata perintah di AWAL (boleh beruntun, mis. "set pengingat").
         .replace(/^(?:\s*\/?(?:ingatkan|ingetin|ingat|remind|reminder|pengingat|buatkan|buat|bikin|bikinin|jadwalkan|jadwalin|jadwal|rutinin|rutin|atur|aturin|pasang|pasangkan|setel|set|tolong|please|pls)\b\s*)+/i, '')
-        .replace(/^\s*(?:tolong|please|pls|saya|aku|gue|gw|kami|kita|dong|nih|ya|deh|sih|iya(?:h)?|oke|ok|halo|hai|hei|wah|eh|yuk|sip|siap|baik|baiklah)\s+/i, '')
+        .replace(/^(?:\s*(?:tolong|please|pls|saya|aku|gue|gw|kami|kita|dong|nih|ya|deh|sih|iya(?:h)?|oke|ok|halo|hai|hei|wah|eh|yuk|sip|siap|baik|baiklah|oh|jadi|nah)\s+)+/i, '')
         // Frasa gaul pengisi ("coba", "dong", "nih") yang menggantung di TENGAH.
         // DIPERBAIKI (06 Okt 2026): "coba di" HARUS dibuang SETELAH kata waktu,
         // karena "coba di jam 21.25" -> waktu dibuang dulu -> sisa "coba di".
@@ -829,6 +845,12 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         // Bila terbalik, "tiap jam" terhapus lebih dulu -> angka "6" tertinggal
         // (hasil kotor: "6 bangun").
         .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
+        // ── JAM KEDUA + KATA SAMBUNG MENGGANTUNG (temuan 07 Okt 2026) ──
+        // "ingetin aku setiap hari minum vitamin jam 7.30 pagi dan 12.30 siang"
+        // -> pesan jadi "minum vitamin dan 12.30" (kotor) TANPA pembersih ini.
+        .replace(/\s*\b(?:dan|atau|serta|,)\s*\d{1,2}([:.]\d{2})?\s*(?:pagi|siang|sore|malam|subuh)?/gi, ' ')
+        .replace(/\s*\b\d{1,2}([:.]\d{2})\s*(?:pagi|siang|sore|malam|subuh)?\b/gi, ' ')
+        .replace(/\s*\b(?:dan|atau|serta|juga)\s*[.!?]*\s*$/gi, ' ')
         .replace(/\b(?:tiap|setiap|saban)\s+(?:hari\s+kerja|hari|minggu|bulan|tahun|jam|pukul)\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+(?:minggu|senin|selasa|rabu|kamis|jumat|jum'at|sabtu)\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+tanggal\s+\d{1,2}\b/gi, '')
@@ -996,12 +1018,24 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
   //
   // SEKARANG: kata perintah boleh didahului kata pengantar singkat
   // (iya/iyah/oke/ok/halo/hai/wah/eh/ya) dan boleh diikuti kata ganti.
+  // ── DIPERBAIKI (temuan nyata 07 Okt 2026) ──
+  // LAPORAN: "oh iya ingetin aku setiap hari buat minum vitamin ya" -> TIDAK
+  // ditangani (pengingat TIDAK tersimpan, padahal user jelas minta).
+  //
+  // AKAR: pengantar "oh iya" (DUA kata) tidak cocok dengan pola satu kata.
+  //
+  // SEKARANG: pengantar boleh DUA kata berturut-turut (oh iya, eh iya, oke deh, dst).
+  const PENGANTAR_INGAT = '(?:oh|eh|oke|ok|iya(?:h)?|ya|halo|hai|hei|wah|yuk|sip|siap|baik|baiklah|deh|dong|nih|tuh|jadi|nah|terus|trus|soalnya)';
   const perintahIngat =
-    /^\s*\/?(?:iya(?:h)?|oke|ok|halo|hai|hei|wah|eh|ya|yuk|sip|siap|baik|baiklah)\b[\s,]*\/?(ingatkan|ingetin|ingat|remind|ingatkanlah)\b/i.test(tanpaPengantar) ||
+    new RegExp(`^\\s*\\/?(?:${PENGANTAR_INGAT}\\s+){0,2}\\/?(ingatkan|ingetin|ingat|remind|ingatkanlah)\\b`, 'i').test(tanpaPengantar) ||
     /^\s*\/?(ingatkan|ingetin|ingat|remind)\b/i.test(tanpaPengantar) ||
     /[,\s]+(?:tolong\s+)?(ingatkan|ingetin|ingat|remind)\s*[.!]*\s*$/i.test(tanpaPengantar);
   if (perintahIngat) {
-    const kapan = parseWaktuAlami(s);
+    // ── PENGINGAT BERULANG TANPA JAM (temuan 07 Okt 2026) ──
+    // "ingetin aku setiap hari buat minum vitamin" (tanpa jam) harus tetap
+    // tersimpan — pakai jam default 08:00, lalu konfirmasi menyebut pengulangan.
+    const ulangAwal = deteksiPengulangan(s);
+    const kapan = parseWaktuAlami(s) ?? (ulangAwal ? (() => { const d = new Date(); d.setHours(8, 0, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1); return d; })() : null);
     if (kapan) {
       // Bersihkan HANYA kata perintah + kata waktu, JANGAN sampai pesan kosong.
       //
@@ -1023,8 +1057,11 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         // pengantar ("Iyah Ingetin aku ...") -> "Ingetin" tidak terbuang karena
         // tidak di awal kalimat, lalu tersisa di isi pengingat.
         // SEKARANG: buang pengantar dulu, baru kata perintah.
-        .replace(/^\s*(?:iya(?:h)?|oke|ok|halo|hai|hei|wah|eh|ya|yuk|sip|siap|baik|baiklah|tolong|please|pls)\b[\s,]*/i, '')
-        .replace(/^\s*\/?(ingatkan|ingetin|ingat|remind|ingatkanlah)\b\s*/i, '')
+        // Pengantar (boleh 2 kata: "oh iya", "eh iya", "oke deh") + kata perintah.
+        // DIPERBAIKI (07 Okt 2026): dulu hanya buang SATU pengantar, sehingga
+        // "oh iya ingetin ..." menyisakan "oh iya ingetin aku" di isi pengingat.
+        .replace(/^(?:\s*\/?(?:oh|eh|oke|ok|iya(?:h)?|ya|halo|hai|hei|wah|yuk|sip|siap|baik|baiklah|deh|dong|nih|tuh|jadi|nah|terus|trus|tolong|please|pls)\b[\s,]*)+/i, '')
+        .replace(/^(?:\s*\/?(?:ingatkan|ingetin|ingat|remind|ingatkanlah)\b\s*)+/i, '')
         // BUG YANG DIPERBAIKI (06 Okt 2026, temuan uji): kata ganti yang
         // menggantung TIDAK dibuang, sehingga:
         //   "ingatkan saya 3 menit lagi makan" -> pesan "saya makan"
@@ -1046,6 +1083,16 @@ export function deteksiNiat(teks: string): NiatTerdeteksi | null {
         // Rentang waktu ("dari jam 9 sampai jam 10") dibuang UTUH lebih dulu.
         .replace(/(?:dari\s+)?(?:jam|pukul)\s*\d{1,2}(?:[:.]\d{2})?\s*(?:sampai(?:\s+dengan)?|s\/d|sd|hingga|-|–|sampai\s+pukul|sampai\s+jam)\s*(?:jam|pukul)?\s*\d{1,2}(?:[:.]\d{2})?/gi, '')
         .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
+        // ── JAM KEDUA + KATA SAMBUNG MENGGANTUNG (temuan 07 Okt 2026) ──
+        // "minum vitamin jam 7.30 dan 12.30" -> "minum vitamin dan 12.30" (kotor).
+        // "minum vitamin jam 7.30 atau jam 12.30" -> "minum vitamin atau" (kotor).
+        // URUTAN PENTING: buang "jam N" yang masih ada, lalu angka telanjang,
+        // baru kata sambungnya. (Kalau "dan" dibuang dulu, angkanya tertinggal.)
+        .replace(/\b(?:jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, ' ')
+        .replace(/\s*\b(?:dan|atau|serta|,)\s*\d{1,2}([:.]\d{2})?\s*(?:pagi|siang|sore|malam|subuh)?/gi, ' ')
+        .replace(/\s*\b\d{1,2}([:.]\d{2})\s*(?:pagi|siang|sore|malam|subuh)?\b/gi, ' ')
+        .replace(/\s*\b(?:dan|atau|serta|juga)\s*[.!?]*\s*$/gi, ' ')
+        .replace(/\s*\b(?:dan|atau|serta|juga)\s+(?=[.!?]|$)/gi, ' ')
         .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
         // "N menit lagi", N boleh digit ATAU angka kata
         .replace(new RegExp(`\\b(?:\\d+|${ANGKA_KATA})\\s*(menit|jam|hari|minggu|bulan)\\s*(lagi|kemudian|kedepan)?\\b`, 'gi'), '')
@@ -2681,7 +2728,13 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
         .replace(/^\s*\/?(?:tolong|please|pls|mohon|bantu|bantuin|coba|set|pasang|buatkan|bikinin|jadwalkan|siapkan)\s+/i, '')
         .replace(/\b(?:jangan\s*lupa|jgn\s*lupa|jngn\s*lupa|ingat\s*ya|ingatkan|ingetin|ingat|remind(?:er)?|pengingat)\b/gi, '')
         .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
-        .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
+        // ── JAM KEDUA + KATA SAMBUNG MENGGANTUNG (temuan 07 Okt 2026) ──
+        // "minum vitamin jam 7.30 dan 12.30" -> "minum vitamin dan 12.30" (kotor).
+        // URUTAN: buang "jam N" dulu, lalu angka telanjang, baru kata sambung.
+        .replace(/\b(?:jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, ' ')
+        .replace(/\s*\b(?:dan|atau|serta|,)\s*\d{1,2}([:.]\d{2})?\s*(?:pagi|siang|sore|malam|subuh)?/gi, ' ')
+        .replace(/\s*\b\d{1,2}([:.]\d{2})\s*(?:pagi|siang|sore|malam|subuh)?\b/gi, ' ')
+        .replace(/\s*\b(?:dan|atau|serta|juga)\s*[.!?]*\s*$/gi, ' ')
         .replace(/\b\d+\s*(menit|jam|hari|minggu|bulan)\s*(lagi|kemudian)?\b/gi, '')
         .replace(/\s{2,}/g, ' ')
         .trim();

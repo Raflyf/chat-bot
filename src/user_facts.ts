@@ -66,17 +66,38 @@ export function deteksiFaktaPersonal(teks: string): FaktaPersonal | null {
 
   // ── 1. NAMA ──
   // "namaku X", "nama saya X", "aku X" (perkenalan), "panggil aja X"
-  let m = asli.match(/\b(?:nama(?:ku|saya|gue|gw)?|namaku)\s+(?:adalah\s+)?([A-Za-z][A-Za-z .'-]{1,30})/i);
+  // ── DIPERBAIKI (temuan nyata 07 Okt 2026) ──
+  // BUG: "nama saya Dhea" -> "Namanya saya Dhea" (kata "saya" ikut terbawa).
+  //      "nama gue itu huruf depan nya D..." -> "Namanya gue itu huruf depan nya D"
+  //      (sampah, bukan nama).
+  //      "aku gasuka di panggil dhea ya" -> "Dipanggil dhea ya" (padahal GASUKA!)
+  //
+  // SEKARANG: kata ganti di ANTARA "nama" dan nama harus dibuang; hanya SATU kata
+  // nama yang diambil; kalimat berisi "tidak/gasuka/jangan" TIDAK dianggap nama.
+  // Kalimat yang menyebut huruf/tebak-tebakan juga dilewati.
+  if (/\b(?:huruf|tebak|kira\s*-?\s*kira|jumlah\s+nama)\b/i.test(asli)) return null;
+  if (/\b(?:ga\s*suka|gak\s*suka|nggak\s*suka|tidak\s*suka|jangan|bukan)\b[^.!?\n]{0,20}\bpanggil/i.test(asli)) return null;
+
+  // Nama boleh 1-3 kata ("Andi", "Budi Santoso", "Rafly Firmansyah"), tetapi
+  // kata ganti di antaranya ("nama SAYA X") dibuang lebih dulu.
+  const KATA_GANTI_NAMA = '(?:(?:ku|saya|aku|gue|gw|kamu|kau)\\s+)?';
+  const NAMA_KATA = "[A-Za-z][A-Za-z'-]*(?:\\s+[A-Za-z][A-Za-z'-]*){0,2}";
+  let m = asli.match(
+    new RegExp(`\\bnam(?:a|aku)\\s+${KATA_GANTI_NAMA}(?:itu\\s+)?(?:adalah\\s+|si\\s+)?(${NAMA_KATA})\\s*[.!?]?\\s*$`, 'i'),
+  );
   if (m) {
     const v = bersih(m[1]);
-    if (v && v.length >= 2 && !/^(?:apa|siapa|kamu|aku|saya|dia|nya)$/i.test(v)) {
+    if (v && v.length >= 2 && !/^(?:apa|siapa|kamu|aku|saya|gue|gw|dia|nya|itu|ini)$/i.test(v)) {
       return { kategori: 'nama', fakta: `Namanya ${v}` };
     }
   }
-  m = asli.match(/\b(?:panggil(?:an)?|dipanggil)\s+(?:aku\s+|saya\s+)?(?:aja\s+|saja\s+)?([A-Za-z][A-Za-z .'-]{1,30})/i);
+  // "panggil aku X" — hanya bila TIDAK ada kata menolak.
+  m = asli.match(/\b(?:panggil(?:an)?|dipanggil)\s+(?:aku\s+|saya\s+|gue\s+|gw\s+)?(?:aja\s+|saja\s+|dengan\s+)?([A-Za-z][A-Za-z'-]{1,24})\s*[.!?]?\s*$/i);
   if (m) {
     const v = bersih(m[1]);
-    if (v && v.length >= 2) return { kategori: 'nama', fakta: `Dipanggil ${v}` };
+    if (v && v.length >= 2 && !/^(?:apa|siapa|dong|ya|deh|sih|aja|saja)$/i.test(v)) {
+      return { kategori: 'nama', fakta: `Dipanggil ${v}` };
+    }
   }
 
   // ── 1b. KULINER (diperiksa LEBIH DULU dari kesukaan umum) ──

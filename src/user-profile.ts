@@ -243,10 +243,27 @@ export function berkaitanDenganWaktu(teks: string): boolean {
     /\b(?:hari|tanggal)\s*(?:apa|berapa)\b/.test(s) ||
     // Minta pengingat
     /\b(?:ingatkan|ingetin|ingat|remind|reminder|pengingat)\b/.test(s) ||
-    // Waktu relatif/absolut yang menandakan jadwal
-    /\b(?:besok|lusa|nanti|hari ini|senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/.test(s) ||
+    // ── DIPERBAIKI (temuan nyata 07 Okt 2026) ──
+    // LAPORAN: user curhat dengan SALINAN CHAT panjang:
+    //   "... kita break dulu, bisa kan? ... nanti aku chat kamu kalo aku udah siap"
+    // -> bot menjawab "aku perlu tahu kamu di daerah mana dulu ya" (TIDAK NYAMBUNG,
+    //    user sedang curhat patah hati!).
+    //
+    // AKAR: kata "nanti" SANGAT UMUM dalam obrolan biasa (bukan pertanyaan waktu).
+    // Setiap kali muncul, bot menganggap butuh zona waktu.
+    //
+    // SEKARANG:
+    //   - "nanti"/"besok"/"lusa" HANYA memicu bila benar-benar soal JADWAL/JAM
+    //     (ada angka jam, atau kata jadwal/pengingat).
+    //   - Nama hari memicu hanya bila disertai "jam"/"pukul" atau kata jadwal.
+    //   - Jam "4:24 pm" (format salinan chat) TIDAK memicu — itu bukan pertanyaan.
+    /\b(?:besok|lusa)\s+(?:jam|pukul)\s*\d{1,2}/.test(s) ||
+    /\b(?:jam|pukul)\s*\d{1,2}/.test(s) ||
     /\b\d{1,2}\s*(?:menit|jam)\s*(?:lagi|kemudian)\b/.test(s) ||
-    /\b(?:jam|pukul)\s*\d{1,2}\b/.test(s) ||
+    /\b(?:senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b[^.!?\n]{0,20}\b(?:jam|pukul)\s*\d{1,2}/.test(s) ||
+    // "nanti" hanya bila jelas soal jadwal (bukan curhat biasa).
+    /\bnanti\b[^.!?\n]{0,15}\b(?:jam|pukul)\s*\d{1,2}/.test(s) ||
+    /\b(?:jadwal|agenda|pengingat|ingatkan|ingetin|remind)\b[^.!?\n]{0,25}\bnanti\b/.test(s) ||
     // Ubah/batalkan jadwal
     /\b(?:undur|mundur|tunda|geser|majukan|jadwal|agenda)\b/.test(s)
   );
