@@ -803,10 +803,37 @@ export function panduanJenisSaja(teks: string): string | null {
  */
 export function deteksiMintaPanduan(teks: string): boolean {
   const t = teks.toLowerCase().trim();
+
+  // ── JANGAN ANGGAP PANDUAN bila ada SINYAL TUGAS NYATA (temuan fatal 08 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: "bisa bisanya bot nya malah menyajikan tutorial
+  // pemakaian, padahal user meminta bantuan untuk merekap dari spreadsheet".
+  //
+  // KASUS NYATA yang salah jadi panduan:
+  //   "bantu aku hitung ada berapa menu"                          -> panduan (SALAH)
+  //   "bantu aku recap ya, ada sekitar kurang lebih 60 menu km bantu hitungin" -> panduan
+  //   "SNACK https://docs.google.com/... hitung ada berapa menu"  -> panduan
+  //
+  // AKAR: kata "menu" (dan "perintah"/"help"/"bantuan") ada di daftar pemicu
+  // panduan, padahal kata itu SANGAT UMUM (menu makanan, menu restoran, daftar
+  // menu spreadsheet). Selain itu blok panduan berjalan SEBELUM blok pertanyaan
+  // & sebelum AI, sehingga semua permintaan yang memuat kata itu tersandera.
+  //
+  // SEKARANG: bila ada sinyal TUGAS NYATA (hitung, recap, rekap, jumlah, baca,
+  // link/URL, spreadsheet, dokumen), JANGAN anggap permintaan panduan — biarkan
+  // diproses sebagai tugas/pertanyaan/AI.
+  const adaTugasNyata =
+    /\b(?:hitung|hitungin|hitunglah|menghitung|recap|rekap|jumlah|jumlahin|total|totalin|berapa\s+banyak|ada\s+berapa|baca|bacain|baca\s+isi|lihat\s+isi|ekstrak|rangkum|ringkas\s+isi|analisa|analisis|carikan|cari\s+data)\b/i.test(t) ||
+    /https?:\/\//i.test(t) ||
+    /\b(?:spreadsheet|spread\s*sheet|google\s*sheet|docs\.google|excel|xlsx|csv|dokumen|dokumennya|file|berkas|tabel|pdf)\b/i.test(t);
+  if (adaTugasNyata) return false;
+
   return (
     /\b(?:bisa|dapat|mampu)\s+(?:apa|ngapain|ngapain\s+aja|apa\s+aja|apa\s+saja)\b/.test(t) ||
     /\b(?:fitur|kemampuan|kelebihan|fungsi)\s*(?:apa|apa\s+aja|apa\s+saja|nya)?\s*(?:aja|saja|apa)?\s*\??$/.test(t) ||
-    /\b(?:tutorial|cara\s+(?:pakai|pemakaian|gunakan|menggunakan|pake)|panduan|guide|help|bantuan|menu|perintah|command)\b/.test(t) ||
+    // Kata umum (menu/perintah/help/bantuan) HANYA dianggap pemicu panduan bila
+    // pesannya PENDEK & tidak ada kata lain (murni permintaan panduan).
+    /^\s*\/?(?:tutorial|cara\s+(?:pakai|pemakaian|gunakan|menggunakan|pake)|panduan|guide|help|bantuan|menu|perintah|command)\s*[?!.]*\s*$/.test(t) ||
+    /\b(?:tutorial|cara\s+(?:pakai|pemakaian|gunakan|menggunakan|pake)|panduan|guide)\b/.test(t) ||
     /\b(?:apa\s+(?:aja|saja)\s+yang\s+bisa|bisa\s+ngelakuin\s+apa|kamu\s+bisa\s+apa|bot\s+ini\s+bisa)\b/.test(t) ||
     /^\s*\/(?:help|bantuan|panduan|menu|fitur|tutorial)\s*$/.test(t)
   );

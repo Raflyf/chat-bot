@@ -230,6 +230,57 @@ export function extractFitMarkdownContent(rawHtml: string): string {
 export async function scrapeWebpage(url: string): Promise<string> {
   if (!url || !isSafePublicUrl(url)) return '';
 
+  // ── 0a. GOOGLE SHEETS / DOCS: pakai URL EXPORT (temuan nyata 08 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: user mengirim 5 link Google Sheets (SNACK, SALAD,
+  // BRUNCH, PASTA, SOUP) dan minta "hitung ada berapa menu cukup baca tab/halaman
+  // yg dibawah aja". Halaman `/edit` hanya mengembalikan UI Spreadsheet
+  // ("Versi browser ini tidak didukung lagi... A B C D E F..."), BUKAN data sel.
+  //
+  // SEKARANG: link Google Sheets dikonversi ke endpoint EXPORT (CSV/TSV) yang
+  // mengembalikan ISI SEL sebagai teks — jauh lebih akurat & ringan.
+  //   /spreadsheets/d/<ID>/edit...  ->  /spreadsheets/d/<ID>/export?format=csv
+  // Bila ada parameter `gid` (tab tertentu), diteruskan.
+  const mSheets = url.match(/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
+  if (mSheets) {
+    const id = mSheets[1];
+    const gid = url.match(/[#&?]gid=(\d+)/)?.[1];
+    const hasil: string[] = [];
+    // Ambil SEMUA tab (bila gid tidak disebut) — export tanpa gid mengembalikan tab pertama.
+    const kandidat = gid
+      ? [`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`]
+      : [
+          `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`,
+          // Varian gviz bisa mengembalikan tab aktif untuk sheet multi-tab.
+          `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv`,
+        ];
+    for (const u of kandidat) {
+      try {
+        const res = await fetch(u, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            Accept: 'text/csv,text/plain,*/*',
+          },
+          signal: AbortSignal.timeout(6000),
+          redirect: 'follow',
+        });
+        if (!res.ok) continue;
+        const teks = (await res.text()).trim();
+        // Tolak respons HTML (berarti butuh login / bukan export).
+        if (!teks || teks.length < 5 || /^\s*<!doctype|^\s*<html/i.test(teks)) continue;
+        hasil.push(teks);
+      } catch {
+        // coba kandidat berikutnya
+      }
+    }
+    if (hasil.length) {
+      // Gabungkan unik (dedupe bila kedua varian mengembalikan tab yang sama).
+      const unik = [...new Set(hasil)];
+      const gabung = unik.join('\n\n---\n\n');
+      return `[Google Sheets CSV]\n${gabung.slice(0, 12000)}`.trim();
+    }
+    // Bila export gagal (mis. butuh login) -> lanjut ke jalur biasa di bawah.
+  }
+
   // 0. PDF & dokumen biner: HANYA lewat Jina Reader (direct fetch akan mengembalikan biner rusak)
   const isBinaryDoc = /\.(?:pdf|docx?|xlsx?|pptx?)(?:[?#]|$)/i.test(url);
 
@@ -1128,9 +1179,14 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   // ~3-4 dtk latensi balasan tanpa manfaat.
   const urlScrapePromise: Promise<void> = (async () => {
     if (targetUrls.size === 0) return;
-    // Semua URL yang dikirim user dibaca PARALEL (maks 4). Sekuensial akan menjumlahkan
-    // timeout tiap URL (4 x ~4.5s) dan membuat balasan lambat; paralel = 1x timeout terlama.
-    const urlsToScrape = Array.from(targetUrls).slice(0, 4);
+    // Semua URL yang dikirim user dibaca PARALEL. Sekuensial akan menjumlahkan
+    // timeout tiap URL dan membuat balasan lambat; paralel = 1x timeout terlama.
+    //
+    // BATAS 4 -> 8 (temuan nyata 08 Okt 2026): pemilik produk mengirim **5 link**
+    // Google Sheets (SNACK, SALAD, BRUNCH, PASTA, SOUP) dan minta dihitung. Batas 4
+    // membuat link ke-5 (SOUP) TIDAK terbaca, sehingga hasil hitungan pasti salah.
+    // Karena pembacaan paralel, menaikkan batas tidak menambah latensi berarti.
+    const urlsToScrape = Array.from(targetUrls).slice(0, 8);
     const urlResults = await Promise.allSettled(
       urlsToScrape.map((u) => scrapeWebpage(u).then((content) => ({ u, content }))),
     );
