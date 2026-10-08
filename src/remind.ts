@@ -520,7 +520,27 @@ export async function checkDueReminders(
         processed++;
       } catch (err) {
         console.error(`[remind] gagal kirim reminder id ${item.id}:`, err);
-        await c.from('reminders').update({ status: 'failed', lease_until: null }).eq('id', item.id);
+        // ── PENGINGAT BERULANG TIDAK BOLEH MATI PERMANEN (temuan 08 Okt 2026) ──
+        // LAPORAN PEMILIK PRODUK: "kenapa pengingat waktu bangun saya ko ga aktif
+        // ya hari ini? padahal pada saat ringkasan itu masih ada".
+        //
+        // BUG LAMA: saat kirim gagal, status diubah ke 'failed'. Padahal query
+        // pengambilan HANYA mengambil status='pending' -> pengingat 'failed'
+        // TIDAK PERNAH dicoba lagi = MATI PERMANEN. Inilah sebab pengingat
+        // "bangun" hilang padahal sudah terdaftar.
+        //
+        // SEKARANG:
+        //   - Pengingat BERULANG (daily/weekly/...) -> kembalikan ke 'pending'
+        //     dengan due_at TETAP (akan dicoba lagi pada cron berikutnya).
+        //   - Pengingat SEKALI -> 'failed' (memang tidak diulang).
+        const iniBerulang = item.repeat_kind && item.repeat_kind !== 'none';
+        if (iniBerulang) {
+          // Kembalikan ke pending TANPA memajukan due_at -> dicoba lagi nanti.
+          await c.from('reminders').update({ status: 'pending', lease_until: null }).eq('id', item.id);
+          console.warn(`[remind] pengingat berulang #${item.id} akan dicoba lagi (status dikembalikan ke pending).`);
+        } else {
+          await c.from('reminders').update({ status: 'failed', lease_until: null }).eq('id', item.id);
+        }
       }
     }
     return processed;

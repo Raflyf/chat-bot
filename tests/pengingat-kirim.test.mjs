@@ -53,3 +53,18 @@ test('remind: urutan benar (simpan riwayat SETELAH kirim sukses)', () => {
   const idxSimpan = REM.indexOf("via: 'reminder'");
   assert.ok(idxKirim > 0 && idxSimpan > idxKirim, 'simpan harus setelah kirim sukses');
 });
+
+test('remind: pengingat BERULANG tidak mati permanen saat gagal', () => {
+  // Saat gagal kirim, pengingat berulang HARUS dikembalikan ke 'pending',
+  // bukan 'failed' (karena query hanya mengambil 'pending' -> mati permanen).
+  assert.ok(REM.includes('iniBerulang'), 'harus deteksi pengingat berulang');
+  assert.match(REM, /iniBerulang[\s\S]{0,200}status: 'pending'/, 'berulang -> pending');
+  assert.match(REM, /else \{[\s\S]{0,120}status: 'failed'/, 'sekali -> failed');
+});
+
+test('remind: pengingat berulang tidak memajukan due_at saat gagal', () => {
+  // Saat gagal, due_at TETAP (tidak dimajukan) agar dicoba lagi.
+  const idx = REM.indexOf('iniBerulang');
+  const blok = REM.slice(idx, idx + 400);
+  assert.ok(!blok.includes('due_at:'), 'tidak boleh mengubah due_at saat gagal');
+});
