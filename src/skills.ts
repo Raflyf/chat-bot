@@ -768,6 +768,45 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   }
   out = out.replace(/\s*(?:mau\s+tanya\s+atau\s+pesan\s+apa\s*\??)/gi, '').trim();
 
+  // 11c. Penegak GAYA CUSTOMER SERVICE (temuan nyata 08 Okt 2026).
+  // LAPORAN PEMILIK PRODUK: user memanggil bot dengan sayang —
+  //   "makasii ya cinta" -> bot menjawab
+  //   "Sama-sama! Semoga hari kamu makin sehat dan bahagia. 😊"
+  // Itu gaya CS/ucapan kartu ucapan, bukan teman ngobrol. Prompt sudah melarang
+  // ("tanpa 'ada yang bisa dibantu', 'siap membantu'"), tetapi model tidak selalu
+  // patuh — jadi ditegakkan di KODE.
+  //
+  // ATURAN: buang KALIMAT harapan/doa generik & tawaran layanan. Bila seluruh
+  // balasan hanya berisi itu -> kosongkan agar diregenerasi dengan gaya teman.
+  {
+    const polaCs = [
+      // "Semoga hari kamu makin sehat dan bahagia", "Semoga harimu menyenangkan",
+      // "Semoga sehat selalu", "Semoga harimu indah", dst.
+      /[^.!?\n]{0,40}\bsemoga\s+(?:hari|harimu|harinya|kamu|kita|andа|anda)?[^.!?\n]{0,80}(?:sehat|bahagia|senang|menyenangkan|indah|cerah|baik|sukses|lancar|berkah|dilancarkan|diberkati|produktif|semangat)[^.!?\n]{0,40}[.!?]?/gi,
+      /[^.!?\n]{0,30}\bsemoga\s+(?:harimu|hari\s+kamu|hari\s+anda)\s+(?:menyenangkan|indah|cerah|baik|hebat|luar\s+biasa)[^.!?\n]{0,30}[.!?]?/gi,
+      // "Sama-sama! Semoga ..." -> sisa "Sama-sama!" saja masih oke, tapi kalau
+      // satu-satunya isi adalah harapan generik, buang seluruhnya.
+      // Ucapan CS lain:
+      /[^.!?\n]{0,30}\b(?:senang\s+bisa\s+membantu|siap\s+membantu(?:\s+kapan\s+saja)?|ada\s+yang\s+bisa\s+(?:saya|aku)\s+bantu|jangan\s+ragu\s+untuk\s+(?:bertanya|menghubungi)|terima\s+kasih\s+telah\s+(?:menghubungi|menggunakan))[^.!?\n]{0,60}[.!?]?/gi,
+    ];
+    for (const p of polaCs) {
+      if (p.test(out)) {
+        out = out.replace(p, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      }
+      p.lastIndex = 0;
+    }
+    // Bila sisa hanya sapaan/terima kasih tanpa isi -> kosongkan (regenerasi).
+    // Buang SEMUA emoji & tanda baca dulu, agar "Sama-sama! 😊" (yang hanya sisa
+    // basa-basi) ikut dikosongkan — temuan nyata 08 Okt 2026.
+    const sisa = out
+      .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '')
+      .replace(/[\s.,!?~\-]+/g, '')
+      .toLowerCase();
+    if (!sisa || /^(?:samasama|samasyang|ok|oke|sip|baik|terimakasih|makasih|thanks|thankyou|yourewelcome|welcome|haha|hehe)$/.test(sisa)) {
+      out = '';
+    }
+  }
+
   // 11b. Bersihkan racauan salah paham tangisan / loop permintaan maaf tawa dan template jokes berulang
   out = out.replace(/(?:Hmm,\s*)?maaf\s+ya\s+kalo\s+bikin\s+lu\s+nangis[^.\n]*[.\n]?/gi, '');
   out = out.replace(/Kenapa kucing selalu ngintip layar laptop\? Karena mereka suka debugging dari jauh wkwk\./gi, '');
