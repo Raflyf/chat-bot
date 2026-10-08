@@ -439,7 +439,41 @@ export async function checkDueReminders(
           due_at: item.due_at,
           created_at: item.created_at,
         });
-        await sendFn(item.chat_id, deliveryText, item.platform);
+
+        // ── PERIKSA HASIL KIRIM (temuan nyata 08 Okt 2026) ──
+        // LAPORAN PEMILIK PRODUK: "kenapa pengingat waktu bangun saya ko ga aktif
+        // ya hari ini? padahal pada saat ringkasan itu masih ada".
+        //
+        // AKAR: `sendFn` dipanggil TANPA memeriksa hasil. Bila pengiriman GAGAL
+        // (mis. WhatsApp API error / jaringan), kode tetap lanjut menaikkan
+        // `repeat_count` dan memajukan `due_at` ke besok -> pengingat hari itu
+        // HILANG PERMANEN (tidak pernah terkirim, tidak pernah diulang).
+        //
+        // SEKARANG: bila hasil kirim JELAS gagal (false), LEMPAR error agar
+        // ditangani blok catch -> status 'failed' dan TIDAK memajukan jadwal,
+        // sehingga percobaan berikutnya masih bisa mengirim.
+        const hasilKirim = await sendFn(item.chat_id, deliveryText, item.platform);
+        if (hasilKirim === false) {
+          throw new Error('PENGIRIMAN_GAGAL');
+        }
+
+        // ── SIMPAN KE RIWAYAT (temuan nyata 08 Okt 2026) ──
+        // Pengingat yang terkirim WAJIB masuk tabel `messages` supaya:
+        //   1. ada jejak (bisa diaudit)
+        //   2. AI tahu pengingat sudah dikirim (konteks percakapan utuh)
+        // Sebelumnya TIDAK disimpan -> riwayat user kosong & AI bisa mengulang.
+        try {
+          const { saveMessage } = await import('./db.js');
+          await saveMessage({
+            platform: item.platform === 'telegram' ? 'telegram' : 'whatsapp',
+            chat_id: item.chat_id,
+            role: 'assistant',
+            content: deliveryText,
+            via: 'reminder',
+          });
+        } catch (simpanErr) {
+          console.warn('[remind] gagal simpan pesan pengingat ke riwayat:', simpanErr);
+        }
 
         // ── PENGINGAT BERULANG (fitur baru 05 Okt 2026) ──
         // Bila punya aturan pengulangan, JANGAN ditandai 'sent' (itu akan

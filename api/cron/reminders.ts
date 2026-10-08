@@ -37,23 +37,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   try {
     const bot = getTelegramBot();
     const processed = await checkDueReminders(async (chatId, text, platform) => {
+      // ── WAJIB MENGEMBALIKAN STATUS (temuan nyata 08 Okt 2026) ──
+      // LAPORAN: pengingat "bangun" tidak terkirim hari ini, tapi jadwal tetap
+      // dimajukan (hilang permanen). AKAR: callback ini dulu tidak mengembalikan
+      // apa pun, sehingga checkDueReminders menganggap SELALU sukses.
+      // SEKARANG: kembalikan true bila terkirim, false bila gagal.
+      //
       // Prioritas 1: Platform eksplisit dari database
       if (platform === 'whatsapp') {
         const cleanTo = chatId.replace(/@.*$/, '').replace(/^\+/, '');
-        await sendWhatsAppCloudMessageSafe(cleanTo, text);
-        return;
+        return await sendWhatsAppCloudMessageSafe(cleanTo, text);
       }
       if (platform === 'telegram') {
-        await bot.sendMessage(Number(chatId), text);
-        return;
+        try {
+          await bot.sendMessage(Number(chatId), text);
+          return true;
+        } catch (e) {
+          console.error('[cron/reminders] gagal kirim telegram:', e);
+          return false;
+        }
       }
 
       // Fallback: Routing berbasis struktur chatId jika platform belum tercatat
       if (chatId.includes('@') || (chatId.length >= 10 && /^(62|1|\+)/.test(chatId))) {
         const cleanTo = chatId.replace(/@.*$/, '').replace(/^\+/, '');
-        await sendWhatsAppCloudMessageSafe(cleanTo, text);
-      } else {
+        return await sendWhatsAppCloudMessageSafe(cleanTo, text);
+      }
+      try {
         await bot.sendMessage(Number(chatId), text);
+        return true;
+      } catch (e) {
+        console.error('[cron/reminders] gagal kirim telegram (fallback):', e);
+        return false;
       }
     });
 

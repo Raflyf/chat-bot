@@ -119,14 +119,21 @@ export async function sendWhatsAppCloudMessageSafe(
   // yang ramai (mis. user membalas pesan lama), atau saat bot menjawab
   // pertanyaan spesifik agar tidak ambigu.
   replyToMessageId?: string,
-): Promise<void> {
+): Promise<boolean> {
   if (!text || !config.whatsappToken || !config.whatsappPhoneNumberId) {
     console.warn('[wa-cloud] Token atau PhoneNumberId belum diset di environment.');
-    return;
+    return false;
   }
 
   const chunks = splitMessageSmart(text, 4000);
   const url = `https://graph.facebook.com/v21.0/${config.whatsappPhoneNumberId}/messages`;
+  // ── LACAK KEBERHASILAN (temuan nyata 08 Okt 2026) ──
+  // LAPORAN: "kenapa pengingat waktu bangun saya ko ga aktif ya hari ini?"
+  // AKAR: fungsi ini dulu `Promise<void>` -> PEMANGGIL TIDAK TAHU apakah kirim
+  // BERHASIL atau GAGAL. Akibatnya pengingat yang gagal terkirim tetap dianggap
+  // sukses (jadwal dimajukan) -> hilang permanen.
+  // SEKARANG: mengembalikan true bila SEMUA chunk terkirim, false bila ada gagal.
+  let semuaBerhasil = true;
 
   for (const chunk of chunks) {
     try {
@@ -154,15 +161,18 @@ export async function sendWhatsAppCloudMessageSafe(
       if (!res.ok) {
         const errText = await res.text();
         console.error(`[wa-cloud] Gagal kirim pesan: ${res.status} ${errText}`);
+        semuaBerhasil = false;
       }
     } catch (err) {
       console.error('[wa-cloud] Network error kirim pesan:', err);
+      semuaBerhasil = false;
     }
 
     if (chunks.length > 1) {
       await new Promise((r) => setTimeout(r, 200));
     }
   }
+  return semuaBerhasil;
 }
 
 /**
