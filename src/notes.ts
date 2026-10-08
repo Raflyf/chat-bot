@@ -895,11 +895,6 @@ export function teksPanduanLengkap(): string {
     '• /reset — hapus riwayat & preferensi obrolan\n' +
     '• /salah <koreksi> — perbaiki preferensi personal\n' +
     '\n' +
-    '🐞 *ADA MASALAH?*\n' +
-    '• Kalau jawabanku nggak nyambung, salah paham, atau ngaco — laporkan ya\n' +
-    '• Buka *free-chatbot-ai.vercel.app* → bagian paling bawah halaman\n' +
-    '• Tempel percakapan yang salah, atau lampirkan tangkapan layarnya\n' +
-    '\n' +
     '_Tinggal ngobrol biasa aja, nggak harus hafal perintah._'
   );
 }

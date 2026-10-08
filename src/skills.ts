@@ -768,6 +768,40 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   }
   out = out.replace(/\s*(?:mau\s+tanya\s+atau\s+pesan\s+apa\s*\??)/gi, '').trim();
 
+  // 11b2. Penegak LARANGAN mengarahkan user ke halaman/form laporan
+  // (permintaan pemilik produk, 08 Okt 2026: "tidak usah membuat bot menyarankan
+  //  atau mengarahkan user"). Prompt sudah melarang, tetapi model tidak selalu
+  //  patuh — jadi kalimat ajakan melapor dibuang di KODE.
+  // CATATAN: informasi laporan tetap ada di DESKRIPSI PROFIL BOT (dibaca user
+  // sendiri), bukan disampaikan bot dalam percakapan.
+  {
+    // Penanda AJAKAN MELAPOR (kata kunci yang hanya muncul saat bot mengarahkan
+    // user ke kanal bantuan) — diperiksa PER KALIMAT agar andal.
+    const kataAjakLapor =
+      /(?:laporkan|melaporkan|laporin|lapor\s+ke|form\s+(?:laporan|keluhan|aduan)|kanal\s+(?:laporan|aduan|masukan)|kolom\s+(?:laporan|aduan|masukan)|landing\s*page|halaman\s+(?:web|depan|utama)|free-?chatbot-?ai\.vercel\.app|vercel\.app)/i;
+    const kataTempelSs =
+      /(?:tangkapan\s*layar|screenshot|\bss\b|screen\s*shot)/i;
+    const kataAksiKirim =
+      /(?:tempel|paste|kirim|kirimkan|sertakan|unggah|upload|masukkan|isi\s+form|buka\s+(?:halaman|link|web))/i;
+
+    const kalimat = out.split(/(?<=[.!?\n])\s+/);
+    const disaring = kalimat.filter((k) => {
+      const ajak = kataAjakLapor.test(k);
+      // "tempel/kirim ... screenshot" juga ajakan, walaupun tanpa kata "lapor".
+      const tempelSs = kataTempelSs.test(k) && kataAksiKirim.test(k);
+      return !(ajak || tempelSs);
+    });
+    if (disaring.length !== kalimat.length) {
+      out = disaring.join(' ').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    }
+    // Bila sisa hanya basa-basi kosong -> kosongkan agar diregenerasi.
+    const sisaLapor = out
+      .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '')
+      .replace(/[\s.,!?~\-]+/g, '')
+      .toLowerCase();
+    if (!sisaLapor) out = '';
+  }
+
   // 11c. Penegak GAYA CUSTOMER SERVICE (temuan nyata 08 Okt 2026).
   // LAPORAN PEMILIK PRODUK: user memanggil bot dengan sayang —
   //   "makasii ya cinta" -> bot menjawab
@@ -2056,7 +2090,7 @@ export function systemPrompt(
     '',
     'Kamu adalah sahabat karib sejati sekaligus partner diskusi cerdas serbabisa (polymath companion) di WhatsApp dan Telegram. Interaksimu selayaknya manusia sejati: hangat, luwes, peka rasa, berwawasan luas, humoris, dan membaca suasana lawan bicara secara mendalam.',
     '- IDENTITAS TEKNIS (ATURAN KERAS, SELALU BERLAKU): JANGAN PERNAH menyebut dirimu dengan nama model/teknologi AI apa pun (Qwen, GPT, Claude, Gemini, Llama, DeepSeek, dsb) — kamu adalah FreeAIBot. Jika ditanya "kamu model apa", jawab santai sebagai FreeAIBot. Saat membahas model AI pihak ketiga di dunia (berita/diskusi), boleh menyebut namanya — tapi JANGAN mengaku dirimu salah satunya.',
-    '- JIKA ADA MASALAH PADA JAWABANMU (kamu sadar salah paham, jawaban tidak nyambung, atau user mengeluh jawabanmu ngaco): akui dengan santai, jangan berdalih, lalu arahkan user melaporkannya. Sebutkan: buka *free-chatbot-ai.vercel.app* → bagian paling bawah halaman ada form laporan, bisa tempel percakapan yang salah atau lampirkan tangkapan layarnya. Sampaikan dengan ringkas & natural (bukan gaya CS), cukup 1-2 kalimat, dan JANGAN menyebutkannya kalau tidak ada masalah.',
+    '- DILARANG menyarankan atau mengarahkan user ke halaman web/form laporan mana pun. Jangan pernah menyebut link/landing page, jangan mengajak melapor, jangan menawarkan kanal bantuan. Cukup akui salah dengan santai lalu lanjutkan obrolan seperti teman biasa.',
     '',
     // ANTI-HALUSINASI DATA PRIBADI (temuan nyata 04 Okt 2026).
     // User bertanya "berapa sisa uang saya" padahal tabel expenses KOSONG (0 baris).
