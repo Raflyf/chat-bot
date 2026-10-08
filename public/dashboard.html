@@ -38,8 +38,8 @@
     </div>
 
     <div>
-      <h2 class="auth-title" id="auth-title">Gerbang keamanan admin</h2>
-      <p class="auth-subtitle">Masukkan Master PIN untuk membuka konsol pemantauan.</p>
+      <h2 class="auth-title" id="auth-title" data-i18n="dash.auth.title">Gerbang keamanan admin</h2>
+      <p class="auth-subtitle" data-i18n="dash.auth.sub">Masukkan Master PIN untuk membuka konsol pemantauan.</p>
     </div>
 
     <div id="auth-alert" class="auth-alert auth-alert-error" role="status" aria-live="polite"></div>
@@ -57,7 +57,7 @@
         aria-label="Master PIN"
       >
       <button type="submit" class="btn btn-primary btn-block" id="btn-submit-pin">
-        <span>Buka konsol</span>
+        <span data-i18n="dash.auth.submit">Buka konsol</span>
       </button>
     </form>
 
@@ -69,7 +69,7 @@
     </div>
 
     <div class="auth-foot">
-      <button type="button" class="auth-link-btn" id="btn-open-reset">Lupa PIN, reset lewat email</button>
+      <button type="button" class="auth-link-btn" id="btn-open-reset" data-i18n="dash.auth.forgot">Lupa PIN, reset lewat email</button>
     </div>
   </div>
 </div>
@@ -80,7 +80,7 @@
 <div id="reset-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="reset-title">
   <div class="pin-card">
     <div class="auth-top-nav">
-      <button type="button" class="auth-back-link" id="btn-back-reset" title="Kembali ke layar PIN">&larr; Kembali ke PIN</button>
+      <button type="button" class="auth-back-link" id="btn-back-reset" title="Kembali ke layar PIN" data-i18n="dash.auth.backPin">&larr; Kembali ke PIN</button>
     </div>
     <div class="auth-shield-icon" aria-hidden="true">
       <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -89,8 +89,8 @@
       </svg>
     </div>
     <div>
-      <h2 class="auth-title" id="reset-title">Reset Master PIN</h2>
-      <p class="auth-subtitle">
+      <h2 class="auth-title" id="reset-title" data-i18n="dash.auth.resetTitle">Reset Master PIN</h2>
+      <p class="auth-subtitle" data-i18n="dash.auth.resetSent">
         Kode verifikasi dikirim ke email admin:
         <span id="reset-target-email">raf***@gmail.com</span>
       </p>
@@ -99,34 +99,34 @@
     <div id="reset-alert" class="auth-alert" role="status" aria-live="polite"></div>
 
     <div id="reset-step-1" class="reset-form">
-      <p class="auth-subtitle">Sistem mengirim kode 6 digit ke email admin. Kode berlaku 10 menit.</p>
-      <button type="button" class="btn btn-primary" id="btn-send-otp">Kirim kode ke email</button>
-      <button type="button" class="btn btn-ghost" id="btn-cancel-reset">Batal, kembali ke login</button>
+      <p class="auth-subtitle" data-i18n="dash.auth.resetStep1">Sistem mengirim kode 6 digit ke email admin. Kode berlaku 10 menit.</p>
+      <button type="button" class="btn btn-primary" id="btn-send-otp" data-i18n="dash.auth.sendCode">Kirim kode ke email</button>
+      <button type="button" class="btn btn-ghost" id="btn-cancel-reset" data-i18n="dash.auth.cancelReset">Batal, kembali ke login</button>
     </div>
 
     <div id="reset-step-2" class="reset-form" style="display:none">
       <div class="field">
-        <label for="input-otp">Kode OTP, 6 digit</label>
+        <label for="input-otp" data-i18n="dash.auth.otpLabel">Kode OTP, 6 digit</label>
         <input type="text" id="input-otp" class="form-input" placeholder="123456" maxlength="6"
                inputmode="numeric" autocomplete="one-time-code">
       </div>
       <div class="field">
-        <label for="input-new-pin">Master PIN baru, 4 sampai 8 digit</label>
+        <label for="input-new-pin" data-i18n="dash.auth.newPinLabel">Master PIN baru, 4 sampai 8 digit</label>
         <input type="password" id="input-new-pin" class="form-input" placeholder="PIN baru" maxlength="8" inputmode="numeric" autocomplete="new-password">
       </div>
       <div class="field">
-        <label for="input-confirm-pin">Ulangi PIN baru</label>
+        <label for="input-confirm-pin" data-i18n="dash.auth.confirmPinLabel">Ulangi PIN baru</label>
         <input type="password" id="input-confirm-pin" class="form-input" placeholder="Ulangi PIN baru" maxlength="8" inputmode="numeric" autocomplete="new-password">
       </div>
 
-      <button type="button" class="btn btn-primary" id="btn-submit-reset">Simpan PIN baru</button>
+      <button type="button" class="btn btn-primary" id="btn-submit-reset" data-i18n="dash.auth.savePin">Simpan PIN baru</button>
 
       <div class="btn-row">
-        <button type="button" class="auth-link-btn" id="btn-resend-otp" disabled>Kirim ulang OTP</button>
+        <button type="button" class="auth-link-btn" id="btn-resend-otp" disabled data-i18n="dash.auth.resendOtp">Kirim ulang OTP</button>
         <!-- ID harus unik: sebelumnya tombol ini memakai ID yang SAMA dengan tombol
              "Kembali ke PIN" di atas, sehingga getElementById hanya menemukan yang
              pertama dan tombol ini tidak pernah terikat ke handler. -->
-        <button type="button" class="auth-link-btn" id="btn-back-reset-step2">Kembali</button>
+        <button type="button" class="auth-link-btn" id="btn-back-reset-step2" data-i18n="dash.auth.back">Kembali</button>
       </div>
     </div>
   </div>
@@ -149,7 +149,7 @@
         </span>
         <span class="brand-text">
           <span class="brand-title-wrap">
-            <span class="brand-name" id="bot-name">Konsol FreeAIBot</span>
+            <span class="brand-name" id="bot-name" data-i18n="dash.brand">Konsol FreeAIBot</span>
             <span class="brand-badge-version">v0.93.0</span>
           </span>
           <span class="brand-sub">
@@ -162,12 +162,12 @@
       <div class="console-head-actions">
         <span class="status-pill" title="Status mesin bot dan konektivitas">
           <span class="pulse-dot-cyan" aria-hidden="true"></span>
-          <span class="status-text-full">Sistem aktif</span>
-          <span class="status-text-short">Aktif</span>
+          <span class="status-text-full" data-i18n="dash.status.full">Sistem aktif</span>
+          <span class="status-text-short" data-i18n="dash.status.short">Aktif</span>
         </span>
 
         <button type="button" class="btn btn-ghost btn-sm active" id="btn-auto" aria-pressed="true" title="Nyalakan atau matikan muat ulang otomatis tiap 15 detik">
-          <span>Otomatis 15 dtk</span>
+          <span data-i18n="dash.auto">Otomatis 15 dtk</span>
         </button>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-manual-refresh" title="Muat ulang metrik sekarang">
           <span id="btn-refresh-icon" aria-hidden="true">
@@ -175,7 +175,7 @@
               <path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6" /><path d="M16.5 3v3.2h-3.2" />
             </svg>
           </span>
-          <span>Segarkan</span>
+          <span data-i18n="dash.refresh">Segarkan</span>
         </button>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-theme-toggle" title="Ganti tema terang atau gelap" aria-label="Ganti tema">
           <svg class="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -192,7 +192,7 @@
           <svg class="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
           </svg>
-          <span id="theme-icon" aria-hidden="true">Terang</span>
+          <span id="theme-icon" aria-hidden="true" data-i18n="dash.theme">Terang</span>
         </button>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-lang-toggle" title="Ganti bahasa (ID / EN)" aria-label="Ganti bahasa">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -215,8 +215,8 @@
 
     <div class="console-head">
       <div>
-        <h1>Pemantauan sistem</h1>
-        <p>Kuota tiap kunci, model yang menjawab, dan riwayat percakapan. Semua angka diambil langsung dari penyedia dan basis data.</p>
+        <h1 data-i18n="dash.title">Pemantauan sistem</h1>
+        <p data-i18n="dash.desc">Kuota tiap kunci, model yang menjawab, dan riwayat percakapan. Semua angka diambil langsung dari penyedia dan basis data.</p>
       </div>
       <div class="console-meta">
         <span>Sinkron terakhir: <strong id="sync-time">&ndash;</strong></span>
@@ -226,20 +226,20 @@
     <!-- Filter tampilan -->
     <section class="filter-dashboard-bar" aria-label="Filter tampilan">
       <div class="filter-group">
-        <span>Rentang waktu</span>
+        <span data-i18n="dash.filter.range">Rentang waktu</span>
         <div class="pill-filter-group" id="time-filter-pills" role="group" aria-label="Rentang waktu">
-          <button type="button" class="pill-filter-btn active" data-range="today">Hari ini</button>
-          <button type="button" class="pill-filter-btn" data-range="7d">7 hari</button>
-          <button type="button" class="pill-filter-btn" data-range="14d">14 hari</button>
-          <button type="button" class="pill-filter-btn" data-range="30d">30 hari</button>
-          <button type="button" class="pill-filter-btn" data-range="all">Semua</button>
+          <button type="button" class="pill-filter-btn active" data-range="today" data-i18n="dash.range.today">Hari ini</button>
+          <button type="button" class="pill-filter-btn" data-range="7d" data-i18n="dash.range.7d">7 hari</button>
+          <button type="button" class="pill-filter-btn" data-range="14d" data-i18n="dash.range.14d">14 hari</button>
+          <button type="button" class="pill-filter-btn" data-range="30d" data-i18n="dash.range.30d">30 hari</button>
+          <button type="button" class="pill-filter-btn" data-range="all" data-i18n="dash.filter.all">Semua</button>
         </div>
       </div>
 
       <div class="filter-group">
-        <span>Platform</span>
+        <span data-i18n="dash.filter.platform">Platform</span>
         <div class="pill-filter-group" id="platform-filter-pills" role="group" aria-label="Platform">
-          <button type="button" class="pill-filter-btn active" data-platform="all">Semua</button>
+          <button type="button" class="pill-filter-btn active" data-platform="all" data-i18n="dash.filter.all">Semua</button>
           <button type="button" class="pill-filter-btn" data-platform="whatsapp">WhatsApp</button>
           <button type="button" class="pill-filter-btn" data-platform="telegram">Telegram</button>
         </div>
@@ -249,7 +249,7 @@
     <!-- KPI -->
     <section class="kpi-grid" aria-label="Ringkasan utama">
       <div class="kpi-card">
-        <span class="kpi-label" id="kpi-title-msgs">Pesan hari ini</span>
+        <span class="kpi-label" id="kpi-title-msgs" data-i18n="dash.kpi.today">Pesan hari ini</span>
         <span class="kpi-value" id="kpi-today-msgs">&ndash;</span>
         <span class="kpi-sub">
           <span class="badge badge-wa" id="kpi-wa">&ndash; WA</span>
@@ -258,21 +258,21 @@
       </div>
 
       <div class="kpi-card">
-        <span class="kpi-label">Total pesan sepanjang waktu</span>
+        <span class="kpi-label" data-i18n="dash.kpi.total">Total pesan sepanjang waktu</span>
         <span class="kpi-value" id="kpi-total-msgs">&ndash;</span>
-        <span class="kpi-sub">Tersimpan di Supabase PostgreSQL</span>
+        <span class="kpi-sub" data-i18n="dash.kpi.totalSub">Tersimpan di Supabase PostgreSQL</span>
       </div>
 
       <div class="kpi-card">
-        <span class="kpi-label" id="kpi-title-calls">Panggilan API penyedia, hari ini</span>
+        <span class="kpi-label" id="kpi-title-calls" data-i18n="dash.kpi.calls">Panggilan API penyedia, hari ini</span>
         <span class="kpi-value" id="kpi-calls-today">&ndash;</span>
-        <span class="kpi-sub" id="kpi-total-keys">&ndash; kunci terpantau</span>
+        <span class="kpi-sub" id="kpi-total-keys" data-i18n="dash.kpi.keysMonitoredDyn">&ndash; kunci terpantau</span>
       </div>
 
       <div class="kpi-card">
-        <span class="kpi-label" id="kpi-title-model">Model paling sering dipakai hari ini</span>
+        <span class="kpi-label" id="kpi-title-model" data-i18n="dash.kpi.topModel">Model paling sering dipakai hari ini</span>
         <span class="kpi-value" id="kpi-top-model" style="font-size:1.15rem">&ndash;</span>
-        <span class="kpi-sub">Distribusi beban otomatis</span>
+        <span class="kpi-sub" data-i18n="dash.kpi.topModelSub">Distribusi beban otomatis</span>
       </div>
     </section>
 
@@ -280,12 +280,12 @@
     <section aria-labelledby="pool-section-title">
       <div class="console-head">
         <div>
-          <h2 class="card-title" id="pool-section-title">Pemakaian pool API key</h2>
-          <p class="card-sub" id="pool-reset-label">Reset harian 00:00 UTC</p>
+          <h2 class="card-title" id="pool-section-title" data-i18n="dash.pool.title">Pemakaian pool API key</h2>
+          <p class="card-sub" id="pool-reset-label" data-i18n="dash.pool.reset">Reset harian 00:00 UTC</p>
         </div>
         <div class="console-head-actions">
           <div class="pill-filter-group" id="provider-filter-pills" role="group" aria-label="Penyedia">
-            <button type="button" class="pill-filter-btn active" data-provider="all">Semua</button>
+            <button type="button" class="pill-filter-btn active" data-provider="all" data-i18n="dash.filter.all">Semua</button>
             <button type="button" class="pill-filter-btn" data-provider="dreamprompting">DreamPrompting</button>
             <button type="button" class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
             <button type="button" class="pill-filter-btn" data-provider="opencode">OpenCode</button>
@@ -296,10 +296,10 @@
             <button type="button" class="pill-filter-btn" data-provider="dahl">Dahl</button>
           </div>
           <select id="key-status-filter" class="filter-select" aria-label="Filter status kunci">
-            <option value="all">Semua status</option>
-            <option value="healthy">Sehat, di bawah 80 persen</option>
-            <option value="warning">Waspada, 80 persen ke atas</option>
-            <option value="capped">Limit habis</option>
+            <option value="all" data-i18n="dash.filter.allStatus">Semua status</option>
+            <option value="healthy" data-i18n="dash.status.healthy">Sehat, di bawah 80 persen</option>
+            <option value="warning" data-i18n="dash.status.warning">Waspada, 80 persen ke atas</option>
+            <option value="capped" data-i18n="dash.status.capped">Limit habis</option>
           </select>
         </div>
       </div>
@@ -312,8 +312,8 @@
     <section class="live-upstream-card" id="live-upstream-section" aria-labelledby="upstream-title">
       <div class="console-head">
         <div>
-          <h2 class="card-title" id="upstream-title">Sisa kuota dan pemakaian token upstream</h2>
-          <p class="card-sub">
+          <h2 class="card-title" id="upstream-title" data-i18n="dash.upstream.title">Sisa kuota dan pemakaian token upstream</h2>
+          <p class="card-sub" data-i18n="dash.upstream.desc">
             Angka diambil dari server penyedia resmi. Mencakup pemakaian dari bot, IDE, dan terminal yang memakai kunci yang sama.
           </p>
         </div>
@@ -324,29 +324,29 @@
 
       <div class="live-upstream-row">
         <div class="upstream-stat">
-          <span class="upstream-stat-label">Total batas kuota harian</span>
+          <span class="upstream-stat-label" data-i18n="dash.upstream.totalCap">Total batas kuota harian</span>
           <span class="upstream-stat-value" id="upstream-total-cap">0</span>
-          <span class="upstream-stat-sub" id="upstream-total-cap-sub">Seluruh penyedia terdaftar</span>
+          <span class="upstream-stat-sub" id="upstream-total-cap-sub" data-i18n="dash.upstream.totalCapSub">Seluruh penyedia terdaftar</span>
         </div>
         <div class="upstream-stat">
-          <span class="upstream-stat-label" id="upstream-label-used">Token terpakai hari ini</span>
+          <span class="upstream-stat-label" id="upstream-label-used" data-i18n="dash.upstream.usedToday">Token terpakai hari ini</span>
           <span class="upstream-stat-value" id="upstream-total-used">0</span>
-          <span class="upstream-stat-sub" id="upstream-total-used-sub">Akumulasi global</span>
+          <span class="upstream-stat-sub" id="upstream-total-used-sub" data-i18n="dash.upstream.usedSub">Akumulasi global</span>
         </div>
         <div class="upstream-stat">
-          <span class="upstream-stat-label">Sisa kuota bersih</span>
+          <span class="upstream-stat-label" data-i18n="dash.upstream.remaining">Sisa kuota bersih</span>
           <span class="upstream-stat-value" id="upstream-total-remaining">0</span>
-          <span class="upstream-stat-sub" id="upstream-remaining-pct">Menunggu data</span>
+          <span class="upstream-stat-sub" id="upstream-remaining-pct" data-i18n="dyn.waitingData">Menunggu data</span>
         </div>
         <div class="upstream-stat">
-          <span class="upstream-stat-label">Kunci dan pool terhubung</span>
-          <span class="upstream-stat-value" id="upstream-openrouter-status">0 kunci</span>
-          <span class="upstream-stat-sub" id="upstream-openrouter-sub">Menunggu data</span>
+          <span class="upstream-stat-label" data-i18n="dash.upstream.keysConnected">Kunci dan pool terhubung</span>
+          <span class="upstream-stat-value" id="upstream-openrouter-status" data-i18n="dash.kpi.zeroKeys">0 kunci</span>
+          <span class="upstream-stat-sub" id="upstream-openrouter-sub" data-i18n="dyn.waitingData">Menunggu data</span>
         </div>
         <div class="upstream-stat" title="WhatsApp Cloud API memberi 1.000 sesi percakapan gratis per bulan. Satu sesi adalah jendela 24 jam per pengguna.">
-          <span class="upstream-stat-label">Sesi WhatsApp Cloud</span>
+          <span class="upstream-stat-label" data-i18n="dash.upstream.waSessions">Sesi WhatsApp Cloud</span>
           <span class="upstream-stat-value" id="upstream-wa-sessions">0 / 1.000</span>
-          <span class="upstream-stat-sub" id="upstream-wa-sessions-sub">Sisa sesi gratis bulan ini</span>
+          <span class="upstream-stat-sub" id="upstream-wa-sessions-sub" data-i18n="dash.upstream.waSessionsSub">Sisa sesi gratis bulan ini</span>
         </div>
       </div>
 
@@ -364,7 +364,7 @@
         <div class="websearch-head">
           <div>
             <div class="websearch-title">Web search</div>
-            <div class="websearch-sub" id="websearch-sub">Menunggu data</div>
+            <div class="websearch-sub" id="websearch-sub" data-i18n="dyn.waitingData">Menunggu data</div>
           </div>
         </div>
         <div class="websearch-metrics">
@@ -373,27 +373,27 @@
                  di bawah angka "sisa", padahal isi bar = terpakai, sehingga mata bisa
                  salah tafsir ("terisi" dibaca "sisa"). Sekarang bar diberi labelnya
                  sendiri: "terpakai", dengan persen eksplisit. -->
-            <span class="websearch-metric-label">Pencarian terpakai</span>
+            <span class="websearch-metric-label" data-i18n="dash.websearch.used">Pencarian terpakai</span>
             <span class="websearch-metric-value" id="websearch-used">0</span>
-            <span class="websearch-metric-note" id="websearch-used-note">dari 0 pencarian</span>
+            <span class="websearch-metric-note" id="websearch-used-note" data-i18n="dash.websearch.usedNote">dari 0 pencarian</span>
             <div class="websearch-bar" role="img" aria-label="Pemakaian jatah pencarian">
               <span id="websearch-bar-fill" style="width: 0%"></span>
             </div>
           </div>
           <div class="websearch-metric">
-            <span class="websearch-metric-label">Sisa jatah</span>
+            <span class="websearch-metric-label" data-i18n="dash.websearch.remaining">Sisa jatah</span>
             <span class="websearch-metric-value" id="websearch-remaining">0</span>
-            <span class="websearch-metric-note" id="websearch-remaining-note">pencarian tersisa</span>
+            <span class="websearch-metric-note" id="websearch-remaining-note" data-i18n="dash.websearch.remainingNote">pencarian tersisa</span>
           </div>
           <div class="websearch-metric">
-            <span class="websearch-metric-label">Kunci siap pakai</span>
+            <span class="websearch-metric-label" data-i18n="dash.websearch.keys">Kunci siap pakai</span>
             <span class="websearch-metric-value" id="websearch-keys">0 / 0</span>
-            <span class="websearch-metric-note" id="websearch-keys-note">Semua kunci tersedia</span>
+            <span class="websearch-metric-note" id="websearch-keys-note" data-i18n="dash.websearch.keysOk">Semua kunci tersedia</span>
           </div>
           <div class="websearch-metric">
-            <span class="websearch-metric-label">Batas per kunci</span>
+            <span class="websearch-metric-label" data-i18n="dash.websearch.cap">Batas per kunci</span>
             <span class="websearch-metric-value" id="websearch-cap">0</span>
-            <span class="websearch-metric-note">pencarian per kunci per hari</span>
+            <span class="websearch-metric-note" data-i18n="dash.websearch.capNote">pencarian per kunci per hari</span>
           </div>
         </div>
         <div class="websearch-foot" id="websearch-foot">
@@ -407,11 +407,11 @@
           <caption class="visually-hidden">Pemakaian token dan sisa kuota tiap kunci API per penyedia</caption>
           <thead>
             <tr>
-              <th scope="col" style="min-width:180px">Penyedia dan kunci</th>
-              <th scope="col" style="min-width:200px">Akun terdaftar</th>
-              <th scope="col" style="min-width:200px" id="th-pemakaian">Pemakaian hari ini</th>
-              <th scope="col" style="min-width:180px" id="th-sisa">Sisa kuota hari ini</th>
-              <th scope="col" style="min-width:110px;text-align:right">Validasi</th>
+              <th scope="col" style="min-width:180px" data-i18n="dash.table.provider">Penyedia dan kunci</th>
+              <th scope="col" style="min-width:200px" data-i18n="dash.table.account">Akun terdaftar</th>
+              <th scope="col" style="min-width:200px" id="th-pemakaian" data-i18n="dash.table.usageToday">Pemakaian hari ini</th>
+              <th scope="col" style="min-width:180px" id="th-sisa" data-i18n="dash.table.remainingToday">Sisa kuota hari ini</th>
+              <th scope="col" style="min-width:110px;text-align:right" data-i18n="dash.table.validation">Validasi</th>
             </tr>
           </thead>
           <tbody id="live-upstream-tbody">
@@ -426,20 +426,20 @@
     <section class="matrix-section" id="ai-model-matrix-section" aria-labelledby="matrix-title">
       <div class="console-head">
         <div>
-          <h2 class="card-title" id="matrix-title"><span id="models-section-title">Model AI dan pemantauan inferensi</span></h2>
-          <p class="card-sub">Kesehatan, latensi rata-rata, dan jumlah eksekusi tiap model di rantai delapan tingkat.</p>
+          <h2 class="card-title" id="matrix-title"><span id="models-section-title" data-i18n="dash.matrix.title">Model AI dan pemantauan inferensi</span></h2>
+          <p class="card-sub" data-i18n="dash.matrix.desc">Kesehatan, latensi rata-rata, dan jumlah eksekusi tiap model di rantai delapan tingkat.</p>
         </div>
         <div class="console-head-actions">
-          <span class="badge"><span>Total inferensi</span> <strong id="matrix-total-inferensi">0x</strong></span>
+          <span class="badge"><span data-i18n="dash.matrix.total">Total inferensi</span> <strong id="matrix-total-inferensi">0x</strong></span>
           <div class="pill-filter-group" id="matrix-time-filters" role="group" aria-label="Rentang waktu matriks model">
             <!-- Kelima rentang harus lengkap, sama seperti filter di header.
                  Sebelumnya "14 hari" hilang di sini sehingga rentang itu tidak
                  bisa dipilih dari bagian ini. -->
-            <button type="button" class="pill-filter-btn active" data-range="today">Hari ini</button>
-            <button type="button" class="pill-filter-btn" data-range="7d">7 hari</button>
-            <button type="button" class="pill-filter-btn" data-range="14d">14 hari</button>
-            <button type="button" class="pill-filter-btn" data-range="30d">30 hari</button>
-            <button type="button" class="pill-filter-btn" data-range="all">Semua</button>
+            <button type="button" class="pill-filter-btn active" data-range="today" data-i18n="dash.range.today">Hari ini</button>
+            <button type="button" class="pill-filter-btn" data-range="7d" data-i18n="dash.range.7d">7 hari</button>
+            <button type="button" class="pill-filter-btn" data-range="14d" data-i18n="dash.range.14d">14 hari</button>
+            <button type="button" class="pill-filter-btn" data-range="30d" data-i18n="dash.range.30d">30 hari</button>
+            <button type="button" class="pill-filter-btn" data-range="all" data-i18n="dash.filter.all">Semua</button>
           </div>
         </div>
       </div>
@@ -447,12 +447,12 @@
       <div class="status-panel" style="margin-bottom:1.1rem">
         <div class="status-grid">
           <div class="status-item">
-            <span class="status-item-label">Router otomatis</span>
+            <span class="status-item-label" data-i18n="dash.gateway.title">Router otomatis</span>
             <span class="status-item-value" id="gateway-total-resolusi">0x</span>
-            <span class="status-item-note">Pembagian beban dan perpindahan otomatis antar tingkat</span>
+            <span class="status-item-note" data-i18n="dash.gateway.desc">Pembagian beban dan perpindahan otomatis antar tingkat</span>
           </div>
           <div class="status-item" style="grid-column:span 2">
-            <span class="status-item-label">Cara kerja rantai</span>
+            <span class="status-item-label" data-i18n="dash.gateway.how">Cara kerja rantai</span>
             <span class="status-item-note" style="margin-top:0">
               Setiap pesan masuk dicoba ke model utama tiap tingkat. Kalau kuotanya habis atau tidak merespons,
               sistem pindah ke cadangan tanpa perlu kamu ubah apa pun.
@@ -463,8 +463,8 @@
 
       <div class="matrix-cards-grid" id="matrix-cards-grid">
         <div class="empty-state">
-          <strong>Memuat matriks model</strong>
-          <span>Mengambil data inferensi per model.</span>
+          <strong data-i18n="dash.matrix.loading">Memuat matriks model</strong>
+          <span data-i18n="dash.matrix.loadingSub">Mengambil data inferensi per model.</span>
         </div>
       </div>
     </section>
@@ -473,34 +473,34 @@
     <section class="activity-card" aria-labelledby="media-section-title">
       <div class="console-head">
         <div>
-          <h2 class="card-title" id="media-section-title">Jenis pesan yang diproses hari ini</h2>
-          <p class="card-sub">Volume pesan menurut jenisnya: teks, pesan suara, gambar, stiker, dokumen, dan video.</p>
+          <h2 class="card-title" id="media-section-title" data-i18n="dash.media.title">Jenis pesan yang diproses hari ini</h2>
+          <p class="card-sub" data-i18n="dash.media.desc">Volume pesan menurut jenisnya: teks, pesan suara, gambar, stiker, dokumen, dan video.</p>
         </div>
       </div>
       <div class="media-grid">
         <div class="media-item">
           <span class="media-item-value" id="media-text">0</span>
-          <span class="media-item-label">Teks</span>
+          <span class="media-item-label" data-i18n="dash.media.text">Teks</span>
         </div>
         <div class="media-item">
           <span class="media-item-value" id="media-voice">0</span>
-          <span class="media-item-label">Pesan suara</span>
+          <span class="media-item-label" data-i18n="dash.media.voice">Pesan suara</span>
         </div>
         <div class="media-item">
           <span class="media-item-value" id="media-image">0</span>
-          <span class="media-item-label">Gambar</span>
+          <span class="media-item-label" data-i18n="dash.media.image">Gambar</span>
         </div>
         <div class="media-item">
           <span class="media-item-value" id="media-sticker">0</span>
-          <span class="media-item-label">Stiker</span>
+          <span class="media-item-label" data-i18n="dash.media.sticker">Stiker</span>
         </div>
         <div class="media-item">
           <span class="media-item-value" id="media-doc">0</span>
-          <span class="media-item-label">Dokumen</span>
+          <span class="media-item-label" data-i18n="dash.media.doc">Dokumen</span>
         </div>
         <div class="media-item">
           <span class="media-item-value" id="media-video">0</span>
-          <span class="media-item-label">Video</span>
+          <span class="media-item-label" data-i18n="dash.media.video">Video</span>
         </div>
       </div>
     </section>
@@ -509,8 +509,8 @@
     <section class="activity-card" id="dataset-section" aria-labelledby="dataset-title">
       <div class="console-head">
         <div>
-          <h2 class="card-title" id="dataset-title">Riwayat percakapan dan dataset evaluasi</h2>
-          <p class="card-sub">Pasangan pertanyaan pengguna dan balasan bot. Dipakai untuk menilai kualitas jawaban dan menyiapkan data latih.</p>
+          <h2 class="card-title" id="dataset-title" data-i18n="dash.dataset.title">Riwayat percakapan dan dataset evaluasi</h2>
+          <p class="card-sub" data-i18n="dash.dataset.desc">Pasangan pertanyaan pengguna dan balasan bot. Dipakai untuk menilai kualitas jawaban dan menyiapkan data latih.</p>
         </div>
       </div>
 
@@ -519,19 +519,19 @@
           <input type="search" id="dataset-search" class="search-input" placeholder="Cari pertanyaan atau jawaban" aria-label="Cari di riwayat percakapan">
         </div>
         <div class="filter-group">
-          <label for="dataset-range-filter" class="visually-hidden">Rentang waktu riwayat</label>
+          <label for="dataset-range-filter" class="visually-hidden" data-i18n="dash.dataset.rangeLabel">Rentang waktu riwayat</label>
           <select id="dataset-range-filter" class="filter-select">
-            <option value="today">Hari ini</option>
-            <option value="all" selected>Semua waktu</option>
-            <option value="7d">7 hari terakhir</option>
-            <option value="14d">14 hari terakhir</option>
-            <option value="30d">30 hari terakhir</option>
+            <option value="today" data-i18n="dash.range.today">Hari ini</option>
+            <option value="all" selected data-i18n="dash.range.allTime">Semua waktu</option>
+            <option value="7d" data-i18n="dash.range.last7">7 hari terakhir</option>
+            <option value="14d" data-i18n="dash.range.last14">14 hari terakhir</option>
+            <option value="30d" data-i18n="dash.range.last30">30 hari terakhir</option>
           </select>
         </div>
         <div class="filter-group">
           <label for="dataset-platform-filter" class="visually-hidden">Filter platform</label>
           <select id="dataset-platform-filter" class="filter-select">
-            <option value="">Semua platform</option>
+            <option value="" data-i18n="dash.filter.allPlatform">Semua platform</option>
             <option value="whatsapp">WhatsApp</option>
             <option value="telegram">Telegram</option>
           </select>
@@ -539,7 +539,7 @@
         <div class="filter-group">
           <label for="dataset-model-filter" class="visually-hidden">Filter model</label>
           <select id="dataset-model-filter" class="filter-select">
-            <option value="">Semua model</option>
+            <option value="" data-i18n="dash.filter.allModel">Semua model</option>
             <option value="dreamprompting">DreamPrompting</option>
             <option value="cloudflare">Cloudflare</option>
             <option value="opencode">OpenCode</option>
@@ -553,10 +553,10 @@
         <div class="filter-spacer"></div>
         <div class="filter-group">
           <button type="button" class="btn btn-ghost btn-sm" id="btn-download-csv" title="Unduh data percakapan sebagai CSV sesuai filter yang aktif">
-            <span>Unduh CSV</span>
+            <span data-i18n="dash.download.csv">Unduh CSV</span>
           </button>
           <button type="button" class="btn btn-primary btn-sm" id="btn-download-jsonl" title="Unduh data percakapan sebagai JSONL untuk pelatihan model">
-            <span>Unduh JSONL</span>
+            <span data-i18n="dash.download.jsonl">Unduh JSONL</span>
           </button>
         </div>
       </div>
@@ -566,20 +566,20 @@
           <caption class="visually-hidden">Riwayat pasangan pertanyaan pengguna dan balasan bot</caption>
           <thead>
             <tr>
-              <th scope="col" style="width:130px">Waktu dan platform</th>
-              <th scope="col" style="width:140px">Chat dan model</th>
-              <th scope="col" style="width:130px">Token</th>
-              <th scope="col" style="min-width:180px">Pertanyaan pengguna</th>
-              <th scope="col" style="min-width:280px">Balasan bot</th>
-              <th scope="col" style="width:70px;text-align:right">Aksi</th>
+              <th scope="col" style="width:130px" data-i18n="dash.table.timePlatform">Waktu dan platform</th>
+              <th scope="col" style="width:140px" data-i18n="dash.table.chatModel">Chat dan model</th>
+              <th scope="col" style="width:130px" data-i18n="dash.table.token">Token</th>
+              <th scope="col" style="min-width:180px" data-i18n="dash.table.userQuestion">Pertanyaan pengguna</th>
+              <th scope="col" style="min-width:280px" data-i18n="dash.table.botReply">Balasan bot</th>
+              <th scope="col" style="width:70px;text-align:right" data-i18n="dash.table.action">Aksi</th>
             </tr>
           </thead>
           <tbody id="dataset-tbody">
             <tr>
               <td colspan="6">
                 <div class="empty-state">
-                  <strong>Memuat riwayat percakapan</strong>
-                  <span>Menunggu data dari basis data.</span>
+                  <strong data-i18n="dash.dataset.loading">Memuat riwayat percakapan</strong>
+                  <span data-i18n="dash.dataset.loadingSub">Menunggu data dari basis data.</span>
                 </div>
               </td>
             </tr>
@@ -599,10 +599,10 @@
 <footer class="site-footer">
   <div class="wrap">
     <div class="footer-bottom" style="border-top:0;padding-top:0">
-      <span>Konsol pemantauan FreeAIBot &middot; Vercel Serverless &amp; Supabase PostgreSQL</span>
+      <span data-i18n="dash.footer.text">Konsol pemantauan FreeAIBot &middot; Vercel Serverless &amp; Supabase PostgreSQL</span>
       <span class="footer-legal">
-        <a href="/">Beranda</a>
-        <a href="/privacy.html">Kebijakan privasi</a>
+        <a href="/" data-i18n="dash.footer.home">Beranda</a>
+        <a href="/privacy.html" data-i18n="dash.footer.privacy">Kebijakan privasi</a>
       </span>
     </div>
   </div>

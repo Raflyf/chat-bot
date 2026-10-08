@@ -81,9 +81,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       if (alertEl) {
         alertEl.className = "auth-alert auth-alert-error show";
         if (reason === "auth_lost" || reason === "unauthorized") {
-          alertEl.textContent = "Sesi autentikasi terputus atau tidak valid (pembaruan server). Masukkan Master PIN kembali.";
+          alertEl.textContent = t('dyn.sessionLost', "Sesi autentikasi terputus atau tidak valid (pembaruan server). Masukkan Master PIN kembali.");
         } else {
-          alertEl.textContent = "Sesi admin 15 menit telah berakhir untuk keamanan. Masukkan Master PIN kembali.";
+          alertEl.textContent = t('dyn.sessionExpired', "Sesi admin 15 menit telah berakhir untuk keamanan. Masukkan Master PIN kembali.");
         }
       }
       const pinField = document.getElementById("pin-input");
@@ -208,7 +208,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       } catch (err) {
         console.error("PIN verification error:", err);
         alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Gagal menghubungi server keamanan. Silakan coba lagi.";
+        alertEl.textContent = t('dyn.authServerFail', "Gagal menghubungi server keamanan. Silakan coba lagi.");
       } finally {
         submitBtn.disabled = false;
       }
@@ -246,7 +246,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       if (resendBtn) resendBtn.disabled = true;
 
       alertEl.className = "auth-alert auth-alert-success show";
-      alertEl.textContent = "Mengirimkan kode OTP ke email admin...";
+      alertEl.textContent = t('dyn.sendingOtp', "Mengirimkan kode OTP ke email admin...");
 
       try {
         const res = await fetch("/api/admin-otp?action=send_otp", {
@@ -276,7 +276,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       } catch (err) {
         console.error("sendOtp error:", err);
         alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Terjadi kesalahan jaringan saat mengirim OTP.";
+        alertEl.textContent = t('dyn.otpNetworkErr', "Terjadi kesalahan jaringan saat mengirim OTP.");
         if (btn) btn.disabled = false;
       }
     }
@@ -295,7 +295,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         if (remaining <= 0) {
           clearInterval(resendCountdownTimer);
           resendBtn.disabled = false;
-          resendBtn.textContent = "Kirim Ulang OTP";
+          resendBtn.textContent = t('dyn.resendOtp', "Kirim Ulang OTP");
         } else {
           resendBtn.textContent = `Kirim Ulang OTP (${remaining}s)`;
         }
@@ -310,26 +310,26 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
       if (!/^\d{6}$/.test(otpCode)) {
         alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Kode OTP harus berupa 6 digit angka.";
+        alertEl.textContent = t('dyn.otpMust6', "Kode OTP harus berupa 6 digit angka.");
         return;
       }
 
       if (newPin.length < 4 || newPin.length > 8 || !/^\d+$/.test(newPin)) {
         alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Master PIN baru harus berupa 4 hingga 8 digit angka.";
+        alertEl.textContent = t('dyn.pinMust4to8', "Master PIN baru harus berupa 4 hingga 8 digit angka.");
         return;
       }
 
       if (newPin !== confirmPin) {
         alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Konfirmasi PIN baru tidak cocok.";
+        alertEl.textContent = t('dyn.pinNoMatch', "Konfirmasi PIN baru tidak cocok.");
         return;
       }
 
       const submitBtn = document.getElementById("btn-submit-reset");
       submitBtn.disabled = true;
       alertEl.className = "auth-alert auth-alert-success show";
-      alertEl.textContent = "Memverifikasi OTP dan mereset PIN...";
+      alertEl.textContent = t('dyn.verifyingOtp', "Memverifikasi OTP dan mereset PIN...");
 
       try {
         const res = await fetch("/api/admin-otp?action=verify_otp_and_reset_pin", {
@@ -354,7 +354,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             document.getElementById("auth-modal").classList.remove("hidden");
             const loginAlert = document.getElementById("auth-alert");
             loginAlert.className = "auth-alert auth-alert-success show";
-            loginAlert.textContent = "PIN baru berhasil disimpan. Silakan masukkan PIN baru Anda.";
+            loginAlert.textContent = t('dyn.pinSaved', "PIN baru berhasil disimpan. Silakan masukkan PIN baru Anda.");
           }, 1500);
         } else {
           alertEl.className = "auth-alert auth-alert-error show";
@@ -364,7 +364,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       } catch (err) {
         console.error("resetPin error:", err);
         alertEl.className = "auth-alert auth-alert-error show";
-        alertEl.textContent = "Kesalahan koneksi saat mereset PIN.";
+        alertEl.textContent = t('dyn.resetConnErr', "Kesalahan koneksi saat mereset PIN.");
         submitBtn.disabled = false;
       }
     }
@@ -588,10 +588,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
       if (data.isDatabaseConnected === false) {
         document.getElementById("server-time").textContent =
-          "Sinkronisasi: " + formatTime(data.serverTime) + " WIB \u2022 Supabase Belum Terhubung di Vercel Env";
+          t('dyn.sync', "Sinkronisasi: ") + formatTime(data.serverTime) + " WIB \u2022 Supabase Belum Terhubung di Vercel Env";
       } else {
         document.getElementById("server-time").textContent =
-          "Sinkronisasi: " + formatTime(data.serverTime) + " WIB \u2022 Periode: " + rangeLabel + platformLabel;
+          t('dyn.sync', "Sinkronisasi: ") + formatTime(data.serverTime) + " WIB \u2022 Periode: " + rangeLabel + platformLabel;
       }
 
       // Waktu sinkron terakhir. Satu sumber dengan header supaya tidak ada dua
@@ -1685,7 +1685,7 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #38bdf8; font-weight: 700; margin-top: 3px;">sk-xt-${escapeHtml(cleanSuffix)}</div>
                 </td>
                 <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">${escapeHtml(k.liveUserName || "Akun Terverifikasi")}</div>
+                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">${escapeHtml(k.liveUserName || t('dyn.verifiedAccount', "Akun Terverifikasi"))}</div>
                   <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">${escapeHtml(k.liveUserEmail || "api.xkiro.com")}</div>
                 </td>
                 <td>
