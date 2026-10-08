@@ -61,17 +61,18 @@ Bot juga memahami permintaan tanpa format perintah:
 
 | Yang Anda ketik | Yang terjadi |
 | :--- | :--- |
-| *"catat pengeluaran 50rb buat makan"* | Bot konfirmasi → catat setelah Anda balas *iya* |
-| *"tambah tugas penting bayar listrik"* | Bot konfirmasi → tambah tugas prioritas tinggi |
-| *"ingatkan saya besok jam 8 rapat"* | **Langsung** dijadwalkan (tanpa konfirmasi) |
+| *"catat pengeluaran 50rb buat makan"* | Langsung dicatat |
+| *"tambah tugas penting bayar listrik"* | Langsung ditambahkan sebagai tugas prioritas tinggi |
+| *"ingatkan saya besok jam 8 rapat"* | Langsung dijadwalkan |
 | *"berapa sisa uang saya"* | Bot jawab dari data nyata (tidak mengarang) |
 | *"tugas saya apa aja"* | Bot tampilkan daftar tugas |
+| *"reset semua percakapan kita"* | Sesi direset |
 
 **Catatan konfirmasi:**
-- **Pengingat** → **langsung disimpan** tanpa balasan *iya/tidak*. Alasannya: pengingat berpacu waktu — bila user minta *"ingatkan 1 menit lagi"*, waktu 1 menit itu habis terpakai tanya-jawab sehingga pengingatnya jadi telat.
+- **Pengingat** → langsung disimpan tanpa balasan *iya/tidak*. Alasannya: pengingat berpacu waktu — bila user minta *"ingatkan 1 menit lagi"*, waktu 1 menit itu habis terpakai tanya-jawab sehingga pengingatnya jadi telat.
 - **Catatan / tugas / keuangan** → **dikonfirmasi dulu** (*"Balas iya untuk simpan, tidak untuk batal"*). Aman, tidak terikat waktu.
 
-Deteksi niat tetap konservatif (4 lapis penyaring), sehingga obrolan biasa (mis. *"aku tadi makan enak banget"*) **tidak** ikut tercatat.
+Deteksi niat tetap konservatif (berlapis), sehingga obrolan biasa (mis. *"aku tadi makan enak banget"*) **tidak** ikut tercatat.
 
 ---
 
@@ -119,16 +120,13 @@ Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key yang 
 
 - **Telegram**: Hubungkan repositori ke **Vercel**, masukkan Environment Variables, dan daftarkan webhook Telegram ke endpoint `/api/webhook`.
 - **WhatsApp Cloud API**: Terintegrasi langsung di **Vercel Serverless** pada endpoint `/api/whatsapp`, siap menerima webhook pesan masuk Meta Cloud API untuk obrolan pribadi 24/7 tanpa membutuhkan server VPS.
-- **Basis Data**: Jalankan skrip SQL pada folder `sql/` di SQL Editor Supabase secara berurutan. Yang wajib:
-  - `migrate_v18_daily_token_tracking.sql` — pelacakan kuota token harian (TPD) lintas instance.
-  - `migrate_v22_personal_notes.sql` — tabel fitur pencatatan (`notes`, `todos`, `expenses`, `habits`, `habit_logs`).
-  - `migrate_v23_pending_confirmations.sql` — konfirmasi tertunda lintas instance serverless (dipakai untuk catatan/tugas/keuangan). Tanpa migrasi ini bot memakai fallback di tabel `messages` — tetap bekerja.
+- **Basis Data**: Jalankan skrip SQL pada folder `sql/` di SQL Editor Supabase secara berurutan (mulai dari versi terendah). Seluruh skrip migrasi bersifat aditif dan aman dijalankan berulang.
 - **Pengingat Tepat Waktu**: tiga lapisan pemicu yang saling melengkapi:
   1. **cron-job.org** (UTAMA, gratis) — memanggil `/api/cron/reminders` **tiap 1 menit**. Setup: `sql/CARA_SETUP_CRONJOB_ORG.md`. Hasil terukur: pengingat terkirim dalam ~40 detik.
   2. **GitHub Actions** — workflow `.github/workflows/reminders.yml`, 3 jadwal bergeser (cadangan).
   3. **Lazy-check** — diperiksa setiap ada pesan masuk (cadangan).
 
-  Semua memanggil endpoint yang sama dengan header `Authorization: Bearer <CRON_SECRET>`. Aman berjalan bersamaan karena endpoint memakai klaim atomik (`lease_until`) — pengingat tidak terkirim dobel.
+  Semua memanggil endpoint yang sama dengan autentikasi yang sama. Aman berjalan bersamaan — pengingat tidak terkirim dobel.
 
 Dokumentasi arsitektur mendalam dan riwayat teknis versi dikelola secara internal dan tidak dipublikasikan di repositori ini.
 
@@ -145,9 +143,9 @@ Hak Cipta (c) 2026 **Rafly Firmansyah**.
 npm test
 ```
 
-36 test menutup fungsi inti: parsing waktu & uang, anti-duplikat pengingat,
-16 mesin game, aturan catur, minimax tic-tac-toe, pengingat berulang, rate limiter.
-Test ini sudah beberapa kali menemukan bug nyata sebelum sampai ke user.
+**331 test** menutup fungsi inti: parsing waktu & uang, pengingat berulang,
+zona waktu, keamanan, dan 16 mesin game. Test ini sudah beberapa kali
+menemukan bug nyata sebelum sampai ke user.
 
 ## ⏰ Pengingat Berulang
 
@@ -178,11 +176,11 @@ lalu dikonfirmasi.
 | Endpoint | Fungsi |
 |---|---|
 | `GET /api/health` | Status sistem (200 sehat / 503 bermasalah) — untuk UptimeRobot |
-| `POST /api/cron/backup` | Backup 7 tabel ke Supabase Storage bucket `backups` (harian) |
-| `POST /api/cron/arsip` | Arsipkan pesan >90 hari ke `messages_archive` (harian) |
+| `POST /api/cron/backup` | Backup tabel utama ke Supabase Storage (harian) |
+| `POST /api/cron/arsip` | Arsipkan pesan lama (harian) |
 
 Panduan pemasangan: `sql/CARA_SETUP_CRON_HARIAN.md` (cron-job.org / GitHub Actions).
-Bucket `backups` sudah dibuat — backup pertama berisi 7 file (530 KB).
+Bucket penyimpanan backup sudah dibuat dan berjalan harian.
 
 ## 📦 Migrasi Database
 
