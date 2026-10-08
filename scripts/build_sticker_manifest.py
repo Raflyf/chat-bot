@@ -268,15 +268,31 @@ def build_manifest() -> dict[str, str]:
     return by_emoji, records
 
 
-def render_ts(by_emoji: dict[str, str]) -> str:
+def render_ts(by_emoji: dict[str, str], records: list[dict[str, str]]) -> str:
+    # Peta emoji -> (teks, konsep/pemakaian). Satu emoji bisa punya beberapa stiker;
+    # yang dipakai adalah yang TERPILIH (nomor terkecil, sama dengan by_emoji).
+    info: dict[str, dict[str, str]] = {}
+    for r in records:
+        e = r["emoji"]
+        if e in by_emoji and by_emoji[e] == r["file"] and e not in info:
+            info[e] = {"teks": r.get("teks", ""), "pakai": r.get("pakai", "")}
+
     lines = [
         "/**",
-        " * Manifest stiker: emoji -> nama file di public/stickers/.",
+        " * Manifest stiker: emoji -> nama file di public/stickers/, PLUS teks & konsep.",
         " *",
         " * DILABELI MANUAL (bukan model API) dengan membaca TEKS di setiap stiker lebih",
         " * dulu, baru konsep gambarnya. Alasan: pelabelan otomatis hanya melihat ekspresi",
         " * wajah sehingga sering salah — contoh nyata: stk_007 (orang dimarahi atasan)",
         " * dilabeli tawa, padahal maknanya kena tegur/tegang.",
+        " *",
+        " * ATURAN MEMBACA STIKER (permintaan pemilik produk 08 Okt 2026):",
+        " *   'yg utama dari stiker nya itu text atau caption yg ada di stiker nya, jika",
+        " *    tidak ada baru dari konsep dan konsep isi stiker nya ... maka yg pertama",
+        " *    di lihat apakah ada text atau captionya, kalo tidak ada baru dari ekspresi",
+        " *    stiker nya di sesuaikan dengan suasana percakapan'.",
+        " * Jadi URUTANNYA: (1) TEKS/CAPTION stiker, (2) konsep/pemakaian, (3) ekspresi.",
+        " * Berlaku untuk stiker yang DIKIRIM BOT maupun yang DIKIRIM USER.",
         " *",
         " * Sumber kebenaran: scripts/build_sticker_manifest.py (nomor -> emoji/teks/konteks).",
         " * Jalankan ulang setelah mengubah label:",
@@ -286,6 +302,18 @@ def render_ts(by_emoji: dict[str, str]) -> str:
     ]
     for emoji in sorted(by_emoji):
         lines.append(f'  {json.dumps(emoji, ensure_ascii=False)}: {json.dumps(by_emoji[emoji])},')
+    lines.append("};")
+    lines.append("")
+    lines.append("/**")
+    lines.append(" * Detail tiap emoji: TEKS yang tertulis di stiker + konsep/kapan dipakai.")
+    lines.append(" * Dipakai model agar tahu MAKNA stiker, bukan sekadar emoji.")
+    lines.append(" */")
+    lines.append("export const STICKER_INFO: Record<string, { teks: string; pakai: string }> = {")
+    for emoji in sorted(info):
+        d = info[emoji]
+        lines.append(
+            f'  {json.dumps(emoji, ensure_ascii=False)}: {{ teks: {json.dumps(d["teks"], ensure_ascii=False)}, pakai: {json.dumps(d["pakai"], ensure_ascii=False)} }},'
+        )
     lines.append("};")
     lines.append("")
     lines.append("/**")
@@ -319,7 +347,7 @@ def main() -> None:
         return
 
     with open(MANIFEST, "w", encoding="utf-8") as fh:
-        fh.write(render_ts(by_emoji))
+        fh.write(render_ts(by_emoji, records))
     with open(LABELS_JSON, "w", encoding="utf-8") as fh:
         json.dump(records, fh, ensure_ascii=False, indent=1)
     print(f"\nmanifest ditulis: {os.path.relpath(MANIFEST, ROOT)}")

@@ -1,10 +1,18 @@
 /**
- * Manifest stiker: emoji -> nama file di public/stickers/.
+ * Manifest stiker: emoji -> nama file di public/stickers/, PLUS teks & konsep.
  *
  * DILABELI MANUAL (bukan model API) dengan membaca TEKS di setiap stiker lebih
  * dulu, baru konsep gambarnya. Alasan: pelabelan otomatis hanya melihat ekspresi
  * wajah sehingga sering salah — contoh nyata: stk_007 (orang dimarahi atasan)
  * dilabeli tawa, padahal maknanya kena tegur/tegang.
+ *
+ * ATURAN MEMBACA STIKER (permintaan pemilik produk 08 Okt 2026):
+ *   'yg utama dari stiker nya itu text atau caption yg ada di stiker nya, jika
+ *    tidak ada baru dari konsep dan konsep isi stiker nya ... maka yg pertama
+ *    di lihat apakah ada text atau captionya, kalo tidak ada baru dari ekspresi
+ *    stiker nya di sesuaikan dengan suasana percakapan'.
+ * Jadi URUTANNYA: (1) TEKS/CAPTION stiker, (2) konsep/pemakaian, (3) ekspresi.
+ * Berlaku untuk stiker yang DIKIRIM BOT maupun yang DIKIRIM USER.
  *
  * Sumber kebenaran: scripts/build_sticker_manifest.py (nomor -> emoji/teks/konteks).
  * Jalankan ulang setelah mengubah label:
@@ -121,6 +129,123 @@ export const STICKER_MANIFEST: Record<string, string> = {
   "🧠": "stk_014.webp",
   "🧼": "stk_157.webp",
   "🫡": "stk_099.webp",
+};
+
+/**
+ * Detail tiap emoji: TEKS yang tertulis di stiker + konsep/kapan dipakai.
+ * Dipakai model agar tahu MAKNA stiker, bukan sekadar emoji.
+ */
+export const STICKER_INFO: Record<string, { teks: string; pakai: string }> = {
+  "✋": { teks: "Chotto Matte", pakai: "minta tunggu sebentar" },
+  "❄️": { teks: "", pakai: "tema kakak-adik / perempuan" },
+  "⬜": { teks: "", pakai: "placeholder / tanpa reaksi" },
+  "⭐": { teks: "MENAMBAHKAN KE FAVORIT", pakai: "menyimpan sesuatu yang lucu/penting" },
+  "🆗": { teks: "ok", pakai: "pasrah / ya sudah" },
+  "🍜": { teks: "NGAPAIN INJR MENDING MASAK SARIMI", pakai: "alihkan topik ke aktivitas receh" },
+  "🍳": { teks: "Let Him Kuk", pakai: "dukung orang yang sedang unjuk kemampuan" },
+  "🎂": { teks: "happy birthday", pakai: "ucapan ulang tahun" },
+  "🎓": { teks: "Hai guys", pakai: "stiker wisuda / menyapa" },
+  "🎮": { teks: "INFOKAN PERMABARAN", pakai: "ajak / info mabar" },
+  "🏃": { teks: "", pakai: "ngacir / kabur" },
+  "🏍️": { teks: "", pakai: "siap / berangkat / berkendara" },
+  "🐌": { teks: "DASAR TUMAN", pakai: "umpatan ke orang manja" },
+  "🐟": { teks: "JANGAN NGOTOT!", pakai: "jangan memaksa pendapat" },
+  "🐱": { teks: "", pakai: "bertahan / terjepit dalam situasi sulit" },
+  "🐶": { teks: "", pakai: "santai / rebahan / malas gerak" },
+  "🐷": { teks: "BABI", pakai: "umpatan bercanda" },
+  "👀": { teks: "MATAKU TERNODAI", pakai: "melihat hal cringe/menjijikkan" },
+  "👌": { teks: "Kolay", pakai: "bilang gampang / tenang" },
+  "👍": { teks: "SECARA HARFIAH IYA", pakai: "menegaskan iya" },
+  "👎": { teks: "BODOH AMAT", pakai: "menghina kecerdasan bercanda" },
+  "👑": { teks: "seriusan seorang princess diginiin?", pakai: "drama self-pity bercanda" },
+  "👶": { teks: "", pakai: "kaget / tidak percaya" },
+  "💀": { teks: "I forgor", pakai: "mengaku lupa (bercanda)" },
+  "💁": { teks: "", pakai: "sassy / meremehkan" },
+  "💔": { teks: "kta unpren ajalh", pakai: "ancaman unfriend bercanda" },
+  "💡": { teks: "Terus terang", pakai: "berkata jujur" },
+  "💥": { teks: "BHAAAPPP", pakai: "efek suara tamparan" },
+  "💩": { teks: "TAI!", pakai: "umpatan kesal" },
+  "💪": { teks: "Secara mental aku hancur, secara fisik aku hitam", pakai: "self-roast humor gelap" },
+  "💸": { teks: "DUIT GUE TINGGAL SEGINI", pakai: "mengeluh bokek" },
+  "📄": { teks: "MANA BUKTINYAAAA?", pakai: "menantang menunjukkan bukti" },
+  "📍": { teks: "Info lokasi", pakai: "minta / bagikan lokasi" },
+  "📝": { teks: "CATAT GUYS", pakai: "menyuruh mencatat info penting" },
+  "📞": { teks: "MENELPON USTAD", pakai: "bercanda minta nasihat agama" },
+  "📱": { teks: "SINI KU PIRALKAN", pakai: "menawarkan versi bajakan (bercanda)" },
+  "🔍": { teks: "KALO NGOMONG YANG JELAS", pakai: "minta bicara jelas" },
+  "🔔": { teks: "CEK NOTIP", pakai: "suruh cek notifikasi" },
+  "🕴️": { teks: "", pakai: "tegang / curiga" },
+  "🖐️": { teks: "Ga dlu", pakai: "menolak halus" },
+  "🖕": { teks: "Pakyu", pakai: "umpatan marah/bercanda" },
+  "🗣️": { teks: "AH NGOMONG DOANG LU KAGAA ADA AKSI", pakai: "menyindir orang cuma bisa bicara" },
+  "😁": { teks: "", pakai: "senyum tidak tulus / sinis" },
+  "😂": { teks: "LU DONGO APA GIMANA", pakai: "ngejek kebodohan bercanda" },
+  "😅": { teks: "senyum tertekan", pakai: "senyum terpaksa saat tertekan" },
+  "😈": { teks: "mwehehehe", pakai: "ketawa jahat / ledek" },
+  "😊": { teks: "", pakai: "bahagia / malu / gemas" },
+  "😍": { teks: "hai gantengk", pakai: "sapaan genit bercanda" },
+  "😎": { teks: "MIMIK TUTU", pakai: "santai / cuek" },
+  "😏": { teks: "JANGAN LUPA MALAM INI YA", pakai: "mengingatkan janji" },
+  "😐": { teks: "", pakai: "datar / tidak peduli" },
+  "😒": { teks: "gw dah muak", pakai: "muak / kesal" },
+  "😔": { teks: "", pakai: "kesepian / capek sendirian" },
+  "😛": { teks: "", pakai: "jail / bercanda bahagia" },
+  "😜": { teks: "wleowleowleo", pakai: "ngejek bercanda" },
+  "😡": { teks: "", pakai: "marah besar" },
+  "😢": { teks: "", pakai: "sedih / terharu / simpati" },
+  "😤": { teks: "sialan", pakai: "kesal / umpatan lucu" },
+  "😧": { teks: "WADUH", pakai: "kaget / mengeluh" },
+  "😩": { teks: "MALAS", pakai: "mager / tidak mau bergerak" },
+  "😫": { teks: "", pakai: "stres / kewalahan" },
+  "😬": { teks: "", pakai: "kena tegur / situasi tegang" },
+  "😭": { teks: "WHEN YAH JAGO NGEDIT", pakai: "memuji / menyindir hasil edit" },
+  "😮": { teks: "Wawww", pakai: "kagum / terkesan" },
+  "😯": { teks: "OWH", pakai: "oh begitu / sadar" },
+  "😰": { teks: "", pakai: "takut / panik" },
+  "😱": { teks: "", pakai: "kaget / panik / tidak percaya" },
+  "😲": { teks: "AH LU", pakai: "kesal / capek menghadapi seseorang" },
+  "😳": { teks: "", pakai: "gemas / terpana / malu" },
+  "😴": { teks: "", pakai: "santai / tidur / tidak peduli" },
+  "😵": { teks: "", pakai: "pusing / berpikir keras" },
+  "😹": { teks: "", pakai: "ngakak" },
+  "😺": { teks: "", pakai: "bingung / melongo" },
+  "😼": { teks: "", pakai: "kucing ngomel / kesal" },
+  "😾": { teks: "LIHAT WAJAHKU AKU SUDAH MUAK", pakai: "kesal / muak" },
+  "😿": { teks: "sniff sniff", pakai: "menahan nangis / sedih" },
+  "🙂": { teks: "tersenyum dengan elegan", pakai: "menahan kesal tapi tetap sopan" },
+  "🙄": { teks: "NYAWIT NI ORANG", pakai: "sindiran kesal pada kelakuan orang" },
+  "🙅": { teks: "OGAH", pakai: "menolak dengan tegas" },
+  "🙈": { teks: "PURA-PURA GAK LIAT", pakai: "sengaja mengabaikan" },
+  "🙉": { teks: "", pakai: "tidak mau dengar / denial" },
+  "🙏": { teks: "Assalamualaikum", pakai: "salam pembuka" },
+  "🚀": { teks: "MELUNCUR", pakai: "pamit / berangkat" },
+  "🚗": { teks: "otw", pakai: "sedang dalam perjalanan" },
+  "🚫": { teks: "NO BUKTI = HOAX", pakai: "sindiran klaim tanpa bukti" },
+  "🚶": { teks: "GW NGIKUT LU AJA", pakai: "pasrah / ikut saja" },
+  "🚿": { teks: "SINI MANDI DULU", pakai: "menyuruh mandi (bercanda)" },
+  "🛁": { teks: "sedang memandang kebodohan mu yang luar biasa", pakai: "menghakimi kebodohan (sarkas)" },
+  "🛌": { teks: "YA UDAH BESOK AJA", pakai: "menunda" },
+  "🤔": { teks: "tidakkah kau gunakan otakmu untuk berfikir?", pakai: "menyindir supaya berpikir" },
+  "🤝": { teks: "SEPAKAT", pakai: "menyatakan setuju" },
+  "🤠": { teks: "", pakai: "kagum / terpukau" },
+  "🤣": { teks: "Cukurukuk", pakai: "tertawa terhibur" },
+  "🤥": { teks: "MENCIUM BAU KEBOHONGAN", pakai: "tahu sedang dibohongi" },
+  "🤦": { teks: "ni orang bego apa tolol si", pakai: "frustrasi melihat kebodohan" },
+  "🤨": { teks: "GAK MANUK AKAL", pakai: "sesuatu absurd / tidak logis" },
+  "🤪": { teks: "Aku: UTIWI", pakai: "respon random / lucu" },
+  "🤫": { teks: "", pakai: "minta rahasia / jangan bilang siapa-siapa" },
+  "🤬": { teks: "DASAR TOLOL", pakai: "umpatan kesal" },
+  "🤭": { teks: "", pakai: "menahan tawa / tidak boleh bicara" },
+  "🤯": { teks: "", pakai: "panik / kesal berat" },
+  "🤲": { teks: "MOGA DIPERMUDAH ALLAH SEGALANYA", pakai: "doa / memberi semangat" },
+  "🤷": { teks: "", pakai: "terserah / bodo amat" },
+  "🥱": { teks: "Besok aja", pakai: "menunda pekerjaan" },
+  "🥺": { teks: "", pakai: "sok polos / tidak mengerti" },
+  "🧒": { teks: "", pakai: "santai / polos / bodo amat" },
+  "🧘": { teks: "SABARAHA", pakai: "menyuruh sabar" },
+  "🧠": { teks: "Akal Dipake", pakai: "sindiran supaya berpikir" },
+  "🧼": { teks: "tolong ketikannya yang suci dong", pakai: "minta bicara sopan" },
+  "🫡": { teks: "XIAP", pakai: "siap laksanakan" },
 };
 
 /**

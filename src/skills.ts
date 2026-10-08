@@ -4,7 +4,7 @@ import { saveCorrection, type ChatContext } from './memory.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
 import { stripStickerMarker } from './stickers.js';
-import { STICKER_MANIFEST } from './sticker-manifest.js';
+import { STICKER_MANIFEST, STICKER_INFO } from './sticker-manifest.js';
 import { stripRiddleMarker, lastRiddleAnswer } from './markers.js';
 import { getOrGrowMemory, needsGrowth, growMemory } from './bot_growth.js';
 import { markMemoryUsed, isMemoryRelevant } from './bot_memory.js';
@@ -2167,9 +2167,41 @@ export function systemPrompt(
     (() => {
       const tersedia = Object.keys(STICKER_MANIFEST);
       return [
-        'STIKER BALASAN (OPSIONAL, JANGAN BERLEBIHAN): boleh sisipkan SATU tag di AKHIR balasan untuk momen emosional: [[sticker:<emoji>]].',
-        `Emoji TERSEDIA: ${tersedia.join(' ')}. Pilih yang PALING cocok: tertawa -> 😂/🤣; disindir -> 😅/🙄 (jangan ikut tertawa); menyanggupi -> 👍/🫡; dia sedih -> 🥺/😢 (bukan stiker lucu); bingung -> 🤔; dia kesal -> 😔/🙏; terima kasih -> 🤝/😊; kabar baik -> 😄/🎉.`,
-        'JANGAN PAKAI saat: jawaban teknis/informasi, balasan >2 kalimat, suasana serius/formal/bisnis, balasanmu berupa pertanyaan, atau sudah pakai stiker dalam 5 balasan terakhir. Rata-rata hanya 1 dari 8-10 balasan. Suasana tegang/sedih/profesional: ZERO stiker.',
+        // ── DIPERBAIKI (temuan nyata 08 Okt 2026) ──
+        // LAPORAN PEMILIK PRODUK: "knapa bot nya jarang memberikan stiker?" lalu
+        // "bukan jarang bahkan hampir tidak pernah".
+        //
+        // AKAR: aturan lama menekankan "JANGAN BERLEBIHAN" + "Rata-rata hanya 1 dari
+        // 8-10 balasan" sehingga model menjadi SANGAT hati-hati dan praktis tidak
+        // pernah menyisipkan stiker sama sekali (uji 5/5 momen emosional: nol stiker).
+        //
+        // SEKARANG: dorong pemakaian pada momen emosional yang JELAS, dengan batas
+        // tetap ada (agar tidak overuse seperti keluhan lama "overuser stikernya").
+        'STIKER BALASAN (PAKAI SAAT MOMENNYA PAS — JANGAN PELIT): sisipkan SATU tag di AKHIR balasan dengan format [[sticker:<emoji>]]. Contoh benar: "Haha iya tuh lucu banget [[sticker:😂]]".',
+        'PENTING: menulis emoji biasa (😊😂👍) di dalam teks BUKAN mengirim stiker — kalau mau mengirim stiker, WAJIB pakai tag [[sticker:<emoji>]] di AKHIR balasan.',
+        // ── ANTI-SALAH KLASIFIKASI (peringatan pemilik produk 08 Okt 2026) ──
+        // Setiap stiker punya TEKS yang sangat spesifik. Mengganti emoji dengan
+        // "yang mirip" bisa menghasilkan makna salah total (mis. emoji sayang
+        // dipetakan ke stiker bertulisan "hai gantengk"). Karena itu:
+        'WAJIB: pilih emoji HANYA dari daftar di atas. JANGAN mengarang emoji lain (❤️ 🥰 🔥 💯 👏 🙏 💬 dsb) yang TIDAK ada di daftar — stiker dengan emoji itu tidak tersedia dan permintaanmu akan gagal. Kalau tidak ada emoji yang benar-benar cocok dengan suasana, JANGAN kirim tag stiker sama sekali (lebih baik tidak kirim daripada salah makna).',
+        'KAPAN PAKAI (sering, jangan ragu): user tertawa/bercanda (wkwk, haha, 🤣) -> 😂/🤣; user berterima kasih -> 🤝/😊; kamu menyanggupi/menyetujui -> 👍/🫡; user memuji kamu -> 😊/🙈; user sedih/kecewa -> 🥺/😢; user kesal -> 😔/🙏; kamu bingung -> 🤔; kabar baik -> 😄/🎉; user sayang/mesra -> 🥰/😊; kamu disindir -> 😅/🙄 (jangan ikut tertawa).',
+        `Emoji TERSEDIA: ${tersedia.join(' ')}.`,
+        'KAPAN JANGAN (hanya ini): jawaban teknis/informasi panjang, balasan >3 kalimat, suasana serius/formal/bisnis/duka, atau balasanmu berupa pertanyaan. Suasana tegang/profesional: ZERO stiker. Selain itu, pakai — target wajar sekitar 1 dari 3 balasan saat obrolan santai hangat.',
+        // ── TEKS/CAPTION STIKER (permintaan pemilik produk 08 Okt 2026) ──
+        // "yg utama dari stiker nya itu text atau caption yg ada di stiker nya, jika
+        //  tidak ada baru dari konsep dan konsep isi stiker nya".
+        //
+        // FORMAT RINGKAS (hemat token — penting!): daftar lengkap 110 emoji dengan
+        // teks + konsep memakan ~1.860 token dan membuat prompt mentok 6.941/7.000
+        // sehingga berisiko dipangkas. Di sini hanya dikirim emoji yang PUNYA teks
+        // (yang benar-benar butuh dibaca) + potongan konsep pendek; sisanya cukup
+        // emoji saja karena maknanya sudah jelas dari emojinya.
+        'TEKS DI STIKER (emoji="tulisan", pakai saat teksnya cocok): ' +
+          Object.entries(STICKER_INFO)
+            .filter(([, d]) => d.teks && d.teks.trim())
+            .map(([e, d]) => `${e}="${d.teks.slice(0, 32)}"`)
+            .join(' ') +
+          '. Untuk emoji lain tanpa teks, pakai sesuai emosinya.',
       ].join(' ');
     })(),
     '- ANTI-FLAT: jawaban pendek wajib tetap bernyawa — minimal bentangkan 1 kata akhiran jadi dua huruf (ohh, okee, sipp, mantapp, amann, iyaa) supaya tidak terkesan cuek/dingin. Kata pendek polos seperti "Oke," "sip," "iya." tanpa ekspresi apa pun dilarang.',
@@ -4359,6 +4391,16 @@ export async function describeImage(
       // Temuan nyata: stiker berisi tulisan "DONGO / Sejak Lahir" (sindiran ke bot yang
       // tidak bisa cek cuaca) dijawab "Wahahaha, lucu banget!" — salah total karena model
       // hanya melihat gambarnya, bukan tulisannya.
+      // ── URUTAN WAJIB MEMBACA STIKER (permintaan pemilik produk 08 Okt 2026) ──
+      // "yg utama dari stiker nya itu text atau caption yg ada di stiker nya, jika
+      //  tidak ada baru dari konsep dan konsep isi stiker nya, baik stiker yg di
+      //  kirim bot, maupun yg di kirim user maka yg pertama di lihat apakah ada text
+      //  atau captionya, kalo tidak ada baru dari ekspresi stiker nya di sesuaikan
+      //  dengan suasana percakapan"
+      'URUTAN MEMBACA STIKER (WAJIB, jangan dibalik):',
+      '(1) TEKS/CAPTION di stiker — kalau ADA tulisan, ITULAH makna utama. Baca apa adanya, jangan mengaku tidak terbaca.',
+      '(2) KONSEP/ISI stiker — kalau TIDAK ada tulisan, pahami maksud gambarnya (mis. kucing pegang mawar = ungkapan sayang).',
+      '(3) EKSPRESI + SUASANA — kalau tidak ada tulisan & konsepnya ambigu, baru pakai ekspresi (senang/sedih/kesal) yang disesuaikan suasana percakapan.',
       '1. LANGKAH PERTAMA — BACA TEKS/NULISAN DI STIKER: banyak stiker memuat tulisan. Jika ada teks, ITULAH makna utama stiker dan wajib jadi dasar balasanmu. Contoh: stiker bertulisan "DONGO Sejak Lahir" = sindiran/ejekan (dongo = bodoh), bukan lelucon lucu — balas dengan menyadari sindirannya secara santai/self-deprecating, BUKAN tertawa "lucu banget".',
       // ── ATURAN KERAS (temuan nyata 06 Okt 2026) ──
       // LAPORAN 1: user kirim stiker "SATIR / SAYANG PADAMU TIADA AKHIR", minta

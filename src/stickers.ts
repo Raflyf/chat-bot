@@ -16,7 +16,9 @@
 import { STICKER_MANIFEST, EDGY_STICKER_EMOJIS } from './sticker-manifest.js';
 
 const STICKER_COOLDOWN_MS = 10 * 60 * 1000;
-const STICKER_MAX_PER_WINDOW = 2;
+// DINAIKKAN 2 -> 4 (temuan 08 Okt 2026): dengan 2/10 menit + jeda 5 balasan,
+// stiker nyaris tidak pernah muncul. 4/10 menit masih jauh dari "overuse".
+const STICKER_MAX_PER_WINDOW = 4;
 
 const recentStickerUses = new Map<string, number[]>();
 
@@ -62,33 +64,62 @@ export type StickerMood =
   | 'netral';   // bingung, kaget, datar
 
 const MOOD_MAP: Record<string, StickerMood> = {
-  // lucu / tertawa
-  '😂': 'lucu', '🤣': 'lucu', '😆': 'lucu', '😅': 'lucu', '😹': 'lucu', '😁': 'lucu',
+  // ══════════════════════════════════════════════════════════════════════════
+  // DIPERBAIKI 08 Okt 2026 setelah MELIHAT SENDIRI 221 stiker (montase).
+  // Temuan: banyak mood salah karena emoji tidak mencerminkan TEKS stiker.
+  // Contoh fatal: 😂 bertulisan "LU DONGO APA GIMANA" dianggap 'lucu' padahal
+  // itu EJEKAN — bot bisa tertawa saat menghina user. Aturan: TEKS menang atas
+  // emoji. Lihat scripts/make_sticker_sheets.py untuk montase verifikasi.
+  // ══════════════════════════════════════════════════════════════════════════
+  // lucu / tertawa (teks benar-benar lucu)
+  '🤣': 'lucu', '😆': 'lucu', '😅': 'lucu', '😹': 'lucu', '😁': 'lucu',
   '😜': 'lucu', '🤪': 'lucu', '😛': 'lucu', '🎉': 'lucu', '🥳': 'lucu',
-  // sindir / roasting
-  '😏': 'sindir', '🙄': 'sindir', '😒': 'sindir', '🤨': 'sindir', '😼': 'sindir',
-  '🫣': 'sindir', '😈': 'sindir',
-  // kesal / marah
+  '🚀': 'lucu',   // teks "MELUNCUR" = pamit bercanda
+  // sindir / roasting (teks menyindir, bukan menghina kasar)
+  '😏': 'sindir', '😼': 'sindir', '🫣': 'sindir', '😈': 'sindir',
+  '🤔': 'sindir',  // teks "gunakan otakmu" = sindiran
+  '🧠': 'sindir',  // teks "Akal Dipake" = sindiran
+  '👑': 'sindir',  // teks "seriusan princess diginiin?"
+  // kesal / marah (termasuk EJEKAN yang tidak boleh dibalas tawa)
   '😠': 'kesal', '😡': 'kesal', '🤬': 'kesal', '😤': 'kesal', '😾': 'kesal',
-  '🖕': 'kesal', '👊': 'kesal', '💢': 'kesal', '💩': 'kesal', '💀': 'kesal',
+  '🖕': 'kesal', '👊': 'kesal', '💢': 'kesal', '💩': 'kesal',
+  '😂': 'kesal',   // PENTING: teks "LU DONGO APA GIMANA" = ejekan, bukan tawa!
+  '😒': 'kesal',   // teks "gw dah muak"
+  '🙄': 'sindir',  // teks "nyawit ni orang", "cukup tau", "apa aku peduli"
+  '🐷': 'kesal',   // teks "BABI"
+  '🐌': 'kesal',   // teks "DASAR TUMAN"
+  '🐟': 'kesal',   // teks "JANGAN NGOTOT!"
+  '👎': 'kesal',   // teks "BODOH AMAT"
+  '🤦': 'kesal',   // teks "ni orang bego apa tolol si"
   // sedih / kecewa
   '😢': 'sedih', '😭': 'sedih', '😔': 'sedih', '😞': 'sedih', '😿': 'sedih',
   '🥺': 'sedih', '💔': 'sedih', '😩': 'sedih', '😫': 'sedih', '🫠': 'sedih',
   '😰': 'sedih', '😨': 'sedih', '😧': 'sedih', '😦': 'sedih',
+  '💀': 'sedih',   // teks "I forgor" = mengaku lupa
+  '💪': 'sedih',   // teks "secara mental aku hancur"
+  '💸': 'sedih',   // teks "DUIT GUE TINGGAL SEGINI"
+  '😪': 'sedih',   // teks "ijin mau nangis"
   // hangat / mesra
   '🥰': 'hangat', '😍': 'hangat', '😘': 'hangat', '❤': 'hangat', '❤️': 'hangat',
   '😳': 'hangat', '🤗': 'hangat', '🫶': 'hangat', '💕': 'hangat',
+  '🎓': 'hangat',  // teks "Hai guys" = sapaan ramah
   // sopan / hormat
-  '🙏': 'sopan', '👍': 'sopan', '👎': 'sopan', '🤝': 'sopan', '🫡': 'sopan',
+  '🙏': 'sopan', '👍': 'sopan', '🤝': 'sopan', '🫡': 'sopan',
   '👋': 'sopan', '✋': 'sopan', '🙋': 'sopan', '🆗': 'sopan', '👌': 'sopan',
-  '🎂': 'sopan', '🤲': 'sopan', '💪': 'sopan', '🍳': 'sopan',
+  '🎂': 'sopan', '🤲': 'sopan', '🍳': 'sopan',
+  '🛌': 'sopan',   // teks "YA UDAH BESOK AJA"
+  '🥱': 'sopan',   // teks "Besok aja"
   // netral
-  '🤔': 'netral', '🧐': 'netral', '😐': 'netral', '😑': 'netral', '🤷': 'netral',
+  '🧐': 'netral', '😐': 'netral', '😑': 'netral', '🤷': 'netral',
   '😮': 'netral', '😲': 'netral', '😱': 'netral', '😵': 'netral', '🤯': 'netral',
-  '😴': 'netral', '🥱': 'netral', '🤫': 'netral', '🙈': 'netral', '🙉': 'netral',
-  '🚀': 'netral', '📢': 'netral', '📍': 'netral', '📝': 'netral', '🧠': 'netral',
+  '😴': 'netral', '🤫': 'netral', '🙈': 'netral', '🙉': 'netral',
+  '📢': 'netral', '📍': 'netral', '📝': 'netral',
+  // Koreksi lanjutan (4 sisa) — dicek dari teks stiker:
+  '🛁': 'kesal',   // "sedang memandang kebodohanmu" = kesal
+  '🤥': 'sindir',  // "MENCIUM BAU KEBOHONGAN" = curiga/sindir
+  '🤨': 'sindir',  // "GAK MANUK AKAL" = heran/sindir
   '👀': 'netral', '🐱': 'netral', '😺': 'netral', '🚶': 'netral', '🏃': 'netral',
-  '🚗': 'netral', '🤥': 'netral', '🧘': 'netral', '😎': 'netral', '🙃': 'netral',
+  '🚗': 'netral', '🧘': 'netral', '😎': 'netral', '🙃': 'netral',
 };
 
 /** Suasana sebuah emoji stiker. Emoji yang tidak dikenal dianggap netral. */
@@ -148,10 +179,22 @@ export function stickerFileForEmoji(emoji: string): string | null {
   // Coba basis tanpa modifier warna kulit (mis. "👍🏽" → "👍")
   const base = e.replace(/[\u{1F3FB}-\u{1F3FF}]/gu, '');
   if (EMOJI_TO_FILE[base]) return EMOJI_TO_FILE[base];
+  // SENGAJA TIDAK ADA peta sinonim.
+  //
+  // PERCOBAAN 08 Okt 2026 (DIBATALKAN): sempat ditambahkan peta ❤️->😍, 😄->😂,
+  // 🔥->🚀, dll untuk "menyelamatkan" emoji tanpa aset. TERNYATA BERBAHAYA —
+  // setiap stiker punya TEKS yang sangat spesifik sehingga sinonim menghasilkan
+  // makna salah total:
+  //   ❤️ "sayang"   -> 😍 "hai gantengk"          (kirim godaan ke user)
+  //   😄 "tertawa"  -> 😂 "LU DONGO APA GIMANA"   (menghina user)
+  //   🙇 "hormat"   -> 🙏 "Assalamualaikum"        (salam agama salah konteks)
+  //   🔥 "semangat" -> 🚀 "MELUNCUR"               (bilang mau pergi)
+  //   💬 "bicara"   -> 🗣️ "AH NGOMONG DOANG LU"    (menghina user)
+  // ATURAN: kalau emoji tidak punya aset, LEBIH BAIK TIDAK KIRIM STIKER
+  // daripada salah makna. Kualitas > kuantitas.
   return null;
 }
 
-/** True bila ada aset stiker untuk emoji tsb. */
 export function hasStickerForEmoji(emoji: string): boolean {
   return stickerFileForEmoji(emoji) !== null;
 }
@@ -234,7 +277,11 @@ export function allowStickerForChat(chatKey: string): boolean {
  * state in-memory kosong). Menghitung balasan sejak stiker terakhir bersifat DURABLE
  * karena dibaca dari riwayat percakapan yang tersimpan.
  */
-export const STICKER_MIN_TURNS_SINCE_LAST = 5;
+// DITURUNKAN 5 -> 3 (temuan 08 Okt 2026): pemilik produk melaporkan bot "hampir
+// tidak pernah" mengirim stiker. Batas 5 balasan terlalu ketat untuk obrolan santai
+// yang pesannya pendek-pendek — praktis tidak pernah tercapai. 3 tetap mencegah
+// overuse (keluhan lama "sekarang malah jadi overuser stikernya").
+export const STICKER_MIN_TURNS_SINCE_LAST = 3;
 
 /**
  * Penanda durable stiker di riwayat: "[Stiker terkirim: <emoji>]".
