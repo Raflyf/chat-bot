@@ -62,6 +62,7 @@
   };
 
   var ID_STORAGE = {};
+  var ID_STORAGE_PH = {};
 
   function initI18n() {
     // Simpan teks asli ID dari DOM saat pertama kali load
@@ -70,6 +71,15 @@
       var key = el.getAttribute("data-i18n");
       if (key && !(key in ID_STORAGE)) {
         ID_STORAGE[key] = el.textContent.trim();
+      }
+    });
+
+    // Simpan placeholder asli (bahasa Indonesia) untuk pemulihan.
+    var phNodes = document.querySelectorAll("[data-i18n-placeholder]");
+    phNodes.forEach(function (el) {
+      var key = el.getAttribute("data-i18n-placeholder");
+      if (key && !(key in ID_STORAGE_PH)) {
+        ID_STORAGE_PH[key] = el.getAttribute("placeholder") || "";
       }
     });
 
@@ -109,6 +119,18 @@
         if (ID_STORAGE[key]) {
           el.textContent = ID_STORAGE[key];
         }
+      }
+    });
+
+    // Placeholder (atribut, bukan teks isi) — dipakai form laporan.
+    var phNodes = document.querySelectorAll("[data-i18n-placeholder]");
+    phNodes.forEach(function (el) {
+      var key = el.getAttribute("data-i18n-placeholder");
+      if (!key) return;
+      if (targetLang === "en") {
+        if (DICTIONARY.en && DICTIONARY.en[key]) el.setAttribute("placeholder", DICTIONARY.en[key]);
+      } else if (ID_STORAGE_PH[key]) {
+        el.setAttribute("placeholder", ID_STORAGE_PH[key]);
       }
     });
 

@@ -158,6 +158,48 @@
     </div>
   </section>
 
+  <!-- Laporan / Keluhan Section (paling bawah halaman) -->
+  <section class="lapor-section">
+    <div class="container">
+      <div class="section-title-wrap">
+        <h3 class="section-title" data-i18n="lapor.heading">Ada yang Janggal? Laporkan ke Kami</h3>
+        <p class="section-subtitle" data-i18n="lapor.subheading">
+          Bot menjawab tidak nyambung, salah paham, atau responsnya ngaco? Tempel percakapan atau lampirkan tangkapan layarnya di sini. Laporan langsung masuk ke pengelola.
+        </p>
+      </div>
+
+      <form class="lapor-card" id="form-lapor" novalidate>
+        <div class="lapor-field">
+          <label for="lapor-pesan" data-i18n="lapor.label">Ceritakan masalahnya <span class="lapor-wajib">*</span></label>
+          <textarea id="lapor-pesan" name="pesan" rows="6" required
+            data-i18n-placeholder="lapor.placeholder"
+            placeholder="Tempel percakapan yang salah, atau tulis apa yang terjadi… (contoh: saya minta hitung menu dari spreadsheet, tapi bot malah kasih panduan pemakaian)"></textarea>
+        </div>
+
+        <div class="lapor-field">
+          <label for="lapor-gambar" data-i18n="lapor.label.file">Lampirkan tangkapan layar (opsional, maks 2 MB)</label>
+          <div class="lapor-file-row">
+            <input type="file" id="lapor-gambar" name="gambar" accept="image/png,image/jpeg,image/webp,image/gif">
+            <button type="button" class="btn btn-ghost btn-sm" id="lapor-hapus-gambar" hidden data-i18n="lapor.hapusfile">Hapus gambar</button>
+          </div>
+          <p class="lapor-hint" data-i18n="lapor.hintfile">Format: PNG, JPG, WEBP, atau GIF.</p>
+          <div class="lapor-preview" id="lapor-preview" hidden>
+            <img id="lapor-preview-img" alt="Pratinjau lampiran">
+          </div>
+        </div>
+
+        <div class="lapor-actions">
+          <button type="submit" class="btn btn-primary" id="lapor-kirim" data-i18n="lapor.kirim">Kirim Laporan</button>
+          <span class="lapor-status" id="lapor-status" role="status" aria-live="polite"></span>
+        </div>
+
+        <p class="lapor-note" data-i18n="lapor.note">
+          Tidak perlu mengisi nomor WhatsApp — laporan langsung diteruskan ke pengelola bot.
+        </p>
+      </form>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer>
     <div class="container" data-i18n="footer.text">
@@ -168,5 +210,6 @@
   <script src="/js/lenis.min.js"></script>
   <script src="/js/smooth-scroll.js"></script>
   <script src="/js/i18n.js"></script>
+  <script src="/js/laporan.js"></script>
 </body>
 </html>
