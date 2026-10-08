@@ -154,6 +154,20 @@ export async function resetSession(chatKey: string, platform: string = 'whatsapp
 }
 
 /** Ambil konteks chat: 24 pesan terakhir sejak checkpoint reset + ringkasan + koreksi. Tanpa DB = kosong. */
+/**
+ * Ambil konteks percakapan yang dibaca MODEL.
+ *
+ * ── ISOLASI MEMORI (penting, jangan diubah tanpa alasan) ──
+ * Fungsi ini HANYA membaca 3 tabel: `messages`, `summaries`, `corrections`.
+ *
+ * Tabel `laporan` (keluhan dari landing page) SENGAJA TIDAK dibaca di sini.
+ * Permintaan pemilik produk (08 Okt 2026): "jangan sampai bot nya jadi tercemar
+ * gara gara memori keluhan itu". Laporan bisa berisi kalimat kasar/ngaco yang,
+ * bila masuk konteks, akan ditiru model sebagai gaya bicara.
+ *
+ * JANGAN menambahkan pembacaan tabel `laporan` di fungsi ini atau di jalur
+ * percakapan mana pun (src/). Akses laporan hanya lewat `api/laporan.ts`.
+ */
 export async function getContext(chatKey: string, msgSentAt?: Date): Promise<ChatContext> {
   const empty: ChatContext = { history: [], summary: null, corrections: [], chatId: chatKey, msgSentAt };
 

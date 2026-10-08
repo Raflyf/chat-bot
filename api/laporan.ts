@@ -183,6 +183,58 @@ async function kirimTelegramPemilikGambar(buf: Buffer, caption: string, mime: st
   }
 }
 
+/**
+ * ANALISIS KELUHAN oleh model AI (best-effort).
+ *
+ * Tujuan: menjawab pertanyaan pemilik produk "apakah bot nya bisa melihat keluhan
+ * yg masuk di chat bot nya? dan memahami apa keluhannya?" — laporan dari form
+ * DIBACA oleh model, lalu diringkas: inti masalah, kategori, dugaan penyebab, saran.
+ * Hasilnya disimpan di kolom `analisis` + dikirim ke notifikasi pemilik, sehingga
+ * pemilik TIDAK perlu membaca manual satu-satu.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ISOLASI TOTAL — LAPORAN TIDAK BOLEH MENCEMARI MEMORI/PERSONA BOT
+ * (permintaan pemilik produk: "tapi jangan sampai bot nya jadi tercemar gara
+ *  gara memori keluhan itu")
+ *
+ * JAMINAN BERLAPIS:
+ *   1. Tabel `laporan` TERPISAH dari memori bot. Memori bot (getContext di
+ *      src/memory.ts) HANYA membaca: `messages`, `summaries`, `corrections`.
+ *      Tidak ada satu pun kode di src/ yang membaca `laporan` — jadi laporan
+ *      TIDAK PERNAH masuk konteks percakapan.
+ *   2. Analisis di bawah ini HANYA ditulis ke kolom `analisis` (untuk dibaca
+ *      pemilik) + dikirim ke notifikasi. TIDAK ditulis ke `messages` maupun
+ *      `corrections`, sehingga tidak pernah jadi "contoh" bagi model.
+ *   3. TIDAK ADA penulisan otomatis ke memori dari laporan. Bila pemilik ingin
+ *      laporan menjadi pelajaran, itu harus dilakukan MANUAL (lewat perbaikan
+ *      kode/test) agar persona tidak rusak oleh laporan asal-asalan.
+ *
+ * ATURAN UNTUK PENGEMBANG: JANGAN pernah menambahkan kode yang membaca tabel
+ * `laporan` di dalam `src/` (jalur percakapan bot). Kalau butuh, buat endpoint
+ * terpisah seperti file ini.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+async function analisisKeluhan(pesan: string, lampiranAda: boolean): Promise<string> {
+  try {
+    const { dynamicNotice } = await import('../src/skills.js');
+    const instruksi =
+      '[SISTEM] Ini adalah LAPORAN/KELUHAN dari pengguna tentang perilaku bot AI. ' +
+      'Tugasmu: analisis SINGKAT (maks 4 baris) dengan format:\n' +
+      'INTI: <masalah utamanya apa>\n' +
+      'KATEGORI: <salah satu: klasifikasi-salah, jawaban-ngaco, tidak-nyambung, ' +
+      'lupa-konteks, fitur-tidak-jalan, gaya-bahasa, lain-lain>\n' +
+      'DUGAAN PENYEBAB: <perkiraan teknis singkat>\n' +
+      'SARAN: <langkah perbaikan singkat>\n\n' +
+      (lampiranAda ? '(Ada lampiran tangkapan layar dari pelapor.)\n\n' : '') +
+      `Isi laporan:\n${pesan.slice(0, 2500)}`;
+    const hasil = await dynamicNotice(instruksi);
+    if (hasil && hasil.trim() && !hasil.includes('gangguan koneksi')) return hasil.trim().slice(0, 1200);
+  } catch {
+    // analisis best-effort: laporan tetap tersimpan tanpa analisis
+  }
+  return '';
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   // Security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');

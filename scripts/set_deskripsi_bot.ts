@@ -75,10 +75,24 @@ async function setWhatsApp(): Promise<void> {
     console.warn('⚠️  WhatsApp dilewati: WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID belum diset.');
     return;
   }
+
+  // ── FIELD `websites`: SATU-SATUNYA tempat link BISA DIKLIK di profil WA ──
+  // Permintaan pemilik produk (08 Okt 2026): "masukan link landingpage nya sebelum
+  // link github, karna klo di deskripsi link nya tidak bisa di klik tidak ada
+  // hyperlink". Jadi landing page diletakkan PERTAMA agar paling menonjol.
+  const websites = [
+    LINK,                                    // landing page (form laporan di bawah)
+    'https://github.com/Raflyf/chat-bot',    // repositori
+  ];
+
   const res = await fetch(`https://graph.facebook.com/v21.0/${pnid}/whatsapp_business_profile`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', description: WA_DESKRIPSI.slice(0, 512) }),
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      description: WA_DESKRIPSI.slice(0, 512),
+      websites,
+    }),
     signal: AbortSignal.timeout(15000),
   });
   const hasil = (await res.json()) as { success?: boolean; error?: { message?: string } };
@@ -86,7 +100,8 @@ async function setWhatsApp(): Promise<void> {
     console.error(`  ❌ WhatsApp: ${hasil.error?.message || res.status}`);
     return;
   }
-  console.log('  ✅ whatsapp_business_profile (deskripsi)');
+  console.log('  ✅ whatsapp_business_profile (deskripsi + websites)');
+  console.log(`     websites: ${websites.join(', ')}`);
 }
 
 async function main(): Promise<void> {

@@ -25,6 +25,11 @@ create table if not exists public.laporan (
 comment on table public.laporan is
   'Laporan/keluhan pengguna dari landing page (teks + lampiran tangkapan layar).';
 
+-- Kolom analisis: hasil pembacaan AI atas keluhan (inti masalah, kategori,
+-- dugaan penyebab, saran). Dipakai pemilik untuk menindaklanjuti.
+-- PENTING: kolom ini TIDAK dibaca jalur percakapan bot (lihat api/laporan.ts).
+alter table public.laporan add column if not exists analisis text;
+
 create index if not exists idx_laporan_created on public.laporan (created_at desc);
 create index if not exists idx_laporan_status  on public.laporan (status);
 
