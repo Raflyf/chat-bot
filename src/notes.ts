@@ -3203,17 +3203,38 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
  */
 export function deteksiPertanyaan(teks: string): 'keuangan' | 'tugas' | 'catatan' | null {
   const s = teks.toLowerCase().trim();
-  if (s.length < 5 || s.length > 200) return null;
+  // Batas panjang dinaikkan ke 400 (temuan 08 Okt 2026): pertanyaan keuangan
+  // seperti "Bores tolong catat semua dan hitung ya pendapatan dan pengeluaran
+  // aku" bisa > 200 karakter dan dulu ditolak sebelum sempat dideteksi.
+  if (s.length < 5 || s.length > 400) return null;
 
-  // Pertanyaan keuangan: "berapa sisa uang", "total pengeluaran", "rekap", "saldo"
-  if (
-    /\b(berapa|brp|total|rekap|sisa|saldo|jumlah)\b/.test(s) &&
-    /\b(uang|duit|pengeluaran|pemasukan|belanja|budget|keuangan|tabungan|cash|dompet)\b/.test(s)
-  ) return 'keuangan';
-  // "pengeluaranku berapa", "uangku sisa berapa", "duitku berapa"
-  if (/\b(uang|duit|pengeluaran|pemasukan|belanja|keuangan|saldo|tabungan|budget)(ku|saya|gue|aku)?\b/.test(s) &&
-      /\b(berapa|brp|total|rekap|sisa|saldo|jumlah)\b/.test(s)) return 'keuangan';
+  // ── PERTANYAAN KEUANGAN (DIPERLUAS, temuan nyata 08 Okt 2026) ──
+  // LAPORAN: "Jadi pendapatan dan pengeluaran berapa" dan
+  // "Di kurangi sama pengeluaran aku jadi berapa" TIDAK ter-trigger ke rekap,
+  // padahal jelas pertanyaan keuangan.
+  //
+  // AKAR: daftar kata tidak memuat "pendapatan", "masuk", "keluar", "kurang",
+  // "selisih", "hitung", "dikurangi". Juga tidak memuat "berapa" di awal
+  // kalimat panjang (panjang > 200 char ditolak lebih dulu).
+  const KATA_UANG =
+    'uang|duit|pengeluaran|pemasukan|pendapatan|penghasilan|income|belanja|belanjaan|budget|keuangan|tabungan|cash|dompet|saldo|masuk|keluar|kurang|selisih|sisa|tagihan|utang|hutang';
+  const KATA_TANYA = 'berapa|brp|total|rekap|sisa|saldo|jumlah|selisih|kurang|dikurangi|hitung|hitungin|rincian|detail|semua|semuanya|keseluruhan';
+  // Naikkan batas panjang: pertanyaan keuangan bisa panjang.
+  if (s.length <= 400 && new RegExp(`\\b(?:${KATA_TANYA})\\b`).test(s) && new RegExp(`\\b(?:${KATA_UANG})\\b`).test(s)) {
+    return 'keuangan';
+  }
+  // "hitung pendapatan dan pengeluaran aku" (tanpa kata tanya eksplisit).
+  if (/\b(?:hitung|hitungin|rekap|rinci|total)\b/.test(s) && new RegExp(`\\b(?:${KATA_UANG})\\b`).test(s)) {
+    return 'keuangan';
+  }
+  // "catat semua dan hitung ya pendapatan dan pengeluaran aku"
+  if (/\b(?:catat|catet|simpan)\b/.test(s) && /\b(?:semua|semuanya|seluruh)\b/.test(s) && new RegExp(`\\b(?:${KATA_UANG})\\b`).test(s)) {
+    return 'keuangan';
+  }
   if (/^\/?(rekap|saldo|keuangan|dompet|kas)\b/.test(s)) return 'keuangan';
+  // "pengeluaranku berapa", "uangku sisa berapa", "duitku berapa"
+  if (/\b(uang|duit|pengeluaran|pemasukan|pendapatan|belanja|keuangan|saldo|tabungan|budget)(ku|saya|gue|aku)?\b/.test(s) &&
+      new RegExp(`\\b(?:${KATA_TANYA})\\b`).test(s)) return 'keuangan';
 
   // Pertanyaan tugas: "tugas saya apa", "apa yang harus dikerjakan", "list tugas"
   if (

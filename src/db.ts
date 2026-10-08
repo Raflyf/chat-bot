@@ -144,6 +144,45 @@ export async function claimIncomingMessage(
   const c = db();
   if (!c) return false; // fail-closed jika DB tidak terhubung
 
+  // ── DEDUP BERBASIS KONTEN (temuan nyata 08 Okt 2026) ──
+  // LAPORAN: satu pesan user diproses DUA KALI sehingga data keuangan tercatat
+  // ganda (#117 & #118) dan rekap jadi salah (Rp5.100.000 padahal Rp4.100.000).
+  //
+  // AKAR: dedup lama HANYA berdasarkan `msg_id`. WhatsApp mengirim ulang pesan
+  // yang sama dengan `msg_id` BERBEDA (retry dari sisi Meta), sehingga lolos.
+  //
+  // SEKARANG: selain msg_id, periksa juga pesan USER dengan KONTEN IDENTIK dari
+  // chat yang sama dalam jendela waktu singkat (60 detik). Bila ada dan SUDAH
+  // diproses, blokir sebagai duplikat.
+  //
+  // PENTING: jendela 60 detik & konten identik -> aman, karena user yang benar-
+  // benar mengirim ulang pesan yang sama dalam <60 detik memang tidak wajar
+  // (dan lebih baik dianggap duplikat daripada mencatat data ganda).
+  try {
+    const JENDELA_MS = 60_000;
+    const batas = new Date(Date.now() - JENDELA_MS).toISOString();
+    const { data: kembar } = await c
+      .from('messages')
+      .select('id, processed_at, msg_id')
+      .eq('platform', platform)
+      .eq('chat_id', chatId)
+      .eq('role', 'user')
+      .eq('content', content.slice(0, 32000))
+      .gte('created_at', batas)
+      .neq('msg_id', msgId)
+      .limit(1);
+
+    const adaKembar = (kembar ?? [])[0] as { processed_at?: string | null } | undefined;
+    if (adaKembar?.processed_at) {
+      console.warn(
+        `[db] Pesan duplikat (KONTEN identik dalam ${JENDELA_MS / 1000}s, msg_id berbeda) diblokir: platform=${platform}, chat=${chatId}`,
+      );
+      return false;
+    }
+  } catch {
+    // best-effort: bila gagal, lanjut ke pengecekan msg_id di bawah
+  }
+
   try {
     const { error } = await c
       .from('messages')
