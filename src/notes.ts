@@ -2291,6 +2291,41 @@ async function ambilProfilCacheAtauDb(chatId: string): Promise<{ timezone: strin
   return null;
 }
 
+/**
+ * Susun pertanyaan konfirmasi keuangan yang RAPI (temuan 08 Okt 2026).
+ *
+ * Dipakai Opsi B: saat user menyebut angka keuangan TANPA meminta catat, bot
+ * TANYA dulu. Pertanyaannya harus menampilkan DAFTAR item agar user tahu apa
+ * yang akan dicatat (bukan ringkasan panjang yang sulit dibaca).
+ */
+function rangkaiTanyaKeuangan(niat: NiatTerdeteksi): string {
+  const d = niat.data as { items?: Array<{ amount: number; kind: string; note?: string }>; amount?: number; kind?: string };
+  const items = Array.isArray(d.items) ? d.items : [];
+  if (items.length > 1) {
+    const masuk = items.filter((x) => x.kind === 'in');
+    const keluar = items.filter((x) => x.kind !== 'in');
+    const baris: string[] = [];
+    if (masuk.length) {
+      baris.push(`📥 *Pemasukan* Rp${masuk.reduce((a, b) => a + Number(b.amount), 0).toLocaleString('id-ID')}`);
+      for (const x of masuk) baris.push(`   • ${x.note || '-'} — Rp${Number(x.amount).toLocaleString('id-ID')}`);
+    }
+    if (keluar.length) {
+      baris.push(`📤 *Pengeluaran* Rp${keluar.reduce((a, b) => a + Number(b.amount), 0).toLocaleString('id-ID')}`);
+      for (const x of keluar) baris.push(`   • ${x.note || '-'} — Rp${Number(x.amount).toLocaleString('id-ID')}`);
+    }
+    return (
+      `Aku lihat ada catatan keuangan nih:\n\n${baris.join('\n')}\n\n` +
+      `Mau aku *catat* ke buku keuanganmu? Balas *iya* untuk catat, atau *tidak* kalau cuma info.`
+    );
+  }
+  const total = Number(d.amount ?? 0);
+  const jenis = d.kind === 'in' ? 'pemasukan' : 'pengeluaran';
+  return (
+    `Aku lihat ada angka *${jenis}* Rp${total.toLocaleString('id-ID')} nih.\n\n` +
+    `Mau aku *catat* ke buku keuanganmu? Balas *iya* untuk catat, atau *tidak* kalau cuma info.`
+  );
+}
+
 export async function tanganiPencatatan(
   teks: string,
   chatId: string,
@@ -2978,12 +3013,30 @@ export async function tanganiPencatatan(
       return { ditangani: true, reply: r.pesan, jalur: `niat-${niat.kind}` };
     }
 
-    // Catatan / tugas / keuangan: konfirmasi dulu.
-    // ── LANGSUNG SIMPAN (perbaikan 06 Okt 2026) ──
-    // LAPORAN PEMILIK PRODUK (dari evaluasi CSV):
-    //   "Bisa langsung catat aja?" -> user MERASA terganggu oleh konfirmasi
-    //   ya/tidak. Sekarang catatan/tugas/keuangan LANGSUNG DISIMPAN.
-    //   (Pengingat memang sudah langsung simpan sejak sebelumnya.)
+    // ── OPSI B: KEUANGAN TANPA PERMINTAAN EKSPLISIT -> TANYA DULU ──
+    // PERMINTAAN PEMILIK PRODUK (08 Okt 2026): "opsi B saja untuk memastikan
+    // tanya dulu oleh AI".
+    //
+    // ATURAN:
+    //   - Ada kata perintah eksplisit (catat/simpan/input/tulis) -> LANGSUNG simpan.
+    //   - Hanya daftar/angka tanpa kata perintah -> TANYA dulu ("mau aku catat?").
+    //     Ini mencegah user yang hanya MENYEBUT angka ikut tercatat.
+    //   - CATATAN & TUGAS tetap langsung simpan (tidak mengubah perilaku lama).
+    const adaPerintahCatatEksplisit =
+      /\b(?:catat|catet|dicatat|tercatat|simpan|masukin|input|tulis|note|tolong\s+catat|bantu\s+catat)\b/i.test(low);
+    if (niat.kind === 'expense' && !adaPerintahCatatEksplisit) {
+      // Simpan niat sebagai konfirmasi tertunda, lalu tanya user.
+      await simpanKonfirmasi(chatId, niat, { actor: opts.actor, platform: opts.platform });
+      return {
+        ditangani: true,
+        reply: rangkaiTanyaKeuangan(niat),
+        jalur: 'tanya-catat-keuangan',
+      };
+    }
+
+    // Catatan / tugas / keuangan (dengan perintah eksplisit): langsung simpan.
+    // LAPORAN PEMILIK PRODUK (06 Okt 2026): "Bisa langsung catat aja?" -> user
+    // MERASA terganggu oleh konfirmasi ya/tidak untuk permintaan eksplisit.
     const hasilSimpan = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform });
     if (!hasilSimpan.ok) {
       return { ditangani: true, reply: hasilSimpan.pesan, jalur: `niat-${niat.kind}-gagal` };
@@ -3014,10 +3067,19 @@ export async function tanganiPencatatan(
   // menyimpan, supaya salah tangkap tidak langsung mengotori database.
   const niatImplisit = deteksiNiatImplisit(s);
   if (niatImplisit) {
-    // ── LANGSUNG SIMPAN (perbaikan 06 Okt 2026) ──
-    // LAPORAN PEMILIK PRODUK: "konfirmasi ya tidaknya itu sangat mengganggu
-    // dan bikin kesal, coba hilangkan saja semua konfirmasi ya tidaknya".
-    // Sekarang SEMUA pencatatan langsung disimpan, termasuk niat implisit.
+    // ── OPSI B (08 Okt 2026): KEUANGAN IMPLISIT -> TANYA DULU ──
+    // Permintaan pemilik produk: "opsi B saja untuk memastikan tanya dulu oleh AI".
+    // Mencegah user yang hanya menyebut angka/daptar ikut tercatat tanpa diminta.
+    const adaPerintahCatatImpl =
+      /\b(?:catat|catet|dicatat|tercatat|simpan|masukin|input|tulis|note|tolong\s+catat|bantu\s+catat)\b/i.test(low);
+    if (niatImplisit.kind === 'expense' && !adaPerintahCatatImpl) {
+      await simpanKonfirmasi(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
+      return {
+        ditangani: true,
+        reply: rangkaiTanyaKeuangan(niatImplisit),
+        jalur: 'tanya-catat-keuangan',
+      };
+    }
     const r = await simpanDariNiat(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
     return { ditangani: true, reply: r.pesan, jalur: `implisit-${niatImplisit.kind}` };
   }

@@ -1,13 +1,17 @@
 /**
- * TEST OTOMATIS — tanpa konfirmasi ya/tidak + multi-item keuangan
- * (perbaikan 06 Okt 2026).
+ * TEST OTOMATIS — tanpa konfirmasi ya/tidak + multi-item keuangan.
  *
- * KENAPA: laporan pemilik produk dari evaluasi chat nyata:
- *   "user bilang bisa langsung di catat aja ga, jadi konfirmasi ya tidaknya
- *    itu sangat menggangu dan bikin kesal, coba hilangkan saja semua
- *    konfirmasi ya tidaknya"
- *   "Pengeluaran: Bayar Nopal 60rb / Bayar Faisa 50rb / Beli rokok 75rb
- *    lalu ini pengeluaran bertumpuk"
+ * RIWAYAT KEPUTUSAN (penting, jangan diubah tanpa alasan):
+ *   - 06 Okt 2026: pemilik produk meminta SEMUA konfirmasi ya/tidak dihilangkan
+ *     ("konfirmasi ya tidaknya itu sangat menggangu dan bikin kesal").
+ *   - 08 Okt 2026 (OPSI B): pemilik produk MEREVISI untuk KEUANGAN — minta bot
+ *     TANYA DULU ("opsi B saja untuk memastikan tanya dulu oleh AI") agar user
+ *     yang hanya menyebut angka tidak ikut tercatat.
+ *
+ * ATURAN BERLAKU SEKARANG:
+ *   - KEUANGAN tanpa kata perintah  -> TANYA dulu (pakai simpanKonfirmasi).
+ *   - KEUANGAN dengan kata "catat"  -> LANGSUNG simpan (tanpa tanya).
+ *   - CATATAN / TUGAS / PENGINGAT   -> LANGSUNG simpan (tanpa tanya).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,18 +19,23 @@ import fs from 'node:fs';
 
 const SRC = fs.readFileSync(new URL('../src/notes.ts', import.meta.url), 'utf8');
 
-test('konfirmasi: TIDAK ADA teks "Balas *iya*" di notes.ts', () => {
-  assert.ok(
-    !/Balas\s*\*iya\*/i.test(SRC),
-    'konfirmasi ya/tidak harus dihilangkan dari semua jalur pencatatan',
-  );
+test('konfirmasi keuangan: hanya untuk KEUANGAN tanpa perintah (Opsi B)', () => {
+  // Konfirmasi boleh ada, TAPI hanya pada kondisi expense tanpa perintah eksplisit.
+  assert.match(SRC, /niat\.kind === 'expense' && !adaPerintahCatatEksplisit/, 'niat utama');
+  assert.match(SRC, /niatImplisit\.kind === 'expense' && !adaPerintahCatatImpl/, 'niat implisit');
 });
 
-test('konfirmasi: tidak ada pemanggilan simpanKonfirmasi yang tersisa', () => {
-  // Fungsi boleh masih ada (untuk kompatibilitas), tetapi tidak dipanggil
-  // dari jalur pencatatan aktif.
+test('konfirmasi: pemanggilan simpanKonfirmasi HANYA di jalur keuangan', () => {
   const pemanggilan = (SRC.match(/await simpanKonfirmasi\(/g) || []).length;
-  assert.equal(pemanggilan, 0, `masih ada ${pemanggilan} pemanggilan simpanKonfirmasi`);
+  assert.equal(pemanggilan, 2, `harus tepat 2 (niat utama + implisit), dapat ${pemanggilan}`);
+  // Pastikan tidak ada konfirmasi untuk catatan/tugas/pengingat.
+  assert.ok(!/niat\.kind === 'note'[\s\S]{0,80}simpanKonfirmasi/.test(SRC), 'catatan tidak boleh konfirmasi');
+  assert.ok(!/niat\.kind === 'todo'[\s\S]{0,80}simpanKonfirmasi/.test(SRC), 'tugas tidak boleh konfirmasi');
+});
+
+test('konfirmasi: kata perintah eksplisit -> LANGSUNG simpan', () => {
+  assert.ok(SRC.includes('adaPerintahCatatEksplisit'), 'harus cek perintah eksplisit');
+  assert.ok(SRC.includes('adaPerintahCatatImpl'), 'harus cek di jalur implisit');
 });
 
 test('multi-item: fungsi pecahItemKeuangan ada', () => {
