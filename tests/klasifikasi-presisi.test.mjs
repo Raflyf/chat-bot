@@ -56,9 +56,11 @@ const PERMINTAAN = [
   ['catat pemasukan 5 juta', 'expense'],
   ['beli kopi 15rb', 'expense'],
   ['bayar listrik 200rb', 'expense'],
-  ['gajian 5 juta', 'expense'],
-  ['bonus 2 juta', 'expense'],
-  ['thr 1 juta', 'expense'],
+  // CATATAN (08 Okt 2026): "gajian 5 juta" TANPA kata "catat" kini dianggap
+  // INFORMASI pendapatan (tidak dicatat) sesuai permintaan pemilik produk.
+  ['catat gajian 5 juta', 'expense'],
+  ['catat bonus 2 juta', 'expense'],
+  ['catat thr 1 juta', 'expense'],
   ['catat nomor polisi B 1234 XYZ', 'note'],
   ['tambah tugas upload jurnal', 'todo'],
   ['todo beli galon', 'todo'],

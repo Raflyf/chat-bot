@@ -1070,6 +1070,29 @@ const KATA_PERINTAH_UTAMA =
   const adaKataUang =
     /\b(?:uang|duit|pengeluaran|pemasukan|masukan|belanja|bayar|bayarin|beli|habis|abis|keluar|masuk|gaji|gajian|gajinya|gajiannya|bonus|bonusan|thr|dapat|dapet|terima|menerima|honor|fee|pendapatan|jajan|ongkos|biaya|tarif|topup|top-up|transferan|komisi|cashback|refund|warisan|hadiah|untung|laba|profit|cair)\b/.test(s);
   const perintahUang = /^\s*\/?(uang|keluar|masuk|pengeluaran|pemasukan)\b/i.test(tanpaPengantar);
+
+  // ── GUARD PEMASUKAN: WAJIB PERMINTAAN EKSPLISIT (temuan nyata 08 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: "jangan sampai user hanya sedang memberikan informasi
+  // pendapatan nya saja malah di masukan ke dalam pemasukan, kan itu malah
+  // merusak nanti nya".
+  //
+  // ATURAN: PEMASUKAN hanya dicatat bila user MEMINTA secara eksplisit
+  // (catat/simpan/input/tolong catat). Menyebut pendapatan saja
+  // ("gaji saya 5 juta", "bonus 2 juta") = INFORMASI -> jangan dicatat.
+  //
+  // PENGELUARAN tetap boleh dicatat otomatis (perilaku lama).
+  const adaPermintaanCatatEksplisit =
+    /\b(?:catat|catet|dicatat|tercatat|simpan|masukin|input|tulis|note|tolong\s+catat|bantu\s+catat)\b/i.test(s);
+  const adaKataMasukKuat =
+    /\b(?:pendapatan|pemasukan|penghasilan|income|gaji|gajian|gajinya|gajiannya|tunjangan|bonus|bonusan|thr|honor|fee|profit|laba|untung|komisi|cashback|refund|warisan|hadiah|dapat|dapet|diterima|menerima|masukan)\b/i.test(s);
+  const adaKataKeluarKuat =
+    /\b(?:pengeluaran|keluar|beli|bayar|bayarin|habis|abis|belanja|belanjaan|jajan|ongkos|biaya|tagihan|sewa|kos|kosan|kontrakan|utang|hutang|cicilan|parkir|bensin|pulsa|kuota|token|topup|top-up|transfer|kirim)\b/i.test(s);
+  const hanyaPemasukanDiSini = adaKataMasukKuat && !adaKataKeluarKuat;
+  if (hanyaPemasukanDiSini && !adaPermintaanCatatEksplisit) {
+    // Informasi pendapatan tanpa permintaan catat -> JANGAN dicatat.
+    return null;
+  }
+
   if (!adaPerintahIngatKuat && nominal && (perintahUang || adaKataUang)) {
     // ── BUG YANG DIPERBAIKI (06 Okt 2026) ──
     // LAPORAN PEMILIK PRODUK: "catat uang saya ada 150 ribu" dianggap PENGELUARAN.
@@ -1590,6 +1613,39 @@ export async function simpanUang(
   const c = db();
   if (!c) return null;
   try {
+    // ── DEDUP DATA KEUANGAN (temuan nyata 08 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: "saat user hanya memberitahu pendapatan sedangkan
+    // bot mencatat, lalu saat user mau menyuruh mencatat pendapatan itu nanti
+    // malah jadi double".
+    //
+    // PENCEGAHAN BERLAPIS:
+    //   1. Guard pemasukan (hanya dicatat bila user minta eksplisit) — lihat
+    //      deteksiNiatImplisit.
+    //   2. Dedup di sini: bila transaksi dengan nominal + jenis + catatan SAMA
+    //      sudah ada dalam 10 menit terakhir, JANGAN simpan ulang.
+    //
+    // Jendela 10 menit dipilih karena: user yang benar-benar melakukan dua
+    // transaksi identik (nominal + catatan sama) dalam <10 menit sangat jarang,
+    // sedangkan risiko "minta catat ulang" jauh lebih besar.
+    const JENDELA_DEDUP_MS = 10 * 60_000;
+    const sejak = new Date(Date.now() - JENDELA_DEDUP_MS).toISOString();
+    const { data: kembar } = await c
+      .from('expenses')
+      .select('id')
+      .eq('chat_id', chatId)
+      .eq('amount', amount)
+      .eq('kind', kind)
+      .eq('note', note?.slice(0, 300) ?? null)
+      .gte('created_at', sejak)
+      .limit(1);
+    const sudahAda = (kembar ?? [])[0] as { id: number } | undefined;
+    if (sudahAda?.id) {
+      console.warn(
+        `[notes] Lewati simpan keuangan duplikat: Rp${amount} ${kind} "${(note ?? '').slice(0, 40)}" (sudah #${sudahAda.id})`,
+      );
+      return sudahAda.id; // kembalikan id yang sudah ada (bukan id baru)
+    }
+
     const { data, error } = await c.from('expenses').insert({
       chat_id: chatId,
       amount,
@@ -2998,7 +3054,27 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   // ("tolong catat tadi aku beli ...") atau transaksi jelas dengan nominal.
   const mintaCatatImplisit = /\b(?:tolong|please|pls|mohon|bantu|bantuin|catat|dicatat|tercatat|simpan|masukin|input|note)\b/i.test(s);
   const ceritaMasaLalu = ceritaRe.test(s) && !mintaCatatImplisit;
-  if (curhatRe.test(s) || laporanSaldo.test(s) || niatNaratif.test(s) || ceritaMasaLalu) return null;
+
+  // ── DAFTAR ITEM BERNOMINAL MENANG ATAS PENANDA CERITA (temuan 08 Okt 2026) ──
+  // LAPORAN: pesan berisi DAFTAR PEMASUKAN yang jelas
+  //   "Pendapatan yang di dapat 04 oktober 2026: Gaji 2.550.000 / Tunjangan makan
+  //    550.000 / ... kemarin 4 oktober dapat: Profit jualan 1.000.000 / ..."
+  // TIDAK tercatat, padahal jelas daftar keuangan (4 nominal).
+  //
+  // AKAR: kata "kemarin" memicu ceritaMasaLalu -> ditolak, padahal user sedang
+  // MENDAFTARKAN transaksi (bukan curhat).
+  //
+  // ATURAN: bila ada >= 2 item bernominal ATAU ada kata jenis yang jelas
+  // ("pendapatan", "pengeluaran", "pemasukan") + >= 2 nominal -> CATAT.
+  const jmlItemBernominal = pecahItemKeuangan(asli).length;
+  const adaKataJenisKuat = /\b(?:pendapatan|pengeluaran|pemasukan|penghasilan|income|expense|rincian|rekap|daftar)\b/i.test(s);
+  const daftarJelas = jmlItemBernominal >= 3 || (adaKataJenisKuat && jmlItemBernominal >= 2);
+  if (daftarJelas) {
+    // Lewati penolak cerita/curhat — ini DAFTAR transaksi yang sah.
+    if (laporanSaldo.test(s) && jmlItemBernominal < 2) return null;
+  } else if (curhatRe.test(s) || laporanSaldo.test(s) || niatNaratif.test(s) || ceritaMasaLalu) {
+    return null;
+  }
 
   // Tolak kalau jelas obrolan/pertanyaan (agar tidak salah tangkap).
   if (/\?$/.test(s)) return null;
@@ -3047,7 +3123,7 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   // Tetap AMAN karena wajib ada NOMINAL (angka/uang), jadi obrolan seperti
   // "aku tadi makan enak" tidak ikut tertangkap.
   const nominal = parseNominal(s);
-  const konteksUang = /\b(?:keluar|masuk|beli|bayar|habis|abis|dapat|dapet|gaji|belanja|jajan|ongkos|biaya|pendapatan|pemasukan|pengeluaran|income|expense|uang|duit|rupiah|rp|transferan|kiriman|bonus|thr|parkir|bensin|tarif|sewa|tagihan|listrik|air|internet|pulsa|kuota|obat|dokter|sekolah|spp|kontrakan|kos|utang|hutang|cicilan|cicil)\b/i.test(s);
+  const konteksUang = /\b(?:keluar|masuk|beli|bayar|bayarin|habis|abis|dapat|dapet|gaji|gajian|belanja|jajan|ongkos|biaya|pendapatan|pemasukan|pengeluaran|income|expense|uang|duit|rupiah|rp|transferan|kiriman|bonus|thr|parkir|bensin|tarif|sewa|tagihan|listrik|air|internet|pulsa|kuota|token|obat|dokter|sekolah|spp|kontrakan|kos|kosan|utang|hutang|cicilan|cicil|tf|transfer)\b/i.test(s);
   // Sinyal "minta catat" + ada nominal -> anggap keuangan (tanpa wajib kata uang).
   const mintaCatat = /\b(?:catat|dicatat|tercatat|simpan|masukin|input|tulis)\b/i.test(s);
   // Sinyal uang KUAT (kata satuan uang) -> cukup dengan nominal saja.
@@ -3056,6 +3132,38 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   const satuanUangKuat = /\d+\s*(?:rb|ribu|k|jt|juta|miliar|milyar)\b|\b(?:rupiah|rp)\s*\d/i.test(s);
   // Kata "pengeluaran/pemasukan/pengeluaranku/pemasukanku" + nominal -> pasti keuangan.
   const kataPengeluaran = /\b(?:pengeluaran|pemasukan|pengeluaranku|pemasukanku|belanjaku|jajananku|uang\s*keluar|uang\s*masuk|total\s*keluar|total\s*masuk)\b/i.test(s);
+  // ── GUARD PEMASUKAN (temuan nyata 08 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: "jangan sampai user hanya sedang memberikan informasi
+  // pendapatan nya saja malah di masukan ke dalam pemasukan, kan itu malah
+  // merusak nanti nya" + "saat user hanya memberitahu pendapatan sedangkan bot
+  // mencatat, lalu saat user mau menyuruh mencatat pendapatan itu nanti malah
+  // jadi double".
+  //
+  // ATURAN:
+  //   - PENGELUARAN (out): boleh dicatat otomatis bila nominal + kata transaksi
+  //     ("beli kopi 15rb") — perilaku lama dipertahankan.
+  //   - PEMASUKAN (in): HANYA dicatat bila ada PERMINTAAN EKSPLISIT
+  //     (catat/simpan/input/tolong catat). Menyebut pendapatan saja
+  //     ("gaji saya 5 juta") = INFORMASI -> jangan dicatat, biarkan AI membalas.
+  const adaPermintaanCatatEksplisit =
+    /\b(?:catat|catet|dicatat|tercatat|simpan|masukin|input|tulis|note|tolong\s+catat|bantu\s+catat)\b/i.test(s);
+  // Deteksi apakah pesan ini tentang PEMASUKAN saja (tanpa pengeluaran).
+  const adaKataMasuk =
+    /\b(?:pendapatan|pemasukan|penghasilan|income|gaji|gajian|gajinya|tunjangan|bonus|thr|honor|fee|profit|laba|untung|komisi|cashback|refund|warisan|hadiah|dapat|dapet|terima|menerima|masuk|cair|jual)\b/i.test(s);
+  // Kata KELUAR yang benar-benar transaksi belanja (BUKAN "jual" yang ambigu —
+  // "jualan" = pemasukan, bukan pengeluaran).
+  const adaKataKeluar =
+    /\b(?:pengeluaran|keluar|beli|bayar|bayarin|habis|abis|belanja|belanjaan|jajan|ongkos|biaya|tagihan|sewa|kos|kosan|kontrakan|utang|hutang|cicilan|parkir|bensin|pulsa|kuota|token|topup|top-up|transfer|kirim)\b/i.test(s);
+  // Kata PEMASUKAN yang jelas (jangan masukkan "jual" — "jualan" ambigu).
+  const adaKataMasukJelas =
+    /\b(?:pendapatan|pemasukan|penghasilan|income|gaji|gajian|gajinya|gajiannya|tunjangan|bonus|thr|honor|fee|profit|laba|untung|komisi|cashback|refund|warisan|hadiah|dapat|dapet|diterima|menerima|masukan)\b/i.test(s);
+  const hanyaPemasukan = adaKataMasukJelas && !adaKataKeluar;
+  if (hanyaPemasukan && !adaPermintaanCatatEksplisit) {
+    // Informasi pendapatan tanpa permintaan catat -> JANGAN dicatat.
+    // Kembalikan null agar AI yang menjawab (dan user bisa minta catat nanti).
+    return null;
+  }
+
   if (nominal && (konteksUang || mintaCatat || satuanUangKuat || kataPengeluaran)) {
     // ── PISAHKAN PEMASUKAN & PENGELUARAN PER ITEM (temuan nyata 08 Okt 2026) ──
     // LAPORAN PEMILIK PRODUK: "liat logika nya jelek banget, malah bentrok dengan

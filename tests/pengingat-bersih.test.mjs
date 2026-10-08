@@ -39,7 +39,8 @@ test('pengingat: menang atas keuangan saat ada kata bayar/beli', () => {
 });
 
 test('keuangan: TIDAK terpengaruh gerbang pengingat', () => {
-  for (const t of ['bayar makan 25rb', 'beli kopi 15rb', 'gajian 5 juta', 'pemasukan 500rb']) {
+  // CATATAN (08 Okt 2026): pemasukan tanpa kata "catat" kini = INFORMASI (tidak dicatat).
+  for (const t of ['bayar makan 25rb', 'beli kopi 15rb', 'catat gajian 5 juta', 'catat pemasukan 500rb']) {
     const n = deteksiNiat(t) || deteksiNiatImplisit(t);
     assert.equal(n?.kind, 'expense', `"${t}" harus tetap keuangan`);
   }
