@@ -18,7 +18,15 @@ const NOTE = fs.readFileSync(new URL('../src/notes.ts', import.meta.url), 'utf8'
 
 test('Opsi B: jalur "tanya-catat-keuangan" ada', () => {
   assert.ok(NOTE.includes('tanya-catat-keuangan'), 'harus ada jalur tanya');
-  assert.ok(NOTE.includes('rangkaiTanyaKeuangan'), 'harus ada perangkai pertanyaan');
+  assert.ok(NOTE.includes('tanyaKonfirmasiKeuangan'), 'harus ada perangkai pertanyaan');
+});
+
+test('Opsi B: pertanyaan dihasilkan AI, BUKAN template statis', () => {
+  // Permintaan pemilik produk: "untuk yg tanya dulu itu respon AI atau template?"
+  // + aturan lama: "jangan hardcode respon bot yg membuat nya jadi template & statis".
+  assert.ok(NOTE.includes('dynamicNotice'), 'harus pakai dynamicNotice (AI)');
+  assert.ok(NOTE.includes('Tanyakan dengan bahasa MU SENDIRI'), 'instruksi ke AI');
+  assert.ok(!/^\s*return\s+`Aku lihat ada catatan keuangan nih/m.test(NOTE), 'jangan template statis');
 });
 
 test('Opsi B: cek perintah eksplisit sebelum tanya', () => {
@@ -37,8 +45,12 @@ test('Opsi B: konfirmasi tertunda dipakai (bukan state baru)', () => {
   assert.match(NOTE, /simpanKonfirmasi\(chatId, niatImplisit,/, 'pakai simpanKonfirmasi implisit');
 });
 
-test('Opsi B: pertanyaan menampilkan daftar item (mudah dibaca)', () => {
-  assert.ok(NOTE.includes('📥 *Pemasukan*'), 'harus tampilkan pemasukan');
-  assert.ok(NOTE.includes('📤 *Pengeluaran*'), 'harus tampilkan pengeluaran');
-  assert.ok(NOTE.includes('Balas *iya* untuk catat'), 'harus ada instruksi jelas');
+test('Opsi B: daftar item dilampirkan (data presisi, bukan dari model)', () => {
+  assert.ok(NOTE.includes('daftarItem'), 'harus ada daftar item');
+  assert.ok(NOTE.includes('rangkaiDataKeuangan'), 'harus ada perangkai data');
+});
+
+test('Opsi B: ctx hanya dipakai bila valid (cegah gangguan koneksi)', () => {
+  assert.ok(NOTE.includes('ctxValid'), 'harus cek validitas ctx');
+  assert.ok(NOTE.includes("hasil.includes('gangguan koneksi')"), 'harus deteksi fallback gagal');
 });

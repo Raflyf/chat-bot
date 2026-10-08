@@ -2298,7 +2298,7 @@ async function ambilProfilCacheAtauDb(chatId: string): Promise<{ timezone: strin
  * TANYA dulu. Pertanyaannya harus menampilkan DAFTAR item agar user tahu apa
  * yang akan dicatat (bukan ringkasan panjang yang sulit dibaca).
  */
-function rangkaiTanyaKeuangan(niat: NiatTerdeteksi): string {
+function rangkaiDataKeuangan(niat: NiatTerdeteksi): string {
   const d = niat.data as { items?: Array<{ amount: number; kind: string; note?: string }>; amount?: number; kind?: string };
   const items = Array.isArray(d.items) ? d.items : [];
   if (items.length > 1) {
@@ -2306,23 +2306,89 @@ function rangkaiTanyaKeuangan(niat: NiatTerdeteksi): string {
     const keluar = items.filter((x) => x.kind !== 'in');
     const baris: string[] = [];
     if (masuk.length) {
-      baris.push(`📥 *Pemasukan* Rp${masuk.reduce((a, b) => a + Number(b.amount), 0).toLocaleString('id-ID')}`);
+      baris.push(`📥 Pemasukan Rp${masuk.reduce((a, b) => a + Number(b.amount), 0).toLocaleString('id-ID')}`);
       for (const x of masuk) baris.push(`   • ${x.note || '-'} — Rp${Number(x.amount).toLocaleString('id-ID')}`);
     }
     if (keluar.length) {
-      baris.push(`📤 *Pengeluaran* Rp${keluar.reduce((a, b) => a + Number(b.amount), 0).toLocaleString('id-ID')}`);
+      baris.push(`📤 Pengeluaran Rp${keluar.reduce((a, b) => a + Number(b.amount), 0).toLocaleString('id-ID')}`);
       for (const x of keluar) baris.push(`   • ${x.note || '-'} — Rp${Number(x.amount).toLocaleString('id-ID')}`);
     }
-    return (
-      `Aku lihat ada catatan keuangan nih:\n\n${baris.join('\n')}\n\n` +
-      `Mau aku *catat* ke buku keuanganmu? Balas *iya* untuk catat, atau *tidak* kalau cuma info.`
-    );
+    return baris.join('\n');
   }
   const total = Number(d.amount ?? 0);
   const jenis = d.kind === 'in' ? 'pemasukan' : 'pengeluaran';
+  return `${jenis === 'pemasukan' ? '📥 Pemasukan' : '📤 Pengeluaran'} Rp${total.toLocaleString('id-ID')}`;
+}
+
+/**
+ * TANYA KONFIRMASI KEUANGAN — dihasilkan AI, BUKAN template (08 Okt 2026).
+ *
+ * PERMINTAAN PEMILIK PRODUK: "untuk yg tanya dulu itu respon AI atau template
+ * pertanyaan?" + aturan lama: "jangan hardcode respon bot yg membuat nya jadi
+ * merespon template dan statis".
+ *
+ * SEKARANG: pertanyaan disusun MODEL (autoReply) dengan DATA sebagai konteks,
+ * sehingga bahasanya natural & bervariasi. Bila SEMUA model mati, dipakai
+ * rangkaian data sederhana sebagai jaring terakhir (bukan gaya percakapan).
+ */
+async function tanyaKonfirmasiKeuangan(
+  niat: NiatTerdeteksi,
+  ctx?: unknown,
+): Promise<string> {
+  const dataTeks = rangkaiDataKeuangan(niat);
+  // Daftar item (untuk ditampilkan apa adanya — bagian ini DATA, bukan gaya bahasa).
+  const daftarItem = (() => {
+    const d = niat.data as { items?: Array<{ amount: number; kind: string; note?: string }> };
+    const items = Array.isArray(d.items) ? d.items : [];
+    if (items.length < 2) return '';
+    return items
+      .map((x) => `• ${x.note || '-'} — Rp${Number(x.amount).toLocaleString('id-ID')}`)
+      .join('\n');
+  })();
+
+  const instruksi =
+    `[SISTEM] Kamu baru melihat user menyebut angka keuangan di chat, TAPI dia TIDAK ` +
+    `meminta dicatat.\n\n` +
+    `Data yang kamu lihat:\n${dataTeks}\n\n` +
+    `TUGAS: Tanyakan dengan bahasa MU SENDIRI (santai, singkat, sesuai gaya obrolan ` +
+    `kalian) apakah dia mau angka ini dicatat ke buku keuangan. Sebutkan dia bisa balas ` +
+    `"iya" untuk catat atau "tidak" kalau cuma info. JANGAN menyimpan apa pun sebelum ` +
+    `dia jawab. JANGAN pakai gaya template/kaku.\n\n` +
+    `PENTING: JANGAN menulis angka sendiri (hindari format salah seperti "Rp15. 000"). ` +
+    `Cukup tanya dengan santai; daftar angka akan aku lampirkan di bawah jawabanmu.`;
+
+  let tanyaAi = '';
+  try {
+    const { dynamicNotice } = await import('./skills.js');
+    // PENTING: ctx HARUS punya history yang valid. Bila ctx kosong ({}), autoReply
+    // gagal dan dynamicNotice mengembalikan teks gangguan — temuan nyata 08 Okt 2026.
+    const ctxValid =
+      ctx && typeof ctx === 'object' && Array.isArray((ctx as { history?: unknown }).history) &&
+      ((ctx as { history: unknown[] }).history.length > 0);
+    const hasil = ctxValid
+      ? await dynamicNotice(instruksi, ctx as never)
+      : await dynamicNotice(instruksi);
+    if (hasil && hasil.trim() && !hasil.includes('gangguan koneksi')) tanyaAi = hasil.trim();
+  } catch {
+    // lanjut ke jaring terakhir
+  }
+
+  // Lampirkan DAFTAR ITEM apa adanya (data presisi dari kode, bukan dari model)
+  // supaya user tahu pasti apa yang akan dicatat & angkanya tidak salah format.
+  if (tanyaAi) {
+    // Bersihkan artefak format angka dari model ("Rp1. 100.000" -> "Rp1.100.000").
+    // Model kadang menyisipkan spasi setelah titik ribuan; daftar di bawah sudah
+    // presisi, jadi cukup rapikan teks AI-nya.
+    const tanyaRapi = tanyaAi
+      .replace(/\bRp(\d+)\.\s+(\d{3})/g, 'Rp$1.$2')
+      .replace(/(\d)\.\s+(\d{3})\b/g, '$1.$2');
+    return daftarItem ? `${tanyaRapi}\n\n${daftarItem}` : tanyaRapi;
+  }
+
+  // Jaring terakhir (semua model mati): rangkaian data + pertanyaan minimal.
   return (
-    `Aku lihat ada angka *${jenis}* Rp${total.toLocaleString('id-ID')} nih.\n\n` +
-    `Mau aku *catat* ke buku keuanganmu? Balas *iya* untuk catat, atau *tidak* kalau cuma info.`
+    `Aku lihat ada angka keuangan nih:\n\n${dataTeks}\n\n` +
+    `Mau aku catat ke buku keuanganmu? Balas *iya* untuk catat, atau *tidak* kalau cuma info.`
   );
 }
 
@@ -3029,7 +3095,7 @@ export async function tanganiPencatatan(
       await simpanKonfirmasi(chatId, niat, { actor: opts.actor, platform: opts.platform });
       return {
         ditangani: true,
-        reply: rangkaiTanyaKeuangan(niat),
+        reply: await tanyaKonfirmasiKeuangan(niat, ctx),
         jalur: 'tanya-catat-keuangan',
       };
     }
@@ -3076,7 +3142,7 @@ export async function tanganiPencatatan(
       await simpanKonfirmasi(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
       return {
         ditangani: true,
-        reply: rangkaiTanyaKeuangan(niatImplisit),
+        reply: await tanyaKonfirmasiKeuangan(niatImplisit, ctx),
         jalur: 'tanya-catat-keuangan',
       };
     }
