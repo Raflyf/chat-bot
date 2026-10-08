@@ -86,16 +86,34 @@ export function updateContextCache(chatKey: string, role: 'user' | 'assistant', 
   }
 }
 
-/** Periksa apakah pesan pengguna adalah perintah reset sesi (wajib awalan slash untuk menghindari false positive). */
+/** Periksa apakah pesan pengguna adalah perintah reset sesi. */
 export function isResetCommand(text: string): boolean {
   const norm = text.trim().toLowerCase();
-  return (
+  // Slash command (paling pasti).
+  if (
     norm === '/reset' ||
     norm === '/clear' ||
     norm === '/reset_session' ||
     norm === '/resetsesi' ||
     norm === '/clearchat'
-  );
+  ) {
+    return true;
+  }
+
+  // ── BAHASA ALAMI (temuan nyata 08 Okt 2026) ──
+  // LAPORAN: "Bores reset semua percakapan kita. Mulai dari awal" -> bot menjawab
+  // "chat nggak bisa di-reset dari sini" (SALAH! seharusnya reset).
+  //
+  // AKAR: fungsi ini HANYA menerima slash command, padahal user menulis dengan
+  // bahasa alami + nama bot di depan ("Bores reset ...").
+  //
+  // ATURAN: kenali permintaan reset yang JELAS (reset/hapus riwayat/percakapan/
+  // mulai dari nol/awal). Ketat agar obrolan biasa tidak memicu reset.
+  const mintaReset =
+    /\b(?:reset|hapus|bersihkan|clear|delete)\b[^.!?\n]{0,30}\b(?:semua\s+)?(?:percakapan|chat|riwayat|obrolan|memori|ingatan|history|konteks|sesi)\b/i.test(norm) ||
+    /\b(?:mulai|start)\b[^.!?\n]{0,15}\b(?:dari\s+)?(?:awal|nol|0|baru)\b/i.test(norm) ||
+    /\b(?:lupakan|hapus)\b[^.!?\n]{0,20}\b(?:semua|segalanya)\b[^.!?\n]{0,20}\b(?:tentang|soal|percakapan|chat)\b/i.test(norm);
+  return mintaReset;
 }
 
 

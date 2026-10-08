@@ -156,13 +156,41 @@ export function parseNominal(teks: string): number | null {
   }
 
   // Pola angka biasa: "50.000" atau "50000" atau "1.234.567"
-  const m2 = s2.match(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/);
-  if (m2) {
-    const bersih = m2[1].replace(/\./g, '');
-    const n = Number(bersih);
-    if (Number.isFinite(n) && n > 0) return n;
+  // ── DIPERBAIKI (temuan nyata 08 Okt 2026) ──
+  // BUG: `match()` mengambil angka PERTAMA. Pada kalimat
+  //   "aku gajian tanggal 4 oktober sebesar 2.550.000"
+  // angka pertama "4" (TANGGAL) dianggap nominal -> Rp4 (NGACO).
+  //
+  // SEKARANG: ambil SEMUA angka lalu pilih yang PALING BESAR & wajar sebagai
+  // nominal uang (tanggal/jam kecil akan kalah).
+  const semuaAngka = [...s2.matchAll(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/g)]
+    .map((mm) => {
+      const bersihA = mm[1].replace(/\./g, '');
+      return { n: Number(bersihA), mentah: mm[1] };
+    })
+    .filter((x) => Number.isFinite(x.n) && x.n > 0);
+
+  if (semuaAngka.length === 0) return null;
+
+  // Pilih kandidat: prioritaskan angka BERPEMISAH RIBUAN (2.550.000) atau >= 1000.
+  const punyaSatuan = /\d+\s*(?:rb|ribu|k|jt|juta|m|miliar|milyar)\b/i.test(s2);
+  const adaKataUang =
+    /\b(?:uang|duit|harga|bayar|bayarin|beli|jajan|ongkos|biaya|rp|rupiah|total|tagihan|kos|sewa|transfer|tf|pengeluaran|pemasukan|gaji|gajian|bonus|thr|honor|fee|dapat|dapet|terima|habis|abis|belanja|topup|top-up|jual|profit|untung|laba|tiket|tarif|iuran|angsuran|cicilan|utang|hutang)\b/i.test(s2);
+
+  const denganPemisah = semuaAngka.filter((x) => /\./.test(x.mentah));
+  if (denganPemisah.length > 0) {
+    // Ambil yang TERBESAR di antara angka berpemisah ribuan.
+    return Math.max(...denganPemisah.map((x) => x.n));
   }
-  return null;
+  const besar = semuaAngka.filter((x) => x.n >= 1000);
+  if (besar.length > 0) return Math.max(...besar.map((x) => x.n));
+
+  // Semua angka kecil: hanya terima bila ada satuan/kata uang.
+  const terkecil = Math.max(...semuaAngka.map((x) => x.n));
+  const angkaTelanjangKecil = terkecil < 1000 && /^\d{1,3}$/.test(String(terkecil));
+  if (angkaTelanjangKecil && !punyaSatuan && !adaKataUang) return null;
+
+  return terkecil;
 }
 
 /** Kategori keuangan dari kata kunci (deterministik). */
@@ -600,14 +628,50 @@ function bersihkanIsi(teks: string, tambahan: RegExp[] = []): string {
  * Hanya segmen yang memuat NOMINAL yang dianggap item.
  */
 export function pecahItemKeuangan(teks: string): Array<{ teks: string; nominal: number }> {
+  // ── DIPERBAIKI (temuan nyata 08 Okt 2026) ──
+  // LAPORAN: pesan panjang berisi BANYAK nominal hanya tercatat SATU:
+  //   "Bores bantu aku ya.. untuk hitung pengeluaran aku selama bulan oktober.
+  //    Jadi aku gajian tanggal 4 oktober sebesar 2.550.000, dapat tunjangan makan
+  //    550.000, dan profit jualan 1.000.000, uang nya sudah aku pakai untuk kosan
+  //    500 rb, aku tf ke ortu 600 rb, aku beli alat pijat 170 rb, beli kuota 47 rb.
+  //    Belanja 60rb. Tf ke atm kosong 20 rb"
+  //   -> hanya "Rp500.000" tercatat (NGACO!). Padahal ada 10 angka.
+  //
+  // AKAR: pemecah lama hanya memisah per BARIS / ';' / 'lalu' / 'terus' / 'dan'.
+  // Kalimat panjang dipisah KOMA tidak terpecah.
+  //
+  // SEKARANG: pecah juga per KOMA dan per KATA KERJA TRANSAKSI
+  // ("aku tf ke ...", "aku beli ...", "belanja ..."), lalu ambil tiap segmen
+  // yang punya nominal.
+
   // Buang baris pembuka yang hanya berisi kata jenis ("Pengeluaran:", "Pemasukan:")
-  const segmenAwal = teks
+  const barisMentah = teks
     .split(/\r?\n/)
     .map((x) => x.trim())
     .filter(Boolean)
     // Pisahkan juga bila ada beberapa item dalam satu baris ("a 5rb; b 3rb").
-    .flatMap((baris) => baris.split(/\s*(?:;|\blalu\b|\bterus\b|\bdan\b(?=\s*[A-Za-z]))\s*/i))
-    .map((x) => x.trim())
+    .flatMap((baris) => baris.split(/\s*(?:;|\blalu\b|\bterus\b|\bdan\b(?=\s*[A-Za-z]))\s*/i));
+
+  // Pecah lagi per KOMA dan KATA KERJA TRANSAKSI, karena kalimat panjang
+  // ("... 500 rb, aku tf ke ortu 600 rb, aku beli alat pijat 170 rb") tidak
+  // terpecah oleh pemisah di atas.
+  const segmenAwal = barisMentah
+    .flatMap((baris) =>
+      baris
+        // Koma sebagai pemisah klausa.
+        .split(/\s*,\s*/)
+        // Kata kerja transaksi yang memulai klausa baru.
+        .flatMap((bagian) =>
+          bagian.split(
+            /\s+(?=(?:aku|saya|gue|gw)\s+(?:tf|transfer|beli|bayar|bayarin|jajan|belanja|habis|abis|dapat|dapet|terima|kirim)\b)|\s+(?=(?:belanja|bayar|beli|tf|transfer|jajan|ongkos|biaya)\s)/i,
+          ),
+        )
+        .map((x) => x.trim())
+        .filter(Boolean),
+    )
+    // Buang kalimat pembuka tanpa nominal (mis. "Bores bantu aku ya.. untuk
+    // hitung pengeluaran aku selama bulan oktober.") — akan difilter di bawah.
+    .map((x) => x.replace(/^(?:jadi|jadi\s+aku|dan|terus|lalu|juga)\s+/i, '').trim())
     .filter(Boolean);
 
   const hasil: Array<{ teks: string; nominal: number }> = [];
@@ -615,7 +679,32 @@ export function pecahItemKeuangan(teks: string): Array<{ teks: string; nominal: 
     // Baris pembuka tanpa nominal (mis. "Pengeluaran:") -> dilewati.
     const n = parseNominal(seg);
     if (n && n > 0) {
-      hasil.push({ teks: seg, nominal: n });
+      // Bersihkan kalimat dari kata pengantar & kata kerja berlebih agar isi
+      // catatan rapi ("uang nya sudah aku pakai untuk kosan 500 rb" -> "kosan").
+      // PENTING: nominal diambil SEBELUM pembersihan (angka bertitik "2.550.000"
+      // akan rusak bila regex angka dijalankan lebih dulu).
+      const teksBersih = seg
+        // ── BUANG KALIMAT PEMBUKA (temuan 08 Okt 2026) ──
+        // "Bores bantu aku ya.. untuk hitung pengeluaran aku selama bulan oktober.
+        //  Jadi aku gajian tanggal 4 oktober sebesar 2.550.000"
+        // -> ambil dari kata kunci ITEM pertama ("gajian").
+        .replace(/^[\s\S]*?\b(?=gaji|gajian|tunjangan|bonus|thr|profit|jual|kosan|kos|tf|transfer|beli|belanja|bayar|kuota|token|jajan|ongkos|biaya|sewa|listrik|air|pulsa|obat|dokter|spp|utang|cicilan|parkir|bensin|makan|minum|rokok|susu)/i, ' ')
+        .replace(/\b(?:uang\s*nya|uangnya|uang|duit)\b[^.!?\n]{0,20}\b(?:sudah\s+)?(?:aku\s+|saya\s+|gue\s+)?(?:pakai|pake|gunakan)\b[^.!?\n]{0,12}\b(?:untuk|buat)\b/gi, ' ')
+        .replace(/\b(?:aku|saya|gue|gw)\s+(?:sudah\s+|udah\s+|telah\s+)?(?:tf|transfer|beli|bayar|bayarin|jajan|belanja|kirim|topup|top-up)\b/gi, ' ')
+        .replace(/\b(?:sebesar|senilai|seharga|sebanyak)\b/gi, ' ')
+        .replace(/\b(?:rp|rupiah)\b\.?/gi, ' ')
+        .replace(/\b(?:rb|ribu|jt|juta|k|rebu|perak)\b\.?/gi, ' ')
+        // Buang nominal UTUH: "2.550.000", "550.000", "500 rb", "60rb", "47 rb".
+        // (Versi lama /\b\d[\d.,]*\b/ memecah "2.550.000" jadi "2" -> sisa "550.000"
+        //  terbaca lagi sebagai item baru -> NGACO.)
+        .replace(/\b\d{1,3}(?:\.\d{3})+(?:,\d+)?\b/g, ' ')
+        .replace(/\b\d+(?:[.,]\d+)?\s*(?:rb|ribu|jt|juta|k|rebu|perak)\b/gi, ' ')
+        .replace(/\b\d+\b/g, ' ')
+        .replace(/^\s*(?:belanja|tf|transfer|bayar|beli|jajan)\b\s*/gi, ' ')
+        .replace(/[.]+$/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      hasil.push({ teks: teksBersih.length >= 2 ? teksBersih : seg.trim(), nominal: n });
     }
   }
   return hasil;
@@ -1989,12 +2078,27 @@ async function simpanDariNiat(
       if (ids.length === 0) {
         return { ok: false, pesan: '⚠️ Gagal menyimpan ke database. Coba lagi nanti ya.' };
       }
-      // Laporkan JUJUR: sebutkan berapa item tersimpan & totalnya.
-      const total = daftarItems.reduce((a, b) => a + (Number(b.amount) || 0), 0);
+      // Laporkan JUJUR: PISAHKAN pemasukan & pengeluaran (temuan nyata 08 Okt 2026).
+      // Laporan lama hanya menyebut "total" gabungan -> user tidak tahu mana
+      // pemasukan mana pengeluaran (padahal bisa beda kind per item).
+      const totalMasuk = daftarItems
+        .filter((it) => String(it.kind) === 'in')
+        .reduce((a, b) => a + (Number(b.amount) || 0), 0);
+      const totalKeluar = daftarItems
+        .filter((it) => String(it.kind) !== 'in')
+        .reduce((a, b) => a + (Number(b.amount) || 0), 0);
+      const jmlMasuk = daftarItems.filter((it) => String(it.kind) === 'in').length;
+      const jmlKeluar = daftarItems.filter((it) => String(it.kind) !== 'in').length;
+      const bagian: string[] = [];
+      if (jmlMasuk) bagian.push(`Pemasukan Rp${totalMasuk.toLocaleString('id-ID')} (${jmlMasuk} item)`);
+      if (jmlKeluar) bagian.push(`Pengeluaran Rp${totalKeluar.toLocaleString('id-ID')} (${jmlKeluar} item)`);
+      const selisih = totalMasuk - totalKeluar;
       return {
         ok: true,
-        pesan: `✅ Tercatat ${ids.length} item (total Rp${total.toLocaleString('id-ID')}): ` +
-          daftarItems.map((it) => `Rp${Number(it.amount).toLocaleString('id-ID')}`).join(' + '),
+        pesan:
+          `✅ Tercatat ${ids.length} item.\n` +
+          bagian.join('\n') +
+          (jmlMasuk && jmlKeluar ? `\nSelisih: Rp${selisih.toLocaleString('id-ID')}` : ''),
       };
     }
 
@@ -2451,6 +2555,40 @@ export async function tanganiPencatatan(
     }
   }
 
+  // ── A0z. HAPUS SEMUA TUGAS / SEMUA INGATAN (temuan nyata 08 Okt 2026) ──
+  // LAPORAN: user minta "hapus semua tugas kemarin, anggap selesai tugasnya" ->
+  // bot MENGAKUI sudah menghapus ("*Belum ada tugas*") padahal TIDAK.
+  //
+  // ATURAN: kenali permintaan hapus SEMUA (bukan per-nomor) lalu benar-benar
+  // hapus dari database, dan laporkan JUJUR berapa yang terhapus.
+  {
+    const mintaHapusSemuaTugas =
+      /\b(?:hapus|buang|hilangkan|bersihkan|clear|reset)\b[^.!?\n]{0,25}\b(?:semua|seluruh|smua)\b[^.!?\n]{0,15}\b(?:tugas|todo|to-do|task|kerjaan|daftar\s+kerjaan)\b/i.test(low) ||
+      /\b(?:semua|seluruh)\b[^.!?\n]{0,15}\b(?:tugas|todo|task)\b[^.!?\n]{0,20}\b(?:hapus|dihapus|selesai|beres|clear|anggap)\b/i.test(low);
+    if (mintaHapusSemuaTugas) {
+      try {
+        const { db } = await import('./db.js');
+        const c = db();
+        if (c) {
+          const { data: sblm } = await c.from('todos').select('id').eq('chat_id', chatId);
+          const n = (sblm ?? []).length;
+          if (n > 0) {
+            await c.from('todos').delete().eq('chat_id', chatId);
+          }
+          return {
+            ditangani: true,
+            reply: n > 0
+              ? `🗑️ Semua tugas dihapus (${n} tugas). Daftar tugas sekarang kosong.`
+              : 'Daftar tugas kamu memang sudah kosong — belum ada yang perlu dihapus.',
+            jalur: 'hapus-semua-tugas',
+          };
+        }
+      } catch (e) {
+        console.warn('[notes] gagal hapus semua tugas:', e);
+      }
+    }
+  }
+
   // ── A1. UBAH / UNDUR / BATALKAN PENGINGAT ──
   //
   // MASALAH (temuan pemilik produk 05 Okt 2026): "jika user bilang waktu rapat
@@ -2849,7 +2987,13 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
     /\b(?:tadi|kemarin|barusan|baru\s*aja|td|udah|sudah|akhirnya|katanya)\b/i;
   const laporanSaldo = /\b(?:duit|uang|saldo|sisa|tinggal|tersisa|masuk\s+rekening|ke\s+rekening)\b[^.!?\n]{0,15}\d/i;
   // "aku dapet bonus 2 juta, mau beliin ibu" -> niat/narasi, bukan permintaan catat.
-  const niatNaratif = /\b(?:mau|pengen|pingin|ingin)\s+(?:beliin|belikan|beli|kasih|kasi|traktir|bagi)\b/i;
+  const niatNaratif = /\b(?:mau|pengen|pingin|ingin|kepingin)\b[^.!?\n]{0,25}\b(?:beliin|belikan|beli|kasih|kasi|traktir|bagi)\b/i;
+  // ── RENCANA BELI TANPA NOMINAL JELAS (temuan nyata 08 Okt 2026) ──
+  // LAPORAN: "Aku pengen juga beli tas bentuk boneka lagi? Sebelumnya aku udh
+  // punya 1" -> tercatat "Pengeluaran Rp1" (NGACO!). Angka "1" = JUMLAH BARANG.
+  // ATURAN: kata RENCANA + beli, TANPA nominal JELAS -> BUKAN transaksi.
+  const nominalJelas = /\d+\s*(?:rb|ribu|jt|juta|k\b|rebu)\b|\b\d{1,3}(?:\.\d{3})+\b|\brp\s*\d/i.test(s);
+  if (niatNaratif.test(s) && !nominalJelas) return null;
   // Penanda CERITA MASA LALU -> curhat. KECUALI bila user meminta catat eksplisit
   // ("tolong catat tadi aku beli ...") atau transaksi jelas dengan nominal.
   const mintaCatatImplisit = /\b(?:tolong|please|pls|mohon|bantu|bantuin|catat|dicatat|tercatat|simpan|masukin|input|note)\b/i.test(s);
@@ -2913,14 +3057,68 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   // Kata "pengeluaran/pemasukan/pengeluaranku/pemasukanku" + nominal -> pasti keuangan.
   const kataPengeluaran = /\b(?:pengeluaran|pemasukan|pengeluaranku|pemasukanku|belanjaku|jajananku|uang\s*keluar|uang\s*masuk|total\s*keluar|total\s*masuk)\b/i.test(s);
   if (nominal && (konteksUang || mintaCatat || satuanUangKuat || kataPengeluaran)) {
-    // ── DIPERLUAS (06 Okt 2026) ──
-    // Temuan: "bonus 2 juta" dicatat sebagai PENGELUARAN (salah). Daftar kata
-    // pemasukan di jalur implisit ini TIDAK sinkron dengan blok 4a — "bonus",
-    // "gajian", "thr", "cair", "komisi" tidak ada. Sekarang disamakan.
+    // ── PISAHKAN PEMASUKAN & PENGELUARAN PER ITEM (temuan nyata 08 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: "liat logika nya jelek banget, malah bentrok dengan
+    // fitur pemasukan dan pengeluaran jadi rusak".
+    //
+    // KASUS NYATA: satu pesan memuat BANYAK nominal campuran:
+    //   "aku gajian 2.550.000, tunjangan makan 550.000, profit jualan 1.000.000,
+    //    uangnya sudah aku pakai untuk kosan 500 rb, aku tf ke ortu 600 rb, ..."
+    // Versi lama: hanya menghasilkan SATU item dengan SATU kind -> salah total
+    // (mis. "Pemasukan Rp500.000" padahal itu pengeluaran kosan!).
+    //
+    // SEKARANG: pecah per item, tentukan kind MASING-MASING item, kembalikan
+    // daftar `items` dengan kind berbeda-beda. Bila hanya satu item, perilaku
+    // lama tetap dipertahankan (kind dari keseluruhan kalimat).
+    const daftarItem = pecahItemKeuangan(asli);
+    // ── URUTAN PENTING (temuan 08 Okt 2026) ──
+    // "tunjangan makan" -> kata "makan" (pengeluaran) menang, padahal "tunjangan"
+    // adalah PEMASUKAN. Jadi kata PEMASUKAN harus diperiksa LEBIH DULU.
+    const adaPemasukanKata = /\b(?:masuk|masukan|dapat|dapet|terima|menerima|gaji|gajian|gajinya|gajiannya|bonus|bonusan|thr|pendapatan|pemasukan|income|honor|fee|saldo|sisa|tersisa|simpanan|tabungan|cair|komisi|cashback|refund|warisan|hadiah|untung|laba|profit|jual|tunjangan|tunjang|upah|uang\s+makan|uang\s+transport|beasiswa|kiriman|transferan\s+masuk)\b/i;
+    // Kata PENGELUARAN KUAT: hanya untuk item yang JELAS keluar.
+    const adaPengeluaranKata = /\b(?:keluar|beli|bayar|bayarin|habis|abis|belanja|jajan|ongkos|biaya|tagihan|sewa|kos|kosan|kontrakan|utang|hutang|cicilan|parkir|bensin|pulsa|kuota|token|topup|top-up|tf|transfer|kirim)\b/i;
+    const tentukanKindItem = (teksItem: string): ExpenseKind => {
+      const t = teksItem.toLowerCase();
+      // Pemasukan diperiksa LEBIH DULU (agar "tunjangan makan" = pemasukan).
+      if (adaPemasukanKata.test(t)) return 'in';
+      if (adaPengeluaranKata.test(t)) return 'out';
+      return 'out'; // default: pengeluaran
+    };
+
+    if (daftarItem.length > 1) {
+      const items = daftarItem.map((it) => ({
+        amount: it.nominal,
+        kind: tentukanKindItem(it.teks),
+        category: tebakKategori(it.teks),
+        note: it.teks,
+      }));
+      const totalMasuk = items.filter((x) => x.kind === 'in').reduce((a, b) => a + b.amount, 0);
+      const totalKeluar = items.filter((x) => x.kind === 'out').reduce((a, b) => a + b.amount, 0);
+      const jmlMasuk = items.filter((x) => x.kind === 'in').length;
+      const jmlKeluar = items.filter((x) => x.kind === 'out').length;
+      return {
+        kind: 'expense',
+        yakin: 0.7,
+        data: {
+          amount: items[0].amount,
+          kind: items[0].kind,
+          category: items[0].category,
+          note: asli,
+          items,
+        },
+        ringkas:
+          `${items.length} item: ` +
+          [
+            jmlMasuk ? `Pemasukan Rp${totalMasuk.toLocaleString('id-ID')} (${jmlMasuk} item)` : '',
+            jmlKeluar ? `Pengeluaran Rp${totalKeluar.toLocaleString('id-ID')} (${jmlKeluar} item)` : '',
+          ]
+            .filter(Boolean)
+            .join(' + '),
+      };
+    }
+
     const kind: ExpenseKind =
-      /\b(?:masuk|masukan|dapat|dapet|terima|menerima|gaji|gajian|gajinya|gajiannya|bonus|bonusan|thr|pendapatan|pemasukan|income|honor|fee|saldo|sisa|tersisa|simpanan|tabungan|cair|komisi|cashback|refund|warisan|hadiah|untung|laba|profit)\b/i.test(s)
-        ? 'in'
-        : 'out';
+      adaPemasukanKata.test(s) ? 'in' : 'out';
     const kategori = tebakKategori(s);
     return {
       kind: 'expense', yakin: 0.7,
