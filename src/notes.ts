@@ -1087,8 +1087,13 @@ const KATA_PERINTAH_UTAMA =
     /\b(?:pendapatan|pemasukan|penghasilan|income|gaji|gajian|gajinya|gajiannya|tunjangan|bonus|bonusan|thr|honor|fee|profit|laba|untung|komisi|cashback|refund|warisan|hadiah|dapat|dapet|diterima|menerima|masukan)\b/i.test(s);
   const adaKataKeluarKuat =
     /\b(?:pengeluaran|keluar|beli|bayar|bayarin|habis|abis|belanja|belanjaan|jajan|ongkos|biaya|tagihan|sewa|kos|kosan|kontrakan|utang|hutang|cicilan|parkir|bensin|pulsa|kuota|token|topup|top-up|transfer|kirim)\b/i.test(s);
+  // Header JENIS eksplisit di AWAL pesan ("Pendapatan:", "Pemasukan", "Pengeluaran:")
+  // menandakan user MENDAFTARKAN transaksi — ini bukan sekadar info.
+  // Temuan 08 Okt 2026: "Pendapatan\nGaji 2.550.000\nTunjangan 550.000" tidak
+  // tercatat padahal "Pengeluaran:\nKosan 500.000" tercatat (tidak konsisten).
+  const adaHeaderJenis = /^\s*\/?(?:pendapatan|pemasukan|penghasilan|pengeluaran|income|expense)\b\s*[:\-]?\s*$/im.test(asli);
   const hanyaPemasukanDiSini = adaKataMasukKuat && !adaKataKeluarKuat;
-  if (hanyaPemasukanDiSini && !adaPermintaanCatatEksplisit) {
+  if (hanyaPemasukanDiSini && !adaPermintaanCatatEksplisit && !adaHeaderJenis) {
     // Informasi pendapatan tanpa permintaan catat -> JANGAN dicatat.
     return null;
   }
@@ -1608,7 +1613,7 @@ export async function simpanUang(
   kind: ExpenseKind,
   category: string,
   note?: string,
-  opts?: { actor?: string; platform?: string; occurred_at?: string },
+  opts?: { actor?: string; platform?: string; occurred_at?: string; info?: { baru?: boolean } },
 ): Promise<number | null> {
   const c = db();
   if (!c) return null;
@@ -1643,6 +1648,8 @@ export async function simpanUang(
       console.warn(
         `[notes] Lewati simpan keuangan duplikat: Rp${amount} ${kind} "${(note ?? '').slice(0, 40)}" (sudah #${sudahAda.id})`,
       );
+      // Tandai bahwa baris ini TIDAK baru (agar pemanggil bisa lapor JUJUR).
+      if (opts?.info) opts.info.baru = false;
       return sudahAda.id; // kembalikan id yang sudah ada (bukan id baru)
     }
 
@@ -1657,6 +1664,7 @@ export async function simpanUang(
       platform: opts?.platform ?? 'whatsapp',
     }).select('id').single();
     if (error) return null;
+    if (opts?.info) opts.info.baru = true;
     return (data as { id: number }).id;
   } catch {
     return null;
@@ -2120,16 +2128,32 @@ async function simpanDariNiat(
 
     if (daftarItems) {
       const ids: number[] = [];
+      let jmlBaru = 0;   // berapa yang BENAR-BENAR baru (bukan duplikat)
       for (const it of daftarItems) {
+        const info: { baru?: boolean } = {};
         const id = await simpanUang(
           chatId,
           Number(it.amount) || 0,
           (it.kind as ExpenseKind) || 'out',
           String(it.category || 'lainnya'),
           String(it.note || ''),
-          { actor: opts.actor, platform: opts.platform },
+          { actor: opts.actor, platform: opts.platform, info },
         );
         if (id) ids.push(id);
+        if (info.baru) jmlBaru++;
+      }
+
+      // ── LAPOR JUJUR (temuan 08 Okt 2026) ──
+      // BUG: saat semua item ternyata DUPLIKAT (sudah tersimpan sebelumnya),
+      // bot tetap berkata "✅ Tercatat 7 item" — padahal tidak ada yang baru
+      // tersimpan. Ini membuat user mengira datanya bertambah (padahal tidak).
+      if (jmlBaru === 0) {
+        return {
+          ok: true,
+          pesan:
+            'Data itu sudah pernah kecatat sebelumnya, jadi aku tidak menambah lagi ya ' +
+            '(biar tidak dobel). Mau aku ubah atau hapus yang lama?',
+        };
       }
       if (ids.length === 0) {
         return { ok: false, pesan: '⚠️ Gagal menyimpan ke database. Coba lagi nanti ya.' };
@@ -2158,17 +2182,23 @@ async function simpanDariNiat(
       };
     }
 
+    const infoSingle: { baru?: boolean } = {};
     const id = await simpanUang(
       chatId,
       Number(d.amount) || 0,
       (d.kind as ExpenseKind) || 'out',
       String(d.category || 'lainnya'),
       String(d.note || ''),
-      { actor: opts.actor, platform: opts.platform },
+      { actor: opts.actor, platform: opts.platform, info: infoSingle },
     );
-    return id
-      ? { ok: true, pesan: `✅ Tercatat (#${id}), ${niat.ringkas}` }
-      : { ok: false, pesan: '⚠️ Gagal menyimpan ke database. Coba lagi nanti ya.' };
+    if (!id) return { ok: false, pesan: '⚠️ Gagal menyimpan ke database. Coba lagi nanti ya.' };
+    if (infoSingle.baru === false) {
+      return {
+        ok: true,
+        pesan: `Data itu sudah pernah kecatat sebelumnya (#${id}), jadi aku tidak menambah lagi ya (biar tidak dobel).`,
+      };
+    }
+    return { ok: true, pesan: `✅ Tercatat (#${id}), ${niat.ringkas}` };
   }
   if (niat.kind === 'todo') {
     const id = await simpanTugas(chatId, String(d.task || ''), {
@@ -3157,8 +3187,10 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   // Kata PEMASUKAN yang jelas (jangan masukkan "jual" — "jualan" ambigu).
   const adaKataMasukJelas =
     /\b(?:pendapatan|pemasukan|penghasilan|income|gaji|gajian|gajinya|gajiannya|tunjangan|bonus|thr|honor|fee|profit|laba|untung|komisi|cashback|refund|warisan|hadiah|dapat|dapet|diterima|menerima|masukan)\b/i.test(s);
+  // Header JENIS eksplisit ("Pendapatan:", "Pemasukan") = user MENDAFTARKAN, bukan info.
+  const adaHeaderJenis2 = /^\s*\/?(?:pendapatan|pemasukan|penghasilan|pengeluaran|income|expense)\b\s*[:\-]?\s*$/im.test(asli);
   const hanyaPemasukan = adaKataMasukJelas && !adaKataKeluar;
-  if (hanyaPemasukan && !adaPermintaanCatatEksplisit) {
+  if (hanyaPemasukan && !adaPermintaanCatatEksplisit && !adaHeaderJenis2) {
     // Informasi pendapatan tanpa permintaan catat -> JANGAN dicatat.
     // Kembalikan null agar AI yang menjawab (dan user bisa minta catat nanti).
     return null;
