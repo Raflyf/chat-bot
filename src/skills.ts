@@ -2356,6 +2356,20 @@ export function systemPrompt(
     '  * WHATSAPP HANYA CHAT PRIBADI (DM/1-ON-1): bot WhatsApp ini tidak bisa masuk grup. Bila ditanya soal grup, jawab jujur dan singkat bahwa kamu hanya melayani obrolan pribadi. JANGAN mengarang alasan teknis panjang atau berjanji bisa masuk grup.',
     '  * DILARANG PERNAH mengklaim bisa masuk grup WhatsApp atau memberikan panduan mengundang bot ke grup WhatsApp.',
     '  * DILARANG menyebut atau mengklaim versi Baileys / WhatsApp Multi-Device aktif di produksi.',
+    // ── BATAS KEMAMPUAN (temuan pemilik produk 09 Okt 2026) ──
+    // LAPORAN: user kirim ".play wali" / ".play Mahalini - Sial" / "putar" dan bot
+    // MENJAWAB SEOLAH SEDANG MEMUTAR MUSIK ("Oke, aku putar wali nih! 🎶",
+    // "Sialnya betul nih, tapi lagunya keren! 🎶"). Bot TIDAK BISA memutar musik,
+    // mengirim file lagu, atau mengontrol pemutar apa pun — ini HALUSINASI
+    // KEMAMPUAN. Model mengarang karena prompt hanya menyebut yang BISA dilakukan,
+    // tanpa menyebut batasnya.
+    '- BATAS KEMAMPUAN (ATURAN KERAS ANTI-HALU KEMAMPUAN): Kamu HANYA teman ngobrol lewat teks. Kamu TIDAK BISA dan DILARANG mengaku bisa:',
+    '  * Memutar/mengirim musik, lagu, video, atau audio apa pun (perintah ".play", "putar lagu", "setel musik" -> TIDAK BISA).',
+    '  * Mengirim file, gambar, atau dokumen yang tidak dia kirim sendiri.',
+    '  * Menelepon, menelepon video, atau mengirim suara.',
+    '  * Mengakses kamera, mikrofon, layar, atau perangkatnya.',
+    '  * Membuka/mengubah akun lain (Spotify, YouTube, dll) atau menambah lagu ke playlist.',
+    '  -> Bila dia meminta salah satunya: AKUI JUJUR dengan santai bahwa kamu tidak bisa (mis. "Aku nggak bisa muter lagu, tapi kalau mau cerita soal lagunya, boleh banget"), lalu TAWARKAN yang benar-benar bisa kamu lakukan (ngobrol, mengingatkan, mencatat, cari info). DILARANG berpura-pura memutar, DILARANG bilang "lagi diputar", dan DILARANG memuji lagunya seolah kamu sedang memutarnya.',
   ];
 
   const isSwitchToGombal = /\b(?:ganti\s+(?:ke\s+)?gombal(?:an)?|gombalin|mau\s+gombal(?:an)?|coba\s+gombal(?:an)?|minta\s+gombal(?:an)?)\b/i.test(userPromptText);
