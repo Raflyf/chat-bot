@@ -1612,6 +1612,11 @@ function renderLiveUpstreamTable(data) {
             const callsRemaining = Math.max(0, keyCap - callsUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((callsUsed / keyCap) * 100)) : 0;
             const tokensUsed = k.tokensUsed || 0;
+            // PERBAIKAN 09 Okt 2026: pakai metrik BINDING (token/neuron), bukan
+            // request saja — agar bar & angka sinkron dengan baris token di bawah.
+            const bindingPct = typeof k.bindingPercent === "number"
+              ? k.bindingPercent
+              : Math.max(pct, typeof k.tokenPercent === "number" ? k.tokenPercent : 0);
             grandTotalUnboundedTokenUsed += tokensUsed;
 
             rows.push(`
@@ -1627,10 +1632,10 @@ function renderLiveUpstreamTable(data) {
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
                     <span style="font-weight: 700; color: #84cc16;">${callsUsed.toLocaleString("id-ID")} Panggilan</span>
-                    <span style="color: var(--text-dim);">${pct}%</span>
+                    <span style="color: var(--text-dim);">${bindingPct}%</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
                   </div>
                   <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.000 Free Credits/key'}</div>
                   ${tokensUsed > 0 ? `<div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">${tokensUsed.toLocaleString("id-ID")} token terpakai</div>` : ''}
@@ -1650,6 +1655,8 @@ function renderLiveUpstreamTable(data) {
             const keyUsed = k.tokensUsed || 0;
             const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);
             const pct = k.tokenPercent || 0;
+            // PERBAIKAN 09 Okt 2026: metrik BINDING agar bar & angka sinkron.
+            const bindingPct = typeof k.bindingPercent === "number" ? k.bindingPercent : pct;
 
             grandTotalTokenCap += keyCap;
             grandTotalTokenUsed += keyUsed;
@@ -1668,10 +1675,10 @@ function renderLiveUpstreamTable(data) {
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
                     <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token</span>
-                    <span style="color: var(--text-dim);">${pct}%</span>
+                    <span style="color: var(--text-dim);">${bindingPct}%</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
                   </div>
                   <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : 'Saldo 100M Token/key'}</div>
                 </td>
@@ -1713,10 +1720,10 @@ function renderLiveUpstreamTable(data) {
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
                     <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token</span>
-                    <span style="color: var(--text-dim);">${pct}%</span>
+                    <span style="color: var(--text-dim);">${bindingPct}%</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
                   </div>
                   <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} &bull; Global (Bot + IDE)</div>
                 </td>
@@ -1855,6 +1862,10 @@ function renderLiveUpstreamTable(data) {
             // "51% OPTIMAL" padahal kuota neuron SUDAH HABIS (semua request 429).
             // Sekarang status memakai metrik BINDING (mana yang lebih dulu habis),
             // memakai field bindingPercent/bindingMetric dari backend.
+            // ── PERBAIKAN 09 Okt 2026 ("yg bawah masih belum singkron") ──
+            // Bar & angka persen memakai `bindingPct` (metrik yang BENAR-BENAR
+            // mengikat), BUKAN `pct` (request). Contoh nyata: request 9% tapi
+            // neuron 10.000/10.000 (100%) — bar 9% menyesatkan.
             const tokenPctCf = typeof k.tokenPercent === "number" ? k.tokenPercent : 0;
             const bindingPct = typeof k.bindingPercent === "number"
               ? k.bindingPercent
@@ -1876,10 +1887,10 @@ function renderLiveUpstreamTable(data) {
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
                     <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Req</span>
-                    <span style="color: var(--text-dim);">${pct}%</span>
+                    <span style="color: var(--text-dim);">${bindingPct}%</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, pct)}%"></div>
+                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
                   </div>
                   <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${k.officialLimitLabel ? escapeHtml(k.officialLimitLabel) : `${keyCap.toLocaleString("id-ID")} RPD`} &bull; ${k.limitIsLive ? 'Live Synced' : 'Bot Monitored'}</div>
                 </td>

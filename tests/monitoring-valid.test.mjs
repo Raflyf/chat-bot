@@ -147,3 +147,22 @@ test('render: semua pool dirender (uji data nyata)', () => {
   // Uji nyata: 8 pool dari API -> 8 card. Bukti bahwa loop tidak berhenti.
   assert.ok(!/bindingIsToken \? tokenPct/.test(DASH), 'tidak boleh ada pemakaian tokenPct di luar scope');
 });
+
+test('sinkron: TABEL BAWAH juga pakai metrik binding (bukan request saja)', () => {
+  // LAPORAN PEMILIK PRODUK: "card yg atas sudah benar bar nya, yg bawah masih
+  // belum singkron". Card atas (renderPoolMatrix) sudah benar, tetapi TABEL
+  // bawah (renderLiveUpstreamTable) masih memakai `pct` (REQUEST) sehingga
+  // Cloudflare tampil 9% padahal neuron 10.000/10.000 (100%).
+  const m = DASH.match(/function renderLiveUpstreamTable\(data\) \{[\s\S]*?\n    \}/);
+  assert.ok(m, 'renderLiveUpstreamTable harus ada');
+  const fn = m[0];
+  // Bar di tabel TIDAK boleh memakai `pct` mentah.
+  const barPct = (fn.match(/progress-bar-fill \$\{pct >= 100/g) || []).length;
+  assert.equal(barPct, 0, 'bar tabel jangan pakai `pct` mentah — pakai bindingPct');
+  // Provider yang punya metrik token harus memakai bindingPct.
+  for (const kind of ['nvidia', 'dahl', 'xkiro', 'cloudflare']) {
+    assert.ok(fn.includes(`p.kind === "${kind}"`), `${kind} harus ada di tabel`);
+  }
+  assert.ok(/const bindingPct = typeof k\.bindingPercent === "number"/.test(fn),
+    'tabel harus menghitung bindingPct dari k.bindingPercent');
+});
