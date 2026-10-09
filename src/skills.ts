@@ -1,4 +1,5 @@
 import { config } from './env.js';
+import { buangAjakanGameLama } from './games/index.js';
 import { chat, type ChatMsg, type ContentPart } from './providers.js';
 import { saveCorrection, type ChatContext } from './memory.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
@@ -633,6 +634,16 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // terbuang (mis. "Hai, ada yang bisa dibantu?" TIDAK boleh terpotong).
   const tawaranLanjutan = [
     /\s*\b(?:mau|lanjut|lanjutkan|gimana|mending)\b[^.!?\n]{0,40}\b(?:tebak(?:\s*-?\s*tebakan)?|tebakan|gombal(?:an)?|pantun|main\s+lagi|kuis|hitung-hitungan)\b[^.!?\n]*\??/gi,
+    // ── DIPERLUAS (temuan pemilik produk 09 Okt 2026) ──
+    // LAPORAN: user keluar topik saat main UNO, tetapi bot menulis
+    // "...Mau lanjut main UNO atau ganti topik?". Dulu pola ini HANYA mencakup
+    // tebak-tebakan/gombalan/pantun/kuis — permainan PAPAN & KARTU (uno, catur,
+    // halma, remi, capsa, gaple, dll) lolos.
+    // ATURAN: "kalo user sudah keluar dari topik game maka tidak usah di singgung lagi".
+    /\s*\b(?:mau|lanjut|lanjutkan|gimana|mending|balik|kembali|ayo|yuk)\b[^.!?\n]{0,40}\b(?:main|permainan|game|uno|catur|halma|remi|capsa|cangkulan|gaple|qiuqiu|tictactoe|hangman|monopoli|dadu|tebak\s*angka|suit|batu\s*gunting)\b[^.!?\n]*\??/gi,
+    // "Mau ganti topik atau main lagi?" / "atau ganti topik?"
+    /\s*\b(?:mau\s+)?ganti\s+topik(?:\s+atau\s+[^.!?\n]{0,30})?\s*\??/gi,
+    /\s*\b(?:mau\s+)?main\s+lagi\s*\??/gi,
     /\s*\b(?:kamu|lu|kalian)\s+pilih\b[^.!?\n]*\??/gi,
     /\s*\bmau\s+ke\s+mana\b[^.!?\n]*\??/gi,
     /\s*\bmau\s+ngobrol(?:in)?\s+(?:apa|soal\s+apa)\b[^.!?\n]*\??/gi,
@@ -1542,7 +1553,12 @@ function stripProtocolLeak(text: string): string {
   out = out.replace(/\b(?:response|answer|reply|output|final|assistant|completion)(?=[A-Z][a-z])/g, '');
   out = out.replace(/^\s*(?:response|answer|reply|output|completion|assistant)\s*[:=]\s*/i, '');
   out = out.replace(/([.!?\n]\s*)(?:response|answer|reply|output|completion|assistant)\s*[:=]\s*/gi, '$1');
-  return out.replace(/[ \t]{2,}/g, ' ').trim();
+  // ── PENEGAKAN DI KODE: buang ajakan menarik user kembali ke permainan/topik lama ──
+  // (temuan pemilik produk 09 Okt 2026: "kalo user sudah keluar dari topik game
+  // maka tidak usah di singgung lagi"). Aturan kritis ditegakkan di kode karena
+  // kepatuhan model tidak bisa diandalkan.
+  const hasilAkhir = buangAjakanGameLama(out.replace(/[ \t]{2,}/g, ' ').trim());
+  return hasilAkhir;
 }
 
 /**
@@ -2356,6 +2372,16 @@ export function systemPrompt(
     '  * WHATSAPP HANYA CHAT PRIBADI (DM/1-ON-1): bot WhatsApp ini tidak bisa masuk grup. Bila ditanya soal grup, jawab jujur dan singkat bahwa kamu hanya melayani obrolan pribadi. JANGAN mengarang alasan teknis panjang atau berjanji bisa masuk grup.',
     '  * DILARANG PERNAH mengklaim bisa masuk grup WhatsApp atau memberikan panduan mengundang bot ke grup WhatsApp.',
     '  * DILARANG menyebut atau mengklaim versi Baileys / WhatsApp Multi-Device aktif di produksi.',
+    // ── ATURAN UNIVERSAL: JANGAN TARIK BALIK KE GAME (temuan pemilik produk 09 Okt 2026) ──
+    // LAPORAN: user sedang main UNO lalu mengirim gambar + "Jadiin stiker"
+    // (minta fitur lain), tetapi bot MENJAWAB "...Mau lanjut main UNO atau ganti
+    // topik?" — memaksa user kembali ke game.
+    // ATURAN PEMILIK PRODUK: "kecuali user minta lanjut, kalo user sudah keluar
+    // dari topik game maka tidak usah di singgung lagi".
+    '- JANGAN MENARIK USER KEMBALI KE TOPIK LAMA (ATURAN KERAS, SEMUA PERMAINAN & TOPIK):',
+    '  * Bila user sudah BERPINDAH topik (minta hal lain, kirim gambar, tanya sesuatu yang tidak berhubungan), LANGSUNG layani permintaan barunya. DILARANG menyebut topik/permainan lama di balasan itu.',
+    '  * DILARANG KERAS menulis ajakan kembali seperti "Mau lanjut main UNO?", "Lanjut main?", "Mau ganti topik atau main lagi?", "Balik ke permainan?", "Mau main lagi?" — KECUALI user sendiri yang memintanya.',
+    '  * Topik/permainan lama HANYA boleh disinggung bila user bertanya/memintanya secara eksplisit.',
     // ── BATAS KEMAMPUAN (temuan pemilik produk 09 Okt 2026) ──
     // LAPORAN: user kirim ".play wali" / ".play Mahalini - Sial" / "putar" dan bot
     // MENJAWAB SEOLAH SEDANG MEMUTAR MUSIK ("Oke, aku putar wali nih! 🎶",

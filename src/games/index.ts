@@ -176,6 +176,72 @@ export function daftarGameTeks(): string {
  * Tangani permintaan bermain. Mengembalikan `ditangani: false` bila teks ini
  * bukan soal permainan (biar diteruskan ke modul lain / AI).
  */
+/**
+ * Apakah teks ini TERLIHAT seperti langkah permainan? (WHITELIST)
+ *
+ * KENAPA WHITELIST, BUKAN BLACKLIST (temuan pemilik produk 09 Okt 2026):
+ *   LAPORAN: user sedang main UNO lalu mengirim "Jadiin stiker" (minta fitur lain)
+ *   tetapi bot MENJAWAB "Nggak ada kartu itu di tanganmu..." — pesan itu dicegat
+ *   mesin game hanya karena TIDAK cocok daftar "bukan langkah" (blacklist).
+ *   Blacklist selalu bocor: apa pun yang tidak terdaftar dianggap langkah game.
+ *
+ *   SEKARANG: pesan hanya diproses sebagai langkah permainan bila BENTUKNYA
+ *   memang khas langkah game (kartu, koordinat, angka, kata kunci permainan).
+ *   Semua pesan lain otomatis mengakhiri permainan dan diteruskan ke AI.
+ *
+ * @param kind jenis permainan aktif
+ * @param teks pesan user (sudah lowercase)
+ */
+function terlihatLangkahGame(kind: string, teks: string): boolean {
+  const t = teks.trim();
+  if (!t) return false;
+
+  // Kata kunci langkah yang berlaku untuk SEMUA permainan.
+  const kataUmum = /^(?:tarik|ambil|draw|lewat|pass|skip|banting|susun|buang|selesai|buka|lempar|lihat|papan|bantu|nyerah|menyerah|undo)\b/i;
+  if (kataUmum.test(t)) return true;
+
+  // Nama warna/angka (UNO, Remi, Cangkulan) — mis. "merah 5", "kuning skip".
+  const warnaKartu = /\b(?:merah|kuning|hijau|biru|red|yellow|green|blue)\b/i;
+  const nilaiKartu = /\b(?:skip|balik|reverse|wild|liar|tarik\s*dua|\+2|\+4|[0-9]|satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|kosong)\b/i;
+  if (warnaKartu.test(t) || (nilaiKartu.test(t) && t.split(/\s+/).length <= 3)) return true;
+
+  switch (kind) {
+    case 'catur':
+    case 'halma':
+      // Koordinat papan: "e2 e4", "d7 d6".
+      return /^[a-h][1-8](?:\s+[a-h][1-8])?$/i.test(t) || /^[a-h][1-8]\s*[-x]\s*[a-h][1-8]$/i.test(t);
+    case 'tictactoe':
+      return /^[1-9]$/.test(t) || /^(?:atas|tengah|bawah|kiri|kanan|tengah)\b/i.test(t);
+    case 'tebakangka':
+      return /^\d{1,3}$/.test(t);
+    case 'kuis':
+      return /^[1-4]$/.test(t) || /^[a-d]$/i.test(t);
+    case 'hangman':
+      // Satu huruf ATAU satu kata tebakan (huruf saja).
+      return /^[a-z]$/i.test(t) || /^[a-z]{2,20}$/i.test(t);
+    case 'gaple':
+    case 'qiuqiu':
+      // Pasangan angka domino: "3 5".
+      return /^\d{1,2}\s*[-|\s]\s*\d{1,2}$/.test(t) || /^\d{1,2}$/.test(t);
+    case 'dadu':
+      return /\b(?:lempar|kocok|gulir|roll)\b/i.test(t);
+    case 'batu':
+      return /^(?:batu|gunting|kertas|rock|paper|scissors)$/i.test(t);
+    case 'suitjawa':
+      return /^(?:gajah|orang|semut)$/i.test(t);
+    case 'monopoli':
+      return /\b(?:lempar|beli|sewa|lewat|bangun|kocok|dadu)\b/i.test(t);
+    case 'uno':
+    case 'capsa':
+    case 'remi':
+    case 'cangkulan':
+      // Kartu: warna+angka sudah ditangani di atas. Nama kartu spesifik:
+      return /\b(?:kartu|as|king|queen|jack|joker|sekop|hati|keriting|wajik)\b/i.test(t);
+    default:
+      return false;
+  }
+}
+
 export async function tanganiGame(
   teks: string,
   chatId: string,
@@ -192,25 +258,20 @@ export async function tanganiGame(
   // 2. Ada permainan AKTIF? -> proses langkahnya lebih dulu
   const aktif = await ambilGame(chatId);
   if (aktif) {
-    // ── BUG YANG DIPERBAIKI (05 Okt 2026) ──
-    // Permainan yang MENGGANTUNG menelan SEMUA pesan berikutnya: user menyapa
-    // "halo apa kabar" tetapi dijawab "Nggak ada kartu itu di tanganmu" karena
-    // sistem masih menganggapnya langkah UNO. Ini membingungkan.
+    // ── WHITELIST, BUKAN BLACKLIST (perbaikan 09 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: user sedang main UNO lalu mengirim "Jadiin stiker"
+    // (minta fitur lain), tetapi bot MENJAWAB "Nggak ada kartu itu di tanganmu...".
+    // AKAR: pendekatan lama adalah BLACKLIST — pesan dianggap langkah permainan
+    // KECUALI cocok daftar "bukan langkah" (sapaan/kata tanya/panjang >80 char).
+    // Blacklist selalu bocor: "Jadiin stiker" (13 char, bukan sapaan) lolos.
     //
-    // Sekarang: pesan yang JELAS bukan langkah permainan (sapaan, pertanyaan
-    // umum, obrolan panjang) otomatis MENGAKHIRI permainan dan diteruskan ke AI.
-    const jelasBukanLangkah =
-      // Sapaan / obrolan umum
-      /^\s*(?:halo|hai|hi|hei|hello|assalamualaikum|pagi|siang|sore|malam|apa kabar|kabar|kamu siapa|siapa kamu)\b/i.test(low) ||
-      // Pertanyaan umum (kata tanya) yang bukan bagian permainan
-      /\b(?:apa kabar|kamu siapa|lagi ngapain|bisa bantu|tolong jelaskan|apa itu|bagaimana cara|kenapa|mengapa)\b/i.test(low) ||
-      // Kalimat panjang (>80 char) hampir pasti obrolan, bukan langkah permainan
-      low.length > 80;
-    // Pengecualian: permainan yang memang menerima kalimat bebas
-    // (hangman menerima tebakan kata; kuis/tebakangka menerima angka).
-    const terimaBebas = ['hangman', 'kuis', 'tebakangka'].includes(aktif.kind);
-
-    if (jelasBukanLangkah && !terimaBebas) {
+    // SEKARANG: pesan hanya diproses sebagai langkah permainan bila BENTUKNYA
+    // memang khas langkah game (whitelist). Semua pesan lain otomatis
+    // MENGAKHIRI permainan dan diteruskan ke AI — user bebas pindah topik.
+    //
+    // ATURAN PEMILIK PRODUK: "kecuali user minta lanjut, kalo user sudah keluar
+    // dari topik game maka tidak usah di singgung lagi".
+    if (!terlihatLangkahGame(aktif.kind, low)) {
       await akhiriGame(chatId);
       // Diteruskan ke modul lain (bukan ditangani di sini).
       return { ditangani: false, reply: '', jalur: '' };
@@ -219,9 +280,11 @@ export async function tanganiGame(
     // Minta berhenti / ganti game
     if (mintaBerhenti(low)) {
       await akhiriGame(chatId);
+      // DILARANG menawarkan main lagi (temuan pemilik produk 09 Okt 2026:
+      // "kalo user sudah keluar dari topik game maka tidak usah di singgung lagi").
       return {
         ditangani: true,
-        reply: `Oke, permainan dihentikan. 👍\n\nMau main lagi? Ketik *main uno*, *main catur*, atau *main tebak angka*.`,
+        reply: 'Oke, permainan dihentikan. 👍',
         jalur: 'game-berhenti',
       };
     }
@@ -254,4 +317,25 @@ async function mulaiGameBaru(
   const pembuka = pembukaGame(kind, state);
   await simpanGame(chatId, platform, kind, state, false);
   return { ditangani: true, reply: pembuka, jalur: `game-mulai-${kind}` };
+}
+
+/**
+ * Buang ajakan MENARIK USER KEMBALI ke permainan/topik lama dari balasan bot.
+ *
+ * KENAPA (temuan pemilik produk 09 Okt 2026): user keluar dari topik game
+ * (kirim gambar + "Jadiin stiker"), tetapi bot MENJAWAB "...Mau lanjut main UNO
+ * atau ganti topik?". ATURAN: "kecuali user minta lanjut, kalo user sudah keluar
+ * dari topik game maka tidak usah di singgung lagi".
+ *
+ * Fungsi ini DITEGAKKAN DI KODE (bukan hanya prompt) karena aturan kritis tidak
+ * bisa diandalkan pada kepatuhan model.
+ */
+export function buangAjakanGameLama(reply: string): string {
+  if (!reply) return reply;
+  // Pola kalimat ajakan kembali ke permainan/topik lama.
+  const pola = /(?:^|(?<=[.!?\n]))\s*(?:[^.!?\n]{0,40}?)(?:mau\s+lanjut\s+(?:main|permainan|game)|lanjut\s+main|mau\s+main\s+lagi|mau\s+ganti\s+topik\s+atau\s+main|balik\s+ke\s+(?:permainan|game)|kembali\s+ke\s+(?:permainan|game)|main\s+lagi\s*(?:yuk|dong|gak|nggak|ga)?)[^.!?\n]*[.!?]?/gi;
+  let hasil = reply.replace(pola, '').replace(/\n{3,}/g, '\n\n').trim();
+  // Bila seluruh balasan habis (hanya ajakan), kembalikan apa adanya agar tidak kosong.
+  if (!hasil) return reply;
+  return hasil;
 }
