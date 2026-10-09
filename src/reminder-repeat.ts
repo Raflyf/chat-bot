@@ -200,8 +200,3 @@ export function labelUlang(aturan: AturanUlang, zona = 'Asia/Jakarta'): string {
   }
 }
 
-/** Format waktu untuk ditampilkan (memakai zona user). */
-export function waktuTeks(d: Date, zona = 'Asia/Jakarta'): string {
-  const t = formatInZone(d, zona);
-  return `${t.dayName}, ${t.dateStr} ${t.time.slice(0, 5)}`;
-}

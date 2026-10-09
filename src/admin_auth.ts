@@ -52,7 +52,6 @@ const CANONICAL_SALT = ENV_SALT || DERIVED_SALT;
 const PIN_SALT = CANONICAL_SALT;
 
 /** Apakah salt aman tersedia? Bila tidak, verifikasi PIN DITOLAK. */
-export const ADA_SALT_AMAN = CANONICAL_SALT.length > 0;
 
 // Salt legacy yang HARUS tetap didukung agar PIN lama tidak terkunci.
 // (Dipakai HANYA untuk mencocokkan hash lama, tidak untuk membuat hash baru.)

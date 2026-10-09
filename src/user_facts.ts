@@ -240,27 +240,6 @@ export async function simpanFaktaPersonal(
   }
 }
 
-/** Ambil SEMUA fakta personal user (untuk disuntikkan ke prompt). */
-export async function ambilFaktaPersonal(chatId: string, limit = 20): Promise<string[]> {
-  const c = db();
-  if (!c || !chatId) return [];
-  try {
-    const { data } = await c
-      .from('corrections')
-      .select('correction')
-      .eq('chat_id', chatId)
-      .ilike('correction', `${PENANDA_FAKTA}%`)
-      .order('created_at', { ascending: true })
-      .limit(limit);
-    return (data ?? [])
-      .map((r) => String((r as { correction?: string }).correction ?? ''))
-      .map((x) => x.replace(PENANDA_FAKTA, '').trim())
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
 /**
  * Tangani pesan user: deteksi fakta personal, lalu simpan (bila ada).
  * Mengembalikan fakta yang tersimpan (atau null) — pemanggil TIDAK perlu

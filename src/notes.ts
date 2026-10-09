@@ -1537,22 +1537,6 @@ export async function daftarCatatan(chatId: string, limit = 10): Promise<Catatan
   }
 }
 
-export async function cariCatatan(chatId: string, kata: string, limit = 10): Promise<CatatanRingkas[]> {
-  const c = db();
-  if (!c) return [];
-  try {
-    const { data, error } = await c.from('notes')
-      .select('id, title, content, tags, created_at')
-      .eq('chat_id', chatId)
-      .ilike('content', `%${kata}%`)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (error || !data) return [];
-    return data as CatatanRingkas[];
-  } catch {
-    return [];
-  }
-}
 
 export async function hapusCatatan(chatId: string, id: number): Promise<boolean> {
   const c = db();
@@ -1845,77 +1829,8 @@ export async function hapusUang(chatId: string, id: number): Promise<boolean> {
 // SIMPAN & AMBIL, KEBIASAAN
 // ============================================================================
 
-export async function simpanKebiasaan(chatId: string, name: string, targetPerDay = 1, opts?: { actor?: string; platform?: string }): Promise<number | null> {
-  const c = db();
-  if (!c) return null;
-  try {
-    const { data, error } = await c.from('habits').insert({
-      chat_id: chatId,
-      name: name.slice(0, 120),
-      target_per_day: targetPerDay,
-      actor: opts?.actor ?? null,
-      platform: opts?.platform ?? 'whatsapp',
-    }).select('id').single();
-    if (error) return null;
-    return (data as { id: number }).id;
-  } catch {
-    return null;
-  }
-}
 
-/** Centang kebiasaan hari ini; kembalikan streak terbaru (null bila gagal). */
-export async function centangKebiasaan(chatId: string, id: number): Promise<{ streak: number; best: number } | null> {
-  const c = db();
-  if (!c) return null;
-  try {
-    const { data: h, error: e1 } = await c.from('habits')
-      .select('id, streak, best_streak, last_done_at')
-      .eq('chat_id', chatId).eq('id', id).single();
-    if (e1 || !h) return null;
-    const row = h as { streak: number; best_streak: number; last_done_at: string | null };
 
-    const hariIni = new Date().toISOString().slice(0, 10);
-    const terakhir = row.last_done_at ? row.last_done_at.slice(0, 10) : null;
-    const kemarin = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-
-    let streak = row.streak;
-    if (terakhir === hariIni) {
-      // sudah dicentang hari ini → tidak menambah streak
-    } else if (terakhir === kemarin) {
-      streak += 1;
-    } else {
-      streak = 1; // putus → mulai dari 1
-    }
-    const best = Math.max(row.best_streak, streak);
-
-    await c.from('habit_logs').upsert(
-      { habit_id: id, done_on: hariIni, count: 1 },
-      { onConflict: 'habit_id,done_on' },
-    );
-    const { error: e2 } = await c.from('habits')
-      .update({ streak, best_streak: best, last_done_at: new Date().toISOString() })
-      .eq('id', id);
-    if (e2) return null;
-    return { streak, best };
-  } catch {
-    return null;
-  }
-}
-
-export async function daftarKebiasaan(chatId: string): Promise<Array<{ id: number; name: string; streak: number; best_streak: number; last_done_at: string | null }>> {
-  const c = db();
-  if (!c) return [];
-  try {
-    const { data, error } = await c.from('habits')
-      .select('id, name, streak, best_streak, last_done_at')
-      .eq('chat_id', chatId).eq('active', true)
-      .order('created_at', { ascending: true }).limit(30);
-    if (error || !data) return [];
-    return data as Array<{ id: number; name: string; streak: number; best_streak: number; last_done_at: string | null }>;
-  } catch {
-    return [];
-  }
-}
 
 // ============================================================================
 // FORMATTER (untuk balasan bot, teks rapi, tanpa AI)
@@ -1957,14 +1872,6 @@ export function formatRekapUang(r: RekapUang, hari: number): string {
   return baris.join('\n');
 }
 
-export function formatDaftarKebiasaan(rows: Array<{ id: number; name: string; streak: number; best_streak: number; last_done_at: string | null }>): string {
-  if (!rows.length) return 'Belum ada kebiasaan yang dilacak.';
-  const hariIni = new Date().toISOString().slice(0, 10);
-  return rows.map((r) => {
-    const sudah = r.last_done_at?.slice(0, 10) === hariIni ? '✅' : '⬜';
-    return `${sudah} #${r.id} ${r.name}, streak ${r.streak} hari (terbaik ${r.best_streak})`;
-  }).join('\n');
-}
 
 // ============================================================================
 // ORKESTRATOR, dipakai lapisan pesan (WhatsApp/Telegram)
@@ -2239,7 +2146,8 @@ function jawabanKonfirmasi(teks: string): 'ya' | 'tidak' | null {
 
 /** Bentuk entri dari niat yang sudah dikonfirmasi. */
 async function simpanDariNiat(
-  chatId: string, niat: NiatTerdeteksi, opts: { actor?: string; platform: string },
+  chatId: string, niat: NiatTerdeteksi,
+  opts: { actor?: string; platform: string; teksAsli?: string },
 ): Promise<{ ok: boolean; pesan: string }> {
   const d = niat.data;
   if (niat.kind === 'expense') {
@@ -2339,6 +2247,37 @@ async function simpanDariNiat(
   }
   // note (termasuk pengingat bahasa alami)
   if (d.pengingat && d.due_at) {
+    // ── PENGINGAT MULTI-HARI (H-N) — permintaan pemilik produk 09 Okt 2026 ──
+    // "ingatkan 3, 2, 1 hari sebelum <acara>". DITANGANI LEBIH DULU karena satu
+    // permintaan menghasilkan BEBERAPA pengingat (H-3, H-2, H-1, dan hari-H).
+    try {
+      const { deteksiMultiHari, susunDaftarPengingat } = await import('./reminder-multihari.js');
+      const teksSumber = String(opts.teksAsli || d.message || '');
+      const mh = deteksiMultiHari(teksSumber, new Date(), (t, s2) => parseWaktuAlami(t, s2));
+      if (mh) {
+        const { simpanReminderCerdas } = await import('./remind.js');
+        const daftar = susunDaftarPengingat(mh);
+        const jam = (x: Date) => x.toLocaleString('id-ID', { timeZone: zonaWaktuAktif(), weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+        const berhasil: string[] = [];
+        for (const item of daftar) {
+          const r = await simpanReminderCerdas(
+            chatId, item.pesan, item.due,
+            opts.platform === 'telegram' ? 'telegram' : 'whatsapp',
+          );
+          if (r.ok) berhasil.push(`   • ${jam(item.due)} — ${item.pesan}`);
+        }
+        if (berhasil.length === 0) {
+          return { ok: false, pesan: '⚠️ Gagal menyimpan pengingat. Coba lagi nanti ya.' };
+        }
+        return {
+          ok: true,
+          pesan: `✅ Siap, aku pasang ${berhasil.length} pengingat untuk *${mh.namaAcara}*:\n${berhasil.join('\n')}`,
+        };
+      }
+    } catch {
+      // Gagal deteksi multi-hari -> lanjut ke jalur pengingat biasa di bawah.
+    }
+
     const { simpanReminderCerdas } = await import('./remind.js');
     const hasil = await simpanReminderCerdas(
       chatId, String(d.message || 'Pengingat'), new Date(String(d.due_at)),
@@ -2562,7 +2501,7 @@ export async function tanganiPencatatan(
         const gabung = `${tertundaJam.teks} ${asli}`;
         const niatGabung = deteksiNiat(gabung);
         if (niatGabung && niatGabung.kind === 'note' && niatGabung.data.pengingat) {
-          const r = await simpanDariNiat(chatId, niatGabung, { actor: opts.actor, platform: opts.platform });
+          const r = await simpanDariNiat(chatId, niatGabung, { actor: opts.actor, platform: opts.platform, teksAsli: asli });
           return { ditangani: true, reply: r.pesan, jalur: 'lanjut-pengingat-jam' };
         }
       }
@@ -2580,6 +2519,7 @@ export async function tanganiPencatatan(
       if (jawabAwal === 'ya') {
         const r = await simpanDariNiat(chatId, tertunda.niat, {
           actor: tertunda.actor ?? opts.actor,
+          teksAsli: asli,
           platform: tertunda.platform ?? opts.platform,
         });
         return { ditangani: true, reply: r.pesan, jalur: 'konfirmasi-ya' };
@@ -3199,7 +3139,7 @@ export async function tanganiPencatatan(
         };
       }
       // Pengingat: langsung simpan (tidak boleh ada balasan tanya-jawab).
-      const r = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform });
+      const r = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform, teksAsli: asli });
       return { ditangani: true, reply: r.pesan, jalur: `niat-${niat.kind}` };
     }
 
@@ -3270,7 +3210,7 @@ export async function tanganiPencatatan(
         jalur: 'tanya-catat-keuangan',
       };
     }
-    const r = await simpanDariNiat(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
+    const r = await simpanDariNiat(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform, teksAsli: asli });
     return { ditangani: true, reply: r.pesan, jalur: `implisit-${niatImplisit.kind}` };
   }
 

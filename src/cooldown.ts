@@ -112,10 +112,3 @@ async function hapusDiDb(kind: string, keyHash: string, model: string): Promise<
   }
 }
 
-/** Bersihkan cooldown kedaluwarsa di memori (dipanggil berkala). */
-export function bersihkanMemoriCooldown(): void {
-  const now = Date.now();
-  for (const [k, until] of cooldownMem) {
-    if (until <= now) cooldownMem.delete(k);
-  }
-}

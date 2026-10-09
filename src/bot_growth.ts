@@ -319,13 +319,6 @@ export async function getOrGrowMemory(
   return await pickMemoryItem(kind, opts);
 }
 
-/**
- * Berapa banyak stok memori per jenis. Dipakai untuk memutuskan perlu tumbuh
- * atau tidak, dan untuk laporan.
- */
-export async function memoryStock(): Promise<Record<string, number>> {
-  return await countMemory();
-}
 
 /** Apakah stok jenis ini menipis (perlu diisi ulang di latar belakang)? */
 export async function needsGrowth(kind: MemoryKind, minStock = 5): Promise<boolean> {

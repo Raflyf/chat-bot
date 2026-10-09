@@ -79,9 +79,3 @@ export function sisaBalasan(sisaNeuron: number, model: string, promptTok = 8000,
   return per > 0 ? Math.floor(sisaNeuron / per) : 0;
 }
 
-/** Label ramah untuk tarif neuron (ditampilkan di dashboard). */
-export function labelTarif(model: string): string {
-  const t = tarifModel(model);
-  const per = neuronPerBalasanKhas(model);
-  return `${t.inputPerJuta.toLocaleString('id-ID')} neuron/juta token input • ~${per.toLocaleString('id-ID')} neuron per balasan`;
-}

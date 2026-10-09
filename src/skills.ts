@@ -2002,6 +2002,32 @@ export interface PickedMemory {
   fromSeed: boolean;
 }
 
+/**
+ * POLA MODE PROFESIONAL — SATU SUMBER untuk instruksi prompt DAN penegakan kode.
+ *
+ * SEBELUMNYA pola ini ditulis DUA KALI (satu di systemPrompt, satu di autoReply).
+ * Duplikasi itu berisiko: bila salah satu diubah, instruksi prompt dan penegakan
+ * kode bisa BERTENTANGAN. Sekarang dipakai bersama.
+ *
+ * Pemicu SENGAJA KONSERVATIF: hanya kata yang jelas menandakan ranah kerja/serius.
+ * Kata ambigu (mis. "harga" di obrolan jualan receh) tidak dipakai sendirian.
+ */
+const POLA_PROFESIONAL = new RegExp(
+  [
+    // peran & konteks kerja
+    '\\b(?:perusahaan|kantor|korporat|bisnis|startup|klien|atasan|bawahan|karyawan|staf|divisi|departemen|jabatan|rekan kerja|tim kerja)\\b',
+    // dokumen & aktivitas kerja
+    '\\b(?:laporan|proposal|kontrak|invoice|faktur|surat resmi|notulen|rapat|meeting|presentasi|deadline|tenggat|sop|prosedur kerja|kebijakan perusahaan)\\b',
+    // ranah pengetahuan formal
+    '\\b(?:hukum|legalitas|pajak|perpajakan|akuntansi|audit|investasi|saham|keuangan perusahaan|analisis pasar|strategi bisnis|manajemen|sumber daya manusia|\\bSDM\\b|\\bHRD\\b)\\b',
+    // medis & teknis formal
+    '\\b(?:diagnosis|resep|dosis|pasien|medis|klinis|regulasi|sertifikasi|standar industri|iso \\d+|safety|keselamatan kerja|\\bK3\\b)\\b',
+    // permintaan eksplisit bersikap profesional
+    '\\b(?:secara profesional|profesional|formal|resmi|serius|seriusan|jangan bercanda|tanpa candaan|untuk pekerjaan|buat kerjaan|dipakai di kantor)\\b',
+  ].join('|'),
+  'i',
+);
+
 export function systemPrompt(
   ctx?: ChatContext,
   web?: string | null,
@@ -2590,22 +2616,7 @@ export function systemPrompt(
   //
   // Pemicu SENGAJA KONSERVATIF: hanya kata yang jelas menandakan ranah kerja/serius.
   // Kata ambigu (mis. "harga" di obrolan jualan receh) tidak dipakai sendirian.
-  const professionalRe = new RegExp(
-    [
-      // peran & konteks kerja
-      '\\b(?:perusahaan|kantor|korporat|bisnis|startup|klien|atasan|bawahan|karyawan|staf|divisi|departemen|jabatan|rekan kerja|tim kerja)\\b',
-      // dokumen & aktivitas kerja
-      '\\b(?:laporan|proposal|kontrak|invoice|faktur|surat resmi|notulen|rapat|meeting|presentasi|deadline|tenggat|sop|prosedur kerja|kebijakan perusahaan)\\b',
-      // ranah pengetahuan formal
-      '\\b(?:hukum|legalitas|pajak|perpajakan|akuntansi|audit|investasi|saham|keuangan perusahaan|analisis pasar|strategi bisnis|manajemen|sumber daya manusia|\\bSDM\\b|\\bHRD\\b)\\b',
-      // medis & teknis formal
-      '\\b(?:diagnosis|resep|dosis|pasien|medis|klinis|regulasi|sertifikasi|standar industri|iso \\d+|safety|keselamatan kerja|\\bK3\\b)\\b',
-      // permintaan eksplisit bersikap profesional
-      '\\b(?:secara profesional|profesional|formal|resmi|serius|seriusan|jangan bercanda|tanpa candaan|untuk pekerjaan|buat kerjaan|dipakai di kantor)\\b',
-    ].join('|'),
-    'i',
-  );
-  const professionalContext = professionalRe.test(userPromptText);
+  const professionalContext = POLA_PROFESIONAL.test(userPromptText);
   if (professionalContext) {
     instructions.push(
       '',
@@ -3505,16 +3516,7 @@ export async function autoReply(
   // dihitung ulang per jalur, bisa berbeda hasil dan guard profesional bocor.
   // Pola ini SENGAJA sama dengan professionalRe di systemPrompt supaya instruksi dan
   // penegakan di kode tidak pernah bertentangan.
-  const professionalContext = new RegExp(
-    [
-      '\\b(?:perusahaan|kantor|korporat|bisnis|startup|klien|atasan|bawahan|karyawan|staf|divisi|departemen|jabatan|rekan kerja|tim kerja)\\b',
-      '\\b(?:laporan|proposal|kontrak|invoice|faktur|surat resmi|notulen|rapat|meeting|presentasi|deadline|tenggat|sop|prosedur kerja|kebijakan perusahaan)\\b',
-      '\\b(?:hukum|legalitas|pajak|perpajakan|akuntansi|audit|investasi|saham|keuangan perusahaan|analisis pasar|strategi bisnis|manajemen|sumber daya manusia|\\bSDM\\b|\\bHRD\\b)\\b',
-      '\\b(?:diagnosis|resep|dosis|pasien|medis|klinis|regulasi|sertifikasi|standar industri|iso \\d+|safety|keselamatan kerja|\\bK3\\b)\\b',
-      '\\b(?:secara profesional|profesional|formal|resmi|serius|seriusan|jangan bercanda|tanpa candaan|untuk pekerjaan|buat kerjaan|dipakai di kantor)\\b',
-    ].join('|'),
-    'i',
-  ).test(clean);
+  const professionalContext = POLA_PROFESIONAL.test(clean);
 
   // ==========================================================================
   // MEMORI BOT: pilih tebak-tebakan / gombalan dari memori (yang tumbuh sendiri).

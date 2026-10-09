@@ -58,14 +58,6 @@ function write(level: LogLevel, msg: string, ctx: LogContext, fields?: LogFields
   emit(level, JSON.stringify(payload));
 }
 
-/** Buat child logger dengan correlation id (requestId / chatId / platform). */
-export function withContext(ctx: LogContext): Logger {
-  return {
-    info: (msg, fields) => write('info', msg, ctx, fields),
-    warn: (msg, fields) => write('warn', msg, ctx, fields),
-    error: (msg, fields) => write('error', msg, ctx, fields),
-  };
-}
 
 export function log(level: LogLevel, msg: string, fields?: LogFields): void {
   write(level, msg, {}, fields);

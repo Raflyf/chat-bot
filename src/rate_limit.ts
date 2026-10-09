@@ -58,12 +58,3 @@ export function cekRateLimit(kunci: string, batas: number, jendelaMs: number): H
   };
 }
 
-/** Ambil IP klien dari header proxy Vercel. */
-export function ipDariReq(req: { headers?: Record<string, unknown>; socket?: { remoteAddress?: string } }): string {
-  const h = req.headers || {};
-  const fwd = h['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.trim()) return fwd.split(',')[0].trim();
-  const real = h['x-real-ip'];
-  if (typeof real === 'string' && real.trim()) return real.trim();
-  return req.socket?.remoteAddress || 'unknown';
-}

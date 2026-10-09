@@ -498,10 +498,6 @@ async function withLimitCache(
   return data;
 }
 
-/** Bersihkan cache (untuk pengujian / saat key berubah). */
-export function clearLimitCache(): void {
-  limitCache.clear();
-}
 
 // ---------------------------------------------------------------------------
 // Pembungkus publik: tiap fungsi probe WAJIB lewat cache (temuan F3).
