@@ -11,6 +11,7 @@ import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb, checkDueReminders } from './remind.js';
 import { tanganiPencatatan } from './notes.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
+import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
 const PROMPT_VERSION = 'v0.66.0';
@@ -498,6 +499,31 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               caption,
               context,
             );
+
+            // ── SIMPAN ISI DOKUMEN (perbaikan 09 Okt 2026) ──
+            // LAPORAN PEMILIK PRODUK: "apalah bot benar menjelaskan isi pdf nya?
+            // coba kamu cek isi pdf nya dan bandingkan dengan bot apakah sudah
+            // sesuai" + "itu pdf yg dikirim user emg ga masuk db?".
+            //
+            // Sebelumnya isi dokumen DIBUANG setelah dirangkum — sehingga ringkasan
+            // bot tidak bisa diverifikasi dan bot tak bisa mengingat isinya.
+            // Sekarang teks ekstraksi + ringkasan disimpan ke tabel `documents`.
+            void (async () => {
+              try {
+                const teksDok = await ekstrakTeksDokumen(media.buffer, mime, filename);
+                await simpanDokumen({
+                  chatId: chatKey,
+                  filename,
+                  mime,
+                  teks: teksDok,
+                  ringkasan: reply,
+                  via,
+                  platform: 'whatsapp',
+                });
+              } catch {
+                // best-effort: jangan sampai menggagalkan balasan ke user
+              }
+            })();
 
             await sendWhatsAppCloudMessageSafe(from, reply);
             void markMessageProcessed('whatsapp', messageId);
