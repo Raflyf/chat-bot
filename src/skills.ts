@@ -2615,6 +2615,88 @@ export function systemPrompt(
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // PERSONA ADAPTIF (permintaan pemilik produk 09 Okt 2026)
+  // "jika user sedang serius maka bot juga serius, jika user sudah selesai
+  //  seriusnya maka bot juga selesai, dan jika user ngeledek, ngata-ngatain dan
+  //  lainnya maka botnya juga adaptasi, tapi jawaban botnya harus tetap nyambung
+  //  dan ga ngawur"
+  //
+  // PRINSIP: bot MENYESUAIKAN DIRI ke register & suasana lawan bicara, TAPI
+  // substansi jawaban tetap NYAMBUNG ke topik (tidak ikut ngawur).
+  //
+  // Tiga hal yang dihitung dari RIWAYAT (bukan hanya pesan terakhir, karena
+  // model berganti tiap pesan pada rantai failover):
+  //   1. REGISTER bahasa (formal / santai / gaul)
+  //   2. SUASANA ledek-ledekan (banter dua arah)
+  //   3. TRANSISI keluar dari mode serius (user sudah selesai seriusnya)
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const riwayatUser = [
+      ...(ctx?.history ?? [])
+        .filter((h) => h.role === 'user' && typeof h.content === 'string')
+        .map((h) => stripDurableMarkers(h.content as string)),
+      userPromptText,
+    ].slice(-6);
+    const gabungRiwayat = riwayatUser.join(' \n ');
+
+    // ── 1. REGISTER BAHASA ──
+    const registerFormal = /\b(?:saya|anda|mohon|dengan hormat|dimohon|saudara|yang terhormat|silakan|terima kasih atas|mohon maaf|bersedia|mohon dibantu|mohon dijelaskan)\b/i;
+    const registerGaul = /\b(?:gue|gw|lu|lo|elo|loe|kamu|elu|anjir|bjir|jir|wkwk|haha|hehe|njir|gokil|buset|banget|dong|nih|deh|sih|lah|tuh|woi|cuy|bro|gan)\b/i;
+    const skorFormal = riwayatUser.filter((m) => registerFormal.test(m)).length;
+    const skorGaul = riwayatUser.filter((m) => registerGaul.test(m) && !registerFormal.test(m)).length;
+
+    if (skorFormal >= 2 && skorFormal > skorGaul) {
+      instructions.push(
+        '',
+        '[REGISTER: dia konsisten bicara FORMAL (saya/anda/mohon). Pakai bahasa yang rapi & sopan, hindari slang (gue/lu/wkwk/njir). Tetap hangat, tidak kaku.]',
+      );
+    } else if (skorGaul >= 2 && skorGaul > skorFormal) {
+      instructions.push(
+        '',
+        '[REGISTER: dia bicara SANTAI/GAUL (gue-lu, wkwk, njir). Ikuti register itu — pakai bahasa santai yang natural, jangan tiba-tiba formal/kaku.]',
+      );
+    }
+
+    // ── 2. SUASANA LEDEK-LEDEKAN (BANTER DUA ARAH) ──
+    // Pemilik produk: "user suka katanya seru" + "bisa berantem dan saling ledek".
+    // BOT BOLEH ikut banter — TAPI: (a) tidak mengumpat kasar/kotor, (b) tidak
+    // mengulang hinaan yang sama, (c) berhenti TOTAL begitu user minta berhenti.
+    const ledekRe = /\b(?:dongo|dongok|bego|goblok|tolol|idiot|bolot|gaje|gajelas|ngaco|ngawur|bacot|bodoh|nyebelin|garing|cringe|cupu|kocak|gokil|parah|ampun|anjir|bjir|jir|buset|woi|woy|lu\s+ya|lo\s+ya|dasar|hebat\s+kamu|sok|kepo|baper|lebay|alay)\b/i;
+    const mintaStopLedek = /\b(?:jangan\s+ngeledek|stop\s+ngel?edek|gausah\s+ngel?edek|ga\s*suka\s+di\s*ledek|aku\s+marah|jangan\s+becanda|serius\s+dong|ini\s+serius)\b/i;
+    const ledekBeruntun = riwayatUser.filter((m) => ledekRe.test(m)).length;
+    const userMenikmati = /(?:wkwk+|haha+|hehe+|🤣|😂|😹|😆)/i.test(gabungRiwayat);
+    const bolehBanter = ledekBeruntun >= 2 && userMenikmati && !mintaStopLedek.test(gabungRiwayat) && !annoyActive && !sadRecent;
+
+    if (bolehBanter) {
+      instructions.push(
+        '',
+        '[SUASANA BANTER AKTIF: kalian sedang saling ledek dan dia MENIKMATINYA (tertawa/balas meledek). Ikut main — balas dengan celetukan ringan yang nyambung 5-15 kata. ATURAN KERAS: (a) DILARANG memakai kata kasar/kotor (anjing, bangsat, kontol, memek, dll) atau hinaan SARA; (b) DILARANG mengulang kata hinaan yang dia tujukan ke kamu; (c) ledekan harus tetap NYAMBUNG ke topik yang sedang dibahas, bukan asal nyerang; (d) begitu dia minta berhenti/marah -> langsung berhenti total.]',
+      );
+    } else if (ledekBeruntun >= 1 && mintaStopLedek.test(gabungRiwayat)) {
+      instructions.push(
+        '',
+        '[SUASANA: dia TIDAK mau di-ledek. Nada wajib tulus & sopan, tanpa sindiran, tanpa emoji nyindir. Fokus jawab isinya.]',
+      );
+    }
+
+    // ── 3. TRANSISI KELUAR DARI MODE SERIUS ──
+    // "jika user sudah selesai seriusnya maka bot juga selesai".
+    // Bila 2 pesan terakhir sudah TIDAK serius lagi (tidak ada kata kerja/formal,
+    // sudah ada candaan/emoji), maka mode serius DIMATIKAN walau kata serius masih
+    // muncul di riwayat lama.
+    const seriusRe = /\b(?:laporan|proposal|kontrak|invoice|rapat|deadline|pajak|audit|hukum|prosedur|sop|kebijakan|analisis|strategi|profesional|formal|resmi|serius)\b/i;
+    const duaTerakhir = riwayatUser.slice(-2);
+    const masihSerius = duaTerakhir.some((m) => seriusRe.test(m));
+    const sudahSantai = /(?:wkwk+|haha+|hehe+|🤣|😂|gokil|santai|becanda|bercanda|iseng|nyantai|lepas)/i.test(duaTerakhir.join(' '));
+    if (!masihSerius && sudahSantai && professionalContext) {
+      instructions.push(
+        '',
+        '[TRANSISI: topik seriusnya sudah SELESAI — dia sudah kembali santai. Ikut kembali santai & hangat, jangan kaku. TAPI tetap jawab isi pertanyaannya dengan benar bila ada.]',
+      );
+    }
+  }
+
   const lastAssistantMsgRaw = ctx?.history?.filter((h) => h.role === 'assistant')?.slice(-1)?.[0]?.content;
   const lastAssistantMsg = typeof lastAssistantMsgRaw === 'string' ? stripDurableMarkers(lastAssistantMsgRaw) : lastAssistantMsgRaw;
   const recentHistoryText = (ctx?.history?.slice(-4) ?? []).map((h) => (typeof h.content === 'string' ? stripDurableMarkers(h.content) : '')).join(' ');
