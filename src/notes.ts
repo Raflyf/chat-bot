@@ -83,6 +83,15 @@ export interface CatatanRingkas {
   content: string;
   title?: string | null;
   created_at: string;
+  /**
+   * Nomor urut PER-USER (1, 2, 3, ...) berdasarkan urutan dibuat.
+   *
+   * KENAPA (pertanyaan pemilik produk 09 Okt 2026): "saya hanya nanya knapa
+   * penomorannya #28. bukannya #1?" — catatan pertama user menampilkan #28
+   * karena memakai ID SERIAL global database. Sekarang memakai nomor urut
+   * per-user, sama seperti tugas.
+   */
+  nomor?: number;
 }
 
 export interface TugasRingkas {
@@ -1552,18 +1561,77 @@ export async function daftarCatatan(chatId: string, limit = 10): Promise<Catatan
   const c = db();
   if (!c) return [];
   try {
-    const { data, error } = await c.from('notes')
+    // Ambil SEMUA catatan user (bukan hanya `limit`) agar nomor urut STABIL:
+    // catatan pertama tetap #1 meski ada catatan lain yang dihapus.
+    const { data: semua, error } = await c.from('notes')
       .select('id, title, content, tags, created_at')
       .eq('chat_id', chatId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (error || !data) return [];
-    return data as CatatanRingkas[];
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(500);
+    if (error || !semua) return [];
+
+    // Nomor urut per-user (1, 2, 3, ...) berdasarkan urutan dibuat.
+    const nomorDari = new Map<number, number>();
+    (semua as CatatanRingkas[]).forEach((r, i) => nomorDari.set(r.id, i + 1));
+
+    // Tampilkan yang TERBARU di atas, lalu batasi sesuai `limit`.
+    const terbaru = [...(semua as CatatanRingkas[])]
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || b.id - a.id)
+      .slice(0, limit);
+    return terbaru.map((r) => ({ ...r, nomor: nomorDari.get(r.id) ?? r.id }));
   } catch {
     return [];
   }
 }
 
+
+/**
+ * Nomor urut PER-USER sebuah catatan (1, 2, 3, ...) berdasarkan urutan dibuat.
+ *
+ * KENAPA (pertanyaan pemilik produk 09 Okt 2026): "knapa penomorannya #28.
+ * bukannya #1?" — dulu memakai ID SERIAL global DB. Sekarang per-user.
+ */
+export async function nomorUrutCatatan(chatId: string, id: number): Promise<number | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
+  const c = db();
+  if (!c) return null;
+  try {
+    const { data, error } = await c
+      .from('notes')
+      .select('id')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(500);
+    if (error || !data) return null;
+    const idx = (data as Array<{ id: number }>).findIndex((n) => n.id === id);
+    return idx >= 0 ? idx + 1 : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ubah NOMOR URUT catatan -> ID database (untuk hapus). */
+export async function idDariNomorCatatan(chatId: string, nomor: number): Promise<number | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
+  const c = db();
+  if (!c) return null;
+  try {
+    const { data, error } = await c
+      .from('notes')
+      .select('id')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(500);
+    if (error || !data) return null;
+    const baris = data as Array<{ id: number }>;
+    return baris[nomor - 1]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function hapusCatatan(chatId: string, id: number): Promise<boolean> {
   chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
@@ -1605,19 +1673,28 @@ export async function simpanTugas(
 
 /** Daftar catatan keuangan terakhir (untuk menampilkan ID yang bisa dihapus). */
 export async function daftarUang(chatId: string, limit = 10): Promise<Array<{
-  id: number; amount: number; kind: string; category: string; note: string; created_at: string;
+  id: number; amount: number; kind: string; category: string; note: string; created_at: string; nomor?: number;
 }>> {
   chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return [];
   try {
-    const { data, error } = await c.from('expenses')
+    // Ambil SEMUA (bukan hanya `limit`) agar nomor urut STABIL per-user.
+    const { data: semua, error } = await c.from('expenses')
       .select('id, amount, kind, category, note, created_at')
       .eq('chat_id', chatId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (error || !data) return [];
-    return data as Array<{ id: number; amount: number; kind: string; category: string; note: string; created_at: string }>;
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(500);
+    if (error || !semua) return [];
+    // Nomor urut per-user berdasarkan urutan DIBUAT.
+    const nomorDari = new Map<number, number>();
+    (semua as Array<{ id: number }>).forEach((r, i) => nomorDari.set(r.id, i + 1));
+    // Tampilkan TERBARU dulu.
+    return [...(semua as Array<{ id: number; amount: number; kind: string; category: string; note: string; created_at: string }>)]
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || b.id - a.id)
+      .slice(0, limit)
+      .map((r) => ({ ...r, nomor: nomorDari.get(r.id) ?? r.id }));
   } catch {
     return [];
   }
@@ -1628,16 +1705,62 @@ export async function daftarUang(chatId: string, limit = 10): Promise<Array<{
  * Nomor urut per-user, dihitung dari urutan dibuat (stabil).
  */
 export function formatDaftarUang(rows: Array<{
-  id: number; amount: number; kind: string; category: string; note: string; created_at: string;
+  id: number; amount: number; kind: string; category: string; note: string; created_at: string; nomor?: number;
 }>): string {
   if (!rows.length) return 'Belum ada catatan keuangan.';
-  const baris = rows.map((r, i) => {
+  // Nomor urut PER-USER (bukan ID global DB) — sudah diisi daftarUang().
+  const baris = rows.map((r) => {
     const tgl = new Date(r.created_at).toLocaleDateString('id-ID', { timeZone: zonaWaktuAktif(), day: '2-digit', month: 'short' });
     const tanda = r.kind === 'in' ? '💰 Masuk' : '💸 Keluar';
     const ket = r.note ? ` - ${r.note.slice(0, 30)}` : '';
-    return `${i + 1}. ${tanda} Rp${Math.round(r.amount).toLocaleString('id-ID')} (${r.category}) ${tgl}${ket}`;
+    return `#${r.nomor ?? r.id} ${tanda} Rp${Math.round(r.amount).toLocaleString('id-ID')} (${r.category}) ${tgl}${ket}`;
   });
   return `${baris.join('\n')}\n\nHapus dengan: */hapus <nomor>*`;
+}
+
+/**
+ * Nomor urut PER-USER catatan keuangan (1, 2, 3, ...) berdasarkan urutan dibuat.
+ * Sama seperti tugas & catatan — bukan ID global DB.
+ */
+export async function nomorUrutUang(chatId: string, id: number): Promise<number | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
+  const c = db();
+  if (!c) return null;
+  try {
+    const { data, error } = await c
+      .from('expenses')
+      .select('id')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(500);
+    if (error || !data) return null;
+    const idx = (data as Array<{ id: number }>).findIndex((e) => e.id === id);
+    return idx >= 0 ? idx + 1 : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ubah NOMOR URUT keuangan -> ID database (untuk hapus). */
+export async function idDariNomorUang(chatId: string, nomor: number): Promise<number | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
+  const c = db();
+  if (!c) return null;
+  try {
+    const { data, error } = await c
+      .from('expenses')
+      .select('id')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(500);
+    if (error || !data) return null;
+    const baris = data as Array<{ id: number }>;
+    return baris[nomor - 1]?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function daftarTugas(chatId: string, hanyaBelumSelesai = true): Promise<TugasRingkas[]> {
@@ -1861,6 +1984,17 @@ export async function cariCatatan(chatId: string, kata: string, limit = 10): Pro
   const c = db();
   if (!c) return [];
   try {
+    // Ambil semua catatan user untuk menentukan nomor urut yang KONSISTEN.
+    const { data: semua, error: errSemua } = await c.from('notes')
+      .select('id, title, content, tags, created_at')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(500);
+    if (errSemua || !semua) return [];
+    const nomorDari = new Map<number, number>();
+    (semua as CatatanRingkas[]).forEach((r, i) => nomorDari.set(r.id, i + 1));
+
     const { data, error } = await c.from('notes')
       .select('id, title, content, tags, created_at')
       .eq('chat_id', chatId)
@@ -1868,7 +2002,7 @@ export async function cariCatatan(chatId: string, kata: string, limit = 10): Pro
       .order('created_at', { ascending: false })
       .limit(limit);
     if (error || !data) return [];
-    return data as CatatanRingkas[];
+    return (data as CatatanRingkas[]).map((r) => ({ ...r, nomor: nomorDari.get(r.id) ?? r.id }));
   } catch {
     return [];
   }
@@ -1899,10 +2033,11 @@ export async function hapusUang(chatId: string, id: number): Promise<boolean> {
 
 export function formatDaftarCatatan(rows: CatatanRingkas[]): string {
   if (!rows.length) return 'Belum ada catatan.';
+  // Tampilkan NOMOR URUT per-user (bukan ID global DB yang bisa #28).
   return rows.map((r, i) => {
     const judul = r.title ? `*${r.title}*, ` : '';
     const isi = r.content.length > 120 ? `${r.content.slice(0, 120)}…` : r.content;
-    return `${i + 1}. ${judul}${isi}`;
+    return `#${r.nomor ?? i + 1} ${judul}${isi}`;
   }).join('\n');
 }
 
@@ -2290,12 +2425,16 @@ async function simpanDariNiat(
     );
     if (!id) return { ok: false, pesan: '⚠️ Gagal menyimpan ke database. Coba lagi nanti ya.' };
     if (infoSingle.baru === false) {
+      // Nomor urut per-user (bukan ID global DB).
+      const nomorDup = await nomorUrutUang(chatId, id);
       return {
         ok: true,
-        pesan: `Data itu sudah pernah kecatat sebelumnya (#${id}), jadi aku tidak menambah lagi ya (biar tidak dobel).`,
+        pesan: `Data itu sudah pernah kecatat sebelumnya (#${nomorDup ?? id}), jadi aku tidak menambah lagi ya (biar tidak dobel).`,
       };
     }
-    return { ok: true, pesan: `✅ Tercatat (#${id}), ${niat.ringkas}` };
+    // Nomor urut per-user untuk keuangan.
+    const nomorUang = await nomorUrutUang(chatId, id);
+    return { ok: true, pesan: `✅ Tercatat (#${nomorUang ?? id}), ${niat.ringkas}` };
   }
   if (niat.kind === 'todo') {
     const id = await simpanTugas(chatId, String(d.task || ''), {
@@ -2393,8 +2532,10 @@ async function simpanDariNiat(
     actor: opts.actor, platform: opts.platform,
     tags: Array.isArray(d.tags) ? (d.tags as string[]) : undefined,
   });
+  // Tampilkan NOMOR URUT per-user (bukan ID global DB yang bisa #28).
+  const nomorCatatan = id ? await nomorUrutCatatan(chatId, id) : null;
   return id
-    ? { ok: true, pesan: `✅ Catatan disimpan (#${id}), ${niat.ringkas}` }
+    ? { ok: true, pesan: `✅ Catatan disimpan (#${nomorCatatan ?? id}), ${niat.ringkas}` }
     : { ok: false, pesan: '⚠️ Gagal menyimpan catatan. Coba lagi nanti ya.' };
 }
 
@@ -2747,8 +2888,9 @@ export async function tanganiPencatatan(
   m = low.match(/^\/(?:hapus-uang|hapusuang|hapus-keuangan)\s+(\d+)/);
   if (m) {
     const nomor = Number(m[1]);
-    const d = await daftarUang(chatId, 50);
-    const target = d[nomor - 1];
+    const d = await daftarUang(chatId, 500);
+    // Cari berdasarkan NOMOR URUT per-user (bukan index array).
+    const target = d.find((x) => (x.nomor ?? 0) === nomor);
     if (!target) {
       return { ditangani: true, reply: `Catatan keuangan #${nomor} tidak ditemukan. Ketik */uang* untuk lihat daftarnya.`, jalur: 'perintah-hapus-uang-gagal' };
     }
@@ -2773,14 +2915,15 @@ export async function tanganiPencatatan(
     // /hapus <nomor> hampir selalu "tidak ditemukan".
     let b = false;
     if (!a) {
-      const dCat = await daftarCatatan(chatId, 50);
-      const targetCat = dCat[nomor - 1];
+      // Cari berdasarkan NOMOR URUT per-user (bukan index array).
+      const dCat = await daftarCatatan(chatId, 500);
+      const targetCat = dCat.find((x) => (x.nomor ?? 0) === nomor);
       if (targetCat) b = await hapusCatatan(chatId, targetCat.id);
     }
     let c = false;
     if (!a && !b) {
-      const dUang = await daftarUang(chatId, 50);
-      const targetUang = dUang[nomor - 1];
+      const dUang = await daftarUang(chatId, 500);
+      const targetUang = dUang.find((x) => (x.nomor ?? 0) === nomor);
       if (targetUang) c = await hapusUang(chatId, targetUang.id);
     }
     return {
@@ -3169,11 +3312,22 @@ export async function tanganiPencatatan(
     }
     if (mHapus) {
       const nomor = Number(mHapus[1]);
-      // Coba sebagai NOMOR URUT tugas dulu (konsisten dengan tampilan daftar).
+      // ⚠️ BUG YANG DIPERBAIKI (09 Okt 2026): dulu `hapusCatatan(chatId, nomor)`
+      // dan `hapusUang(chatId, nomor)` memakai NOMOR URUT sebagai ID DATABASE —
+      // bisa menghapus data MILIK ORANG LAIN / baris yang salah!
+      // Sekarang nomor urut DIKONVERSI ke ID asli lebih dulu.
       const idTugas = await idDariNomorTugas(chatId, nomor);
       const a = idTugas !== null ? await hapusTugas(chatId, idTugas) : false;
-      const b = a ? false : await hapusCatatan(chatId, nomor);
-      const cc = a || b ? false : await hapusUang(chatId, nomor);
+      let b = false;
+      if (!a) {
+        const idCat = await idDariNomorCatatan(chatId, nomor);
+        if (idCat !== null) b = await hapusCatatan(chatId, idCat);
+      }
+      let cc = false;
+      if (!a && !b) {
+        const idUang = await idDariNomorUang(chatId, nomor);
+        if (idUang !== null) cc = await hapusUang(chatId, idUang);
+      }
       return { ditangani: true, reply: a || b || cc ? `🗑️ #${nomor} dihapus.` : `#${nomor} tidak ditemukan.`, jalur: 'niat-hapus' };
     }
   }

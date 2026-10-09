@@ -23,8 +23,11 @@ test('hapus: /hapus-uang <nomor> tersedia', () => {
 });
 
 test('hapus: /hapus memakai nomor urut untuk catatan & keuangan', () => {
-  assert.match(SRC, /dCat\[nomor - 1\]/, 'catatan harus dicari per nomor urut');
-  assert.match(SRC, /dUang\[nomor - 1\]/, 'keuangan harus dicari per nomor urut');
+  // DIPERBARUI (09 Okt 2026): dulu `dCat[nomor - 1]` (index array) — itu SALAH
+  // karena nomor urut bisa berbeda dari posisi di array. Sekarang konversi
+  // nomor -> ID lewat idDariNomorCatatan/idDariNomorUang (bebas bug hapus salah).
+  assert.match(SRC, /idDariNomorCatatan\(chatId, nomor\)/, 'catatan: konversi nomor -> ID');
+  assert.match(SRC, /idDariNomorUang\(chatId, nomor\)/, 'keuangan: konversi nomor -> ID');
 });
 
 test('panduan: deteksi minta panduan ada', () => {
