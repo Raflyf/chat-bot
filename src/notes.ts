@@ -624,7 +624,10 @@ export function parseWaktuAlami(
 // BUG: "gajian 5 juta" DITOLAK karena "gajian" tidak ada (hanya "gaji").
 // Daftar ini HARUS sinkron dengan KATA_PERINTAH_UTAMA di deteksiNiat().
 const KATA_PERINTAH =
-  'catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|' +
+  // DITAMBAHKAN (temuan 09 Okt 2026): "masukin ke watchlist movie ku" TIDAK
+  // terdeteksi karena hanya ada "masukkan" (baku), bukan "masukin" (gaul).
+  // Bahasa sehari-hari di chat lebih sering memakai bentuk -in.
+  'catat|catet|note|notes|simpan|simpen|tulis|tambah|tambahin|nambah|masukkan|masukin|masukin|taro|taruh|input|' +
   'ingatkan|ingetin|ingat|remind|reminder|pengingat|todo|to-do|tugas|task|' +
   'uang|duit|keluar|masuk|masukan|pengeluaran|pemasukan|jurnal|diary|' +
   'belanja|belanjaan|barang|stok|inventaris|daftar-belanja|shopping|' +
@@ -680,6 +683,20 @@ function bersihkanIsi(teks: string, tambahan: RegExp[] = []): string {
   const pola = [
     new RegExp(`^\\s*\\/?(${KATA_PERINTAH})\\b\\s*[:\\-]?\\s*`, 'i'),
     /^\s*(penting|urgent|segera|buruan|prioritas|santai|nanti|kapan-kapan|gak\s+urgent|dong|nih|ya|tolong|saya|aku|gue|gw)\b\s*/i,
+    // ── FRASA TUJUAN (temuan 09 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: "masukin ke watchlist movie ku, documentary: in the
+    // name of god" tercatat sebagai "ke watchlist movie ku, documentary: in the
+    // name of god" — NOISE "ke watchlist movie ku" ikut terbawa, padahal yang
+    // diminta dicatat hanya JUDUL FILM-nya.
+    //
+    // AKAR: pola lama hanya membuang KATA PERINTAH ("masukin"), bukan FRASA
+    // TUJUAN ("ke watchlist movie ku", "ke daftar belanja", "ke notes").
+    //
+    // ATURAN: buang "ke/dalam <wadah>" di awal, lalu sisanya jadi isi catatan.
+    // "ke watchlist movie ku", "ke daftar belanja", "ke notes", "ke wishlist film"
+    /^\s*(?:ke|kedalam|ke\s+dalam|masuk\s+ke|masukin\s+ke|simpan\s+ke|simpen\s+ke|tambah(?:in|kan)?\s+ke|taro\s+ke)\s+[\w\s]{0,30}?\b(?:watchlist|wishlist|daftar|list|notes?|catatan|movie|film|buku|belanja|belanjaan|stok|inventaris|todo|tugas)\b[\w\s]{0,20}?\s*[:,\-]\s*/i,
+    // Tanpa tanda baca: "ke watchlist movie ku documentary ..." (koma opsional)
+    /^\s*(?:ke|masuk\s+ke|masukin\s+ke|simpan\s+ke|simpen\s+ke|tambah(?:in|kan)?\s+ke)\s+(?:watchlist|wishlist|daftar|list|notes?|catatan)\s+[\w\s]{0,20}?\s*(?=[:,\-])/i,
     ...tambahan,
   ];
   let berubah = true, putaran = 0;
@@ -1302,6 +1319,9 @@ const KATA_PERINTAH_UTAMA =
     let isiBarang = asli
       .replace(/^\s*\/?(?:catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|barang|belanja|belanjaan|stok|inventaris|shopping)\b\s*/i, '')
       .replace(/\b(?:barang|belanja|belanjaan|stok|inventaris|shopping)\b\s*/gi, '')
+      // Buang frasa tujuan yang menggantung ("ke daftar", "ke list") + titik dua
+      // (temuan 09 Okt 2026: "catat ke daftar belanja: sabun, sampo" -> "ke daftar : sabun, sampo").
+      .replace(/^\s*(?:ke|masuk\s+ke|masukin\s+ke|simpan\s+ke)\s*(?:daftar|list|catatan|notes?)?\s*[:,\-]?\s*/i, '')
       .replace(/\s{2,}/g, ' ')
       .trim();
     // Bila hanya "tambah barang" tanpa isi -> minta isinya.
@@ -3597,9 +3617,19 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   }
 
   // d) CATATAN: "simpan/tulis/dicatat" + isi jelas
-  const mCatat = asli.match(/\b(?:simpan|dicatat|tercatat|tulis(?:kan)?|masukin|input(?:kan)?)\b\s*(?:ini|nih|dong)?[:\s]+([\s\S]{4,200})/i);
+  //
+  // DIPERBAIKI (temuan pemilik produk 09 Okt 2026): pesan
+  //   "masukin ke watchlist movie ku, documentary: in the name of god"
+  // tersimpan sebagai "ke watchlist movie ku, documentary: in the name of god" —
+  // NOISE frasa tujuan ("ke watchlist movie ku") ikut terbawa, padahal user
+  // hanya ingin JUDUL FILM-nya dicatat.
+  //
+  // AKAR: cabang ini mengambil isi MENTAH (mCatat[1]) tanpa membersihkan frasa
+  // tujuan. Cabang lain sudah pakai `bersihkanIsi()`.
+  const mCatat = asli.match(/\b(?:simpan|dicatat|tercatat|tulis(?:kan)?|masukin|masukkan|input(?:kan)?)\b\s*(?:ini|nih|dong)?[:\s]+([\s\S]{4,200})/i);
   if (mCatat) {
-    const isi = mCatat[1].trim();
+    // Buang frasa tujuan/kata pengantar yang menggantung di awal.
+    const isi = bersihkanIsi(mCatat[1].trim());
     if (isi.length >= 4) {
       return {
         kind: 'note', yakin: 0.65,
