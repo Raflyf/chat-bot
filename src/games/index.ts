@@ -9,6 +9,7 @@
  * permainan terasa NYATA: kartu/papan tidak berubah-ubah tiap balasan.
  */
 import { db } from '../db.js';
+import { normChatId } from '../chat_id.js';
 import { mulaiGame, langkahGame, pembukaGame, type HasilGame } from './engine.js';
 import { cariGame, mintaBerhenti, DAFTAR_GAME } from './cards.js';
 
@@ -26,6 +27,7 @@ export interface HasilTanganiGame {
 
 /** Ambil permainan aktif untuk chat ini (null bila tidak ada). */
 export async function ambilGame(chatId: string): Promise<{ kind: string; state: Record<string, unknown> } | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return null;
 
@@ -76,6 +78,7 @@ export async function simpanGame(
   state: Record<string, unknown> | null,
   selesai = false,
 ): Promise<void> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return;
 
@@ -122,6 +125,7 @@ export async function simpanGame(
 
 /** Akhiri permainan aktif (tanpa syarat). */
 export async function akhiriGame(chatId: string): Promise<void> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return;
   try {
@@ -177,6 +181,7 @@ export async function tanganiGame(
   chatId: string,
   platform: string,
 ): Promise<HasilTanganiGame> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const low = teks.trim().toLowerCase();
 
   // 1. Minta daftar game

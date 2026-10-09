@@ -13,6 +13,7 @@
  * dengan KONFIRMASI lebih dulu agar tidak salah hapus.
  */
 import { db } from './db.js';
+import { normChatId } from './chat_id.js';
 import { parseWaktuAlami } from './notes.js';
 import { kemiripanPesan } from './reminder-dedup.js';
 
@@ -39,6 +40,7 @@ export interface PermintaanUbah {
 
 /** Ambil pengingat pending milik chat. */
 export async function daftarPengingatPending(chatId: string): Promise<PengingatRingkas[]> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return [];
   try {

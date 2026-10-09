@@ -17,6 +17,7 @@
  * fungsi ini TIDAK melempar error — hanya mengembalikan false. Bot tetap jalan.
  */
 import { db } from './db.js';
+import { normChatId } from './chat_id.js';
 import { logWarn } from './logger.js';
 
 /** Batas karakter teks yang disimpan (agar DB tidak membengkak). */
@@ -42,6 +43,7 @@ export interface DokumenTersimpan {
 export async function simpanDokumen(d: DokumenTersimpan): Promise<boolean> {
   const c = db();
   if (!c || !d?.chatId || !d?.filename) return false;
+  d.chatId = normChatId(d.chatId);   // konsistensi chat_id (satu sumber)
   const teksAsli = typeof d.teks === 'string' ? d.teks : '';
   try {
     const { error } = await c.from('documents').insert({
@@ -79,6 +81,7 @@ export async function dokumenTerakhir(
   chatId: string,
   limit = 3,
 ): Promise<Array<{ filename: string; teks: string | null; ringkasan: string | null; created_at: string }>> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c || !chatId) return [];
   try {

@@ -144,6 +144,7 @@ export async function claimIncomingMessage(
   chatId: string,
   content: string = '[incoming]'
 ): Promise<boolean> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   if (!msgId) return true;
   const c = db();
   if (!c) return false; // fail-closed jika DB tidak terhubung
@@ -292,6 +293,7 @@ export async function pesanBotTerakhir(
   platform: string,
   chatId: string,
 ): Promise<string | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c || !chatId) return null;
   try {

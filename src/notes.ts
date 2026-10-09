@@ -1318,7 +1318,11 @@ const KATA_PERINTAH_UTAMA =
   if (perintahBarang) {
     // Buang kata perintah + kata "barang/belanja", sisanya jadi isi.
     let isiBarang = asli
-      .replace(/^\s*\/?(?:catat|catet|note|notes|simpan|tulis|tambah|tambahin|nambah|masukkan|input|barang|belanja|belanjaan|stok|inventaris|shopping)\b\s*/i, '')
+      // Buang slash + kata perintah + kata wadah (berulang, karena bisa menumpuk:
+      // "/barang tambah beras" -> buang "/barang", lalu buang "tambah").
+      .replace(/^\s*\/?\s*(?:catat|catet|note|notes|simpan|tulis|nambah|masukkan|input|barang|belanja|belanjaan|stok|inventaris|shopping)\b\s*/i, '')
+      .replace(/^\s*(?:tambah|tambahin|masukin|masukkan|input|catat|simpan)\b\s*/i, '')
+      .replace(/^\s*(?:barang|belanja|belanjaan|stok|inventaris|shopping)\b\s*/i, '')
       .replace(/\b(?:barang|belanja|belanjaan|stok|inventaris|shopping)\b\s*/gi, '')
       // Buang frasa tujuan yang menggantung ("ke daftar", "ke list") + titik dua
       // (temuan 09 Okt 2026: "catat ke daftar belanja: sabun, sampo" -> "ke daftar : sabun, sampo").
@@ -1544,6 +1548,7 @@ export async function simpanCatatan(
 }
 
 export async function daftarCatatan(chatId: string, limit = 10): Promise<CatatanRingkas[]> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return [];
   try {
@@ -1561,6 +1566,7 @@ export async function daftarCatatan(chatId: string, limit = 10): Promise<Catatan
 
 
 export async function hapusCatatan(chatId: string, id: number): Promise<boolean> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return false;
   try {
@@ -1601,6 +1607,7 @@ export async function simpanTugas(
 export async function daftarUang(chatId: string, limit = 10): Promise<Array<{
   id: number; amount: number; kind: string; category: string; note: string; created_at: string;
 }>> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return [];
   try {
@@ -1634,6 +1641,7 @@ export function formatDaftarUang(rows: Array<{
 }
 
 export async function daftarTugas(chatId: string, hanyaBelumSelesai = true): Promise<TugasRingkas[]> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return [];
   try {
@@ -1673,6 +1681,7 @@ export async function daftarTugas(chatId: string, hanyaBelumSelesai = true): Pro
  * Dipakai untuk menampilkan "Tugas dicatat (#N)" dengan nomor yang konsisten.
  */
 export async function nomorUrutTugas(chatId: string, id: number): Promise<number | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return null;
   try {
@@ -1692,6 +1701,7 @@ export async function nomorUrutTugas(chatId: string, id: number): Promise<number
 }
 
 export async function idDariNomorTugas(chatId: string, nomor: number): Promise<number | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return null;
   try {
@@ -1711,6 +1721,7 @@ export async function idDariNomorTugas(chatId: string, nomor: number): Promise<n
 }
 
 export async function selesaikanTugas(chatId: string, id: number): Promise<boolean> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return false;
   try {
@@ -1724,6 +1735,7 @@ export async function selesaikanTugas(chatId: string, id: number): Promise<boole
 }
 
 export async function hapusTugas(chatId: string, id: number): Promise<boolean> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return false;
   try {
@@ -1805,6 +1817,7 @@ export async function simpanUang(
 
 export async function rekapUang(chatId: string, dariHari: number = 30): Promise<RekapUang> {
   const kosong: RekapUang = { masuk: 0, keluar: 0, selisih: 0, perKategori: [] };
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return kosong;
   try {
@@ -1844,6 +1857,7 @@ export async function rekapUang(chatId: string, dariHari: number = 30): Promise<
 
 
 export async function cariCatatan(chatId: string, kata: string, limit = 10): Promise<CatatanRingkas[]> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return [];
   try {
@@ -1861,6 +1875,7 @@ export async function cariCatatan(chatId: string, kata: string, limit = 10): Pro
 }
 
 export async function hapusUang(chatId: string, id: number): Promise<boolean> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return false;
   try {
@@ -2010,6 +2025,7 @@ const PERMINTAAN_TERTUNDA_TTL_MS = 10 * 60_000; // 10 menit
 async function simpanPermintaanTertunda(
   chatId: string, teks: string, platform: string, actor?: string, jenis: 'zona' | 'jam' = 'zona',
 ): Promise<void> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const v: PermintaanTertunda = { teks, platform, actor, at: Date.now(), jenis };
   // Lapisan 1: memori (cepat, untuk instance yang sama).
   permintaanTertunda.set(chatId, v);
@@ -2032,6 +2048,7 @@ async function simpanPermintaanTertunda(
 
 /** Ambil permintaan tertunda (memori dulu, lalu database). */
 async function ambilPermintaanTertunda(chatId: string): Promise<PermintaanTertunda | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   // Lapisan 1: memori.
   const v = permintaanTertunda.get(chatId);
   if (v && Date.now() - v.at <= PERMINTAAN_TERTUNDA_TTL_MS) return v;
@@ -2068,6 +2085,7 @@ async function ambilPermintaanTertunda(chatId: string): Promise<PermintaanTertun
 
 /** Buang permintaan tertunda (sudah dilanjutkan / dibatalkan). */
 async function buangPermintaanTertunda(chatId: string): Promise<void> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   permintaanTertunda.delete(chatId);
   try {
     const c = db();
@@ -2167,6 +2185,7 @@ async function ambilKonfirmasi(
 
 /** Buang konfirmasi tertunda (user bilang "tidak"). */
 async function buangKonfirmasi(chatId: string): Promise<void> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   konfirmasiTertunda.delete(chatId);
   const c = db();
   if (!c) return;
@@ -2681,7 +2700,18 @@ export async function tanganiPencatatan(
   // dengan tag khusus 'belanja', agar tidak perlu tabel baru).
   m = low.match(/^\/(?:barang|belanja|stok|shopping)\s+([\s\S]+)/);
   if (m) {
-    const isi = s.replace(/^\/(?:barang|belanja|stok|shopping)\s+/i, '').trim();
+    // Buang kata kerja yang menggantung ("tambah", "tambahin", "masukin", "catat")
+    // agar isi barang bersih.
+    // Temuan 09 Okt 2026: "/barang tambah beras lima kilo" tersimpan sebagai
+    // "tambah beras lima kilo" — kata "tambah" ikut terbawa.
+    const isi = s
+      .replace(/^\/(?:barang|belanja|stok|shopping)\s+/i, '')
+      .replace(/^\s*(?:tambah|tambahin|masukin|masukkan|input|catat|catet|simpan|tulis|nambah)\b\s*/i, '')
+      .replace(/^\s*(?:ke|kedalam|ke\s+dalam)\s+(?:daftar|list|catatan|notes?|belanja)\s*[:,\-]?\s*/i, '')
+      .trim();
+    if (!isi) {
+      return { ditangani: true, reply: 'Mau tambah barang apa? Contoh: */barang tambah beras 5kg*', jalur: 'perintah-barang' };
+    }
     const r = await simpanDariNiat(chatId,
       { kind: 'note', yakin: 1, data: { content: isi, tags: ['belanja'] }, ringkas: `Barang: "${isi.slice(0, 80)}"` },
       { actor: opts.actor, platform: opts.platform });

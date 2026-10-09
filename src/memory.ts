@@ -77,6 +77,7 @@ function sweepContextCache(now: number): void {
 }
 
 export function updateContextCache(chatKey: string, role: 'user' | 'assistant', content: string): void {
+  chatKey = normChatId(chatKey);   // konsistensi chat_id (satu sumber)
   if (!content || !content.trim()) return; // jangan simpan balasan kosong (zero teks statis)
   sweepContextCache(Date.now());
   const cached = contextCache.get(chatKey);
@@ -121,6 +122,7 @@ export function isResetCommand(text: string): boolean {
 /** Reset sesi percakapan aktif: menyematkan checkpoint pemotong riwayat, menghapus ringkasan lama & membersihkan cache.
  * Tidak mengembalikan teks konfirmasi statis — balasan dibuat dinamis oleh pemanggil via autoReply. */
 export async function resetSession(chatKey: string, platform: string = 'whatsapp'): Promise<void> {
+  chatKey = normChatId(chatKey);   // konsistensi chat_id (satu sumber)
   contextCache.delete(chatKey);
   counters.delete(chatKey);
   // Chat fixture test (mis. __verify_v32__) tidak boleh menulis checkpoint ke DB production.
@@ -279,6 +281,7 @@ const counters = new Map<string, number>();
  * 60 pesan terakhir -> memori jangka panjang lebih kaya & lebih cepat diperbarui.
  */
 export function noteExchange(chatKey: string): void {
+  chatKey = normChatId(chatKey);   // konsistensi chat_id (satu sumber)
   // ── COUNTER PERSISTEN (perbaikan 06 Okt 2026) ──
   // MASALAH: counter lama (`counters` Map di memori) TIDAK PERNAH mencapai 6
   // di Vercel serverless, karena tiap request bisa jalan di instance berbeda

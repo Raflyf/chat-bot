@@ -21,6 +21,7 @@
  * `corrections` (menyimpan baris bertanda khusus) bila migrasi belum dijalankan.
  */
 import { db } from './db.js';
+import { normChatId } from './chat_id.js';
 import {
   detectUserCountry, detectLocation, detectUserLocationDeclaration,
   registerPembacaProfil,
@@ -44,6 +45,7 @@ const TANDA_FALLBACK = '[ZONA_WAKTU]';
 
 /** Ambil profil waktu user (null bila belum diketahui). */
 export async function ambilProfilWaktu(chatId: string): Promise<ProfilWaktu | null> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return null;
 
@@ -103,6 +105,7 @@ export async function simpanProfilWaktu(
   platform: string,
   profil: ProfilWaktu,
 ): Promise<boolean> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return false;
 
@@ -172,6 +175,7 @@ export async function tentukanProfilWaktu(
   platform: string,
   teksPesan = '',
 ): Promise<KeputusanWaktu> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   // 0. User menyebut lokasinya di pesan ini? -> simpan (paling akurat).
   const deklarasi = detectUserLocationDeclaration(teksPesan);
   if (deklarasi) {
@@ -335,6 +339,7 @@ const CACHE_TTL_MS = 10 * 60_000;
 
 /** Isi cache (dipanggil tentukanProfilWaktu). */
 export function setCacheProfil(chatId: string, profil: ProfilWaktu | null): void {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   if (!profil) {
     cacheProfil.delete(chatId);
     return;
@@ -349,6 +354,7 @@ export function setCacheProfil(chatId: string, profil: ProfilWaktu | null): void
 /** Baca cache (sinkron). Mengembalikan null bila belum ada / kadaluarsa. */
 export function getCacheProfil(chatId?: string): ProfilWaktu | null {
   if (!chatId) return null;
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const e = cacheProfil.get(chatId);
   if (!e) return null;
   if (Date.now() - e.at > CACHE_TTL_MS) {
