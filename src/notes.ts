@@ -370,9 +370,57 @@ export function parseWaktuAlami(
   const zona = zonaZona || (typeof zonaAktif === 'string' && zonaAktif ? zonaAktif : 'Asia/Jakarta');
   const hasil = new Date(sekarang.getTime());
 
+  // ── PRIORITAS TERTINGGI: TANGGAL LENGKAP (temuan fatal 09 Okt 2026) ──
+  // DICEK SEBELUM segalanya, karena pola "13 oct 2026 jam 16.00" dulu ditangkap
+  // oleh blok JEDA ("2026 jam") sehingga menghasilkan 1 Januari 2027.
+  {
+    const NAMA_BULAN_AWAL: Record<string, number> = {
+      januari: 1, jan: 1, februari: 2, feb: 2, maret: 3, mar: 3, april: 4, apr: 4,
+      mei: 5, may: 5, juni: 6, jun: 6, juli: 7, jul: 7, agustus: 8, agu: 8, ags: 8, aug: 8,
+      september: 9, sep: 9, sept: 9, oktober: 10, okt: 10, oct: 10, november: 11, nov: 11,
+      desember: 12, des: 12, dec: 12,
+    };
+    const alt = Object.keys(NAMA_BULAN_AWAL).join('|');
+    const mTL = s.match(new RegExp(`\\b(\\d{1,2})\\s+(?:${alt})\\s*(\\d{4})?`, 'i'));
+    if (mTL) {
+      const tgl = Math.min(31, Math.max(1, Number(mTL[1])));
+      const namaB = (mTL[0].match(new RegExp(alt, 'i'))?.[0] ?? '').toLowerCase();
+      const mo = NAMA_BULAN_AWAL[namaB] ?? 0;
+      if (mo > 0) {
+        const thn = mTL[2] ? Number(mTL[2]) : undefined;
+        const mJ = s.match(/(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?/);
+        let j = mJ ? Number(mJ[1]) : 8;
+        const men = mJ?.[2] ? Number(mJ[2]) : 0;
+        if (/\b(malam|sore|petang)\b/.test(s) && j < 12) j += 12;
+        const k = komponenDiZona(sekarang, zona);
+        const th = thn ?? k.y;
+        let d = dariKomponenZona(th, mo, tgl, j, men, zona);
+        if (!thn && d.getTime() <= sekarang.getTime()) d = dariKomponenZona(th + 1, mo, tgl, j, men, zona);
+        // Jam selesai (rentang) bila ada.
+        const mS = s.match(/(?:jam|pukul)?\s*\d{1,2}[:.]\d{2}\s*(?:-|–|sampai|hingga|s\/d|sd)\s*(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?/);
+        if (mS) {
+          Object.defineProperty(d, 'selesai', {
+            value: dariKomponenZona(th, mo, tgl, Number(mS[1]), mS[2] ? Number(mS[2]) : 0, zona),
+            enumerable: false,
+          });
+        }
+        return d;
+      }
+    }
+  }
+
   // "N menit lagi" / "N jam lagi" / "N hari lagi", N boleh angka atau kata.
-  const mJeda = s.match(/(\d+(?:[.,]\d+)?)\s*(menit|jam|hari|minggu|bulan)\s*(lagi|kemudian|kedepan)?/);
-  if (mJeda) {
+  // ── BUG FATAL DIPERBAIKI (09 Okt 2026) ──
+  // Pola jeda ini menangkap "2026 jam" dari "... 13 oct 2026 jam 16.00 ..." —
+  // angka TAHUN dibaca sebagai N, "jam" sebagai satuan -> 2026 JAM dari sekarang
+  // = 1 Januari 2027 (ngaco total). Akibatnya pengingat tidak pernah tersimpan.
+  //
+  // BATAS: N jeda maksimal 3 digit (maks 999) DAN diikuti kata "lagi/kemudian/
+  // kedepan" ATAU tidak ada kata bulan/tahun di sekitarnya. Tahun 4 digit
+  // (1900-2100) SELALU ditolak sebagai jeda.
+  const mJeda = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*(menit|jam|hari|minggu|bulan)\s*(lagi|kemudian|kedepan)?/);
+  const tahunDekat = /\b(?:19|20)\d{2}\b/.test(s);
+  if (mJeda && !(tahunDekat && !/\b(?:lagi|kemudian|kedepan)\b/.test(s))) {
     const n = Number(String(mJeda[1]).replace(',', '.'));
     const satuan = mJeda[2];
     const ms =
@@ -434,6 +482,8 @@ export function parseWaktuAlami(
   // SELESAI dibuang begitu saja, sehingga pesan jadi "saya akan rapat dari sampai".
   // Jam selesai disimpan di properti non-enumerable agar tidak mengubah tipe Date.
   const mRentang = s.match(
+    /(?:dari\s+)?(?:jam|pukul)?\s*(\d{1,2})[:.](\d{2})\s*(?:sampai|sampai\s+dengan|s\/d|sd|hingga|-|–)\s*(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?/,
+  ) || s.match(
     /(?:dari\s+)?(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(?:sampai|sampai\s+dengan|s\/d|sd|hingga|sampai\s+jam|-|–|sampai\s+pukul)\s*(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?/,
   );
   if (mRentang) {
@@ -448,6 +498,53 @@ export function parseWaktuAlami(
     if (selesai.getTime() <= d.getTime()) selesai = geserHariDiZona(selesai, 1, zona);
     Object.defineProperty(d, 'selesai', { value: selesai, enumerable: false });
     return d;
+  }
+
+  // ── TANGGAL LENGKAP: "13 Oktober 2026", "13 oct 2026", "Selasa, 13 Oktober 2026" ──
+  // BUG FATAL YANG DIPERBAIKI (temuan 09 Okt 2026):
+  //   "ini jadwal aku. latihan badminton hari Selasa, 13 oct 2026 jam 16.00-19.00 WIB"
+  //   -> parseWaktuAlami mengembalikan 1 JANUARI 2027 (ngaco total!), karena
+  //      TIDAK ADA parser tanggal+bulan+tahun. Angka "2026" ikut dibaca sebagai jam.
+  //
+  // Dampak nyata: pengingat tidak tersimpan sama sekali (parser mengembalikan
+  // tanggal mustahil) sehingga bot berbohong "siap aku catat".
+  const NAMA_BULAN: Record<string, number> = {
+    januari: 1, jan: 1, februari: 2, feb: 2, maret: 3, mar: 3, april: 4, apr: 4,
+    mei: 5, may: 5, juni: 6, jun: 6, juli: 7, jul: 7, agustus: 8, agu: 8, ags: 8, aug: 8,
+    september: 9, sep: 9, sept: 9, oktober: 10, okt: 10, oct: 10, november: 11, nov: 11,
+    desember: 12, des: 12, dec: 12,
+  };
+  const bulanAlt = Object.keys(NAMA_BULAN).join('|');
+  // Pola: "13 oktober 2026", "13 oct 2026", "13 okt", "1 desember 2026"
+  const mTanggalLengkap = s.match(
+    new RegExp(`\\b(\\d{1,2})\\s+(?:${bulanAlt})\\s*(\\d{4})?`, 'i'),
+  );
+  if (mTanggalLengkap) {
+    const tgl = Math.min(31, Math.max(1, Number(mTanggalLengkap[1])));
+    const namaBulan = mTanggalLengkap[0].match(new RegExp(bulanAlt, 'i'))?.[0]?.toLowerCase() ?? '';
+    const mo = NAMA_BULAN[namaBulan] ?? 0;
+    if (mo > 0) {
+      const thn = mTanggalLengkap[2] ? Number(mTanggalLengkap[2]) : undefined;
+      // Ambil jam bila ada (bisa dari rentang "16.00-19.00" -> jam mulai 16).
+      const mJamTL = s.match(/(?:jam|pukul)\s*(\d{1,2})(?:[:.](\d{2}))?/);
+      let jTL = mJamTL ? Number(mJamTL[1]) : 8;
+      const menTL = mJamTL?.[2] ? Number(mJamTL[2]) : 0;
+      if (/\b(malam|sore|petang)\b/.test(s) && jTL < 12) jTL += 12;
+      const kTL = komponenDiZona(sekarang, zona);
+      const tahunTL = thn ?? kTL.y;
+      let dTL = dariKomponenZona(tahunTL, mo, tgl, jTL, menTL, zona);
+      // Tanpa tahun & tanggalnya sudah lewat -> tahun depan.
+      if (!thn && dTL.getTime() <= sekarang.getTime()) {
+        dTL = dariKomponenZona(tahunTL + 1, mo, tgl, jTL, menTL, zona);
+      }
+      // Lampirkan jam selesai bila ada rentang ("16.00-19.00").
+      const mSelTL = s.match(/(?:jam|pukul)?\s*\d{1,2}[:.]\d{2}\s*(?:-|–|sampai|hingga|s\/d|sd)\s*(?:jam|pukul)?\s*(\d{1,2})(?:[:.](\d{2}))?/);
+      if (mSelTL) {
+        const selesaiTL = dariKomponenZona(tahunTL, mo, tgl, Number(mSelTL[1]), mSelTL[2] ? Number(mSelTL[2]) : 0, zona);
+        Object.defineProperty(dTL, 'selesai', { value: selesaiTL, enumerable: false });
+      }
+      return dTL;
+    }
   }
 
   // TANGGAL BULANAN: "tanggal 1", "tgl 15" -> tanggal itu, jam 08:00 (default).
@@ -3200,8 +3297,27 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
   const s = asli.toLowerCase();
   if (s.length < 5 || s.length > 400) return null;
 
+  // ── JADWAL/KEGIATAN DENGAN WAKTU JELAS (temuan fatal 09 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: user 2166 mengirim
+  //   "ini jadwal aku. latihan badminton hari Selasa, 13 oct 2026 jam 16.00-19.00 WIB
+  //    ya, ditunggu kehadirannya di lapang"
+  // lalu bot menjawab "Siap, aku catat jadwal latihan badmintonmu untuk Selasa,
+  // 13 Oktober 2026 pukul 16.00-19.00 WIB" — TETAPI DATABASE KOSONG. Bot BERBOHONG.
+  //
+  // AKAR: `sinyalMinta` hanya menerima kata perintah (tolong/catat/jadwalkan/dll).
+  // Pesan yang MENDESKRIPSIKAN jadwal/kegiatan dengan WAKTU JELAS tidak lolos,
+  // padahal jelas perlu dicatat sebagai pengingat/tugas.
+  //
+  // ATURAN BARU: bila ada (a) kata jadwal/kegiatan/agenda/acara/undangan ATAU
+  // kata kegiatan umum (latihan, rapat, seminar, sosialisasi, ujian, dll)
+  // DITAMBAH (b) WAKTU yang bisa diparse -> itu permintaan catat yang sah.
+  const kataJadwal =
+    /\b(?:jadwal|agenda|acara|kegiatan|kegiatanku|undangan|diundang|ditunggu|hadir|kehadiran|sosialisasi|rapat|seminar|ujian|uts|uas|sidang|presentasi|praktikum|kuliah|les|kursus|latihan|turnamen|lomba|pertandingan|konser|nikahan|pernikahan|resepsi|arisan|pengajian|vaksin|periksa|kontrol|operasi|interview|wawancara|deadline|tenggat|batas\s+waktu|bayar\s+sekolah|bimbingan|konsultasi|menginap|camp|study\s*tour)\b/i.test(s);
+  const adaWaktuJelas = parseWaktuAlami(asli) !== null;
+  const jadwalJelas = kataJadwal && adaWaktuJelas;
+
   // Harus ada sinyal "permintaan aksi", kalau tidak, ini obrolan biasa.
-  const sinyalMinta =
+  const sinyalMinta = jadwalJelas ||
     /\b(?:tolong|please|pls|mohon|bantu|bantuin|bisa|bisakah|boleh|coba|cek|masukin|input|daftarkan|list|set|pasang|buatkan|bikinin|jadwalkan|siapkan|tandai|mark)\b/i.test(s) ||
     /\b(?:jangan\s*lupa|jgn\s*lupa|jngn\s*lupa|ingat\s*ya|catat\s*ya|dicatat|tercatat|notes?\s*:)/i.test(s) ||
     // "aku perlu ...", "aku harus ...", permintaan implisit untuk dicatat sebagai tugas
@@ -3294,6 +3410,42 @@ export function deteksiNiatImplisit(teks: string): NiatTerdeteksi | null {
       if (pesan.length < 3) pesan = asli;
       return {
         kind: 'note', yakin: 0.7,
+        data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
+        ringkas: `Pengingat "${pesan}" pada ${formatWaktuUser(kapan)}`,
+      };
+    }
+  }
+
+  // a2) JADWAL/KEGIATAN dengan WAKTU JELAS (temuan fatal 09 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: user 2166 kirim
+  //   "ini jadwal aku. latihan badminton hari Selasa, 13 oct 2026 jam 16.00-19.00 WIB"
+  // Bot jawab "Siap, aku catat jadwal latihan badmintonmu untuk Selasa, 13 Oktober
+  // 2026 pukul 16.00-19.00 WIB" — TETAPI DATABASE KOSONG. Bot BERBOHONG.
+  //
+  // AKAR: `sinyalMinta` sudah menerima jadwalJelas, TETAPI fungsi ini hanya punya
+  // cabang (a) PENGINGAT dan (b) KEUANGAN — tidak ada cabang untuk JADWAL,
+  // sehingga fungsi jatuh ke `return null` di akhir.
+  //
+  // SEKARANG: jadwal/kegiatan + waktu jelas -> simpan sebagai PENGINGAT
+  // (paling masuk akal: user ingin diingatkan pada waktu itu).
+  if (jadwalJelas) {
+    const kapan = parseWaktuAlami(asli);
+    if (kapan) {
+      let pesan = asli
+        .replace(/^\s*\/?(?:tolong|please|pls|mohon|bantu|bantuin|coba|set|pasang|buatkan|bikinin|jadwalkan|siapkan)\s+/i, '')
+        .replace(/^\s*(?:ini|itu)\s+(?:jadwal|agenda|acara)\s+(?:aku|saya|gue|gw)\s*[.,:]?\s*/i, '')
+        .replace(/\b(?:jadwal|agenda|acara)\s+(?:aku|saya|gue|gw)\b/gi, '')
+        .replace(/\b(?:ya|yah|nih|dong|deh|sih)\b\s*[,.]?\s*$/gi, '')
+        .replace(/\s*[.,]\s*(?:ditunggu|menunggu)\s+kehadiran(?:nya)?[^.]*/gi, '')
+        .replace(/\b(?:ditunggu|menunggu)\s+kehadiran(?:nya)?\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      if (pesan.length < 3) pesan = asli;
+      // Buang emoji berlebih di akhir (💪🏻✨ dsb)
+      pesan = pesan.replace(/\s*[\p{Extended_Pictographic}\uFE0F\u200D]+\s*$/gu, '').trim();
+      if (pesan.length < 3) pesan = asli;
+      return {
+        kind: 'note', yakin: 0.75,
         data: { pengingat: true, due_at: kapan.toISOString(), message: pesan },
         ringkas: `Pengingat "${pesan}" pada ${formatWaktuUser(kapan)}`,
       };
@@ -3526,7 +3678,16 @@ export function deteksiPertanyaan(teks: string): 'keuangan' | 'tugas' | 'catatan
   if (/\b(?:catat|catet|simpan)\b/.test(s) && /\b(?:semua|semuanya|seluruh)\b/.test(s) && new RegExp(`\\b(?:${KATA_UANG})\\b`).test(s)) {
     return 'keuangan';
   }
-  if (/^\/?(rekap|saldo|keuangan|dompet|kas)\b/.test(s)) return 'keuangan';
+  // ── PRIORITAS TUGAS (temuan fatal 09 Okt 2026) ──
+  // LAPORAN: "rekap tugas aku" salah dikenali sebagai pertanyaan KEUANGAN, karena
+  // aturan `/^(rekap|saldo|keuangan|...)/` jalan lebih dulu. Padahal jelas TUGAS.
+  // ATURAN: bila ada kata tugas/todo/task/kerjaan + kata rekap/daftar/lihat ->
+  // itu pertanyaan TUGAS, bukan keuangan.
+  if (
+    /\b(?:tugas|todo|to-do|task|kerjaan|pekerjaan|pr|agenda|kegiatan|jadwal)\b/.test(s) &&
+    /\b(?:rekap|daftar|list|lihat|tampilkan|cek|apa|semua|rincian)\b/.test(s)
+  ) return 'tugas';
+  if (/^\/?(rekap|saldo|keuangan|dompet|kas)\b/.test(s) && !/\b(?:tugas|todo|task|kerjaan|agenda|kegiatan|jadwal)\b/.test(s)) return 'keuangan';
   // "pengeluaranku berapa", "uangku sisa berapa", "duitku berapa"
   if (/\b(uang|duit|pengeluaran|pemasukan|pendapatan|belanja|keuangan|saldo|tabungan|budget)(ku|saya|gue|aku)?\b/.test(s) &&
       new RegExp(`\\b(?:${KATA_TANYA})\\b`).test(s)) return 'keuangan';
