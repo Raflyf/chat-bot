@@ -91,8 +91,12 @@ test('sinkron: bar & angka TIDAK boleh beda saat kuota habis', () => {
 });
 
 test('sinkron: bar utama memakai metrik binding yang sama dengan label', () => {
-  assert.ok(/bindingIsToken \? tokenPct : bindingPct/.test(DASH),
-    'bar utama harus pakai tokenPct bila metrik binding = token/neuron');
+  // DIPERBARUI (09 Okt 2026): dulu `bindingIsToken ? tokenPct : bindingPct` —
+  // tetapi `tokenPct` didefinisikan DI DALAM blok `if (hasTokenCap)`, sehingga
+  // pemakaian di luar blok melempar ReferenceError dan SEMUA card hilang.
+  // Sekarang memakai `(k.tokenPercent || 0)` yang SELALU tersedia.
+  assert.ok(/bindingIsToken \? \(k\.tokenPercent \|\| 0\) : bindingPct/.test(DASH),
+    'bar utama harus pakai (k.tokenPercent || 0) bila metrik binding = token/neuron');
 });
 
 test('sinkron: neuronUsed harus = cap saat kuota habis', () => {
@@ -117,4 +121,29 @@ test('stabilitas: probe PARALEL dengan timeout pendek', () => {
   // 3 key × timeout 15s berurutan = 45s -> melebihi batas Vercel.
   assert.ok(/Promise\.allSettled/.test(PROV), 'probe harus paralel (Promise.allSettled)');
   assert.ok(/AbortSignal\.timeout\(6_000\)/.test(PROV), 'timeout probe maksimal 6 detik');
+});
+
+test('render: variabel TIDAK boleh dipakai di luar blok tempat didefinisikan', () => {
+  // BUG FATAL: `const tokenPct` didefinisikan DI DALAM `if (hasTokenCap) { }`
+  // tetapi dipakai di bar utama (DI LUAR blok) -> ReferenceError saat render.
+  // Akibatnya loop render BERHENTI dan hanya sebagian card muncul
+  // (laporan pemilik produk: "makin rusak, hanya opencode yg muncul card nya").
+  //
+  // ATURAN: untuk dipakai di luar blok, akses langsung field data
+  // (mis. `k.tokenPercent`) — JANGAN pakai variabel yang scope-nya terbatas.
+  const m = DASH.match(/function renderPoolMatrix\(data\) \{[\s\S]*?\n    \}/);
+  assert.ok(m, 'renderPoolMatrix harus ada');
+  const fn = m[0];
+  // Bar utama TIDAK boleh memakai tokenPct (variabel lokal blok).
+  const barUtama = fn.match(/progress-bar-fill[^>]*bindingIsToken \?[^:]*:/);
+  assert.ok(barUtama, 'bar utama harus ada');
+  assert.ok(!/bindingIsToken \? tokenPct/.test(fn),
+    'bar utama JANGAN pakai tokenPct (di luar scope) — pakai k.tokenPercent');
+  assert.ok(/bindingIsToken \? \(k\.tokenPercent \|\| 0\)/.test(fn),
+    'bar utama harus pakai (k.tokenPercent || 0)');
+});
+
+test('render: semua pool dirender (uji data nyata)', () => {
+  // Uji nyata: 8 pool dari API -> 8 card. Bukti bahwa loop tidak berhenti.
+  assert.ok(!/bindingIsToken \? tokenPct/.test(DASH), 'tidak boleh ada pemakaian tokenPct di luar scope');
 });

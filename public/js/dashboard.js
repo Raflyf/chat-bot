@@ -1284,7 +1284,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                     key yang sama. Sekarang bila metrik binding = token/neuron,
                     bar memakai tokenPct yang SUDAH dijamin sinkron dengan status.
                   -->
-                  <div class="progress-bar-fill ${progressColor}" style="width: ${Math.min(100, bindingIsToken ? tokenPct : bindingPct)}%"></div>
+                  <div class="progress-bar-fill ${progressColor}" style="width: ${Math.min(100, bindingIsToken ? (k.tokenPercent || 0) : bindingPct)}%"></div>
                 </div>
                 ${tokenLine}
               </div>
