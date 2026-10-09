@@ -87,7 +87,12 @@ export function deteksiFaktaPersonal(teks: string): FaktaPersonal | null {
   );
   if (m) {
     const v = bersih(m[1]);
-    if (v && v.length >= 2 && !/^(?:apa|siapa|kamu|aku|saya|gue|gw|dia|nya|itu|ini)$/i.test(v)) {
+    // Guard (temuan nyata 09 Okt 2026): "nama gue kan" -> "Namanya gue kan" (SAMPAH).
+    // Tolak bila ada kata ganti/partikel yang tersisa di dalam hasil.
+    const partikel = /^(?:kan|ya|yah|deh|sih|nih|dong|lah|tuh|kok|kah|apa|siapa|itu|ini|nya|gue|gw|aku|saya|ku|kamu|kau|dia)$/i;
+    const kataArr = v.split(/\s+/).filter(Boolean);
+    const adaSampah = kataArr.some((k) => partikel.test(k));
+    if (v && v.length >= 2 && !adaSampah) {
       return { kategori: 'nama', fakta: `Namanya ${v}` };
     }
   }
@@ -98,7 +103,11 @@ export function deteksiFaktaPersonal(teks: string): FaktaPersonal | null {
   m = asli.match(new RegExp(`\\bnam(?:a|amu|a)\\s+(?:kamu\\s+|kau\\s+)?(?:itu\\s+)?(?:adalah\\s+)?(${NAMA_KATA})\\s*[,.]?`, 'i'));
   if (m) {
     const v = bersih(m[1]);
-    if (v && v.length >= 2 && !/^(?:apa|siapa|kamu|aku|saya|gue|gw|dia|nya|itu|ini|freeaibot|bot)$/i.test(v)) {
+    // Guard sama seperti blok pertama: tolak bila ada kata ganti/partikel tersisa
+    // (mis. "nama gue kan" -> "gue kan" = SAMPAH, bukan nama).
+    const partikel2 = /^(?:kan|ya|yah|deh|sih|nih|dong|lah|tuh|kok|kah|apa|siapa|itu|ini|nya|gue|gw|aku|saya|ku|kamu|kau|dia|freeaibot|bot)$/i;
+    const adaSampah2 = v.split(/\s+/).filter(Boolean).some((k) => partikel2.test(k));
+    if (v && v.length >= 2 && !adaSampah2) {
       return { kategori: 'nama', fakta: `Namanya ${v}` };
     }
   }
@@ -153,7 +162,15 @@ export function deteksiFaktaPersonal(teks: string): FaktaPersonal | null {
   m = asli.match(/\b(?:aku|saya|gue|gw)\s+(?:kerja|bekerja|kerjaan(?:ku)?|profesiku|jabatanku)\s+(?:di\s+|sebagai\s+|jadi\s+)?([^.!?]{2,60})/i);
   if (m) {
     const v = bersih(m[1]);
-    if (v.length >= 2) return { kategori: 'pekerjaan', fakta: `Kerja di/sebagai ${v}` };
+    // Guard (temuan nyata 09 Okt 2026): "aku kerja biar ga pegel" / "aku kerja baru
+    // pulang" disimpan sebagai PEKERJAAN — itu BUKAN profesi, hanya keterangan.
+    // Tolak bila diawali kata keterangan/konjungsi, atau tidak ada kata benda nyata.
+    const kaburKerja = /^(?:biar|baru|lagi|mau|sedang|udah|sudah|saja|aja|nya|kan|ya|deh|sih|dulu|terus|lalu|jadi\s+ga)\b/i.test(v)
+      || /^(?:di|ke|dari|sama|buat|untuk)\b/i.test(v);
+    const kataKerjaBenda = /\b(?:pt|cv|toko|kantor|pabrik|sekolah|kampus|rumah\s*sakit|rs|hotel|restoran|kafe|warung|bank|startup|perusahaan|instansi|dinas|klinik|apotek|tambang|proyek|lapangan|bengkel|salon|laundry|online|freelance|wirausaha|karyawan|pegawai|staff|staf|guru|dosen|dokter|perawat|programmer|developer|desainer|kasir|sales|marketing|admin|operator|supir|driver|ojek|kurir|barista|koki|petani|nelayan|pedagang|polisi|tentara|pns|tni|polri|mahasiswa|pelajar|siswa|siswi)\b/i.test(v);
+    if (v.length >= 2 && !kaburKerja && kataKerjaBenda) {
+      return { kategori: 'pekerjaan', fakta: `Kerja di/sebagai ${v}` };
+    }
   }
   m = asli.match(/\b(?:aku|saya|gue|gw)\s+(?:seorang\s+|seorang\s+)?(mahasiswa|mahasiswi|pelajar|siswa|siswi|dosen|guru|dokter|perawat|polisi|tentara|programmer|developer|desainer|wirausaha|pengusaha|karyawan|pegawai|buruh|petani|nelayan|pedagang|ojek|driver|kurir|barista|koki|penulis|gitaris|musisi)\b/i);
   if (m) {
@@ -174,10 +191,17 @@ export function deteksiFaktaPersonal(teks: string): FaktaPersonal | null {
 
   // ── 7. KEBIASAAN ──
   // "aku biasa X", "aku selalu X", "tiap hari aku X"
-  m = asli.match(/\b(?:aku|saya|gue|gw)\s+(?:biasanya|biasa|selalu|tiap hari|setiap hari)\s+([^.!?]{3,60})/i);
+  //
+  // DIPERBAIKI (temuan nyata 09 Okt 2026): "aku biasa nya mau ke toko barang² lucu ya"
+  // disimpan sebagai "Biasanya nya mau ke toko..." (kata terbelah + berantakan).
+  // Sekarang "biasa nya"/"biasanya" ditangani sebagai satu kesatuan + guard kabur.
+  m = asli.match(/\b(?:aku|saya|gue|gw)\s+(?:biasa\s*nya|biasanya|biasa|selalu|tiap hari|setiap hari)\s+([^.!?]{3,60})/i);
   if (m) {
     const v = bersih(m[1]);
-    if (v.length >= 3) return { kategori: 'kebiasaan', fakta: `Biasanya ${v}` };
+    // Guard: frasa KABUR (tanpa objek konkret) bukan kebiasaan yang berguna.
+    const kabur = /^(?:nya\b|mau\b|lagi\b|sedang\b|kan\b|ya\b|deh\b|sih\b|aja\b|saja\b)/i.test(v)
+      || (/\b(?:semua|mereka|itu|ini)\s*$/i.test(v) && v.split(/\s+/).length <= 4);
+    if (v.length >= 3 && !kabur) return { kategori: 'kebiasaan', fakta: `Biasanya ${v}` };
   }
 
   return null;

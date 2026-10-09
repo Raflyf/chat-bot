@@ -32,6 +32,8 @@ const LINK = 'https://free-chatbot-ai.vercel.app';
 const DESKRIPSI =
   'Asisten AI pribadi 24/7 untuk WhatsApp & Telegram: teman ngobrol, pengingat, ' +
   'pencatatan (catatan/tugas/keuangan), riset web, dan baca dokumen/gambar/suara.\n\n' +
+  // Baris "bisa apa saja" JANGAN DIHAPUS — cara user menemukan daftar fitur.
+  'Tanya "bisa apa saja" untuk panduan lengkap fitur.\n\n' +
   `🐞 Ada keluhan, atau jawabannya terasa tidak nyambung / ngaco? Laporkan di ${LINK} — ` +
   'bagian paling bawah halaman tersedia form laporan (bisa tempel percakapan atau ' +
   'lampirkan tangkapan layar).';
@@ -45,8 +47,12 @@ const WA_DESKRIPSI =
   'Asisten AI 24 jam: teman ngobrol, riset real-time, dan bantu kerjaan.\n\n' +
   'Bisa mencatat pengingat, keuangan, tugas, dan catatan. Bisa membaca foto, ' +
   'voice note, dan dokumen. Bisa main game di chat juga.\n\n' +
+  // PENTING (koreksi pemilik produk 09 Okt 2026): baris "Tanya bisa apa saja"
+  // JANGAN DIHAPUS — itu cara user menemukan daftar fitur. Saat menambahkan info
+  // laporan, TAMBAHKAN baris baru; jangan menimpa baris yang sudah ada.
+  'Tanya "bisa apa saja" untuk panduan lengkap fitur.\n\n' +
   `Ada keluhan atau jawaban yang tidak nyambung? Laporkan lewat form di ${LINK} ` +
-  '(bagian paling bawah halaman).';
+  '(bagian bawah halaman).';
 
 async function panggil(method: string, body: Record<string, unknown>): Promise<void> {
   if (!config.telegramToken) {
