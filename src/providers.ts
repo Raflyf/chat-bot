@@ -2123,3 +2123,68 @@ export async function chat(
 
   throw new Error(`ALL_PROVIDERS_FAILED:${lastError}`);
 }
+
+/**
+ * PROBE AKTIF: cek langsung apakah kunci Cloudflare masih bisa dipakai.
+ *
+ * KENAPA PERLU (temuan pemilik produk 09 Okt 2026):
+ *   "semua apikey habis? tapi monitoring masih hijau, berarti ini bug fatal yg
+ *    kamu buat, betulkan yg benar dan valid data monitoring nya".
+ *
+ * MASALAH: cooldown 'neuron' hanya tercatat bila ada REQUEST YANG GAGAL. Key yang
+ * kebetulan tidak pernah dicoba (karena kunci lain menang balapan) TIDAK punya
+ * cooldown -> dashboard menampilkannya "Optimal" padahal neuron akun itu HABIS
+ * (kuota neuron dihitung per AKUN, bukan per aplikasi — aplikasi lain di akun
+ * yang sama bisa menghabiskannya tanpa lewat bot).
+ *
+ * SOLUSI: probe ringan (model termurah, 1 token) untuk memastikan status nyata,
+ * lalu CATAT hasilnya sebagai cooldown (atau hapus bila ternyata sehat).
+ * Hasil disimpan di DB sehingga bertahan lintas instance serverless.
+ *
+ * @param model model termurah untuk probe (default llama-3.2-1b)
+ * @returns jumlah key yang HABIS
+ */
+export async function probeKunciCloudflare(
+  model = '@cf/meta/llama-3.2-1b-instruct',
+): Promise<{ diperiksa: number; habis: number; sehat: number }> {
+  let habis = 0;
+  let sehat = 0;
+  for (const key of config.pools.cloudflare) {
+    try {
+      const { accountId, token } = await resolveCloudflareKey(key);
+      if (!accountId || !token) continue;
+      const res = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+      const kh = `cloudflare:${keyHash(key)}`;
+      if (res.ok) {
+        // Sehat -> pastikan tidak ada cooldown 'neuron' yang tertinggal.
+        hapusCooldownPersist(kh);
+        sehat++;
+      } else {
+        let pesan = '';
+        try {
+          const j = (await res.json()) as { errors?: Array<{ message?: string }> };
+          pesan = j.errors?.[0]?.message || '';
+        } catch {
+          pesan = '';
+        }
+        // Neuron habis (400/429 + pesan khas) -> catat cooldown.
+        if (/neurons|daily free allocation|4006|workers paid/i.test(pesan)) {
+          const sampai = Date.now() + msUntilDailyResetUtc();
+          await setCooldownPersist(kh, sampai, 'neuron');
+          habis++;
+        }
+      }
+    } catch {
+      // best-effort: probe gagal karena jaringan, jangan ubah apa pun
+    }
+  }
+  return { diperiksa: config.pools.cloudflare.length, habis, sehat };
+}

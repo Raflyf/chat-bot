@@ -29,6 +29,17 @@ const STATS = baca('api/stats.ts');
 const PROV = baca('src/providers.ts');
 const DASH = baca('public/js/dashboard.js');
 
+test('monitoring: ada PROBE AKTIF untuk kunci Cloudflare', () => {
+  // KENAPA PERLU: cooldown hanya tercatat bila ada request yang GAGAL. Kunci yang
+  // kebetulan tidak pernah dicoba TIDAK punya cooldown -> tampil "Optimal" padahal
+  // neuron akun itu HABIS (kuota dihitung per AKUN, aplikasi lain bisa menghabiskan).
+  // Bukti nyata: key #2 (59a278046880) HABIS tapi tidak ada cooldown-nya.
+  assert.ok(PROV.includes('export async function probeKunciCloudflare'),
+    'harus ada probeKunciCloudflare');
+  assert.ok(/probeKunciCloudflare\(\)/.test(STATS), 'stats.ts harus memanggil probe');
+  assert.ok(STATS.includes('PROBE_TTL_MS'), 'harus ada cache agar dashboard tidak lambat');
+});
+
 test('monitoring: dashboard MEMBACA provider_cooldown', () => {
   assert.ok(STATS.includes('provider_cooldown'), 'stats.ts harus membaca provider_cooldown');
   assert.ok(STATS.includes('cooldownAktif'), 'harus ada map cooldown aktif');

@@ -1,4 +1,5 @@
 import { hitungNeuron, neuronPerBalasanKhas, sisaBalasan, NEURON_HARIAN_GRATIS, tarifModel } from '../src/neuron.js';
+import { probeKunciCloudflare } from '../src/providers.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import { config } from '../src/env.js';
@@ -219,6 +220,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // sudah mencatat alasan='neuron' (Cloudflare habis) dengan `until_at` jelas.
     // Akibatnya key yang SEDANG DIBEKUKAN tetap ditampilkan "OPTIMAL".
     // SEKARANG: cooldown aktif dibaca dan MEMAKSA status key menjadi bukan-optimal.
+    // ── PROBE AKTIF (perbaikan 09 Okt 2026) ──
+    // Sebelum membaca cooldown, PASTIKAN status tiap kunci Cloudflare nyata.
+    // Alasannya: cooldown hanya tercatat bila ada request yang gagal; kunci yang
+    // kebetulan tidak pernah dicoba (karena kunci lain menang balapan) tidak punya
+    // cooldown -> tampil "Optimal" padahal neuron akun itu HABIS.
+    // Probe ringan (model termurah, 1 token) memastikan data monitoring VALID.
+    // Dijalankan best-effort: kegagalan tidak boleh menggagalkan endpoint.
+    // CACHE 5 MENIT: probe memanggil 3 endpoint Cloudflare (bisa ~1-2 detik).
+    // Tanpa cache, setiap refresh dashboard menambah latensi. 5 menit cukup
+    // karena kuota neuron hanya berubah saat ada pemakaian.
+    const PROBE_TTL_MS = 5 * 60_000;
+    const sekarang = Date.now();
+    if (sekarang - (globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir! > PROBE_TTL_MS
+        || !(globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir) {
+      try {
+        await probeKunciCloudflare();
+        (globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir = sekarang;
+      } catch {
+        // best-effort
+      }
+    }
+
     const cooldownAktif = new Map<string, { alasan: string; until: string }>();
     if (c) {
       try {
