@@ -1,4 +1,5 @@
 import { cekRateLimit } from '../src/rate_limit.js';
+import { normChatId } from '../src/chat_id.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from '../src/env.js';
 import { db } from '../src/db.js';
@@ -239,7 +240,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         return;
       }
 
-      const chatId = String(body.chat_id || query.chat_id || '').trim();
+      // Normalisasi chat_id (satu sumber) agar penghapusan data konsisten dengan
+      // penyimpanan (mis. "628991333323" -> "wa_628991333323").
+      const chatId = normChatId(String(body.chat_id || query.chat_id || '').trim());
       if (!chatId) {
         res.status(400).json({ success: false, message: 'chat_id wajib disertakan.' });
         return;

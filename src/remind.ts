@@ -643,7 +643,8 @@ export function startReminderWorker(
     void checkDueReminders(async (chatId, text, platform) => {
       if (platform === 'whatsapp') {
         if (sendWhatsApp) {
-          await sendWhatsApp(chatId, text);
+          // chat_id dari DB bisa berprefix "wa_" -> kirim nomor TELANJANG ke Meta.
+          await sendWhatsApp(nomorWhatsApp(chatId), text);
         } else {
           console.warn(`[remind] Reminder WhatsApp dilewati (tanpa sender WA): ${chatId}`);
         }
