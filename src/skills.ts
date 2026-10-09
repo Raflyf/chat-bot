@@ -2448,7 +2448,26 @@ export function systemPrompt(
     .filter((h) => h.role === 'user')
     .slice(-4)
     .map((h) => (typeof h.content === 'string' ? h.content : ''));
-  const annoyRe = /\b(?:bolot|dongo|dongok|gaje|goblok|bego|tolol|idiot|garing|cringe|gajelas|ga\s*jelas|ngaco|ngawur|apasi|apasih|bacot|bodoh|nyebelin|ga\s*nyambung)\b/i;
+  // ── DIPERLUAS (temuan 09 Okt 2026): FRUSTRASI tanpa kata hinaan ──
+  // LAPORAN: user bilang "dari tadi jawabanmu muter-muter, aku sudah tidak sabar"
+  // + "ini sudah ketiga kali aku tanya hal yang sama" — jelas FRUSTASI, tetapi
+  // bot menjawab "Oke, langsung ke pertanyaanmu aja. Apa yang mau kamu tanyakan?"
+  // (tidak mengakui kekesalannya; malah balik tanya).
+  //
+  // AKAR: pola hanya memuat HINAAN (dongo/goblok/ngaco). Frustrasi yang diutarakan
+  // dengan kalimat biasa TIDAK tertangkap. Ini bukti deteksi berbasis regex TIDAK
+  // universal — maka pola diperluas ke penanda FRUSTRASI UMUM.
+  const annoyRe = new RegExp(
+    [
+      // hinaan langsung
+      '\\b(?:bolot|dongo|dongok|gaje|goblok|bego|tolol|idiot|garing|cringe|gajelas|ga\\s*jelas|ngaco|ngawur|apasi|apasih|bacot|bodoh|nyebelin|ga\\s*nyambung)\\b',
+      // FRUSTRASI / KECEWA (kalimat biasa, tanpa hinaan)
+      '\\b(?:muter\\s*-?\\s*muter|mutar\\s*-?\\s*mutar|berputar\\s*-?\\s*putar|tidak\\s*sabar|gak\\s*sabar|ga\\s*sabar|nggak\\s*sabar|sudah\\s*kesekian|kesekian\\s*kali|ketiga\\s*kali|ke\\s*\\d+\\s*kali|sudah\\s*\\d+\\s*kali|berulang\\s*-?\\s*ulang|diulang\\s*terus|ulang\\s*mulu|susah\\s*(?:banget\\s*)?dijawab|sulit\\s*(?:banget\\s*)?dijawab|tidak\\s*dijawab|gak\\s*dijawab|belum\\s*dijawab|kok\\s*susah|kok\\s*sulit|males\\s*banget|capek\\s*nanya|buang\\s*waktu|percuma|ga\\s*guna|gak\\s*guna|nggak\\s*guna|tidak\\s*membantu|ga\\s*membantu|gak\\s*membantu|mengecewakan|kecewa|sebel|kesel|marah|emosi|frustrasi|frustasi)\\b',
+      // keluhan tentang balasan
+      '\\b(?:jawabanmu|balasanmu|responmu|jawaban\\s*kamu|balasan\\s*kamu)\\b[^.!?\\n]{0,25}\\b(?:salah|aneh|ngaco|ngawur|gajelas|ga\\s*jelas|muter|sama\\s*aja|tidak\\s*membantu|ga\\s*membantu|gak\\s*membantu|belum\\s*benar)\\b',
+    ].join('|'),
+    'i',
+  );
   const warmRe = /(wkwk+|haha+|hehe+|🤣|😭|❤|🧡|makasih|terima kasih|mantap|cakep|salting|seru|asik|ngakak)/i;
   const sadRe = /\b(?:sedih|nangis|menangis|curhat|capek|lelah|lemas|lesu|galau|putus|ditinggal|kecewa|sakit\s*hati|terluka|pengen\s*nangis|down\s*banget)\b/i;
   // Hitung sinyal kesal dari riwayat + pesan saat ini (pesan hangat tidak dihitung kesal)
@@ -2635,7 +2654,13 @@ export function systemPrompt(
   // dengan kalimat meta tentang gaya diri sendiri; (3) PRIORITAS #1 selalu
   // menjawab ISI pesan.
   // ══════════════════════════════════════════════════════════════════════════
+  // ── ATURAN UNIVERSAL: baca suasana SENDIRI, jangan hanya andalkan penanda ──
+  // Deteksi sistem berbasis kata kunci TIDAK mungkin mencakup semua cara orang
+  // mengungkapkan perasaan. Karena itu model WAJIB membaca sendiri suasana dari
+  // kalimatnya, bukan sekadar menunggu penanda [SUASANA: ...] muncul.
   instructions.push(
+    '',
+    '[BACA SUASANA SENDIRI (WAJIB)]: Selain penanda sistem, kamu WAJIB menilai sendiri suasana dari kata-kata dan tanda baca user. Perhatikan: (a) keluhan berulang ("dari tadi", "sudah ketiga kali", "berulang-ulang", "muter-muter", "sama aja"); (b) ketidaksabaran ("tidak sabar", "kok susah", "capek nanya"); (c) kekecewaan ("mengecewakan", "percuma", "ga guna"); (d) nada tinggi (HURUF KAPITAL, banyak tanda seru, "!!"); (e) kesopanan formal ("mohon", "terima kasih", "saya"); (f) keakraban santai ("wkwk", "lu/gue", "cuy", "bro"). Sesuaikan nada balasanmu dengan hasil penilaianmu itu — jangan menunggu instruksi khusus.',
     '',
     '[PRIORITAS UTAMA SEBELUM GAYA]: JAWAB ISI PESANNYA dulu. Gaya bahasa hanya bumbu. Kalau user bertanya/berkata sesuatu, jawab APA YANG DIA KATAKAN dengan nyambung, baru sesuaikan nadanya.',
     '[DILARANG MUTLAK membicarakan dirimu sendiri sebagai bot/AI dalam balasan — termasuk: "aku cuma bisa jadi komentator", "aku cuma bot", "aku lagi ngegas doang", "aku sedang menyesuaikan gaya", "aku di sini buat temenin", atau kalimat apa pun yang menjelaskan PERAN/KEMAMPUAN/CARA KERJAMU. Kamu teman ngobrol; bicaralah tentang TOPIKNYA, bukan tentang dirimu.]',
