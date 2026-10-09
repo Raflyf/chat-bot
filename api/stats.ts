@@ -210,6 +210,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let orLiveResults: OrLiveItem[] = [];
     let liveLimitsMap = new Map<string, Map<string, LiveLimit>>();
     let todayQuotasData: Array<{ kind: string; key_suffix: string; used: number; tokens_used?: number }> = [];
+    // ── COOLDOWN AKTIF (perbaikan 09 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: "semua apikey habis? tapi monitoring masih hijau,
+    // berarti ini bug fatal yg kamu buat, betulkan yg benar dan valid data
+    // monitoring nya".
+    //
+    // AKAR: dashboard TIDAK PERNAH membaca `provider_cooldown`, padahal tabel itu
+    // sudah mencatat alasan='neuron' (Cloudflare habis) dengan `until_at` jelas.
+    // Akibatnya key yang SEDANG DIBEKUKAN tetap ditampilkan "OPTIMAL".
+    // SEKARANG: cooldown aktif dibaca dan MEMAKSA status key menjadi bukan-optimal.
+    const cooldownAktif = new Map<string, { alasan: string; until: string }>();
+    if (c) {
+      try {
+        const { data: cds } = await c
+          .from('provider_cooldown')
+          .select('kind, key_hash, alasan, until_at')
+          .gt('until_at', new Date().toISOString());
+        for (const cd of (cds ?? []) as Array<{ kind: string; key_hash: string; alasan: string; until_at: string }>) {
+          cooldownAktif.set(`${cd.kind}:${cd.key_hash}`, { alasan: cd.alasan, until: cd.until_at });
+        }
+      } catch {
+        // best-effort: bila tabel belum ada, lewati
+      }
+    }
 
     if (c) {
       // Ambil tokens_used juga agar TPD riil bisa ditampilkan (bukan estimasi calls × rata-rata)
@@ -849,16 +872,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         //   Data nyata: input 66.132 token, output 495 token (10 balasan)
         //   Akurat: 2.849 neuron  |  Asumsi 80/20: 3.803 neuron  (33% lebih besar)
         // SEKARANG memakai prompt_tokens & completion_tokens NYATA bila tersedia.
+        // ── PERBAIKAN BESAR (09 Okt 2026): SUMBER DATA NEURON ──
+        // LAPORAN PEMILIK PRODUK: "semua apikey habis? tapi monitoring masih hijau,
+        // berarti ini bug fatal yg kamu buat, betulkan yg benar dan valid data
+        // monitoring nya".
+        //
+        // BUKTI NYATA: dashboard tampil 5.459/10.000 neuron (55%, OPTIMAL) padahal
+        // API Cloudflare balas HTTP 429 "used up daily free allocation of 10,000
+        // neurons" pada KETIGA akun. `provider_cooldown` juga sudah mencatat
+        // alasan='neuron' — jadi sistem TAHU habis, tapi dashboard tidak.
+        //
+        // AKAR: neuron dihitung dari `providerTokenStats` yang bersumber dari tabel
+        // `messages` (125.066 token hari ini). Padahal `provider_quota` mencatat
+        // 316.601 token — SELISIH 191.535 token (60% data HILANG) karena `messages`
+        // hanya menyimpan balasan yang BERHASIL dikirim, sementara `provider_quota`
+        // mencatat SEMUA panggilan (termasuk yang gagal/timeout/failover).
+        //
+        // PERBAIKAN: pakai TOKEN dari `provider_quota` (tokenQuotaMap) sebagai
+        // sumber utama — itu pencatatan pemakaian yang sebenarnya. `messages` hanya
+        // dipakai untuk KOMPOSISI input/output (rasio), bukan totalnya.
         const statKey = p.kind as keyof typeof providerTokenStats;
         const statNya = providerTokenStats[statKey];
-        const adaDataNyata = Boolean(statNya && statNya.promptTokens > 0);
+        // Token total dari provider_quota (pencatatan pemakaian sebenarnya).
+        const tokenDariQuota = (tokenQuotaMap.get(`${p.kind}:${hash12}`) || 0)
+          + (tokenQuotaMap.get(`${p.kind}:${suffix}`) || 0);
+        // Token efektif: pakai yang TERBESAR antara quota & live (jangan meremehkan).
+        const tokenEfektif = Math.max(tokensUsed, tokenDariQuota);
+        // Komposisi input/output: pakai rasio NYATA bila ada, jika tidak 99/1.
+        const rasioInput = statNya && (statNya.promptTokens + statNya.completionTokens) > 0
+          ? statNya.promptTokens / (statNya.promptTokens + statNya.completionTokens)
+          : 0.99;
         const neuronTerpakai = adalahNeuron
-          ? (adaDataNyata
-              // Akurat: pakai komposisi input/output sebenarnya.
-              ? hitungNeuron(statNya.promptTokens, statNya.completionTokens, modelNeuron)
-              // Fallback: komposisi yang lebih realistis (99% input, 1% output)
-              // daripada asumsi lama 80/20 yang terbukti terlalu tinggi.
-              : hitungNeuron(Math.round(tokensUsed * 0.99), Math.round(tokensUsed * 0.01), modelNeuron))
+          ? hitungNeuron(Math.round(tokenEfektif * rasioInput), Math.round(tokenEfektif * (1 - rasioInput)), modelNeuron)
           : tokensUsed;
         const neuronCap = adalahNeuron ? NEURON_HARIAN_GRATIS : tokenCap;
         const sisaNeuron = Math.max(0, neuronCap - neuronTerpakai);
@@ -891,8 +936,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const dailyCallsUsed = liveCallsUsed ?? (daysCount > 0 ? effectiveCallsUsed : todayUsedForKey);
         const percent = callCap > 0 ? Math.min(100, Math.round((dailyCallsUsed / callCap) * 100)) : 0;
         // Status key mempertimbangkan RPD DAN TPD — mana yang lebih dulu tercapai.
-        const bindingPercent = Math.max(percent, tokenPercent);
-        const status = bindingPercent >= 100 ? 'capped' : bindingPercent >= 80 ? 'warning' : 'healthy';
+        let bindingPercent = Math.max(percent, tokenPercent);
+        let status = bindingPercent >= 100 ? 'capped' : bindingPercent >= 80 ? 'warning' : 'healthy';
+        // ── COOLDOWN MEMAKSA STATUS (perbaikan 09 Okt 2026) ──
+        // LAPORAN: "semua apikey habis? tapi monitoring masih hijau, berarti ini bug
+        // fatal yg kamu buat, betulkan yg benar dan valid data monitoring nya".
+        // Bila key SEDANG DIBEKUKAN (mis. neuron Cloudflare habis, alasan='neuron'),
+        // dashboard WAJIB menampilkan itu — bukan "OPTIMAL" — walau persentase
+        // internal masih rendah (karena pencatatan token kita tidak lengkap).
+        const cdInfo = cooldownAktif.get(`${p.kind}:${hash12}`) || cooldownAktif.get(`${p.kind}:${suffix}`);
+        const kenaCooldown = Boolean(cdInfo);
+        if (kenaCooldown) {
+          bindingPercent = 100;
+          status = 'capped';
+        }
         // Metrik yang MENGIKAT (binding) dipakai untuk progress bar & label agar visual
         // konsisten dengan status. Tanpa ini bar bisa 22% (calls) padahal badge CAPPED
         // (token 100%) — sumber kebingungan di dashboard (temuan user).
@@ -946,6 +1003,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           liveUsageUsd: orLive?.usageUsd ?? null,
           liveDailyUsageUsd: orLive?.usageDailyUsd ?? null,
           isFreeTier: orLive?.isFreeTier ?? true,
+          // ── INFO COOLDOWN (perbaikan 09 Okt 2026) ──
+          // Agar dashboard menampilkan ALASAN key tidak dipakai (mis. "neuron habis
+          // sampai 00:05 UTC") — bukan hanya diam-diam hijau.
+          cooldownAlasan: cdInfo?.alasan ?? null,
+          cooldownSampai: cdInfo?.until ?? null,
         };
       });
 

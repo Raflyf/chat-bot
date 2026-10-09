@@ -1680,7 +1680,12 @@ async function cekKeyBolehDipakai(
     if (step.kind === 'cloudflare' && keyTokenCap > 0) {
       const tokensHariIni = keyTokensUsedToday('cloudflare', key);
       const modelCf = step.models[0] || '';
-      const neuronTerpakai = hitungNeuron(tokensHariIni * 0.8, tokensHariIni * 0.2, modelCf);
+      // ── KONSISTENSI RASIO (perbaikan 09 Okt 2026) ──
+      // Dulu di sini memakai 80/20, sedangkan api/stats.ts memakai 99/1 — DUA
+      // tempat menghitung neuron dengan asumsi BERBEDA untuk data yang sama.
+      // Data nyata (kolom prompt_tokens/completion_tokens): ~98,7% input / 1,3%
+      // output. Sekarang disamakan ke 99/1 (cadangan) agar tidak ada dua angka.
+      const neuronTerpakai = hitungNeuron(Math.round(tokensHariIni * 0.99), Math.round(tokensHariIni * 0.01), modelCf);
       if (neuronTerpakai >= keyTokenCap) {
         if (!allowCoolingPass) {
           console.warn(

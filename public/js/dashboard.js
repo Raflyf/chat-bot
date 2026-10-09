@@ -1190,7 +1190,21 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
             if (k.status === "capped" || bindingPct >= 100) progressColor = "progress-rose";
             else if (k.status === "warning" || bindingPct >= 80) progressColor = "progress-amber";
 
-            const statusLabel = k.status === "capped" ? "Capped" : k.status === "warning" ? "Waspada" : "Optimal";
+            // ── LABEL STATUS + ALASAN COOLDOWN (perbaikan 09 Okt 2026) ──
+            // LAPORAN: "semua apikey habis? tapi monitoring masih hijau". Backend
+            // kini mengirim `cooldownAlasan`/`cooldownSampai`; tampilkan agar tidak
+            // ada lagi key yang tampak "Optimal" padahal sedang dibekukan.
+            let statusLabel = k.status === "capped" ? "Capped" : k.status === "warning" ? "Waspada" : "Optimal";
+            if (k.cooldownAlasan) {
+              const namaAlasan = k.cooldownAlasan === "neuron" ? "neuron habis"
+                : k.cooldownAlasan === "rpd" ? "limit harian"
+                : k.cooldownAlasan === "rpm" ? "limit per menit"
+                : k.cooldownAlasan;
+              const jamReset = k.cooldownSampai
+                ? new Date(k.cooldownSampai).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" })
+                : "";
+              statusLabel = jamReset ? `Beku (${namaAlasan}, s.d. ${jamReset} UTC)` : `Beku (${namaAlasan})`;
+            }
             const cleanSuffix = String(k.suffix || "").startsWith("...") ? k.suffix : "..." + (k.suffix || "????");
             // k.used / k.cap bisa undefined pada kunci yang baru terdaftar dan belum
             // punya catatan kuota -> tanpa fallback, satu kunci seperti itu melempar
