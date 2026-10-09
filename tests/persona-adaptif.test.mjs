@@ -22,29 +22,34 @@ import fs from 'node:fs';
 const SK = fs.readFileSync(new URL('../src/skills.ts', import.meta.url), 'utf8');
 
 test('persona: register formal dideteksi', () => {
-  assert.ok(SK.includes('[REGISTER: dia konsisten bicara FORMAL'), 'harus ada instruksi register formal');
+  assert.ok(SK.includes('rapi & sopan'), 'harus ada instruksi register formal');
   assert.ok(SK.includes('registerFormal'), 'harus ada pola registerFormal');
 });
 
 test('persona: register gaul dideteksi', () => {
-  assert.ok(SK.includes('[REGISTER: dia bicara SANTAI/GAUL'), 'harus ada instruksi register gaul');
+  assert.ok(SK.includes('santai/gaul natural'), 'harus ada instruksi register gaul');
   assert.ok(SK.includes('registerGaul'), 'harus ada pola registerGaul');
 });
 
+test('persona: PRIORITAS menjawab ISI pesan (anti-ngawur)', () => {
+  assert.ok(SK.includes('PRIORITAS UTAMA SEBELUM GAYA'), 'harus ada prioritas jawab isi');
+  assert.ok(SK.includes('DILARANG MUTLAK membicarakan dirimu sendiri'), 'harus larang meta tentang diri');
+});
+
 test('persona: banter diperbolehkan dengan batas aman', () => {
-  assert.ok(SK.includes('[SUASANA BANTER AKTIF'), 'harus ada blok banter');
-  assert.ok(SK.includes('DILARANG memakai kata kasar/kotor'), 'harus larang kata kotor');
-  assert.ok(SK.includes('DILARANG mengulang kata hinaan'), 'harus larang ulang hinaan');
-  assert.ok(SK.includes('tetap NYAMBUNG ke topik'), 'harus wajib nyambung');
+  assert.ok(SK.includes('saling ledek & dia menikmatinya'), 'harus ada blok banter');
+  assert.ok(SK.includes('Dilarang kata kasar/kotor'), 'harus larang kata kotor');
+  assert.ok(SK.includes('dilarang mengulang hinaannya'), 'harus larang ulang hinaan');
+  assert.ok(SK.includes('NYAMBUNG ke isi pesannya'), 'harus wajib nyambung');
 });
 
 test('persona: banter berhenti bila user minta berhenti', () => {
   assert.ok(SK.includes('mintaStopLedek'), 'harus deteksi permintaan berhenti');
-  assert.ok(SK.includes('begitu dia minta berhenti/marah -> langsung berhenti total'), 'harus berhenti total');
+  assert.ok(SK.includes('berhenti total'), 'harus berhenti total');
 });
 
 test('persona: transisi keluar dari mode serius', () => {
-  assert.ok(SK.includes('[TRANSISI: topik seriusnya sudah SELESAI'), 'harus ada blok transisi');
+  assert.ok(SK.includes('topik serius sudah selesai'), 'harus ada blok transisi');
   assert.ok(SK.includes('masihSerius') && SK.includes('sudahSantai'), 'harus hitung transisi');
 });
 

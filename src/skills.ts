@@ -2622,15 +2622,24 @@ export function systemPrompt(
   //  lainnya maka botnya juga adaptasi, tapi jawaban botnya harus tetap nyambung
   //  dan ga ngawur"
   //
-  // PRINSIP: bot MENYESUAIKAN DIRI ke register & suasana lawan bicara, TAPI
-  // substansi jawaban tetap NYAMBUNG ke topik (tidak ikut ngawur).
+  // ── ATURAN PALING PENTING (temuan 09 Okt 2026) ──
+  // Uji awal: user "kapan mabar" -> bot "Aku cuma bisa jadi komentator, kapan
+  // kamu mau?" ; user "gokil lu gajelas" -> bot "Santai, aku cuma lagi ngegas
+  // doang." DUA-DUANYA TIDAK NYAMBUNG — model menjawab soal GAYA/DIRINYA SENDIRI
+  // alih-alih menjawab ISI pesan user.
   //
-  // Tiga hal yang dihitung dari RIWAYAT (bukan hanya pesan terakhir, karena
-  // model berganti tiap pesan pada rantai failover):
-  //   1. REGISTER bahasa (formal / santai / gaul)
-  //   2. SUASANA ledek-ledekan (banter dua arah)
-  //   3. TRANSISI keluar dari mode serius (user sudah selesai seriusnya)
+  // AKAR: blok instruksi persona membuat model fokus ke "meta" (bicara tentang
+  // gaya bicara) bukan ke substansi. 
+  //
+  // FIX: (1) instruksi dibuat SINGKAT; (2) ditambah larangan keras membalas
+  // dengan kalimat meta tentang gaya diri sendiri; (3) PRIORITAS #1 selalu
+  // menjawab ISI pesan.
   // ══════════════════════════════════════════════════════════════════════════
+  instructions.push(
+    '',
+    '[PRIORITAS UTAMA SEBELUM GAYA]: JAWAB ISI PESANNYA dulu. Gaya bahasa hanya bumbu. Kalau user bertanya/berkata sesuatu, jawab APA YANG DIA KATAKAN dengan nyambung, baru sesuaikan nadanya.',
+    '[DILARANG MUTLAK membicarakan dirimu sendiri sebagai bot/AI dalam balasan — termasuk: "aku cuma bisa jadi komentator", "aku cuma bot", "aku lagi ngegas doang", "aku sedang menyesuaikan gaya", "aku di sini buat temenin", atau kalimat apa pun yang menjelaskan PERAN/KEMAMPUAN/CARA KERJAMU. Kamu teman ngobrol; bicaralah tentang TOPIKNYA, bukan tentang dirimu.]',
+  );
   {
     const riwayatUser = [
       ...(ctx?.history ?? [])
@@ -2647,15 +2656,9 @@ export function systemPrompt(
     const skorGaul = riwayatUser.filter((m) => registerGaul.test(m) && !registerFormal.test(m)).length;
 
     if (skorFormal >= 2 && skorFormal > skorGaul) {
-      instructions.push(
-        '',
-        '[REGISTER: dia konsisten bicara FORMAL (saya/anda/mohon). Pakai bahasa yang rapi & sopan, hindari slang (gue/lu/wkwk/njir). Tetap hangat, tidak kaku.]',
-      );
+      instructions.push('', '[GAYA: rapi & sopan (hindari slang gue/lu/wkwk). Tetap hangat.]');
     } else if (skorGaul >= 2 && skorGaul > skorFormal) {
-      instructions.push(
-        '',
-        '[REGISTER: dia bicara SANTAI/GAUL (gue-lu, wkwk, njir). Ikuti register itu — pakai bahasa santai yang natural, jangan tiba-tiba formal/kaku.]',
-      );
+      instructions.push('', '[GAYA: santai/gaul natural mengikuti dia. Jangan kaku.]');
     }
 
     // ── 2. SUASANA LEDEK-LEDEKAN (BANTER DUA ARAH) ──
@@ -2671,7 +2674,7 @@ export function systemPrompt(
     if (bolehBanter) {
       instructions.push(
         '',
-        '[SUASANA BANTER AKTIF: kalian sedang saling ledek dan dia MENIKMATINYA (tertawa/balas meledek). Ikut main — balas dengan celetukan ringan yang nyambung 5-15 kata. ATURAN KERAS: (a) DILARANG memakai kata kasar/kotor (anjing, bangsat, kontol, memek, dll) atau hinaan SARA; (b) DILARANG mengulang kata hinaan yang dia tujukan ke kamu; (c) ledekan harus tetap NYAMBUNG ke topik yang sedang dibahas, bukan asal nyerang; (d) begitu dia minta berhenti/marah -> langsung berhenti total.]',
+        '[GAYA: kalian saling ledek & dia menikmatinya. Balas celetukan ringan 5-15 kata yang NYAMBUNG ke isi pesannya. Dilarang kata kasar/kotor, dilarang mengulang hinaannya, dilarang nyerang tanpa kaitan topik. Bila dia minta berhenti/marah -> berhenti total.]',
       );
     } else if (ledekBeruntun >= 1 && mintaStopLedek.test(gabungRiwayat)) {
       instructions.push(
@@ -2690,10 +2693,7 @@ export function systemPrompt(
     const masihSerius = duaTerakhir.some((m) => seriusRe.test(m));
     const sudahSantai = /(?:wkwk+|haha+|hehe+|🤣|😂|gokil|santai|becanda|bercanda|iseng|nyantai|lepas)/i.test(duaTerakhir.join(' '));
     if (!masihSerius && sudahSantai && professionalContext) {
-      instructions.push(
-        '',
-        '[TRANSISI: topik seriusnya sudah SELESAI — dia sudah kembali santai. Ikut kembali santai & hangat, jangan kaku. TAPI tetap jawab isi pertanyaannya dengan benar bila ada.]',
-      );
+      instructions.push('', '[GAYA: topik serius sudah selesai, dia kembali santai. Ikut santai, tapi isi jawaban tetap benar.]');
     }
   }
 
