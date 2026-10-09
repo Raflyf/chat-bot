@@ -1276,7 +1276,15 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
                   <span class="key-stats">${capLabel}</span>
                 </div>
                 <div class="progress-bar-bg">
-                  <div class="progress-bar-fill ${progressColor}" style="width: ${Math.min(100, bindingPct)}%"></div>
+                  <!--
+                    BAR UTAMA: memakai metrik BINDING (mana yang lebih dulu habis).
+                    PERBAIKAN 09 Okt 2026 ("bar dan perhitungannya tidak singkron"):
+                    sebelumnya bar memakai bindingPct yang bisa 9% (dari REQUEST)
+                    padahal baris NEURON di bawahnya 50% — dua angka berbeda untuk
+                    key yang sama. Sekarang bila metrik binding = token/neuron,
+                    bar memakai tokenPct yang SUDAH dijamin sinkron dengan status.
+                  -->
+                  <div class="progress-bar-fill ${progressColor}" style="width: ${Math.min(100, bindingIsToken ? tokenPct : bindingPct)}%"></div>
                 </div>
                 ${tokenLine}
               </div>

@@ -70,3 +70,24 @@ test('monitoring: rasio input/output KONSISTEN (99/1)', () => {
     'providers.ts jangan pakai rasio 80/20 (tidak konsisten dengan stats.ts)');
   assert.ok(/0\.99/.test(PROV), 'providers.ts harus pakai 99/1');
 });
+
+test('sinkron: bar & angka TIDAK boleh beda saat kuota habis', () => {
+  // LAPORAN PEMILIK PRODUK: "bar dan perhitungannya tidak singkron".
+  // Bukti: bar 9% (dari REQUEST) padahal baris NEURON 50%; "≈ 12 balasan lagi"
+  // padahal neuron HABIS.
+  //
+  // ATURAN: bila cooldown aktif, persentase NEURON & balasanTersisa WAJIB jujur
+  // (100% dan 0) — agar bar, angka, dan status SINKRON.
+  assert.ok(/cooldownAktif[\s\S]{0,200}tokenPercent = 100/.test(STATS),
+    'tokenPercent harus dipaksa 100% saat cooldown aktif');
+  assert.ok(/neuronBenarHabis[\s\S]{0,200}balasanTersisa/.test(STATS),
+    'balasanTersisa harus 0 saat neuron habis');
+  // Header provider: 100% bila semua kunci habis.
+  assert.ok(/semuaKunciHabis[\s\S]{0,200}poolTokenPercent = 100/.test(STATS),
+    'header provider harus 100% bila semua kunci habis');
+});
+
+test('sinkron: bar utama memakai metrik binding yang sama dengan label', () => {
+  assert.ok(/bindingIsToken \? tokenPct : bindingPct/.test(DASH),
+    'bar utama harus pakai tokenPct bila metrik binding = token/neuron');
+});

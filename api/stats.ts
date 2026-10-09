@@ -930,7 +930,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           : tokensUsed;
         const neuronCap = adalahNeuron ? NEURON_HARIAN_GRATIS : tokenCap;
         const sisaNeuron = Math.max(0, neuronCap - neuronTerpakai);
-        const balasanTersisa = adalahNeuron ? sisaBalasan(sisaNeuron, modelNeuron) : 0;
+        // ── PERBAIKAN (09 Okt 2026): balasanTersisa harus 0 bila kuota HABIS ──
+        // LAPORAN PEMILIK PRODUK: "bar dan perhitungannya tidak singkron" — dashboard
+        // menampilkan "≈ 12 balasan lagi" (hijau) padahal neuron SUDAH HABIS.
+        // SEBAB: sisaBalasan() menghitung dari (cap - neuronTerpakai) yang masih
+        // positif karena pencatatan token internal TIDAK LENGKAP. Bila cooldown
+        // aktif (neuron benar-benar habis), sisa balasan WAJIB 0.
+        const cdKeySementara = `${p.kind}:${hash12}`;
+        const neuronBenarHabis = Boolean(cooldownAktif.get(cdKeySementara))
+          || Boolean(cooldownAktif.get(`${p.kind}:${suffix}`))
+          || neuronTerpakai >= NEURON_HARIAN_GRATIS;
+        const balasanTersisa = adalahNeuron
+          ? (neuronBenarHabis ? 0 : sisaBalasan(sisaNeuron, modelNeuron))
+          : 0;
 
         // Sisa dari endpoint bila tersedia (paling akurat — sudah memperhitungkan
         // pemakaian dari semua aplikasi di akun yang sama).
@@ -940,6 +952,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           ? neuronTerpakai
           : (todayTokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayTokenQuotaMap.get(`${p.kind}:${suffix}`) || 0) || neuronTerpakai;
         let tokenPercent = neuronCap > 0 ? Math.min(100, Math.round((tokensForPercent / neuronCap) * 100)) : 0;
+        // ── PERBAIKAN (09 Okt 2026): persentase NEURON harus jujur ──
+        // Bila cooldown aktif (neuron habis menurut probe/API), persentase neuron
+        // WAJIB 100% — bukan angka internal yang lebih kecil karena pencatatan
+        // token tidak lengkap. Ini yang membuat bar & angka SINKRON dengan status.
+        if (adalahNeuron) {
+          const cdKeyPct = `${p.kind}:${hash12}`;
+          if (cooldownAktif.get(cdKeyPct) || cooldownAktif.get(`${p.kind}:${suffix}`)) {
+            tokenPercent = 100;
+          }
+        }
 
         // (Blok xkLive DIHAPUS 04 Okt 2026 — xKiro disuspend permanen 403.
         //  Dulu di sini nilai token diambil dari live sync xKiro.)
@@ -1076,7 +1098,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
       // Untuk provider NEURON: pakai neuron (bukan token) sebagai pembanding.
       const poolNilaiDipakai = adalahProviderNeuron && poolNeuronUsed > 0 ? poolNeuronUsed : poolTokensUsed;
-      const poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolNilaiDipakai / totalTokenPoolCap) * 100)) : 0;
+      let poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolNilaiDipakai / totalTokenPoolCap) * 100)) : 0;
+      // ── PERBAIKAN (09 Okt 2026): header provider harus JUJUR ──
+      // LAPORAN: "bar dan perhitungannya tidak singkron". Gambar nyata: header
+      // menampilkan "13.819/30.000 neuron (46%)" dengan bar 46%, PADAHAL ketiga
+      // kunci sudah HABIS ("3 kunci sudah habis kuotanya"). Persentase pool yang
+      // dihitung dari penjumlahan internal selalu lebih rendah dari kenyataan
+      // (pencatatan token tidak lengkap).
+      //
+      // ATURAN: bila SEMUA kunci provider habis (capped), persentase pool WAJIB
+      // 100% — agar bar, angka, dan status SINKRON.
+      const semuaKunciHabis = keysDetail.length > 0 && keysDetail.every((kd) => kd.status === 'capped');
+      if (semuaKunciHabis && totalTokenPoolCap > 0) {
+        poolTokenPercent = 100;
+      }
       // Pemakaian HARIAN pool — agar header kartu bisa menampilkan konteks cap harian
       // tanpa mencampur akumulasi periode (temuan: "1728/1500" menyesatkan).
       const poolUsedToday = keysDetail.reduce((acc, kd) => acc + (kd.used || 0), 0);
