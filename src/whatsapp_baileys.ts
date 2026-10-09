@@ -20,7 +20,7 @@ import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStic
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
-import { saveReminderToDb, checkDueReminders } from './remind.js';
+import { saveReminderToDb, checkDueReminders, nomorWhatsApp } from './remind.js';
 import { sendWhatsAppCloudMessageSafe } from './whatsapp_cloud.js';
 import {
   restoreSessionFromSupabase,
@@ -211,8 +211,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     try {
       await checkDueReminders(async (chatId, text, platform) => {
         if (platform === 'telegram') return; // Telegram ditangani cron/worker terpisah
-        const cleanTo = String(chatId).replace(/@.*$/, '').replace(/^\+/, '');
-        await sendWhatsAppCloudMessageSafe(cleanTo, text);
+        await sendWhatsAppCloudMessageSafe(nomorWhatsApp(String(chatId)), text);
       });
     } catch (err) {
       console.warn('[remind] Lazy-check gagal:', String((err as Error)?.message ?? err).slice(0, 120));

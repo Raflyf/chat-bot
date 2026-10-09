@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from '../../src/env.js';
 import { getTelegramBot } from '../../src/telegram.js';
-import { checkDueReminders } from '../../src/remind.js';
+import { checkDueReminders, nomorWhatsApp } from '../../src/remind.js';
 import { sendWhatsAppCloudMessageSafe } from '../../src/whatsapp_cloud.js';
 
 function timingSafeMatch(a: string, b: string): boolean {
@@ -44,13 +44,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       // SEKARANG: kembalikan true bila terkirim, false bila gagal.
       //
       // Prioritas 1: Platform eksplisit dari database
+      //
+      // ── PENTING (perbaikan 09 Okt 2026) ──
+      // Setelah normalisasi chat_id, WhatsApp memakai prefix "wa_"
+      // ("wa_628991333323") agar KONSISTEN dengan tabel `messages`. Prefix itu
+      // HARUS DIBUANG sebelum dikirim ke Meta — kalau tidak, Meta MENOLAK dan
+      // pengingat GAGAL TERKIRIM.
+      // Nomor juga dibersihkan dari "+", "@s.whatsapp.net", dan ":device".
       if (platform === 'whatsapp') {
-        const cleanTo = chatId.replace(/@.*$/, '').replace(/^\+/, '');
-        return await sendWhatsAppCloudMessageSafe(cleanTo, text);
+        return await sendWhatsAppCloudMessageSafe(nomorWhatsApp(chatId), text);
       }
       if (platform === 'telegram') {
         try {
-          await bot.sendMessage(Number(chatId), text);
+          await bot.sendMessage(Number(String(chatId).replace(/^(?:wa_|tg_)/, '')), text);
           return true;
         } catch (e) {
           console.error('[cron/reminders] gagal kirim telegram:', e);
@@ -59,12 +65,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
 
       // Fallback: Routing berbasis struktur chatId jika platform belum tercatat
-      if (chatId.includes('@') || (chatId.length >= 10 && /^(62|1|\+)/.test(chatId))) {
-        const cleanTo = chatId.replace(/@.*$/, '').replace(/^\+/, '');
-        return await sendWhatsAppCloudMessageSafe(cleanTo, text);
+      if (chatId.includes('@') || chatId.startsWith('wa_') || (chatId.length >= 10 && /^(62|1|\+)/.test(chatId))) {
+        return await sendWhatsAppCloudMessageSafe(nomorWhatsApp(chatId), text);
       }
       try {
-        await bot.sendMessage(Number(chatId), text);
+        await bot.sendMessage(Number(String(chatId).replace(/^(?:wa_|tg_)/, '')), text);
         return true;
       } catch (e) {
         console.error('[cron/reminders] gagal kirim telegram (fallback):', e);

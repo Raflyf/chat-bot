@@ -25,6 +25,7 @@
  * semuanya deterministik agar cepat, murah, dan tidak berhalusinasi.
  */
 import { db } from './db.js';
+import { normChatId } from './chat_id.js';
 import { formatInZone } from './timezone.js';
 import { tanganiGame } from './games/index.js';
 import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
@@ -1523,6 +1524,7 @@ const KATA_PERINTAH_UTAMA =
 export async function simpanCatatan(
   chatId: string, content: string, opts?: { title?: string; tags?: string[]; actor?: string; platform?: string },
 ): Promise<number | null> {
+  chatId = normChatId(chatId, opts?.platform);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return null;
   try {
@@ -1576,6 +1578,7 @@ export async function hapusCatatan(chatId: string, id: number): Promise<boolean>
 export async function simpanTugas(
   chatId: string, task: string, opts?: { priority?: number; due_at?: string | null; actor?: string; platform?: string },
 ): Promise<number | null> {
+  chatId = normChatId(chatId, opts?.platform);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return null;
   try {
@@ -1743,6 +1746,7 @@ export async function simpanUang(
   note?: string,
   opts?: { actor?: string; platform?: string; occurred_at?: string; info?: { baru?: boolean } },
 ): Promise<number | null> {
+  chatId = normChatId(chatId, opts?.platform);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return null;
   try {

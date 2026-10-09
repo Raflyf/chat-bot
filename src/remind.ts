@@ -4,6 +4,10 @@ import { db } from './db.js';
 import { config } from './env.js';
 import { kemiripanPesan, AMBANG_MIRIP, TOLERANSI_WAKTU_MENIT } from './reminder-dedup.js';
 import { berikutnya, type AturanUlang } from './reminder-repeat.js';
+import { normChatId, nomorWhatsApp } from './chat_id.js';
+
+// Re-export agar pemakai lama (cron, baileys) tetap bekerja tanpa perubahan.
+export { normChatId, nomorWhatsApp };
 import { ambilProfilWaktu } from './user-profile.js';
 
 export interface ReminderItem {
@@ -51,7 +55,8 @@ export async function saveReminderToDb(
   dueAt: Date,
   platform: 'telegram' | 'whatsapp' = 'telegram',
 ): Promise<boolean> {
-  const hasil = await simpanReminderCerdas(chatId, message, dueAt, platform);
+  // NORMALISASI agar chat_id konsisten dengan `messages` (lihat normChatId).
+  const hasil = await simpanReminderCerdas(normChatId(chatId, platform), message, dueAt, platform);
   return hasil.ok;
 }
 
@@ -77,6 +82,8 @@ export async function simpanReminderCerdas(
   platform: 'telegram' | 'whatsapp' = 'telegram',
   ulang?: { repeat_kind: string; repeat_value: string | null },
 ): Promise<HasilSimpanReminder> {
+  // NORMALISASI: pastikan chat_id konsisten dengan `messages` (lihat normChatId).
+  chatId = normChatId(chatId, platform === 'telegram' ? 'telegram' : 'whatsapp');
   const c = db();
   if (!c) return { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Database tidak tersedia.' };
   const dueIso = waktuJatuhTempo(dueAt).toISOString();
@@ -643,7 +650,9 @@ export function startReminderWorker(
         return;
       }
       // Telegram (atau platform belum tercatat): kirim via bot Telegram.
-      await bot.sendMessage(Number(chatId), text);
+      // Bersihkan prefix "wa_"/"tg_" dulu — kalau tidak, Number() menjadi NaN
+      // dan pengiriman GAGAL (temuan audit universal 09 Okt 2026).
+      await bot.sendMessage(Number(String(chatId).replace(/^(?:wa_|tg_)/, '')), text);
     });
   }, 30_000);
 }

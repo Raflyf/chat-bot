@@ -15,6 +15,8 @@ function isTestChatKey(chatKey: string): boolean {
 }
 
 /** Simpan pesan best-effort: gagal DB tidak boleh menggagalkan balasan chat. */
+import { normChatId } from './chat_id.js';
+
 export async function saveMessage(row: {
   platform: string;
   chat_id: string;
@@ -31,6 +33,8 @@ export async function saveMessage(row: {
 }): Promise<void> {
   if (!row.content || !row.content.trim()) return; // balasan kosong tidak pernah disimpan
   if (isTestChatKey(row.chat_id)) return; // chat fixture test tidak menodai data production
+  // NORMALISASI chat_id (satu sumber) agar konsisten dengan tabel lain.
+  row = { ...row, chat_id: normChatId(row.chat_id, row.platform) };
   const c = db();
   if (!c) return;
   try {
@@ -242,5 +246,66 @@ export async function claimIncomingMessage(
   } catch (err: any) {
     console.error('[db] claimIncomingMessage exception:', err?.message || err);
     return false;
+  }
+}
+
+/**
+ * Cari isi pesan LAMA berdasarkan msg_id (untuk membaca pesan yang di-REPLY user).
+ *
+ * KENAPA PERLU (temuan pemilik produk 09 Okt 2026):
+ *   "saya nyoba reply tag pesan yg sudah sangat lama lalu menanyakan ini apa
+ *    ternyata bot nya juga masih tidak bisa melihat apa yg di reply tag user".
+ *
+ *   Saat user me-reply pesan LAMA, Meta/Telegram TIDAK selalu menyertakan isi
+ *   pesan yang di-quote — kadang hanya ID-nya. Akibatnya bot menjawab ngawur.
+ *
+ *   SOLUSI: cari isi pesan itu di DATABASE berdasarkan msg_id (kolom `msg_id`
+ *   sudah terisi untuk setiap pesan masuk & keluar).
+ */
+export async function cariPesanByMsgId(
+  platform: string,
+  msgId: string,
+): Promise<{ content: string; role: string } | null> {
+  const c = db();
+  if (!c || !msgId) return null;
+  try {
+    const { data, error } = await c
+      .from('messages')
+      .select('content, role')
+      .eq('platform', platform)
+      .eq('msg_id', msgId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error || !data || data.length === 0) return null;
+    const row = data[0] as { content?: string; role?: string };
+    return { content: String(row.content ?? ''), role: String(row.role ?? '') };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cari pesan BOT TERAKHIR yang dikirim ke chat (untuk quote yang hanya punya ID
+ * tanpa teks). Dipakai bila pesan yang di-reply tidak ditemukan lewat msg_id.
+ */
+export async function pesanBotTerakhir(
+  platform: string,
+  chatId: string,
+): Promise<string | null> {
+  const c = db();
+  if (!c || !chatId) return null;
+  try {
+    const { data, error } = await c
+      .from('messages')
+      .select('content')
+      .eq('platform', platform)
+      .eq('chat_id', chatId)
+      .eq('role', 'assistant')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error || !data || data.length === 0) return null;
+    return String((data[0] as { content?: string }).content ?? '') || null;
+  } catch {
+    return null;
   }
 }

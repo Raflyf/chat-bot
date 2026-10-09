@@ -1,4 +1,5 @@
 import { db } from './db.js';
+import { normChatId } from './chat_id.js';
 import { chat, type ChatMsg } from './providers.js';
 
 export interface ChatContext {
@@ -169,6 +170,9 @@ export async function resetSession(chatKey: string, platform: string = 'whatsapp
  * percakapan mana pun (src/). Akses laporan hanya lewat `api/laporan.ts`.
  */
 export async function getContext(chatKey: string, msgSentAt?: Date): Promise<ChatContext> {
+  // NORMALISASI chat_id (satu sumber): agar data lama yang tersimpan TANPA prefix
+  // (mis. "628991333323") tetap terbaca walau percakapan memakai "wa_628991333323".
+  chatKey = normChatId(chatKey);
   const empty: ChatContext = { history: [], summary: null, corrections: [], chatId: chatKey, msgSentAt };
 
   // Fast-path in-memory cache: respon instan 0ms saat user sedang aktif chatting
@@ -436,6 +440,7 @@ export function validateCorrection(raw: string): CorrectionValidationResult {
 
 /** Simpan koreksi user agar diingat di percakapan berikutnya. */
 export async function saveCorrection(chatKey: string, correction: string): Promise<boolean> {
+  chatKey = normChatId(chatKey);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return false;
   try {

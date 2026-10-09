@@ -20,6 +20,7 @@
  *   - Dibatasi panjang & jumlahnya agar prompt tidak membengkak.
  */
 import { db } from './db.js';
+import { normChatId } from './chat_id.js';
 
 /** Penanda agar fakta personal bisa dibedakan dari koreksi /salah biasa. */
 export const PENANDA_FAKTA = '[FAKTA]';
@@ -226,6 +227,7 @@ export async function simpanFaktaPersonal(
   chatId: string,
   fakta: FaktaPersonal,
 ): Promise<boolean> {
+  chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c || !chatId || !fakta?.fakta) return false;
   const isi = `${PENANDA_FAKTA} ${fakta.kategori}: ${fakta.fakta}`.slice(0, 300);

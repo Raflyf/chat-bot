@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { config } from './env.js';
 import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
-import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
+import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed, cariPesanByMsgId, pesanBotTerakhir } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { encodeMarkers } from './markers.js';
@@ -386,6 +386,38 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           // Bila quoted tidak punya teks (mis. stiker/gambar), sebut jenisnya.
           if (!quotedText && typeof qAny.type === 'string') {
             quotedText = `[${qAny.type}]`;
+          }
+          // ── FALLBACK: AMBIL ISI PESAN LAMA DARI DATABASE (perbaikan 09 Okt 2026) ──
+          // LAPORAN PEMILIK PRODUK: "saya nyoba reply tag pesan yg sudah sangat lama
+          // lalu menanyakan ini apa ternyata bot nya juga masih tidak bisa melihat
+          // apa yg di reply tag user".
+          //
+          // AKAR: saat me-reply pesan LAMA, Meta sering TIDAK menyertakan isi pesan
+          // yang di-quote — hanya ID-nya (`context.id`). Akibatnya bot menjawab ngawur
+          // karena tidak tahu apa yang dimaksud user.
+          //
+          // SOLUSI: cari isi pesan itu di DATABASE lewat msg_id. Setiap pesan masuk
+          // & keluar sudah tersimpan dengan `msg_id`.
+          if (!quotedText || quotedText.startsWith('[')) {
+            const idQuoted = String((quoted as { id?: string }).id || '').trim();
+            if (idQuoted) {
+              const dariDb = await cariPesanByMsgId('whatsapp', idQuoted);
+              if (dariDb?.content) {
+                quotedText = dariDb.content;
+                quotedFromBot = dariDb.role === 'assistant';
+                quotedPengirim = dariDb.role === 'assistant' ? 'bot' : 'diri';
+              }
+            }
+            // Masih kosong? Ambil pesan BOT TERAKHIR (kemungkinan itu yang di-reply,
+            // mis. pengingat otomatis yang dikirim bot).
+            if (!quotedText || quotedText.startsWith('[')) {
+              const botTerakhir = await pesanBotTerakhir('whatsapp', chatKey);
+              if (botTerakhir) {
+                quotedText = botTerakhir;
+                quotedFromBot = true;
+                quotedPengirim = 'bot';
+              }
+            }
           }
           // Siapa pengirim pesan yang dibalas? Ada 3 kemungkinan:
           //   'bot'   -> pesan bot sendiri
