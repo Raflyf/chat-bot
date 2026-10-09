@@ -195,7 +195,14 @@ export function deteksiFaktaPersonal(teks: string): FaktaPersonal | null {
   // DIPERBAIKI (temuan nyata 09 Okt 2026): "aku biasa nya mau ke toko barang² lucu ya"
   // disimpan sebagai "Biasanya nya mau ke toko..." (kata terbelah + berantakan).
   // Sekarang "biasa nya"/"biasanya" ditangani sebagai satu kesatuan + guard kabur.
+  // Pola A: "aku biasanya/selalu/tiap hari X"
   m = asli.match(/\b(?:aku|saya|gue|gw)\s+(?:biasa\s*nya|biasanya|biasa|selalu|tiap hari|setiap hari)\s+([^.!?]{3,60})/i);
+  // Pola B (DIPERLUAS 09 Okt 2026): "tiap hari aku X", "setiap pagi aku X",
+  // "tiap malam gue X" — keterangan waktu di DEPAN, subjek di tengah.
+  // Temuan uji: "tiap hari aku olahraga pagi" TIDAK tertangkap oleh pola A.
+  if (!m) {
+    m = asli.match(/\b(?:tiap|setiap)\s+(?:hari|pagi|siang|sore|malam|minggu|bulan)\s+(?:aku|saya|gue|gw)\s+([^.!?]{3,60})/i);
+  }
   if (m) {
     const v = bersih(m[1]);
     // Guard: frasa KABUR (tanpa objek konkret) bukan kebiasaan yang berguna.
