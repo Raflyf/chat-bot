@@ -1814,6 +1814,120 @@ export async function rekapUang(chatId: string, dariHari: number = 30): Promise<
   }
 }
 
+// ============================================================================
+// SIMPAN & AMBIL, KEBIASAAN (dihidupkan kembali 09 Okt 2026)
+// ============================================================================
+
+export async function simpanKebiasaan(chatId: string, name: string, targetPerDay = 1, opts?: { actor?: string; platform?: string }): Promise<number | null> {
+  const c = db();
+  if (!c) return null;
+  try {
+    const { data, error } = await c.from('habits').insert({
+      chat_id: chatId,
+      name: name.slice(0, 120),
+      target_per_day: targetPerDay,
+      actor: opts?.actor ?? null,
+      platform: opts?.platform ?? 'whatsapp',
+    }).select('id').single();
+    if (error) return null;
+    return (data as { id: number }).id;
+  } catch {
+    return null;
+  }
+}
+
+/** Centang kebiasaan hari ini; kembalikan streak terbaru (null bila gagal). */
+export async function centangKebiasaan(chatId: string, id: number): Promise<{ streak: number; best: number } | null> {
+  const c = db();
+  if (!c) return null;
+  try {
+    const { data: h, error: e1 } = await c.from('habits')
+      .select('id, streak, best_streak, last_done_at')
+      .eq('chat_id', chatId).eq('id', id).single();
+    if (e1 || !h) return null;
+    const row = h as { streak: number; best_streak: number; last_done_at: string | null };
+
+    const hariIni = new Date().toISOString().slice(0, 10);
+    const terakhir = row.last_done_at ? row.last_done_at.slice(0, 10) : null;
+    const kemarin = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+
+    let streak = row.streak;
+    if (terakhir === hariIni) {
+      // sudah dicentang hari ini → tidak menambah streak
+    } else if (terakhir === kemarin) {
+      streak += 1;
+    } else {
+      streak = 1; // putus → mulai dari 1
+    }
+    const best = Math.max(row.best_streak, streak);
+
+    await c.from('habit_logs').upsert(
+      { habit_id: id, done_on: hariIni, count: 1 },
+      { onConflict: 'habit_id,done_on' },
+    );
+    const { error: e2 } = await c.from('habits')
+      .update({ streak, best_streak: best, last_done_at: new Date().toISOString() })
+      .eq('id', id);
+    if (e2) return null;
+    return { streak, best };
+  } catch {
+    return null;
+  }
+}
+
+export async function daftarKebiasaan(chatId: string): Promise<Array<{ id: number; name: string; streak: number; best_streak: number; last_done_at: string | null }>> {
+  const c = db();
+  if (!c) return [];
+  try {
+    const { data, error } = await c.from('habits')
+      .select('id, name, streak, best_streak, last_done_at')
+      .eq('chat_id', chatId).eq('active', true)
+      .order('created_at', { ascending: true }).limit(30);
+    if (error || !data) return [];
+    return data as Array<{ id: number; name: string; streak: number; best_streak: number; last_done_at: string | null }>;
+  } catch {
+    return [];
+  }
+}
+
+export function formatDaftarKebiasaan(rows: Array<{ id: number; name: string; streak: number; best_streak: number; last_done_at: string | null }>): string {
+  if (!rows.length) return 'Belum ada kebiasaan yang dilacak.';
+  const hariIni = new Date().toISOString().slice(0, 10);
+  return rows.map((r) => {
+    const sudah = r.last_done_at?.slice(0, 10) === hariIni ? '✅' : '⬜';
+    return `${sudah} #${r.id} ${r.name}, streak ${r.streak} hari (terbaik ${r.best_streak})`;
+  }).join('\n');
+}
+
+/** Hentikan pelacakan sebuah kebiasaan (soft delete: active = false). */
+export async function hapusKebiasaan(chatId: string, id: number): Promise<boolean> {
+  const c = db();
+  if (!c) return false;
+  try {
+    const { error } = await c.from('habits').update({ active: false }).eq('chat_id', chatId).eq('id', id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function cariCatatan(chatId: string, kata: string, limit = 10): Promise<CatatanRingkas[]> {
+  const c = db();
+  if (!c) return [];
+  try {
+    const { data, error } = await c.from('notes')
+      .select('id, title, content, tags, created_at')
+      .eq('chat_id', chatId)
+      .ilike('content', `%${kata}%`)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return data as CatatanRingkas[];
+  } catch {
+    return [];
+  }
+}
+
 export async function hapusUang(chatId: string, id: number): Promise<boolean> {
   const c = db();
   if (!c) return false;
@@ -2610,6 +2724,99 @@ export async function tanganiPencatatan(
   if (/^\/(?:catatan|notes)$/.test(low)) {
     const c = await daftarCatatan(chatId, 10);
     return { ditangani: true, reply: `*Catatan terakhir:*\n${formatDaftarCatatan(c)}`, jalur: 'perintah-catatan' };
+  }
+
+  // ── /cari <kata> ATAU "cari catatan <kata>" (dihidupkan 09 Okt 2026) ──
+  // LAPORAN: fungsi `cariCatatan()` sudah ada tapi TIDAK PERNAH dipanggil,
+  // sehingga user tak bisa mencari catatannya sendiri. Sekarang tersambung.
+  {
+    const mc = low.match(/^\/(?:cari|search)\s+([\s\S]{2,60})/) || low.match(/^cari\s+(?:catatan|note)\s+([\s\S]{2,60})/);
+    if (mc) {
+      const kata = mc[1].trim();
+      const hasil = await cariCatatan(chatId, kata, 10);
+      if (hasil.length === 0) {
+        return { ditangani: true, reply: `Tidak ada catatan yang memuat *${kata}*.`, jalur: 'perintah-cari' };
+      }
+      return {
+        ditangani: true,
+        reply: `*Catatan yang memuat "${kata}":*\n${formatDaftarCatatan(hasil)}`,
+        jalur: 'perintah-cari',
+      };
+    }
+  }
+
+  // ── KEBIASAAN (dihidupkan & disambungkan 09 Okt 2026) ──
+  // Fitur lengkap (tabel `habits` + streak) tapi TIDAK PERNAH dipanggil dari
+  // mana pun — user tak bisa pakai. Sekarang tersambung:
+  //   /kebiasaan tambah <nama>   -> mulai lacak kebiasaan
+  //   /kebiasaan                 -> lihat daftar + streak
+  //   /kebiasaan <nama>          -> centang selesai hari ini
+  //   /kebiasaan hapus <nomor>   -> berhenti melacak
+  if (/^\/(?:kebiasaan|habit|habits)(?:\s+([\s\S]+))?$/.test(low)) {
+    const arg = (low.match(/^\/(?:kebiasaan|habit|habits)(?:\s+([\s\S]+))?$/) || [])[1]?.trim() || '';
+
+    // a) tanpa argumen -> daftar
+    if (!arg) {
+      const rows = await daftarKebiasaan(chatId);
+      return {
+        ditangani: true,
+        reply: rows.length === 0
+          ? 'Belum ada kebiasaan yang dilacak.\n\nMulai dengan: */kebiasaan tambah minum air 2L*'
+          : `*Kebiasaan kamu:*\n${formatDaftarKebiasaan(rows)}\n\n_Centang dengan: /kebiasaan <nama>_`,
+        jalur: 'perintah-kebiasaan',
+      };
+    }
+
+    // b) tambah
+    const mtambah = arg.match(/^(?:tambah|baru|add)\s+([\s\S]{2,60})$/i);
+    if (mtambah) {
+      const nama = mtambah[1].trim();
+      const id = await simpanKebiasaan(chatId, nama, 1, { actor: opts.actor, platform: opts.platform });
+      if (!id) return { ditangani: true, reply: '⚠️ Gagal menyimpan kebiasaan. Coba lagi ya.', jalur: 'perintah-kebiasaan' };
+      return {
+        ditangani: true,
+        reply: `✅ Kebiasaan *${nama}* mulai dilacak.\n\nKalau sudah dilakukan, centang dengan:\n*/kebiasaan ${nama}*`,
+        jalur: 'perintah-kebiasaan',
+      };
+    }
+
+    // c) hapus
+    const mhapus = arg.match(/^(?:hapus|buang|stop|berhenti)\s+(\d+)$/i);
+    if (mhapus) {
+      const rows = await daftarKebiasaan(chatId);
+      const target = rows[Number(mhapus[1]) - 1];
+      if (!target) return { ditangani: true, reply: `Nomor ${mhapus[1]} tidak ada di daftar kebiasaanmu.`, jalur: 'perintah-kebiasaan' };
+      const ok = await hapusKebiasaan(chatId, target.id);
+      return {
+        ditangani: true,
+        reply: ok ? `✅ Kebiasaan *${target.name}* berhenti dilacak.` : '⚠️ Gagal menghapus. Coba lagi ya.',
+        jalur: 'perintah-kebiasaan',
+      };
+    }
+
+    // d) centang: cocokkan nama (persis dulu, lalu sebagian)
+    const rows = await daftarKebiasaan(chatId);
+    const cari = arg.toLowerCase();
+    const target = rows.find((r) => r.name.toLowerCase() === cari)
+      || rows.find((r) => r.name.toLowerCase().includes(cari))
+      || rows.find((r) => cari.includes(r.name.toLowerCase()));
+    if (target) {
+      const hasil = await centangKebiasaan(chatId, target.id);
+      if (!hasil) return { ditangani: true, reply: '⚠️ Gagal mencatat. Coba lagi ya.', jalur: 'perintah-kebiasaan' };
+      const rekor = hasil.streak >= hasil.best && hasil.streak > 1 ? ' 🏆 *rekor baru!*' : '';
+      return {
+        ditangani: true,
+        reply: `✅ *${target.name}* dicatat!\n🔥 Streak: *${hasil.streak} hari*${rekor}${hasil.best > hasil.streak ? ` (terbaik: ${hasil.best})` : ''}`,
+        jalur: 'perintah-kebiasaan',
+      };
+    }
+
+    // e) nama tidak ketemu -> tawarkan buat baru
+    return {
+      ditangani: true,
+      reply: `Belum ada kebiasaan bernama *${arg}*.\n\nMau mulai lacak? Ketik:\n*/kebiasaan tambah ${arg}*`,
+      jalur: 'perintah-kebiasaan',
+    };
   }
 
   // /barang <isi>  atau  /belanja <isi> , daftar barang/belanja (pakai tabel notes

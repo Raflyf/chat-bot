@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import { config } from '../src/env.js';
 import { getTelegramBot, processTelegramUpdate } from '../src/telegram.js';
-import { logError, logWarn } from '../src/logger.js';
+import { logError, logWarn, withContext } from '../src/logger.js';
 
 function verifySecretToken(tokenHeader: string | string[] | undefined, secret: string): boolean {
   if (!secret) {
@@ -44,12 +44,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
+  // ── CORRELATION ID (dihidupkan 09 Okt 2026) ──
+  // `withContext()` sudah ada tapi tidak dipakai. Sekarang setiap update Telegram
+  // diberi requestId dari update_id, sehingga log error bisa ditelusuri per-request
+  // (sebelumnya semua log tercampur tanpa penanda).
+  const requestId = `tg-${(update as { update_id?: number }).update_id ?? Date.now()}`;
+  const log = withContext({ requestId, platform: 'telegram' });
+
   try {
     const bot = getTelegramBot();
     await processTelegramUpdate(bot, update);
     res.status(200).json({ ok: true });
   } catch (err) {
-    logError('[webhook] Error processing update', { error: String((err as Error)?.message ?? err) });
+    log.error('[webhook] Error processing update', { error: String((err as Error)?.message ?? err) });
     // Selalu kembalikan 200 ke Telegram agar tidak terjadi Retry Storm
     res.status(200).json({ ok: false, error: 'Internal Error' });
   }

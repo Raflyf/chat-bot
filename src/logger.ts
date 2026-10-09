@@ -74,3 +74,13 @@ export function logWarn(msg: string, fields?: LogFields): void {
 export function logError(msg: string, fields?: LogFields): void {
   write('error', msg, {}, fields);
 }
+
+/** Buat child logger dengan correlation id (requestId / chatId / platform). */
+export function withContext(ctx: LogContext): Logger {
+  return {
+    info: (msg, fields) => write('info', msg, ctx, fields),
+    warn: (msg, fields) => write('warn', msg, ctx, fields),
+    error: (msg, fields) => write('error', msg, ctx, fields),
+  };
+}
+
