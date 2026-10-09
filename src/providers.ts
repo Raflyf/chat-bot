@@ -2147,43 +2147,55 @@ export async function chat(
 export async function probeKunciCloudflare(
   model = '@cf/meta/llama-3.2-1b-instruct',
 ): Promise<{ diperiksa: number; habis: number; sehat: number }> {
-  let habis = 0;
-  let sehat = 0;
-  for (const key of config.pools.cloudflare) {
-    try {
+  // ── PENTING: PARALEL + TIMEOUT PENDEK (perbaikan 09 Okt 2026) ──
+  // BUG YANG DIPERBAIKI: versi pertama menjalankan probe BERURUTAN dengan timeout
+  // 15 detik per kunci -> kasus terburuk 3 × 15 = 45 detik. Itu MELEBIHI batas
+  // waktu function Vercel sehingga endpoint /api/stats GAGAL dan SEMUA CARD
+  // PROVIDER HILANG dari dashboard (laporan pemilik produk: "ini ko malah hilang
+  // card yg disini gimna sih").
+  //
+  // SEKARANG: dijalankan PARALEL (Promise.allSettled) dengan timeout 6 detik
+  // per kunci -> total maksimal ~6 detik. Kegagalan satu kunci tidak menghambat
+  // yang lain, dan tidak pernah melempar error ke pemanggil.
+  const hasil = await Promise.allSettled(
+    config.pools.cloudflare.map(async (key) => {
       const { accountId, token } = await resolveCloudflareKey(key);
-      if (!accountId || !token) continue;
+      if (!accountId || !token) return 'lewat' as const;
       const res = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
-          signal: AbortSignal.timeout(15_000),
+          signal: AbortSignal.timeout(6_000),
         },
       );
       const kh = `cloudflare:${keyHash(key)}`;
       if (res.ok) {
-        // Sehat -> pastikan tidak ada cooldown 'neuron' yang tertinggal.
-        hapusCooldownPersist(kh);
-        sehat++;
-      } else {
-        let pesan = '';
-        try {
-          const j = (await res.json()) as { errors?: Array<{ message?: string }> };
-          pesan = j.errors?.[0]?.message || '';
-        } catch {
-          pesan = '';
-        }
-        // Neuron habis (400/429 + pesan khas) -> catat cooldown.
-        if (/neurons|daily free allocation|4006|workers paid/i.test(pesan)) {
-          const sampai = Date.now() + msUntilDailyResetUtc();
-          await setCooldownPersist(kh, sampai, 'neuron');
-          habis++;
-        }
+        hapusCooldownPersist(kh);   // sehat -> bersihkan cooldown lama
+        return 'sehat' as const;
       }
-    } catch {
-      // best-effort: probe gagal karena jaringan, jangan ubah apa pun
+      let pesan = '';
+      try {
+        const j = (await res.json()) as { errors?: Array<{ message?: string }> };
+        pesan = j.errors?.[0]?.message || '';
+      } catch {
+        pesan = '';
+      }
+      if (/neurons|daily free allocation|4006|workers paid/i.test(pesan)) {
+        setCooldownPersist(kh, Date.now() + msUntilDailyResetUtc(), 'neuron');
+        return 'habis' as const;
+      }
+      return 'lewat' as const;
+    }),
+  );
+
+  let habis = 0;
+  let sehat = 0;
+  for (const h of hasil) {
+    if (h.status === 'fulfilled') {
+      if (h.value === 'habis') habis++;
+      else if (h.value === 'sehat') sehat++;
     }
   }
   return { diperiksa: config.pools.cloudflare.length, habis, sehat };

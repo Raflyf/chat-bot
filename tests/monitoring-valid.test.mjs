@@ -25,7 +25,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const baca = (p) => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8');
-const STATS = baca('api/stats.ts');
+// Buang KOMENTAR dulu — regex tidak boleh cocok dengan contoh di komentar.
+const STATS = baca('api/stats.ts')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/[^\n]*/g, '');
 const PROV = baca('src/providers.ts');
 const DASH = baca('public/js/dashboard.js');
 
@@ -90,4 +93,28 @@ test('sinkron: bar & angka TIDAK boleh beda saat kuota habis', () => {
 test('sinkron: bar utama memakai metrik binding yang sama dengan label', () => {
   assert.ok(/bindingIsToken \? tokenPct : bindingPct/.test(DASH),
     'bar utama harus pakai tokenPct bila metrik binding = token/neuron');
+});
+
+test('sinkron: neuronUsed harus = cap saat kuota habis', () => {
+  // BUG: bar 100% tapi angka tetap 4.959/10.000 (50%) — dua angka berbeda.
+  // ATURAN: bila cooldown aktif, neuronTampil = NEURON_HARIAN_GRATIS.
+  assert.ok(/neuronTampil = adalahNeuron && kenaCooldownNeuron[\s\S]{0,100}NEURON_HARIAN_GRATIS/.test(STATS),
+    'neuronTampil harus = cap saat cooldown aktif');
+  assert.ok(/neuronUsed: adalahNeuron \? neuronTampil/.test(STATS),
+    'output neuronUsed harus pakai neuronTampil');
+});
+
+test('stabilitas: PROBE TIDAK BOLEH MEMBLOKIR render', () => {
+  // BUG FATAL: `await probeKunciCloudflare()` memblokir -> /api/stats timeout
+  // -> SEMUA CARD PROVIDER HILANG (laporan: "ini ko malah hilang card").
+  assert.ok(/void probeKunciCloudflare\(\)/.test(STATS),
+    'probe harus fire-and-forget (void, bukan await)');
+  assert.ok(!/await probeKunciCloudflare\(\)/.test(STATS),
+    'JANGAN await probeKunciCloudflare di handler');
+});
+
+test('stabilitas: probe PARALEL dengan timeout pendek', () => {
+  // 3 key × timeout 15s berurutan = 45s -> melebihi batas Vercel.
+  assert.ok(/Promise\.allSettled/.test(PROV), 'probe harus paralel (Promise.allSettled)');
+  assert.ok(/AbortSignal\.timeout\(6_000\)/.test(PROV), 'timeout probe maksimal 6 detik');
 });

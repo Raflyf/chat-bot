@@ -227,19 +227,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // cooldown -> tampil "Optimal" padahal neuron akun itu HABIS.
     // Probe ringan (model termurah, 1 token) memastikan data monitoring VALID.
     // Dijalankan best-effort: kegagalan tidak boleh menggagalkan endpoint.
-    // CACHE 5 MENIT: probe memanggil 3 endpoint Cloudflare (bisa ~1-2 detik).
-    // Tanpa cache, setiap refresh dashboard menambah latensi. 5 menit cukup
-    // karena kuota neuron hanya berubah saat ada pemakaian.
+    // ── PROBE TIDAK BOLEH MEMBLOKIR RENDER (perbaikan 09 Okt 2026) ──
+    // BUG YANG DIPERBAIKI: versi pertama memakai `await probeKunciCloudflare()`
+    // secara BLOKIR. Probe memanggil API Cloudflare; bila lambat/timeout, endpoint
+    // /api/stats melewati batas waktu Vercel -> SELURUH CARD PROVIDER HILANG dari
+    // dashboard (laporan: "ini ko malah hilang card yg disini gimna sih").
+    //
+    // SEKARANG: probe dijalankan FIRE-AND-FORGET (tanpa await). Dashboard langsung
+    // render memakai data cooldown yang SUDAH ADA di DB; probe hanya MEMPERBARUI
+    // untuk permintaan berikutnya. Jadi dashboard tidak pernah gagal karena probe.
     const PROBE_TTL_MS = 5 * 60_000;
     const sekarang = Date.now();
-    if (sekarang - (globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir! > PROBE_TTL_MS
-        || !(globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir) {
-      try {
-        await probeKunciCloudflare();
-        (globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir = sekarang;
-      } catch {
-        // best-effort
-      }
+    const terakhirProbe = (globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir || 0;
+    if (sekarang - terakhirProbe > PROBE_TTL_MS) {
+      (globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir = sekarang;
+      // TIDAK di-await — sengaja. Lihat komentar di atas.
+      void probeKunciCloudflare().catch(() => undefined);
     }
 
     const cooldownAktif = new Map<string, { alasan: string; until: string }>();
@@ -929,7 +932,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           ? hitungNeuron(Math.round(tokenEfektif * rasioInput), Math.round(tokenEfektif * (1 - rasioInput)), modelNeuron)
           : tokensUsed;
         const neuronCap = adalahNeuron ? NEURON_HARIAN_GRATIS : tokenCap;
-        const sisaNeuron = Math.max(0, neuronCap - neuronTerpakai);
+        // ── PERBAIKAN (09 Okt 2026): neuronTerpakai harus = cap bila HABIS ──
+        // LAPORAN: "bar dan perhitungannya tidak singkron". Bila cooldown aktif
+        // (neuron habis), angka neuron WAJIB menampilkan cap penuh (10.000/10.000)
+        // agar SAMA dengan bar 100% & status Capped. Tanpa ini, bar 100% tapi
+        // angka tetap 4.959/10.000 (50%) — dua angka berbeda untuk hal yang sama.
+        const cdKeyNeuron = `${p.kind}:${hash12}`;
+        const kenaCooldownNeuron = Boolean(cooldownAktif.get(cdKeyNeuron))
+          || Boolean(cooldownAktif.get(`${p.kind}:${suffix}`));
+        const neuronTampil = adalahNeuron && kenaCooldownNeuron
+          ? NEURON_HARIAN_GRATIS
+          : neuronTerpakai;
+        const sisaNeuron = Math.max(0, neuronCap - neuronTampil);
         // ── PERBAIKAN (09 Okt 2026): balasanTersisa harus 0 bila kuota HABIS ──
         // LAPORAN PEMILIK PRODUK: "bar dan perhitungannya tidak singkron" — dashboard
         // menampilkan "≈ 12 balasan lagi" (hijau) padahal neuron SUDAH HABIS.
@@ -949,7 +963,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         let remainingTokens: number | null =
           liveLimit?.tokensRemaining ?? (neuronCap > 0 ? sisaNeuron : null);
         const tokensForPercent = daysCount > 0 || liveLimit?.tokensUsedToday != null
-          ? neuronTerpakai
+          ? neuronTampil
           : (todayTokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayTokenQuotaMap.get(`${p.kind}:${suffix}`) || 0) || neuronTerpakai;
         let tokenPercent = neuronCap > 0 ? Math.min(100, Math.round((tokensForPercent / neuronCap) * 100)) : 0;
         // ── PERBAIKAN (09 Okt 2026): persentase NEURON harus jujur ──
@@ -1020,15 +1034,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           // `tokensUsed` agar frontend menampilkan satuan yang SAMA dengan cap.
           // (Sebelumnya token 14.000 dibandingkan dengan cap neuron 10.000 ->
           //  tampil "14.000 / 10.000" yang mencampur satuan.)
-          tokensUsed: adalahNeuron ? neuronTerpakai : tokensUsed,
+          tokensUsed: adalahNeuron ? neuronTampil : tokensUsed,
           tokenCap,
           tokenPercent,
           // NEURON (perbaikan 06 Okt 2026): khusus Cloudflare, tampilkan neuron
           // terpakai & perkiraan balasan tersisa — agar dashboard TIDAK lagi
           // menyamakan neuron dengan token (dulu salah lapor "KUOTA HABIS").
-          neuronUsed: adalahNeuron ? neuronTerpakai : undefined,
+          neuronUsed: adalahNeuron ? neuronTampil : undefined,
           neuronCap: adalahNeuron ? neuronCap : undefined,
-          balasanTersisa: adalahNeuron ? balasanTersisa : undefined,
+          balasanTersisa: adalahNeuron ? (kenaCooldownNeuron ? 0 : balasanTersisa) : undefined,
           // Satuan untuk KEY INI (agar frontend menulis "neuron", bukan "Token").
           satuanToken: adalahNeuron ? 'neuron' : 'token',
           isRealTokenData,
