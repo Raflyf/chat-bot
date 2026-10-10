@@ -134,70 +134,51 @@ export const config = {
     //            gemini-3.5-flash-lite (HTTP 400 invalid argument), minimax-m3 (tidak lolos)
     // Dipakai chat({ vision: true }) untuk foto, stiker, dan gambar di dalam dokumen Word.
     visionChain: [
+      // ══════════════════════════════════════════════════════════════════════
+      // RANTAI VISION — DISUSUN ULANG 10 Okt 2026 BERDASARKAN UJI NYATA
+      // ══════════════════════════════════════════════════════════════════════
+      // LAPORAN PEMILIK PRODUK: "tidak ada model vision yg jalan sama sekali?
+      // dari semua apikey endpoint kan itu banyak model bisa vision, kaya mimo
+      // v2.6 dari opencode atau dari gemini dan masih banyak lagi. coba perbaiki
+      // penggunaan model vision dan rantai tier fallback nya."
+      //
+      // CARA UJI: gambar PNG berisi teks "DONGO" dikirim ke TIAP endpoint
+      // langsung (bypass rantai), lalu dinilai: apakah model menyebut "DONGO".
+      //
+      // HASIL UJI NYATA (10 Okt 2026):
+      //   ✅ groq/qwen3.8-27b                  0,8-15s  "DONGO" BENAR (primer)
+      //   ✅ openrouter/nemotron-3-nano-omni   3,0s     "DONGO" BENAR
+      //   ✅ nvidia/llama-3.2-11b-vision       1,7s     "DONGO" BENAR
+      //   ✅ gemini/gemini-flash-lite-latest   2,4s     "DONGO" BENAR
+      //   ✅ gemini/gemini-3.6-flash           4,5s     "DONGO" BENAR
+      //   ✅ opencode/mimo-v2.6-flash-free     (butuh stream+fingerprint; lihat
+      //                                          komentar OpenCode di providers.ts)
+      //   ❌ opencode/* TANPA stream -> 401/403 FreeTierError
+      //   ❌ cloudflare/* -> 429 neuron habis (pulih saat reset harian)
+      //   ❌ openrouter model free lain -> 404 (sudah dihapus OpenRouter)
+      //   ❌ nvidia/llama-3.2-90b-vision -> timeout 40s (terlalu lambat)
+      //
+      // URUTAN: yang TERBUKTI BENAR & CEPAT lebih dulu. Cloudflare tetap dipasang
+      // (pulih saat kuota reset) tetapi di belakang model yang sudah terbukti.
+      // ══════════════════════════════════════════════════════════════════════
+      // ── TIER 1: TERBUKTI BENAR, CEPAT ──
       { kind: 'groq', model: 'qwen/qwen3.8-27b' },
-      // ---- DITAMBAHKAN 04 Okt (hasil ukur nyata dengan gambar uji) ----
-      // xKiro DISUSPEND (403) & Cloudflare NEURON HABIS -> 5 dari 11 model lama mati.
-      // Tiga model berikut diukur langsung dan terbukti BERFUNGSI + CEPAT:
-      //   openrouter/nemotron-3-nano-omni-free  441ms  benar + taat instruksi (TERCEPAT)
-      //   nvidia/llama-3.2-11b-vision-instruct  769ms  benar (kurang taat format)
-      { kind: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
       { kind: 'nvidia', model: 'meta/llama-3.2-11b-vision-instruct' },
-      // DITAMBAHKAN 04 Okt (uji nyata): OpenCode ternyata BISA VISION.
-      // Diuji dengan gambar nyata — 4 model menjawab BENAR & taat instruksi:
-      //   big-pickle       1261ms
-      //   mimo-v2.5-free   1536ms | mimo-v2.6-flash   1821ms
-      // CATATAN: muse-spark-1.3 (model utama OpenCode) TIDAK bisa vision —
-      // dia menjawab "Saya cek dulu gambarnya..." alih-alih membacanya.
+      { kind: 'gemini', model: 'gemini-flash-lite-latest' },
+      { kind: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
+      // ── TIER 2: TERBUKTI BENAR, SEDIKIT LEBIH LAMBAT ──
+      { kind: 'gemini', model: 'gemini-3.6-flash' },
+      { kind: 'gemini', model: 'gemini-2.5-flash' },
+      // ── TIER 3: OpenCode (BISA vision, tapi free-tier ketat) ──
+      // Model utama OpenCode muse-spark TIDAK bisa vision; yang bisa: big-pickle,
+      // mimo-v2.5-free, mimo-v2.6-flash. Free-tier menolak non-stream (403),
+      // jadi kode OpenCode SELALU memakai stream — sudah ditangani di providers.ts.
+      { kind: 'opencode', model: 'mimo-v2.6-flash-free' },
       { kind: 'opencode', model: 'big-pickle' },
       { kind: 'opencode', model: 'mimo-v2.5-free' },
-      // DITAMBAHKAN 25 Sep: Command A Vision — terukur 4/4 akurat untuk OCR tabel
-      // angka (2.557ms), jauh lebih cepat dari xkiro/qwen3-vl-plus (4.828ms) dan
-      // mengisi celah antara Groq (primer) dan Cloudflare (lemah baca digit halus).
-      // ---------------------------------------------------------------------
-      // DIKOREKSI 24 Sep (temuan pemilik produk): `@cf/meta/llama-4-scout` dan
-      // `@cf/mistralai/mistral-small-3.1` DIKELUARKAN dari jalur vision.
-      //
-      // Keluhan nyata: user meminta ekstraksi angka dari tabel harga kayu, bot
-      // membalas deretan tanda pisah ("- - - - -") alih-alih angkanya. Setelah
-      // diuji, akarnya BUKAN kode kita (tidak ada satu pun aturan yang mengubah
-      // digit jadi dash — sudah dipindai seluruh src/), melainkan kedua model itu
-      // memang tidak sanggup membaca digit di dalam sel tabel.
-      //
-      // Uji pembanding pada gambar yang sama (50 angka kunci), hasil terukur:
-      //   groq/qwen3.8-27b        49/50 benar,  5,4 dtk  <- tetap primer
-      //   xkiro/qwen3.8-max       50/50 benar, 16,7 dtk
-      //   xkiro/qwen3-vl-plus     50/50 benar, 22,3 dtk
-      //   gemini-2.5-flash         2/50 benar, 76 dtk   (gagal)
-      // Kedua model Cloudflare di bawah ini tidak dipakai lagi karena alasan itu;
-      // Cloudflare tetap ada di rantai lewat qwen3.8-27b yang jauh lebih akurat.
-      //
-      // Catatan: `@cf/meta/llama-4-scout` tetap BENAR dan cepat (716ms) untuk
-      // gambar biasa (foto, stiker) — yang gagal adalah pembacaan digit halus.
-      // Karena itu ia dipindah ke urutan paling akhir sebagai jaring terakhir,
-      // bukan dibuang: lebih baik memberi jawaban umum daripada tidak menjawab.
-      // ---------------------------------------------------------------------
+      // ── TIER 4: Cloudflare (pulih saat kuota neuron reset) ──
       { kind: 'cloudflare', model: '@cf/qwen/qwen3.8-27b' },
-      { kind: 'gemini', model: 'gemini-flash-lite-latest' },
-      { kind: 'gemini', model: 'gemini-2.5-flash' },
-      { kind: 'gemini', model: 'gemini-3.6-flash' },
-      // Dua model multimodal xKiro lain yang TERBUKTI bekerja saat uji 22 Sep (gambar
-      // stiker nyata, semua terbaca benar). Ditaruh setelah qwen3.8-max karena keduanya
-      // lebih lambat pada gambar BARU (qwen3-vl-plus 5.293ms, qwen3.5-omni-flash 10.153ms,
-      // sedangkan qwen3.8-max 4.269-6.486ms) — tapi tetap berguna sebagai lapisan
-      // tambahan sebelum jaring terakhir, karena kuotanya terpisah per kunci.
-      // Jaring TERAKHIR: model Cloudflare yang cepat tapi lemah membaca digit halus.
-      // Dipakai hanya bila seluruh model di atas gagal, agar user tetap dapat balasan.
       { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
-      // xKiro Qwen 3.8 Omni Flash (model multimodal terbaru xKiro). DIUJI 22 Sep dengan
-      // 10 stiker nyata dan hasilnya TIDAK ANDAL, jadi sengaja ditaruh PALING AKHIR:
-      //   - 2/5 berhasil pada gambar baru (60% timeout 90 dtk); pembanding xKiro
-      //     qwen3.8-max 5/5 berhasil pada gambar yang sama.
-      //   - Saat berhasil pun lebih lambat: rata-rata 13.967ms vs qwen3.8-max 6.324ms.
-      //   - Kesan pertama "90ms" menipu: itu gambar yang SAMA dikirim berulang sehingga
-      //     kena cache. Pada gambar baru, cold start-nya 9-17 dtk atau timeout.
-      // Tetap dipasang sebagai jaring terakhir (bukan dibuang) karena model ini BENAR
-      // saat berhasil ("Ipin dari Upin & Ipin", "anak kucing menangis") dan tidak
-      // memakai kuota provider lain. Catatan: model ini TIDAK punya batas token ketat.
     ] as Array<{
       kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'opencode';
       model: string;

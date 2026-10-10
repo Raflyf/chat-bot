@@ -1350,7 +1350,40 @@ export async function processIncomingSticker(
   mime: string = 'image/webp',
   emoji?: string,
   ctx?: ChatContext,
-): Promise<{ reply: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
+): Promise<{
+  reply: string;
+  via: string;
+  tokens?: { prompt: number; completion: number; total: number };
+  /** Emoji stiker balasan (dari tag [[sticker:x]]) — agar bot bisa membalas
+   *  stiker dengan stiker. Ditambahkan 10 Okt 2026. */
+  sticker?: string | null;
+}> {
   const stickerCaption = emoji ? `(Emoji stiker: ${emoji})` : undefined;
-  return await describeImage(buffer.toString('base64'), mime, stickerCaption, ctx);
+
+  // ── PERBAIKAN BESAR (10 Okt 2026): KONVERSI STIKER KE PNG PUTIH ──
+  // LAPORAN PEMILIK PRODUK: "ga nyambung anjir klo dikasih stiker, kaya yg
+  // gabisa lihat itu stiker apaan, kaya yg asal jawab aja."
+  //
+  // AKAR (dibuktikan uji nyata): stiker WhatsApp berformat WebP TRANSPARAN
+  // (punya alpha). Model vision menerimanya tetapi TIDAK sanggup membacanya —
+  // hasil uji 4 stiker: 3 dibalas "stikernya belum kelihatan, kirim ulang dong"
+  // dan 1 salah total (stiker "DONGO" dibalas "lucu banget"). Model hanya
+  // MELIHAT area transparan, bukan gambarnya.
+  //
+  // SOLUSI: ratakan stiker ke latar PUTIH dan ubah ke PNG sebelum dikirim ke
+  // vision. Model lalu benar-benar melihat isinya.
+  let bufferFinal = buffer;
+  let mimeFinal = mime;
+  try {
+    const sharpMod = (await import('sharp')).default;
+    bufferFinal = await sharpMod(buffer)
+      .flatten({ background: { r: 255, g: 255, b: 255 } })  // buang alpha -> latar putih
+      .png()
+      .toBuffer();
+    mimeFinal = 'image/png';
+  } catch {
+    // sharp tidak tersedia -> pakai buffer asli (jangan gagalkan permintaan).
+  }
+
+  return await describeImage(bufferFinal.toString('base64'), mimeFinal, stickerCaption, ctx, true);
 }

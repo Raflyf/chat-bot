@@ -1,4 +1,5 @@
 import path from 'path';
+import { sanitizeAssistantOutput } from './skills.js';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import {
@@ -575,14 +576,21 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           msg_id: messageId || undefined,
         });
 
-        const { reply, via, tokens } = await processIncomingSticker(buffer, mime, undefined, context);
-        await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+        const { reply: replyStiker, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(buffer, mime, undefined, context);
+        // PERBAIKAN 10 Okt 2026: sanitize + kirim stiker balasan (sama seperti
+        // jalur WhatsApp Cloud).
+        const teksStiker = sanitizeAssistantOutput(replyStiker, '[Stiker WhatsApp]', undefined, true).trim();
+        await sendWhatsAppMessageSafe(sock, remoteJid, teksStiker);
         if (messageId) void markMessageProcessed('whatsapp', messageId);
+        let stikerBaileys = false;
+        if (stickerBalasan && hasStickerForEmoji(stickerBalasan) && stickerFitsMood(stickerBalasan, '[Stiker WhatsApp]')) {
+          stikerBaileys = await sendWhatsAppStickerSafe(sock, remoteJid, stickerBalasan);
+        }
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',
-          content: reply,
+          content: stikerBaileys ? `${teksStiker}\n[Stiker terkirim: ${stickerBalasan}]` : teksStiker,
           via,
           tokens,
         });

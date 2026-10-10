@@ -4,7 +4,7 @@ import { chat, type ChatMsg, type ContentPart } from './providers.js';
 import { saveCorrection, type ChatContext } from './memory.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
-import { stripStickerMarker } from './stickers.js';
+import { stripStickerMarker, hasStickerForEmoji } from './stickers.js';
 import { STICKER_MANIFEST, STICKER_INFO } from './sticker-manifest.js';
 import { stripRiddleMarker, lastRiddleAnswer } from './markers.js';
 import { getOrGrowMemory, needsGrowth, growMemory } from './bot_growth.js';
@@ -1545,9 +1545,37 @@ export function sanitizeAssistantOutput(
     akhir = buangTemplateKosong(akhir);
     akhir = buangKlaimLirikAsli(akhir);
     akhir = buangBalasanStikerGenerik(akhir, userPrompt);
+    akhir = buangKlaimTidakLihatStiker(akhir, userPrompt);
     return akhir;
   }
   return hasilBersih;
+}
+
+/**
+ * Buang balasan yang MENGAKU TIDAK MELIHAT STIKER padahal stiker DIKIRIM.
+ *
+ * LAPORAN (10 Okt 2026): "ga nyambung anjir klo dikasih stiker, kaya yg gabisa
+ * lihat itu stiker apaan, kaya yg asal jawab aja."
+ *
+ * BUKTI dari uji nyata: 3 dari 4 stiker dibalas "stikernya belum kelihatan /
+ * belum masuk sini, kirim ulang dong" — padahal gambarnya JELAS terkirim.
+ * Ini kesalahan paling parah: user merasa bot buta.
+ *
+ * ATURAN: bila user mengirim stiker, DILARANG bilang tidak melihat/menerimanya.
+ * Balasan seperti itu -> kosongkan agar autoReply meregenerasi.
+ */
+export function buangKlaimTidakLihatStiker(reply: string, userPrompt: string): string {
+  if (!reply) return reply;
+  const u = String(userPrompt || '');
+  if (!/\[Stiker\s*WhatsApp\]/i.test(u) && !/^\s*stiker\s*$/i.test(u)) return reply;
+  // Klaim tidak melihat / minta kirim ulang.
+  const klaimButa =
+    /\b(?:stiker(?:nya)?|gambarnya|fotonya|kirimannya)\s*(?:nya)?\s*(?:belum|nggak|gak|tidak|ga)\s*(?:kelihatan|masuk|sampai|terlihat|ada|muncul|kelihatan|keterima|terkirim)\b/i.test(reply) ||
+    /\b(?:kirim\s+ulang|kirim\s+lagi|ulangi\s+kirim)\b/i.test(reply) ||
+    /\b(?:belum\s+(?:ada|masuk|kelihatan|sampai|terlihat))\b/i.test(reply) ||
+    /\b(?:nggak|gak|tidak|ga)\s+(?:lihat|liat|terima|dapat|dapet)\b/i.test(reply);
+  if (klaimButa) return '';
+  return reply;
 }
 
 /**
@@ -1567,8 +1595,9 @@ export function buangKlaimLirikAsli(reply: string): string {
   // Klaim "lirik yang sebenarnya/benar/aslinya".
   const klaim = /\b(?:lirik(?:nya)?\s+(?:yang\s+)?(?:sebenarnya|benar|asli|bener|tepat)|(?:ini|berikut)\s+(?:baris|lirik)\s+(?:yang\s+)?(?:sebenarnya|benar|asli|bener)|lirik\s+aslinya)\b/i;
   if (klaim.test(reply)) {
-    // Ganti dengan pengakuan jujur (jangan mengarang lirik).
-    return 'Waduh, maaf ya — aku nggak hafal lirik aslinya, jadi tadi cuma ngarang. Kamu yang lebih tahu, lanjutin aja. 😄';
+    // Kosongkan -> autoReply meregenerasi dengan gaya sendiri (JANGAN hardcode).
+    // Aturan pemilik produk: "jangan menghardcode jawaban respon bot".
+    return '';
   }
   return reply;
 }
@@ -1761,7 +1790,9 @@ export function perbaikiSalahInfoKemampuan(reply: string, userPrompt: string): s
     /\b(?:cuma|hanya|cm)\b[^.!?\n]{0,30}\b(?:teks|text|tulisan|chat|ngobrol)\b/i.test(reply) ||
     /\b(?:nggak|gak|tidak|ga)\s+bisa\b[^.!?\n]{0,20}\b(?:stiker|sticker)\b/i.test(reply);
   if (klaimSalah) {
-    return 'Bisa dong, aku bisa kirim stiker. Tinggal bilang aja mau stiker yang gimana. 😄';
+    // Kosongkan -> autoReply meregenerasi dengan info BENAR (bot bisa stiker).
+    // Prompt sudah memuat daftar kemampuan; JANGAN hardcode teks di sini.
+    return '';
   }
   return reply;
 }
@@ -4726,6 +4757,41 @@ export async function dynamicNotice(instruction: string, ctx?: ChatContext): Pro
 
 /** Respon gambar / media visual / dokumen secara alami via model vision. */
 /**
+ * Pilih emoji stiker balasan dari MAKNA/ekspresi stiker yang dibaca model.
+ *
+ * KENAPA PERLU (10 Okt 2026): model kecil sering TIDAK menulis tag [[sticker:]]
+ * walau sudah diminta, sehingga bot tidak pernah membalas stiker. Fungsi ini
+ * memberi emoji yang cocok berdasarkan kata kunci makna pada hasil bacaan.
+ *
+ * PENTING: emoji yang dipilih HARUS ada di manifest (punya file stiker).
+ */
+export function emojiStikerDariMakna(teks: string): string | null {
+  const t = String(teks || '').toLowerCase();
+  if (!t) return null;
+  const peta: Array<[RegExp, string]> = [
+    [/\b(?:ngakak|ketawa|tertawa|lucu|haha|wkwk|gokil|receh)\b/, '😂'],
+    [/\b(?:kaget|terkejut|syok|shock|meledak|panik)\b/, '😱'],
+    [/\b(?:sedih|nangis|menangis|baper|galau|hiks)\b/, '😭'],
+    [/\b(?:kesal|marah|emosi|ngamuk|sebal|bete|jengkel|kesel|nahan emosi)\b/, '😤'],
+    [/\b(?:malu|grogi|salah tingkah|canggung)\b/, '😳'],
+    [/\b(?:sayang|cinta|gemas|peluk|cium|manis)\b/, '🥰'],
+    [/\b(?:memohon|minta|please|kasihan|iba)\b/, '🥺'],
+    [/\b(?:capek|lelah|ngantuk|tidur|rebahan|males|malas)\b/, '😴'],
+    [/\b(?:senyum|senang|bahagia|happy|gembira|ceria)\b/, '😊'],
+    [/\b(?:santai|tenang|aman|oke|ok|sip|setuju|jempol|bagus)\b/, '👍'],
+    [/\b(?:kabur|ngacir|pergi|berangkat|jalan)\b/, '🏃'],
+    [/\b(?:main|game|mabar|mainan)\b/, '🎮'],
+    [/\b(?:makan|lapar|nyam|enak|kuliner)\b/, '🍜'],
+    [/\b(?:doa|semangat|berjuang|kuat)\b/, '💪'],
+    [/\b(?:tanya|bertanya|mikir|berpikir|pusing|bingung|heran)\b/, '🤔'],
+  ];
+  for (const [re, emoji] of peta) {
+    if (re.test(t) && hasStickerForEmoji(emoji)) return emoji;
+  }
+  return null;
+}
+
+/**
  * Bersihkan artefak pada hasil ekstraksi tabel — TANPA menyentuh baris data.
  *
  * Artefak nyata yang terbukti muncul (uji 25 Sep):
@@ -4778,12 +4844,20 @@ export async function describeImage(
   mime: string,
   caption?: string,
   ctx?: ChatContext,
+  /** Dipaksa true bila ini STIKER (walau sudah dikonversi ke PNG). Penting karena
+   *  isSticker lama hanya mendeteksi mime 'webp' — stiker yang dikonversi ke PNG
+   *  jadi tidak dianggap stiker sehingga fallback emoji tidak jalan. */
+  paksaStiker = false,
 ): Promise<{
   reply: string;
   via: string;
   tokens?: { prompt: number; completion: number; total: number };
+  /** Emoji stiker balasan (dari tag [[sticker:x]]) — null bila tidak ada.
+   *  Ditambahkan 10 Okt 2026: sebelumnya tag ini DIBUANG tapi tidak diteruskan,
+   *  sehingga bot TIDAK PERNAH membalas stiker dengan stiker. */
+  sticker?: string | null;
 }> {
-  const isSticker = mime.includes('webp');
+  const isSticker = paksaStiker || mime.includes('webp');
   const isPdf = mime === 'application/pdf';
 
   let promptText: string;
@@ -4853,6 +4927,12 @@ export async function describeImage(
       '9. TANGGAPI SEIRAMA DENGAN OBROLAN TERAKHIR — perhatikan konteks percakapan terakhir kalian.',
       '10. ZERO ROBOT EMOJI / ZERO CRINGE EMOJI: Maksimal 1 emoji ekspresif wajar atau TANPA EMOJI sama sekali. DILARANG emoji robot, tertawa menangis 😂, atau jejak kaki 🐾.',
       '11. BILA TIDAK YAKIN SAMA SEKALI ISI STIKERNYA: cukup tanggapi dengan reaksi hangat yang netral dan wajar — jauh lebih baik daripada salah tebak dengan yakin. Susun kalimatmu sendiri, jangan memakai frasa hafalan.',
+      // ── BALAS STIKER DENGAN STIKER (permintaan pemilik produk 10 Okt 2026) ──
+      // "kalo bisa jika ada user membalas dengan stiker maka bot juga diperbolehkan
+      //  membalas dengan stiker juga"
+      '12. BALAS DENGAN STIKER (DIIZINKAN & DIANJURKAN): karena dia mengirim STIKER, kamu BOLEH membalas dengan stiker juga. Sisipkan SATU tag di AKHIR balasanmu dengan format [[sticker:<emoji>]] — pilih emoji yang COCOK dengan ekspresi/makna stiker yang dia kirim (mis. dia kirim stiker ketawa -> [[sticker:😂]]; stiker kesal -> [[sticker:😤]]; stiker sedih -> [[sticker:🥺]]). Contoh: "Haha iya tuh lucu banget [[sticker:😂]]".',
+      '12b. WAJIB: tag [[sticker:...]] harus di AKHIR balasan dan HANYA SATU. Emoji biasa di dalam teks BUKAN stiker — kalau mau kirim stiker, WAJIB pakai tag itu.',
+      '12c. Balasan teksnya tetap SINGKAT (maksimal 12 kata) dan NYAMBUNG dengan isi/ekspresi stiker. JANGAN mengarang isi stiker yang tidak terlihat.',
     ].filter(Boolean).join('\n');
   } else if (isPdf) {
     promptText = caption && caption.trim()
@@ -4989,11 +5069,19 @@ export async function describeImage(
   //   - guard panjang/emoji tidak relevan untuk data tabel.
   // Angka di dalamnya sudah diverifikasi benar; merapikannya justru merusak.
   const ekstraksiTsv = isTsvExtraction(textLengkap);
+  // ── AMBIL TAG STIKER SEBELUM SANITIZE (perbaikan 10 Okt 2026) ──
+  // sanitizeAssistantOutput MEMBUANG tag [[sticker:emoji]], jadi bila diambil
+  // sesudahnya tag sudah hilang -> bot tidak pernah membalas stiker dengan stiker.
+  const stickerDariModel = extractStickerTag(String(textLengkap || '')).sticker;
+
   let reply = ekstraksiTsv
     ? bersihkanArtefakEkstraksi(textLengkap)
     : sanitizeAssistantOutput(
         textLengkap,
-        caption?.trim() || undefined,
+        // Untuk STIKER: userPrompt harus '[Stiker WhatsApp]' agar penegak stiker
+        // (buangBalasanStikerGenerik) aktif. Sebelumnya caption kosong -> penegak
+        // tidak jalan -> "iya salah liat" lolos.
+        isSticker ? '[Stiker WhatsApp]' : caption?.trim() || undefined,
         recentOpenings,
         true,
         // Mode profesional juga berlaku untuk media: kiriman dokumen/foto kerja
@@ -5112,5 +5200,17 @@ export async function describeImage(
     }
   }
 
-  return { reply, via, tokens };
+  // Ambil tag stiker dari balasan ([[sticker:emoji]]) supaya bisa dikirim sebagai
+  // stiker. Sebelumnya tag ini dibuang sanitizer TANPA diteruskan -> bot tidak
+  // pernah membalas stiker dengan stiker (temuan pemilik produk 10 Okt 2026).
+  // Tag sudah diambil SEBELUM sanitize (lihat `stickerDariModel` di atas).
+  // Bila model TIDAK menulis tag (sering terjadi pada model kecil), tentukan
+  // emoji stiker balasan dari MAKNA yang dibaca. Ini memenuhi permintaan pemilik
+  // produk: "kalo bisa jika ada user membalas dengan stiker maka bot juga
+  // diperbolehkan membalas dengan stiker juga".
+  let stickerFinal = stickerDariModel;
+  if (isSticker && !stickerFinal) {
+    stickerFinal = emojiStikerDariMakna(`${caption ?? ''} ${reply}`);
+  }
+  return { reply, via, tokens, sticker: stickerFinal };
 }

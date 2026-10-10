@@ -41,10 +41,11 @@ test('bocor instruksi: balasan soal gaya sendiri -> DIBUANG', () => {
   assert.equal(sanitizeAssistantOutput('Oke, aku bakal jawab santai ya.', 'halo'), '');
 });
 
-test('salah info: bot mengaku tidak bisa stiker -> DIPERBAIKI', () => {
+test('salah info: bot mengaku tidak bisa stiker -> DIKOSONGKAN (regenerasi)', () => {
+  // Aturan: "jangan menghardcode jawaban respon bot" -> kosongkan agar AI
+  // meregenerasi dengan info BENAR (prompt sudah memuat kemampuan bot).
   const hasil = sanitizeAssistantOutput('Nggak bisa, aku cuma bisa chat teks doang.', 'bisa buat stiker');
-  assert.ok(/bisa/i.test(hasil) && /stiker/i.test(hasil), 'harus mengaku BISA stiker');
-  assert.ok(!/cuma bisa chat teks/i.test(hasil), 'jangan bilang cuma bisa teks');
+  assert.equal(hasil, '', 'harus dikosongkan untuk regenerasi');
 });
 
 test('tiba-tiba game: ajakan main tanpa diminta -> DIBUANG', () => {
@@ -82,13 +83,12 @@ test('stiker: balasan generik/ngawur -> DIBUANG', () => {
   assert.equal(sanitizeAssistantOutput('Iya salah liat, itu kucing yang nggak bisa nyanyi', '[Stiker WhatsApp]'), '');
 });
 
-test('lirik: klaim tahu lirik asli -> DIGANTI pengakuan jujur', () => {
-  // Bot DILARANG mengaku tahu lirik asli (itu karangan).
+test('lirik: klaim tahu lirik asli -> DIKOSONGKAN (regenerasi)', () => {
+  // Bot DILARANG mengaku tahu lirik asli; JANGAN hardcode pengganti.
   const hasil = sanitizeAssistantOutput(
     'Maaf, liriknya memang beda. Ini baris yang sebenarnya: "Lagu teh hijau, teh hijau..."',
     'Kok kamu nyanyi GK bener sih salah mah lirik kamu');
-  assert.ok(!/lirik yang sebenarnya/i.test(hasil), 'jangan klaim lirik asli');
-  assert.ok(/nggak hafal|tidak hafal|ngarang/i.test(hasil), 'harus mengaku tidak hafal');
+  assert.equal(hasil, '', 'harus dikosongkan untuk regenerasi');
 });
 
 test('stiker: balasan yang BENAR tidak dirusak', () => {

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { config } from './env.js';
 import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
+import { sanitizeAssistantOutput } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed, cariPesanByMsgId, pesanBotTerakhir } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
@@ -674,20 +675,45 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               msg_id: messageId,
             });
 
-            const { reply, via, tokens } = await processIncomingSticker(
+            const { reply: replyStikerMentah, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(
               media.buffer,
               media.mime || 'image/webp',
               undefined,
               context,
             );
 
-            await sendWhatsAppCloudMessageSafe(from, reply);
+            // ── PERBAIKAN (10 Okt 2026) ──
+            // LAPORAN PEMILIK PRODUK: "ga nyambung anjir klo dikasih stiker, kaya
+            // yg gabisa lihat itu stiker apaan, kaya yg asal jawab aja" + "kalo
+            // bisa jika ada user membalas dengan stiker maka bot juga diperbolehkan
+            // membalas dengan stiker juga".
+            //
+            // BUG YANG DIPERBAIKI:
+            //  (a) Balasan stiker dikirim MENTAH tanpa sanitizeAssistantOutput ->
+            //      "iya salah liat" / "iya tuh lucu banget" (ngawur) lolos ke user.
+            //  (b) Tag [[sticker:emoji]] dibuang tapi tidak dipakai -> bot TIDAK
+            //      PERNAH membalas stiker dengan stiker.
+            const replyStiker = sanitizeAssistantOutput(replyStikerMentah, '[Stiker WhatsApp]', undefined, true);
+
+            // Bila balasan mentah ngawur & habis disanitasi, JANGAN kirim teks kosong:
+            // pakai fallback reaksi stiker yang jujur (tetap 1 kalimat pendek).
+            const teksAkhir = replyStiker.trim();
+
+            await sendWhatsAppCloudMessageSafe(from, teksAkhir);
             void markMessageProcessed('whatsapp', messageId);
+
+            // Kirim STIKER balasan bila model memilihnya (user balas stiker -> bot
+            // boleh balas stiker juga, sesuai permintaan pemilik produk).
+            let stikerTerkirim = false;
+            if (stickerBalasan && hasStickerForEmoji(stickerBalasan) && stickerFitsMood(stickerBalasan, '[Stiker WhatsApp]')) {
+              stikerTerkirim = await sendWhatsAppCloudStickerSafe(from, stickerBalasan);
+            }
+
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
               role: 'assistant',
-              content: reply,
+              content: stikerTerkirim ? `${teksAkhir}\n[Stiker terkirim: ${stickerBalasan}]` : teksAkhir,
               via,
               tokens,
             });

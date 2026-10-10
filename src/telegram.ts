@@ -1,4 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
+import { sanitizeAssistantOutput } from './skills.js';
 import { config } from './env.js';
 import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
@@ -620,14 +621,23 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       if (!msg.sticker.is_animated && !msg.sticker.is_video) {
         const dl = await downloadTelegramBuffer(bot, msg.sticker.file_id);
         if (dl) {
-          const { reply, via, tokens } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx);
-          await sendTelegramMessageSafe(bot, chatId, reply);
+          const { reply: replyStiker, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx);
+          // PERBAIKAN 10 Okt 2026: sanitize + kirim stiker balasan (sama seperti
+          // jalur WhatsApp Cloud) agar balasan stiker tidak ngawur & bot bisa
+          // membalas stiker dengan stiker.
+          const teksStiker = sanitizeAssistantOutput(replyStiker, '[Stiker WhatsApp]', undefined, true).trim()
+            ;
+          await sendTelegramMessageSafe(bot, chatId, teksStiker);
           if (msgId) void markMessageProcessed('telegram', msgId);
+          let stikerTele = false;
+          if (stickerBalasan && hasStickerForEmoji(stickerBalasan) && stickerFitsMood(stickerBalasan, '[Stiker WhatsApp]')) {
+            stikerTele = await sendTelegramStickerSafe(bot, chatId, stickerBalasan);
+          }
           await saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
             role: 'assistant',
-            content: reply,
+            content: stikerTele ? `${teksStiker}\n[Stiker terkirim: ${stickerBalasan}]` : teksStiker,
             via,
             tokens,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker assistant:', err));
