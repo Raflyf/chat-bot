@@ -1531,7 +1531,239 @@ export function sanitizeAssistantOutput(
   // [ANTI-LINK FIKTIF 26 Sep] Buang URL karangan yang tidak ada di data internet.
   // Dijalankan PALING AKHIR agar URL yang disisipkan pembersih lain tetap tervalidasi.
   cleaned = stripInventedUrls(cleaned, webData ?? null);
-  return avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
+  const hasilBersih = avoidRepeatedOpening(redactOutput(cleaned), recentOpenings);
+  // ── PENEGAKAN KONFABULASI (temuan 10 Okt 2026) ──
+  // "bot nya ngaco jawabannya, ditanya apa di balas apa, tercemar karna memori
+  //  sebelumnya". Bila pesan user SANGAT PENDEK & balasan menyebut topik yang
+  // tidak ada di pesan -> kosongkan agar autoReply meregenerasi.
+  if (userPrompt) {
+    let akhir = buangKonfabulasiKonteks(hasilBersih, userPrompt);
+    akhir = buangBocorInstruksi(akhir);
+    akhir = perbaikiSalahInfoKemampuan(akhir, userPrompt);
+    akhir = cegahMulaiGameTanpaDiminta(akhir, userPrompt);
+    akhir = bersihkanFrasaNgawur(akhir);
+    akhir = buangTemplateKosong(akhir);
+    akhir = buangKlaimLirikAsli(akhir);
+    akhir = buangBalasanStikerGenerik(akhir, userPrompt);
+    return akhir;
+  }
+  return hasilBersih;
+}
+
+/**
+ * Cegah bot MENGARANG LIRIK LAGU.
+ *
+ * LAPORAN (10 Okt 2026) — contoh nyata dari dataset:
+ *   user: "Kok kamu nyanyi GK bener sih salah mah lirik kamu"
+ *   bot : "Maaf, liriknya memang beda. Ini baris yang sebenarnya:
+ *          'Lagu teh hijau, teh hijau, Berbuah rasa, nikmat di lidah.'"
+ * → Bot MENGAKU tahu lirik asli, padahal itu KARANGAN. Menyesatkan.
+ *
+ * ATURAN: bot boleh ikut bersenang-senang menyanyi, TAPI DILARANG mengklaim
+ * tahu lirik asli/benar sebuah lagu. Bila tidak yakin, akui saja.
+ */
+export function buangKlaimLirikAsli(reply: string): string {
+  if (!reply) return reply;
+  // Klaim "lirik yang sebenarnya/benar/aslinya".
+  const klaim = /\b(?:lirik(?:nya)?\s+(?:yang\s+)?(?:sebenarnya|benar|asli|bener|tepat)|(?:ini|berikut)\s+(?:baris|lirik)\s+(?:yang\s+)?(?:sebenarnya|benar|asli|bener)|lirik\s+aslinya)\b/i;
+  if (klaim.test(reply)) {
+    // Ganti dengan pengakuan jujur (jangan mengarang lirik).
+    return 'Waduh, maaf ya — aku nggak hafal lirik aslinya, jadi tadi cuma ngarang. Kamu yang lebih tahu, lanjutin aja. 😄';
+  }
+  return reply;
+}
+
+/**
+ * Perbaiki balasan STIKER yang generik/ngawur.
+ *
+ * LAPORAN (10 Okt 2026) — contoh nyata dari dataset (semua balasan stiker):
+ *   "Iya tuh lucu banget"          (generik, tidak lihat stiker)
+ *   "Patrick lagi marah?"          (mengarang isi stiker)
+ *   "itu kucing yang nggak bisa nyanyi" (mengarang)
+ *   "Iya salah liat"               (tidak jelas)
+ *
+ * ATURAN PEMILIK PRODUK: stiker dibaca TEKS/CAPTION -> KONSEP -> EKSPRESI.
+ * Bila balasan hanya basa-basi generik tanpa kaitan nyata -> kosongkan agar
+ * autoReply meregenerasi dengan yang lebih tepat.
+ */
+export function buangBalasanStikerGenerik(reply: string, userPrompt: string): string {
+  if (!reply) return reply;
+  const u = String(userPrompt || '');
+  // Hanya berlaku bila user mengirim STIKER.
+  if (!/\[Stiker\s*WhatsApp\]/i.test(u) && !/^\s*stiker\s*$/i.test(u)) return reply;
+  const generik = /^\s*(?:iya|ya|hehe|haha|wkwk|😄|😂|🤣)?[\s,]*(?:tuh\s+)?(?:lucu|lucu\s+banget|gemas|imut|keren|bagus|ngakak)\b[^.!?\n]*[.!]?\s*$/i;
+  const mengarang = /\b(?:patrick|spongebob|monyet|kucing\s+yang|salah\s+lia?t|maksa\s+liha?t)\b/i;
+  if (generik.test(reply) || mengarang.test(reply)) return '';
+  return reply;
+}
+
+/**
+ * Cegah bot MEMULAI PERMAINAN tanpa diminta.
+ *
+ * LAPORAN (10 Okt 2026): user jawab "Iya" -> bot menulis "Siap, kita main
+ * tebak-tebakan ya. Apa yang sama dari penjual sate dan soto?" — user TIDAK
+ * pernah minta main. Ini mengganggu & tidak nyambung.
+ */
+export function buangTemplateKosong(reply: string): string {
+  if (!reply) return reply;
+  // Template kaku yang tidak menjawab apa pun.
+  // HANYA template murni "siap bantu X" TANPA konteks lain (jangan buang
+  // balasan yang benar-benar menanggapi curhat).
+  if (/^\s*(?:siap|oke|ok)[\s,]*bantu\s+(?:nanya|menjawab|diskusi|curhat|ngobrol)[^.!?\n]*[.!]?\s*$/i.test(reply)) return '';
+  if (/^\s*(?:ada|apa)\s+yang\s+bisa\s+(?:aku|saya)\s+bantu[^.!?\n]*[.!]?\s*$/i.test(reply)) return '';
+  return reply;
+}
+
+export function cegahMulaiGameTanpaDiminta(reply: string, userPrompt: string): string {
+  if (!reply) return reply;
+  const u = String(userPrompt || '').toLowerCase();
+  // User memang minta main? (kata ajakan/permainan eksplisit)
+  const mintaMain = /\b(?:main|mabar|game|permainan|tebak(?:\s*-?\s*tebakan)?|kuis|uno|catur|halma|remi|capsa|gaple|tictactoe|hangman|dadu|suit|monopoli|kartu|papan)\b/.test(u);
+  if (mintaMain) return reply;
+  // Balasan MENGajak main padahal user tidak minta -> buang kalimat ajakannya.
+  const out = reply
+    .replace(/[^.!?\n]*\b(?:kita|ayo|yuk|mari)\s+(?:main|bermain|mabar)\b[^.!?\n]*[.!?]?/gi, '')
+    .replace(/[^.!?\n]*\b(?:siap|oke|ok|boleh)[,!.]?\s*(?:kita\s+)?(?:main|bermain)\b[^.!?\n]*[.!?]?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s,.:;-]+/, '')
+    .trim();
+  return out;
+}
+
+/**
+ * Bersihkan frasa NGAWUR/aneh yang muncul dari model kecil.
+ *
+ * LAPORAN (10 Okt 2026) — contoh nyata dari dataset:
+ *   "Iya salah liat"                    (tidak jelas, membingungkan)
+ *   "BRO?! iya salah liat, aku maksa lihat lagi"
+ *   "Monyet, udah nyangka kaget banget" (mengarang isi stiker)
+ */
+export function bersihkanFrasaNgawur(reply: string): string {
+  if (!reply) return reply;
+  // Frasa yang SELALU salah (tidak pernah masuk akal sebagai balasan).
+  const selaluSalah = [
+    /\bsalah\s+lia?t\b/gi,
+    /\baku\s+maksa\s+liha?t\s+lagi\b/gi,
+    /\budah\s+nyangka\s+kaget\b/gi,
+    /^\s*\bbro\s*[?!.,]+\s*/gi,
+    /^\s*\bbray\s*[?!.,]+\s*/gi,
+  ];
+  let out = reply;
+  for (const re of selaluSalah) out = out.replace(re, '');
+  out = out.replace(/\s{2,}/g, ' ').replace(/^[\s,.:;!?-]+/, '').trim();
+  // Sisa yang tidak bermakna (<=2 kata & tanpa tanda tanya) -> kosongkan.
+  if (out && out.split(/\s+/).filter(Boolean).length <= 2 && !/[?!]/.test(out)) return '';
+  return out;
+}
+
+/**
+ * Buang balasan yang MENGARANG KONTEKS saat pesan user SANGAT PENDEK.
+ *
+ * LAPORAN PEMILIK PRODUK (10 Okt 2026) — "bot nya ngaco jawabannya, ditanya apa
+ * di balas apa, tercemar karna memori sebelumnya jadi malah membalas percakapan
+ * topik sebelumnya". Contoh NYATA dari dataset:
+ *   "Iya"        -> "Oh iya, kamu suka main ML..."        (topik lama dipaksakan)
+ *   "Oh"         -> "Iya, sini aja obrolan santai..."     (mengarang kedekatan)
+ *   "yah"        -> "Iya, memang belum ada info resmi..." (mengarang konteks)
+ *   "?"          -> "Maaf, sepertinya liriknya nggak pas" (mengarang konteks)
+ *   "Udah aku save kok" -> "seneng tersimpan di kontak kamu"
+ *
+ * AKAR: pesan 1-3 kata TIDAK memuat cukup konteks, tetapi model memaksakan
+ * menyambung topik dari riwayat -> konfabulasi. Prompt sudah melarang, tetapi
+ * model tidak selalu patuh -> ditegakkan di KODE.
+ *
+ * ATURAN: bila pesan user SANGAT PENDEK (<=3 kata) DAN TIDAK memuat kata tanya
+ * atau kata bermakna, balasan yang menyebut TOPIK SPESIFIK (yang tidak ada di
+ * pesan user) dianggap konfabulasi -> dikosongkan agar autoReply meregenerasi.
+ *
+ * @param reply balasan model
+ * @param userPrompt pesan user
+ * @returns balasan bersih, atau '' bila terdeteksi konfabulasi
+ */
+export function buangKonfabulasiKonteks(reply: string, userPrompt: string): string {
+  if (!reply) return reply;
+  const u = String(userPrompt || '').trim().toLowerCase();
+  if (!u) return reply;
+
+  const kata = u.split(/\s+/).filter(Boolean);
+  // Untuk pesan PENDEK (<=6 kata): tidak cukup konteks untuk topik spesifik.
+  if (kata.length > 6) return reply;
+
+  // KATA GANTI TANPA RUJUKAN: "dia/nya" tapi tidak ada nama/orang di pesan ->
+  // balasan menyebut fakta tentang "dia" = konfabulasi (tidak jelas siapa).
+  if (/\b(?:dia|nya)\b/i.test(u) && !/\b(?:[A-Z][a-z]{2,}|nama|panggil|orang|teman|kakak|adik|ibu|ayah|bapak)\b/.test(u)) {
+    if (/\b(?:dia|nya)\b/i.test(reply) && /\b(?:gak|nggak|tidak|engga|belum)\s+(?:tau|tahu|pernah|ada)\b/i.test(reply)) return '';
+  }
+
+  // Balasan menyebut TOPIK SPESIFIK yang TIDAK ada di pesan user -> konfabulasi.
+  // Ini berlaku walau pesan user "iya"/"oh" (kasus nyata: "Iya" -> "kamu suka
+  // main ML" — ML tidak pernah disebut user, itu karangan dari riwayat lama).
+  const daftarTopik = /\b(?:ml|mobile\s*legends|mabar|rank|hero|skin|lagu|lirik|nyanyi|tebak|gombal|pacaran|mantan|film|drakor|anime|jacuzzi|meta\s*ai|stiker|kucing|monyet|patrick|kontak|nomor|simpan|sate|soto|info\s+resmi|berita|sewa|otak|refresh|kenal|tersimpan|save|berasal|lirik)\b/gi;
+  // Pesan HANYA tanda baca ("?", "...", "??"): SEMUA balasan yang menyebut topik
+  // spesifik apa pun = konfabulasi (tidak ada konteks sama sekali).
+  if (/^[?!.,\s]*$/.test(u)) {
+    // Balasan panjang (>15 char) untuk pesan tanda-baca = hampir pasti konfabulasi.
+    if (reply.trim().length > 15) return '';
+  }
+  let m: RegExpExecArray | null;
+  while ((m = daftarTopik.exec(reply)) !== null) {
+    const topik = m[0].toLowerCase();
+    if (!u.includes(topik)) return '';   // topik baru (tidak ada di pesan user)
+  }
+  return reply;
+}
+
+/**
+ * Buang balasan yang MEMBOCORKAN INSTRUKSI PROMPT INTERNAL.
+ *
+ * LAPORAN (10 Okt 2026): user tanya "Kamu lagi ngapain ni" -> bot menjawab
+ * "Siap Cintia, aku jawab santai dan nyambung teruss." — itu INSTRUKSI SISTEM
+ * yang disalin mentah, bukan jawaban.
+ */
+export function buangBocorInstruksi(reply: string): string {
+  if (!reply) return reply;
+  // Bila SELURUH balasan hanyalah pernyataan soal gaya/instruksi -> kosongkan.
+  const polaPenuh = [
+    /^[\s\S]*\b(?:jawab|balas|respon|merespons)\s+(?:santai|dengan\s+santai)\b[\s\S]*$/i,
+    /^[\s\S]*\bnyambung\s+teru?ss?\b[\s\S]*$/i,
+    /^[\s\S]*\b(?:sesuai|mengikuti|patuh)\s+(?:instruksi|aturan|perintah|prompt)\b[\s\S]*$/i,
+    /^[\s\S]*\b(?:mode|gaya)\s+(?:santai|serius|banter|profesional)\s+(?:aktif|dinyalakan|diaktifkan)\b[\s\S]*$/i,
+  ];
+  for (const re of polaPenuh) {
+    if (re.test(reply)) return '';
+  }
+  // Buang kalimat yang mengandung bocoran (sisanya dipertahankan).
+  let out = reply
+    .replace(/[^.!?\n]*\b(?:jawab|balas|respon)\s+(?:santai|dengan\s+santai)\b[^.!?\n]*[.!?]?/gi, '')
+    .replace(/[^.!?\n]*\bnyambung\s+teru?ss?\b[^.!?\n]*[.!?]?/gi, '')
+    .replace(/[^.!?\n]*\b(?:sesuai|mengikuti|patuh)\s+(?:instruksi|aturan|perintah|prompt)\b[^.!?\n]*[.!?]?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s,.:;-]+/, '')
+    .trim();
+  // Sisa yang terlalu pendek/menggantung -> kosongkan.
+  if (out && out.split(/\s+/).filter(Boolean).length < 2 && !/[?!]/.test(out)) return '';
+  return out;
+}
+
+/**
+ * Perbaiki SALAH INFO KEMAMPUAN: bot mengaku "cuma bisa chat teks doang".
+ *
+ * LAPORAN (10 Okt 2026): user tanya "bisa buat stiker" -> bot menjawab
+ * "Nggak bisa, aku cuma bisa chat teks doang." — PADAHAL bot BISA kirim stiker.
+ */
+export function perbaikiSalahInfoKemampuan(reply: string, userPrompt: string): string {
+  if (!reply) return reply;
+  const u = String(userPrompt || '').toLowerCase();
+  // Konteks: user menanyakan STIKER.
+  if (!/\b(?:stiker|sticker)\b/i.test(u)) return reply;
+  // Bot mengaku hanya bisa teks / tidak bisa stiker.
+  const klaimSalah =
+    /\b(?:cuma|hanya|cm)\b[^.!?\n]{0,30}\b(?:teks|text|tulisan|chat|ngobrol)\b/i.test(reply) ||
+    /\b(?:nggak|gak|tidak|ga)\s+bisa\b[^.!?\n]{0,20}\b(?:stiker|sticker)\b/i.test(reply);
+  if (klaimSalah) {
+    return 'Bisa dong, aku bisa kirim stiker. Tinggal bilang aja mau stiker yang gimana. 😄';
+  }
+  return reply;
 }
 
 /**
@@ -1557,8 +1789,7 @@ function stripProtocolLeak(text: string): string {
   // (temuan pemilik produk 09 Okt 2026: "kalo user sudah keluar dari topik game
   // maka tidak usah di singgung lagi"). Aturan kritis ditegakkan di kode karena
   // kepatuhan model tidak bisa diandalkan.
-  const hasilAkhir = buangAjakanGameLama(out.replace(/[ \t]{2,}/g, ' ').trim());
-  return hasilAkhir;
+  return buangAjakanGameLama(out.replace(/[ \t]{2,}/g, ' ').trim());
 }
 
 /**
@@ -1810,7 +2041,19 @@ function scrubInventedJargon(text: string, userPrompt?: string): string {
   out = out.replace(/\byang\s+(?:bikin|buat)\s+kode\s+(?:aku|gue|gw|saya)\b/gi, 'yang bikin aku');
   // Kolaps pengulangan frasa hasil penggantian: "yang bikin aku, yang bikin aku ada"
   out = out.replace(/\byang bikin aku\b[,\s]+(?=yang bikin aku\b)/gi, '');
-  return out.replace(/[ \t]{2,}/g, ' ').trim();
+  let hasilAkhir = buangAjakanGameLama(out.replace(/[ \t]{2,}/g, ' ').trim());
+  // ── PENEGAKAN KONFABULASI (temuan 10 Okt 2026) ──
+  // "bot nya ngaco jawabannya, ditanya apa di balas apa, tercemar karna memori
+  //  sebelumnya". Bila pesan user SANGAT PENDEK & balasan menyebut topik yang
+  // tidak ada di pesan -> kosongkan agar autoReply meregenerasi.
+  if (userPrompt) {
+    hasilAkhir = buangKonfabulasiKonteks(hasilAkhir, userPrompt);
+    // Bocor instruksi prompt internal ("aku jawab santai dan nyambung terus").
+    hasilAkhir = buangBocorInstruksi(hasilAkhir);
+    // Salah info kemampuan ("cuma bisa chat teks doang" padahal bisa stiker).
+    hasilAkhir = perbaikiSalahInfoKemampuan(hasilAkhir, userPrompt);
+  }
+  return hasilAkhir;
 }
 
 /**
@@ -2347,6 +2590,14 @@ export function systemPrompt(
     '  * DILARANG menjawab seolah penanda "[Membalas ...]" tidak ada. Itu membuat jawaban tidak nyambung.',
     '- DILARANG MENGARANG KONTEKS BARU DARI SATU KATA. Bila dia menyebut satu kata saja (mis. "PAGI!", "Ulangi", "DONGEK"), JANGAN menciptakan cerita di sekitarnya (jangan mengarang soal "sewa", "otak refresh", kejadian, atau objek yang tidak dia sebutkan).',
     '- Bila pesannya ambigu/pendek: tanyakan maksudnya dengan santai ATAU tanggapi minimalis seperlunya. DILARANG menyusun lelucon dari asumsi yang tidak berdasar.',
+    // ── RUJUKAN AMBIGU (temuan pemilik produk 10 Okt 2026) ──
+    // LAPORAN: user bahas jacuzzi (09 Okt), lalu bahas people pleaser (10 Okt),
+    // lalu tanya "apakah itu bahaya? jika itu ke perempuan dan banyak perempuan
+    // baper itu gimna" -> bot menjawab soal SUHU JACUZZI (topik 1 hari lalu),
+    // padahal "itu" jelas merujuk ke PEOPLE PLEASER (topik terdekat).
+    '- KATA RUJUKAN AMBIGU ("itu", "ini", "dia", "nya", "yang tadi"): SELALU artikan sebagai TOPIK TERDEKAT (pesan sebelumnya), BUKAN topik dari jauh sebelumnya. Bila topik terdekat sudah berganti, JANGAN kembali ke topik lama.',
+    '  * Contoh yang DILARANG: percakapan baru saja pindah dari "jacuzzi" ke "people pleaser", lalu user tanya "apakah itu bahaya?" -> menjawab soal jacuzzi = SALAH. Jawab soal people pleaser.',
+    '  * Bila kamu benar-benar tidak yakin "itu" merujuk apa: TANYA singkat ("maksudnya yang mana?"). DILARANG menebak topik dari percakapan yang sudah lama berganti.',
     '- Bila dia meminta "ulangi" / "apa" / "maksud?" setelah kamu salah: ULANGI atau JELASKAN maksudmu dengan kalimat BARU yang jelas, TANPA bercanda dan TANPA menyebut hal yang tidak berhubungan.',
     '- DILARANG mengklaim mendengar/menyimak suara (mis. "kedengeran", "suaranya jernih") KECUALI pesan terakhir memang Voice Note sungguhan (ditandai "[Pesan Suara / Voice Note]"). Teks seperti "tes 123" adalah uji chat biasa — BUKAN uji mikrofon.',
     '- Jika pesannya membingungkan atau dia balik bertanya: AKUI singkat dengan santai bahwa kamu belum nangkep (tanpa drama, tanpa minta maaf berlebihan), lalu jelaskan singkat ATAU tanya balik dengan santai. DILARANG menebak dan mengarang.',
