@@ -947,6 +947,11 @@ export function deteksiMintaPanduan(teks: string): boolean {
   // diproses sebagai tugas/pertanyaan/AI.
   const adaTugasNyata =
     /\b(?:hitung|hitungin|hitunglah|menghitung|recap|rekap|jumlah|jumlahin|total|totalin|berapa\s+banyak|ada\s+berapa|baca|bacain|baca\s+isi|lihat\s+isi|ekstrak|rangkum|ringkas\s+isi|analisa|analisis|carikan|cari\s+data)\b/i.test(t) ||
+    // Kata PERINTAH CATAT (temuan 10 Okt 2026): "catat: beli menu" adalah perintah
+    // MENCATAT, bukan permintaan panduan — walau memuat kata "menu".
+    /\b(?:catat|catet|simpan|simpen|tulis|tuliskan|ingatkan|ingetin|remind|masukkan|masukin|tambah(?:in|kan)?)\b/i.test(t) ||
+    // Kata soal MAKANAN/DAFTAR-HARGA (menu makanan, bukan menu fitur).
+    /\b(?:makan|makanan|minum|minuman|restoran|resto|cafe|kafe|warung|kantin|sarapan|resep|harga|price|daftar\s+harga)\b/i.test(t) ||
     /https?:\/\//i.test(t) ||
     /\b(?:spreadsheet|spread\s*sheet|google\s*sheet|docs\.google|excel|xlsx|csv|dokumen|dokumennya|file|berkas|tabel|pdf)\b/i.test(t);
   if (adaTugasNyata) return false;
@@ -957,6 +962,23 @@ export function deteksiMintaPanduan(teks: string): boolean {
     // Kata umum (menu/perintah/help/bantuan) HANYA dianggap pemicu panduan bila
     // pesannya PENDEK & tidak ada kata lain (murni permintaan panduan).
     /^\s*\/?(?:tutorial|cara\s+(?:pakai|pemakaian|gunakan|menggunakan|pake)|panduan|guide|help|bantuan|menu|perintah|command)\s*[?!.]*\s*$/.test(t) ||
+    // ── DIPERLUAS (temuan 10 Okt 2026) ──
+    // LAPORAN PEMILIK PRODUK: user kirim "Kirim menu" lalu "Kalau begitu buat menu
+    // dong", tetapi bot MENJAWAB "aku bukan aplikasi yang punya fitur menu" —
+    // PADAHAL bot punya daftar fitur lengkap!
+    // AKAR: pola lama hanya menangkap "menu" SENDIRIAN. Begitu ada kata lain
+    // ("kirim menu", "buat menu dong", "minta menu", "lihat menu"), tidak cocok.
+    //
+    // SEKARANG: kata kunci panduan boleh didahului/diikuti kata kerja permintaan
+    // yang umum (kirim/tampilkan/lihat/minta/buat/tampil/coba/cari/kasih/show/
+    // minta/tolong/aku mau/dong/nya) selama TIDAK ada sinyal tugas nyata
+    // (sudah dijaga oleh `adaTugasNyata` di atas).
+    // "menu"/"perintah"/"panduan" sebagai PERMINTAAN (bukan menu makanan).
+    // Diterima bila: (a) pesan PENDEK (<=8 kata), DAN (b) ada kata kunci panduan,
+    // DAN (c) tidak ada kata soal MAKANAN/DAFTAR-HARGA (dijaga di bawah).
+    (/\b(?:menu|perintah|command|panduan|guide|tutorial|bantuan|help|fitur|kemampuan)\b/.test(t) &&
+      t.split(/\s+/).filter(Boolean).length <= 8 &&
+      !/\b(?:makan|makanan|minum|minuman|restoran|resto|cafe|kafe|warung|kantin|sarapan|makan\s+siang|makan\s+malam|resep|harga|price|daftar\s+harga)\b/.test(t)) ||
     /\b(?:tutorial|cara\s+(?:pakai|pemakaian|gunakan|menggunakan|pake)|panduan|guide)\b/.test(t) ||
     /\b(?:apa\s+(?:aja|saja)\s+yang\s+bisa|bisa\s+ngelakuin\s+apa|kamu\s+bisa\s+apa|bot\s+ini\s+bisa)\b/.test(t) ||
     /^\s*\/(?:help|bantuan|panduan|menu|fitur|tutorial)\s*$/.test(t)
