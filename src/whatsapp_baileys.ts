@@ -17,7 +17,7 @@ import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProce
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
-import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -568,15 +568,19 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         // memuat aturan "amati isi stiker dengan teliti".
         const context = await getContext(chatKey, msgSentAt);
 
+        const { reply: replyStiker, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(buffer, mime, undefined, context);
+
+        // Simpan DESKRIPSI stiker (bukan hanya penanda) agar saat user me-REPLY
+        // stiker ini, bot tahu stiker APA yang dimaksud (perbaikan 10 Okt 2026).
+        const deskripsiStiker = stripStickerMarker(String(replyStiker || ''))
+          .replace(/\s+/g, ' ').trim().slice(0, 200);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'user',
-          content: '[Stiker WhatsApp]',
+          content: deskripsiStiker ? `[Stiker WhatsApp] ${deskripsiStiker}` : '[Stiker WhatsApp]',
           msg_id: messageId || undefined,
         });
-
-        const { reply: replyStiker, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(buffer, mime, undefined, context);
         // PERBAIKAN 10 Okt 2026: sanitize + kirim stiker balasan (sama seperti
         // jalur WhatsApp Cloud).
         const teksStiker = sanitizeAssistantOutput(replyStiker, '[Stiker WhatsApp]', undefined, true).trim();

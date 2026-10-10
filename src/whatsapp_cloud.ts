@@ -5,7 +5,7 @@ import { sanitizeAssistantOutput } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed, cariPesanByMsgId, pesanBotTerakhir } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
-import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -667,13 +667,6 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           const media = await downloadWhatsAppCloudMedia(m.sticker.id);
           if (media) {
             const context = await getContext(chatKey, msgSentAt);
-            await saveMessage({
-              platform: 'whatsapp',
-              chat_id: chatKey,
-              role: 'user',
-              content: '[Stiker WhatsApp]',
-              msg_id: messageId,
-            });
 
             const { reply: replyStikerMentah, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(
               media.buffer,
@@ -681,6 +674,29 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               undefined,
               context,
             );
+
+            // ── SIMPAN DESKRIPSI STIKER, BUKAN HANYA PENANDA (perbaikan 10 Okt 2026) ──
+            // LAPORAN PEMILIK PRODUK: "ketika saya tag reply pesan saya sendiri yg
+            // stiker itu bot nya seperti tidak bisa lihat apa yg saya tag reply".
+            //
+            // AKAR: stiker disimpan sebagai teks polos "[Stiker WhatsApp]" TANPA isi.
+            // Saat user me-REPLY stiker itu, fallback DB (cariPesanByMsgId) hanya
+            // mengembalikan "[Stiker WhatsApp]" -> bot tidak tahu stiker APA yang
+            // dimaksud -> menjawab "Kurang nangkep nih, ulah yang mana?".
+            //
+            // SOLUSI: simpan HASIL BACAAN stiker (yang sudah dibaca vision) sebagai
+            // isi pesan, dengan penanda jenis tetap ada agar jalur stiker lain tahu
+            // ini stiker. Format: "[Stiker WhatsApp] <deskripsi>".
+            // Deskripsi diambil dari balasan model TANPA tag stiker & dipotong.
+            const deskripsiStiker = stripStickerMarker(String(replyStikerMentah || ''))
+              .replace(/\s+/g, ' ').trim().slice(0, 200);
+            await saveMessage({
+              platform: 'whatsapp',
+              chat_id: chatKey,
+              role: 'user',
+              content: deskripsiStiker ? `[Stiker WhatsApp] ${deskripsiStiker}` : '[Stiker WhatsApp]',
+              msg_id: messageId,
+            });
 
             // ── PERBAIKAN (10 Okt 2026) ──
             // LAPORAN PEMILIK PRODUK: "ga nyambung anjir klo dikasih stiker, kaya

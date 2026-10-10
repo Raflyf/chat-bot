@@ -7,7 +7,7 @@ import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProce
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
-import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
+import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
@@ -605,17 +605,9 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       const emoji = msg.sticker.emoji;
       const ctx = await getContext(chatKey, msgSentAt);
 
-      const savedStickerContent = isGroup
+      const labelStiker = isGroup
         ? `[Stiker Telegram dari ${senderName}${emoji ? `: ${emoji}` : ''}]`
         : `[Stiker Telegram${emoji ? `: ${emoji}` : ''}]`;
-
-      await saveMessage({
-        platform: 'telegram',
-        chat_id: chatKey,
-        role: 'user',
-        content: savedStickerContent,
-        msg_id: msgId || undefined,
-      }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker user:', err));
 
       // Jika stiker statis (WebP), kita kirim ke Vision
       if (!msg.sticker.is_animated && !msg.sticker.is_video) {
@@ -625,8 +617,18 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           // PERBAIKAN 10 Okt 2026: sanitize + kirim stiker balasan (sama seperti
           // jalur WhatsApp Cloud) agar balasan stiker tidak ngawur & bot bisa
           // membalas stiker dengan stiker.
-          const teksStiker = sanitizeAssistantOutput(replyStiker, '[Stiker WhatsApp]', undefined, true).trim()
-            ;
+          const teksStiker = sanitizeAssistantOutput(replyStiker, '[Stiker WhatsApp]', undefined, true).trim();
+          // Simpan DESKRIPSI stiker (bukan hanya penanda) agar saat user me-REPLY
+          // stiker ini, bot tahu stiker APA yang dimaksud (perbaikan 10 Okt 2026).
+          const deskripsiStiker = stripStickerMarker(String(replyStiker || ''))
+            .replace(/\s+/g, ' ').trim().slice(0, 200);
+          await saveMessage({
+            platform: 'telegram',
+            chat_id: chatKey,
+            role: 'user',
+            content: deskripsiStiker ? `${labelStiker} ${deskripsiStiker}` : labelStiker,
+            msg_id: msgId || undefined,
+          }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker user:', err));
           await sendTelegramMessageSafe(bot, chatId, teksStiker);
           if (msgId) void markMessageProcessed('telegram', msgId);
           let stikerTele = false;
