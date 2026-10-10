@@ -147,6 +147,35 @@ export function stickerFitsMood(emoji: string, userText: string | undefined, isP
   const mood = stickerMood(emoji);
   const t = (userText || '').toLowerCase();
 
+  // ── BALAS STIKER DENGAN STIKER (perbaikan 10 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: "saat saya mengirim stiker, si bot nya masih tidak
+  // pernah mengirim stiker balik" + koreksi "jarang, bukan tidak pernah".
+  //
+  // AKAR: saat user mengirim STIKER, `userText` = '[Stiker WhatsApp]' — TIDAK ADA
+  // kata suasana, sehingga fungsi ini jatuh ke DEFAULT yang hanya mengizinkan mood
+  // 'netral'/'sopan'/'lucu'. Akibatnya stiker bermood kesal/sindir/sedih/hangat
+  // (12 dari 32 emoji) SELALU ditolak -> bot jarang membalas stiker.
+  //
+  // ATURAN SEIMBANG (permintaan pemilik produk 10 Okt 2026: "tapi jangan terlalu
+  // longgar juga, yg sekarang juga sudah lumayan"):
+  //
+  // Saat user mengirim STIKER, suasana sudah dinyatakan OLEH STIKER ITU SENDIRI —
+  // jadi filter berbasis KATA SUASANA tidak berlaku (dulu ini yang membuat bot
+  // jarang membalas stiker: 12 dari 32 emoji selalu ditolak).
+  //
+  // TETAPI tetap disaring agar tidak asal:
+  //   1. Emoji EDGY (kasar/umpatan) TETAP ditolak bila konteksnya tidak bercanda
+  //      — sudah dijaga terpisah oleh isEdgyStickerEmoji di pemanggil.
+  //   2. Mood 'kesal' (marah/ngamuk) DITOLAK: membalas stiker dengan stiker MARAH
+  //      berisiko menyinggung — user tidak sedang marah ke bot.
+  //   3. Mood 'sedih' (menahan nangis) DITOLAK: bisa terasa dramatis berlebihan.
+  //   Sisanya (lucu/sindir/hangat/sopan/netral) DIIZINKAN — itu semua wajar
+  //   sebagai reaksi stiker.
+  const dariStiker = /^\s*\[Stiker\s*(?:WhatsApp|Telegram)/i.test(t) || /^\s*stiker\s*$/i.test(t);
+  if (dariStiker) {
+    return mood !== 'kesal' && mood !== 'sedih';
+  }
+
   const userSedih = /\b(?:sedih|nangis|menangis|kecewa|galau|putus|capek|lelah|lemas|sakit hati|terluka|down|hancur|minder|sendirian|kesepian|gagal)\b/.test(t);
   const userKesal = /\b(?:kesal|marah|jengkel|sebal|muak|bete|emosi|ngamuk|nyebelin|goblok|bego|tolol|bodoh|dongo|gaje|ngaco|bacot)\b/.test(t);
   const userBercanda = /(?:wkwk+|haha+|hehe+|ngakak|lucu|kocak|garing|cringe|joke|becanda|bercanda|iseng|roast|ledek|tebak|gombal|gokil|jir+|anjay|😂|🤣|😹|😅)/i.test(t);

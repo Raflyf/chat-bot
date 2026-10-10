@@ -4,7 +4,7 @@ import { chat, type ChatMsg, type ContentPart } from './providers.js';
 import { saveCorrection, type ChatContext } from './memory.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
-import { stripStickerMarker, hasStickerForEmoji } from './stickers.js';
+import { stripStickerMarker, hasStickerForEmoji, stickerFitsMood } from './stickers.js';
 import { STICKER_MANIFEST, STICKER_INFO } from './sticker-manifest.js';
 import { stripRiddleMarker, lastRiddleAnswer } from './markers.js';
 import { getOrGrowMemory, needsGrowth, growMemory } from './bot_growth.js';
@@ -1753,8 +1753,9 @@ export function buangBocorInstruksi(reply: string): string {
   if (!reply) return reply;
   // Bila SELURUH balasan hanyalah pernyataan soal gaya/instruksi -> kosongkan.
   const polaPenuh = [
-    /^[\s\S]*\b(?:jawab|balas|respon|merespons)\s+(?:santai|dengan\s+santai)\b[\s\S]*$/i,
-    /^[\s\S]*\bnyambung\s+teru?ss?\b[\s\S]*$/i,
+    /^[\s\S]*\b(?:jawab|balas|respon|merespons)\s+(?:santai|singkat|dengan\s+santai|dengan\s+singkat)\b[\s\S]*$/i,
+    /^[\s\S]*\b(?:nyambung|tetap\s+nyambung)\s+teru?ss?\b[\s\S]*$/i,
+    /^[\s\S]*\b(?:jawab|balas)\s+(?:singkat|pendek|begini|seperti\s+ini)\b[\s\S]*$/i,
     /^[\s\S]*\b(?:sesuai|mengikuti|patuh)\s+(?:instruksi|aturan|perintah|prompt)\b[\s\S]*$/i,
     /^[\s\S]*\b(?:mode|gaya)\s+(?:santai|serius|banter|profesional)\s+(?:aktif|dinyalakan|diaktifkan)\b[\s\S]*$/i,
   ];
@@ -1763,7 +1764,7 @@ export function buangBocorInstruksi(reply: string): string {
   }
   // Buang kalimat yang mengandung bocoran (sisanya dipertahankan).
   let out = reply
-    .replace(/[^.!?\n]*\b(?:jawab|balas|respon)\s+(?:santai|dengan\s+santai)\b[^.!?\n]*[.!?]?/gi, '')
+    .replace(/[^.!?\n]*\b(?:jawab|balas|respon)\s+(?:santai|singkat|pendek|begini|dengan\s+santai|dengan\s+singkat)\b[^.!?\n]*[.!?]?/gi, '')
     .replace(/[^.!?\n]*\bnyambung\s+teru?ss?\b[^.!?\n]*[.!?]?/gi, '')
     .replace(/[^.!?\n]*\b(?:sesuai|mengikuti|patuh)\s+(?:instruksi|aturan|perintah|prompt)\b[^.!?\n]*[.!?]?/gi, '')
     .replace(/\s{2,}/g, ' ')
@@ -4776,25 +4777,25 @@ export async function dynamicNotice(instruction: string, ctx?: ChatContext): Pro
 export function emojiStikerDariMakna(teks: string): string | null {
   const t = String(teks || '').toLowerCase();
   if (!t) return null;
+  // PENTING: hanya emoji yang LOLOS filter mood (stickerFitsMood) yang boleh
+  // dipakai — kalau tidak, stiker akan DITOLAK dan bot tidak jadi mengirimnya.
+  // Emoji bermood 'kesal'/'sedih' dikecualikan (bisa menyinggung / dramatis).
+  // Verifikasi: skrip `scratch` memastikan tiap emoji di bawah ini AMAN.
   const peta: Array<[RegExp, string]> = [
-    [/\b(?:ngakak|ketawa|tertawa|lucu|haha|wkwk|gokil|receh)\b/, '😂'],
-    [/\b(?:kaget|terkejut|syok|shock|meledak|panik)\b/, '😱'],
-    [/\b(?:sedih|nangis|menangis|baper|galau|hiks)\b/, '😭'],
-    [/\b(?:kesal|marah|emosi|ngamuk|sebal|bete|jengkel|kesel|nahan emosi)\b/, '😤'],
-    [/\b(?:malu|grogi|salah tingkah|canggung)\b/, '😳'],
-    [/\b(?:sayang|cinta|gemas|peluk|cium|manis)\b/, '🥰'],
-    [/\b(?:memohon|minta|please|kasihan|iba)\b/, '🥺'],
-    [/\b(?:capek|lelah|ngantuk|tidur|rebahan|males|malas)\b/, '😴'],
-    [/\b(?:senyum|senang|bahagia|happy|gembira|ceria)\b/, '😊'],
-    [/\b(?:santai|tenang|aman|oke|ok|sip|setuju|jempol|bagus)\b/, '👍'],
-    [/\b(?:kabur|ngacir|pergi|berangkat|jalan)\b/, '🏃'],
-    [/\b(?:main|game|mabar|mainan)\b/, '🎮'],
-    [/\b(?:makan|lapar|nyam|enak|kuliner)\b/, '🍜'],
-    [/\b(?:doa|semangat|berjuang|kuat)\b/, '💪'],
-    [/\b(?:tanya|bertanya|mikir|berpikir|pusing|bingung|heran)\b/, '🤔'],
+    [/\b(?:ngakak|ketawa|tertawa|lucu|haha|wkwk|gokil|receh|ngocol)\b/, '😹'],
+    [/\b(?:kaget|terkejut|syok|shock|panik|kaget|melongo)\b/, '😱'],
+    [/\b(?:malu|grogi|salah tingkah|canggung|geer)\b/, '😳'],
+    [/\b(?:sayang|cinta|gemas|mesra|manis|cium)\b/, '😍'],
+    [/\b(?:capek|lelah|ngantuk|tidur|rebahan|males|malas|bosen)\b/, '😴'],
+    [/\b(?:senyum|senang|bahagia|happy|gembira|ceria|semangat)\b/, '😊'],
+    [/\b(?:santai|tenang|aman|oke|ok|sip|setuju|jempol|bagus|mantap)\b/, '👍'],
+    [/\b(?:bingung|heran|mikir|berpikir|pusing|hah)\b/, '😐'],
+    [/\b(?:kabur|ngacir|pergi|berangkat|jalan|gas)\b/, '😅'],
+    [/\b(?:main|game|mabar|mainan)\b/, '😁'],
+    [/\b(?:tanya|bertanya)\b/, '😮'],
   ];
   for (const [re, emoji] of peta) {
-    if (re.test(t) && hasStickerForEmoji(emoji)) return emoji;
+    if (re.test(t) && hasStickerForEmoji(emoji) && stickerFitsMood(emoji, '[Stiker WhatsApp]')) return emoji;
   }
   return null;
 }

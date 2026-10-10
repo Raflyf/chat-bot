@@ -48,9 +48,14 @@ test('stiker: tag stiker diambil SEBELUM sanitize', () => {
 test('stiker: fallback emoji bila model tidak menulis tag', () => {
   assert.ok(/emojiStikerDariMakna/.test(SKILLS), 'harus ada emojiStikerDariMakna');
   // Fungsi harus memilih emoji yang ADA di manifest.
-  assert.equal(emojiStikerDariMakna('wkwkwk lucu banget'), '😂');
+  // DIPERBARUI 10 Okt 2026: fallback HARUS memilih emoji yang LOLOS filter mood
+  // (agar stiker benar-benar terkirim). 😂 dikecualikan karena stikernya berisi
+  // ejekan "LU DONGO" (mood 'kesal'), 😤 juga ditolak (bisa menyinggung).
+  assert.equal(emojiStikerDariMakna('wkwkwk lucu banget'), '😹');
   assert.equal(emojiStikerDariMakna('kaget banget'), '😱');
-  assert.equal(emojiStikerDariMakna('kesal nih'), '😤');
+  assert.equal(emojiStikerDariMakna('malu nih'), '😳');
+  // Mood kesal/sedih TIDAK dihasilkan (ditolak filter).
+  assert.equal(emojiStikerDariMakna('kesal nih'), null);
 });
 
 test('stiker: balasan "tidak lihat stiker" DIBUANG', () => {
