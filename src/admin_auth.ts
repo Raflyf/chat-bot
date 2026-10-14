@@ -859,17 +859,51 @@ export async function verifyPin(
     };
   }
 
-  // Gagal: catat di throttle per-IP + tambah hitungan percobaan global
+  // Gagal: catat di throttle per-IP + tambah hitungan percobaan global.
   notePinFailureForIp(clientIp, now);
-  const newAttempts = current.lockoutAttempts + 1;
-  const willLock = newAttempts >= 5;
-  // Kunci selama 15 menit jika gagal 5x berturut-turut
-  const lockedUntil = willLock ? new Date(now + 15 * 60 * 1000).toISOString() : null;
 
-  await saveAuthConfig({
-    lockoutAttempts: newAttempts,
-    lockedUntil,
-  });
+  // ── PERBAIKAN AUDIT 14 Okt 2026: LOCKOUT ATOMIK ──
+  // BUG LAMA: `newAttempts = current.lockoutAttempts + 1` dihitung dari konfigurasi
+  // yang di-CACHE 25 detik. Beberapa permintaan PARALEL membaca nilai cache yang
+  // sama (mis. 0) lalu masing-masing menulis 1 -> LOST UPDATE -> counter global
+  // TIDAK PERNAH mencapai 5 -> brute-force PIN 6 digit tidak pernah terkunci.
+  //
+  // SEKARANG: increment dilakukan oleh RPC `rpc_catat_gagal_pin` yang memakai
+  // `UPDATE ... RETURNING` (atomik tingkat baris di PostgreSQL), sehingga request
+  // paralel tetap menambah dengan benar.
+  //
+  // Fail-safe: bila RPC belum tersedia (migrasi v34 belum dijalankan), jatuh
+  // kembali ke perilaku lama supaya login tetap bisa dipakai.
+  let newAttempts = current.lockoutAttempts + 1;
+  let lockedUntil: string | null = null;
+  let pakaiRpc = false;
+  try {
+    const c = db();
+    if (c) {
+      const { data: rpcData, error: rpcErr } = await c.rpc('rpc_catat_gagal_pin', {
+        p_batas: 5,
+        p_durasi: '15 minutes',
+      });
+      if (!rpcErr && rpcData && typeof rpcData === 'object') {
+        const hasil = rpcData as { ok?: boolean; attempts?: number; locked?: boolean; locked_until?: string | null };
+        if (hasil.ok && typeof hasil.attempts === 'number') {
+          newAttempts = hasil.attempts;
+          lockedUntil = hasil.locked ? (hasil.locked_until ?? new Date(now + 15 * 60 * 1000).toISOString()) : null;
+          pakaiRpc = true;
+        }
+      }
+    }
+  } catch {
+    // RPC belum ada / DB error -> pakai jalur lama di bawah.
+  }
+
+  if (!pakaiRpc) {
+    const willLock = newAttempts >= 5;
+    lockedUntil = willLock ? new Date(now + 15 * 60 * 1000).toISOString() : null;
+    await saveAuthConfig({ lockoutAttempts: newAttempts, lockedUntil });
+  }
+
+  const willLock = newAttempts >= 5;
 
   return {
     success: false,
