@@ -69,3 +69,24 @@ logs/
 # Dokumentasi internal (JANGAN di repo publik):
 # berisi detail keamanan (nama salt, tabel tanpa RLS, langkah mitigasi).
 DOKUMENTASI_KEAMANAN.md
+
+# ── FILE RAHASIA (audit 14 Okt 2026) ──
+# Sebelumnya TIDAK ada pola ini. Bila suatu saat ada file sertifikat/kunci yang
+# tak sengaja ditaruh di repo, `git add .` akan IKUT MENG-COMMIT-nya — dan karena
+# repo ini PUBLIK, kunci itu langsung bocor permanen (harus di-rotate + scrub
+# riwayat git). Pola di bawah mencegahnya sejak awal.
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+id_rsa
+id_ed25519
+.npmrc
+.netrc
+.env.production
+.env.staging
+service-account*.json
+credentials*.json

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 /**
  * BACKUP HARIAN — /api/cron/backup
  *
@@ -22,7 +23,15 @@ function otorisasi(req: VercelRequest): boolean {
   const auth = String(req.headers.authorization || '');
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   const rahasia = config.cronSecret || process.env.CRON_SECRET || '';
-  return Boolean(rahasia) && token === rahasia;
+  // KEAMANAN (audit 14 Okt 2026): perbandingan biasa (`===`) berhenti di
+  // karakter pertama yang berbeda, sehingga waktu responsnya MEMBOCORKAN
+  // berapa banyak karakter awal yang sudah benar (timing attack).
+  // timingSafeEqual selalu membandingkan seluruh panjang.
+  if (!rahasia || !token) return false;
+  const a = Buffer.from(token);
+  const b = Buffer.from(rahasia);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

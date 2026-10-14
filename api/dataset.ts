@@ -306,27 +306,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const rawList = (messages || []).slice().reverse();
     const pairs: DatasetPair[] = [];
 
+    // ── PERBAIKAN AUDIT 14 Okt 2026: dari O(n²) ke O(n) ──
+    // BUG LAMA: untuk SETIAP pesan user, ada loop mencari jawaban bot berikutnya
+    // dari awal. Pada 5.000 pesan itu ~25 juta iterasi -> endpoint lambat dan
+    // berisiko kena batas waktu.
+    // SEKARANG: indeks dibangun SEKALI (satu lintasan dari BELAKANG) sehingga
+    // setiap pencarian menjadi O(1).
+    //
+    // Cara kerja: menelusuri dari belakang sambil mengingat "indeks jawaban bot
+    // terdekat berikutnya" per (chat_id|platform). Begitu menemukan pesan user,
+    // pasangkan dengan jawaban tercatat LALU HAPUS entri — penghapusan inilah
+    // yang meniru aturan lama: rantai terputus bila ada pesan USER lain lebih dulu.
+    const indeksJawaban = new Map<string, number>();
+    const pasangan = new Map<number, number>(); // index pesan user -> index jawaban bot
+    for (let k = rawList.length - 1; k >= 0; k--) {
+      const r = rawList[k] as { chat_id?: string; platform?: string; role?: string };
+      const key = `${r.chat_id}|${r.platform}`;
+      if (r.role === 'assistant') {
+        indeksJawaban.set(key, k);
+      } else if (r.role === 'user') {
+        const j = indeksJawaban.get(key);
+        if (j !== undefined) pasangan.set(k, j);
+        indeksJawaban.delete(key); // putus rantai (perilaku lama)
+      }
+    }
+
     for (let i = 0; i < rawList.length; i++) {
       const userMsg = rawList[i];
       if (userMsg.role === 'user') {
-        let botMsg: any = null;
-        for (let j = i + 1; j < rawList.length; j++) {
-          if (
-            rawList[j].chat_id === userMsg.chat_id &&
-            rawList[j].platform === userMsg.platform &&
-            rawList[j].role === 'assistant'
-          ) {
-            botMsg = rawList[j];
-            break;
-          }
-          if (
-            rawList[j].chat_id === userMsg.chat_id &&
-            rawList[j].platform === userMsg.platform &&
-            rawList[j].role === 'user'
-          ) {
-            break;
-          }
-        }
+        const j = pasangan.get(i);
+        const botMsg: any = j !== undefined ? rawList[j] : null;
 
         const prompt = userMsg.content || '';
         const reply = botMsg ? (botMsg.content || '') : '';

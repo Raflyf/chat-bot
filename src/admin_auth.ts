@@ -1049,7 +1049,11 @@ export async function sendOtp(clientIp: string): Promise<{
   // Send Email
   const emailResult = await dispatchEmail(otpCode);
 
-  const maskedEmail = TARGET_EMAIL.replace(/(.{3})(.*)(@.*)/, '$1***$3');
+  // KEAMANAN (audit 14 Okt 2026): dulu menampilkan 3 huruf awal
+  // ("raf***@gmail.com"). Untuk email pendek itu sudah mengungkap sebagian
+  // besar nama; cukup untuk menebak alamat lengkap lalu phishing bertarget.
+  // Sekarang hanya 1 huruf awal + panjang bintang tetap.
+  const maskedEmail = TARGET_EMAIL.replace(/^(.)(.*)(@.*)$/, (_m, a, b, c) => `${a}${'*'.repeat(Math.min(b.length, 8))}${c}`);
 
   return {
     success: true,
