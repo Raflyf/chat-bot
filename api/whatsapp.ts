@@ -6,6 +6,12 @@ import {
 } from '../src/whatsapp_cloud.js';
 import { logError, logInfo, logWarn } from '../src/logger.js';
 
+// Batas waktu fungsi Vercel (detik). Default 10 dtk TERLALU PENDEK untuk
+// endpoint ini — Webhook WhatsApp: vision + AI bisa >10 detik (default Vercel). Tanpa ini, request dipotong di tengah jalan:
+// pesan user hilang tanpa balasan dan webhook dianggap gagal (retry-storm).
+export const maxDuration = 60;
+
+
 export const config = {
   api: {
     bodyParser: false,

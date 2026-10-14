@@ -4,6 +4,12 @@ import { config } from '../src/env.js';
 import { getTelegramBot, processTelegramUpdate } from '../src/telegram.js';
 import { logError, logWarn, withContext } from '../src/logger.js';
 
+// Batas waktu fungsi Vercel (detik). Default 10 dtk TERLALU PENDEK untuk
+// endpoint ini — Webhook Telegram: vision + AI bisa >10 detik. Tanpa ini, request dipotong di tengah jalan:
+// pesan user hilang tanpa balasan dan webhook dianggap gagal (retry-storm).
+export const maxDuration = 60;
+
+
 function verifySecretToken(tokenHeader: string | string[] | undefined, secret: string): boolean {
   if (!secret) {
     if (process.env.NODE_ENV === 'test') return true;

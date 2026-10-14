@@ -182,8 +182,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         return;
       }
 
-      const otpCode = String(body.otp_code || query.otp_code || '').trim();
-      const newPin = String(body.new_pin || query.new_pin || '').trim();
+      // KEAMANAN (audit 14 Okt 2026): OTP TIDAK dibaca dari query string.
+      // Query string ikut tercatat di access log, Referer, dan riwayat browser.
+      const otpCode = String(body.otp_code || '').trim();
+      // KEAMANAN (audit 14 Okt 2026): PIN baru TIDAK dibaca dari query string.
+      const newPin = String(body.new_pin || '').trim();
 
       if (!otpCode || !newPin) {
         res.status(400).json({ success: false, message: 'Kode OTP dan PIN baru wajib disertakan.' });
@@ -221,7 +224,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         return;
       }
 
-      const currentPin = String(body.current_pin || query.current_pin || body.current_pin_hash || '').trim();
+      // KEAMANAN (audit 14 Okt 2026): PIN saat ini TIDAK dibaca dari query string.
+      const currentPin = String(body.current_pin || body.current_pin_hash || '').trim();
       const newPin = String(body.new_pin || query.new_pin || '').trim();
 
       if (!currentPin || !newPin) {
@@ -241,7 +245,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // 6. VERIFY SESSION
     if (action === 'verify_session') {
-      const token = extractSessionToken(req) || String(body.session_token || query.session_token || '').trim();
+      // KEAMANAN (audit 14 Okt 2026): token sesi TIDAK dibaca dari query string.
+      const token = extractSessionToken(req) || String(body.session_token || '').trim();
       const sessionInfo = token ? await inspectSessionToken(token) : { valid: false };
       const isValid = sessionInfo.valid;
 

@@ -3,6 +3,12 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../src/db.js';
 import { config } from '../src/env.js';
 
+// Batas waktu fungsi Vercel (detik). Default 10 dtk TERLALU PENDEK untuk
+// endpoint ini — Laporan user: vision (baca lampiran) + kirim email. Tanpa ini, request dipotong di tengah jalan:
+// pesan user hilang tanpa balasan dan webhook dianggap gagal (retry-storm).
+export const maxDuration = 60;
+
+
 /**
  * ENDPOINT LAPORAN/KELUHAN (permintaan pemilik produk, 08 Okt 2026):
  *   "tambahkan untuk keluhan dengan fungsi menambahkan file ss an percakapan
