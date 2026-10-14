@@ -196,14 +196,27 @@ function terlihatLangkahGame(kind: string, teks: string): boolean {
   const t = teks.trim();
   if (!t) return false;
 
+  // ── PERBAIKAN AUDIT 14 Okt 2026: whitelist terlalu longgar ──
+  // BUKTI SEBELUM PERBAIKAN (game aktif, pesan wajar dicegat sebagai langkah game):
+  //   "besok jam 8"           -> true  (angka 8 dianggap nilai kartu)
+  //   "lihat dong"            -> true  (kata "lihat" dianggap perintah)
+  //   "buang sampah"          -> true  (kata "buang" dianggap perintah)
+  // Akibatnya bot menjawab "Nggak ada kartu itu di tanganmu..." dan user TERTAHAN
+  // di topik game — bertentangan dengan aturan pemilik produk.
+  // SEKARANG: pesan yang memuat kata NON-GAME selalu dianggap BUKAN langkah game.
+  const KATA_NONGAME = /\b(?:besok|lusa|kemarin|tadi|jam|pukul|tanggal|hari|minggu|bulan|tahun|pagi|siang|sore|malam|tolong|dong|deh|sih|sampah|makan|minum|tidur|bangun|kerja|sekolah|kuliah|uang|harga|beli|bayar|catat|ingatkan|pengingat|jadwal|stiker|gambar|foto|video|dokumen|laporan|cuaca|berita|siapa|kenapa|bagaimana|kapan|dimana|apa\s+kabar|halo|hai)\b/i;
+  const jumlahKata = t.split(/\s+/).filter(Boolean).length;
+  const adaKataNongame = KATA_NONGAME.test(t);
+
   // Kata kunci langkah yang berlaku untuk SEMUA permainan.
   const kataUmum = /^(?:tarik|ambil|draw|lewat|pass|skip|banting|susun|buang|selesai|buka|lempar|lihat|papan|bantu|nyerah|menyerah|undo)\b/i;
-  if (kataUmum.test(t)) return true;
+  if (kataUmum.test(t) && !adaKataNongame && jumlahKata <= 3) return true;
 
   // Nama warna/angka (UNO, Remi, Cangkulan) — mis. "merah 5", "kuning skip".
   const warnaKartu = /\b(?:merah|kuning|hijau|biru|red|yellow|green|blue)\b/i;
   const nilaiKartu = /\b(?:skip|balik|reverse|wild|liar|tarik\s*dua|\+2|\+4|[0-9]|satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|kosong)\b/i;
-  if (warnaKartu.test(t) || (nilaiKartu.test(t) && t.split(/\s+/).length <= 3)) return true;
+  if (warnaKartu.test(t) && !adaKataNongame) return true;
+  if (nilaiKartu.test(t) && jumlahKata <= 3 && !adaKataNongame) return true;
 
   switch (kind) {
     case 'catur':

@@ -278,10 +278,23 @@ export const DAFTAR_GAME: Array<{ kind: string; nama: string; alias: RegExp }> =
 
 /** Cari permainan dari teks. */
 export function cariGame(teks: string): { kind: string; nama: string } | null {
+  // ── PERBAIKAN AUDIT 14 Okt 2026: pilih alias TERPANJANG (paling spesifik) ──
+  // BUG LAMA: mengembalikan match PERTAMA. Karena `batu` (alias memuat "suit")
+  // didaftarkan SEBELUM `suitjawa`, dan `gaple` (alias "domino") sebelum `qiuqiu`:
+  //   "main suit jawa"       -> batu    (SALAH; harus suitjawa)
+  //   "main domino qiu qiu"  -> gaple   (SALAH; harus qiuqiu)
+  // User meminta game A, bot memulai game B. Kini yang menang adalah alias dengan
+  // teks cocok TERPANJANG, sehingga frasa yang lebih spesifik selalu diutamakan.
+  let terbaik: { kind: string; nama: string } | null = null;
+  let panjangTerbaik = 0;
   for (const g of DAFTAR_GAME) {
-    if (g.alias.test(teks)) return { kind: g.kind, nama: g.nama };
+    const m = teks.match(g.alias);
+    if (m && m[0].length > panjangTerbaik) {
+      panjangTerbaik = m[0].length;
+      terbaik = { kind: g.kind, nama: g.nama };
+    }
   }
-  return null;
+  return terbaik;
 }
 
 /** Apakah teks minta BERHENTI dari permainan? */

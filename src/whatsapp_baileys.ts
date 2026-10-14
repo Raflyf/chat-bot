@@ -22,6 +22,17 @@ import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb, checkDueReminders, nomorWhatsApp } from './remind.js';
+// normChatId: SATU SUMBER normalisasi chat_id (audit 14 Okt 2026 — chatKey Baileys
+// dulu memakai JID penuh sehingga identitas user terpecah dari Cloud API).
+import { normChatId } from './chat_id.js';
+
+// ── Reconnect dengan backoff (perbaikan audit 14 Okt 2026) ──
+// Sebelumnya delay TETAP 3 detik tanpa batas percobaan -> hot-loop saat
+// disconnect persisten, dan socket lama menumpuk (leak). Lihat blok
+// 'connection.update' di bawah.
+const MAX_RECONNECT = 8;
+let reconnectTimer: NodeJS.Timeout | null = null;
+let reconnectCount = 0;
 import { sendWhatsAppCloudMessageSafe } from './whatsapp_cloud.js';
 import {
   restoreSessionFromSupabase,
@@ -145,6 +156,9 @@ export async function startWhatsApp(): Promise<void> {
     }
 
     if (connection === 'open') {
+      // Koneksi berhasil -> reset penghitung reconnect (perbaikan audit 14 Okt 2026).
+      reconnectCount = 0;
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       console.log('[whatsapp] Berhasil terhubung ke jaringan WhatsApp.');
       console.log('[whatsapp] Bot siap menerima dan membalas pesan 24 jam nonstop.');
       await syncSessionDirToSupabase(sessionDir);
@@ -156,10 +170,37 @@ export async function startWhatsApp(): Promise<void> {
       console.log(`[whatsapp] Koneksi terputus (status: ${statusCode}). Reconnect: ${shouldReconnect}`);
 
       if (shouldReconnect) {
-        console.log('[whatsapp] Menyambung ulang dalam 3 detik...');
-        setTimeout(() => {
+        // ── PERBAIKAN AUDIT 14 Okt 2026 ──
+        // BUG LAMA: delay TETAP 3 detik tanpa batas percobaan, dan socket lama
+        // tidak pernah ditutup / listener tidak dilepas. Akibatnya:
+        //   (a) disconnect persisten (401/503) -> loop reconnect tiap 3 detik
+        //       SELAMANYA (hot-loop, memicu rate-limit WhatsApp);
+        //   (b) setiap reconnect menumpuk socket + listener baru (leak memori,
+        //       risiko pesan ganda).
+        // SEKARANG: backoff eksponensial (3s, 6s, 12s, ... maks 60s), dibatasi
+        // 8 percobaan, socket lama ditutup & listener dilepas lebih dulu.
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectCount += 1;
+        if (reconnectCount > MAX_RECONNECT) {
+          console.error(
+            `[whatsapp] Gagal menyambung ulang ${MAX_RECONNECT}x. Berhenti mencoba otomatis — restart bot untuk mencoba lagi.`,
+          );
+          return;
+        }
+        // Tutup socket lama supaya tidak menumpuk (best-effort).
+        try {
+          sock.ev.removeAllListeners('connection.update');
+          sock.ev.removeAllListeners('creds.update');
+          sock.ev.removeAllListeners('messages.upsert');
+          sock.end(undefined);
+        } catch {
+          // abaikan: socket mungkin sudah mati
+        }
+        const jeda = Math.min(3000 * 2 ** (reconnectCount - 1), 60_000);
+        console.log(`[whatsapp] Menyambung ulang dalam ${jeda / 1000} detik... (${reconnectCount}/${MAX_RECONNECT})`);
+        reconnectTimer = setTimeout(() => {
           void startWhatsApp();
-        }, 3000);
+        }, jeda);
       } else {
         console.warn('[whatsapp] Sesi logout permanen oleh pengguna. Membersihkan sesi Supabase...');
         await clearSessionInSupabase();
@@ -286,7 +327,15 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     quotedFromBot = quotedPengirim === 'bot';
   }
 
-  const chatKey = 'wa_' + remoteJid;
+  // ── PERBAIKAN AUDIT 14 Okt 2026: chatKey HARUS SAMA dengan Cloud API ──
+  // BUG LAMA: `'wa_' + remoteJid` menghasilkan "wa_628991333323@s.whatsapp.net"
+  // (JID lengkap), sedangkan WhatsApp Cloud API menghasilkan "wa_628991333323"
+  // (nomor telanjang). Akibatnya SATU USER punya DUA identitas: riwayat/pengingat/
+  // keuangan yang tersimpan lewat Baileys TIDAK terlihat saat bot berjalan di
+  // Cloud (dan sebaliknya). Cooldown stiker juga memakai kunci berbeda.
+  // Kini memakai SATU SUMBER `normChatId` (src/chat_id.ts) seperti transport lain.
+  const nomorBaileys = String(remoteJid).split('@')[0].split(':')[0];
+  const chatKey = normChatId(nomorBaileys, 'whatsapp');
   const messageId = m.key.id;
   // Klaim atomik anti-TOCTOU
   if (messageId && !(await claimIncomingMessage('whatsapp', messageId, chatKey, text || '[baileys-msg]'))) return;
