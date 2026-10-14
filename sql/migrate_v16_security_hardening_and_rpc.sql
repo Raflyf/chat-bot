@@ -104,7 +104,10 @@ WITH CHECK (true);
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS idx_web_knowledge_entity_key_trgm ON public.web_knowledge USING gin (entity_key gin_trgm_ops);
 
--- 8. Bersihkan Default Hash PIN 080402 dari Database (Temuan C1 & Catatan Keselamatan E7)
+-- 8. Bersihkan Default Hash PIN BAWAAN dari Database (Temuan C1 & Catatan Keselamatan E7)
+-- CATATAN KEAMANAN: nilai PIN bawaan TIDAK ditulis di sini. Repositori ini PUBLIK —
+-- menyebutkan nilainya sama saja mempublikasikan kredensial. Lihat riwayat commit
+-- internal / catatan pemilik produk bila nilainya benar-benar diperlukan.
 -- Lepas NOT NULL constraint agar kolom pin_hash mendukung state unconfigured / reset
 DO $$
 BEGIN
