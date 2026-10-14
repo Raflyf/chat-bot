@@ -71,7 +71,25 @@ test('dedup: simpanUang menolak duplikat 10 menit', () => {
   assert.ok(NOTE.includes('JENDELA_DEDUP_MS'), 'harus ada jendela dedup');
   assert.match(NOTE, /\.eq\('amount', amount\)/, 'harus bandingkan amount');
   assert.match(NOTE, /\.eq\('kind', kind\)/, 'harus bandingkan kind');
-  assert.match(NOTE, /\.eq\('note', note/, 'harus bandingkan note');
+  // AUDIT 14 Okt 2026: dedup memakai `catatanDedup` (note yang sudah di-trim)
+  // dan HANYA dijalankan bila catatan tidak kosong — agar dua transaksi berbeda
+  // bernominal sama tanpa catatan tidak saling menelan.
+  assert.match(NOTE, /\.eq\('note', catatanDedup\)/, 'harus bandingkan catatan');
+  assert.ok(NOTE.includes('catatanDedup.length >= 3'), 'dedup hanya bila catatan ada isinya');
+});
+
+test('simpanUang: menolak nominal tidak masuk akal (audit 14 Okt 2026)', () => {
+  // Nominal negatif / nol / NaN / terlalu besar harus DITOLAK sebelum insert,
+  // karena bisa merusak rekap (total berkurang, selisih salah).
+  assert.ok(NOTE.includes('TOLAK simpan keuangan: nominal tidak valid'), 'harus ada guard nominal');
+  assert.match(NOTE, /amount\s*<=\s*0/, 'harus menolak <= 0');
+  assert.ok(NOTE.includes('Number.isFinite(amount)'), 'harus menolak NaN/Infinity');
+});
+
+test('rekapUang: memakai paginasi eksplisit (audit 14 Okt 2026)', () => {
+  // Tanpa `range`, PostgREST memotong di 1000 baris -> rekap diam-diam kurang.
+  assert.ok(NOTE.includes('.range(offset, offset + BATCH - 1)'), 'harus pakai range()');
+  assert.ok(NOTE.includes('const BATCH = 1000'), 'harus ada ukuran batch');
 });
 
 test('guard pemasukan ada di KEDUA jalur (deteksiNiat + implisit)', () => {

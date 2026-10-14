@@ -1981,6 +1981,22 @@ export async function simpanUang(
   chatId = normChatId(chatId, opts?.platform);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return null;
+
+  // ── PERBAIKAN AUDIT 14 Okt 2026 (S1): TOLAK NOMINAL TIDAK MASUK AKAL ──
+  // BUG LAMA: tidak ada validasi. `amount` negatif atau 0 ikut tersimpan
+  // (mis. salah parse "-5000"), lalu MERUSAK rekap: total pengeluaran berkurang
+  // dan selisih jadi salah. Nominal maksimum juga tidak dibatasi (salah ketik
+  // "999999999999" bisa masuk).
+  if (!Number.isFinite(amount) || amount <= 0) {
+    console.warn(`[notes] TOLAK simpan keuangan: nominal tidak valid (${amount}).`);
+    return null;
+  }
+  if (amount > 1_000_000_000_000) {
+    // > 1 triliun: hampir pasti salah parse, bukan transaksi nyata user ini.
+    console.warn(`[notes] TOLAK simpan keuangan: nominal terlalu besar (${amount}).`);
+    return null;
+  }
+
   try {
     // ── DEDUP DATA KEUANGAN (temuan nyata 08 Okt 2026) ──
     // LAPORAN PEMILIK PRODUK: "saat user hanya memberitahu pendapatan sedangkan
@@ -1996,25 +2012,35 @@ export async function simpanUang(
     // Jendela 10 menit dipilih karena: user yang benar-benar melakukan dua
     // transaksi identik (nominal + catatan sama) dalam <10 menit sangat jarang,
     // sedangkan risiko "minta catat ulang" jauh lebih besar.
-    const JENDELA_DEDUP_MS = 10 * 60_000;
-    const sejak = new Date(Date.now() - JENDELA_DEDUP_MS).toISOString();
-    const { data: kembar } = await c
-      .from('expenses')
-      .select('id')
-      .eq('chat_id', chatId)
-      .eq('amount', amount)
-      .eq('kind', kind)
-      .eq('note', note?.slice(0, 300) ?? null)
-      .gte('created_at', sejak)
-      .limit(1);
-    const sudahAda = (kembar ?? [])[0] as { id: number } | undefined;
-    if (sudahAda?.id) {
-      console.warn(
-        `[notes] Lewati simpan keuangan duplikat: Rp${amount} ${kind} "${(note ?? '').slice(0, 40)}" (sudah #${sudahAda.id})`,
-      );
-      // Tandai bahwa baris ini TIDAK baru (agar pemanggil bisa lapor JUJUR).
-      if (opts?.info) opts.info.baru = false;
-      return sudahAda.id; // kembalikan id yang sudah ada (bukan id baru)
+    //
+    // ── PERBAIKAN AUDIT 14 Okt 2026 (S3): JANGAN dedup bila catatan KOSONG ──
+    // BUG LAMA: dedup memakai (chat_id, amount, kind, note) — bila `note` kosong
+    // (NULL), DUA transaksi BERBEDA dengan nominal sama dalam 10 menit DIGABUNG.
+    // Contoh nyata: "catat 20rb" lalu "catat 20rb" untuk dua hal berbeda -> yang
+    // kedua HILANG. Tanpa catatan tidak ada cara membedakan transaksi, jadi
+    // lebih aman TIDAK melakukan dedup (duplikat bisa dihapus, data hilang tidak).
+    const catatanDedup = (note ?? '').trim().slice(0, 300);
+    if (catatanDedup.length >= 3) {
+      const JENDELA_DEDUP_MS = 10 * 60_000;
+      const sejak = new Date(Date.now() - JENDELA_DEDUP_MS).toISOString();
+      const { data: kembar } = await c
+        .from('expenses')
+        .select('id')
+        .eq('chat_id', chatId)
+        .eq('amount', amount)
+        .eq('kind', kind)
+        .eq('note', catatanDedup)
+        .gte('created_at', sejak)
+        .limit(1);
+      const sudahAda = (kembar ?? [])[0] as { id: number } | undefined;
+      if (sudahAda?.id) {
+        console.warn(
+          `[notes] Lewati simpan keuangan duplikat: Rp${amount} ${kind} "${catatanDedup.slice(0, 40)}" (sudah #${sudahAda.id})`,
+        );
+        // Tandai bahwa baris ini TIDAK baru (agar pemanggil bisa lapor JUJUR).
+        if (opts?.info) opts.info.baru = false;
+        return sudahAda.id; // kembalikan id yang sudah ada (bukan id baru)
+      }
     }
 
     const { data, error } = await c.from('expenses').insert({
@@ -2042,11 +2068,28 @@ export async function rekapUang(chatId: string, dariHari: number = 30): Promise<
   if (!c) return kosong;
   try {
     const sejak = new Date(Date.now() - dariHari * 86_400_000).toISOString();
-    const { data, error } = await c.from('expenses')
-      .select('kind, amount, category')
-      .eq('chat_id', chatId)
-      .gte('occurred_at', sejak);
-    if (error || !data) return kosong;
+    // ── PERBAIKAN AUDIT 14 Okt 2026: PAGINASI EKSPLISIT ──
+    // BUG LAMA: satu query tanpa `range`. Supabase/PostgREST membatasi jumlah
+    // baris per permintaan (default 1000). Bila user punya >1000 transaksi dalam
+    // rentang waktu itu, rekap DIAM-DIAM menghitung sebagian saja — total
+    // pemasukan/pengeluaran jadi lebih kecil dari kenyataan dan user tidak tahu.
+    // SEKARANG: ambil berulang dalam batch 1000 sampai habis.
+    const BATCH = 1000;
+    const data: Array<{ kind: string; amount: number; category: string }> = [];
+    for (let offset = 0; ; offset += BATCH) {
+      const { data: batch, error } = await c
+        .from('expenses')
+        .select('kind, amount, category')
+        .eq('chat_id', chatId)
+        .gte('occurred_at', sejak)
+        .order('id', { ascending: true })
+        .range(offset, offset + BATCH - 1);
+      if (error) return kosong;
+      if (!batch || batch.length === 0) break;
+      data.push(...(batch as Array<{ kind: string; amount: number; category: string }>));
+      if (batch.length < BATCH) break;
+    }
+    if (data.length === 0) return kosong;
 
     let masuk = 0, keluar = 0;
     const kat = new Map<string, { total: number; jumlah: number }>();
