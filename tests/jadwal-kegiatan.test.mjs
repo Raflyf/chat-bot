@@ -54,7 +54,10 @@ test('jadwal: undangan sosialisasi TERSIMPAN', () => {
   const t = 'Assalamualaikum wrwb punten izin menyampaikan sosialisasi pedoman TA 2627: 2. Tingkat 2 senin 12 Oktober pukul 16';
   const n = deteksiNiatImplisit(t);
   assert.ok(n, 'undangan kegiatan harus terdeteksi');
-  assert.ok(String(n.data.due_at).startsWith('2026-10-12'), `due_at harus 12 Okt 2026 (dapat ${n.data.due_at})`);
+  // DATE-ROBUST: "12 Oktober" tanpa tahun = kejadian terdekat. Setelah 12 Okt 2026
+  // lewat, parser wajar menggulir ke 2027. Yang penting: tanggalnya terbaca sebagai
+  // TANGGAL (bukan "jam"), bulan & hari benar.
+  assert.ok(/^(2026|2027)-10-12/.test(String(n.data.due_at)), `due_at harus 12 Oktober (2026/2027), dapat ${n.data.due_at}`);
 });
 
 test('tanya: "rekap tugas aku" = TUGAS (bukan keuangan)', () => {

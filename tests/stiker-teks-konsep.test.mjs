@@ -53,7 +53,7 @@ test('prompt: TEKS stiker dikirim ke model (hemat token)', () => {
 });
 
 test('prompt: URUTAN teks -> konsep -> ekspresi ditegaskan', () => {
-  assert.ok(SK.includes('URUTAN MEMBACA STIKER'), 'harus ada urutan membaca');
+  assert.ok(SK.includes('CARA BACA STIKER'), 'harus ada urutan membaca');
   assert.ok(SK.includes('(1) TEKS/CAPTION'), 'prioritas 1 = teks');
   assert.ok(SK.includes('(2) KONSEP/ISI'), 'prioritas 2 = konsep');
   assert.ok(SK.includes('(3) EKSPRESI'), 'prioritas 3 = ekspresi');

@@ -169,24 +169,29 @@ export const config = {
       // URUTAN: yang TERBUKTI BENAR & CEPAT lebih dulu. Cloudflare tetap dipasang
       // (pulih saat kuota reset) tetapi di belakang model yang sudah terbukti.
       // ══════════════════════════════════════════════════════════════════════
-      // ── TIER 1: TERBUKTI BENAR, CEPAT ──
+      // ── URUTAN BARU (12 Okt 2026) — berdasarkan UJI AKURASI BACA STIKER ──
+      // Uji: 4 stiker ber-teks (NGAPAIN INJR / BABI / DASAR TUMAN / BODOH AMAT).
+      //   ✅ 4/4 : gemini-flash-lite, gemini-3.6-flash, nvidia/llama-3.2-11b-vision,
+      //            cloudflare/qwen3.8-27b, cloudflare/llama-4-scout,
+      //            cloudflare/mistral-small-3.1-24b
+      //   ❌ 2/4 : openrouter/nemotron-3-nano-omni (dipindah ke belakang)
+      //   ⚠️ groq/qwen3.8-27b: tidak bisa diuji langsung (Cloudflare blokir request
+      //      non-browser → HTTP 403 code 1010), TETAPI lewat rantai asli terbukti
+      //      BENAR & TERCEPAT (1,3–2,4 dtk). Tetap di posisi 1.
+      // URUTAN: akurat + cepat dulu; Cloudflare ditaruh setelah Gemini agar neuron
+      // tidak cepat habis; OpenRouter/OpenCode jadi cadangan terakhir.
       { kind: 'groq', model: 'qwen/qwen3.8-27b' },
       { kind: 'nvidia', model: 'meta/llama-3.2-11b-vision-instruct' },
       { kind: 'gemini', model: 'gemini-flash-lite-latest' },
-      { kind: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
-      // ── TIER 2: TERBUKTI BENAR, SEDIKIT LEBIH LAMBAT ──
       { kind: 'gemini', model: 'gemini-3.6-flash' },
+      { kind: 'cloudflare', model: '@cf/qwen/qwen3.8-27b' },
+      { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
+      { kind: 'cloudflare', model: '@cf/mistralai/mistral-small-3.1-24b-instruct' },
       { kind: 'gemini', model: 'gemini-2.5-flash' },
-      // ── TIER 3: OpenCode (BISA vision, tapi free-tier ketat) ──
-      // Model utama OpenCode muse-spark TIDAK bisa vision; yang bisa: big-pickle,
-      // mimo-v2.5-free, mimo-v2.6-flash. Free-tier menolak non-stream (403),
-      // jadi kode OpenCode SELALU memakai stream — sudah ditangani di providers.ts.
+      { kind: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
       { kind: 'opencode', model: 'mimo-v2.6-flash-free' },
       { kind: 'opencode', model: 'big-pickle' },
       { kind: 'opencode', model: 'mimo-v2.5-free' },
-      // ── TIER 4: Cloudflare (pulih saat kuota neuron reset) ──
-      { kind: 'cloudflare', model: '@cf/qwen/qwen3.8-27b' },
-      { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
     ] as Array<{
       kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'opencode';
       model: string;

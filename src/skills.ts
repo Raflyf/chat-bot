@@ -1622,7 +1622,10 @@ export function buangBalasanStikerGenerik(reply: string, userPrompt: string): st
   if (!/\[Stiker\s*WhatsApp\]/i.test(u) && !/^\s*stiker\s*$/i.test(u)) return reply;
   const generik = /^\s*(?:iya|ya|hehe|haha|wkwk|😄|😂|🤣)?[\s,]*(?:tuh\s+)?(?:lucu|lucu\s+banget|gemas|imut|keren|bagus|ngakak)\b[^.!?\n]*[.!]?\s*$/i;
   const mengarang = /\b(?:patrick|spongebob|monyet|kucing\s+yang|salah\s+lia?t|maksa\s+liha?t)\b/i;
-  if (generik.test(reply) || mengarang.test(reply)) return '';
+  // Balasan NADA ASISTEN ROBOTIK — tidak pernah wajar sebagai reaksi stiker.
+  // BUKTI (12 Okt 2026): stk_044 dijawab "Tidak ada masalah. Saya akan membantu Anda."
+  const robotik = /\b(?:tidak\s+ada\s+masalah|siap\s+membantu|akan\s+membantu\s+(?:anda|kamu)|ada\s+yang\s+bisa\s+(?:saya|aku)\s+bantu|dengan\s+senang\s+hati|silakan\s+(?:bertanya|tanya)|senang\s+bisa\s+membantu|semoga\s+membantu)\b/i;
+  if (generik.test(reply) || mengarang.test(reply) || robotik.test(reply)) return '';
   return reply;
 }
 
@@ -4873,75 +4876,27 @@ export async function describeImage(
 
   if (isSticker) {
     promptText = [
-      '[PENGGUNA MENGIRIM STIKER EKSPRESI DI WHATSAPP/TELEGRAM]',
-      caption && caption.trim() ? `Catatan/Emoji stiker: ${caption.trim()}` : '',
-      'ATURAN RESPON STIKER (MUTLAK):',
-      // PRIORITAS 1 (permintaan user 21 Sep 13:24): BACA TEKS DI STIKER.
-      // Temuan nyata: stiker berisi tulisan "DONGO / Sejak Lahir" (sindiran ke bot yang
-      // tidak bisa cek cuaca) dijawab "Wahahaha, lucu banget!" — salah total karena model
-      // hanya melihat gambarnya, bukan tulisannya.
-      // ── URUTAN WAJIB MEMBACA STIKER (permintaan pemilik produk 08 Okt 2026) ──
-      // "yg utama dari stiker nya itu text atau caption yg ada di stiker nya, jika
-      //  tidak ada baru dari konsep dan konsep isi stiker nya, baik stiker yg di
-      //  kirim bot, maupun yg di kirim user maka yg pertama di lihat apakah ada text
-      //  atau captionya, kalo tidak ada baru dari ekspresi stiker nya di sesuaikan
-      //  dengan suasana percakapan"
-      'URUTAN MEMBACA STIKER (WAJIB, jangan dibalik):',
-      '(1) TEKS/CAPTION di stiker — kalau ADA tulisan, ITULAH makna utama. Baca apa adanya, jangan mengaku tidak terbaca.',
-      '(2) KONSEP/ISI stiker — kalau TIDAK ada tulisan, pahami maksud gambarnya (mis. kucing pegang mawar = ungkapan sayang).',
-      '(3) EKSPRESI + SUASANA — kalau tidak ada tulisan & konsepnya ambigu, baru pakai ekspresi (senang/sedih/kesal) yang disesuaikan suasana percakapan.',
-      '1. LANGKAH PERTAMA — BACA TEKS/NULISAN DI STIKER: banyak stiker memuat tulisan. Jika ada teks, ITULAH makna utama stiker dan wajib jadi dasar balasanmu. Contoh: stiker bertulisan "DONGO Sejak Lahir" = sindiran/ejekan (dongo = bodoh), bukan lelucon lucu — balas dengan menyadari sindirannya secara santai/self-deprecating, BUKAN tertawa "lucu banget".',
-      // ── ATURAN KERAS (temuan nyata 06 Okt 2026) ──
-      // LAPORAN 1: user kirim stiker "SATIR / SAYANG PADAMU TIADA AKHIR", minta
-      //   "isi stikernya apa" -> bot: "tulisan kecil susah kebaca 😂" -> user:
-      //   "Mata lu mines ya".
-      // LAPORAN 2: user kirim stiker kucing pegang mawar -> bot: "itu kucingnya
-      //   sampe kaget" -> SALAH TOTAL (kucingnya tidak kaget, ekspresinya datar).
-      //
-      // AKAR: model MELIHAT gambar tapi TIDAK TELITI, lalu menebak ekspresi/isi
-      // yang tidak ada. Ini merusak kepercayaan.
-      '1b. DILARANG KERAS bilang tulisan stiker "kecil", "susah dibaca", "nggak kebaca", "buram", atau "kayaknya ada tulisan tapi tidak jelas". Kalau ada tulisan, BACA dan SEBUTKAN isinya dengan yakin.',
-      '1c. Bila user MEMINTA eksplisit ("isi stikernya apa", "tulisannya apa", "coba baca"): sebutkan TEKSNYA apa adanya + maknanya singkat.',
-      '1d. DILARANG MENEBAK EKSPRESI/EMOSI YANG TIDAK TERLIHAT. Amati WAJAH & sikapnya dulu: mata datar = datar/santai, bukan kaget; mata melotot = kaget. Kalau ragu, JANGAN sebut ekspresi apa pun — cukup reaksi netral yang aman.',
-      '1e. DILARANG KERAS menyebut hal yang tidak ada di stiker (mis. "sampe kaget", "ketawa", "nangis") hanya karena kebiasaan. Salah sebut = jawaban gagal.',
-      // ── ATURAN KERAS (temuan nyata 06 Okt 2026) ──
-      // LAPORAN: user kirim stiker bertulisan "SATIR / SAYANG PADAMU TIADA AKHIR",
-      // lalu minta "Coba itu isi stikernya apa". Bot menjawab:
-      //   "Itu stiker kucing lucu, kayaknya ada kata-katanya juga tapi kecil
-      //    banget susah kebaca 😂"
-      // User kesal: "Mata lu mines ya".
-      //
-      // KENAPA SALAH: teks di stiker itu JELAS. Mengaku "susah dibaca" =
-      // mengecewakan user dan terlihat tidak becus. Kalau user MEMINTA membaca
-      // isi stiker, teks itu WAJIB dibaca dan disebutkan.
-      '1b. DILARANG KERAS bilang tulisan stiker "kecil", "susah dibaca", "nggak kebaca", "buram", atau "kayaknya ada tulisan tapi tidak jelas". Kalau ada tulisan, BACA dan SEBUTKAN isinya (atau intinya) dengan yakin. Mengaku tidak bisa membaca padahal tulisannya ada = jawaban gagal.',
-      '1c. Bila user MEMINTA eksplisit ("isi stikernya apa", "tulisannya apa", "coba baca"): sebutkan TEKSNYA apa adanya (boleh dikutip) + maknanya singkat. Itu permintaan jelas, jadi boleh menyebut isi (bukan narasi terlarang).',
-      '2. JIKA TIDAK ADA TEKS: barulah dasarkan balasan pada GAMBAR dan KONSEP stiker (emosi/maksud yang tergambar: sindiran, kesal, kaget, sedih, lucu, dll).',
-      // KASUS NYATA 04 Okt 02:25: user kirim stiker AYAM + love. Bot jawab
-      // "angsa jomblo siap dilamar" (salah spesies), lalu saat dikoreksi
-      // "itu ayam jir" malah menambah karangan ("ngarep-injek kucing tetangga").
-      // Akar masalah: model TIDAK mengamati gambar dengan teliti.
-      '2b. AMATI ISI STIKER DENGAN TELITI, LALU SEBUT APA ADANYA (ATURAN KERAS):',
-      '    -> Kamu HARUS benar-benar melihat gambar di stiker, bukan menebak dari kebiasaan. Kenali objeknya dengan cermat sebelum menyebut.',
-      '    -> HATI-HATI membedakan yang mirip: ayam vs bebek vs angsa vs burung; kucing vs anjing; dll. Kalau ragu, JANGAN sebut spesifik — tanggapi maknanya saja ("haha gemas banget"). Salah sebut spesies jauh lebih buruk daripada tidak menyebut.',
-      '    -> Kalau kamu YAKIN objeknya apa, sebut objeknya dengan benar dan wajar sebagai bagian dari celetukanmu — susun kalimatnya sendiri, jangan memakai kalimat hafalan.',
-      '    -> DILARANG KERAS mengarang detail yang TIDAK TERLIHAT di stiker (hewan lain, kejadian, tempat, aktivitas seperti "ngarep-injek kucing tetangga"). Itu fabrikasi, bukan respons.',
-      '    -> Bila lawan bicara MENGOREKSI objeknya ("itu ayam jir", "bukan angsa"): AKUI singkat dengan santai (satu celetukan, misal "wkwk iya salah liat") lalu LANGSUNG lanjut — DILARANG membela diri, DILARANG menambah karangan baru untuk menutupi kesalahan.',
-      '3. INI ADALAH STIKER CHAT, BUKAN BAHAN ESSAY ATAU ANALISIS GAMBAR!',
-      '4. DILARANG KERAS MENARASIKAN / MENDESKRIPSIKAN ISI STIKER sebagai laporan ("Stikernya menampilkan tulisan...", "Kucingnya ketawa", "Gambarnya..."). Tanggapi MAKNANYA, jangan laporkan isinya. Temanmu yang mengirim stiker itu — dia SUDAH TAHU isinya.',
-      '5. TANGGAPI SESUAI MAKNA: stiker sindiran/ejekan -> respons sadar-diri yang santai (jangan tertawa); stiker lucu -> boleh ikut tertawa; stiker kesal -> akui dengan tenang. JANGAN tertawa bila stiker jelas menyindir.',
-      '6. YANG BENAR: balas dengan REAKSI NATURAL seperti manusia dikirimi stiker — celetukan pendek yang nyambung dengan obrolan terakhir.',
-      '7. DILARANG KERAS MENGARANG CERITA / DONGENG KHAYALAN! (DILARANG mengarang kompetisi/tren TikTok, profesi dancer/atlet/influencer, pantai/tempat fiktif, otot, dsb).',
-      '8. PANJANG JAWABAN: HANYA 1 KALIMAT PENDEK SANTAI (maksimal 5-12 kata). DILARANG MEMBUAT 2 PARAGRAF!',
-      '9. TANGGAPI SEIRAMA DENGAN OBROLAN TERAKHIR — perhatikan konteks percakapan terakhir kalian.',
-      '10. ZERO ROBOT EMOJI / ZERO CRINGE EMOJI: Maksimal 1 emoji ekspresif wajar atau TANPA EMOJI sama sekali. DILARANG emoji robot, tertawa menangis 😂, atau jejak kaki 🐾.',
-      '11. BILA TIDAK YAKIN SAMA SEKALI ISI STIKERNYA: cukup tanggapi dengan reaksi hangat yang netral dan wajar — jauh lebih baik daripada salah tebak dengan yakin. Susun kalimatmu sendiri, jangan memakai frasa hafalan.',
-      // ── BALAS STIKER DENGAN STIKER (permintaan pemilik produk 10 Okt 2026) ──
-      // "kalo bisa jika ada user membalas dengan stiker maka bot juga diperbolehkan
-      //  membalas dengan stiker juga"
-      '12. BALAS DENGAN STIKER (DIIZINKAN & DIANJURKAN): karena dia mengirim STIKER, kamu BOLEH membalas dengan stiker juga. Sisipkan SATU tag di AKHIR balasanmu dengan format [[sticker:<emoji>]] — pilih emoji yang COCOK dengan ekspresi/makna stiker yang dia kirim (mis. dia kirim stiker ketawa -> [[sticker:😂]]; stiker kesal -> [[sticker:😤]]; stiker sedih -> [[sticker:🥺]]). Contoh: "Haha iya tuh lucu banget [[sticker:😂]]".',
-      '12b. WAJIB: tag [[sticker:...]] harus di AKHIR balasan dan HANYA SATU. Emoji biasa di dalam teks BUKAN stiker — kalau mau kirim stiker, WAJIB pakai tag itu.',
-      '12c. Balasan teksnya tetap SINGKAT (maksimal 12 kata) dan NYAMBUNG dengan isi/ekspresi stiker. JANGAN mengarang isi stiker yang tidak terlihat.',
+      '[PENGGUNA MENGIRIM STIKER]',
+      caption && caption.trim() ? `Emoji/catatan stiker: ${caption.trim()}` : '',
+      'CARA BACA STIKER (urutan WAJIB):',
+      '(1) TEKS/CAPTION — kalau ADA tulisan, ITU makna utamanya. Baca apa adanya dan pakai sebagai dasar balasan. Jangan bilang tidak terbaca.',
+      '(2) KONSEP/ISI — kalau TIDAK ada tulisan, pahami maksud gambarnya (mis. kucing pegang mawar = ungkapan sayang).',
+      '(3) EKSPRESI — kalau masih ambigu, pakai ekspresi (senang/sedih/kesal) yang cocok dengan suasana obrolan.',
+      'ATURAN KERAS (salah satu dilanggar = jawaban GAGAL):',
+      'a. DILARANG bilang tulisan "kecil / susah dibaca / buram / tidak jelas". Kalau ada tulisan, BACA dan PAKAI.',
+      'b. DILARANG mengarang objek, makhluk, atau kejadian yang TIDAK terlihat di stiker. Amati WAJAH dulu: mata datar = datar/santai, bukan kaget; mata melotot = kaget. Kalau ragu, jangan sebut apa pun yang spesifik.',
+      'c. DILARANG menarasikan isi ("Stikernya menampilkan..."). Tanggapi MAKNANYA, jangan dilaporkan — dia sudah tahu isinya.',
+      'd. DILARANG bertanya balik ("maksudnya apa?", "stiker apa itu?"). Kamu yang melihat stiker itu — langsung bereaksi.',
+      'e. DILARANG balasan bernada asisten ("Tidak ada masalah", "Saya akan membantu Anda", "Ada yang bisa saya bantu").',
+      'f. DILARANG mengarang cerita/dongeng (kompetisi, tren TikTok, profesi, tempat fiktif).',
+      'g. Amati dulu dalam hati: objek apa, ekspresinya bagaimana, maknanya apa. Baru susun reaksi.',
+      'BENTUK BALASAN:',
+      '1. SATU kalimat pendek santai (5-12 kata). DILARANG dua paragraf.',
+      '2. Nyambung dengan makna stiker + obrolan terakhir.',
+      '3. Stiker sindiran/ejekan -> respons sadar-diri santai (JANGAN tertawa). Stiker lucu -> boleh ikut tertawa. Stiker kesal -> akui dengan tenang.',
+      '4. BOLEH membalas dengan stiker: sisipkan SATU tag [[sticker:<emoji>]] di AKHIR balasan, emoji yang cocok dengan makna stiker.',
+      '5. Maksimal 1 emoji wajar, atau tanpa emoji. DILARANG emoji robot/jejak kaki.',
+      '6. Bila benar-benar tidak yakin: reaksi netral hangat yang singkat — jauh lebih baik daripada salah tebak dengan yakin.',
     ].filter(Boolean).join('\n');
   } else if (isPdf) {
     promptText = caption && caption.trim()
@@ -5145,8 +5100,12 @@ export async function describeImage(
   const mintaBacaStiker =
     /\b(?:isi(?:nya)?|tulisan(?:nya)?|teks(?:nya)?|kata(?:-kata)?(?:nya)?|baca|bacain|bacakan|coba\s+lihat|apa\s+tulisannya)\b/i.test(caption || '') ||
     /\b(?:isi|tulisan|teks|kata|baca)\b[^.!?\n]{0,20}\b(?:stiker|stikernya|gambar|gambarnya|ini)\b/i.test(caption || '');
-  const mengakuTakBisaBaca =
-    /\b(?:kecil(?:\s+banget)?|susah\s+(?:dibaca|kebaca)|nggak\s+(?:kebaca|bisa\s+dibaca)|tidak\s+(?:kebaca|bisa\s+dibaca)|buram|kurang\s+jelas|gak\s+jelas\s+bacaannya|kayaknya\s+ada\s+(?:tulisan|kata)\s+tapi)\b/i.test(reply);
+  // HARUS menyebut MEDIA (tulisan/teks/stiker/gambar) DAN kata tak-terbaca.
+  // Regex lama hanya butuh kata umum ("kecil", "kurang jelas") → balasan SAH
+  // seperti "kucing kecil" / "ekspresinya kurang jelas" ikut TERHAPUS.
+  const kataTakTerbaca = /(?:kecil(?:\s+banget)?|susah\s+(?:dibaca|kebaca)|nggak\s+(?:kebaca|bisa\s+dibaca)|tidak\s+(?:kebaca|bisa\s+dibaca)|buram|kurang\s+jelas|gak\s+jelas)/i;
+  const kataMedia = /(?:tulisan|teks|kata|bacaannya|stiker|gambar)/i;
+  const mengakuTakBisaBaca = kataTakTerbaca.test(reply) && kataMedia.test(reply);
   if (mengakuTakBisaBaca) {
     // Buang kalimat yang mengaku tidak bisa membaca.
     const sisaKalimat = reply
@@ -5166,6 +5125,39 @@ export async function describeImage(
     reply = reply.replace(/^Wah,\s*(?:ini\s+)?stiker[^.!?\n]*[.!?\n]+\s*/i, '');
     reply = reply.replace(/#[a-zA-Z0-9_-]+/g, '');
     reply = reply.replace(/[🐾🤖]/gu, '');
+    // Buang baris OBSERVASI/ANALISIS bila model sempat menulisnya (kertas kerja).
+    reply = reply.replace(/(?:^|\n)\s*(?:OBSERVASI|OBSERVATION|ANALISIS|ANALYSIS)\s*[:：][^\n]*/gi, '').trim();
+    // ── PROMPT-ECHO: model MENGULANG INSTRUKSI, bukan menjawab (12 Okt 2026) ──
+    // BUKTI: stk_063 -> "Dalam percakapan, penting untuk memahami konteks dan
+    // makna pesan yang dikirimkan..."; stk_026 -> "Bila temanmu mengirim stiker,
+    // baca tulisan di stiker itu terlebih dahulu...". Model bingung lalu
+    // menyalin aturan prompt. Jawaban seperti ini = GAGAL -> kosongkan.
+    const echoInstruksi = /(?:bila|kalau|jika)\s+(?:temanmu|user|pengguna|seseorang|kamu|anda)\s+mengirim\s+stiker|baca\s+tulisan\s+di\s+stiker|dalam\s+percakapan,?\s*penting\s+untuk|itu\s+makna\s+utamanya|makna\s+utamanya\s+adalah|aturan\s+keras|dilarang\s+(?:bilang|mengarang|menarasikan|bertanya|membalas)|kamu\s+yang\s+melihat\s+stiker|sebagai\s+asisten|saya\s+akan\s+membantu\s+anda|saya\s+akan\s+membaca\s+teksnya|jika\s+ada\s+tulisan|ekspresi\s+dan\s+suasana|kalau\s+ada\s+tulisan,?\s*(?:itu|baca)/i;
+    if (echoInstruksi.test(reply)) {
+      console.warn('[skills] Balasan stiker mengulang instruksi (prompt-echo) — dibuang.');
+      reply = '';
+    }
+    // ── TANYA-BALIK soal stiker (12 Okt 2026) ──
+    // BUKTI: stk_063 dijawab "Kamu kirim stiker apa maksudnya?" — bot balik
+    // bertanya padahal dia yang melihat stikernya. Harus langsung bereaksi.
+    const tanyaBalikStiker = /(?:kirim\s+stiker\s+apa|stiker\s+apa\s+(?:itu|maksudnya|ya)|maksudnya\s+apa\s*\?|ini\s+stiker\s+apa|mau\s+apa\s+kirim\s+stiker|stikernya\s+apa\s+maksudnya)/i;
+    if (tanyaBalikStiker.test(reply)) {
+      console.warn('[skills] Balasan stiker bertanya balik — dibuang.');
+      reply = '';
+    }
+    // ── META / MENYERAH (12 Okt 2026) ──
+    // BUKTI: stk_063 -> "Dalam situasi ini, kamu harus menanggapi dengan cara yang
+    // santai dan tidak mengganggu..."; stk_026 -> "*Tidak ada jawaban yang sesuai
+    // dengan kriteria yang diberikan.*". Model membahas CARA menjawab atau menyerah,
+    // bukan menjawab. Keduanya GAGAL -> kosongkan agar diregenerasi.
+    const metaMenyerah = /tidak\s+ada\s+jawaban\s+yang\s+sesuai|kriteria\s+yang\s+diberikan|dalam\s+situasi\s+ini,?\s*(?:kamu|anda|saya)\s+harus|kamu\s+harus\s+menanggapi|cara\s+yang\s+santai\s+dan\s+tidak\s+mengganggu|saya\s+tidak\s+bisa\s+(?:membaca|melihat|mengakses)|maaf,?\s*saya\s+tidak\s+bisa/i;
+    if (metaMenyerah.test(reply)) {
+      console.warn('[skills] Balasan stiker meta/menyerah — dibuang.');
+      reply = '';
+    }
+    // Buang prefix bocoran instruksi: "Jawaban: ...", "Balasan: ...", "Respon: ..."
+    reply = reply.replace(/^\s*(?:jawaban|balasan|respon|respons|output|hasil)\s*[:：]\s*/i, '');
+    reply = reply.replace(/^\s*["“]?(?:jawaban|balasan|respon)\s*[:：]\s*["”]?\s*/i, '');
 
     // ── PENEGAK: JANGAN MENGAKU TAK BISA BACA (perbaikan 06 Okt 2026) ──
     // LAPORAN NYATA: user kirim stiker bertulisan "SATIR / SAYANG PADAMU TIADA
@@ -5173,7 +5165,8 @@ export async function describeImage(
     // -> user kesal "Mata lu mines ya".
     // Kalau teksnya ada, WAJIB dibaca. Mengaku tidak bisa = jawaban gagal.
     const mengakuTakBisaBaca =
-      /\b(?:kecil(?:\s+banget)?|susah\s+(?:dibaca|kebaca)|nggak\s+(?:kebaca|bisa\s+dibaca)|tidak\s+(?:kebaca|bisa\s+dibaca)|buram|kurang\s+jelas\s+bacaannya)\b/i.test(reply);
+      (/(?:kecil(?:\s+banget)?|susah\s+(?:dibaca|kebaca)|nggak\s+(?:kebaca|bisa\s+dibaca)|tidak\s+(?:kebaca|bisa\s+dibaca)|buram|kurang\s+jelas|gak\s+jelas)/i.test(reply)) &&
+      (/(?:tulisan|teks|kata|bacaannya|stiker|gambar)/i.test(reply));
     if (mengakuTakBisaBaca) {
       const sisaKalimat = reply
         .split(/(?<=[.!?])\s+|\n+/)

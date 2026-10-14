@@ -89,7 +89,8 @@ test('stiker: jalur kirim WAJIB sanitize + kirim stiker balasan', () => {
 });
 
 test('stiker: prompt minta balas dengan stiker', () => {
-  assert.ok(/BALAS DENGAN STIKER/.test(SKILLS), 'prompt harus mengizinkan balas stiker');
+  // Frasa prompt diubah 12 Okt 2026 (prompt dipangkas 74% agar model kecil fokus).
+  assert.ok(/BOLEH membalas dengan stiker/.test(SKILLS), 'prompt harus mengizinkan balas stiker');
   assert.ok(/\[\[sticker:<emoji>\]\]/.test(SKILLS), 'prompt harus sebut format tag');
 });
 

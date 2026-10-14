@@ -41,11 +41,11 @@ test('stiker: ada penegak anti-"mengaku tak bisa baca"', () => {
 });
 
 test('stiker: prompt melarang bilang tulisan kecil/tidak kebaca', () => {
-  assert.ok(SK.includes('DILARANG KERAS bilang tulisan stiker "kecil"'), 'harus ada larangan');
+  assert.ok(SK.includes('DILARANG bilang tulisan "kecil / susah dibaca / buram / tidak jelas"'), 'harus ada larangan');
 });
 
 test('stiker: prompt melarang menebak ekspresi yang tidak terlihat', () => {
-  assert.ok(SK.includes('DILARANG MENEBAK EKSPRESI/EMOSI YANG TIDAK TERLIHAT'), 'harus ada larangan');
+  assert.ok(SK.includes('DILARANG mengarang objek, makhluk, atau kejadian yang TIDAK terlihat'), 'harus ada larangan');
   assert.ok(SK.includes('mata datar = datar/santai, bukan kaget'), 'harus beri contoh');
 });
 
