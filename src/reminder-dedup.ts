@@ -43,7 +43,20 @@ export function normalisasiUntukBanding(teks: string): string[] {
 export function kemiripanPesan(a: string, b: string): number {
   const wa = normalisasiUntukBanding(a);
   const wb = normalisasiUntukBanding(b);
-  if (wa.length === 0 && wb.length === 0) return 1;
+  // ── PERBAIKAN AUDIT 14 Okt 2026 ──
+  // BUG LAMA: `if (wa.length === 0 && wb.length === 0) return 1;` -> bila KEDUA
+  // sisi tidak menyisakan kata bermakna, keduanya dianggap IDENTIK. BUKTI:
+  //   kemiripanPesan("jam 9", "jam 10")            = 1
+  //   kemiripanPesan("jam 9", "besok")             = 1
+  //   kemiripanPesan("ingatkan jam 9","ingatkan jam 11") = 1
+  // Sebab: "jam"/"besok"/"hari" ada di KATA_ABAIKAN dan angka dibuang, sehingga
+  // kedua sisi kosong. Akibatnya dua agenda BERBEDA dalam jendela ±5 menit
+  // DIGABUNG menjadi satu -> salah satu agenda HILANG.
+  // SEKARANG: bila keduanya kosong, bandingkan teks MENTAH — hanya identik
+  // (setelah trim+lowercase) yang dianggap sama.
+  if (wa.length === 0 && wb.length === 0) {
+    return a.trim().toLowerCase() === b.trim().toLowerCase() ? 1 : 0;
+  }
   if (wa.length === 0 || wb.length === 0) return 0;
 
   const setA = new Set(wa);

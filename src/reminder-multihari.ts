@@ -157,6 +157,11 @@ export function deteksiMultiHari(
  */
 export function susunDaftarPengingat(
   p: PermintaanMultiHari,
+  // Waktu "sekarang" dapat DISUNTIK untuk pengujian (audit 14 Okt 2026).
+  // Tanpa parameter ini, penjaga "jangan jadwalkan ke masa lalu" di bawah
+  // membuat pengujian dengan tanggal tetap selalu gagal begitu tanggal itu
+  // sudah lewat.
+  sekarang: Date = new Date(),
 ): Array<{ due: Date; pesan: string }> {
   const daftar: Array<{ due: Date; pesan: string }> = [];
   const dasar = p.tanggalAcara;
@@ -171,6 +176,16 @@ export function susunDaftarPengingat(
     d.setDate(d.getDate() - n);
     if (punyaJam) d.setHours(jamPakai, menitPakai, 0, 0);
     else d.setHours(jamPakai, menitPakai, 0, 0);
+
+    // ── PERBAIKAN AUDIT 14 Okt 2026 ──
+    // BUG LAMA: tidak ada penjaga "due <= sekarang". Bila user minta pengingat
+    // H-N untuk acara yang SUDAH DEKAT (mis. "ingatkan 3 hari sebelum rapat
+    // besok"), maka H-3 jatuh 2 hari di MASA LALU. Pengingat itu langsung
+    // terkirim dengan teks salah ("Persiapan rapat — 3 hari lagi" padahal
+    // acaranya besok).
+    // SEKARANG: lewati H-N yang jatuh di masa lalu (sudah tidak relevan).
+    if (d.getTime() <= sekarang.getTime()) continue;
+
     const label = n === 1 ? 'besok' : `${n} hari lagi`;
     daftar.push({
       due: d,

@@ -112,9 +112,26 @@ export async function simpanReminderCerdas(
     if (palingMirip && skorTerbaik >= AMBANG_MIRIP) {
       // Pilih pesan yang lebih INFORMATIF (lebih panjang) agar tidak kehilangan detail.
       const pesanFinal = message.length >= palingMirip.message.length ? message : palingMirip.message;
-      const { error } = await c.from('reminders')
-        .update({ message: pesanFinal, due_at: dueIso })
-        .eq('id', palingMirip.id);
+      // ── PERBAIKAN AUDIT 14 Okt 2026: IKUT PERBARUI ATURAN BERULANG ──
+      // BUG LAMA: merge hanya menulis `message` & `due_at`, TIDAK menyentuh
+      // `repeat_kind`/`repeat_value`. Akibatnya:
+      //   (a) user menyimpan ulang "tiap hari minum obat" -> aturan berulang BARU
+      //       DIABAIKAN (pengingat tetap sekali-jalan);
+      //   (b) bila baris lama sudah berulang lalu user menambah pengingat
+      //       sekali-jalan yang mirip -> pengingat itu IKUT BERULANG.
+      // Balasan tetap berkata "sudah saya perbarui, tidak dobel" -> menyesatkan.
+      const patch: Record<string, unknown> = { message: pesanFinal, due_at: dueIso };
+      if (ulang) {
+        // Permintaan BARU punya aturan berulang -> terapkan.
+        patch.repeat_kind = ulang.repeat_kind;
+        patch.repeat_value = ulang.repeat_value;
+      } else {
+        // Permintaan BARU tidak berulang -> matikan aturan berulang yang lama
+        // agar pengingat sekali-jalan tidak ikut berulang.
+        patch.repeat_kind = null;
+        patch.repeat_value = null;
+      }
+      const { error } = await c.from('reminders').update(patch).eq('id', palingMirip.id);
       if (!error) {
         return {
           ok: true,
@@ -362,23 +379,34 @@ export async function checkDueReminders(
 
     // 1. Reaper: Kembalikan reminder 'processing' yang lease-nya kadaluwarsa ke 'pending'
     // Prioritas: cek kolom lease_until (B4)
-    await c
+    // ── PERBAIKAN AUDIT 14 Okt 2026: PERIKSA HASIL UPDATE ──
+    // Sebelumnya hasil kedua query reaper TIDAK diperiksa. Bila update gagal
+    // (DB error / RLS menolak / kolom lease_until belum ada), baris 'processing'
+    // yang macet TIDAK pernah dikembalikan ke 'pending' — pengingat hilang
+    // SENYAP tanpa jejak apa pun di log. Sekarang setiap kegagalan dilaporkan.
+    const { error: reapErr1 } = await c
       .from('reminders')
       .update({ status: 'pending', lease_until: null })
       .eq('status', 'processing')
       .lte('lease_until', now);
+    if (reapErr1) {
+      console.error('[remind] reaper lease_until GAGAL:', reapErr1.message);
+    }
 
     // Fallback reaper hanya untuk DB pra-migrasi lease_until (lease_until IS NULL).
     // Ambang dinaikkan ke 30 menit (dari 10 menit): pengiriman yang masih in-flight
     // tidak boleh di-reap lalu diklaim ulang worker/cron lain -> cegah dobel kirim.
     // Tradeoff: baris yang benar-benar macet baru pulih setelah 30 menit, bukan 10.
     const staleThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    await c
+    const { error: reapErr2 } = await c
       .from('reminders')
       .update({ status: 'pending', lease_until: null })
       .eq('status', 'processing')
       .is('lease_until', null)
       .lte('due_at', staleThreshold);
+    if (reapErr2) {
+      console.error('[remind] reaper fallback GAGAL:', reapErr2.message);
+    }
 
     // 2. Ambil pengingat yang jatuh tempo
     // Kolom berulang (v27) diambil bila ada. Bila migrasi v27 belum dijalankan,
@@ -571,7 +599,24 @@ export async function checkDueReminders(
           await c.from('reminders').update({ status: 'pending', lease_until: null }).eq('id', item.id);
           console.warn(`[remind] pengingat berulang #${item.id} akan dicoba lagi (status dikembalikan ke pending).`);
         } else {
-          await c.from('reminders').update({ status: 'failed', lease_until: null }).eq('id', item.id);
+          // ── PERBAIKAN AUDIT 14 Okt 2026: pengingat SEKALI juga dicoba ulang ──
+          // BUG LAMA: sekali gagal -> 'failed' SELAMANYA. Karena query hanya
+          // mengambil status='pending', satu gangguan jaringan sesaat (WhatsApp
+          // API down 1 detik, timeout) membuat pengingat MATI PERMANEN — padahal
+          // isinya bisa penting (mis. "minum obat").
+          // SEKARANG: beri JENDELA PERCOBAAN ULANG 30 MENIT. Selama due_at masih
+          // di dalam jendela itu, kembalikan ke 'pending' supaya cron berikutnya
+          // mencoba lagi. Setelah 30 menit, baru tandai 'failed' agar tidak
+          // mencoba selamanya (dan tidak menumpuk beban).
+          const dueMs = new Date(String((item as { due_at?: string }).due_at ?? '')).getTime();
+          const masihDalamJendela = Number.isFinite(dueMs) && Date.now() - dueMs < 30 * 60_000;
+          if (masihDalamJendela) {
+            await c.from('reminders').update({ status: 'pending', lease_until: null }).eq('id', item.id);
+            console.warn(`[remind] pengingat #${item.id} gagal terkirim — akan dicoba lagi (jendela 30 menit).`);
+          } else {
+            await c.from('reminders').update({ status: 'failed', lease_until: null }).eq('id', item.id);
+            console.error(`[remind] pengingat #${item.id} GAGAL PERMANEN (lewat jendela percobaan ulang).`);
+          }
         }
       }
     }

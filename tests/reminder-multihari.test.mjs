@@ -48,7 +48,9 @@ test('multi-hari: kata angka ("tiga hari") didukung', () => {
 
 test('multi-hari: susun pengingat termasuk hari-H', () => {
   const m = deteksiMultiHari('ingatkan 3, 2, 1 hari sebelum rapat 12 oktober 2026 jam 10', BASE, parse);
-  const daftar = susunDaftarPengingat(m);
+  // `sekarang` disuntik = BASE supaya penjaga "jangan jadwalkan ke masa lalu"
+  // (perbaikan audit 14 Okt 2026) tidak mengganggu pengujian berulang.
+  const daftar = susunDaftarPengingat(m, BASE);
   assert.equal(daftar.length, 4, 'H-3, H-2, H-1 + hari-H');
   // Urut dari paling awal
   const tanggal = daftar.map((d) => tgl(d.due));
@@ -56,6 +58,21 @@ test('multi-hari: susun pengingat termasuk hari-H', () => {
   assert.match(daftar[3].pesan, /rapat/i, 'pengingat hari-H menyebut nama acara');
   assert.match(daftar[0].pesan, /3 hari lagi/);
   assert.match(daftar[2].pesan, /besok/);
+});
+
+test('multi-hari: H-N yang jatuh di MASA LALU dibuang (audit 14 Okt 2026)', () => {
+  // "ingatkan 3 hari sebelum rapat besok" -> H-3 & H-2 sudah lewat.
+  // BUG LAMA: keduanya tetap dijadwalkan lalu LANGSUNG terkirim dengan teks
+  // salah ("3 hari lagi" padahal acaranya besok).
+  const acara = new Date('2026-10-10T03:00:00Z'); // 10 Okt 10:00 WIB
+  const sekarang = new Date('2026-10-09T01:00:00Z'); // 9 Okt 08:00 WIB
+  const daftar = susunDaftarPengingat(
+    { namaAcara: 'rapat', tanggalAcara: acara, hariSebelum: [3, 2, 1], ingatHariH: true },
+    sekarang,
+  );
+  const tanggal = daftar.map((d) => tgl(d.due));
+  assert.deepEqual(tanggal, ['2026-10-09', '2026-10-10'], 'H-3 & H-2 lewat -> hanya H-1 + hari-H');
+  assert.match(daftar[0].pesan, /besok/);
 });
 
 test('multi-hari: BUKAN multi-hari ditolak', () => {
