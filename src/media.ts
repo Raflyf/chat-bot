@@ -742,7 +742,11 @@ async function processPdfViaGemini(
             }
           : undefined;
         if (tokens?.total) keyTokensUsed('gemini', key, tokens.total);
-        return { reply: sanitizeAssistantOutput(text), via: `gemini/${model}`, tokens };
+        // AUDIT 14 Okt 2026: dulu sanitizeAssistantOutput(text) dipanggil 1 argumen,
+        // sehingga SELURUH blok penegak `if (userPrompt)` (8 penegak: anti-konfabulasi,
+        // anti-bocor-instruksi, koreksi kemampuan, anti-game, frasa ngawur, template
+        // kosong, klaim lirik, klaim stiker) TIDAK PERNAH berjalan di jalur PDF ini.
+        return { reply: sanitizeAssistantOutput(text, prompt, undefined, true), via: `gemini/${model}`, tokens };
       }
     } catch (err) {
       console.warn(`[media] Gemini PDF [${model}] gagal:`, err);
@@ -804,7 +808,8 @@ async function processPdfViaOpenRouter(
             }
           : undefined;
         if (tokens?.total) keyTokensUsed('openrouter', key, tokens.total);
-        return { reply: sanitizeAssistantOutput(text), via: `openrouter/${config.models.orPrimary}`, tokens };
+        // AUDIT 14 Okt 2026: teruskan prompt agar penegak `if (userPrompt)` ikut berjalan.
+        return { reply: sanitizeAssistantOutput(text, prompt, undefined, true), via: `openrouter/${config.models.orPrimary}`, tokens };
       }
     } catch (err) {
       console.warn(`[media] OpenRouter PDF gagal:`, err);
@@ -1197,7 +1202,8 @@ export async function processIncomingDocument(
               visionRes.text,
               ctx?.chatId,
             );
-            return { reply: sanitizeAssistantOutput(lanjutan), via: `docx-vision/${visionRes.via}`, tokens: visionRes.tokens };
+            // AUDIT 14 Okt 2026: teruskan caption + tandai balasan media agar penegak berjalan.
+            return { reply: sanitizeAssistantOutput(lanjutan, caption, undefined, true), via: `docx-vision/${visionRes.via}`, tokens: visionRes.tokens };
           }
         } catch (err) {
           console.warn('[media] Analisis gambar .docx via vision gagal, lanjut teks saja:', err);

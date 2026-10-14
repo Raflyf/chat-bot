@@ -133,6 +133,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         return;
       }
 
+      // RATE LIMIT (audit 14 Okt 2026): endpoint PUBLIK ini memicu pengiriman
+      // email OTP. Tanpa batas di lapisan HTTP, penyerang bisa melakukan email
+      // bombing ke kotak masuk admin. (Throttle internal di admin_auth.ts bersifat
+      // in-memory per-instance sehingga bisa digilir antar-instance serverless.)
+      const rlSend = cekRateLimit(`otp-send:${clientIp}`, 5, 10 * 60_000);
+      if (!rlSend.boleh) {
+        res.setHeader('Retry-After', String(rlSend.resetDalamDetik));
+        res.status(429).json({
+          success: false,
+          message: `Terlalu banyak permintaan OTP. Coba lagi dalam ${rlSend.resetDalamDetik} detik.`,
+        });
+        return;
+      }
+
       const result = await sendOtp(clientIp);
       const statusCode = result.success ? 200 : result.retryAfterSeconds ? 429 : 500;
 
@@ -140,7 +154,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         success: result.success,
         message: result.message,
         expires_at: result.expiresAt,
-        target_email_masked: result.targetEmailMasked,
+        // KEAMANAN (audit 14 Okt 2026): `target_email_masked` TIDAK lagi dikirim
+        // di endpoint publik — 3 huruf awal + domain email admin cukup untuk
+        // phishing bertarget. Email hanya ditampilkan setelah login (get_auth_state
+        // dengan token sesi valid).
         retry_after_seconds: result.retryAfterSeconds,
       });
       return;
@@ -150,6 +167,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     if (action === 'verify_otp_and_reset_pin') {
       if (req.method !== 'POST') {
         res.status(405).json({ success: false, message: 'Method Not Allowed' });
+        return;
+      }
+
+      // RATE LIMIT (audit 14 Okt 2026): OTP hanya 6 digit (1 juta kombinasi).
+      // Tanpa batas di lapisan HTTP, brute-force bisa digilir antar-instance.
+      const rlVerif = cekRateLimit(`otp-verify:${clientIp}`, 10, 10 * 60_000);
+      if (!rlVerif.boleh) {
+        res.setHeader('Retry-After', String(rlVerif.resetDalamDetik));
+        res.status(429).json({
+          success: false,
+          message: `Terlalu banyak percobaan. Coba lagi dalam ${rlVerif.resetDalamDetik} detik.`,
+        });
         return;
       }
 
@@ -175,6 +204,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     if (action === 'update_pin') {
       if (req.method !== 'POST') {
         res.status(405).json({ success: false, message: 'Method Not Allowed' });
+        return;
+      }
+
+      // RATE LIMIT (audit 14 Okt 2026): endpoint ini menerima `current_pin` dan
+      // TIDAK butuh token sesi. Sebelumnya TANPA rate limit sama sekali — satu-
+      // satunya perlindungan adalah lockout global yang rentan lost-update.
+      // PIN hanya 6 digit, jadi ini jalur brute-force paling langsung.
+      const rlUpdate = cekRateLimit(`otp-update:${clientIp}`, 5, 10 * 60_000);
+      if (!rlUpdate.boleh) {
+        res.setHeader('Retry-After', String(rlUpdate.resetDalamDetik));
+        res.status(429).json({
+          success: false,
+          message: `Terlalu banyak percobaan. Coba lagi dalam ${rlUpdate.resetDalamDetik} detik.`,
+        });
         return;
       }
 

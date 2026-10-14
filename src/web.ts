@@ -137,6 +137,45 @@ export function isSafePublicUrl(urlString: string): boolean {
   }
 }
 
+/**
+ * `fetch` yang AMAN dari SSRF lewat REDIRECT.
+ *
+ * MASALAH YANG DIPECAHKAN (audit 14 Okt 2026):
+ *   `isSafePublicUrl()` hanya memvalidasi URL AWAL. Fetch dengan `redirect:'follow'`
+ *   (atau default) akan MENGIKUTI 3xx menuju target internal — URL publik yang
+ *   dikendalikan penyerang bisa mengalihkan ke `http://169.254.169.254/...`
+ *   (metadata cloud) atau IP privat, lalu isinya dikembalikan ke pemanggil.
+ *
+ * SOLUSI: `redirect:'manual'` + validasi ULANG setiap hop. Maksimum 5 hop
+ * (batas wajar; melebihi itu dianggap gagal). Setiap hop yang tidak lolos
+ * `isSafePublicUrl` -> fetch dibatalkan (mengembalikan Response 3xx terakhir
+ * supaya pemanggil tidak crash).
+ */
+export async function fetchAmanSsrf(
+  url: string,
+  init: RequestInit = {},
+  maxHop = 5,
+): Promise<Response> {
+  let target = url;
+  for (let hop = 0; hop <= maxHop; hop++) {
+    if (!isSafePublicUrl(target)) {
+      // Target (awal atau hasil redirect) TIDAK aman -> jangan diambil.
+      return new Response('', { status: 403, statusText: 'URL tidak aman (SSRF diblokir)' });
+    }
+    const res = await fetch(target, { ...init, redirect: 'manual' });
+    // 3xx dengan Location -> validasi hop berikutnya.
+    const isRedirect = res.status >= 300 && res.status < 400;
+    const lokasi = res.headers.get('location');
+    if (!isRedirect || !lokasi) return res;
+    try {
+      target = new URL(lokasi, target).toString();
+    } catch {
+      return new Response('', { status: 400, statusText: 'Location redirect tidak valid' });
+    }
+  }
+  return new Response('', { status: 508, statusText: 'Terlalu banyak redirect' });
+}
+
 /** Bersihkan entitas HTML dan tag */
 export function cleanStr(str: string): string {
   if (!str) return '';
@@ -341,7 +380,7 @@ export async function scrapeWebpage(url: string): Promise<string> {
   // hampir selalu berhasil karena koneksi sudah "hangat" (DNS+TLS tersimpan).
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(url, {
+      const res = await fetchAmanSsrf(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 FreeAIBot/2026',
           Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
@@ -2012,7 +2051,7 @@ export async function searchWeb(query: string, previousContext?: string): Promis
         const ctrl = new AbortController();
         const to = setTimeout(() => ctrl.abort(), 3000);
         try {
-          const r = await fetch(u, {
+          const r = await fetchAmanSsrf(u, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
             signal: ctrl.signal,
           });

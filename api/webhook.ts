@@ -58,6 +58,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   } catch (err) {
     log.error('[webhook] Error processing update', { error: String((err as Error)?.message ?? err) });
     // Selalu kembalikan 200 ke Telegram agar tidak terjadi Retry Storm
-    res.status(200).json({ ok: false, error: 'Internal Error' });
+    // AUDIT 14 Okt 2026: JANGAN balas 200 saat GAGAL — Telegram hanya mengirim
+    // ulang bila menerima status NON-2xx. Balasan 200 = pesan hilang permanen.
+    res.status(500).json({ ok: false, error: 'Internal Error' });
   }
 }

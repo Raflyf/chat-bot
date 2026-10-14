@@ -247,9 +247,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  // Ambil IP (Vercel menyediakan x-forwarded-for)
+  // Ambil IP (Vercel menyediakan x-forwarded-for).
+  //
+  // PERBAIKAN AUDIT 14 Okt 2026: sebelumnya memakai entri PERTAMA `x-forwarded-for`,
+  // padahal entri itu DIKENDALIKAN KLIEN (bisa disisipkan). Penyerang cukup mengirim
+  // header berbeda tiap request untuk melewati rate-limit 5 laporan/10 menit ->
+  // spam laporan + email bombing pemilik. Entri TERAKHIR adalah satu-satunya yang
+  // ditambahkan proxy kita sendiri sehingga tidak bisa dipalsukan.
+  // Disamakan dengan `getClientIp()` di src/admin_auth.ts.
   const fwd = req.headers['x-forwarded-for'];
-  const ip = (Array.isArray(fwd) ? fwd[0] : fwd || '').split(',')[0].trim() || 'tanpa-ip';
+  const fwdStr = Array.isArray(fwd) ? fwd.join(',') : (fwd || '');
+  const bagian = fwdStr.split(',').map((s) => s.trim()).filter(Boolean);
+  const vercelFwd = req.headers['x-vercel-forwarded-for'];
+  const ip = String(
+    (Array.isArray(vercelFwd) ? vercelFwd[0] : vercelFwd) || bagian[bagian.length - 1] || '',
+  ).trim() || 'tanpa-ip';
   if (!lolosRateLimit(ip)) {
     res.status(429).json({ ok: false, error: 'Terlalu banyak laporan. Coba lagi beberapa menit lagi ya.' });
     return;

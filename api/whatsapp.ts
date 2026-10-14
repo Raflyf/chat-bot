@@ -88,6 +88,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     res.status(200).json({ ok: true });
   } catch (err) {
     logError('[api/whatsapp] Error saat memproses pesan WhatsApp', { error: String((err as Error)?.message ?? err) });
-    res.status(200).json({ ok: false, error: 'Internal Error' });
+    // AUDIT 14 Okt 2026: JANGAN balas 200 saat GAGAL. Meta hanya mengirim ulang
+    // webhook bila menerima status NON-2xx. Balasan 200 membuat pesan yang gagal
+    // diproses HILANG PERMANEN tanpa retry (mis. saat DB sedang down).
+    res.status(500).json({ ok: false, error: 'Internal Error' });
   }
 }
