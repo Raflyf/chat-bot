@@ -173,12 +173,45 @@ export function parseNominal(teks: string): number | null {
   //
   // SEKARANG: ambil SEMUA angka lalu pilih yang PALING BESAR & wajar sebagai
   // nominal uang (tanggal/jam kecil akan kalah).
+  //
+  // ── PERBAIKAN AUDIT 14 Okt 2026: BUANG nomor HP / nomor rekening ──
+  // BUKTI NYATA sebelum perbaikan:
+  //   "tf 100000 ke 08123456789"            -> 8123456789   (8 MILIAR!)
+  //   "bayar kos 500000 no rek 1234567890"  -> 1234567890
+  //   "beli pulsa 25000 nomor 628123456789" -> 628123456789
+  // Sebab: kandidat ">= 1000" dipilih dengan Math.max(), sehingga nomor
+  // telepon/rekening yang lebih panjang selalu menang atas nominal asli.
+  const KONTEKS_NOMOR = /\b(?:no|nomor|nomer|rek|rekening|hp|wa|telp|telpon|telepon|akun|va|dana|ovo|gopay|shopeepay)\b/i;
+  const adaKonteksNomor = KONTEKS_NOMOR.test(s2);
+
   const semuaAngka = [...s2.matchAll(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?/g)]
     .map((mm) => {
       const bersihA = mm[1].replace(/\./g, '');
       return { n: Number(bersihA), mentah: mm[1] };
     })
-    .filter((x) => Number.isFinite(x.n) && x.n > 0);
+    .filter((x) => Number.isFinite(x.n) && x.n > 0)
+    .filter((x) => {
+      const punyaPemisah = /\./.test(x.mentah); // 2.550.000 -> jelas nominal uang
+      if (punyaPemisah) return true;
+      const digit = x.mentah; // tanpa pemisah
+      // Nomor HP Indonesia berawalan 0 (0812xxxxxxx, 11-13 digit).
+      if (/^0\d{9,}$/.test(digit)) return false;
+      // Nomor HP dengan kode negara Indonesia (62812xxxxxxx, 11-14 digit).
+      if (/^62\d{9,}$/.test(digit)) return false;
+      // Nomor sangat panjang (>= 13 digit) -> bukan nominal wajar.
+      if (digit.length >= 13) return false;
+      // Angka >= 10 digit TANPA pemisah ribuan DAN ada kata "nomor/rek/akun"
+      // di kalimat -> hampir pasti nomor rekening, bukan uang.
+      if (adaKonteksNomor && digit.length >= 10) return false;
+      // Angka >= 10 digit yang muncul SETELAH "ke/kepada/untuk" -> tujuan
+      // transfer (nomor rekening/HP), bukan nominal.
+      // Contoh: "transfer ke 1234567890 sebesar 250000" -> 250000 (bukan 1234567890).
+      if (digit.length >= 10) {
+        const tujuan = new RegExp(`\\b(?:ke|kepada|untuk|kirim\\s+ke)\\s+${digit}\\b`);
+        if (tujuan.test(s2)) return false;
+      }
+      return true;
+    });
 
   if (semuaAngka.length === 0) return null;
 
@@ -1299,37 +1332,79 @@ const KATA_PERINTAH_UTAMA =
     else if (kataMasuk && kataKeluar) kind = 'out'; // keduanya -> anggap pengeluaran (lebih umum)
     else kind = 'out'; // ambigu tanpa penanda: default pengeluaran (perilaku lama)
 
-    // ── MULTI-ITEM (perbaikan 06 Okt 2026) ──
+    // ── MULTI-ITEM (perbaikan 06 Okt 2026, diperkuat audit 14 Okt 2026) ──
     // LAPORAN PEMILIK PRODUK: "Pengeluaran: Bayar Nopal 60rb / Bayar Faisa 50rb /
     // Beli rokok + susu + kue + esteh 75rb" -> hanya Rp60.000 yang dicatat,
     // dua item lain HILANG. Padahal user menulis BEBERAPA baris sekaligus.
     //
     // SEKARANG: pesan dipecah per BARIS (atau per pemisah ";" / " lalu "), dan
     // setiap baris yang punya nominal disimpan sebagai catatan keuangan TERPISAH.
+    //
+    // ── PERBAIKAN AUDIT 14 Okt 2026: `kind` dihitung PER-ITEM ──
+    // BUG LAMA: satu nilai `kind` dihitung dari SELURUH pesan lalu diterapkan ke
+    // SEMUA item. BUKTI:
+    //   "catat: pendapatan 5 juta, pengeluaran 2 juta"
+    //     -> [{5jt, kind:'out'}, {2jt, kind:'out'}]   (pemasukan jadi PENGELUARAN)
+    //   "gaji 5 juta, kosan 500rb"
+    //     -> [{5jt, kind:'in'}, {500rb, kind:'in'}]   (pengeluaran jadi PEMASUKAN)
+    // Rekap jadi salah total. Kini tiap item dinilai dari TEKSNYA SENDIRI.
+    // Daftar kata DISELARASKAN dengan `adaKataMasukKuat`/`adaKataKeluarKuat` di
+    // atas (audit 14 Okt 2026: "Tunjangan" sempat tidak dikenali sebagai pemasukan
+    // sehingga header "Pendapatan:" menghasilkan item kind='out').
+    const kataMasukItem = /\b(?:masuk|masukan|gaji|gajian|gajinya|gajiannya|tunjangan|bonus|bonusan|thr|dapat|dapet|diterima|terima|menerima|pemasukan|pendapatan|penghasilan|income|honor|fee|cair|komisi|cashback|refund|warisan|hadiah|untung|laba|profit)\b/i;
+    const kataKeluarItem = /\b(?:beli|bayar|bayarin|jajan|ongkos|biaya|habis|abis|keluar|pengeluaran|belanja|belanjaan|topup|top-up|pulsa|kuota|token|sewa|kos|kosan|kontrakan|utang|hutang|cicilan|parkir|bensin|tagihan|kirim|transfer|tf)\b/i;
+    const kindPerItem = (teks: string): ExpenseKind => {
+      const m = kataMasukItem.test(teks);
+      const k = kataKeluarItem.test(teks);
+      if (m && !k) return 'in';
+      return 'out'; // keluar, keduanya, atau ambigu -> pengeluaran (perilaku lama)
+    };
+
     const barisItems = pecahItemKeuangan(asli);
     if (barisItems.length > 1) {
-      const total = barisItems.reduce((a, b) => a + b.nominal, 0);
+      // Hitung kind per item, lalu BUANG item pemasukan yang hanya INFORMASI
+      // (tanpa permintaan catat eksplisit & tanpa header jenis). Aturan keras
+      // pemilik produk: pemasukan HANYA dicatat bila user meminta.
+      const bolehCatatPemasukan = adaPermintaanCatatEksplisit || adaHeaderJenis;
+      const items = barisItems
+        .map((it) => ({
+          amount: it.nominal,
+          kind: kindPerItem(it.teks),
+          category: tebakKategori(it.teks),
+          note: it.teks,
+        }))
+        .filter((it) => it.kind === 'out' || bolehCatatPemasukan);
+
+      if (items.length === 0) {
+        // Semua item hanyalah informasi pendapatan -> jangan dicatat.
+        return null;
+      }
+
+      const total = items.reduce((a, b) => a + b.amount, 0);
+      const adaMasuk = items.some((it) => it.kind === 'in');
+      const adaKeluar = items.some((it) => it.kind === 'out');
       return {
         kind: 'expense',
         yakin: 0.93,
         data: {
-          amount: barisItems[0].nominal,
-          kind,
-          category: tebakKategori(barisItems[0].teks),
-          note: barisItems[0].teks,
+          amount: items[0].amount,
+          kind: items[0].kind,
+          category: items[0].category,
+          note: items[0].note,
           // Daftar lengkap untuk disimpan sebagai beberapa baris.
-          items: barisItems.map((it) => ({
-            amount: it.nominal,
-            kind,
-            category: tebakKategori(it.teks),
-            note: it.teks,
-          })),
+          items,
         },
         ringkas:
-          `${kind === 'in' ? 'Pemasukan' : 'Pengeluaran'} ${barisItems.length} item ` +
+          `${adaMasuk && adaKeluar ? 'Catatan' : adaMasuk ? 'Pemasukan' : 'Pengeluaran'} ${items.length} item ` +
           `(total Rp${total.toLocaleString('id-ID')}): ` +
-          barisItems.map((it) => `Rp${it.nominal.toLocaleString('id-ID')}`).join(' + '),
+          items.map((it) => `${it.kind === 'in' ? '+' : '-'}Rp${it.amount.toLocaleString('id-ID')}`).join(' + '),
       };
+    }
+
+    // Jalur SATU item: bila hasilnya PEMASUKAN tetapi user tidak meminta catat
+    // (dan tidak ada header jenis), itu hanya INFORMASI -> jangan dicatat.
+    if (kind === 'in' && !adaPermintaanCatatEksplisit && !adaHeaderJenis) {
+      return null;
     }
 
     return {

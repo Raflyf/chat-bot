@@ -210,10 +210,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // Dijalankan tanpa `await` (fire-and-forget) agar TIDAK menambah latensi balasan.
   void (async () => {
     try {
-      await checkDueReminders(async (chatId, text, platform) => {
-        if (platform === 'telegram') return; // Telegram ditangani cron/worker terpisah
-        await sendWhatsAppCloudMessageSafe(nomorWhatsApp(String(chatId)), text);
-      });
+      // HANYA platform 'whatsapp' — pengingat Telegram dibiarkan `pending`
+      // untuk cron/worker Telegram (lihat catatan di checkDueReminders).
+      await checkDueReminders(async (chatId, text) => {
+        // WAJIB `return`: tanpa ini kegagalan kirim dianggap sukses (audit 14 Okt 2026).
+        return await sendWhatsAppCloudMessageSafe(nomorWhatsApp(String(chatId)), text);
+      }, 'whatsapp');
     } catch (err) {
       console.warn('[remind] Lazy-check gagal:', String((err as Error)?.message ?? err).slice(0, 120));
     }

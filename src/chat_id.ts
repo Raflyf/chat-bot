@@ -16,9 +16,22 @@
  *   ngawur karena pengingat tersimpan di chat_id yang berbeda dari percakapan.
  *
  * ATURAN (ditetapkan di sini agar TIDAK terulang):
- *   - WhatsApp : SELALU berawalan "wa_"  -> "wa_628991333323"
- *   - Telegram : angka apa adanya (konsisten dengan String(chat.id)) -> "1073504871"
+ *   - SEMUA id numerik (WhatsApp MAUPUN Telegram) -> berawalan "wa_"
+ *     WhatsApp : "wa_628991333323"
+ *     Telegram : "wa_1073504871"
  *   - Kunci non-nomor (mis. "tz_b865", fixture test) dibiarkan apa adanya.
+ *
+ * KOREKSI 14 Okt 2026 (audit menyeluruh):
+ *   Sebelumnya Telegram dibiarkan TELANJANG ("1073504871"). Itu BERTENTANGAN
+ *   dengan kenyataan data produksi: seluruh tabel menyimpan Telegram sebagai
+ *   "wa_1073504871" (dihasilkan jalur tanpa-platform, mis. getContext di
+ *   memory.ts:80, lalu diteruskan saveMessage). Akibatnya jalur TULIS yang
+ *   menyertakan platform='telegram' (simpanUang/simpanCatatan/simpanTugas di
+ *   notes.ts) menulis chat_id BERBEDA dari yang dicari jalur BACA tanpa
+ *   platform -> data tersimpan tetapi tidak pernah ditemukan.
+ *   Dibuktikan dengan uji langsung + query DB (messages platform=telegram
+ *   tersimpan "wa_1073504871", 0 baris telanjang di seluruh tabel).
+ *   Prefix "wa_" kini dipakai untuk SEMUA id numerik supaya TULIS == BACA.
  *
  * PENTING: normalisasi HANYA untuk PENYIMPANAN. Saat MENGIRIM ke Meta WhatsApp,
  * prefix "wa_" harus dibuang — pakai `nomorWhatsApp()`.
@@ -43,15 +56,14 @@ export function normChatId(chatId: string, platform?: string): string {
 
   const plat = String(platform ?? '').toLowerCase();
 
-  // Telegram: biarkan angka apa adanya.
-  if (plat === 'telegram') return id;
-
-  // WhatsApp: nomor telanjang -> beri prefix "wa_".
-  if (plat === 'whatsapp' && nomorTelanjang(id)) {
-    return `wa_${id.replace(/^\+/, '')}`;
+  // WhatsApp & Telegram: id numerik -> prefix "wa_" (SAMA dengan jalur tanpa
+  // platform, supaya TULIS dan BACA selalu menemukan chat_id yang identik).
+  if (plat === 'whatsapp' || plat === 'telegram') {
+    if (nomorTelanjang(id)) return `wa_${id.replace(/^\+/, '')}`;
+    return id;
   }
 
-  // Platform tidak diketahui: nomor telanjang -> anggap WhatsApp (mayoritas).
+  // Platform tidak diketahui: nomor telanjang -> prefix "wa_" (mayoritas).
   if (!plat && nomorTelanjang(id)) return `wa_${id.replace(/^\+/, '')}`;
 
   return id;

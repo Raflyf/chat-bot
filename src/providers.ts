@@ -3,6 +3,9 @@ import { config } from './env.js';
 import { cooldownMemori, setCooldown, hapusCooldown, mulaiHidrasiLatar } from './cooldown.js';
 import { hitungNeuron } from './neuron.js';
 import { isKeyAllowed, keyUsed, keyTokensUsed, keyTokensUsedToday, keyRequestsUsedToday, keyTokenAbsolute, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
+// redactUrl: WAJIB dipakai setiap mencetak URL upstream — Gemini menaruh API key
+// di query string, jadi URL mentah membocorkan kredensial ke log (audit 14 Okt 2026).
+import { redactUrl, redactSecret } from './logger.js';
 // (xKiro DIHAPUS 04 Okt 2026 — semua akun disuspend permanen 403)
 
 // --- CIRCUIT BREAKER & ADAPTIVE KEY ROUTING (LATENCY OPTIMIZER) ---
@@ -448,7 +451,7 @@ async function fetchJsonWithLifecycle(
   }
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    console.warn(`[providers] Upstream error dari ${url}: status=${res.status}, body=${errBody.slice(0, 300)}`);
+    console.warn(`[providers] Upstream error dari ${redactUrl(url)}: status=${res.status}, body=${redactUrl(errBody.slice(0, 300))}`);
     throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 300)}`);
   }
 
@@ -571,7 +574,7 @@ async function streamSse(
     }
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      console.warn(`[providers] Upstream error dari ${url}: status=${res.status}, body=${errBody.slice(0, 300)}`);
+      console.warn(`[providers] Upstream error dari ${redactUrl(url)}: status=${res.status}, body=${redactUrl(errBody.slice(0, 300))}`);
       throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 300)}`);
     }
     if (!res.body) throw new Error('NO_STREAM_BODY');
@@ -2032,7 +2035,7 @@ export async function chat(
         } catch (e) {
           lastError = e instanceof Error ? e.message : 'UNKNOWN';
           recordKeyFailure(step.kind, key, e);
-          console.warn(`[providers] Kegagalan key pada ${step.kind}/${model} (key: ${key.slice(0, 10)}...): ${lastError}. Mencoba key berikutnya...`);
+          console.warn(`[providers] Kegagalan key pada ${step.kind}/${model} (key: ${redactSecret(key)}): ${redactUrl(lastError)}. Mencoba key berikutnya...`);
 
           // FASE 1 timeout: model TIDAK merespon sama sekali dalam batas singkat.
           //

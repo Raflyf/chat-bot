@@ -84,3 +84,45 @@ export function withContext(ctx: LogContext): Logger {
   };
 }
 
+/**
+ * Buang kredensial dari string/URL SEBELUM dicetak ke log.
+ *
+ * MASALAH YANG DIPECAHKAN (audit 14 Okt 2026):
+ *   Gemini menaruh API key di QUERY STRING
+ *   (`...:streamGenerateContent?alt=sse&key=AIza...`). Saat upstream membalas
+ *   error non-429, `console.warn` di providers.ts mencetak URL tersebut UTUH ->
+ *   API key bocor ke log Vercel. Selain itu ada log yang mencetak
+ *   `key.slice(0,10)` (10 karakter pertama key).
+ *
+ * ATURAN: SETIAP kali mencetak URL / header / pesan error dari upstream,
+ * WAJIB lewatkan dulu ke fungsi ini.
+ *
+ * @example
+ *   console.warn(`Upstream error dari ${redactUrl(url)}`);
+ *   // -> "Upstream error dari https://...?alt=sse&key=[REDACTED]"
+ */
+export function redactUrl(input: unknown): string {
+  return String(input ?? '')
+    // key/token di query string (?key=... / &token=...)
+    .replace(
+      /([?&](?:key|api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password|sig|signature)=)[^&\s'"]+/gi,
+      '$1[REDACTED]',
+    )
+    // Authorization: Bearer <token>
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, '$1[REDACTED]')
+    // Bentuk key yang lazim (sk-..., gsk_..., AIza..., sk_live_...)
+    .replace(/\b(?:sk|gsk|pk|rk)[-_][A-Za-z0-9_-]{6,}/g, '[REDACTED]')
+    .replace(/\bAIza[A-Za-z0-9_-]{10,}/g, '[REDACTED]');
+}
+
+/**
+ * Sembunyikan nilai rahasia apa pun menjadi bentuk aman untuk log
+ * (hanya 4 karakter terakhir yang ditampilkan).
+ */
+export function redactSecret(input: unknown): string {
+  const s = String(input ?? '');
+  if (!s) return '';
+  if (s.length <= 4) return '[REDACTED]';
+  return `…${s.slice(-4)}`;
+}
+

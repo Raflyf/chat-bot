@@ -281,6 +281,20 @@ async function zonaWaktuChat(chatId: string): Promise<string> {
 
 export async function checkDueReminders(
   sendFn: (chatId: string, text: string, platform?: 'telegram' | 'whatsapp') => Promise<unknown>,
+  /**
+   * Batasi HANYA pengingat platform ini (opsional).
+   *
+   * KENAPA ADA (temuan audit 14 Okt 2026):
+   *   Lazy-check di `whatsapp_cloud.ts` / `whatsapp_baileys.ts` hanya bisa
+   *   mengirim WhatsApp. Sebelumnya mereka ikut MENGAMBIL pengingat Telegram
+   *   lalu "melewatinya" (`return` tanpa nilai) — dan karena nilai balik
+   *   `undefined` tidak sama dengan `false`, checkDueReminders menganggapnya
+   *   SUKSES -> status 'sent' + jadwal berulang dimajukan -> PENGINGAT
+   *   TELEGRAM HILANG PERMANEN tanpa pernah dikirim.
+   *   Dengan filter ini, tiap pengirim hanya memproses platform yang benar-benar
+   *   bisa ia kirim; sisanya dibiarkan `pending` untuk cron/worker.
+   */
+  platformFilter?: 'whatsapp' | 'telegram',
 ): Promise<number> {
   const c = db();
   if (!c) return 0;
@@ -398,6 +412,17 @@ export async function checkDueReminders(
     }
 
     if (error || !data || data.length === 0) return 0;
+
+    // Batasi ke platform yang bisa dikirim oleh pemanggil (bila diminta).
+    // Baris tanpa platform (data lama) DIBIARKAN agar fallback routing tetap
+    // berjalan — sama seperti perilaku `api/cron/reminders.ts`.
+    if (platformFilter) {
+      data = data.filter((r) => {
+        const p = String((r as { platform?: string }).platform ?? '').toLowerCase();
+        return p === platformFilter || p === '';
+      });
+      if (data.length === 0) return 0;
+    }
 
     let processed = 0;
     for (const itemRaw of data) {
@@ -641,19 +666,26 @@ export function startReminderWorker(
   if (config.isServerless || workerInterval) return;
   workerInterval = setInterval(() => {
     void checkDueReminders(async (chatId, text, platform) => {
+      // WAJIB mengembalikan status: checkDueReminders menganggap kirim GAGAL
+      // hanya bila nilai balik === false (audit 14 Okt 2026).
       if (platform === 'whatsapp') {
-        if (sendWhatsApp) {
-          // chat_id dari DB bisa berprefix "wa_" -> kirim nomor TELANJANG ke Meta.
-          await sendWhatsApp(nomorWhatsApp(chatId), text);
-        } else {
+        if (!sendWhatsApp) {
           console.warn(`[remind] Reminder WhatsApp dilewati (tanpa sender WA): ${chatId}`);
+          return false; // JANGAN tandai terkirim — biar cron yang mengirim
         }
-        return;
+        // chat_id dari DB bisa berprefix "wa_" -> kirim nomor TELANJANG ke Meta.
+        return await sendWhatsApp(nomorWhatsApp(chatId), text);
       }
       // Telegram (atau platform belum tercatat): kirim via bot Telegram.
       // Bersihkan prefix "wa_"/"tg_" dulu — kalau tidak, Number() menjadi NaN
       // dan pengiriman GAGAL (temuan audit universal 09 Okt 2026).
-      await bot.sendMessage(Number(String(chatId).replace(/^(?:wa_|tg_)/, '')), text);
+      try {
+        await bot.sendMessage(Number(String(chatId).replace(/^(?:wa_|tg_)/, '')), text);
+        return true;
+      } catch (e) {
+        console.error('[remind] gagal kirim telegram:', e);
+        return false;
+      }
     });
   }, 30_000);
 }

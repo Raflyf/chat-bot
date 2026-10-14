@@ -5177,6 +5177,37 @@ export async function describeImage(
       if (!reply) console.warn('[skills] Bot mengaku tidak bisa membaca teks stiker — diregenerasi.');
     }
 
+    // ── REGENERASI KEDUA (audit 14 Okt 2026) ──
+    // MASALAH: blok regenerasi di atas (baris ~5062) berjalan SEBELUM penegak
+    // stiker. Bila salah satu penegak (prompt-echo / tanya-balik / meta-menyerah
+    // / mengaku-tak-bisa-baca) MENGOSONGKAN `reply`, tidak ada regenerasi lagi —
+    // sehingga yang terkirim hanya emoji user atau pesan KOSONG. Itu melanggar
+    // aturan keras pemilik produk: "jangan menghardcode jawaban respon bot" —
+    // bila penegak mengosongkan, WAJIB dibangkitkan ulang oleh AI.
+    if (isSticker && !reply.trim()) {
+      try {
+        const regen2 = await autoReply(
+          `Respon 1 celetukan pendek maksimal 12 kata untuk stiker ${caption?.trim() ? `ber-emoji ${caption.trim()} ` : ''}ini, selaras obrolan terakhir dengan gayamu sendiri. Jangan menyalin instruksi.`,
+          ctx,
+          null,
+        );
+        const teks2 = String(regen2.reply || '').trim();
+        // Terima hanya bila hasilnya BUKAN narasi media dan BUKAN prompt-echo.
+        if (
+          teks2 &&
+          !MEDIA_NARRATION_RE.test(teks2) &&
+          !echoInstruksi.test(teks2) &&
+          !tanyaBalikStiker.test(teks2) &&
+          !metaMenyerah.test(teks2)
+        ) {
+          reply = teks2;
+          console.warn('[skills] Balasan stiker kosong setelah penegak — diregenerasi AI (aturan anti-hardcode).');
+        }
+      } catch {
+        // biarkan kosong; caller punya fallback sendiri
+      }
+    }
+
     // ── 2. DIPERBAIKI (06 Okt 2026) ──
     // BUG: dulu balasan stiker DIPOTONG ke kalimat PERTAMA saja + maksimal 120
     // karakter. Akibatnya balasan yang wajar (mis. menyebutkan isi tulisan stiker)

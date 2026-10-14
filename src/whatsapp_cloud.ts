@@ -9,7 +9,7 @@ import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStic
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
-import { saveReminderToDb, checkDueReminders } from './remind.js';
+import { saveReminderToDb, checkDueReminders, nomorWhatsApp } from './remind.js';
 import { tanganiPencatatan } from './notes.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
 import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
@@ -329,11 +329,16 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
   //   3. startReminderWorker (bila bot dijalankan lokal)
   void (async () => {
     try {
-      await checkDueReminders(async (chatId, text, platform) => {
-        if (platform === 'telegram') return; // Telegram ditangani webhook-nya sendiri
-        const cleanTo = String(chatId).replace(/@.*$/, '').replace(/^\+/, '');
-        await sendWhatsAppCloudMessageSafe(cleanTo, text);
-      });
+      // HANYA platform 'whatsapp' — pengingat Telegram DIBIARKAN `pending`
+      // untuk cron/worker Telegram (dulu ikut diambil lalu "dilewati", sehingga
+      // dianggap sukses dan hilang permanen).
+      await checkDueReminders(async (chatId, text) => {
+        // WAJIB `return`: nilai balik dipakai checkDueReminders untuk menentukan
+        // sukses/gagal. Tanpa ini, kegagalan kirim dianggap sukses (audit 14 Okt 2026).
+        // nomorWhatsApp() membuang prefix "wa_" + "@s.whatsapp.net" — Meta MENOLAK
+        // nomor berprefix.
+        return await sendWhatsAppCloudMessageSafe(nomorWhatsApp(String(chatId)), text);
+      }, 'whatsapp');
     } catch (err) {
       console.warn('[remind] Lazy-check gagal:', String((err as Error)?.message ?? err).slice(0, 120));
     }

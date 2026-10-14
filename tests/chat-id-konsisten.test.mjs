@@ -31,9 +31,30 @@ test('chat_id: WhatsApp SELALU berprefix wa_', () => {
   assert.equal(normChatId('628991333323', 'whatsapp'), 'wa_628991333323');
 });
 
-test('chat_id: Telegram dibiarkan angka apa adanya', () => {
-  assert.equal(normChatId('1073504871', 'telegram'), '1073504871');
-  assert.equal(normChatId('-1001234567890', 'telegram'), '-1001234567890');
+test('chat_id: Telegram JUGA berprefix wa_ (selaras data produksi)', () => {
+  // KOREKSI 14 Okt 2026: sebelumnya Telegram dibiarkan telanjang, tetapi data
+  // produksi menyimpan Telegram sebagai "wa_<id>" (jalur tanpa-platform di
+  // getContext). Akibatnya TULIS (platform='telegram') != BACA (tanpa platform)
+  // -> data tersimpan tapi tak pernah ditemukan. Kini keduanya "wa_".
+  assert.equal(normChatId('1073504871', 'telegram'), 'wa_1073504871');
+  assert.equal(normChatId('wa_1073504871', 'telegram'), 'wa_1073504871');
+  assert.equal(normChatId('1073504871'), 'wa_1073504871', 'BACA (tanpa platform) harus SAMA dgn TULIS');
+  // Grup Telegram (id negatif) juga diberi prefix agar konsisten.
+  assert.equal(normChatId('-1001234567890', 'telegram'), 'wa_-1001234567890');
+  assert.equal(normChatId('-1001234567890'), 'wa_-1001234567890', 'grup: TULIS == BACA');
+});
+
+test('chat_id: TULIS == BACA untuk SEMUA platform (anti-regresi)', () => {
+  // Inti bug 14 Okt 2026: jalur tulis menyertakan platform, jalur baca tidak.
+  // Keduanya WAJIB menghasilkan string yang sama untuk id apa pun.
+  const ids = ['1073504871', '-1001234567890', '628991333323', '+628991333323', 'wa_628991333323', 'tz_b865'];
+  for (const id of ids) {
+    const tulisWa = normChatId(id, 'whatsapp');
+    const tulisTg = normChatId(id, 'telegram');
+    const baca = normChatId(id);
+    assert.equal(tulisWa, baca, `WhatsApp: tulis(${id}) harus == baca(${id})`);
+    assert.equal(tulisTg, baca, `Telegram: tulis(${id}) harus == baca(${id})`);
+  }
 });
 
 test('chat_id: kunci non-nomor dibiarkan (fixture test)', () => {

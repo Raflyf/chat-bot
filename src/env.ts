@@ -311,10 +311,11 @@ export const config = {
   resendApiKey: cleanStr('RESEND_API_KEY'),
   resendFrom: cleanStr('RESEND_FROM') || 'ChatBot Security <notifications@resend.dev>',
   adminEmail: cleanStr('ADMIN_EMAIL'),
-  // PERBAIKAN KEAMANAN (06 Okt 2026): DULU ada fallback hardcoded
-  // 'rafly_telemetry_salt' yang bisa dibaca siapa pun dari repo publik.
-  // SEKARANG kosong bila tidak diset — admin_auth.ts akan menolak verifikasi
-  // (fail-closed) atau menurunkan salt dari SUPABASE_SERVICE_KEY.
+  // PERBAIKAN KEAMANAN (06 Okt 2026, diperkuat 14 Okt 2026): DULU ada fallback
+  // salt hardcoded yang bisa dibaca siapa pun dari repo publik (namanya sengaja
+  // tidak ditulis lagi di sini). SEKARANG kosong bila tidak diset — admin_auth.ts
+  // akan menolak verifikasi (fail-closed) atau menurunkan salt dari
+  // SUPABASE_SERVICE_KEY. Salt legacy opsional lewat env LEGACY_PIN_SALTS.
   pinSalt: cleanStr('PIN_SALT'),
   adminPin: cleanStr('ADMIN_PIN'),
 };

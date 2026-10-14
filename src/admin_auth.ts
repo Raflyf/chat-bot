@@ -29,11 +29,11 @@ export interface AdminAuthConfig {
 
 const ENV_PIN = config.adminPin || '';
 
-// ── PERBAIKAN KEAMANAN (06 Okt 2026) ──
-// TEMUAN AUDIT: sebelumnya ada SALT HARDCODED ('rafly_telemetry_salt',
-// 'agentkit_runtime_internal_salt') sebagai fallback bila PIN_SALT tidak diset.
-// Karena repositori ini publik, string tersebut bisa dibaca siapa pun ->
-// penyerang bisa memakai salt yang sama untuk memecahkan hash PIN.
+// ── PERBAIKAN KEAMANAN (06 Okt 2026, diperkuat 14 Okt 2026) ──
+// TEMUAN AUDIT: sebelumnya ada SALT HARDCODED sebagai fallback bila PIN_SALT
+// tidak diset. Karena repositori ini publik, string tersebut bisa dibaca siapa
+// pun -> penyerang bisa memakai salt yang sama untuk memecahkan hash PIN.
+// (Nama salt-nya TIDAK ditulis di sini — menyebutkannya sama bocornya.)
 //
 // SEKARANG (fail-closed): bila PIN_SALT tidak diset DAN tidak ada cara lain
 // memperoleh salt yang aman, sistem MENOLAK verifikasi (bukan memakai salt
@@ -53,12 +53,32 @@ const PIN_SALT = CANONICAL_SALT;
 
 /** Apakah salt aman tersedia? Bila tidak, verifikasi PIN DITOLAK. */
 
-// Salt legacy yang HARUS tetap didukung agar PIN lama tidak terkunci.
-// (Dipakai HANYA untuk mencocokkan hash lama, tidak untuk membuat hash baru.)
-const LEGACY_SALTS = [
-  'rafly_telemetry_salt',
-  'agentkit_runtime_internal_salt',
-];
+/**
+ * Salt legacy — DIPINDAH KE ENVIRONMENT VARIABLE (perbaikan audit 14 Okt 2026).
+ *
+ * MASALAH YANG DIPERBAIKI:
+ *   Sebelumnya DUA STRING SALT DITULIS LANGSUNG DI KODE sebagai fallback bila
+ *   PIN_SALT tidak diset. Karena repositori ini PUBLIK, siapa pun bisa
+ *   membacanya. PIN admin hanya 6 digit (1 juta kombinasi); bila hash SHA-256
+ *   lama bocor (backup/DB), salt publik membuatnya bisa dipecahkan OFFLINE
+ *   dalam hitungan detik — sehingga hardening scrypt jadi sia-sia. Salt publik
+ *   juga memungkinkan pemalsuan token HMAC lama bila pinHash diketahui.
+ *   (Nama salt-nya SENGAJA TIDAK ditulis lagi di sini — lihat riwayat git bila
+ *   benar-benar perlu; menyebutkannya di repo publik sama bocornya.)
+ *
+ * SEKARANG (fail-safe):
+ *   - Salt legacy dibaca dari ENV `LEGACY_PIN_SALTS` (pisahkan dengan koma).
+ *   - Bila env TIDAK diset -> daftar KOSONG -> hanya CANONICAL_SALT yang dipakai.
+ *     Konsekuensi: PIN/token lama yang memakai salt legacy TIDAK bisa masuk lagi
+ *     (harus reset PIN). Itu memang perilaku yang diinginkan: lebih baik
+ *     memaksa reset daripada mempertahankan kredensial yang salt-nya publik.
+ *   - Untuk migrasi sementara, set `LEGACY_PIN_SALTS=<salt1>,<salt2>` di server
+ *     (RAHASIA, tidak di repo), lalu HAPUS setelah semua PIN direset.
+ */
+const LEGACY_SALTS: string[] = String(process.env.LEGACY_PIN_SALTS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // Kandidat salt untuk MEMVERIFIKASI token HMAC lama (backward-compat).
 // Token yang dibuat saat PIN_SALT belum ada memakai salt legacy; tanpa daftar

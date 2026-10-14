@@ -32,9 +32,13 @@ const REMIND = fs.readFileSync(new URL('../src/remind.ts', import.meta.url), 'ut
 test('chat_id: WhatsApp SELALU berprefix wa_ (konsisten dengan messages)', () => {
   assert.equal(normChatId('628991333323', 'whatsapp'), 'wa_628991333323');
   assert.equal(normChatId('wa_628991333323', 'whatsapp'), 'wa_628991333323');
-  // Telegram dibiarkan (messages memang memakai String(chat.id)).
-  assert.equal(normChatId('1073504871', 'telegram'), '1073504871');
-  assert.equal(normChatId('-1001234567890', 'telegram'), '-1001234567890');
+  // Telegram JUGA berprefix "wa_" (koreksi audit 14 Okt 2026): data produksi
+  // menyimpan Telegram sebagai "wa_<id>" lewat jalur tanpa-platform
+  // (getContext), sehingga jalur TULIS ber-platform harus menghasilkan bentuk
+  // yang SAMA supaya data bisa ditemukan kembali.
+  assert.equal(normChatId('1073504871', 'telegram'), 'wa_1073504871');
+  assert.equal(normChatId('-1001234567890', 'telegram'), 'wa_-1001234567890');
+  assert.equal(normChatId('1073504871'), 'wa_1073504871', 'BACA == TULIS untuk Telegram');
 });
 
 test('chat_id: normalisasi DIPAKAI saat menyimpan & mengirim pengingat', () => {
