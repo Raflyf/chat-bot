@@ -77,8 +77,16 @@ export const config = {
     ],
 
     // Tier 2: Cloudflare Workers AI
+    // cfPrimary : qwen3.8-27b (2026-08-17, 262K, reasoning+vision+tool)
+    // cfBackup  : nemotron-3-120b-a12b (2026-02-24, 256K, 120B MoE) — MENGGANTIKAN
+    //             gpt-oss-20b (2025-08-05) yang sudah lawas.
+    //             BUKTI UJI (12 Okt 2026): nemotron 0.60s dengan enable_thinking:false
+    //             (tanpa itu 8.02s), JSON benar, reasoning+tool.
+    //             llama-4-scout = cadangan cepat (0.56s) + vision.
+    // CATATAN: model terbaru (glm-5.3, kimi-k2.6/2.7, deepseek-v4) SEMUA BERBAYAR
+    //          ("not available on Workers Free plan") — tidak bisa dipakai.
     cfPrimary: '@cf/qwen/qwen3.8-27b',
-    cfBackup: ['@cf/nvidia/nemotron-3-120b-a12b', '@cf/openai/gpt-oss-20b'],
+    cfBackup: ['@cf/nvidia/nemotron-3-120b-a12b', '@cf/meta/llama-4-scout-17b-16e-instruct'],
     cfVision: [
       '@cf/meta/llama-4-scout-17b-16e-instruct',
       '@cf/mistralai/mistral-small-3.1-24b-instruct',
