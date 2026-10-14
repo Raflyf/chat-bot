@@ -91,9 +91,12 @@ test('vision: mistral TIDAK dipakai (sering halu + sisip bahasa Mandarin)', () =
   // menyisipkan bahasa mandarin, dan jelek". Diganti model vision khusus.
   const chain = ENV.match(/visionChain: \[([\s\S]*?)\n    \] as Array/);
   assert.ok(chain, 'visionChain harus ada');
-  assert.ok(!/mistral/i.test(chain[1]), 'mistral TIDAK boleh ada di visionChain');
-  const cfVis = ENV.split('cfVision:')[1]?.split(']')[0] || '';
-  assert.ok(!/mistral/i.test(cfVis), 'mistral TIDAK boleh ada di cfVision');
+  // Cek hanya NAMA MODEL (abaikan komentar penjelasan).
+  const modelSaja = [...chain[1].matchAll(/\{ kind: '\w+', model: '([^']+)' \}/g)].map(x => x[1]).join(' ');
+  assert.ok(!/mistral/i.test(modelSaja), 'mistral TIDAK boleh ada di visionChain');
+  const cfVisBlok = ENV.split('cfVision:')[1]?.split(']')[0] || '';
+  const cfVisModel = [...cfVisBlok.matchAll(/'([^']+)'/g)].map(x => x[1]).join(' ');
+  assert.ok(!/mistral/i.test(cfVisModel), 'mistral TIDAK boleh ada di cfVision');
   // Penggantinya harus model VISION KHUSUS.
-  assert.ok(/llama-3\.2-11b-vision-instruct/.test(chain[1]), 'harus ada model vision khusus sebagai pengganti');
+  assert.ok(/llama-3\.2-11b-vision-instruct/.test(modelSaja), 'harus ada model vision khusus sebagai pengganti');
 });
