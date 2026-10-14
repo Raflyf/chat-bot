@@ -761,10 +761,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // Katalog model router multi-tier.
       // ── SINKRONISASI PENUH (12 Okt 2026) ──────────────────────────────────
       // Katalog ini WAJIB sama persis dengan `config.models` di src/env.ts.
-      // Temuan: entri "GPT-OSS 20B (CF)" & "Mistral Small 3.1 (CF)" masih tampil
-      // padahal sudah TIDAK dipakai di config; model baru (Llama 3.2 Vision CF)
-      // belum ada; nama "Gemini 3.1 Flash Lite" salah (config: flash-lite-latest);
-      // OpenCode tertulis "Tier 8" padahal Tier 3. Semua sudah dibetulkan.
+      // Sebelumnya katalog ini TERTINGGAL dari config: ada 2 entri model yang
+      // sudah tidak dipakai, 1 model baru belum terdaftar, 1 nama model salah,
+      // dan label tier OpenCode keliru. Semua sudah dibetulkan 12 Okt 2026.
       // URUTAN TIER (sama dengan steps() di src/providers.ts):
       //   1 DreamPrompting | 2 Cloudflare | 3 OpenCode | 4 OpenRouter
       //   5 NVIDIA | 6 Groq | 7 Gemini | 8 Dahl
@@ -816,7 +815,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           provider: "CLOUDFLARE",
           tagClass: "tag-cloudflare",
           capabilities: ["Vision", "Multimodal"],
-          desc: "Vision prioritas #3 - pengganti mistral-small (12 Okt); model vision khusus",
+          desc: "Vision prioritas #3 - model vision khusus Cloudflare (pengganti 12 Okt)",
           matchKeys: ["cloudflare/@cf/meta/llama-3.2-11b-vision-instruct", "@cf/meta/llama-3.2-11b-vision-instruct"],
         },
         // --- Tier 3: OpenCode Free (tanpa API key) ---
