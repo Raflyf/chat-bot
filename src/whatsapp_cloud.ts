@@ -4,6 +4,9 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { sanitizeAssistantOutput } from './skills.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed, cariPesanByMsgId, pesanBotTerakhir } from './db.js';
+// withChatLock: serialisasi per-chat (audit 14 Okt 2026 — cegah balasan keluar
+// urutan / konteks saling menimpa saat user kirim pesan beruntun).
+import { withChatLock } from './memory.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
 import { encodeMarkers } from './markers.js';
@@ -363,10 +366,20 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // Satu pesan poison TIDAK boleh menggagalkan seluruh batch webhook (audit F2.3):
         // tanpa try/catch per-pesan, throw dari describeImage/processIncomingDocument/autoReply
         // membatalkan sisa array dan webhook tetap di-ack 200 → pesan lain hilang permanen.
+        // chatKey dihitung DI LUAR kunci (dipakai sebagai nama kunci).
+        const chatKey = 'wa_' + from;
+
+        // ── KUNCI PER-CHAT (audit 14 Okt 2026) ──
+        // Handler ini sebelumnya TIDAK memakai withChatLock (padahal Telegram sudah).
+        // Bila user mengirim beberapa pesan beruntun, atau Meta mengirim ulang webhook,
+        // beberapa pemrosesan berjalan BERSAMAAN pada chat yang sama: konteks saling
+        // menimpa dan balasan keluar urutan. withChatLock menyerialkannya.
+        // CATATAN: `continue` di blok ini diganti `return` karena tidak bisa menembus
+        // batas fungsi — efeknya sama (keluar dari pemrosesan pesan INI, lanjut ke
+        // pesan berikutnya di loop).
+        await withChatLock(chatKey, async () => {
         try {
         const msgSentAt = Number(m.timestamp) ? new Date(Number(m.timestamp) * 1000) : undefined;
-
-        const chatKey = 'wa_' + from;
 
         // ── PESAN YANG DI-REPLY USER (quoted message) — perbaikan 06 Okt 2026 ──
         // KENAPA PERLU: user sering membalas pesan lama lalu bilang "ini maksudnya
@@ -466,7 +479,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           initialContent = `[Membalas ${label}: "${quotedText.slice(0, 300)}"] ${initialContent}`;
         }
         // Klaim atomik (zero TOCTOU): jika sudah pernah ada, drop langsung!
-        if (!(await claimIncomingMessage('whatsapp', messageId, chatKey, initialContent))) continue;
+        if (!(await claimIncomingMessage('whatsapp', messageId, chatKey, initialContent))) return;
 
         // Tandai pesan telah dibaca (centang dua biru)
         void markWhatsAppCloudMessageRead(messageId);
@@ -477,7 +490,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         if (msgTimeSec > 0 && (nowSec - msgTimeSec) > 180) {
           console.warn(`[wa-cloud] Mengabaikan pesan basi/stale retry (umur: ${nowSec - msgTimeSec} detik, id: ${messageId}). Tandai selesai tanpa memanggil AI.`);
           void markMessageProcessed('whatsapp', messageId);
-          continue;
+          return;
         }
 
         const msgType = m.type;
@@ -509,7 +522,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               tokens,
             });
             noteExchange(chatKey);
-            continue;
+            return;
           }
         }
 
@@ -574,7 +587,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               tokens,
             });
             noteExchange(chatKey);
-            continue;
+            return;
           }
         }
 
@@ -628,7 +641,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                   via: `notes/${hasilCatatVn.jalur}`,
                 });
                 noteExchange(chatKey);
-                continue;
+                return;
               }
 
               if (needsSearch(transcription, prevContextVn)) {
@@ -663,7 +676,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 ),
               );
             }
-            continue;
+            return;
           }
         }
 
@@ -739,7 +752,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               tokens,
             });
             noteExchange(chatKey);
-            continue;
+            return;
           }
         }
 
@@ -772,7 +785,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             tokens,
           });
           noteExchange(chatKey);
-          continue;
+          return;
         }
 
         // Kasus 5b: Lokasi Pengguna (Share Location Pin)
@@ -797,7 +810,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               content: reply,
             });
             noteExchange(chatKey);
-            continue;
+            return;
           }
         }
 
@@ -812,7 +825,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             '';
         }
 
-        if (!text) continue;
+        if (!text) return;
 
         // Cek perintah reset sesi (konfirmasi 100% dinamis — ZERO teks statis)
         if (isResetCommand(text)) {
@@ -837,7 +850,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             content: reply,
             via: 'system/reset',
           }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan reset assistant:', err));
-          continue;
+          return;
         }
 
         // Cek perintah koreksi fakta /salah
@@ -848,7 +861,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
             await sendWhatsAppCloudMessageSafe(from, reply);
             void markMessageProcessed('whatsapp', messageId);
-            continue;
+            return;
           }
           const check = validateCorrection(rawCorrection);
           if (!check.valid) {
@@ -858,7 +871,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             );
             await sendWhatsAppCloudMessageSafe(from, reply);
             void markMessageProcessed('whatsapp', messageId);
-            continue;
+            return;
           }
           const saved = await saveCorrection(chatKey, check.cleaned);
           const { reply } = await autoReply(
@@ -868,7 +881,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           );
           await sendWhatsAppCloudMessageSafe(from, reply);
           void markMessageProcessed('whatsapp', messageId);
-          continue;
+          return;
         }
 
         // Cek perintah pengingat /remind
@@ -883,7 +896,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             );
             await sendWhatsAppCloudMessageSafe(from, reply);
             void markMessageProcessed('whatsapp', messageId);
-            continue;
+            return;
           }
           const minutes = Number(mRemind[1]);
           const message = mRemind[2].trim().slice(0, 500);
@@ -894,7 +907,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             );
             await sendWhatsAppCloudMessageSafe(from, reply);
             void markMessageProcessed('whatsapp', messageId);
-            continue;
+            return;
           }
           // PRESISI (06 Okt 2026): bulatkan ke awal menit lalu -5 detik, agar cron
           // per menit mengirim TEPAT WAKTU (bukan ngaret 1 menit karena detik).
@@ -914,7 +927,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           );
           await sendWhatsAppCloudMessageSafe(from, reply);
           void markMessageProcessed('whatsapp', messageId);
-          continue;
+          return;
         }
 
         // ── PENCATATAN PRIBADI (catatan, tugas, keuangan, kebiasaan) ──
@@ -975,7 +988,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 platform: 'whatsapp', chat_id: chatKey, role: 'assistant',
                 content: hasil.reply, via: `notes/${hasil.jalur}`,
               }).catch(() => undefined);
-              continue;
+              return;
             }
           }
         }
@@ -1148,6 +1161,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             // best-effort
           }
         }
+        }); // tutup withChatLock (kunci per-chat)
       }
     }
   }

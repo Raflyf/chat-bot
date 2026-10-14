@@ -336,6 +336,13 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // Kini memakai SATU SUMBER `normChatId` (src/chat_id.ts) seperti transport lain.
   const nomorBaileys = String(remoteJid).split('@')[0].split(':')[0];
   const chatKey = normChatId(nomorBaileys, 'whatsapp');
+
+  // ── KUNCI PER-CHAT (audit 14 Okt 2026) ──
+  // Handler ini sebelumnya TIDAK memakai withChatLock (padahal Telegram sudah).
+  // Bila user mengirim beberapa pesan beruntun, pemrosesan berjalan BERSAMAAN pada
+  // chat yang sama: konteks saling menimpa & balasan keluar urutan.
+  // Fungsi ini memakai `return` (bukan `continue`), jadi aman dibungkus.
+  return await withChatLock(chatKey, async () => {
   const messageId = m.key.id;
   // Klaim atomik anti-TOCTOU
   if (messageId && !(await claimIncomingMessage('whatsapp', messageId, chatKey, text || '[baileys-msg]'))) return;
@@ -1040,6 +1047,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       // best-effort
     }
   }
+  }); // tutup withChatLock (kunci per-chat)
 }
 
 // Jika dijalankan langsung sebagai entrypoint file
