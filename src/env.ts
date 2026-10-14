@@ -89,7 +89,7 @@ export const config = {
     cfBackup: ['@cf/nvidia/nemotron-3-120b-a12b', '@cf/meta/llama-4-scout-17b-16e-instruct'],
     cfVision: [
       '@cf/meta/llama-4-scout-17b-16e-instruct',
-      '@cf/mistralai/mistral-small-3.1-24b-instruct',
+      '@cf/meta/llama-3.2-11b-vision-instruct',
       '@cf/qwen/qwen3.8-27b',
     ],
 
@@ -186,7 +186,11 @@ export const config = {
       { kind: 'gemini', model: 'gemini-3.6-flash' },
       { kind: 'cloudflare', model: '@cf/qwen/qwen3.8-27b' },
       { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
-      { kind: 'cloudflare', model: '@cf/mistralai/mistral-small-3.1-24b-instruct' },
+      // mistral-small DIGANTI (12 Okt 2026) — keluhan pemilik produk: "mistral itu
+      // sering halu, ngaco, suka menyisipkan bahasa mandarin, dan jelek".
+      // Diganti dengan model VISION KHUSUS (bukan model umum) — sekeluarga dengan
+      // meta/llama-3.2-11b-vision-instruct di NVIDIA yang sudah terbukti 4/4.
+      { kind: 'cloudflare', model: '@cf/meta/llama-3.2-11b-vision-instruct' },
       { kind: 'gemini', model: 'gemini-2.5-flash' },
       { kind: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
       { kind: 'opencode', model: 'mimo-v2.6-flash-free' },

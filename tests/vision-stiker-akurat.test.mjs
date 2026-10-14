@@ -85,3 +85,15 @@ test('vision: chain >= 8 model & model lemah tidak di posisi awal', () => {
     assert.ok(model.some(x => x.model === wajib), `model terbukti akurat harus ada: ${wajib}`);
   }
 });
+
+test('vision: mistral TIDAK dipakai (sering halu + sisip bahasa Mandarin)', () => {
+  // Keluhan pemilik produk 12 Okt 2026: "mistral itu sering halu, ngaco, suka
+  // menyisipkan bahasa mandarin, dan jelek". Diganti model vision khusus.
+  const chain = ENV.match(/visionChain: \[([\s\S]*?)\n    \] as Array/);
+  assert.ok(chain, 'visionChain harus ada');
+  assert.ok(!/mistral/i.test(chain[1]), 'mistral TIDAK boleh ada di visionChain');
+  const cfVis = ENV.split('cfVision:')[1]?.split(']')[0] || '';
+  assert.ok(!/mistral/i.test(cfVis), 'mistral TIDAK boleh ada di cfVision');
+  // Penggantinya harus model VISION KHUSUS.
+  assert.ok(/llama-3\.2-11b-vision-instruct/.test(chain[1]), 'harus ada model vision khusus sebagai pengganti');
+});
