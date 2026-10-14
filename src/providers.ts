@@ -136,27 +136,66 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
     return;
   }
 
-  // RATE LIMIT HARIAN GROQ / CLOUDFLARE
-   // Jika ini adalah 429 harian, kita harus suspend kunci ini sampai besok.
-   // Groq TPD biasanya menolak dengan error code atau msg yang mencolok 'daily', 'quota', 'limit_exceeded'.
-   // Karena sebelumnya error dari `RATE_LIMITED` menangkap body di pesan errornya, kita baca itu:
-   const errCode = (err as { code?: string } | null)?.code;
-   const rates = errCode === 'RATE_LIMITED' || msg === 'RATE_LIMITED' || msg.includes('429');
-   if ((kind === 'groq' || kind === 'cloudflare') && rates) {
-     // Bedakan antara limit per menit (TPM) dan per hari (TPD)
-     // - Groq biasanya melampirkan "Please try again in 5.6s" (ada 'try again in') atau retry-after jika TPM
-     // - Cloudflare juga ada response body khusus.
-     const isTempLimit = /try again in|requests per minute|tokens per minute/i.test(msg) || (err as any)?.retryAfter;
-     if (isTempLimit) {
-       setCooldownPersist(kh, Date.now() + 60_000, 'tpm'); // 1 menit untuk TPM
-       return;
-     } else if (/daily|quota|limit|insufficient/i.test(msg)) {
-       // Limit harian -> cooldown sampai reset UTC
-       const cd = Date.now() + msUntilDailyResetUtc();
-       setCooldownPersist(kh, cd, 'quota');
-       return;
-     }
-   }
+  // ── RATE LIMIT: BEDAKAN PER-MENIT (TPM) vs PER-HARI (TPD) ──
+  // PERBAIKAN AUDIT 14 Okt 2026. Bug lama punya DUA cacat yang saling menutupi:
+  //
+  //  1. Pesan error hanya memuat 150 char pertama body, sehingga frasa
+  //     "tokens per minute" / "try again in" di EKOR body TIDAK terbaca.
+  //     Akibatnya regex TPM gagal -> jatuh ke cabang `else if` yang memakai
+  //     kata generik `/limit/` -> 429 PER-MENIT dianggap limit SEHARI dan key
+  //     sehat dimatikan sampai 00.00 UTC. (Persis yang dilarang pemilik produk:
+  //     "jangan sampai ketika limit per menit nya ke trigger malah di anggap
+  //     limit per hari".)
+  //  2. Sebaliknya, karena Groq SELALU mengirim header `retry-after` pada 429,
+  //     `|| err.retryAfter` membuat isTempLimit SELALU true -> 429 PER-HARI
+  //     (TPD 200k) hanya di-cooldown 60 detik, lalu dicoba ulang tiap menit
+  //     sepanjang hari (membakar RPD & memperlambat rantai).
+  //
+  // SEKARANG:
+  //   - Klasifikasi memakai body PENUH (`err.fullBody`), bukan 150 char pertama.
+  //   - Frasa per-hari / per-menit dicocokkan SPESIFIK, bukan kata "limit" generik.
+  //   - `retry-after` dipakai untuk MENENTUKAN DURASI cooldown, bukan sebagai
+  //     penanda "ini TPM".
+  //   - Bila tidak ada penanda jelas: cooldown PENDEK (aman) — JANGAN mematikan
+  //     key sehari hanya karena ada kata "limit".
+  const errCode = (err as { code?: string } | null)?.code;
+  const rates = errCode === 'RATE_LIMITED' || msg === 'RATE_LIMITED' || msg.includes('429');
+  if ((kind === 'groq' || kind === 'cloudflare') && rates) {
+    const errAny = err as { fullBody?: string; retryAfter?: string | null } | null;
+    // Body PENUH bila tersedia; jatuh kembali ke pesan error (perilaku lama).
+    const teks = String(errAny?.fullBody ?? '') || msg;
+    const retryAfterDetik = Number(errAny?.retryAfter);
+
+    // Penanda PER-HARI (TPD/RPD) — harus SPESIFIK.
+    const penandaHarian =
+      /\b(?:tokens?|requests?)\s+per\s+day\b|\bTPD\b|\bRPD\b|daily\s+(?:quota|limit|allocation|free allocation)|per\s+day\s*\(|kuota\s+harian|batas\s+harian|insufficient_quota/i.test(teks);
+    // Penanda PER-MENIT (TPM/RPM).
+    const penandaPerMenit =
+      /\b(?:tokens?|requests?)\s+per\s+minute\b|\bTPM\b|\bRPM\b|try\s+again\s+in|per\s+minute\s*\(/i.test(teks);
+
+    if (penandaHarian && !penandaPerMenit) {
+      // Limit harian -> cooldown sampai reset UTC + margin.
+      setCooldownPersist(kh, Date.now() + msUntilDailyResetUtc(), 'quota');
+      return;
+    }
+    if (penandaPerMenit) {
+      // Durasi mengikuti `retry-after` bila masuk akal; selainnya 60 detik.
+      const ms =
+        Number.isFinite(retryAfterDetik) && retryAfterDetik > 0
+          ? Math.min(retryAfterDetik * 1000 + 2_000, 300_000) // maks 5 menit
+          : 60_000;
+      setCooldownPersist(kh, Date.now() + ms, 'tpm');
+      return;
+    }
+    // Tanpa penanda jelas: bila `retry-after` menunjukkan jeda PENDEK (<5 menit),
+    // hormati itu. Selainnya cooldown pendek standar — JANGAN matikan sehari.
+    const msFallback =
+      Number.isFinite(retryAfterDetik) && retryAfterDetik > 0 && retryAfterDetik <= 300
+        ? retryAfterDetik * 1000 + 2_000
+        : 60_000;
+    setCooldownPersist(kh, Date.now() + msFallback, 'tpm');
+    return;
+  }
 
    // RATE LIMIT DREAMPROMPTING (temuan 04 Okt).
   //
@@ -443,10 +482,11 @@ async function fetchJsonWithLifecycle(
     // Beberapa provider (mis. DreamPrompting) mengirim SISA DETIK di header
     // `x-ratelimit-reset` — dipakai untuk cooldown ADAPTIF, bukan tebakan.
     const rateLimitReset = res.headers.get('x-ratelimit-reset');
-    const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null; rateLimitReset?: string | null };
+    const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null; rateLimitReset?: string | null; fullBody?: string };
     err.code = 'RATE_LIMITED';
     err.retryAfter = retryAfter;
     err.rateLimitReset = rateLimitReset;
+    err.fullBody = errBody;
     throw err;
   }
   if (!res.ok) {
@@ -566,10 +606,14 @@ async function streamSse(
       try { errBody = await res.text(); } catch {}
       const retryAfter = res.headers.get('retry-after');
       const rateLimitReset = res.headers.get('x-ratelimit-reset');
-      const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null; rateLimitReset?: string | null };
+      const err = new Error(`RATE_LIMITED:${errBody.slice(0, 150)}`) as Error & { code?: string; retryAfter?: string | null; rateLimitReset?: string | null; fullBody?: string };
       err.code = 'RATE_LIMITED';
       err.retryAfter = retryAfter;
       err.rateLimitReset = rateLimitReset;
+      // AUDIT 14 Okt 2026: pesan error hanya memuat 150 char pertama, sehingga
+      // frasa "tokens per minute"/"try again in" di EKOR body tidak terbaca dan
+      // 429 per-menit salah diklasifikasi sebagai limit harian. Simpan body PENUH.
+      err.fullBody = errBody;
       throw err;
     }
     if (!res.ok) {

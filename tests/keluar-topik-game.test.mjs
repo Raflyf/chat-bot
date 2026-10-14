@@ -24,6 +24,9 @@ import { buangAjakanGameLama } from '../src/games/index.js';
 
 const GAMES = fs.readFileSync(new URL('../src/games/index.ts', import.meta.url), 'utf8');
 const SKILLS = fs.readFileSync(new URL('../src/skills.ts', import.meta.url), 'utf8');
+// CELAH YANG DIPERBAIKI (audit 14 Okt 2026): dulu test ini HANYA membaca
+// index.ts, sehingga 21 ajakan "main lagi" di engine.ts LOLOS dari pemeriksaan.
+const ENGINE = fs.readFileSync(new URL('../src/games/engine.ts', import.meta.url), 'utf8');
 
 test('game: memakai WHITELIST, bukan blacklist', () => {
   assert.ok(GAMES.includes('function terlihatLangkahGame'), 'harus ada terlihatLangkahGame (whitelist)');
@@ -48,6 +51,23 @@ test('game: TIDAK menawarkan main lagi saat berhenti', () => {
   const m = GAMES.match(/jalur: 'game-berhenti'[\s\S]{0,200}/);
   assert.ok(m, 'harus ada jalur game-berhenti');
   assert.ok(!/Mau main lagi\? Ketik/.test(GAMES), 'tidak boleh menawarkan main lagi');
+});
+
+test('game: engine.ts JUGA tidak mengajak main lagi (celah yang lolos)', () => {
+  // AUDIT 14 Okt 2026: engine.ts punya 21 tempat yang mengajak "main lagi"
+  // ("Ketik *main X* untuk main lagi", "Coba lagi: *main X*", dst) dan SEMUA
+  // lolos karena test ini dulu hanya membaca index.ts.
+  const terlarang = [
+    /main\s+lagi/i,
+    /coba\s+lagi\s*[:?]/i,
+    /ketik\s+\*?main\s+\w+\*/i,
+  ];
+  for (const pola of terlarang) {
+    assert.ok(
+      !pola.test(ENGINE),
+      `engine.ts tidak boleh mengajak main lagi (cocok: ${pola})`,
+    );
+  }
 });
 
 test('game: buangAjakanGameLama membuang ajakan kembali ke game', () => {

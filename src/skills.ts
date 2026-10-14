@@ -1681,10 +1681,24 @@ export function bersihkanFrasaNgawur(reply: string): string {
     /^\s*\bbray\s*[?!.,]+\s*/gi,
   ];
   let out = reply;
-  for (const re of selaluSalah) out = out.replace(re, '');
+  // PERBAIKAN AUDIT 14 Okt 2026: catat apakah ada frasa yang MEMANG dibuang.
+  // BUG LAMA: baris berikutnya mengosongkan SETIAP balasan <= 2 kata tanpa "?",
+  // sehingga balasan SAH seperti "Halo juga", "Oke deh", "Belum ada.", "Iyaa 😊"
+  // ikut HILANG — bertentangan dengan aturan prompt "pesan 1-5 kata cukup
+  // 1 kalimat pendek" dan aturan ANTI-FLAT.
+  let adaYangDibuang = false;
+  for (const re of selaluSalah) {
+    const sebelum = out;
+    out = out.replace(re, '');
+    if (out !== sebelum) adaYangDibuang = true;
+  }
   out = out.replace(/\s{2,}/g, ' ').replace(/^[\s,.:;!?-]+/, '').trim();
-  // Sisa yang tidak bermakna (<=2 kata & tanpa tanda tanya) -> kosongkan.
-  if (out && out.split(/\s+/).filter(Boolean).length <= 2 && !/[?!]/.test(out)) return '';
+  // Kosongkan HANYA bila frasa terlarang tadi MEMANG ADA dan sisanya tidak
+  // bermakna. Balasan pendek yang sejak awal bersih DIBIARKAN apa adanya.
+  if (adaYangDibuang) {
+    const sisaKata = out.split(/\s+/).filter(Boolean).length;
+    if (!out || (sisaKata <= 2 && !/[?!]/.test(out))) return '';
+  }
   return out;
 }
 
@@ -1754,19 +1768,46 @@ export function buangKonfabulasiKonteks(reply: string, userPrompt: string): stri
  */
 export function buangBocorInstruksi(reply: string): string {
   if (!reply) return reply;
-  // Bila SELURUH balasan hanyalah pernyataan soal gaya/instruksi -> kosongkan.
-  const polaPenuh = [
-    /^[\s\S]*\b(?:jawab|balas|respon|merespons)\s+(?:santai|singkat|dengan\s+santai|dengan\s+singkat)\b[\s\S]*$/i,
-    /^[\s\S]*\b(?:nyambung|tetap\s+nyambung)\s+teru?ss?\b[\s\S]*$/i,
-    /^[\s\S]*\b(?:jawab|balas)\s+(?:singkat|pendek|begini|seperti\s+ini)\b[\s\S]*$/i,
-    /^[\s\S]*\b(?:sesuai|mengikuti|patuh)\s+(?:instruksi|aturan|perintah|prompt)\b[\s\S]*$/i,
-    /^[\s\S]*\b(?:mode|gaya)\s+(?:santai|serius|banter|profesional)\s+(?:aktif|dinyalakan|diaktifkan)\b[\s\S]*$/i,
+  // PERBAIKAN AUDIT 14 Okt 2026.
+  // BUG LAMA: pola ber-anchor `^[\s\S]*…[\s\S]*$` cocok bila frasa muncul di
+  // MANA SAJA dan mengembalikan SELURUH balasan menjadi kosong, sehingga isi
+  // yang sah ikut hilang. Contoh terbukti:
+  //   'Aku jawab singkat aja: jawabannya 5.'   -> ''  (isi "jawabannya 5" HILANG)
+  //   'Biar nyambung terus, aku jelasin dulu.' -> ''  (SALAH)
+  // SEKARANG: frasa bocorannya DIBUANG SATU PER SATU, isi balasan dipertahankan.
+  // Balasan hanya dikosongkan bila setelah pembuangan memang tidak ada isi nyata
+  // (artinya balasan itu MEMANG cuma meta-statement).
+  const frasaBocor = [
+    /\b(?:aku|saya|bot)?\s*(?:akan|bakal|mau)?\s*(?:jawab|balas|respon|merespons)\s+(?:santai|singkat|pendek|dengan\s+santai|dengan\s+singkat|begini|seperti\s+ini)\b/gi,
+    /\b(?:tetap\s+)?nyambung\s+teru?ss?\b/gi,
+    /\b(?:sesuai|mengikuti|patuh)\s+(?:instruksi|aturan|perintah|prompt)\b/gi,
+    /\b(?:mode|gaya)\s+(?:santai|serius|banter|profesional)\s+(?:aktif|dinyalakan|diaktifkan)\b/gi,
   ];
-  for (const re of polaPenuh) {
-    if (re.test(reply)) return '';
+  let out = reply;
+  let adaBocor = false;
+  for (const re of frasaBocor) {
+    const sebelum = out;
+    out = out.replace(re, ' ');
+    if (out !== sebelum) adaBocor = true;
+  }
+  if (adaBocor) {
+    out = out
+      .replace(/^\s*(?:siap|oke|ok|baik|ya|iya|wah)[\s,]*/i, '')
+      .replace(/\b(?:aja|saja)\b/gi, ' ')
+      // Buang tanda baca DULU supaya "Cintia, dan." bisa dikenali sebagai sisa kosong.
+      .replace(/[.!?…]+/g, ' ')
+      .replace(/\s*[:;,]\s*/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+      .replace(/^\s*\b(?:dan|atau)\b\s*/i, '')
+      .replace(/\s*\b(?:dan|atau)\b\s*$/i, '')
+      .replace(/^[\s,.:;!?—-]+|[\s,.:;!?—-]+$/g, '')
+      .trim();
+    // Tidak ada isi nyata tersisa -> memang hanya bocoran instruksi.
+    if (out.split(/\s+/).filter(Boolean).length < 2) return '';
   }
   // Buang kalimat yang mengandung bocoran (sisanya dipertahankan).
-  let out = reply
+  out = out
     .replace(/[^.!?\n]*\b(?:jawab|balas|respon)\s+(?:santai|singkat|pendek|begini|dengan\s+santai|dengan\s+singkat)\b[^.!?\n]*[.!?]?/gi, '')
     .replace(/[^.!?\n]*\bnyambung\s+teru?ss?\b[^.!?\n]*[.!?]?/gi, '')
     .replace(/[^.!?\n]*\b(?:sesuai|mengikuti|patuh)\s+(?:instruksi|aturan|perintah|prompt)\b[^.!?\n]*[.!?]?/gi, '')

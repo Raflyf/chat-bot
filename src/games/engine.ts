@@ -108,7 +108,7 @@ export function unoLangkah(state: Record<string, unknown>, aksi: string): HasilG
   s.warnaAktif = kartu.warna === 'hitam' ? 'merah' : kartu.warna; // wild: default merah (disederhanakan)
 
   if (s.tanganUser.length === 0) {
-    return { balas: `🎉 *KAMU MENANG!* Kartu terakhirmu ${kartuUnoTeks(kartu)}. Keren banget!\n\nMau main lagi? Ketik *main uno*.`, state: null, selesai: true, menang: true };
+    return { balas: `🎉 *KAMU MENANG!* Kartu terakhirmu ${kartuUnoTeks(kartu)}. Keren banget!`, state: null, selesai: true, menang: true };
   }
 
   // Efek kartu khusus
@@ -174,7 +174,7 @@ function unoJalanBot(s: {
   s.warnaAktif = main!.warna === 'hitam' ? 'merah' : main!.warna;
 
   if (s.tanganBot.length === 0) {
-    return { balas: `😤 *Bot menang!* Kartu terakhirnya ${kartuUnoTeks(main!)}.\n\nCoba lagi? Ketik *main uno*.`, state: null, selesai: true, menang: false };
+    return { balas: `😤 *Bot menang!* Kartu terakhirnya ${kartuUnoTeks(main!)}.`, state: null, selesai: true, menang: false };
   }
 
   let info = '';
@@ -418,8 +418,8 @@ export function remiLangkah(state: Record<string, unknown>, aksi: string): Hasil
         kb.length ? kb.map((x) => `• ${x.nama}`).join('\n') : '• tidak ada kombinasi',
         ``,
         menang ? `🏆 *Kamu menang!*` : skorU === skorB ? `🤝 *Seri!*` : `😤 *Bot menang!*`,
-        ``,
-        `Ketik *main remi* untuk main lagi.`,
+        // Ajakan mengulang permainan SENGAJA DIHAPUS (aturan pemilik produk:
+        // jangan menarik user kembali ke topik permainan — biarkan user memutuskan).
       ].join('\n'),
       state: null, selesai: true, menang,
     };
@@ -466,14 +466,14 @@ export function cangkulanLangkah(state: Record<string, unknown>, aksi: string): 
     s.buangan.push(dibuang);
 
     if (s.tanganUser.length === 0) {
-      return { balas: `🎉 *Kamu habis kartunya duluan — MENANG!*\n\nKetik *main cangkulan* untuk main lagi.`, state: null, selesai: true, menang: true };
+      return { balas: `🎉 *Kamu habis kartunya duluan — MENANG!*`, state: null, selesai: true, menang: true };
     }
 
     // Bot: tarik lalu buang
     if (s.dek.length > 0) s.tanganBot.push(s.dek.shift()!);
     if (s.tanganBot.length > 0) s.buangan.push(s.tanganBot.shift()!);
     if (s.tanganBot.length === 0) {
-      return { balas: `😤 *Bot habis kartunya duluan — bot menang!*\n\nKetik *main cangkulan* untuk main lagi.`, state: null, selesai: true, menang: false };
+      return { balas: `😤 *Bot habis kartunya duluan — bot menang!*`, state: null, selesai: true, menang: false };
     }
 
     return {
@@ -540,7 +540,7 @@ export function gapleLangkah(state: Record<string, unknown>, aksi: string): Hasi
     s.papan.push(kartu);
 
     if (s.tanganUser.length === 0) {
-      return { balas: `🎉 *Kamu habis kartunya — MENANG!*\n\nKetik *main gaple* untuk main lagi.`, state: null, selesai: true, menang: true };
+      return { balas: `🎉 *Kamu habis kartunya — MENANG!*`, state: null, selesai: true, menang: true };
     }
 
     const botMain = s.tanganBot.find((d) => gapleBoleh(d, s.papan));
@@ -551,7 +551,7 @@ export function gapleLangkah(state: Record<string, unknown>, aksi: string): Hasi
       s.tanganBot.push(s.dek.shift()!);
     }
     if (s.tanganBot.length === 0) {
-      return { balas: `😤 *Bot habis kartunya — bot menang!*\n\nKetik *main gaple* untuk main lagi.`, state: null, selesai: true, menang: false };
+      return { balas: `😤 *Bot habis kartunya — bot menang!*`, state: null, selesai: true, menang: false };
     }
 
     const ujungKiri = s.papan[0][0], ujungKanan = s.papan[s.papan.length - 1][1];
@@ -692,7 +692,7 @@ export function caturLangkah(state: Record<string, unknown>, aksi: string): Hasi
   s.riwayat.push(`${m[1]}-${m[2]}`);
 
   if (dimakan.toLowerCase() === 'k') {
-    return { balas: `👑 *Kamu menang!* Raja bot berhasil dimakan (${m[2]}).\n\n${papanTeks(s.papan)}\n\nKetik *main catur* untuk main lagi.`, state: null, selesai: true, menang: true };
+    return { balas: `👑 *Kamu menang!* Raja bot berhasil dimakan (${m[2]}).\n\n${papanTeks(s.papan)}`, state: null, selesai: true, menang: true };
   }
 
   // Bot: cari gerakan sah acak yang menguntungkan (prioritas makan)
@@ -710,7 +710,7 @@ export function caturLangkah(state: Record<string, unknown>, aksi: string): Hasi
   s.riwayat.push(`${posTeks(dariB)}-${posTeks(keB)}`);
 
   if (dimakanB.toLowerCase() === 'k') {
-    return { balas: `😤 *Bot menang!* Rajamu dimakan.\n\n${papanTeks(s.papan)}\n\nCoba lagi: *main catur*.`, state: null, selesai: true, menang: false };
+    return { balas: `😤 *Bot menang!* Rajamu dimakan.\n\n${papanTeks(s.papan)}`, state: null, selesai: true, menang: false };
   }
 
   const infoMakan = dimakan ? ` (makan ${dimakan})` : '';
@@ -817,13 +817,13 @@ export function tictactoeLangkah(state: Record<string, unknown>, aksi: string): 
 
   s.papan[idx] = 'X';
   let p = ticTacPemenang(s.papan);
-  if (p === 'X') return { balas: `🎉 *Kamu menang!*\n\n${ticTacTeks(s.papan)}\n\nKetik *main tictactoe* untuk main lagi.`, state: null, selesai: true, menang: true };
+  if (p === 'X') return { balas: `🎉 *Kamu menang!*\n\n${ticTacTeks(s.papan)}`, state: null, selesai: true, menang: true };
   if (p === 'seri') return { balas: `🤝 *Seri!*\n\n${ticTacTeks(s.papan)}`, state: null, selesai: true };
 
   const bot = ticTacBot(s.papan);
   if (bot >= 0) s.papan[bot] = 'O';
   p = ticTacPemenang(s.papan);
-  if (p === 'O') return { balas: `😤 *Bot menang!*\n\n${ticTacTeks(s.papan)}\n\nCoba lagi: *main tictactoe*.`, state: null, selesai: true, menang: false };
+  if (p === 'O') return { balas: `😤 *Bot menang!*\n\n${ticTacTeks(s.papan)}`, state: null, selesai: true, menang: false };
   if (p === 'seri') return { balas: `🤝 *Seri!*\n\n${ticTacTeks(s.papan)}`, state: null, selesai: true };
 
   return { balas: `Bot jalan di kotak ${bot + 1}.\n\n${ticTacTeks(s.papan)}\n\nGiliranmu — ketik nomor kotak.`, state: s, selesai: false };
@@ -847,10 +847,10 @@ export function hangmanLangkah(state: Record<string, unknown>, aksi: string): Ha
   const tebak = aksi.trim().toLowerCase().replace(/[^a-z]/g, '');
   if (tebak.length > 1) {
     if (tebak === s.kata) {
-      return { balas: `🎉 *BENAR!* Katanya "${s.kata}". Kamu menang! 🏆\n\nKetik *main hangman* untuk main lagi.`, state: null, selesai: true, menang: true };
+      return { balas: `🎉 *BENAR!* Katanya "${s.kata}". Kamu menang! 🏆`, state: null, selesai: true, menang: true };
     }
     s.nyawa -= 1;
-    if (s.nyawa <= 0) return { balas: `💀 *Kalah!* Katanya "${s.kata}".\n\nCoba lagi: *main hangman*.`, state: null, selesai: true, menang: false };
+    if (s.nyawa <= 0) return { balas: `💀 *Kalah!* Katanya "${s.kata}".`, state: null, selesai: true, menang: false };
     return { balas: `❌ Bukan "${tebak}".\n\n${hangmanTeks(s.kata, s.terbuka, s.salah, s.nyawa)}`, state: s, selesai: false };
   }
 
@@ -861,14 +861,14 @@ export function hangmanLangkah(state: Record<string, unknown>, aksi: string): Ha
   if (s.kata.includes(huruf)) {
     s.terbuka.push(huruf);
     if (s.kata.split('').every((c) => s.terbuka.includes(c))) {
-      return { balas: `🎉 *BENAR!* Katanya "${s.kata}". Kamu menang! 🏆\n\nKetik *main hangman* untuk main lagi.`, state: null, selesai: true, menang: true };
+      return { balas: `🎉 *BENAR!* Katanya "${s.kata}". Kamu menang! 🏆`, state: null, selesai: true, menang: true };
     }
     return { balas: `✅ Ada huruf "${huruf}"!\n\n${hangmanTeks(s.kata, s.terbuka, s.salah, s.nyawa)}`, state: s, selesai: false };
   }
   s.salah.push(huruf);
   s.nyawa -= 1;
   if (s.nyawa <= 0) {
-    return { balas: `💀 *Kalah!* Katanya "${s.kata}".\n\nCoba lagi: *main hangman*.`, state: null, selesai: true, menang: false };
+    return { balas: `💀 *Kalah!* Katanya "${s.kata}".`, state: null, selesai: true, menang: false };
   }
   return { balas: `❌ Tidak ada "${huruf}".\n\n${hangmanTeks(s.kata, s.terbuka, s.salah, s.nyawa)}`, state: s, selesai: false };
 }
@@ -890,10 +890,10 @@ export function tebakAngkaLangkah(state: Record<string, unknown>, aksi: string):
   s.tebakan.push(n);
 
   if (n === s.target) {
-    return { balas: `🎉 *BENAR!* Angkanya ${s.target}. Kamu menebak dalam ${s.tebakan.length} percobaan! 🏆\n\nKetik *main tebakangka* untuk main lagi.`, state: null, selesai: true, menang: true };
+    return { balas: `🎉 *BENAR!* Angkanya ${s.target}. Kamu menebak dalam ${s.tebakan.length} percobaan! 🏆`, state: null, selesai: true, menang: true };
   }
   if (s.tebakan.length >= s.maks) {
-    return { balas: `💀 *Habis percobaan!* Angkanya ${s.target}.\n\nCoba lagi: *main tebakangka*.`, state: null, selesai: true, menang: false };
+    return { balas: `💀 *Habis percobaan!* Angkanya ${s.target}.`, state: null, selesai: true, menang: false };
   }
   const petunjuk = n < s.target ? '📈 Terlalu *kecil*' : '📉 Terlalu *besar*';
   return { balas: `${petunjuk}.\n\nSisa percobaan: ${s.maks - s.tebakan.length}\nSudah ditebak: ${s.tebakan.join(', ')}`, state: s, selesai: false };
@@ -1075,10 +1075,10 @@ export function monopoliLangkah(state: Record<string, unknown>, aksi: string): H
     else if (s.uangBot >= 200 && !PETAK.includes(petakBot)) s.uangBot -= 200;
 
     if (s.uangUser <= 0) {
-      return { balas: `💀 *Kamu bangkrut!* Bot menang.\n\nKetik *main monopoli* untuk main lagi.`, state: null, selesai: true, menang: false };
+      return { balas: `💀 *Kamu bangkrut!* Bot menang.`, state: null, selesai: true, menang: false };
     }
     if (s.uangBot <= 0) {
-      return { balas: `🎉 *Bot bangkrut — kamu MENANG!* 🏆\n\nKetik *main monopoli* untuk main lagi.`, state: null, selesai: true, menang: true };
+      return { balas: `🎉 *Bot bangkrut — kamu MENANG!* 🏆`, state: null, selesai: true, menang: true };
     }
 
     return {
@@ -1128,7 +1128,7 @@ export function kuisLangkah(state: Record<string, unknown>, aksi: string): Hasil
     if (s.putaran >= s.indeks.length) {
       const menang = s.skorUser > s.skorBot;
       return {
-        balas: `🏁 *Kuis selesai!*\n\nSkor — Kamu: *${s.skorUser}* | Bot: *${s.skorBot}*\n\n${menang ? '🏆 Kamu menang!' : s.skorUser === s.skorBot ? '🤝 Seri!' : '😤 Bot menang!'}\n\nKetik *main kuis* untuk main lagi.`,
+        balas: `🏁 *Kuis selesai!*\n\nSkor — Kamu: *${s.skorUser}* | Bot: *${s.skorBot}*\n\n${menang ? '🏆 Kamu menang!' : s.skorUser === s.skorBot ? '🤝 Seri!' : '😤 Bot menang!'}`,
         state: null, selesai: true, menang,
       };
     }
@@ -1160,7 +1160,7 @@ export function kuisLangkah(state: Record<string, unknown>, aksi: string): Hasil
   if (s.putaran >= s.indeks.length) {
     const menang = s.skorUser > s.skorBot;
     return {
-      balas: `${info}\n${infoBot}\n\n🏁 *Kuis selesai!*\nSkor — Kamu: *${s.skorUser}* | Bot: *${s.skorBot}*\n\n${menang ? '🏆 Kamu menang!' : s.skorUser === s.skorBot ? '🤝 Seri!' : '😤 Bot menang!'}\n\nKetik *main kuis* untuk main lagi.`,
+      balas: `${info}\n${infoBot}\n\n🏁 *Kuis selesai!*\nSkor — Kamu: *${s.skorUser}* | Bot: *${s.skorBot}*\n\n${menang ? '🏆 Kamu menang!' : s.skorUser === s.skorBot ? '🤝 Seri!' : '😤 Bot menang!'}`,
       state: null, selesai: true, menang,
     };
   }
