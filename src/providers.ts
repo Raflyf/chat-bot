@@ -95,8 +95,26 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   // request yang jatuh ke tier ini membuang 10 kunci x ~250ms = 2,5 detik PERCUMA
   // sebelum lanjut ke tier berikutnya.
   // Perbaikan: cooldown 6 jam untuk pola ini supaya tier dilewati, bukan diulang.
-  if (/concurrency capacity|Paid accounts are admitted first|insufficient_quota|Insufficient wallet balance/i.test(msg)) {
+  // KUOTA/BALDO HABIS (benar-benar habis, bukan rate limit sementara) -> cooldown panjang.
+  if (/insufficient_quota|Insufficient wallet balance|insufficient balance|exceeded your current quota/i.test(msg)) {
     setCooldownPersist(kh, Date.now() + 6 * 60 * 60_000, 'rpd');
+    return;
+  }
+
+  // KAPASITAS PENUH (concurrency) — SEMENTARA, BUKAN kuota harian.
+  //
+  // LAPORAN PEMILIK PRODUK (12 Okt 2026): "knapa gini? padahal dahl juga itu blm
+  // terpakai knaapa beku batas harian? betulkan"
+  //
+  // AKAR: pola "concurrency capacity" / "Paid accounts are admitted first"
+  // digabung dengan pola kuota habis, lalu diberi cooldown 6 JAM berlabel 'rpd'
+  // (= "limit harian" di dashboard). Padahal Dahl 0 pemakaian — ini BUKAN limit
+  // harian, melainkan pembatasan concurrency yang pulih dalam detik/menit.
+  //
+  // PERBAIKAN: cooldown pendek (2 menit) + alasan 'concurrency' agar dashboard
+  // menulis "Beku (kapasitas penuh)" — bukan menyesatkan "Beku (limit harian)".
+  if (/concurrency capacity|Paid accounts are admitted first|at capacity|overloaded/i.test(msg)) {
+    setCooldownPersist(kh, Date.now() + 2 * 60_000, 'concurrency');
     return;
   }
 
