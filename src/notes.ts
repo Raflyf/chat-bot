@@ -2530,6 +2530,15 @@ async function simpanDariNiat(
       if (ids.length === 0) {
         return { ok: false, pesan: '⚠️ Gagal menyimpan ke database. Coba lagi nanti ya.' };
       }
+      // ── PERBAIKAN AUDIT 14 Okt 2026 (S4): LAPOR YANG GAGAL ──
+      // BUG LAMA: pesan selalu berkata "✅ Tercatat N item" dengan N = jumlah
+      // yang BERHASIL. Bila sebagian item gagal disimpan (DB error, nominal
+      // tidak valid, dsb), user TIDAK diberi tahu — dia mengira semua tercatat
+      // padahal ada yang HILANG. Sekarang kegagalan disebut eksplisit.
+      const jmlGagal = daftarItems.length - ids.length;
+      if (jmlGagal > 0) {
+        console.warn(`[notes] ${jmlGagal} dari ${daftarItems.length} item keuangan GAGAL disimpan.`);
+      }
       // Laporkan JUJUR: PISAHKAN pemasukan & pengeluaran (temuan nyata 08 Okt 2026).
       // Laporan lama hanya menyebut "total" gabungan -> user tidak tahu mana
       // pemasukan mana pengeluaran (padahal bisa beda kind per item).
@@ -2548,7 +2557,9 @@ async function simpanDariNiat(
       return {
         ok: true,
         pesan:
-          `✅ Tercatat ${ids.length} item.\n` +
+          (jmlGagal > 0
+            ? `⚠️ Tercatat ${ids.length} dari ${daftarItems.length} item — ${jmlGagal} item GAGAL disimpan (coba ulang bagian itu ya).\n`
+            : `✅ Tercatat ${ids.length} item.\n`) +
           bagian.join('\n') +
           (jmlMasuk && jmlKeluar ? `\nSelisih: Rp${selisih.toLocaleString('id-ID')}` : ''),
       };
