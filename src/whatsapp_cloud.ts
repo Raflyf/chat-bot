@@ -167,6 +167,11 @@ export async function sendWhatsAppCloudMessageSafe(
         const errText = await res.text();
         console.error(`[wa-cloud] Gagal kirim pesan: ${res.status} ${errText}`);
         semuaBerhasil = false;
+      } else {
+        const data = (await res.json().catch(() => null)) as { messages?: Array<{ id?: string }> } | null;
+        if (data?.messages?.[0]?.id) {
+          console.log(`[wa-cloud] Pesan terkirim ke gateway Meta (id: ${data.messages[0].id})`);
+        }
       }
     } catch (err) {
       console.error('[wa-cloud] Network error kirim pesan:', err);
@@ -354,6 +359,17 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
     for (const change of changes) {
       const value = change.value;
       if (!value || value.messaging_product !== 'whatsapp') continue;
+
+      // Catat status pengiriman dari Meta (sent, delivered, read, failed)
+      if (Array.isArray(value.statuses) && value.statuses.length > 0) {
+        for (const st of value.statuses) {
+          if (st.status === 'failed') {
+            console.error(`[wa-cloud] Pesan ${st.id} GAGAL didistribusikan Meta:`, JSON.stringify(st.errors || st));
+          } else {
+            console.log(`[wa-cloud] Meta delivery status: ${st.status} (id: ${st.id})`);
+          }
+        }
+      }
 
       const messages = value.messages;
       if (!Array.isArray(messages) || messages.length === 0) continue;
