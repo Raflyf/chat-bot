@@ -509,6 +509,25 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           return;
         }
 
+        // ── RESPON OTOMATIS PEMELIHARAAN (MAINTENANCE MODE) SEMENTARA ──
+        // Mengarahkan pengguna ke Telegram sementara penautan payment method Meta diselesaikan.
+        if (config.whatsappMaintenanceMode) {
+          const maintenanceMsg =
+            'Halo! Layanan bot WhatsApp sedang dalam pemeliharaan (maintenance) sementara.\n\n' +
+            'Kamu tetap bisa ngobrol dan menggunakan seluruh fitur bot seperti biasa di Telegram kami yang aktif normal:\n' +
+            '👉 https://t.me/chatkita_bot';
+          await sendWhatsAppCloudMessageSafe(from, maintenanceMsg);
+          void markMessageProcessed('whatsapp', messageId);
+          void saveMessage({
+            platform: 'whatsapp',
+            chat_id: chatKey,
+            role: 'assistant',
+            content: maintenanceMsg,
+            via: 'system/maintenance',
+          }).catch(() => undefined);
+          return;
+        }
+
         const msgType = m.type;
 
         // Kasus 1: Pesan Gambar / Foto

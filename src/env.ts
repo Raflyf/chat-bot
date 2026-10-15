@@ -308,6 +308,8 @@ export const config = {
   whatsappPhoneNumberId: cleanStr('WHATSAPP_PHONE_NUMBER_ID'),
   whatsappVerifyToken: cleanStr('WHATSAPP_VERIFY_TOKEN'),
   whatsappAppSecret: cleanStr('WHATSAPP_APP_SECRET'),
+  // Mode maintenance WhatsApp sementara: bila aktif (default true), otomatis membalas & mengarahkan ke Telegram
+  whatsappMaintenanceMode: process.env.WHATSAPP_MAINTENANCE_MODE !== 'false',
   resendApiKey: cleanStr('RESEND_API_KEY'),
   resendFrom: cleanStr('RESEND_FROM') || 'ChatBot Security <notifications@resend.dev>',
   adminEmail: cleanStr('ADMIN_EMAIL'),
