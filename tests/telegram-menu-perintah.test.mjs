@@ -156,3 +156,37 @@ test('skrip pendaftaran memakai setMyCommands + verifikasi getMyCommands', () =>
   assert.match(SCRIPT, /getMyCommands/, 'harus memverifikasi hasil pendaftaran');
   assert.match(SCRIPT, /daftarPerintahTelegram\(\)/, 'harus memakai satu sumber kebenaran');
 });
+
+test('ANTI-TERSEMBUNYI: perintah yang DISEBUT di balasan wajib terdaftar di menu', () => {
+  // Temuan 16 Okt 2026: `/ringkasan` sudah lama berfungsi dan disebut di balasan
+  // lain ("Bisa juga pakai */ringkasan*..."), tetapi TIDAK pernah didaftarkan ->
+  // tidak muncul di menu `/` dan tidak ada di panduan.
+  const terdaftar = new Set(PERINTAH_BOT.map((p) => p.command));
+  const disebut = new Set();
+  for (const berkas of ['notes.ts', 'remind.ts', 'skills.ts', 'telegram.ts']) {
+    const isi = fs.readFileSync(new URL(`../src/${berkas}`, import.meta.url), 'utf8');
+    for (const m of isi.matchAll(/\*\/([a-z][a-z0-9_]{1,20})\*/g)) disebut.add(m[1]);
+  }
+  const tersembunyi = [...disebut].filter((c) => !terdaftar.has(c));
+  assert.deepEqual(tersembunyi, [], `perintah ini disebut di balasan tapi tidak ada di menu: ${tersembunyi.join(', ')}`);
+});
+
+test('/ringkasan terdaftar & ada di panduan', () => {
+  assert.ok(PERINTAH_BOT.some((p) => p.command === 'ringkasan'), '/ringkasan harus terdaftar di menu');
+  assert.match(teksBantuan(), /\/ringkasan/, '/ringkasan harus ada di panduan');
+});
+
+test('ANTI-DUPLIKAT nyata: tiap perintah punya jalur penanganan sendiri', () => {
+  // Menangkap kembar yang deskripsinya beda tapi perilakunya sama
+  // (temuan nyata: /tugas tanpa isi == /list, /masuk tanpa isi == /uang).
+  const NOTES = fs.readFileSync(new URL('../src/notes.ts', import.meta.url), 'utf8');
+  // Daftar tugas HANYA lewat /list (tugas tidak lagi ikut).
+  assert.ok(NOTES.includes('(?:list|tugas-saya)'), 'daftar tugas hanya boleh lewat /list');
+  assert.ok(!NOTES.includes('(?:list|daftar|tugas|'), 'tugas tidak boleh lagi ikut daftar tugas');
+  // Daftar keuangan HANYA lewat /uang (masuk tidak lagi ikut).
+  assert.ok(NOTES.includes('(?:uang|duit|keuangan|'), 'daftar keuangan lewat /uang');
+  assert.ok(!NOTES.includes('expenses?|keluar|masuk)'), 'masuk tidak boleh lagi menampilkan daftar keuangan');
+  // Pesan error harus mengarahkan ke perintah yang benar-benar ada.
+  assert.ok(!NOTES.includes('Ketik */tugas*'), 'pesan error tidak boleh menyuruh /tugas untuk lihat daftar');
+  assert.ok(NOTES.includes('Ketik */list*'), 'pesan error harus mengarahkan ke /list');
+});

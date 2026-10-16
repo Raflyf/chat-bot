@@ -82,6 +82,12 @@ export const PERINTAH_BOT: PerintahBot[] = [
   // `belanja` DIHAPUS: isinya sama persis dengan `barang`.
   { command: 'barang', description: 'Catat/lihat daftar barang & belanja' },
 
+  // ── Ringkasan menyeluruh ──
+  // FITUR TERSEMBUNYI (temuan 16 Okt 2026): `/ringkasan` sudah lama berfungsi
+  // (notes.ts: mintaRingkasan -> susunRingkasan) tetapi TIDAK PERNAH didaftarkan,
+  // sehingga tidak muncul di menu `/` padahal balasan lain menyuruh memakainya.
+  { command: 'ringkasan', description: 'Ringkasan semua: keuangan, tugas, pengingat, catatan' },
+
   // ── Pengingat & preferensi ──
   { command: 'remind', description: 'Pengingat — /remind <menit> <pesan>' },
   { command: 'salah', description: 'Koreksi preferensi personal — /salah <koreksi>' },
@@ -199,6 +205,9 @@ export function teksBantuan(): string {
     '',
     '*Belanja*',
     '`/barang` — lihat / tambah daftar belanja',
+    '',
+    '*Ringkasan*',
+    '`/ringkasan` — semua sekaligus (keuangan, tugas, pengingat, catatan)',
     '',
     '*Pengingat*',
     '`/remind <menit> <pesan>`',

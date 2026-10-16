@@ -2984,7 +2984,13 @@ export async function tanganiPencatatan(
   // /uang  (tanpa isi) -> tampilkan daftar keuangan + nomor untuk dihapus.
   // DITAMBAHKAN (06 Okt 2026): sebelumnya tidak ada cara melihat ID keuangan,
   // sehingga user TIDAK BISA menghapus catatan keuangan yang salah.
-  if (/^\/(?:uang|duit|keuangan|expenses?|keluar|masuk)\s*$/.test(low)) {
+  //
+  // ── KOREKSI 16 Okt 2026 (anti-duplikat) ──
+  // Sebelumnya `masuk` ikut di daftar ini, sehingga `/masuk` (tanpa isi)
+  // menghasilkan balasan yang PERSIS SAMA dengan `/uang` — duplikat, dan
+  // dilarang ("jangan ada / yg isi nya sama"). `masuk` dikeluarkan; sekarang
+  // `/masuk` tanpa isi memberi contoh pemakaian, bukan menampilkan daftar.
+  if (/^\/(?:uang|duit|keuangan|expenses?|keluar)\s*$/.test(low)) {
     const d = await daftarUang(chatId, 10);
     return {
       ditangani: true,
@@ -3025,7 +3031,11 @@ export async function tanganiPencatatan(
   //
   // BUG YANG DIPERBAIKI (06 Okt 2026): "tugas" TIDAK ada di daftar, padahal
   // pesan error kita sendiri menyuruh user mengetik */tugas*. Sekarang ditambah.
-  if (/^\/(?:list|daftar|tugas|tugas-saya|todo|todos|tugasku)$/.test(low)) {
+  // ── KOREKSI 16 Okt 2026 (anti-duplikat) ──
+  // Sebelumnya `tugas` ikut di daftar ini, sehingga `/tugas` (tanpa isi)
+  // menghasilkan balasan PERSIS SAMA dengan `/list` — duplikat. `tugas`
+  // dikeluarkan; `/tugas` tanpa isi kini memberi contoh pemakaian.
+  if (/^\/(?:list|tugas-saya)$/.test(low)) {
     const t = await daftarTugas(chatId, true);
     return { ditangani: true, reply: `*Tugas kamu:*\n${formatDaftarTugas(t)}`, jalur: 'perintah-list' };
   }
@@ -3097,7 +3107,7 @@ export async function tanganiPencatatan(
     // bukan ID global. Konversi dulu ke ID asli.
     const idAsli = await idDariNomorTugas(chatId, nomor);
     if (idAsli === null) {
-      return { ditangani: true, reply: `Tugas #${nomor} tidak ditemukan. Ketik */tugas* untuk melihat daftar.`, jalur: 'perintah-selesai' };
+      return { ditangani: true, reply: `Tugas #${nomor} tidak ditemukan. Ketik */list* untuk melihat daftar.`, jalur: 'perintah-selesai' };
     }
     const ok = await selesaikanTugas(chatId, idAsli);
     return { ditangani: true, reply: ok ? `✅ Tugas #${nomor} selesai!` : `Tugas #${nomor} tidak ditemukan.`, jalur: 'perintah-selesai' };
@@ -3148,7 +3158,7 @@ export async function tanganiPencatatan(
       ditangani: true,
       reply: a || b || c
         ? `🗑️ #${nomor} dihapus.`
-        : `#${nomor} tidak ditemukan. Ketik */tugas*, */catatan*, atau */uang* untuk lihat daftarnya.`,
+        : `#${nomor} tidak ditemukan. Ketik */list*, */catatan*, atau */uang* untuk lihat daftarnya.`,
       jalur: 'perintah-hapus',
     };
   }
@@ -3523,7 +3533,7 @@ export async function tanganiPencatatan(
       // Nomor yang diketik user = NOMOR URUT per-user, bukan ID global.
       const idAsli = await idDariNomorTugas(chatId, id);
       if (idAsli === null) {
-        return { ditangani: true, reply: `Tugas #${id} tidak ditemukan. Ketik */tugas* untuk melihat daftar.`, jalur: 'niat-selesai' };
+        return { ditangani: true, reply: `Tugas #${id} tidak ditemukan. Ketik */list* untuk melihat daftar.`, jalur: 'niat-selesai' };
       }
       const okk = await selesaikanTugas(chatId, idAsli);
       return { ditangani: true, reply: okk ? `✅ Tugas #${id} selesai!` : `Tugas #${id} tidak ditemukan.`, jalur: 'niat-selesai' };
