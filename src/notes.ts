@@ -2484,6 +2484,72 @@ function jawabanKonfirmasi(teks: string): 'ya' | 'tidak' | null {
   return null;
 }
 
+/**
+ * Bagian MURNI (tanpa database) dari deteksi pertanyaan konfirmasi pengingat.
+ * Dipisah agar bisa diuji langsung tanpa menyentuh database.
+ *
+ * True bila kalimatnya berbentuk konfirmasi DAN menyebut hal seputar pengingat.
+ */
+export function adalahPertanyaanKonfirmasiPengingat(teks: string): boolean {
+  const t = (teks || '').trim().toLowerCase();
+  if (!t) return false;
+  // Ciri kalimat konfirmasi: diakhiri "ya/kan/yak/ya?" ATAU dibuka "jadi/berarti".
+  const akhirKonfirmasi = /\b(?:ya|yaa|yak|kan|ya\?|kan\?)\s*[?.!]*$/.test(t);
+  const bukaKonfirmasi = /^(?:jadi|berarti|brarti|jadiinya|soalnya)\b/.test(t);
+  if (!akhirKonfirmasi && !bukaKonfirmasi) return false;
+  // Wajib menyebut hal yang berkaitan dengan pengingat, bukan sekadar "iya ya".
+  return /\b(?:ingat|pengingat|ingetin|rutin|tiap|setiap|jadwal|reminder)\b/.test(t);
+}
+
+/**
+ * Apakah pesan ini PERTANYAAN KONFIRMASI tentang pengingat yang SUDAH ada?
+ *
+ * TEMUAN NYATA (16 Okt 2026) — pengingat jadi DOBEL:
+ *   user : "Ingatkan saya rutin tiap jam 6 pagi untuk bangun"   -> tersimpan "bangun"
+ *   bot  : "✅ Pengingat disimpan..."
+ *   user : "aku di Cianjur"                                     -> zona diperbaiki
+ *   user : "jadi pengingat rutin bangun jam 6 pagi itu WIB ya"  <- PERTANYAAN
+ *   bot  : "✅ Pengingat disimpan, "bangun itu WIB" (tiap hari) mulai 17 Okt, 06.00"
+ *
+ * Kalimat terakhir itu KONFIRMASI, bukan perintah baru — tetapi dicatat sebagai
+ * pengingat KEDUA ("bangun itu WIB") sehingga user menerima dua pengingat.
+ *
+ * Dedup di simpanReminderCerdas TIDAK menangkapnya karena dedup berbasis
+ * KEDEKATAN WAKTU: pengingat pertama masih memakai zona Amerika (17:00 WIB),
+ * sedangkan yang baru 06:00 WIB — jaraknya 13 jam, jauh di luar toleransi.
+ *
+ * ATURAN: bila pesannya berbentuk pertanyaan konfirmasi DAN sudah ada pengingat
+ * pending dengan subjek mirip, maka ini BUKAN perintah baru. Pemanggil
+ * mengembalikan `ditangani: false` agar AI menjawab pertanyaannya secara wajar —
+ * bukan membuat pengingat kedua, dan bukan pula membalas dengan teks template.
+ */
+async function pertanyaanKonfirmasiPengingat(
+  teks: string,
+  chatId: string,
+  subjek: string,
+  platform: string,
+): Promise<boolean> {
+  if (!subjek.trim()) return false;
+  if (!adalahPertanyaanKonfirmasiPengingat(teks)) return false;
+
+  try {
+    const c = db();
+    if (!c) return false;
+    const { data } = await c
+      .from('reminders')
+      .select('message')
+      .eq('chat_id', normChatId(chatId, platform))
+      .eq('status', 'pending')
+      .limit(30);
+    if (!data?.length) return false;
+    const { kemiripanPesan } = await import('./reminder-dedup.js');
+    return data.some((r) => kemiripanPesan(subjek, String((r as { message?: string }).message ?? '')) >= 0.5);
+  } catch {
+    // Best-effort: bila gagal memeriksa, JANGAN memblokir penyimpanan normal.
+    return false;
+  }
+}
+
 /** Bentuk entri dari niat yang sudah dikonfirmasi. */
 async function simpanDariNiat(
   chatId: string, niat: NiatTerdeteksi,
@@ -3537,6 +3603,13 @@ export async function tanganiPencatatan(
           reply: 'Oke, aku catat. Mau diingetin jam berapa? (mis. *jam 7.30 pagi* atau *jam 12.30 siang*)',
           jalur: 'tanya-jam-pengingat',
         };
+      }
+      // ── GUARD ANTI-DOBEL (temuan 16 Okt 2026) ──
+      // Pertanyaan konfirmasi ("...itu WIB ya?") BUKAN perintah pengingat baru.
+      // Bila sudah ada pengingat pending yang mirip, serahkan ke AI supaya
+      // pertanyaannya dijawab wajar — jangan buat pengingat kedua.
+      if (await pertanyaanKonfirmasiPengingat(asli, chatId, String(niat.data.message || ''), opts.platform)) {
+        return { ditangani: false, reply: '', jalur: 'konfirmasi-pengingat' };
       }
       // Pengingat: langsung simpan (tidak boleh ada balasan tanya-jawab).
       const r = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform, teksAsli: asli });
