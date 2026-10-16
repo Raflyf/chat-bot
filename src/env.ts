@@ -82,11 +82,14 @@ export const config = {
     //             gpt-oss-20b (2025-08-05) yang sudah lawas.
     //             BUKTI UJI (12 Okt 2026): nemotron 0.60s dengan enable_thinking:false
     //             (tanpa itu 8.02s), JSON benar, reasoning+tool.
-    //             llama-4-scout = cadangan cepat (0.56s) + vision.
+    //
+    // CATATAN (16 Okt 2026 — instruksi pemilik produk): llama-4-scout DIKELUARKAN
+    // dari cfBackup. Model itu VISION (multimodal) dan tempatnya di `cfVision`,
+    // bukan di rantai TEKS — teks punya model khusus yang lebih tepat.
     // CATATAN: model terbaru (glm-5.3, kimi-k2.6/2.7, deepseek-v4) SEMUA BERBAYAR
     //          ("not available on Workers Free plan") — tidak bisa dipakai.
     cfPrimary: '@cf/qwen/qwen3.8-27b',
-    cfBackup: ['@cf/nvidia/nemotron-3-120b-a12b', '@cf/meta/llama-4-scout-17b-16e-instruct'],
+    cfBackup: ['@cf/nvidia/nemotron-3-120b-a12b'],
     cfVision: [
       '@cf/meta/llama-4-scout-17b-16e-instruct',
       '@cf/meta/llama-3.2-11b-vision-instruct',
