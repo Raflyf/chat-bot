@@ -28,22 +28,47 @@ import { config } from '../src/env.js';
 
 const LINK = 'https://free-chatbot-ai.vercel.app';
 
+/**
+ * PEMBERITAHUAN PEMELIHARAAN (14 Okt 2026).
+ *
+ * KENAPA: pengiriman WhatsApp Cloud API sedang diblokir Meta (payment method
+ * belum beres -> error 141006), sehingga balasan bot TIDAK sampai ke pengguna.
+ * Karena bot tidak bisa memberi tahu lewat percakapan, pemberitahuan
+ * diletakkan di DESKRIPSI PROFIL yang dibaca user sendiri saat membuka profil.
+ *
+ * ATURAN: TAMBAHKAN baris baru di depan, JANGAN hapus baris yang sudah ada
+ * (terutama "Tanya bisa apa saja" — cara user menemukan daftar fitur).
+ * Cabut baris ⚠️ ini setelah pengiriman WhatsApp kembali normal.
+ */
+const NOTA_PEMELIHARAAN_TG =
+  '⚠️ WhatsApp sedang PEMELIHARAAN. Telegram aktif normal — lanjut di sini ya.';
+
+const NOTA_PEMELIHARAAN_WA =
+  '⚠️ WhatsApp sedang PEMELIHARAAN: balasan belum bisa terkirim. Gunakan Telegram ' +
+  'kami yang aktif normal: https://t.me/chatkita_bot';
+
 /** Deskripsi panjang Telegram (maks 512 karakter menurut Telegram). */
 const DESKRIPSI =
+  NOTA_PEMELIHARAAN_TG + '\n\n' +
   'Asisten AI pribadi 24/7 untuk WhatsApp & Telegram: teman ngobrol, pengingat, ' +
   'pencatatan (catatan/tugas/keuangan), riset web, dan baca dokumen/gambar/suara.\n\n' +
   // Baris "bisa apa saja" JANGAN DIHAPUS — cara user menemukan daftar fitur.
   'Tanya "bisa apa saja" untuk panduan lengkap fitur.\n\n' +
   `🐞 Ada keluhan, atau jawabannya terasa tidak nyambung / ngaco? Laporkan di ${LINK} — ` +
-  'bagian paling bawah halaman tersedia form laporan (bisa tempel percakapan atau ' +
-  'lampirkan tangkapan layar).';
+  'bagian bawah halaman ada form laporan (bisa tempel percakapan atau tangkapan layar).';
 
 /** Deskripsi singkat Telegram (maks 120 karakter). */
 const DESKRIPSI_SINGKAT =
-  `Teman ngobrol AI 24/7: pengingat, catatan, riset. Ada keluhan? ${LINK}`;
+  `⚠️ WhatsApp pemeliharaan sementara. Telegram aktif 24/7. Keluhan: ${LINK}`;
+
+/** Field `about` WhatsApp (maks 139 karakter) — paling terlihat di profil. */
+const WA_ABOUT =
+  '⚠️ WhatsApp sedang PEMELIHARAAN. Sementara ini gunakan Telegram kami: ' +
+  'https://t.me/chatkita_bot';
 
 /** Deskripsi profil bisnis WhatsApp (maks 512 karakter). */
 const WA_DESKRIPSI =
+  NOTA_PEMELIHARAAN_WA + '\n\n' +
   'Asisten AI 24 jam: teman ngobrol, riset real-time, dan bantu kerjaan.\n\n' +
   'Bisa mencatat pengingat, keuangan, tugas, dan catatan. Bisa membaca foto, ' +
   'voice note, dan dokumen. Bisa main game di chat juga.\n\n' +
@@ -51,8 +76,7 @@ const WA_DESKRIPSI =
   // JANGAN DIHAPUS — itu cara user menemukan daftar fitur. Saat menambahkan info
   // laporan, TAMBAHKAN baris baru; jangan menimpa baris yang sudah ada.
   'Tanya "bisa apa saja" untuk panduan lengkap fitur.\n\n' +
-  `Ada keluhan atau jawaban yang tidak nyambung? Laporkan lewat form di ${LINK} ` +
-  '(bagian bawah halaman).';
+  `Ada keluhan atau jawaban ngaco? Laporkan lewat form di ${LINK}.`;
 
 async function panggil(method: string, body: Record<string, unknown>): Promise<void> {
   if (!config.telegramToken) {
@@ -96,6 +120,9 @@ async function setWhatsApp(): Promise<void> {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
+      // `about` (maks 139) = teks paling terlihat, tepat di bawah nama bot.
+      about: WA_ABOUT.slice(0, 139),
+      // `description` (maks 512) = teks lengkap di bagian "Info" profil.
       description: WA_DESKRIPSI.slice(0, 512),
       websites,
     }),
