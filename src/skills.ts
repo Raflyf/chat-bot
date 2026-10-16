@@ -2574,6 +2574,20 @@ export function systemPrompt(
     '- ANTI-FLAT: jawaban pendek wajib tetap bernyawa — minimal bentangkan 1 kata akhiran jadi dua huruf (ohh, okee, sipp, mantapp, amann, iyaa) supaya tidak terkesan cuek/dingin. Kata pendek polos seperti "Oke," "sip," "iya." tanpa ekspresi apa pun dilarang.',
     '- Pengecualian: saat suasana serius, sedih, atau rapuh, tulis dengan tempo normal tanpa bentangan dan tanpa emoji.',
     '- Bicara setara sahabat: tanpa jargon server/IT/database, tanpa gelar diri (sebagai AI/bot), tanpa ceramah moral, tanpa template CS (menawarkan bantuan atau menu percakapan), tanpa rengekan pasrah minta maaf, dan tanpa pertanyaan pancingan klise di akhir pesan.',
+    // ── JAWAB LANGSUNG PESAN TERAKHIR (temuan produksi 16 Okt 2026) ──
+    // KASUS NYATA (Telegram #4526):
+    //   user : "lu juga jemping"   (menyapa BOT)
+    //   bot  : "Jemping bareng? Nenekmu pasti ahli lompat tali! 😂"
+    // User mengeluh: "tiba tiba ke nenekmu dan ahli lompat tali" — balasan jadi
+    // tidak nyambung karena (a) dia sedang membicarakan BOT, tapi dibelokkan ke
+    // orang lain, dan (b) muncul klaim baru "ahli lompat tali" yang tidak pernah
+    // dia sebutkan.
+    //
+    // CATATAN PENTING: ini BUKAN larangan menyebut "nenek gue". Gaya banter
+    // "Nenek gue jemping juga katanya!" justru DISUKAI pemilik produk dan harus
+    // tetap dipertahankan. Yang dilarang hanya MEMBELOKKAN topik dan MENGARANG
+    // klaim baru tentang orang lain.
+    '- JAWAB LANGSUNG PESAN TERAKHIRNYA: tanggapi apa yang dia baru saja katakan, jangan membelokkan ke orang/topik lain. Bila dia sedang membicarakan KAMU ("lu juga...", "kamu tuh..."), balas tentang DIRIMU. DILARANG menambah klaim baru tentang orang lain (keahlian, kebiasaan, kejadian) yang tidak pernah dia sebutkan.',
     '- MINTA MAAF: PAKAI PENILAIAN SITUASI (ATURAN PENTING):',
     '  * Minta maaf itu manusiawi dan sering tepat — jangan dihindari karena takut dianggap lemah.',
     '  * PERLU: kamu benar-benar keliru; jawabanmu menyinggung perasaannya; kamu lupa hal penting yang dia ceritakan; kamu mengarang fakta lalu terbukti salah; kamu bikin dia kecewa.',
@@ -3866,6 +3880,43 @@ function buildMessages(
   return messages;
 }
 
+/**
+ * Deteksi balasan yang hanya MENGULANG pesan user (echo) — bukan menjawab.
+ *
+ * KENAPA PERLU (temuan produksi 16 Okt 2026, Telegram #4517):
+ *   User mengirim stiker + caption "Gaya terbangmu itu level dewa ya?" lalu bot
+ *   membalas PERSIS kalimat itu. Dari sisi user, bot tampak mengulang pesannya.
+ *
+ * AKAR: guard lama hanya membandingkan balasan dengan balasan asisten SEBELUMNYA,
+ * sehingga echo terhadap pesan user saat ini lolos. Model kecil sering "collapse"
+ * dengan menyalin input saat ragu.
+ *
+ * DIEKSPOR agar SEMUA jalur memakai aturan yang sama — termasuk jalur STIKER di
+ * ketiga transport (Telegram/Cloud/Baileys) yang memakai describeImage LANGSUNG
+ * dan karena itu TIDAK melewati autoReply.
+ *
+ * @param balasan   teks balasan yang akan dikirim
+ * @param pesanUser teks pesan user yang sedang dibalas
+ * @returns true bila balasan hanya mengulang pesan user
+ */
+export function adalahEchoPesanUser(balasan: string, pesanUser: string): boolean {
+  const a = String(balasan || '').trim().toLowerCase();
+  const b = String(pesanUser || '').trim().toLowerCase();
+  // Pesan pendek (sapaan: "woy", "oi", "tes") WAJAR diulang balasannya.
+  if (!a || !b || b.length <= 15) return false;
+  if (a === b) return true;
+  // Kemiripan token hanya bermakna untuk kalimat yang cukup panjang.
+  if (a.length <= 30 || b.length <= 30) return false;
+  const tokensOf = (s: string): Set<string> =>
+    new Set(s.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3));
+  const ta = tokensOf(a);
+  const tb = tokensOf(b);
+  if (!ta.size || !tb.size) return false;
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter++;
+  return inter / Math.min(ta.size, tb.size) >= 0.85;
+}
+
 /** Balas pesan teks apa pun secara dinamis. ZERO teks statis: bila seluruh provider mati dan model tidak menghasilkan apa pun, balasan kosong + eskalasi (platform tidak mengirim pesan apa pun). */
 export async function autoReply(
   userText: string,
@@ -4268,6 +4319,50 @@ export async function autoReply(
           // Fallback graceful jika retry tidak tersedia
         }
       }
+    }
+
+    // ── GUARD ANTI-ECHO PESAN USER (temuan produksi 16 Okt 2026) ──
+    // KASUS NYATA (Telegram #4517): user mengirim stiker + caption
+    // "Gaya terbangmu itu level dewa ya?" lalu bot membalas PERSIS kalimat itu.
+    // Dari sisi user, bot tampak "mengulang pesannya" alih-alih menjawab.
+    //
+    // AKAR: guard anti-loop di atas hanya membandingkan balasan dengan balasan
+    // asisten SEBELUMNYA. Echo terhadap pesan user SAAT INI lolos sepenuhnya.
+    // Model kecil sering "collapse" dengan menyalin input saat ragu — terutama
+    // pada jalur stiker, karena teks caption ikut menjadi bahan prompt.
+    //
+    // SEKARANG: balasan yang sama/sangat mirip dengan pesan user saat ini dianggap
+    // gagal lalu diminta ulang dengan instruksi tegas. Bila percobaan kedua masih
+    // mengulang, balasan lama dibiarkan (TIDAK ada teks template statis — sesuai
+    // aturan pemilik produk: jangan menghardcode jawaban bot).
+    if (adalahEchoPesanUser(reply, clean)) {
+        console.warn('[skills] Balasan mengulang pesan user (echo) — diminta ulang.');
+        try {
+          const retryEchoMsgs: ChatMsg[] = [
+            ...buildMessages(clean, ctx, web, pickedForTurn),
+            {
+              role: 'user',
+              content:
+                'Balasanmu barusan hanya MENGULANG kalimat yang baru saja dia kirim — itu bukan jawaban. Jawab SEKARANG dengan reaksi atau tanggapanmu sendiri terhadap apa yang dia sampaikan: jangan menyalin kalimatnya, jangan mengulanginya dengan kata lain, jangan menerangkannya ulang.',
+            },
+          ];
+          const cobaEcho = await chatRetry(retryEchoMsgs, false, ctx?.chatId);
+          if (cobaEcho.text && cobaEcho.text.trim()) {
+            const echoSticker = extractStickerTag(cobaEcho.text);
+            const echoExtract = extractRiddleTag(echoSticker.text);
+            const echoReply = sanitizeAssistantOutput(
+              echoExtract.text, clean, recentOpenings, false, professionalContext, !!web, web,
+            );
+            // Terima hanya bila hasil retry benar-benar BERBEDA dari pesan user.
+            if (echoReply.trim() && !adalahEchoPesanUser(echoReply, clean)) {
+              reply = echoReply;
+              if (!stickerEmoji && echoSticker.sticker) stickerEmoji = echoSticker.sticker;
+              if (!riddleAnswer && echoExtract.answer) riddleAnswer = echoExtract.answer;
+            }
+          }
+        } catch {
+          // Fallback graceful: bila retry gagal, balasan lama dibiarkan.
+        }
     }
 
     // GUARD ANTI-AMNESIA (temuan produksi 20 Sep, chat wa_...3323):
@@ -4931,6 +5026,18 @@ export async function describeImage(
       'e. DILARANG balasan bernada asisten ("Tidak ada masalah", "Saya akan membantu Anda", "Ada yang bisa saya bantu").',
       'f. DILARANG mengarang cerita/dongeng (kompetisi, tren TikTok, profesi, tempat fiktif).',
       'g. Amati dulu dalam hati: objek apa, ekspresinya bagaimana, maknanya apa. Baru susun reaksi.',
+      // ── SUDUT PANDANG (temuan produksi 16 Okt 2026, Telegram #4517) ──
+      // KASUS NYATA: user mengirim stiker kucing terbang, lalu bot membalas
+      // "Gaya terbangmu itu level dewa ya?" — kalimat itu DITUJUKAN KEPADA bot,
+      // bukan balasan bot. Karena dikirim sebagai pesan bot, user melihat bot
+      // bertanya soal gaya terbangnya sendiri = tidak nyambung.
+      // AKAR: model menulis dari sudut pandang USER (menyapa "kamu"), bukan dari
+      // sudut pandangnya sendiri sebagai pihak yang membalas.
+      //
+      // CATATAN: sengaja TANPA contoh kalimat balasan. Memberi contoh siap pakai
+      // membuat model menyalinnya mentah-mentah (bot jadi template). Prinsipnya
+      // saja — kalimatnya biar model susun sendiri secara dinamis.
+      'h. SUDUT PANDANG: kamu yang MEMBALAS, jadi tulis reaksimu sendiri terhadap stiker itu. DILARANG menulis kalimat yang ditujukan KEPADA kamu, DILARANG bertanya untuk dirimu sendiri, dan DILARANG mengulang kalimat dia.',
       'BENTUK BALASAN:',
       '1. SATU kalimat pendek santai (5-12 kata). DILARANG dua paragraf.',
       '2. Nyambung dengan makna stiker + obrolan terakhir.',
