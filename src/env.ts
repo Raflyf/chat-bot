@@ -308,8 +308,23 @@ export const config = {
   whatsappPhoneNumberId: cleanStr('WHATSAPP_PHONE_NUMBER_ID'),
   whatsappVerifyToken: cleanStr('WHATSAPP_VERIFY_TOKEN'),
   whatsappAppSecret: cleanStr('WHATSAPP_APP_SECRET'),
-  // Mode maintenance WhatsApp sementara: bila aktif (default true), otomatis membalas & mengarahkan ke Telegram
-  whatsappMaintenanceMode: process.env.WHATSAPP_MAINTENANCE_MODE !== 'false',
+  // ── MODE PEMELIHARAAN WHATSAPP (sementara) ──
+  // DEFAULT: NONAKTIF (operasional normal). Aktifkan EKSPLISIT dengan
+  // `WHATSAPP_MAINTENANCE_MODE=true` saat pengiriman WhatsApp Cloud API
+  // terblokir Meta (mis. payment method belum tertaut -> error 141006
+  // "There is an error with the payment method").
+  //
+  // Saat aktif: bot TIDAK memanggil AI untuk pesan WhatsApp (hemat kuota) dan
+  // hanya mengirim pemberitahuan pemeliharaan + mengarahkan pengguna ke Telegram.
+  // Set kembali ke `false` (atau hapus) setelah payment method beres.
+  //
+  // CATATAN: sebelumnya memakai `!== 'false'`, sehingga env yang TIDAK diset
+  // berarti AKTIF. Itu membuat status tidak jelas — mode pemeliharaan bisa
+  // menyala tanpa sengaja (mis. preview deployment tanpa env) dan sulit
+  // dibedakan dari kerusakan. Sekarang harus eksplisit.
+  whatsappMaintenanceMode: ['true', '1', 'yes', 'on'].includes(
+    String(process.env.WHATSAPP_MAINTENANCE_MODE ?? '').trim().toLowerCase(),
+  ),
   resendApiKey: cleanStr('RESEND_API_KEY'),
   resendFrom: cleanStr('RESEND_FROM') || 'ChatBot Security <notifications@resend.dev>',
   adminEmail: cleanStr('ADMIN_EMAIL'),

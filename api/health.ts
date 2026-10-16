@@ -10,6 +10,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../src/db.js';
 import { config } from '../src/env.js';
+import { statistikKirimWa } from '../src/wa_monitor.js';
 
 const MULAI = Date.now();
 
@@ -54,11 +55,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     sehat = false;
   }
 
+  // 3. Status WhatsApp (mode pemeliharaan / operasional).
+  //    PENTING: maintenance TIDAK membuat `sehat=false` — bot tetap melayani
+  //    Telegram dengan normal. Ini hanya penanda status agar landing page dan
+  //    monitoring tidak mengklaim "Online 24/7" untuk WhatsApp saat terblokir.
+  const waMaintenance = config.whatsappMaintenanceMode;
+  cek.whatsapp = {
+    ok: !waMaintenance,
+    detail: waMaintenance ? 'pemeliharaan (payment method Meta)' : 'operasional',
+  };
+
+  // 4. Statistik pengiriman WhatsApp (monitor kegagalan beruntun).
+  //    Angka ini per-instance serverless (reset saat instance dingin), jadi
+  //    dipakai sebagai indikator cepat — bukan penghitung kumulatif abadi.
+  //    Pemberitahuan ke pemilik tetap dikirim oleh src/wa_monitor.ts.
+  let waKirim: { gagal_beruntun: number; gagal_total: number; sukses_total: number } | undefined;
+  try {
+    const s = statistikKirimWa();
+    waKirim = {
+      gagal_beruntun: s.gagal_beruntun,
+      gagal_total: s.gagal_total,
+      sukses_total: s.sukses_total,
+    };
+  } catch {
+    waKirim = undefined;
+  }
+
   res.status(sehat ? 200 : 503).json({
     status: sehat ? 'sehat' : 'bermasalah',
     waktu: new Date().toISOString(),
     uptime_detik: Math.round((Date.now() - MULAI) / 1000),
     versi: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || 'lokal',
+    whatsapp_maintenance: waMaintenance,
+    whatsapp_kirim: waKirim,
     cek,
   });
 }

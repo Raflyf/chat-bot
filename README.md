@@ -1,6 +1,10 @@
 # FreeAIBot
 
-Asisten AI multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. Dibangun dengan TypeScript, Vercel Serverless, dan Supabase PostgreSQL.
+Asisten AI multimodal untuk Telegram dan WhatsApp. Dibangun dengan TypeScript, Vercel Serverless, dan Supabase PostgreSQL.
+
+> **Status layanan:** Telegram aktif normal. WhatsApp Cloud API dapat berada dalam
+> **mode pemeliharaan** sementara (mis. saat penautan payment method Meta belum
+> selesai) — lihat [Mode Pemeliharaan WhatsApp](#-mode-pemeliharaan-whatsapp).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -8,7 +12,7 @@ Asisten AI multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. Dibangun de
 [![Platform](https://img.shields.io/badge/Deployment-Vercel%20Serverless-black.svg?logo=vercel&logoColor=white)](https://free-chatbot-ai.vercel.app)
 [![Database](https://img.shields.io/badge/Database-Supabase%20PostgreSQL-3ECF8E.svg?logo=supabase&logoColor=white)](https://supabase.com)
 [![Telegram](https://img.shields.io/badge/Telegram-%40chatkita__bot-2CA5E0.svg?logo=telegram&logoColor=white)](https://t.me/chatkita_bot)
-[![WhatsApp](https://img.shields.io/badge/WhatsApp-Online%2024%2F7-25D366.svg?logo=whatsapp&logoColor=white)](https://wa.me/6283874640066)
+[![WhatsApp](https://img.shields.io/badge/WhatsApp-Cloud%20API-25D366.svg?logo=whatsapp&logoColor=white)](https://wa.me/6283874640066)
 
 ---
 
@@ -17,7 +21,7 @@ Asisten AI multimodal yang beroperasi 24/7 di WhatsApp dan Telegram. Dibangun de
 | Layanan | Tautan / Kontak | Keterangan |
 | :--- | :--- | :--- |
 | **Telegram Bot** | [@chatkita_bot](https://t.me/chatkita_bot) | Siap digunakan 24/7 |
-| **WhatsApp Bot** | [+62 838-7464-0066](https://wa.me/6283874640066) | Dukungan resmi WhatsApp Cloud API (Obrolan Pribadi) |
+| **WhatsApp Bot** | [+62 838-7464-0066](https://wa.me/6283874640066) | WhatsApp Cloud API (obrolan pribadi). Dapat berstatus **pemeliharaan** — lihat [Mode Pemeliharaan WhatsApp](#-mode-pemeliharaan-whatsapp) |
 | **Landing Page** | [free-chatbot-ai.vercel.app](https://free-chatbot-ai.vercel.app) | Beranda informasi produk & panduan |
 
 ---
@@ -119,7 +123,8 @@ Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key yang 
 ## Penerapan Produksi (Deployment)
 
 - **Telegram**: Hubungkan repositori ke **Vercel**, masukkan Environment Variables, dan daftarkan webhook Telegram ke endpoint `/api/webhook`.
-- **WhatsApp Cloud API**: Terintegrasi langsung di **Vercel Serverless** pada endpoint `/api/whatsapp`, siap menerima webhook pesan masuk Meta Cloud API untuk obrolan pribadi 24/7 tanpa membutuhkan server VPS.
+- **WhatsApp Cloud API**: Terintegrasi langsung di **Vercel Serverless** pada endpoint `/api/whatsapp`, siap menerima webhook pesan masuk Meta Cloud API untuk obrolan pribadi tanpa membutuhkan server VPS.
+  - **PENTING — payment method wajib:** WhatsApp Cloud API memerlukan metode pembayaran yang valid pada akun bisnis Meta. Bila belum tertaut, Meta **MEMBLOKIR pengiriman** (error `141006` "There is an error with the payment method") walau API tetap membalas HTTP 200 — pesan masuk **tidak akan sampai** ke pengguna. Langkah perbaikan: `sql/CARA_MAINTENANCE_WHATSAPP.md`.
 - **Basis Data**: Jalankan skrip SQL pada folder `sql/` di SQL Editor Supabase secara berurutan (mulai dari versi terendah). Seluruh skrip migrasi bersifat aditif dan aman dijalankan berulang.
 - **Pengingat Tepat Waktu**: tiga lapisan pemicu yang saling melengkapi:
   1. **cron-job.org** (UTAMA, gratis) — memanggil `/api/cron/reminders` **tiap 1 menit**. Setup: `sql/CARA_SETUP_CRONJOB_ORG.md`. Hasil terukur: pengingat terkirim dalam ~40 detik.
@@ -129,6 +134,44 @@ Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key yang 
   Semua memanggil endpoint yang sama dengan autentikasi yang sama. Aman berjalan bersamaan — pengingat tidak terkirim dobel.
 
 Dokumentasi arsitektur mendalam dan riwayat teknis versi dikelola secara internal dan tidak dipublikasikan di repositori ini.
+
+---
+
+## 🚧 Mode Pemeliharaan WhatsApp
+
+Bila pengiriman WhatsApp terblokir Meta (mis. payment method belum tertaut →
+error `141006`), aktifkan **mode pemeliharaan** agar bot tidak membuang kuota AI
+untuk pesan yang tidak akan sampai, dan pengguna diarahkan ke Telegram:
+
+```bash
+WHATSAPP_MAINTENANCE_MODE=true
+```
+
+Perilaku saat aktif:
+
+- Pesan WhatsApp **tidak** diproses AI (hemat kuota provider).
+- Pengguna menerima pemberitahuan pemeliharaan yang mengarahkan ke Telegram.
+- Bila pemberitahuan itu **sendiri gagal terkirim**, kegagalan dicatat di log dan
+  pesan **tidak** ditandai selesai serta **tidak** disimpan sebagai balasan —
+  supaya dataset tidak seolah menunjukkan bot sudah menjawab.
+- `GET /api/health` melaporkan `whatsapp_maintenance: true`, dan landing page
+  menampilkan penanda **"Telegram Online · WhatsApp Maintenance"** alih-alih
+  "Online 24/7".
+
+Mematikan kembali (setelah payment method beres):
+
+```bash
+WHATSAPP_MAINTENANCE_MODE=false   # atau hapus variabelnya
+```
+
+Default **nonaktif** (operasional normal) — mode ini harus dinyalakan eksplisit
+supaya statusnya jelas dan tidak menyala tanpa sengaja.
+
+**Notifikasi otomatis:** bila pengiriman gagal 3× berturut-turut, sistem mengirim
+peringatan ke Telegram pemilik (maksimal sekali per 6 jam) berisi dugaan penyebab
+dan langkah pengecekan — jadi blokir Meta tidak lewat tanpa ada yang sadar.
+
+Panduan lengkap memperbaiki payment method: **`sql/CARA_MAINTENANCE_WHATSAPP.md`**.
 
 ---
 
@@ -175,7 +218,7 @@ lalu dikonfirmasi.
 
 | Endpoint | Fungsi |
 |---|---|
-| `GET /api/health` | Status sistem (200 sehat / 503 bermasalah) — untuk UptimeRobot |
+| `GET /api/health` | Status sistem (200 sehat / 503 bermasalah) + `whatsapp_maintenance` — untuk UptimeRobot |
 | `POST /api/cron/backup` | Backup tabel utama ke Supabase Storage (harian) |
 | `POST /api/cron/arsip` | Arsipkan pesan lama (harian) |
 

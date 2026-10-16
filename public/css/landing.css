@@ -417,6 +417,24 @@ header {
   transform: translateY(-1px);
 }
 
+/* Mode pemeliharaan WhatsApp: status TIDAK boleh mengklaim "Online 24/7" untuk
+   WhatsApp saat pengiriman terblokir (mis. payment method Meta belum tertaut). */
+.status-pill--warn {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.38);
+}
+
+.status-pill--warn:hover {
+  border-color: rgba(245, 158, 11, 0.6);
+  background-color: rgba(245, 158, 11, 0.2);
+}
+
+.status-pill--warn .pulse-dot {
+  background: #fbbf24;
+  box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55);
+}
+
 .pulse-dot {
   width: 7px;
   height: 7px;

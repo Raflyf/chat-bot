@@ -16,6 +16,8 @@ import { saveReminderToDb, checkDueReminders, nomorWhatsApp } from './remind.js'
 import { tanganiPencatatan } from './notes.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
 import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
+// Monitor pengiriman: deteksi kegagalan beruntun -> beri tahu pemilik via Telegram.
+import { catatHasilKirimWa } from './wa_monitor.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
 const PROMPT_VERSION = 'v0.66.0';
@@ -182,6 +184,14 @@ export async function sendWhatsAppCloudMessageSafe(
       await new Promise((r) => setTimeout(r, 200));
     }
   }
+  // Catat hasil untuk deteksi kegagalan beruntun (fire-and-forget; tidak menambah
+  // latensi balasan dan tidak pernah melempar). Pemilik diberi tahu lewat Telegram
+  // bila gagal berulang — inilah yang membuat blokir Meta (mis. payment method)
+  // TIDAK lagi lewat begitu saja tanpa ada yang sadar.
+  void catatHasilKirimWa(
+    semuaBerhasil,
+    semuaBerhasil ? undefined : 'Meta menolak atau tidak mengembalikan id pesan',
+  );
   return semuaBerhasil;
 }
 
@@ -516,15 +526,29 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             'Halo! Layanan bot WhatsApp sedang dalam pemeliharaan (maintenance) sementara.\n\n' +
             'Kamu tetap bisa ngobrol dan menggunakan seluruh fitur bot seperti biasa di Telegram kami yang aktif normal:\n' +
             '👉 https://t.me/chatkita_bot';
-          await sendWhatsAppCloudMessageSafe(from, maintenanceMsg);
-          void markMessageProcessed('whatsapp', messageId);
-          void saveMessage({
-            platform: 'whatsapp',
-            chat_id: chatKey,
-            role: 'assistant',
-            content: maintenanceMsg,
-            via: 'system/maintenance',
-          }).catch(() => undefined);
+          const terkirim = await sendWhatsAppCloudMessageSafe(from, maintenanceMsg);
+          if (terkirim) {
+            void markMessageProcessed('whatsapp', messageId);
+            void saveMessage({
+              platform: 'whatsapp',
+              chat_id: chatKey,
+              role: 'assistant',
+              content: maintenanceMsg,
+              via: 'system/maintenance',
+            }).catch(() => undefined);
+          } else {
+            // Bila pemberitahuan pemeliharaan pun GAGAL terkirim (biasanya karena
+            // Meta masih memblokir pengiriman, mis. payment method belum beres),
+            // JANGAN tandai selesai dan JANGAN simpan sebagai balasan: kalau
+            // disimpan, dataset seolah bot sudah menjawab padahal pengguna tidak
+            // menerima apa pun. Log dibuat eksplisit supaya kegagalan ini tidak
+            // lewat "diam-diam".
+            console.error(
+              '[wa-cloud] MAINTENANCE: pemberitahuan pemeliharaan GAGAL terkirim ' +
+                '(Meta menolak / payment method belum beres). Pesan TIDAK ditandai selesai ' +
+                `dan TIDAK disimpan sebagai balasan. msg_id=${messageId}`,
+            );
+          }
           return;
         }
 

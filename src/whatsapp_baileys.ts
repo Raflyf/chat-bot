@@ -25,6 +25,8 @@ import { saveReminderToDb, checkDueReminders, nomorWhatsApp } from './remind.js'
 // normChatId: SATU SUMBER normalisasi chat_id (audit 14 Okt 2026 — chatKey Baileys
 // dulu memakai JID penuh sehingga identitas user terpecah dari Cloud API).
 import { normChatId } from './chat_id.js';
+// Monitor pengiriman: deteksi kegagalan beruntun -> beri tahu pemilik via Telegram.
+import { catatHasilKirimWa } from './wa_monitor.js';
 
 // ── Reconnect dengan backoff (perbaikan audit 14 Okt 2026) ──
 // Sebelumnya delay TETAP 3 detik tanpa batas percobaan -> hot-loop saat
@@ -58,19 +60,34 @@ export async function sendWhatsAppMessageSafe(
   // Bila diisi, pesan bot tampil sebagai BALASAN (quote) ke pesan itu.
   // Baileys memakai `{ quoted: WAMessage }` — jadi kita perlu pesan aslinya.
   quotedMsg?: unknown,
-): Promise<void> {
-  if (!text) return;
+): Promise<boolean> {
+  if (!text) return false;
   const chunks = splitMessageSmart(text, 4000);
+  // Mengembalikan status supaya pemanggil bisa membedakan TERKIRIM vs GAGAL.
+  // Sebelumnya `Promise<void>`: kegagalan kirim tidak terdeteksi sama sekali
+  // (pemberitahuan pemeliharaan ditandai selesai padahal tidak sampai).
+  let semuaBerhasil = true;
 
   for (const chunk of chunks) {
     // Quote hanya untuk chunk PERTAMA.
     const payload: Record<string, unknown> = { text: chunk };
     if (quotedMsg && chunk === chunks[0]) payload.quoted = quotedMsg;
-    await sock.sendMessage(jid, payload as Parameters<typeof sock.sendMessage>[1]);
+    try {
+      await sock.sendMessage(jid, payload as Parameters<typeof sock.sendMessage>[1]);
+    } catch (err) {
+      console.error('[whatsapp] Gagal kirim pesan:', String((err as Error)?.message ?? err));
+      semuaBerhasil = false;
+    }
     if (chunks.length > 1) {
       await new Promise((r) => setTimeout(r, 200));
     }
   }
+
+  void catatHasilKirimWa(
+    semuaBerhasil,
+    semuaBerhasil ? undefined : 'Baileys gagal mengirim pesan',
+  );
+  return semuaBerhasil;
 }
 
 /**
@@ -365,15 +382,27 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       'Halo! Layanan bot WhatsApp sedang dalam pemeliharaan (maintenance) sementara.\n\n' +
       'Kamu tetap bisa ngobrol dan menggunakan seluruh fitur bot seperti biasa di Telegram kami yang aktif normal:\n' +
       '👉 https://t.me/chatkita_bot';
-    await sendWhatsAppMessageSafe(sock, remoteJid, maintenanceMsg);
-    if (messageId) void markMessageProcessed('whatsapp', messageId);
-    void saveMessage({
-      platform: 'whatsapp',
-      chat_id: chatKey,
-      role: 'assistant',
-      content: maintenanceMsg,
-      via: 'system/maintenance',
-    }).catch(() => undefined);
+    const terkirim = await sendWhatsAppMessageSafe(sock, remoteJid, maintenanceMsg);
+    if (terkirim) {
+      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      void saveMessage({
+        platform: 'whatsapp',
+        chat_id: chatKey,
+        role: 'assistant',
+        content: maintenanceMsg,
+        via: 'system/maintenance',
+      }).catch(() => undefined);
+    } else {
+      // Bila pemberitahuan pemeliharaan pun GAGAL terkirim, JANGAN tandai selesai
+      // dan JANGAN simpan sebagai balasan: kalau disimpan, dataset seolah bot
+      // sudah menjawab padahal pengguna tidak menerima apa pun. Log dibuat
+      // eksplisit supaya kegagalan ini tidak lewat "diam-diam".
+      console.error(
+        '[whatsapp] MAINTENANCE: pemberitahuan pemeliharaan GAGAL terkirim. ' +
+          'Pesan TIDAK ditandai selesai dan TIDAK disimpan sebagai balasan.' +
+          (messageId ? ` msg_id=${messageId}` : ''),
+      );
+    }
     return;
   }
 
