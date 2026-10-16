@@ -1543,9 +1543,27 @@ function steps(): Step[] {
       keys: config.pools.dreamprompting,
       models: [config.models.dpPrimary, ...config.models.dpBackup],
       cap: config.dailyCap.dreamprompting,
-      maxPromptTokens: 7000,
+      maxPromptTokens: 0,
       run: (k, m, msgs, t) => {
-        const dpMsgs = trimMessagesToTokenBudget(msgs, 7000);
+        // ── PERBAIKAN 16 Okt 2026: DreamPrompting HAMPIR TIDAK PERNAH DIPAKAI ──
+        // GEJALA: seluruh percakapan selalu jatuh ke Cloudflare (Tier 2), padahal
+        // DreamPrompting adalah Tier 1. Terakhir dipakai 9 Okt 08:30.
+        //
+        // AKAR: guard `maxPromptTokens: 7000` memeriksa ukuran prompt MENTAH.
+        // Ukuran prompt nyata: median 8.752 token (p75 9.556, p90 10.971), sehingga
+        // ~75% permintaan DILEWATI sebelum sempat dicoba. Padahal fungsi ini SUDAH
+        // memangkas sendiri lewat trimMessagesToTokenBudget di bawah — guard itu
+        // membatalkan pemangkasan yang sudah disiapkan.
+        //
+        // BUKTI DreamPrompting SANGGUP: pemakaian nyata 7-9 Okt berhasil pada
+        // prompt 9.097-9.916 token (bukan 7.000). Sejalan dengan instruksi pemilik
+        // produk: "jangan terlalu di kompres... dream bisa merespon walapun lebih
+        // dari 8000".
+        //
+        // SEKARANG: tidak ada skip (0 = tanpa batas), dan pagar pemangkasan
+        // dinaikkan 7.000 -> 12.000 token (menutup ~94% percakapan) agar tidak
+        // dikompres berlebihan namun tetap terlindung dari prompt ekstrem.
+        const dpMsgs = trimMessagesToTokenBudget(msgs, 12000);
         return openAiChat('https://dreamprompting.com/api/v1', k, m, dpMsgs, BASE_GEN_TIGHT.maxTokens, {
           reasoning_effort: 'none',
           reasoning: { effort: 'none' },
