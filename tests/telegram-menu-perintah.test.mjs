@@ -20,6 +20,7 @@ import {
   PERINTAH_BOT,
   PERINTAH_BANTUAN,
   PERINTAH_BERARGUMEN,
+  PERINTAH_DIGABUNG,
   daftarPerintahTelegram,
   teksDaftarPerintah,
   konteksBantuanUntukAi,
@@ -52,20 +53,46 @@ test('fitur utama SEMUA terdaftar', () => {
   const ada = new Set(PERINTAH_BOT.map((p) => p.command));
   for (const wajib of [
     'start', 'help', 'reset',
-    'tanya', 'ai',
+    'tanya',
     'catat', 'catatan', 'cari',
     'tugas', 'list',
-    'uang', 'masuk', 'keluar', 'rekap',
-    'barang', 'belanja',
+    'uang', 'masuk', 'rekap', 'hapusuang',
+    'barang',
     'remind', 'salah',
   ]) {
     assert.ok(ada.has(wajib), `perintah /${wajib} harus terdaftar di menu`);
   }
 });
 
-test('perintah bantuan mencakup semua alias yang didukung kode', () => {
-  for (const a of ['help', 'bantuan', 'menu', 'fitur', 'panduan', 'tutorial']) {
-    assert.ok(PERINTAH_BANTUAN.has(a), `/${a} harus memicu daftar fitur`);
+test('HANYA ADA SATU perintah bantuan: /help', () => {
+  // KOREKSI 16 Okt 2026: "knapa help, menu, bantuan, fitur, tutorial, panduan,
+  // itu isi nya sama, kalo gitu cukup satukan saja jadi help saja".
+  assert.deepEqual([...PERINTAH_BANTUAN], ['help'], 'hanya /help yang boleh jadi perintah bantuan');
+  const bantuan = PERINTAH_BOT.filter((p) => PERINTAH_BANTUAN.has(p.command));
+  assert.equal(bantuan.length, 1, 'tidak boleh ada perintah bantuan kedua');
+});
+
+test('ANTI-DUPLIKAT: tidak ada dua perintah dengan isi/deskripsi sama', () => {
+  // Aturan pemilik produk: "jangan ada / yg isi nya sama".
+  const deskripsi = PERINTAH_BOT.map((p) => p.description);
+  const unik = new Set(deskripsi);
+  assert.equal(unik.size, deskripsi.length, `ada deskripsi kembar: ${deskripsi.filter((d, i) => deskripsi.indexOf(d) !== i).join(', ')}`);
+  // Nama perintah juga harus unik.
+  const nama = PERINTAH_BOT.map((p) => p.command);
+  assert.equal(new Set(nama).size, nama.length, 'ada nama perintah kembar');
+});
+
+test('perintah lama yang digabung diarahkan ke perintah utama', () => {
+  // Alias lama tidak lagi dijalankan (supaya tidak ada isi kembar), tetapi
+  // user tetap diberi arahan — bukan dibiarkan diam.
+  for (const [lama, utama] of Object.entries(PERINTAH_DIGABUNG)) {
+    assert.ok(PERINTAH_BOT.some((p) => p.command === utama), `perintah utama "/${utama}" harus terdaftar`);
+    assert.ok(!PERINTAH_BOT.some((p) => p.command === lama), `perintah lama "/${lama}" tidak boleh masih terdaftar`);
+  }
+  assert.match(TG, /PERINTAH_DIGABUNG\[cmdLama\]/, 'handler harus mengarahkan perintah lama');
+  // Yang digabung ke bantuan HARUS mengarah ke help.
+  for (const a of ['bantuan', 'menu', 'fitur', 'panduan', 'tutorial']) {
+    assert.equal(PERINTAH_DIGABUNG[a], 'help', `/${a} harus diarahkan ke /help`);
   }
 });
 
@@ -118,7 +145,7 @@ test('perintah berargumen punya petunjuk singkat saat diketik telanjang', () => 
   assert.match(NOTES, /petunjukPemakaian\(mt\[1\]\)/);
   assert.match(NOTES, /jalur: 'perintah-tanpa-argumen'/);
   // Setiap alias berargumen harus punya contoh (termasuk alias yang dulu diam).
-  for (const c of ['catat', 'note', 'tugas', 'todo', 'task', 'uang', 'keluar', 'out', 'masuk', 'in', 'gaji', 'cari', 'rekap', 'hapusuang']) {
+  for (const c of ['catat', 'tugas', 'uang', 'masuk', 'cari', 'rekap', 'hapusuang']) {
     assert.ok(PERINTAH_BERARGUMEN[c], `/${c} harus punya contoh pemakaian`);
     assert.ok(petunjukPemakaian(c).includes(`/${c}`), `petunjuk /${c} harus menyebut perintahnya`);
   }

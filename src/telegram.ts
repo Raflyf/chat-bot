@@ -6,7 +6,7 @@ import { transcribeAudio, processIncomingDocument, processIncomingSticker, proce
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
-import { PERINTAH_BANTUAN, teksBantuan, petunjukPemakaian } from './commands.js';
+import { PERINTAH_BANTUAN, PERINTAH_DIGABUNG, teksBantuan, petunjukPemakaian } from './commands.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
 import { encodeMarkers } from './markers.js';
@@ -385,6 +385,20 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       await sendTelegramMessageSafe(bot, chatId, teksBantuan());
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
+    }
+
+    // 1c. Perintah LAMA yang sudah DIGABUNG (mis. /menu, /todo, /belanja).
+    // Diarahkan ke perintah utamanya — TIDAK dijalankan — supaya tidak ada dua
+    // perintah dengan isi yang sama (aturan pemilik produk 16 Okt 2026:
+    // "jangan ada / yg isi nya sama").
+    {
+      const cmdLama = text.replace(/^\//, '').split(/[\s@]/)[0].trim().toLowerCase();
+      const pengganti = PERINTAH_DIGABUNG[cmdLama];
+      if (pengganti) {
+        await sendTelegramMessageSafe(bot, chatId, `Perintah \`/${cmdLama}\` sudah digabung. Pakai \`/${pengganti}\` ya.`);
+        if (msgId) void markMessageProcessed('telegram', msgId);
+        return;
+      }
     }
 
     // 2. Perintah /salah <koreksi>

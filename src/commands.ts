@@ -41,54 +41,50 @@ export interface PerintahBot {
 export const PERINTAH_BOT: PerintahBot[] = [
   // ── Sapaan & bantuan ──
   { command: 'start', description: 'Mulai & sapa bot' }, // telegram.ts: if (text === '/start')
-  { command: 'help', description: 'Daftar lengkap fitur & perintah' }, // telegram.ts: blok bantuan
-  { command: 'bantuan', description: 'Daftar lengkap fitur & perintah' },
-  { command: 'menu', description: 'Daftar lengkap fitur & perintah' },
-  { command: 'fitur', description: 'Daftar lengkap fitur & perintah' },
-  { command: 'panduan', description: 'Daftar lengkap fitur & perintah' },
-  { command: 'tutorial', description: 'Daftar lengkap fitur & perintah' },
+  // ── HANYA SATU perintah bantuan (koreksi pemilik produk 16 Okt 2026) ──
+  // "knapa help, menu, bantuan, fitur, tutorial, panduan, itu isi nya sama,
+  //  kalo gitu cukup satukan saja jadi help saja... kan sudah saya bilang jangan
+  //  ada / yg isi nya sama"
+  //
+  // Sebelumnya ada 6 perintah bantuan dengan isi identik — itu DUPLIKAT dan
+  // dilarang. Semuanya dihapus, hanya `/help` yang tersisa.
+  { command: 'help', description: 'Daftar lengkap fitur & perintah' },
 
   // ── Sesi ──
-  { command: 'reset', description: 'Mulai sesi baru — hapus riwayat percakapan' }, // memory.ts: isResetCommand
-  { command: 'clear', description: 'Mulai sesi baru (sama seperti /reset)' },
+  // `clear` DIHAPUS: isinya sama persis dengan `reset` (aturan anti-duplikat).
+  { command: 'reset', description: 'Mulai sesi baru — hapus riwayat percakapan' },
 
   // ── Obrolan & tanya AI ──
-  { command: 'tanya', description: 'Tanya apa saja ke AI' }, // telegram.ts: prefix dibuang
-  { command: 'ai', description: 'Tanya apa saja ke AI (alias /tanya)' },
+  // `ai` DIHAPUS: isinya sama persis dengan `tanya`.
+  { command: 'tanya', description: 'Tanya apa saja ke AI' },
 
   // ── Catatan ──
-  { command: 'catat', description: 'Simpan catatan — /catat <isi>' }, // notes.ts: ^/(?:catat|note|notes)
-  { command: 'note', description: 'Simpan catatan (alias /catat)' },
-  { command: 'catatan', description: 'Lihat catatan terakhir' }, // notes.ts: ^/(?:catatan|notes)$
-  { command: 'notes', description: 'Lihat catatan terakhir (alias)' },
-  { command: 'cari', description: 'Cari catatan — /cari <kata>' }, // notes.ts: blok /cari
+  // `note` DIHAPUS (sama dengan `catat`), `notes` DIHAPUS (sama dengan `catatan`).
+  { command: 'catat', description: 'Simpan catatan — /catat <isi>' },
+  { command: 'catatan', description: 'Lihat catatan terakhir' },
+  { command: 'cari', description: 'Cari catatan — /cari <kata>' },
 
   // ── Tugas ──
-  { command: 'tugas', description: 'Tambah tugas — /tugas <isi>' }, // notes.ts: ^/(?:todo|tugas|task)
-  { command: 'todo', description: 'Tambah tugas (alias /tugas)' },
-  { command: 'task', description: 'Tambah tugas (alias /tugas)' },
-  { command: 'list', description: 'Lihat daftar tugas' }, // notes.ts: ^/(?:list|daftar|...)$
-  { command: 'daftar', description: 'Lihat daftar tugas (alias /list)' },
-  { command: 'todos', description: 'Lihat daftar tugas (alias /list)' },
-  { command: 'tugasku', description: 'Lihat daftar tugas (alias /list)' },
+  // `todo` & `task` DIHAPUS (sama dengan `tugas`);
+  // `daftar`, `todos`, `tugasku` DIHAPUS (sama dengan `list`).
+  { command: 'tugas', description: 'Tambah tugas — /tugas <isi>' },
+  { command: 'list', description: 'Lihat daftar tugas' },
 
   // ── Keuangan ──
-  { command: 'uang', description: 'Catat pengeluaran — /uang <nominal> <keterangan>' }, // notes.ts: ^/(?:uang|keluar|out)
-  { command: 'keluar', description: 'Catat pengeluaran (alias /uang)' },
-  { command: 'out', description: 'Catat pengeluaran (alias /uang)' },
-  { command: 'masuk', description: 'Catat pemasukan — /masuk <nominal> <keterangan>' }, // notes.ts: ^/(?:masuk|in|gaji)
-  { command: 'in', description: 'Catat pemasukan (alias /masuk)' },
-  { command: 'gaji', description: 'Catat pemasukan gaji (alias /masuk)' },
-  { command: 'rekap', description: 'Rekap keuangan — /rekap [jumlah hari]' }, // notes.ts: ^/rekap
-  { command: 'hapusuang', description: 'Hapus catatan keuangan — /hapusuang <nomor>' }, // notes.ts: ^/(?:hapus-uang|hapusuang|...)
+  // `keluar` & `out` DIHAPUS (sama dengan `uang`);
+  // `in` & `gaji` DIHAPUS (sama dengan `masuk`).
+  { command: 'uang', description: 'Catat pengeluaran — /uang <nominal> <keterangan>' },
+  { command: 'masuk', description: 'Catat pemasukan — /masuk <nominal> <keterangan>' },
+  { command: 'rekap', description: 'Rekap keuangan — /rekap [jumlah hari]' },
+  { command: 'hapusuang', description: 'Hapus catatan keuangan — /hapusuang <nomor>' },
 
   // ── Barang & belanja ──
-  { command: 'barang', description: 'Catat/lihat daftar barang & belanja' }, // notes.ts: blok /barang
-  { command: 'belanja', description: 'Catat/lihat daftar belanja (alias /barang)' },
+  // `belanja` DIHAPUS: isinya sama persis dengan `barang`.
+  { command: 'barang', description: 'Catat/lihat daftar barang & belanja' },
 
   // ── Pengingat & preferensi ──
-  { command: 'remind', description: 'Pengingat — /remind <menit> <pesan>' }, // telegram.ts: text.startsWith('/remind')
-  { command: 'salah', description: 'Koreksi preferensi personal — /salah <koreksi>' }, // telegram.ts: text.startsWith('/salah')
+  { command: 'remind', description: 'Pengingat — /remind <menit> <pesan>' },
+  { command: 'salah', description: 'Koreksi preferensi personal — /salah <koreksi>' },
 ];
 
 /**
@@ -97,33 +93,54 @@ export const PERINTAH_BOT: PerintahBot[] = [
  */
 export const PERINTAH_BERARGUMEN: Record<string, string> = {
   catat: '/catat <isi catatan>',
-  note: '/note <isi catatan>',
   tugas: '/tugas <isi tugas>',
-  todo: '/todo <isi tugas>',
-  task: '/task <isi tugas>',
   uang: '/uang <nominal> <keterangan>',
-  keluar: '/keluar <nominal> <keterangan>',
-  out: '/out <nominal> <keterangan>',
   masuk: '/masuk <nominal> <keterangan>',
-  in: '/in <nominal> <keterangan>',
-  gaji: '/gaji <nominal> <keterangan>',
   rekap: '/rekap [jumlah hari]',
   cari: '/cari <kata kunci>',
-  search: '/search <kata kunci>',
   remind: '/remind <menit> <pesan>',
   salah: '/salah <koreksi>',
   hapusuang: '/hapusuang <nomor>',
 };
 
-/** Perintah bantuan — semuanya memicu daftar fitur yang sama. */
-export const PERINTAH_BANTUAN = new Set([
-  'help',
-  'bantuan',
-  'menu',
-  'fitur',
-  'panduan',
-  'tutorial',
-]);
+/**
+ * Perintah bantuan — HANYA SATU (koreksi pemilik produk 16 Okt 2026).
+ *
+ * Sebelumnya 6 perintah (`help`, `bantuan`, `menu`, `fitur`, `panduan`,
+ * `tutorial`) menghasilkan isi yang SAMA. Itu duplikat dan dilarang:
+ *   "kan sudah saya bilang jangan ada / yg isi nya sama"
+ * Sekarang tinggal `/help`.
+ */
+export const PERINTAH_BANTUAN = new Set(['help']);
+
+/**
+ * Perintah LAMA yang sudah DIGABUNG ke perintah utama (tidak lagi dipakai).
+ *
+ * Dipakai untuk memberi arahan singkat bila user masih mengetiknya, bukan untuk
+ * menjalankannya — supaya tidak ada dua perintah dengan isi yang sama.
+ */
+export const PERINTAH_DIGABUNG: Record<string, string> = {
+  bantuan: 'help',
+  menu: 'help',
+  fitur: 'help',
+  panduan: 'help',
+  tutorial: 'help',
+  clear: 'reset',
+  ai: 'tanya',
+  note: 'catat',
+  notes: 'catatan',
+  search: 'cari',
+  todo: 'tugas',
+  task: 'tugas',
+  daftar: 'list',
+  todos: 'list',
+  tugasku: 'list',
+  keluar: 'uang',
+  out: 'uang',
+  in: 'masuk',
+  gaji: 'masuk',
+  belanja: 'barang',
+};
 
 /**
  * Daftar perintah siap-pakai untuk `setMyCommands` Telegram.
