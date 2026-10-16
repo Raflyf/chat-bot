@@ -26,6 +26,7 @@
  */
 import { db } from './db.js';
 import { normChatId } from './chat_id.js';
+import { PERINTAH_BERARGUMEN, petunjukPemakaian } from './commands.js';
 import { formatInZone } from './timezone.js';
 import { tanganiGame } from './games/index.js';
 import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
@@ -3685,6 +3686,28 @@ export async function tanganiPencatatan(
     }
     const r = await simpanDariNiat(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform, teksAsli: asli });
     return { ditangani: true, reply: r.pesan, jalur: `implisit-${niatImplisit.kind}` };
+  }
+
+  // ── PERINTAH BERARGUMEN YANG DIKETIK TELANJANG (temuan 16 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: "ada / yg ga jalan" — contoh nyatanya `/cari` tanpa
+  // kata kunci: bot DIAM tanpa penjelasan.
+  //
+  // AKAR: perintah berargumen hanya cocok bila ADA isinya (`\s+...`). Yang
+  // diketik telanjang tidak cocok pola mana pun, lalu ditelan
+  // `if (text.startsWith('/')) return` di telegram.ts -> tidak ada balasan.
+  //
+  // Diletakkan di AKHIR rantai supaya hanya menangkap yang benar-benar belum
+  // tertangani — `/tugas` dan `/rekap` tetap memakai perilaku aslinya (menampilkan
+  // daftar / rekap default), bukan petunjuk pemakaian.
+  {
+    const mt = low.match(/^\/([a-z_]+)\s*$/);
+    if (mt && PERINTAH_BERARGUMEN[mt[1]]) {
+      return {
+        ditangani: true,
+        reply: petunjukPemakaian(mt[1]),
+        jalur: 'perintah-tanpa-argumen',
+      };
+    }
   }
 
   return { ditangani: false, reply: '', jalur: '' };

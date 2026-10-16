@@ -97,11 +97,19 @@ export const PERINTAH_BOT: PerintahBot[] = [
  */
 export const PERINTAH_BERARGUMEN: Record<string, string> = {
   catat: '/catat <isi catatan>',
+  note: '/note <isi catatan>',
   tugas: '/tugas <isi tugas>',
+  todo: '/todo <isi tugas>',
+  task: '/task <isi tugas>',
   uang: '/uang <nominal> <keterangan>',
+  keluar: '/keluar <nominal> <keterangan>',
+  out: '/out <nominal> <keterangan>',
   masuk: '/masuk <nominal> <keterangan>',
+  in: '/in <nominal> <keterangan>',
+  gaji: '/gaji <nominal> <keterangan>',
   rekap: '/rekap [jumlah hari]',
   cari: '/cari <kata kunci>',
+  search: '/search <kata kunci>',
   remind: '/remind <menit> <pesan>',
   salah: '/salah <koreksi>',
   hapusuang: '/hapusuang <nomor>',
@@ -130,6 +138,66 @@ export function daftarPerintahTelegram(): PerintahBot[] {
 /** Daftar perintah sebagai teks ringkas (untuk konteks AI / dokumentasi). */
 export function teksDaftarPerintah(): string {
   return PERINTAH_BOT.map((p) => `/${p.command} — ${p.description}`).join('\n');
+}
+
+/**
+ * Panduan ringkas yang DETERMINISTIK (satu teks untuk semua alias bantuan).
+ *
+ * KENAPA TIDAK DIGENERASI AI (koreksi pemilik produk 16 Okt 2026):
+ *   "ada yg balasannya sama dan ga sampai tuntas karna terlalu panjang" +
+ *   "panduannya juga terlalu panjang dan pusing untuk di baca dan sulit di pahami"
+ *
+ * Sebelumnya `/help`, `/bantuan`, `/menu`, `/fitur`, `/panduan`, `/tutorial`
+ * masing-masing DIGENERASI AI, sehingga:
+ *   - isinya BERBEDA-BEDA untuk perintah yang seharusnya sama;
+ *   - panjangnya melewati batas pesan Telegram -> terpotong di tengah kalimat;
+ *   - bertele-tele dan sulit dibaca.
+ *
+ * Daftar perintah adalah DATA REFERENSI, bukan percakapan — jadi wajar disusun
+ * pasti. Balasan obrolan tetap 100% digenerate AI seperti biasa; yang ini hanya
+ * menu bantuan. Hasilnya: konsisten, ringkas, dan tidak pernah terpotong.
+ */
+export function teksBantuan(): string {
+  return [
+    '*FreeAIBot — daftar perintah*',
+    '',
+    '*Ngobrol*',
+    'Ketik langsung apa saja. Atau `/tanya <pertanyaan>`.',
+    '`/reset` — mulai sesi baru',
+    '',
+    '*Catatan*',
+    '`/catat <isi>` — simpan catatan',
+    '`/catatan` — lihat catatan terakhir',
+    '`/cari <kata>` — cari catatan',
+    '',
+    '*Tugas*',
+    '`/tugas <isi>` — tambah tugas',
+    '`/list` — lihat daftar tugas',
+    '',
+    '*Keuangan*',
+    '`/uang <nominal> <ket>` — catat pengeluaran',
+    '`/masuk <nominal> <ket>` — catat pemasukan',
+    '`/rekap [hari]` — rekap keuangan',
+    '`/hapusuang <nomor>` — hapus catatan keuangan',
+    '',
+    '*Belanja*',
+    '`/barang` — lihat / tambah daftar belanja',
+    '',
+    '*Pengingat*',
+    '`/remind <menit> <pesan>`',
+    '',
+    '*Lainnya*',
+    '`/salah <koreksi>` — perbaiki data tentangmu',
+    '`/help` — tampilkan panduan ini',
+  ].join('\n');
+}
+
+/** Petunjuk singkat saat perintah berargumen diketik TANPA argumen. */
+export function petunjukPemakaian(command: string): string {
+  const contoh = PERINTAH_BERARGUMEN[command];
+  return contoh
+    ? `Contoh: \`${contoh}\``
+    : `Ketik \`/${command}\` dengan benar ya.`;
 }
 
 /**

@@ -6,7 +6,7 @@ import { transcribeAudio, processIncomingDocument, processIncomingSticker, proce
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
-import { PERINTAH_BANTUAN, konteksBantuanUntukAi } from './commands.js';
+import { PERINTAH_BANTUAN, teksBantuan, petunjukPemakaian } from './commands.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
 import { encodeMarkers } from './markers.js';
@@ -371,28 +371,18 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     //
     // SEBELUMNYA perintah-perintah ini TIDAK punya penanganan: hanya terdaftar di
     // `knownCommands` (agar dianggap "ditujukan ke bot" di grup), lalu ditelan
-    // `if (text.startsWith('/'))` -> bot diam. Sekarang dijawab.
+    // `if (text.startsWith('/'))` -> bot diam.
     //
-    // Balasan DIGENERASI AI (bukan teks template) dengan daftar perintah AKURAT
-    // sebagai konteks — supaya lengkap tetapi tidak mengarang fitur.
+    // ── KOREKSI 16 Okt 2026 (laporan pemilik produk) ──
+    // "ada yg balasannya sama dan ga sampai tuntas karna terlalu panjang" +
+    // "panduannya juga terlalu panjang dan pusing untuk di baca"
+    //
+    // Versi pertama DIGENERASI AI -> isinya berbeda-beda untuk 6 alias yang
+    // seharusnya sama, panjangnya melewati batas pesan Telegram sehingga terpotong,
+    // dan bertele-tele. Sekarang memakai `teksBantuan()`: SATU teks pasti, ringkas,
+    // dan dijamin muat dalam satu pesan. Balasan obrolan tetap digenerate AI.
     if (PERINTAH_BANTUAN.has(text.replace(/^\//, '').trim().toLowerCase())) {
-      try {
-        const helpCtx = await getContext(chatKey, msgSentAt);
-        const { reply } = await autoReply(
-          `User ${isGroup ? `di grup bersama ${senderName} ` : ''}meminta daftar lengkap fitur & perintah bot. ` +
-            `Sebutkan kemampuannya dengan gayamu sendiri (jangan seperti buku manual), kelompokkan singkat: ` +
-            `ngobrol & tanya AI, catatan, tugas, keuangan, barang/belanja, pengingat, koreksi preferensi, reset sesi. ` +
-            `Sertakan perintah yang perlu diingat beserta contohnya. ` +
-            (isGroup
-              ? `Ingatkan juga cara pakai di grup: tulis pertanyaannya lalu panggil /${botUsername}, atau tag @${botUsername}, atau reply pesan bot. `
-              : '') +
-            `\n\n${konteksBantuanUntukAi()}`,
-          helpCtx,
-        );
-        if (reply.trim()) await sendTelegramMessageSafe(bot, chatId, reply);
-      } catch {
-        // diam — ZERO teks statis
-      }
+      await sendTelegramMessageSafe(bot, chatId, teksBantuan());
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
     }

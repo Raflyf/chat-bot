@@ -23,6 +23,8 @@ import {
   daftarPerintahTelegram,
   teksDaftarPerintah,
   konteksBantuanUntukAi,
+  teksBantuan,
+  petunjukPemakaian,
 } from '../src/commands.js';
 
 const TG = fs.readFileSync(new URL('../src/telegram.ts', import.meta.url), 'utf8');
@@ -83,12 +85,43 @@ test('perintah berargumen punya contoh format', () => {
   }
 });
 
-test('handler bantuan terpasang & memakai AI (bukan teks template statis)', () => {
+test('handler bantuan memakai SATU teks pasti (konsisten untuk semua alias)', () => {
   assert.match(TG, /PERINTAH_BANTUAN\.has\(/, 'handler harus memakai daftar bantuan');
-  // Balasan dihasilkan model dengan konteks daftar perintah yang akurat.
-  assert.match(TG, /konteksBantuanUntukAi\(\)/, 'daftar perintah harus dikirim ke AI sebagai konteks');
   const blok = TG.slice(TG.indexOf('PERINTAH_BANTUAN.has('), TG.indexOf('// 2. Perintah /salah'));
-  assert.match(blok, /await autoReply\(/, 'bantuan harus digenerate AI, bukan teks hardcode');
+  // KOREKSI 16 Okt 2026: sebelumnya digenerate AI -> isinya berbeda-beda untuk
+  // 6 alias yang seharusnya sama, panjangnya terpotong, dan bertele-tele.
+  assert.match(blok, /teksBantuan\(\)/, 'bantuan harus memakai satu teks pasti');
+  assert.doesNotMatch(blok, /await autoReply\(/, 'bantuan TIDAK boleh digenerate AI lagi (tidak konsisten & kepanjangan)');
+});
+
+test('panduan: ringkas, muat satu pesan Telegram, dan lengkap', () => {
+  const t = teksBantuan();
+  // Batas satu pesan Telegram = 4096 karakter.
+  assert.ok(t.length <= 4096, `panduan ${t.length} char melebihi batas Telegram 4096`);
+  // Harus ringkas supaya mudah dibaca (laporan: "terlalu panjang dan pusing").
+  assert.ok(t.length <= 1500, `panduan ${t.length} char terlalu panjang untuk dibaca`);
+  // Setiap kelompok fitur utama harus ada.
+  for (const bagian of ['Ngobrol', 'Catatan', 'Tugas', 'Keuangan', 'Belanja', 'Pengingat']) {
+    assert.match(t, new RegExp(`\\*${bagian}\\*`), `bagian "${bagian}" harus ada di panduan`);
+  }
+  // Perintah penting harus disebut.
+  for (const c of ['/catat', '/cari', '/tugas', '/list', '/uang', '/masuk', '/rekap', '/remind', '/salah', '/reset']) {
+    assert.ok(t.includes(c), `${c} harus ada di panduan`);
+  }
+});
+
+test('perintah berargumen punya petunjuk singkat saat diketik telanjang', () => {
+  // Laporan pemilik produk: "ada / yg ga jalan" — contohnya /cari tanpa argumen,
+  // bot DIAM karena ditelan `if (text.startsWith('/'))`.
+  const NOTES = fs.readFileSync(new URL('../src/notes.ts', import.meta.url), 'utf8');
+  assert.match(NOTES, /PERINTAH_BERARGUMEN\[mt\[1\]\]/, 'harus ada penanganan perintah tanpa argumen');
+  assert.match(NOTES, /petunjukPemakaian\(mt\[1\]\)/);
+  assert.match(NOTES, /jalur: 'perintah-tanpa-argumen'/);
+  // Setiap alias berargumen harus punya contoh (termasuk alias yang dulu diam).
+  for (const c of ['catat', 'note', 'tugas', 'todo', 'task', 'uang', 'keluar', 'out', 'masuk', 'in', 'gaji', 'cari', 'rekap', 'hapusuang']) {
+    assert.ok(PERINTAH_BERARGUMEN[c], `/${c} harus punya contoh pemakaian`);
+    assert.ok(petunjukPemakaian(c).includes(`/${c}`), `petunjuk /${c} harus menyebut perintahnya`);
+  }
 });
 
 test('skrip pendaftaran memakai setMyCommands + verifikasi getMyCommands', () => {
