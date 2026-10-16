@@ -224,6 +224,16 @@ export const config = {
   ),
   telegramWebhookSecret: cleanStr('TELEGRAM_WEBHOOK_SECRET'),
   telegramBotUsername: cleanStr('TELEGRAM_BOT_USERNAME') || 'chatkita_bot',
+  // ── GRUP TELEGRAM (permintaan pemilik produk 16 Okt 2026) ──
+  // Bot BOLEH masuk grup, tetapi TIDAK pernah menyahut sendiri: di grup bot hanya
+  // menjawab bila DIPANGGIL — tulis pertanyaannya lalu panggil dengan
+  // `/namabot` (mis. "/chatkita_bot harga emas hari ini"), atau mention
+  // @namabot, atau reply pesan bot. Ini mencegah bot berisik di grup.
+  //
+  // Daftar putih grup (opsional, dipisah koma): bila DIISI, bot HANYA melayani
+  // grup yang terdaftar. Kosong = semua grup boleh (tetap wajib dipanggil).
+  // Isi dengan id grup (angka, mis. -1001234567890).
+  telegramGroupAllowlist: csv('TELEGRAM_GROUP_ALLOWLIST'),
   cronSecret: cleanStr('CRON_SECRET'),
   botName: cleanStr('BOT_NAME') || 'FreeAIBot',
   botProfile:

@@ -117,6 +117,36 @@ async function answerPhoto(
   return true;
 }
 
+/** Escape karakter regex agar username bot aman dipakai menyusun pola. */
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Deteksi kata panggil `/namabot` di dalam pesan — gaya memanggil Meta AI di X
+ * (permintaan pemilik produk 16 Okt 2026): "cukup tulis pertanyaan dan gunakan
+ * /nama bot untuk memanggil bot untuk menjawab pertanyaan".
+ *
+ * Kata panggil boleh berada di AWAL, TENGAH, atau AKHIR pesan, dan otomatis
+ * DIBUANG dari pertanyaan supaya AI menerima pertanyaan bersihnya saja.
+ *
+ * Sengaja diekspor sebagai fungsi murni agar bisa diuji tanpa menjalankan bot.
+ *
+ * @example
+ *   deteksiPanggilSlash('harga emas berapa /chatkita_bot', 'chatkita_bot')
+ *   // -> { dipanggil: true, bersih: 'harga emas berapa' }
+ */
+export function deteksiPanggilSlash(
+  teks: string,
+  botUsername: string,
+): { dipanggil: boolean; bersih: string } {
+  const sumber = teks || '';
+  const pola = () => new RegExp(`/${escapeRe(botUsername)}(?![a-z0-9_])`, 'gi');
+  const dipanggil = pola().test(sumber);
+  const bersih = dipanggil ? sumber.replace(pola(), '').replace(/[ \t]{2,}/g, ' ').trim() : sumber;
+  return { dipanggil, bersih };
+}
+
 /**
  * Wrapper publik: serialkan pemrosesan per-chat agar balasan tidak keluar urutan
  * saat dua pesan tiba beruntun (audit F3.1). Handler inti dipakai bersama oleh
@@ -137,6 +167,22 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
 
     const isGroup = chatType === 'group' || chatType === 'supergroup';
     const chatKey = String(chatId);
+    // ── IDENTITAS PRIBADI DI GRUP (perbaikan audit 16 Okt 2026, temuan P1-2) ──
+    // TEMUAN AUDIT: "Data pribadi digabung per-grup (satu grup = satu akun)".
+    // Sebelumnya SEMUA data pribadi (catatan, tugas, keuangan, fakta personal,
+    // koreksi, pengingat, profil waktu) memakai chatId GRUP. Akibatnya catatan
+    // semua anggota melebur jadi satu — anggota lain bisa membaca catatan orang
+    // lain lewat pertanyaan seperti "apa catatanku?".
+    //
+    // SEKARANG: di grup, data pribadi dikunci ke id PENGIRIM. Percakapan grup
+    // tetap memakai chatKey (agar bot mengikuti alur obrolan grup), tetapi data
+    // pribadi terpisah per orang.
+    //
+    // CATATAN pengingat: karena kuncinya id pengirim, pengingat yang dibuat di grup
+    // dikirim ke chat PRIBADI orang itu. Bila dia belum pernah memulai chat pribadi
+    // dengan bot, Telegram menolak — pengingat tetap `pending` dan dicoba lagi,
+    // bukan hilang.
+    const identityKey = isGroup && msg.from?.id ? String(msg.from.id) : chatKey;
     const msgId = msg.message_id ? String(msg.message_id) : '';
     const ownerId = config.ownerChatId;
     const rawText = msg.text?.trim() ?? '';
@@ -193,6 +239,30 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       return str === `@${botUsername}`;
     });
 
+    // ── PANGGIL BOT DENGAN "/namabot" (permintaan pemilik produk 16 Okt 2026) ──
+    // "saya juga ingin bot di tele bisa masuk grup dan memanggilnya itu kaya meta
+    //  di x, jika ada yg mau nanya cukup tulis pertanyaan dan gunakan / nama bot
+    //  untuk memanggil bot untuk menjawab pertanyaan user yg memanggil bot nya"
+    //
+    // Jadi di grup, `/namabot` berfungsi seperti mention: tulis pertanyaannya lalu
+    // panggil bot di mana saja dalam pesan — awal, tengah, atau akhir. Kata panggil
+    // itu DIBUANG dari pertanyaan sebelum dikirim ke AI.
+    //
+    // Contoh: "harga emas hari ini berapa /chatkita_bot"  ->  "harga emas hari ini berapa"
+    const panggilText = deteksiPanggilSlash(rawText, botUsername);
+    const panggilCaption = deteksiPanggilSlash(rawCaption, botUsername);
+    const hasSlashPanggil = panggilText.dipanggil || panggilCaption.dipanggil;
+
+    // ── DAFTAR PUTIH GRUP (opsional) ──
+    // Bila TELEGRAM_GROUP_ALLOWLIST diisi, bot HANYA melayani grup terdaftar.
+    // Kosong = semua grup boleh, tetapi tetap WAJIB dipanggil (bot tidak pernah
+    // menyahut sendiri di grup).
+    if (isGroup && config.telegramGroupAllowlist.length > 0) {
+      if (!config.telegramGroupAllowlist.includes(chatKey)) {
+        return;
+      }
+    }
+
     // Cek perintah / command
     const cmdMatch = rawText.match(/^\/([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9_]+))?/);
     let isTargetedCommand = false;
@@ -218,7 +288,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
 
     let isDirectedToBot = !isGroup;
     if (isGroup) {
-      if (isTargetedCommand || hasMention || hasEntityMention || isReplyToBot) {
+      if (isTargetedCommand || hasMention || hasEntityMention || isReplyToBot || hasSlashPanggil) {
         isDirectedToBot = true;
       } else if (hasMedia) {
         // Untuk stiker di grup: wajib reply ke pesan bot
@@ -235,15 +305,19 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       return;
     }
 
-    // Bersihkan mention dan prefix command
-    let text = rawText
+    // Bersihkan mention dan prefix command.
+    // Kata panggil `/namabot` sudah dibuang oleh deteksiPanggilSlash() di atas
+    // (panggilText.bersih / panggilCaption.bersih) — di sini tinggal mention & prefix.
+    let text = panggilText.bersih
       .replace(new RegExp(`@${botUsername}\\b`, 'gi'), '')
       .replace(/^\/(?:tanya|ai)(?:@\w+)?\s*/i, '')
       .replace(/^\/([a-zA-Z0-9_]+)@\w+/i, '/$1')
+      .replace(/[ \t]{2,}/g, ' ')
       .trim();
 
-    let caption = rawCaption
+    let caption = panggilCaption.bersih
       .replace(new RegExp(`@${botUsername}\\b`, 'gi'), '')
+      .replace(/[ \t]{2,}/g, ' ')
       .trim();
 
     // Tentukan konten awal pesan untuk klaim atomik agar teks asli dan jenis media langsung tercatat
@@ -278,7 +352,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         const { reply } = await autoReply(
           `User ${isGroup ? `di grup bersama ${senderName} ` : ''}baru menjalankan /start. Sapa dia secara dinamis dengan gayamu sendiri dan sebutkan singkat kemampuan utamamu (ngobrol, info internet real-time, baca dokumen/gambar/VN/stiker/video, /remind, /salah, /reset).` +
             (isGroup
-              ? ` Sebutkan juga cara pakai di grup: tag @${botUsername} atau reply pesanmu, perintah /tanya dan /ai, /remind, /reset.`
+              ? ` Sebutkan juga cara pakai di grup: tulis pertanyaannya lalu panggil /${botUsername} (mis. "harga emas hari ini /${botUsername}"), atau tag @${botUsername}, atau reply pesanmu. Sebutkan juga /remind dan /reset.`
               : ''),
           startCtx,
         );
@@ -310,7 +384,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         if (msgId) void markMessageProcessed('telegram', msgId);
         return;
       }
-      const saved = await saveCorrection(chatKey, isGroup ? `[${senderName}]: ${check.cleaned}` : check.cleaned);
+      const saved = await saveCorrection(identityKey, isGroup ? `[${senderName}]: ${check.cleaned}` : check.cleaned);
       const { reply } = await autoReply(
         `User ${senderName} ${isGroup ? 'di grup ' : ''}menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!` +
           (saved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa catatan mungkin tidak tersimpan lama.'),
@@ -335,8 +409,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     if (text) {
       const catatCtx = await getContext(chatKey, msgSentAt);
       // Tangkap fakta personal (diam-diam) — lihat user_facts.ts.
-      try { await tangkapFaktaPersonal(String(chatId), text); } catch { /* best-effort */ }
-      const hasilCatat = await tanganiPencatatan(text, String(chatId), catatCtx, {
+      try { await tangkapFaktaPersonal(identityKey, text); } catch { /* best-effort */ }
+      const hasilCatat = await tanganiPencatatan(text, identityKey, catatCtx, {
         actor: isGroup ? senderName : undefined,
         platform: 'telegram',
       });
@@ -586,7 +660,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       const lon = msg.location.longitude;
       const tzInfo = resolveTimezoneFromCoords(lat, lon);
       const locPrefix = isGroup ? `[Lokasi dari ${senderName}]: ` : 'Lokasi pengguna berada di ';
-      await saveCorrection(chatKey, `${locPrefix}koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`);
+      await saveCorrection(identityKey, `${locPrefix}koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`);
       const locTime = formatInZone(new Date(), tzInfo.zone);
       // Konfirmasi 100% dinamis: model menyusun kalimatnya sendiri dari data waktu (ZERO teks statis)
       const reply = await dynamicNotice(
@@ -721,6 +795,24 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       return;
     }
 
+    // Panggil bot TANPA pertanyaan (mis. di grup hanya menulis "/namabot").
+    // Balas dengan sapaan yang DIGENERASI model (bukan teks statis), lalu minta
+    // dia menuliskan pertanyaannya.
+    if (!text && isGroup && hasSlashPanggil) {
+      try {
+        const ctxPanggil = await getContext(chatKey, msgSentAt);
+        const { reply } = await autoReply(
+          `Anggota grup bernama ${senderName} memanggilmu dengan /${botUsername} tetapi belum menuliskan pertanyaannya. Sapa dia singkat dan santai, lalu minta dia menuliskan pertanyaannya.`,
+          ctxPanggil,
+        );
+        if (reply.trim()) await sendTelegramMessageSafe(bot, chatId, reply);
+      } catch {
+        // diam — ZERO teks statis
+      }
+      if (msgId) void markMessageProcessed('telegram', msgId);
+      return;
+    }
+
     if (text.startsWith('/')) return;
 
     // Fast-path in-memory context (0ms saat aktif)
@@ -757,6 +849,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         console.warn('[telegram] Gagal penelusuran web:', err);
       }
     }
+    // Indikator "sedang menulis" supaya user tahu bot sedang memproses —
+    // penting di grup, tempat balasan bisa terasa lama.
+    void bot.sendChatAction(chatId, 'typing').catch(() => undefined);
+
     const tStart = Date.now();
     const { reply, escalate, via, tokens, sticker, riddleAnswer } = await autoReply(promptText, ctx, web);
     const latencyMs = Date.now() - tStart;
