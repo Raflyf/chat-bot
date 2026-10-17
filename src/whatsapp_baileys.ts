@@ -674,7 +674,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         // memuat aturan "amati isi stiker dengan teliti".
         const context = await getContext(chatKey, msgSentAt);
 
-        const { reply: replyStiker, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(buffer, mime, undefined, context);
+        // PERBAIKAN 16 Okt 2026: teruskan `text` sebagai caption, sama seperti
+        // jalur WhatsApp Cloud & Telegram. Tanpa ini, bila pengguna mengetik
+        // teks/caption BERSAMAAN dengan stiker, maksudnya tidak pernah sampai
+        // ke vision dan balasan jadi terkesan tidak membaca caption.
+        const { reply: replyStiker, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(buffer, mime, undefined, context, text || undefined);
 
         // Simpan DESKRIPSI stiker (bukan hanya penanda) agar saat user me-REPLY
         // stiker ini, bot tahu stiker APA yang dimaksud (perbaikan 10 Okt 2026).

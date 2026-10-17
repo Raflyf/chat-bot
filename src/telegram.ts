@@ -724,7 +724,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       if (!msg.sticker.is_animated && !msg.sticker.is_video) {
         const dl = await downloadTelegramBuffer(bot, msg.sticker.file_id);
         if (dl) {
-          const { reply: replyStiker, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx);
+          const { reply: replyStiker, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx, rawCaption);
           // PERBAIKAN 10 Okt 2026: sanitize + kirim stiker balasan (sama seperti
           // jalur WhatsApp Cloud) agar balasan stiker tidak ngawur & bot bisa
           // membalas stiker dengan stiker.

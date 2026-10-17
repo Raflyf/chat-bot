@@ -745,11 +745,21 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           if (media) {
             const context = await getContext(chatKey, msgSentAt);
 
+            // PERBAIKAN 16 Okt 2026: teruskan caption/teks pengirim.
+            // Objek stiker WhatsApp tidak punya field caption, jadi teks yang
+            // diketik BERSAMAAN stiker diambil dari akar pesan. Tanpa ini,
+            // maksud pengguna tidak pernah sampai ke vision.
+            const captionStiker = String(
+              (m as unknown as Record<string, unknown>).text ??
+                (m as unknown as Record<string, unknown>).caption ??
+                '',
+            ).trim();
             const { reply: replyStikerMentah, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(
               media.buffer,
               media.mime || 'image/webp',
               undefined,
               context,
+              captionStiker || undefined,
             );
 
             // ── SIMPAN DESKRIPSI STIKER, BUKAN HANYA PENANDA (perbaikan 10 Okt 2026) ──

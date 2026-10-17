@@ -1356,6 +1356,9 @@ export async function processIncomingSticker(
   mime: string = 'image/webp',
   emoji?: string,
   ctx?: ChatContext,
+  /** Caption yang diketik pengguna BERSAMAAN dengan stiker itu.
+   *  Ditambahkan 16 Okt 2026 — lihat catatan di pemakaiannya di bawah. */
+  caption?: string,
 ): Promise<{
   reply: string;
   via: string;
@@ -1364,7 +1367,23 @@ export async function processIncomingSticker(
    *  stiker dengan stiker. Ditambahkan 10 Okt 2026. */
   sticker?: string | null;
 }> {
-  const stickerCaption = emoji ? `(Emoji stiker: ${emoji})` : undefined;
+  // ── CAPTION PENGIRIM (perbaikan 16 Okt 2026) ──
+  // LAPORAN PEMILIK PRODUK: "bot nya baca caption nya dulu ga? knapa respon nya
+  // kaya ga baca caption dari stiker nya?"
+  //
+  // AKAR: sebelumnya nilai ini HANYA berisi emoji stiker:
+  //     const stickerCaption = emoji ? `(Emoji stiker: ${emoji})` : undefined;
+  // Caption yang diketik pengguna tidak pernah masuk, sehingga di describeImage
+  // baris `caption && caption.trim()` SELALU kosong dan model tidak pernah tahu
+  // ada tulisan di stiker. Di Telegram caption bahkan tidak diteruskan sama
+  // sekali dari pemanggilnya (telegram.ts).
+  //
+  // SEKARANG: caption pengirim didahulukan karena itu maksud eksplisit dia,
+  // emoji hanya pelengkap. Kalau caption ada, jangan sampai kalah oleh emoji.
+  const bagianCaption: string[] = [];
+  if (caption && caption.trim()) bagianCaption.push(caption.trim());
+  if (emoji) bagianCaption.push(`(Emoji stiker: ${emoji})`);
+  const stickerCaption = bagianCaption.length ? bagianCaption.join(' ') : undefined;
 
   // ── PERBAIKAN BESAR (10 Okt 2026): KONVERSI STIKER KE PNG PUTIH ──
   // LAPORAN PEMILIK PRODUK: "ga nyambung anjir klo dikasih stiker, kaya yg
