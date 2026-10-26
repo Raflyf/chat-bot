@@ -2370,7 +2370,7 @@ function renderLiveUpstreamTable(data) {
       // fetch ber-header, lalu buat blob — URL hanya hidup sesaat di memori.
       const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=3000`;
 
-      const filePrefix = format === "csv" ? "evaluasi_chatbot" : "training_dataset";
+      const filePrefix = "riwayat_percakapan";
       const rangeLabel = range === "today" ? "hari_ini" : range === "all" ? "semua" : range;
       const now = new Date();
       const pad = (n) => String(n).padStart(2, "0");

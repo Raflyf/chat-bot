@@ -213,13 +213,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const format = String(req.query.format || 'json').toLowerCase();
     if (format === 'csv') {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', 'attachment; filename="freeaibot_dataset_empty.csv"');
-      res.status(200).send('ID,Tanggal,Jam,Waktu_Lokal,Platform,User_Chat,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n');
+      res.setHeader('Content-Disposition', 'attachment; filename="riwayat_percakapan_empty.csv"');
+      res.status(200).send('ID,Tanggal,Jam,Waktu_Lokal,Platform,Chat_ID,Pertanyaan_User,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n');
       return;
     }
     if (format === 'jsonl') {
       res.setHeader('Content-Type', 'application/x-jsonlines; charset=utf-8');
-      res.setHeader('Content-Disposition', 'attachment; filename="freeaibot_dataset_empty.jsonl"');
+      res.setHeader('Content-Disposition', 'attachment; filename="riwayat_percakapan_empty.jsonl"');
       res.status(200).send('');
       return;
     }
@@ -443,7 +443,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       exportFileLabel += `_${modelFilter.replace(/[^a-z0-9_-]/gi, '')}`;
     }
 
-    // Format 1: JSONL (Standar Fine-Tuning Model AI / OpenAI / HuggingFace format)
+    // Format 1: JSONL (satu objek JSON per baris)
     if (format === 'jsonl') {
       const systemMsg = `Nama kamu ${config.botName}. Sahabat karib sekaligus partner cerdas serbabisa.`;
       const lines = finalPairs
@@ -473,7 +473,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       res.setHeader('Content-Type', 'application/x-jsonlines; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="training_dataset_${exportFileLabel}.jsonl"`,
+        `attachment; filename="riwayat_percakapan_${exportFileLabel}.jsonl"`,
       );
       res.status(200).send(lines.join('\n'));
       return;
@@ -489,7 +489,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         return s;
       };
       const escapeCsv = (str: unknown): string => `"${sanitizeCsvCell(str).replace(/"/g, '""')}"`;
-      const csvHeader = 'ID,Tanggal,Jam,Waktu_Lokal,Platform,User_Chat,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n';
+      const csvHeader = 'ID,Tanggal,Jam,Waktu_Lokal,Platform,Chat_ID,Pertanyaan_User,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n';
       const csvRows = finalPairs
         .map((p) =>
           [
@@ -498,6 +498,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
             escapeCsv(p.timeStr),
             escapeCsv(p.fullLocalStr),
             escapeCsv(p.platform),
+            escapeCsv(p.chatId),
             escapeCsv(p.userPrompt),
             escapeCsv(p.botReply),
             escapeCsv(p.via),
@@ -512,7 +513,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="evaluasi_chatbot_${exportFileLabel}.csv"`,
+        `attachment; filename="riwayat_percakapan_${exportFileLabel}.csv"`,
       );
       res.status(200).send('\uFEFF' + csvHeader + csvRows); // BOM untuk Excel UTF-8
       return;

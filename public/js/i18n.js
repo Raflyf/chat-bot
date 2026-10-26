@@ -29,8 +29,8 @@
       "feat.5.desc": "If a primary route hits capacity or disruption, the system automatically switches to the backup route in milliseconds.",
       "feat.6.title": "Genuine Interaction Without Templates",
       "feat.6.desc": "Free of robotic clichés and rigid formats. Interacts fluidly like a close friend and an insightful discussion partner.",
-      "teaser.title": "Monitoring Console & AI Training Dataset",
-      "teaser.desc": "Monitor API key pool usage, daily quotas, conversation traffic, and download chat logs in JSONL/CSV format for AI model fine-tuning.",
+      "teaser.title": "Monitoring Console & Conversation History",
+      "teaser.desc": "Monitor API key pool usage, daily quotas and conversation traffic, and download the conversation history in JSONL/CSV format.",
       "teaser.btn": "Access Admin Dashboard",
       // ── Form Laporan (ditambahkan 08 Okt 2026) ──
       // CATATAN: patch pertama GAGAL karena key-nya tidak ikut masuk kamus —
@@ -70,7 +70,7 @@
       "dash.pool.title": "Provider API Key Pools",
       "dash.upstream.title": "Upstream Provider Status",
       "dash.token.title": "Token Consumption Distribution",
-      "dash.dataset.title": "AI Training Dataset",
+      "dash.dataset.title": "Conversation History",
       "dash.download.jsonl": "Download JSONL",
       "dash.download.csv": "Download CSV",
       // Kunci dinamis untuk dashboard.js (dipanggil via window.t)
@@ -231,7 +231,7 @@
       "dash.media.doc": "Document",
       "dash.media.video": "Video",
       "dash.dataset.rangeLabel": "History time range",
-      "dash.dataset.desc": "Pairs of user questions and bot replies. Used to assess answer quality and prepare training data.",
+      "dash.dataset.desc": "Pairs of user questions and bot replies, for reviewing answer quality.",
       "dash.range.allTime": "All time",
       "dash.range.last7": "Last 7 days",
       "dash.range.last14": "Last 14 days",
