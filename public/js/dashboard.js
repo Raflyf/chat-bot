@@ -2228,6 +2228,15 @@ function renderLiveUpstreamTable(data) {
           ? `<span class="badge badge-wa">WhatsApp</span>`
           : `<span class="badge badge-tele">Telegram</span>`;
 
+        // Identitas pengirim: tampilkan PENUH tanpa prefix internal "wa_", dan
+        // beri label supaya ID Telegram tidak terbaca sebagai nomor WhatsApp.
+        const isWaChat = p.platform === "whatsapp";
+        const idLabel = isWaChat ? "Nomor WA" : "ID Telegram";
+        const idValue = String(p.chatId || p.chatIdMasked || "-").replace(/^(wa_|tg_)/, "");
+        const idTitle = isWaChat
+          ? "Nomor WhatsApp pengirim"
+          : "ID internal Telegram (bukan nomor HP)";
+
         // Metrik token per chat (Input Prompt, Context total, Output Reply, Total Terpakai)
         const promptTk = Number(p.promptTokens) || Math.max(1, Math.ceil(((p.userPrompt || "")).length / 3.8));
         const outTk = Number(p.completionTokens) || (p.botReply ? Math.max(1, Math.ceil(p.botReply.length / 3.8)) : 0);
@@ -2245,7 +2254,10 @@ function renderLiveUpstreamTable(data) {
             <div style="margin-top: 0.25rem;">${platformBadge}</div>
           </td>
           <td>
-            <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim);">${escapeHtml(p.chatIdMasked)}</div>
+            <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim); display: flex; align-items: baseline; gap: 0.35rem; flex-wrap: wrap;">
+              <span style="font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted);">${idLabel}</span>
+              <span title="${escapeHtml(idTitle)}">${escapeHtml(idValue)}</span>
+            </div>
             <div style="margin-top: 0.2rem; display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
               <span class="model-tag">${escapeHtml(cleanVia)}</span>
               ${usageBadge}

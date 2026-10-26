@@ -13,6 +13,8 @@ export interface DatasetPair {
   id: number;
   platform: string;
   chatIdMasked: string;
+  /** chat_id penuh apa adanya dari DB (mis. "wa_628991333323" / "wa_1073504871"). */
+  chatId: string;
   userPrompt: string;
   botReply: string;
   via: string;
@@ -232,6 +234,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   const format = String(req.query.format || 'json').toLowerCase();
   const search = typeof req.query.q === 'string' ? req.query.q.toLowerCase().trim() : '';
+  // Pencarian nomor WA / ID Telegram: query yang isinya cuma digit (boleh
+  // berprefix "wa_"/"tg_", spasi, "+", "-") dicari langsung ke kolom chat_id
+  // lewat SQL, bukan hanya menyaring 600 baris terakhir di memori.
+  const searchDigits = search.replace(/^(wa_|tg_)/, '').replace(/[\s+-]/g, '');
+  const isIdSearch = /^\d{6,}$/.test(searchDigits);
   const platform = typeof req.query.platform === 'string' ? req.query.platform.toLowerCase().trim() : '';
   const range = typeof req.query.range === 'string' ? req.query.range.toLowerCase().trim() : 'all';
   const dateParam = typeof req.query.date === 'string' ? req.query.date.trim() : null;
@@ -263,6 +270,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
     if (endDateIso) {
       query = query.lte('created_at', endDateIso);
+    }
+
+    // Filter ID di sisi SQL supaya pencarian nomor/ID menjangkau SELURUH tabel,
+    // bukan hanya jendela dbLimit baris terakhir.
+    if (isIdSearch) {
+      query = query.ilike('chat_id', `%${searchDigits}%`);
     }
 
     const { data: messagesRaw, error } = await query;
@@ -353,7 +366,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           const matchUser = prompt.toLowerCase().includes(search);
           const matchBot = reply.toLowerCase().includes(search);
           const matchVia = rawVia.toLowerCase().includes(search);
-          if (!matchUser && !matchBot && !matchVia) continue;
+          const chatIdRaw = String(userMsg.chat_id || '').toLowerCase();
+          const matchChat =
+            chatIdRaw.includes(search) ||
+            (searchDigits.length >= 4 && chatIdRaw.replace(/^wa_/, '').includes(searchDigits));
+          if (!matchUser && !matchBot && !matchVia && !matchChat) continue;
         }
 
         // Ekstraksi Token Usage Asli Upstream (Bukan Estimasi Buatan)
@@ -396,6 +413,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           id: userMsg.id,
           platform: pForm,
           chatIdMasked: maskChatId(userMsg.chat_id),
+          chatId: String(userMsg.chat_id || ''),
           userPrompt: prompt,
           botReply: reply,
           via,
