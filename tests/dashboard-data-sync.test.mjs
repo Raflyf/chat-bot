@@ -32,7 +32,7 @@ const messages = before.modelsBreakdown.flatMap(m => Array.from({length: m.count
   created_at: '2026-11-10T16:00:00.000Z', total_tokens: 0, prompt_tokens: 0, completion_tokens: 0,
 })));
 
-function loadApi({oldRows = [], fail = false, authenticated = true} = {}) {
+function loadApi({oldRows = [], quotaRows = quotas, cooldowns = [], fail = false, authenticated = true} = {}) {
   class Query {
     constructor(table) { this.table = table; this.predicates = []; this.take = null; this.offset = 0; }
     select(_columns, options = {}) { this.head = options.head; return this; }
@@ -43,7 +43,7 @@ function loadApi({oldRows = [], fail = false, authenticated = true} = {}) {
     limit(n) { this.take = n; return this; }
     range(start, end) { this.offset = start; this.take = end - start + 1; return this; }
     then(resolve, reject) {
-      let rows = this.table === 'provider_quota' ? [...quotas, ...oldRows] : this.table === 'messages' ? messages : [];
+      let rows = this.table === 'provider_quota' ? [...quotaRows, ...oldRows] : this.table === 'provider_cooldown' ? cooldowns : this.table === 'messages' ? messages : [];
       rows = rows.filter(r => this.predicates.every(f => f(r)));
       const count = rows.length;
       rows = rows.slice(this.offset, this.take === null ? undefined : this.offset + this.take);
@@ -151,4 +151,20 @@ test('render: compact badges, scrolling and visible-only guarded cadence',()=>{
   assert.ok(dash.includes('statsRequest?.cacheKey === cacheKey'));
   assert.ok(!source.includes('probeKunciCloudflare'));
   assert.ok(!source.includes('fetchGroqLimits('));
+});
+
+test('cooldown upstream tidak memalsukan pemakaian bot menjadi 100 persen', async () => {
+  const cf = quotas.find(row => row.kind === 'cloudflare');
+  const {body} = await request(loadApi({
+    quotaRows: quotas.map(row => row === cf ? {...row,tokens_used:900} : row),
+    cooldowns: [{kind:'cloudflare',key_hash:cf.key_suffix,alasan:'neuron',until_at:'2026-11-10T23:59:00.000Z'}],
+  }));
+  const key = body.pools.find(pool => pool.kind === 'cloudflare').keys[0];
+  assert.equal(key.status, 'capped');
+  assert.equal(key.used, cf.used);
+  assert.equal(key.bindingPercent, null);
+  assert.ok(key.tokenPercent < 100);
+  const {context} = uiContext();
+  assert.doesNotMatch(context.keyUsageHtml(key), /100 persen|width:100%/);
+  assert.equal(context.keyStatus(key).label, 'Cooldown');
 });

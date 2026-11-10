@@ -584,7 +584,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const tokenPercent = tokenCap && tokenCap > 0 && tokensUsed !== null ? Math.min(100, Math.round(tokensUsed / tokenCap * 100)) : null;
         const cd = cooldownAktif.get(p.kind + ':' + hash) || cooldownAktif.get(p.kind + ':' + key.slice(-4));
         const quotaBlocked = cd && ['neuron', 'rpd', 'quota', 'tpd'].includes(cd.alasan);
-        const bindingPercent = quotaBlocked ? 100 : percent === null && tokenPercent === null ? null : Math.max(percent ?? 0, tokenPercent ?? 0);
+        const bindingPercent = cd ? null : percent === null && tokenPercent === null ? null : Math.max(percent ?? 0, tokenPercent ?? 0);
         const upstreamRemaining = usageFresh ? upstream?.requestsRemaining ?? null : null;
         const status = cd ? (quotaBlocked ? 'capped' : 'cooldown') : !cooldownAvailable ? 'unknown'
           : upstreamRemaining === 0 ? 'capped'

@@ -891,7 +891,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     function keyUsageHtml(key) {
       const measured = typeof key.tokensUsed === 'number' && Number.isFinite(key.tokensUsed);
       const unit = key.satuanToken === 'neuron' ? 'neuron' : 'token';
-      const tokenLine = measured ? metricNumber(key.tokensUsed) + ' ' + unit + (key.tokenEstimated ? ' (estimasi bot)' : ' tercatat') : 'Token belum terukur';
+      const tokenLine = (measured ? metricNumber(key.tokensUsed) + ' ' + unit + (key.tokenEstimated ? ' (estimasi bot)' : ' tercatat') : 'Token belum terukur') + (key.cooldownAlasan ? ' · upstream membatasi akses' : '');
       const pct = key.bindingPercent;
       const bar = typeof pct === 'number' && Number.isFinite(pct)
         ? '<div class="progress-bar-bg" role="img" aria-label="Pemakaian tercatat ' + pct + ' persen"><div class="progress-bar-fill ' + (pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald') + '" style="width:' + Math.min(100, Math.max(0, pct)) + '%"></div></div>' : '';
@@ -914,18 +914,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     }
 
 
-    /**
- * Panel pemakaian WEB SEARCH (mesin pencari cadangan).
- *
- * Kenapa panel terpisah: web search memakai kuota yang TERPISAH dari kuota token
- * (10 pencarian per kunci per hari, diukur langsung dari respons provider —
- * kunci membalas 429 pada pencarian ke-11). Karena itu ia tidak bisa dibaca dari
- * angka token; tanpa panel ini jatah pencarian bisa habis tanpa terlihat.
- *
- * Semua angka di sini berasal dari `webSearch` di /api/stats, yang diturunkan
- * dari penghitung runtime + status kunci yang sedang kehabisan kuota. Tidak ada
- * angka yang dikarang: bila data belum ada, panel menampilkan tanda pisah.
- */
+    /** Mesin pencari publik tidak memiliki saldo per API key. */
 function renderWebSearchPanel(data) {
   const panel = document.getElementById('websearch-panel');
   if (!panel) return;

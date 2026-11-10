@@ -99,7 +99,7 @@ Foto/stiker memakai `visionChain` terpisah. PDF/audio/video native memakai `gemi
 
 Dahl dan NVIDIA NIM tidak masuk pool aktif; riwayat pemakaian lama tetap disimpan. Semua kunci Cloudflare tetap dipertahankan: batas harian memicu cooldown sementara, bukan penghapusan kunci.
 
-Dashboard mengambil katalog dari API. Metrik panggilan tercatat, balasan tersimpan, token, dan neuron memakai sumber terpisah dengan rentang UTC yang sama; kuota upstream yang belum diketahui tidak ditampilkan sebagai nol. Snapshot diperbarui tiap 5 detik saat tab terlihat, tanpa probe inferensi tambahan.
+Dashboard mengambil katalog dari API. Metrik panggilan tercatat, balasan tersimpan, token, dan neuron memakai sumber terpisah dengan rentang UTC yang sama; kuota upstream yang belum diketahui tidak ditampilkan sebagai nol. Snapshot diperbarui tiap 5 detik saat tab terlihat, tanpa probe inferensi tambahan. Cooldown upstream ditampilkan terpisah; persentase pemakaian bot tidak dipaksa menjadi 100%.
 
 Riwayat percakapan tetap memuat pesan pengguna dengan `via` kosong. Pembacaan suasana memakai caption asli, bukan instruksi media; teks stiker yang diamati dipisahkan dari reaksi bot. Regenerasi stiker tetap membawa gambar, dan gaya bercanda dapat kembali mengikuti pesan terbaru setelah suasana serius selesai.
 
