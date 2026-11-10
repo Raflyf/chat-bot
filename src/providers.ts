@@ -1371,6 +1371,7 @@ async function opencodeChat(_key: string, model: string, msgs: ChatMsg[], timeou
   }, {
     model, messages, stream: true, stream_options: { include_usage: true },
     max_tokens: config.maxOutputTokens,
+    ...BASE_GEN,
     ...(model.startsWith('deepseek-') ? { reasoning_effort: 'low' } : {}),
     tools: Object.entries(builtins).map(([name, schema]) => ({ type: 'function', function: { name, ...schema } })),
   }, {

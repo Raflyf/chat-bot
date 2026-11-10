@@ -1351,6 +1351,12 @@ export async function processIncomingVideo(
 /**
  * Memproses stiker WhatsApp atau Telegram (.webp) dan memahami konteks ekspresinya via Vision AI.
  */
+/** Caption asli dan OCR tetap konten pengirim, bukan balasan model. */
+export function stickerUserContent(label: string, caption?: string, stickerText?: string): string {
+  return [label, caption?.trim() ? '[Caption: ' + JSON.stringify(caption.trim()) + ']' : '',
+    stickerText?.trim() ? '[Tulisan stiker: ' + JSON.stringify(stickerText.trim().slice(0, 200)) + ']' : ''].filter(Boolean).join(' ');
+}
+
 export async function processIncomingSticker(
   buffer: Buffer,
   mime: string = 'image/webp',
@@ -1366,6 +1372,7 @@ export async function processIncomingSticker(
   /** Emoji stiker balasan (dari tag [[sticker:x]]) — agar bot bisa membalas
    *  stiker dengan stiker. Ditambahkan 10 Okt 2026. */
   sticker?: string | null;
+  stickerText?: string;
 }> {
   // ── CAPTION PENGIRIM (perbaikan 16 Okt 2026) ──
   // LAPORAN PEMILIK PRODUK: "bot nya baca caption nya dulu ga? knapa respon nya

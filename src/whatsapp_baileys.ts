@@ -12,7 +12,7 @@ import {
 } from '@whiskeysockets/baileys';
 import { config, assertRuntime } from './env.js';
 import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
-import { transcribeAudio, processIncomingDocument, processIncomingSticker, processIncomingVideo } from './media.js';
+import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
@@ -678,26 +678,25 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         // jalur WhatsApp Cloud & Telegram. Tanpa ini, bila pengguna mengetik
         // teks/caption BERSAMAAN dengan stiker, maksudnya tidak pernah sampai
         // ke vision dan balasan jadi terkesan tidak membaca caption.
-        const { reply: replyStiker, via, tokens, sticker: stickerBalasan } = await processIncomingSticker(buffer, mime, undefined, context, text || undefined);
+        const { reply: replyStiker, via, tokens, sticker: stickerBalasan, stickerText } = await processIncomingSticker(buffer, mime, undefined, context, text || undefined);
 
-        // Simpan DESKRIPSI stiker (bukan hanya penanda) agar saat user me-REPLY
-        // stiker ini, bot tahu stiker APA yang dimaksud (perbaikan 10 Okt 2026).
-        const deskripsiStiker = stripStickerMarker(String(replyStiker || ''))
-          .replace(/\s+/g, ' ').trim().slice(0, 200);
+        // Simpan isi pengirim, bukan reaksi bot sebagai ucapan user.
+        const kontenStikerUser = stickerUserContent('[Stiker WhatsApp]', text, stickerText);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'user',
-          content: deskripsiStiker ? `[Stiker WhatsApp] ${deskripsiStiker}` : '[Stiker WhatsApp]',
+          content: kontenStikerUser,
           msg_id: messageId || undefined,
         });
+        updateContextCache(chatKey, 'user', kontenStikerUser);
         // PERBAIKAN 10 Okt 2026: sanitize + kirim stiker balasan (sama seperti
         // jalur WhatsApp Cloud).
-        const teksStiker = sanitizeAssistantOutput(replyStiker, '[Stiker WhatsApp]', undefined, true).trim();
+        const teksStiker = sanitizeAssistantOutput(replyStiker, kontenStikerUser, undefined, true).trim();
         await sendWhatsAppMessageSafe(sock, remoteJid, teksStiker);
         if (messageId) void markMessageProcessed('whatsapp', messageId);
         let stikerBaileys = false;
-        if (stickerBalasan && hasStickerForEmoji(stickerBalasan) && stickerFitsMood(stickerBalasan, '[Stiker WhatsApp]')) {
+        if (stickerBalasan && hasStickerForEmoji(stickerBalasan) && stickerFitsMood(stickerBalasan, kontenStikerUser)) {
           stikerBaileys = await sendWhatsAppStickerSafe(sock, remoteJid, stickerBalasan);
         }
         await saveMessage({
@@ -708,6 +707,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           via,
           tokens,
         });
+        updateContextCache(chatKey, 'assistant', stikerBaileys ? `${teksStiker}\n[Stiker terkirim: ${stickerBalasan}]` : teksStiker);
         noteExchange(chatKey);
         return;
       }

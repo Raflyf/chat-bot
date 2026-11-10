@@ -430,6 +430,12 @@ interface LimitCacheEntry {
 
 const limitCache = new Map<string, LimitCacheEntry>();
 
+/** Baca cache monitoring tanpa memicu panggilan inferensi. */
+export function getCachedLimits(cacheKey: string): LimitCacheEntry | null {
+  const cached = limitCache.get(cacheKey);
+  return cached ? { at: cached.at, data: new Map(cached.data) } : null;
+}
+
 /** Ambil dari cache bila masih segar; `probe` dijalankan hanya saat cache kosong/basi. */
 async function withLimitCache(
   kind: string,

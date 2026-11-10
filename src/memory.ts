@@ -83,7 +83,7 @@ export function updateContextCache(chatKey: string, role: 'user' | 'assistant', 
   const cached = contextCache.get(chatKey);
   if (cached && Date.now() - cached.at < CONTEXT_TTL_MS) {
     cached.data.history.push({ role, content });
-    if (cached.data.history.length > 15) cached.data.history.shift();
+    if (cached.data.history.length > 40) cached.data.history.shift();
     cached.at = Date.now();
   }
 }
@@ -208,7 +208,7 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
       //   - prompt hanya memakai sebagian riwayat yang relevan (lihat skills.ts)
       //   - ada ringkasan otomatis untuk percakapan yang lebih lama lagi
       c.from('messages').select('role,content,feedback,via').eq('chat_id', chatKey)
-        .not('via', 'like', 'system/%')
+        .or('via.is.null,via.not.like.system/%')
         .order('created_at', { ascending: false }).limit(40),
       c.from('summaries').select('summary').eq('chat_id', chatKey).limit(1).maybeSingle(),
       c.from('corrections').select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(15),
@@ -229,7 +229,9 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
     // anti-overuse tetap terlihat lintas instance serverless (tanpa polusi tabel).
     const withStickerMarkers = validMessages.map((m) => {
       const fb = typeof m.feedback === 'string' ? m.feedback.trim() : '';
-      let content = m.content;
+      // Riwayat stiker lama memuat reaksi bot sebagai teks user; hanya abaikan saat membaca.
+      let content = m.role === 'user' && /^\[Stiker (?:Telegram|WhatsApp)[^\]]*\] [^\[]/.test(m.content)
+        ? m.content.replace(/^(\[Stiker (?:Telegram|WhatsApp)[^\]]*\]).*$/s, '$1') : m.content;
       for (const part of fb.split('|')) {
         const i = part.indexOf(':');
         if (i < 0) continue;

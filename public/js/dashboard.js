@@ -9,6 +9,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
     let autoRefresh = true;
     let refreshTimer = null;
+    let statsRequest = null;
+    let statsGeneration = 0;
+    const REFRESH_MS = 5000;
     let sessionExpiryTimer = null;
     let resendCountdownTimer = null;
     let datasetSearchTimeout = null;
@@ -102,7 +105,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     function formatTime(isoString) {
       if (!isoString) return "-";
       const d = new Date(isoString);
-      return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" });
     }
 
     function formatDateTime(isoString) {
@@ -530,59 +533,60 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       if (cachedDashboardData) renderPoolMatrix(cachedDashboardData);
     }
 
+    function updateFreshness(stale = false) {
+      const stamp = cachedDashboardData?.serverTime;
+      const age = stamp ? Date.now() - Date.parse(stamp) : Infinity;
+      const late = stale || !Number.isFinite(age) || age > 20000;
+      const el = document.getElementById('server-time');
+      if (el) el.textContent = (stamp ? 'Snapshot ' + formatTime(stamp) + ' UTC' : 'Belum ada snapshot') + (late ? ' · data belum segar' : ' · pantau tiap 5 dtk saat terlihat');
+      const label = document.getElementById('monitoring-status');
+      if (label) label.textContent = late ? 'Data belum segar' : 'Terpantau 5 dtk';
+      const sync = document.getElementById('sync-time');
+      if (sync) sync.textContent = stamp ? formatTime(stamp) + ' UTC' : '–';
+    }
+
     async function fetchData(force = false) {
       const token = getStoredToken();
-      if (!token) return;
-
-      const cacheKey = `${currentTimeRange}_${currentPlatform}`;
-      // Instant render dari cache jika ada dan bukan force refresh
+      if (!token || document.hidden) return;
+      const cacheKey = currentTimeRange + '_' + currentPlatform;
+      if (statsRequest?.cacheKey === cacheKey) return;
+      if (statsRequest) statsRequest.controller.abort();
+      const generation = ++statsGeneration;
+      const controller = new AbortController();
+      statsRequest = { cacheKey, controller };
       if (!force && statsCache.has(cacheKey)) {
-        const cached = statsCache.get(cacheKey);
-        cachedDashboardData = cached;
-        renderDashboard(cached);
+        cachedDashboardData = statsCache.get(cacheKey);
+        renderDashboard(cachedDashboardData);
       }
-
-      const btnIcon = document.getElementById("btn-refresh-icon");
-      if (btnIcon) btnIcon.classList.add("spinning");
-
+      const icon = document.getElementById('btn-refresh-icon');
+      icon?.classList.add('spinning');
+      const deadline = setTimeout(() => controller.abort(), 15000);
       try {
-        const url = `/api/stats?range=${encodeURIComponent(currentTimeRange)}&platform=${encodeURIComponent(currentPlatform)}`;
-        const res = await fetch(url, {
-          headers: { "x-admin-token": token },
+        const res = await fetch('/api/stats?range=' + encodeURIComponent(currentTimeRange) + '&platform=' + encodeURIComponent(currentPlatform), {
+          headers: { 'x-admin-token': token }, cache: 'no-store', signal: controller.signal,
         });
-
+        if (generation !== statsGeneration || token !== getStoredToken()) return;
         if (res.status === 401) {
-          // Lakukan recheck verifikasi sesi sebelum memutuskan sesi hilang
-          const recheck = await fetch("/api/admin-otp?action=verify_session", {
-            headers: { "x-admin-token": token },
+          const recheck = await fetch('/api/admin-otp?action=verify_session', {
+            headers: { 'x-admin-token': token }, cache: 'no-store', signal: controller.signal,
           }).catch(() => null);
-
-          if (recheck && recheck.ok) {
-            const recheckData = await recheck.json().catch(() => ({}));
-            if (recheckData.valid) {
-              console.warn("Transient 401 pada /api/stats terdeteksi, sesi tetap valid.");
-              return;
-            }
-          }
-
-          triggerSessionExpired("auth_lost");
+          if (generation !== statsGeneration || token !== getStoredToken()) return;
+          if (recheck?.ok && (await recheck.json().catch(() => ({}))).valid) { updateFreshness(true); return; }
+          triggerSessionExpired('auth_lost');
           return;
         }
-
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        const prev = statsCache.get(cacheKey);
+        if (generation !== statsGeneration || token !== getStoredToken() || cacheKey !== currentTimeRange + '_' + currentPlatform) return;
+        if (!data.ok) throw new Error('Data monitoring belum tersedia');
         statsCache.set(cacheKey, data);
         cachedDashboardData = data;
-        // Hindari rebuild DOM ganda tiap tick 15 dtk: render ulang hanya bila
-        // payload benar-benar berubah (audit P-4).
-        if (!prev || JSON.stringify(prev) !== JSON.stringify(data)) {
-          renderDashboard(data);
-        }
+        renderDashboard(data);
       } catch (err) {
-        console.error("Gagal mengambil metrik:", err);
+        if (generation === statsGeneration) { updateFreshness(true); console.error('Gagal mengambil metrik:', err); }
       } finally {
-        if (btnIcon) btnIcon.classList.remove("spinning");
+        clearTimeout(deadline);
+        if (generation === statsGeneration) { statsRequest = null; icon?.classList.remove('spinning'); }
       }
     }
 
@@ -592,20 +596,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       const rangeLabel = data.rangeLabel || "Hari Ini";
       const platformLabel = data.platform === "whatsapp" ? " (WhatsApp)" : data.platform === "telegram" ? " (Telegram)" : "";
 
-      if (data.isDatabaseConnected === false) {
-        document.getElementById("server-time").textContent =
-          t('dyn.sync', "Sinkronisasi: ") + formatTime(data.serverTime) + " WIB \u2022 Supabase Belum Terhubung di Vercel Env";
-      } else {
-        document.getElementById("server-time").textContent =
-          t('dyn.sync', "Sinkronisasi: ") + formatTime(data.serverTime) + " WIB \u2022 Periode: " + rangeLabel + platformLabel;
-      }
-
-      // Waktu sinkron terakhir. Satu sumber dengan header supaya tidak ada dua
-      // timestamp berbeda di satu layar (temuan verifikasi visual).
-      (function () {
-        var st = document.getElementById("sync-time");
-        if (st) st.textContent = formatTime(data.serverTime) + " WIB";
-      })();
+      updateFreshness(data.dataTruncated || !data.cooldownAvailable);
 
       // KPI Titles & Values
       document.getElementById("kpi-title-msgs").textContent = `Pesan (${rangeLabel})`;
@@ -614,11 +605,10 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       document.getElementById("kpi-wa").textContent = (data.summary.whatsappPeriod ?? data.summary.whatsappToday ?? 0) + " WA";
       document.getElementById("kpi-tele").textContent = (data.summary.telegramPeriod ?? data.summary.telegramToday ?? 0) + " Telegram";
 
-      document.getElementById("kpi-title-calls").textContent = `Panggilan & Token API (${rangeLabel})`;
-      const totalCalls = data.summary.totalCallsPeriod ?? data.summary.totalCallsToday ?? 0;
-      const totalTokens = data.summary.totalTokensPeriod ?? 0;
-      document.getElementById("kpi-calls-today").textContent = totalCalls.toLocaleString("id-ID") + " panggilan";
-      document.getElementById("kpi-total-keys").textContent = `${formatTokens(totalTokens)} \u2022 ${data.summary.totalKeys} kunci terpantau`;
+      document.getElementById('kpi-title-calls').textContent = 'Panggilan tercatat (' + rangeLabel + '; semua platform)';
+      document.getElementById('kpi-calls-today').textContent = metricNumber(data.summary.totalCallsPeriod) + ' panggilan';
+      document.getElementById('kpi-total-keys').textContent = (data.summary.totalTokensPeriod == null ? 'Token belum lengkap' : metricNumber(data.summary.totalTokensPeriod) + ' token tercatat') + ' · ' + metricNumber(data.summary.totalKeys) + ' kunci + ' + metricNumber(data.summary.publicAccessCount) + ' akses publik';
+
 
       document.getElementById("kpi-title-model").textContent = `Model Terpopuler (${rangeLabel})`;
       const topModel = data.modelsBreakdown && data.modelsBreakdown.length > 0
@@ -628,10 +618,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
       // Pool reset label
       const poolReset = document.getElementById("pool-reset-label");
-      if (poolReset) {
-        if (data.range === "today") poolReset.textContent = "Kuota harian dan cooldown mengikuti provider; angka bot bukan saldo upstream.";
-        else poolReset.textContent = `Akumulasi Periode ${rangeLabel}`;
-      }
+      if (poolReset) poolReset.textContent = "Panggilan tercatat: " + rangeLabel + " · semua platform. Bar per akses: hari ini (UTC). Balasan tersimpan memakai filter platform.";
 
       // Dynamic Section Titles
       const modelsH = document.getElementById("models-section-title");
@@ -643,13 +630,12 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // "hari ini" di HTML tanpa id, sehingga saat rentang diganti ke 7/14/30
       // hari teksnya tetap berbunyi "hari ini" — padahal angkanya sudah
       // menampilkan periode lain.
-      const rangeWord = data.range === "today" ? "hari ini" : rangeLabel.toLowerCase();
-      const labelUsed = document.getElementById("upstream-label-used");
-      if (labelUsed) labelUsed.textContent = `Token terpakai ${rangeWord}`;
-      const thPakai = document.getElementById("th-pemakaian");
-      if (thPakai) thPakai.textContent = `Pemakaian ${rangeWord}`;
-      const thSisa = document.getElementById("th-sisa");
-      if (thSisa) thSisa.textContent = `Sisa kuota ${rangeWord}`;
+      const labelUsed = document.getElementById('upstream-label-used');
+      if (labelUsed) labelUsed.textContent = 'Token tercatat hari ini (UTC)';
+      const thPakai = document.getElementById('th-pemakaian');
+      if (thPakai) thPakai.textContent = 'Tercatat hari ini (UTC)';
+      const thSisa = document.getElementById('th-sisa');
+      if (thSisa) thSisa.textContent = 'Snapshot sisa upstream';
 
       // Badge versi diambil dari package.json lewat API, bukan ditulis di HTML:
       // versi yang di-hardcode mudah tertinggal setiap kali rilis, dan dashboard
@@ -699,9 +685,6 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
       const modelsBreakdown = data.modelsBreakdown || [];
       let totalCalls = modelsBreakdown.reduce((sum, m) => sum + (m.count || 0), 0);
-      if (totalCalls === 0 && data.summary) {
-        totalCalls = data.summary.totalCallsPeriod || data.summary.totalMessagesPeriod || 0;
-      }
 
       if (totalInferensiEl) totalInferensiEl.textContent = `${totalCalls.toLocaleString()}x`;
       if (totalResolusiEl) totalResolusiEl.textContent = `${totalCalls.toLocaleString()}x`;
@@ -842,7 +825,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
               <div class="card-model-desc">${escapeHtml(c.desc)}</div>
             </div>
             <div class="card-footer-row">
-              <span class="card-footer-label">Total Eksekusi</span>
+              <span class="card-footer-label">Balasan tersimpan</span>
               <span class="card-footer-count">${count.toLocaleString()}x</span>
             </div>
           </div>
@@ -890,268 +873,46 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       return true;
     }
 
-    function renderPoolMatrix(data) {
-      const poolGrid = document.getElementById("pool-grid");
-      if (!poolGrid) return;
-
-      const pools = data.pools || data.providers || [];
-      const filteredPools = pools.filter(p => {
-        if (currentProviderFilter !== "all" && p.kind !== currentProviderFilter) return false;
-        return true;
-      });
-
-      if (filteredPools.length === 0) {
-        setHtmlIfChanged(poolGrid, `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 2rem;">Tidak ada pool provider yang sesuai filter.</div>`);
-        return;
-      }
-
-      // Kartu dibangun di FRAGMEN (bukan langsung ke grid) supaya bisa
-      // dibandingkan dulu; kalau isinya sama, DOM tidak disentuh sama sekali
-      // -> grid tidak berkedip saat refresh berkala (perbaikan blink 24 Sep).
-      // Event listener tombol lipat tetap terpasang karena kartunya elemen nyata.
-      const __frag = document.createDocumentFragment();
-
-      filteredPools.forEach(p => {
-        const card = document.createElement("div");
-        card.className = "provider-card";
-
-        let keysHtml = "";
-        const filteredKeys = (p.keys || []).filter(k => {
-          if (currentKeyStatusFilter === "healthy" && k.status !== "healthy") return false;
-          if (currentKeyStatusFilter === "warning" && k.status !== "warning") return false;
-          if (currentKeyStatusFilter === "capped" && k.status !== "capped") return false;
-          return true;
-        });
-
-        if (filteredKeys.length === 0) {
-          keysHtml = `<div style="color: var(--text-dim); font-size: 0.8rem; padding: 0.5rem 0;">Tidak ada key dengan status ${currentKeyStatusFilter}.</div>`;
-        } else {
-          filteredKeys.forEach(k => {
-            // Metrik BINDING: mana yang lebih dulu habis (RPD panggilan vs TPD token).
-            // Bar & warna memakai metrik binding agar konsisten dengan badge status —
-            // sebelumnya bar bisa 22% (panggilan) padahal key sudah CAPPED karena token 100%.
-            const hasTokenCap = (k.tokenCap || 0) > 0 && (k.tokensUsed || 0) > 0;
-            const bindingPct = typeof k.bindingPercent === "number" ? k.bindingPercent : Math.max(k.percent || 0, k.tokenPercent || 0);
-            const bindingIsToken = (k.bindingMetric === "tokens") || (!k.bindingMetric && (k.tokenPercent || 0) > (k.percent || 0));
-
-            let progressColor = "progress-emerald";
-            if (k.status === "capped" || bindingPct >= 100) progressColor = "progress-rose";
-            else if (k.status === "warning" || bindingPct >= 80) progressColor = "progress-amber";
-
-            // ── LABEL STATUS + ALASAN COOLDOWN (perbaikan 09 Okt 2026) ──
-            // LAPORAN: "semua apikey habis? tapi monitoring masih hijau". Backend
-            // kini mengirim `cooldownAlasan`/`cooldownSampai`; tampilkan agar tidak
-            // ada lagi key yang tampak "Optimal" padahal sedang dibekukan.
-            let statusLabel = k.status === "capped" ? "Capped" : k.status === "warning" ? "Waspada" : "Optimal";
-            if (k.cooldownAlasan) {
-              const namaAlasan = k.cooldownAlasan === "neuron" ? "neuron habis"
-                : k.cooldownAlasan === "rpd" ? "limit harian"
-                : k.cooldownAlasan === "rpm" ? "limit per menit"
-                : k.cooldownAlasan === "concurrency" ? "kapasitas penuh"
-                : k.cooldownAlasan === "error" ? "gangguan sesaat"
-                : k.cooldownAlasan;
-              const jamReset = k.cooldownSampai
-                ? new Date(k.cooldownSampai).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" })
-                : "";
-              statusLabel = jamReset ? `Beku (${namaAlasan}, s.d. ${jamReset} UTC)` : `Beku (${namaAlasan})`;
-            }
-            const cleanSuffix = String(k.suffix || "").startsWith("...") ? k.suffix : "..." + (k.suffix || "????");
-            // k.used / k.cap bisa undefined pada kunci yang baru terdaftar dan belum
-            // punya catatan kuota -> tanpa fallback, satu kunci seperti itu melempar
-            // TypeError dan mematikan seluruh panel. Pakai Number(...) || 0.
-            const kUsed = Number(k.used) || 0;
-            const kCap = Number(k.cap) || 0;
-            const kPct = Number(k.percent) || 0;
-            const capLabel = kCap > 0 ? `${kUsed.toLocaleString("id-ID")} / ${kCap.toLocaleString("id-ID")} panggilan (${kPct}%)` : `${kUsed.toLocaleString()} calls`;
-
-            // Baris kedua: info TOKEN bila provider punya batas token (Dahl/Groq).
-            // Inilah yang membuat dashboard jujur: key ...6386 tampil "112/500 panggilan (22%)"
-            // SEKALIGUS "1.004.173 / 1.000.000 token (100%)" — tidak lagi menyesatkan.
-            // Limit diambil dari endpoint provider (v0.49) — ditandai "live" atau "dokumentasi".
-            let tokenLine = "";
-            if (k.officialLimitLabel) {
-              const srcTag = k.limitIsLive
-                ? '<span style="color: #34d399;"> • limit live dari endpoint</span>'
-                : '<span style="color: #fbbf24;"> • limit dari dokumentasi resmi</span>';
-              tokenLine += `<div style="font-size: 0.66rem; color: var(--text-dim); margin-top: 2px;">Batas resmi: ${escapeHtml(k.officialLimitLabel)}${srcTag}</div>`;
-            }
-            if (hasTokenCap) {
-              const tokenPct = k.tokenPercent || 0;
-              const tokenColor = tokenPct >= 100 ? "#fb7185" : tokenPct >= 80 ? "#fbbf24" : "#34d399";
-              // Angka saja sulit dibaca sekilas ("178.330 / 200.000 token (89%)"),
-              // jadi ditambah bar tipis di bawah teks: panjangnya menunjukkan
-              // porsi terpakai, warnanya mengikuti ambang yang sama dengan angka.
-              // BUG YANG DIPERBAIKI (06 Okt 2026): label DULU HARDCODE "Token",
-              // sehingga Cloudflare (satuan NEURON) tertulis "Token 14.000 / 10.000"
-              // — mencampur satuan. Sekarang label mengikuti satuan sebenarnya.
-              const satuanKey = (k.satuanToken === 'neuron') ? 'neuron' : 'Token';
-              const labelBatas = (k.satuanToken === 'neuron') ? 'BATAS NEURON' : 'BATAS TOKEN';
-              tokenLine = `<div class="key-token-line">
-                <div class="key-token-head">
-                  <span class="key-token-label">${satuanKey}</span>
-                  <span style="color: ${tokenColor};">${(k.tokensUsed || 0).toLocaleString("id-ID")} / ${(k.tokenCap || 0).toLocaleString("id-ID")} (${tokenPct}%)</span>
-                  ${bindingIsToken && bindingPct >= 80 ? `<span class="key-token-binding">${labelBatas}</span>` : ""}
-                </div>
-                <div class="key-token-bar" role="img" aria-label="Pemakaian ${satuanKey} ${tokenPct} persen">
-                  <span style="width: ${Math.min(100, tokenPct)}%; background: ${tokenColor};"></span>
-                </div>
-              </div>`;
-            } else if ((k.cap || 0) > 0) {
-              // Provider tanpa batas token (Cloudflare, Gemini, OpenRouter) hanya
-              // punya batas panggilan. Sebelumnya mereka tampil tanpa baris
-              // terukur sama sekali, sehingga bar hanya terlihat di Dahl.
-              // Sekarang setiap kunci punya baris bar: panggilan bila token tidak
-              // dibatasi, token bila dibatasi — jadi semua provider konsisten.
-              const callPct = Math.min(100, k.percent || 0);
-              const callColor = callPct >= 100 ? "#fb7185" : callPct >= 80 ? "#fbbf24" : "#34d399";
-              tokenLine = `<div class="key-token-line">
-                <div class="key-token-head">
-                  <span class="key-token-label">Panggilan</span>
-                  <span style="color: ${callColor};">${(k.used || 0).toLocaleString("id-ID")} / ${(k.cap || 0).toLocaleString("id-ID")} (${k.percent || 0}%)</span>
-                  ${!bindingIsToken && bindingPct >= 80 ? '<span class="key-token-binding">BATAS PANGGILAN</span>' : ""}
-                </div>
-                <div class="key-token-bar" role="img" aria-label="Pemakaian panggilan ${k.percent || 0} persen">
-                  <span style="width: ${callPct}%; background: ${callColor};"></span>
-                </div>
-              </div>`;
-            }
-
-            keysHtml += `
-              <div class="key-row">
-                <div class="key-info-line">
-                  <div class="key-identity">
-                    <span class="key-label">${escapeHtml(cleanSuffix)}</span>
-                    <span class="key-badge-status status-${k.status}">${statusLabel}</span>
-                  </div>
-                  <span class="key-stats">${capLabel}</span>
-                </div>
-                <div class="progress-bar-bg">
-                  <!--
-                    BAR UTAMA: memakai metrik BINDING (mana yang lebih dulu habis).
-                    PERBAIKAN 09 Okt 2026 ("bar dan perhitungannya tidak singkron"):
-                    sebelumnya bar memakai bindingPct yang bisa 9% (dari REQUEST)
-                    padahal baris NEURON di bawahnya 50% — dua angka berbeda untuk
-                    key yang sama. Sekarang bila metrik binding = token/neuron,
-                    bar memakai tokenPct yang SUDAH dijamin sinkron dengan status.
-                  -->
-                  <div class="progress-bar-fill ${progressColor}" style="width: ${Math.min(100, bindingIsToken ? (k.tokenPercent || 0) : bindingPct)}%"></div>
-                </div>
-                ${tokenLine}
-              </div>
-            `;
-          });
-        }
-
-        // Angka utama = pemakaian HARIAN (cap provider bersifat harian). Saat rentang
-        // bukan "hari ini", akumulasi periode ditampilkan sebagai info sekunder agar
-        // tidak tertukar dengan kuota harian (temuan user pada filter "Semua").
-        const usedValue = p.usedTodayDaily ?? p.usedToday ?? p.usedPeriod ?? 0;
-        const usedPeriodValue = p.usedPeriod ?? usedValue;
-        const showPeriodInfo = usedPeriodValue > usedValue;
-        const capInfo = p.totalCap > 0 ? `Batas: ${(Number(p.totalCap) || 0).toLocaleString("id-ID")} panggilan` : "Batas upstream belum diketahui";
-        // Konteks token pada header kartu: provider yang dibatasi TOKEN (Dahl/Groq)
-        // tidak boleh hanya menampilkan panggilan — pengguna perlu tahu batas mana yang mengikat.
-        const hasTokenContext = (p.totalTokenCap || 0) > 0 && (p.totalTokensUsed || 0) > 0;
-        const providerTokenPct = p.tokenPercent || 0;
-        const providerTokenColor = providerTokenPct >= 100 ? "#fb7185" : providerTokenPct >= 80 ? "#fbbf24" : "#34d399";
-        const tokenContextHtml = hasTokenContext
-          ? `<div class="provider-token-block">
-              <div class="provider-token-head">
-                <span class="provider-token-label">Pemakaian ${p.satuanToken === 'neuron' ? 'neuron' : 'token'}</span>
-                <span style="color: ${providerTokenColor};">${formatTokens(p.totalTokensUsed, p.satuanToken === 'neuron' ? 'neuron' : 'Token')} / ${formatTokens(p.totalTokenCap, p.satuanToken === 'neuron' ? 'neuron' : 'Token')} (${providerTokenPct}%)</span>
-              </div>
-              <div class="provider-token-bar" role="img" aria-label="Pemakaian token provider ${providerTokenPct} persen">
-                <span style="width: ${Math.min(100, providerTokenPct)}%; background: ${providerTokenColor};"></span>
-              </div>
-              ${p.cappedKeys > 0 ? `<div class="provider-token-note">${p.cappedKeys} kunci sudah habis kuotanya</div>` : ""}
-            </div>`
-          : "";
-        // Kalau hari ini belum ada pemakaian tapi provider ini pernah dipakai,
-        // sebutkan kapan. Tanpa ini, "0" terbaca seperti data rusak.
-        const lastUsedLabel = (() => {
-          if (usedValue > 0 || !p.lastUsedAt) return "";
-          const d = new Date(p.lastUsedAt);
-          if (isNaN(d.getTime())) return "";
-          const now = new Date();
-          const sameYear = d.getFullYear() === now.getFullYear();
-          const fmt = d.toLocaleDateString("id-ID", sameYear
-            ? { day: "numeric", month: "short" }
-            : { day: "numeric", month: "short", year: "numeric" });
-          const jam = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-          return `<div class="provider-last-used">Terakhir dipakai ${escapeHtml(fmt)}, ${escapeHtml(jam)}</div>`;
-        })();
-
-        const providerLiveBadge = p.isLiveSynced
-          ? `<span class="badge" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8; font-size: 0.68rem; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.25); padding: 2px 7px; border-radius: 9999px; margin-left: 6px;">● Live Remote Sync</span>`
-          : "";
-
-        // Kalau kuncinya banyak (Dahl 10), daftar dibatasi tingginya dan bisa digulir
-        // supaya kartu tidak memanjang ke bawah. Tombol lipat membuka daftar penuh.
-        const collapsible = filteredKeys.length > 4;
-        const listClass = collapsible ? "keys-list keys-list-scroll" : "keys-list";
-        const toggleHtml = collapsible
-          ? `<button type="button" class="keys-toggle" data-toggle-keys aria-expanded="false">
-               <span>Lihat semua ${filteredKeys.length} kunci</span>
-               <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5L7 9.5l4-4"/></svg>
-             </button>`
-          : "";
-
-        // Warna penyedia sebagai penanda: penyedia yang sama selalu dikenali
-        // dari warnanya, di kartu ini maupun di halaman lain.
-        card.dataset.provider = p.kind;
-
-        card.innerHTML = `
-          <div class="provider-header">
-            <div>
-              <div class="provider-name" style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
-                <span class="provider-dot" aria-hidden="true"></span>
-                <span>${escapeHtml(p.displayName)}</span>
-                ${providerLiveBadge}
-              </div>
-              ${lastUsedLabel}
-            </div>
-            <div class="provider-summary-stat">
-              <div class="provider-usage-text">${usedValue.toLocaleString()} Calls</div>
-              <div class="provider-cap-text">${typeof p.keyCount === "number" ? p.keyCount : (p.keys || []).length} kunci &bull; ${capInfo}</div>
-              ${showPeriodInfo ? `<div style="font-size: 0.66rem; color: var(--text-dim); margin-top: 1px;">Hari ini • ${usedPeriodValue.toLocaleString()} total periode</div>` : ""}
-              ${tokenContextHtml}
-            </div>
-          </div>
-          <div class="${listClass}">
-            ${keysHtml}
-          </div>
-          ${toggleHtml}
-        `;
-        __frag.appendChild(card);
-
-        // Tombol lipat: buka/tutup daftar kunci penuh.
-        const toggleBtn = card.querySelector("[data-toggle-keys]");
-        if (toggleBtn) {
-          toggleBtn.addEventListener("click", () => {
-            const list = card.querySelector(".keys-list");
-            const expanded = toggleBtn.getAttribute("aria-expanded") === "true";
-            const next = !expanded;
-            toggleBtn.setAttribute("aria-expanded", next ? "true" : "false");
-            list.classList.toggle("keys-list-scroll", !next);
-            const label = toggleBtn.querySelector("span");
-            if (label) label.textContent = next ? "Ringkas daftar kunci" : `Lihat semua ${filteredKeys.length} kunci`;
-          });
-        }
-      });
-
-      // Bandingkan dulu: kalau isi grid identik dengan render sebelumnya,
-      // JANGAN sentuh DOM -> tidak ada kedip.
-      const __htmlBaru = (() => {
-        const tmp = document.createElement("div");
-        tmp.appendChild(__frag.cloneNode(true));
-        return tmp.innerHTML;
-      })();
-      if (poolGrid.__lastHtml !== __htmlBaru) {
-        poolGrid.innerHTML = "";
-        poolGrid.appendChild(__frag);
-        poolGrid.__lastHtml = __htmlBaru;
-      }
+    function metricNumber(value) {
+      return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('id-ID') : '–';
     }
+
+    function keyStatus(key) {
+      if (key.cooldownAlasan) {
+        const reason = { neuron: 'neuron habis', rpd: 'limit harian', rpm: 'limit per menit', concurrency: 'kapasitas penuh', error: 'gangguan sementara' }[key.cooldownAlasan] || key.cooldownAlasan;
+        return { label: 'Cooldown', className: 'status-warning', detail: reason + (key.cooldownSampai ? ' sampai ' + formatDateTime(key.cooldownSampai) : '') };
+      }
+      if (key.status === 'capped') return { label: 'Dibatasi', className: 'status-capped', detail: 'Batas tercatat tercapai; bukan kunci mati permanen.' };
+      if (key.status === 'warning') return { label: 'Waspada', className: 'status-warning', detail: 'Pemakaian tercatat mendekati batas; cek sumber dan tanggal.' };
+      if (key.status === 'healthy') return { label: 'Terpantau', className: 'status-healthy', detail: 'Snapshot kuota tersedia; bukan jaminan inferensi berhasil.' };
+      return { label: 'Belum diketahui', className: 'status-unknown', detail: 'Saldo atau kesehatan upstream belum terverifikasi.' };
+    }
+
+    function keyUsageHtml(key) {
+      const measured = typeof key.tokensUsed === 'number' && Number.isFinite(key.tokensUsed);
+      const unit = key.satuanToken === 'neuron' ? 'neuron' : 'token';
+      const tokenLine = measured ? metricNumber(key.tokensUsed) + ' ' + unit + (key.tokenEstimated ? ' (estimasi bot)' : ' tercatat') : 'Token belum terukur';
+      const pct = key.bindingPercent;
+      const bar = typeof pct === 'number' && Number.isFinite(pct)
+        ? '<div class="progress-bar-bg" role="img" aria-label="Pemakaian tercatat ' + pct + ' persen"><div class="progress-bar-fill ' + (pct >= 100 ? 'progress-rose' : pct >= 80 ? 'progress-amber' : 'progress-emerald') + '" style="width:' + Math.min(100, Math.max(0, pct)) + '%"></div></div>' : '';
+      return '<div class="key-stats">' + metricNumber(key.used) + ' panggilan tercatat hari ini (UTC)</div><div class="key-token-line">' + escapeHtml(tokenLine) + '</div>' + bar;
+    }
+
+    function renderPoolMatrix(data) {
+      const grid = document.getElementById('pool-grid');
+      if (!grid) return;
+      const pools = (data.pools || []).filter(p => currentProviderFilter === 'all' || p.kind === currentProviderFilter);
+      const html = pools.map(p => {
+        const keys = (p.keys || []).filter(k => currentKeyStatusFilter === 'all' || k.status === currentKeyStatusFilter);
+        const rows = keys.map(k => {
+          const state = keyStatus(k);
+          return '<div class="key-row"><div class="key-info-line"><div class="key-identity"><span class="key-label">' + escapeHtml(k.publicAccess ? 'public · tanpa API key' : '…' + k.suffix) + '</span><span class="key-badge-status ' + state.className + '" title="' + escapeHtml(state.detail) + '">' + state.label + '</span></div></div>' + keyUsageHtml(k) + '<div class="key-token-line">Batas: ' + escapeHtml(k.officialLimitLabel || p.tokenLimitLabel || 'Belum diketahui') + '</div></div>';
+        }).join('') || '<div class="key-row">Tidak ada akses sesuai filter status.</div>';
+        return '<div class="provider-card" data-provider="' + escapeHtml(p.kind) + '"><div class="provider-header"><div><div class="provider-name"><span class="provider-dot" aria-hidden="true"></span>' + escapeHtml(p.displayName) + '</div><div class="provider-last-used">' + metricNumber(p.repliesPeriod) + ' balasan tersimpan · ' + escapeHtml(data.rangeLabel || data.range) + '</div></div><div class="provider-summary-stat"><div class="provider-usage-text">' + metricNumber(p.usedPeriod) + ' panggilan tercatat</div><div class="provider-cap-text">' + escapeHtml(data.rangeLabel || data.range) + ' · semua platform</div><div class="provider-cap-text">Hari ini (UTC): ' + metricNumber(p.usedToday) + ' · ' + (p.publicAccess ? 'akses publik' : metricNumber(p.keyCount) + ' kunci') + '</div></div></div><div class="keys-list ' + (keys.length > 4 ? 'keys-list-scroll' : '') + '">' + rows + '</div>' + (keys.length > 4 ? '<button type="button" class="keys-toggle" data-toggle-keys aria-expanded="false">Lihat semua kunci</button>' : '') + '</div>';
+      }).join('');
+      setHtmlIfChanged(grid, html || '<p>Tidak ada pool sesuai filter.</p>');
+    }
+
 
     /**
  * Panel pemakaian WEB SEARCH (mesin pencari cadangan).
@@ -1166,641 +927,56 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
  * angka yang dikarang: bila data belum ada, panel menampilkan tanda pisah.
  */
 function renderWebSearchPanel(data) {
-  const panel = document.getElementById("websearch-panel");
+  const panel = document.getElementById('websearch-panel');
   if (!panel) return;
-
-  const ws = data && data.webSearch;
-  const setText = (id, text) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text;
-  };
-
-  if (!ws || typeof ws !== "object") {
-    setText("websearch-sub", "Data belum tersedia");
-    setText("websearch-used", "–");
-    setText("websearch-remaining", "–");
-    setText("websearch-keys", "–");
-    setText("websearch-cap", "–");
-    return;
-  }
-
-  const capTotal = ws.capTotal || 0;
-  // Pemakaian diambil dari angka DATABASE (persisten), bukan penghitung
-  // in-memory: di serverless setiap request bisa dilayani instance baru yang
-  // penghitungnya mulai dari 0, sehingga "terpakai" akan selalu terbaca 0.
-  const used = typeof ws.usedToday === "number" ? ws.usedToday : null;
-  const usedPct = used !== null && capTotal > 0
-    ? Math.min(100, Math.round((used / capTotal) * 100))
-    : (ws.usedPercent || 0);
-  const remaining = typeof ws.remainingToday === "number" ? ws.remainingToday : Math.max(0, capTotal - (used || 0));
-  const keysTotal = ws.keysTotal || 0;
-  const keysAvailable = typeof ws.keysAvailable === "number" ? ws.keysAvailable : keysTotal;
-  const cooling = ws.keysCoolingDown || 0;
-
-  // Warna bar mengikuti TINGKAT PEMAKAIAN dengan ambang yang SAMA di seluruh
-  // dashboard (bar token per kunci, bar token provider, dan bar web search):
-  //   < 80%   hijau  (masih lega)
-  //   >= 80%  kuning (menipis, siapkan cadangan)
-  //   >= 100% merah  (habis)
-  // Ambang seragam penting: sebelumnya bar web search memakai 50/80, sehingga
-  // kuning di satu tempat berarti beda dengan kuning di tempat lain.
-  const barColor = usedPct >= 100 ? "#fb7185" : usedPct >= 80 ? "#fbbf24" : "#34d399";
-  const fill = document.getElementById("websearch-bar-fill");
-  const bar = fill ? fill.parentElement : null;
-  if (fill) {
-    fill.style.width = usedPct + "%";
-    fill.style.background = barColor;
-  }
-  // Pembaca layar tidak bisa "melihat" panjang bar, jadi nilainya diberikan
-  // sebagai atribut: role progressbar + valuenow/min/max.
-  if (bar) {
-    bar.setAttribute("role", "progressbar");
-    bar.setAttribute("aria-valuenow", String(used === null ? usedPct : used));
-    bar.setAttribute("aria-valuemin", "0");
-    bar.setAttribute("aria-valuemax", String(capTotal));
-    bar.setAttribute("aria-valuetext", `${used} dari ${capTotal} pencarian terpakai (${usedPct}%)`);
-    bar.setAttribute("aria-label", "Pemakaian jatah web search hari ini");
-  }
-
-  // Bar diberi label "terpakai" + persen eksplisit: tanpa persen, pengguna tetap
-  // harus menghitung sendiri, dan bar jadi hiasan bukan informasi.
-  // Bila angka pemakaian tidak tersedia (DB tidak terbaca), tampilkan tanda
-  // pisah — bukan 0. Angka 0 yang salah lebih menyesatkan daripada tanda pisah.
-  setText("websearch-used", used === null ? "–" : used.toLocaleString("id-ID"));
-  setText("websearch-used-note", used === null
-    ? `dari ${capTotal.toLocaleString("id-ID")} pencarian`
-    : `dari ${capTotal.toLocaleString("id-ID")} pencarian • ${usedPct}% terpakai`);
-  setText("websearch-remaining", remaining.toLocaleString("id-ID"));
-  setText("websearch-remaining-note", used === null
-    ? `${Math.max(0, 100 - usedPct)}% jatah tersisa (perkiraan dari kunci siap pakai)`
-    : `${Math.max(0, 100 - usedPct)}% jatah masih tersisa`);
-  setText("websearch-keys", `${keysAvailable} / ${keysTotal}`);
-  setText("websearch-cap", (ws.capPerKey || 0).toLocaleString("id-ID"));
-
-  // Subjudul menjelaskan KENAPA angka bisa rendah: kunci yang kehabisan kuota
-  // dinonaktifkan 1 jam lalu aktif sendiri, jadi ini keadaan sementara.
-  // Waktu pemulihan dihitung SEKALI di sini lalu dipakai di subjudul dan catatan
-  // kaki. Sebelumnya kedua tempat menyebut waktu dengan gaya berbeda ("dalam 1 jam"
-  // vs "sekitar 17.34"), sehingga pembaca mengira itu dua kejadian berbeda.
-  const nextAt = ws.nextRecoveryAt ? new Date(ws.nextRecoveryAt) : null;
-  const jamPulih = nextAt && !isNaN(nextAt.getTime())
-    ? nextAt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
-    : null;
-
-  const sub = document.getElementById("websearch-sub");
-  if (sub) {
-    if (cooling > 0) {
-      sub.textContent = jamPulih
-        ? `${cooling} dari ${keysTotal} kunci sedang kehabisan kuota — kunci pertama aktif lagi sekitar pukul ${jamPulih}`
-        : `${cooling} dari ${keysTotal} kunci sedang kehabisan kuota, aktif lagi otomatis`;
-    } else {
-      sub.textContent = "Pencarian lewat mesin utama, mesin cadangan dipakai bila jatah habis";
-    }
-  }
-
-  // Catatan kunci cukup menyebut APA yang terjadi pada kunci itu; jumlah kunci
-  // istirahat sudah disebut di subjudul, jadi tidak diulang lagi di sini.
-  const keysNote = document.getElementById("websearch-keys-note");
-  if (keysNote) {
-    keysNote.textContent = cooling > 0 ? "sisanya istirahat sementara" : "semua kunci tersedia";
-  }
-
-  const foot = document.getElementById("websearch-foot");
-  if (foot) {
-    // Catatan ini menyebut SUMBER angka, supaya pemilik produk tahu seberapa
-    // jauh ia bisa mempercayainya: pemakaian dari database (bertahan lintas
-    // instance), jumlah kunci dari respons nyata provider.
-    // Sebut SUMBER angkanya: pemilik produk perlu tahu seberapa jauh angka ini
-    // bisa dipercaya. Angka langsung dari provider lebih akurat daripada hitungan
-    // kita sendiri (yang bisa terlewat saat instance serverless berbeda).
-    const sumber = ws.usedSource === "provider"
-      ? "Angka diambil langsung dari laporan penyedia di setiap pencarian, jadi paling akurat."
-      : "Penyedia belum melaporkan sisanya, jadi angka ini dihitung dari catatan harian di database.";
-    foot.textContent =
-      `Web search memakai kuota terpisah dari kuota token: ${ws.capPerKey} pencarian per kunci per hari. ` +
-      sumber +
-      ` Bila jatah mesin utama habis, bot otomatis memakai mesin pencari cadangan tanpa kuota.`;
-  }
+  const ws = data.webSearch;
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set('websearch-sub', ws?.mode === 'public-engines' ? 'Mesin pencari publik tanpa API key' : 'Data pencarian belum tersedia');
+  set('websearch-used', metricNumber(ws?.usedToday));
+  set('websearch-used-note', 'Jumlah pencarian belum dicatat');
+  set('websearch-remaining', 'Tidak berlaku');
+  set('websearch-remaining-note', 'Tidak ada saldo kuota per kunci');
+  set('websearch-keys', 'Tanpa key');
+  set('websearch-keys-note', 'Mesin publik, tanpa autentikasi key');
+  set('websearch-cap', 'Belum diketahui');
+  set('websearch-foot', ws?.note || 'Ketersediaan upstream belum diukur; pembatasan layanan dapat berlaku.');
+  const bar = document.getElementById('websearch-bar-fill')?.parentElement;
+  if (bar) { bar.hidden = true; bar.removeAttribute('role'); bar.removeAttribute('aria-valuenow'); }
 }
 
 function renderLiveUpstreamTable(data) {
-      const tbody = document.getElementById("live-upstream-tbody");
-      if (!tbody) return;
-      // JANGAN kosongkan tbody di sini. Tabel diisi lewat setHtmlIfChanged() di
-      // akhir fungsi; mengosongkan lebih dulu membuat tabel hilang sekejap ->
-      // kedip saat refresh berkala (perbaikan blink 24 Sep).
-
-      const pools = data.pools || data.providers || [];
-      let grandTotalTokenCap = 0;
-      let grandTotalTokenUsed = 0;
-      let grandTotalTokenRemaining = 0;
-      let grandTotalUnboundedTokenUsed = 0;
-      let grandTotalCloudflareRpd = 0;
-      let grandTotalCloudflareUsed = 0;
-      let grandTotalGroqRpd = 0;
-      let grandTotalGroqUsed = 0;
-      let totalAllKeys = 0;
-      let totalOrUsageUsd = 0;
-
-      const rows = [];
-
-      pools.forEach(p => {
-        if (!p.keys || p.keys.length === 0) return;
-
-        p.keys.forEach(k => {
-          totalAllKeys++;
-          const cleanSuffix = String(k.suffix || "").startsWith("...") ? k.suffix : "..." + (k.suffix || "????");
-          if (p.kind === "dreamprompting") {
-            const keyCap = Number(k.cap) || 0;
-            const callsUsed = k.used || 0;
-            const callsRemaining = Math.max(0, keyCap - callsUsed);
-            const pct = keyCap > 0 ? Math.min(100, Math.round((callsUsed / keyCap) * 100)) : 0;
-            const tokensUsed = k.tokensUsed || 0;
-            // DreamPrompting punya DUA batas (request DAN token, scope akun).
-            // Status memakai metrik binding dari backend supaya jujur: token bisa
-            // 100% habis walau request baru 2% (kasus nyata 04 Okt).
-            const tokenPctDp = typeof k.tokenPercent === "number" ? k.tokenPercent : 0;
-            const bindingPct = typeof k.bindingPercent === "number"
-              ? k.bindingPercent
-              : Math.max(pct, tokenPctDp);
-            grandTotalUnboundedTokenUsed += tokensUsed;
-
-            rows.push(`
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #38bdf8; font-weight: 700; margin-top: 3px;">dp-...${escapeHtml(cleanSuffix)}</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">DreamPrompting Gateway</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">dreamprompting.com</div>
-                </td>
-                <td>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #38bdf8;">${callsUsed.toLocaleString("id-ID")} Panggilan${tokensUsed > 0 ? ` &bull; ${tokensUsed.toLocaleString("id-ID")} Tok` : ''}</span>
-                    <span style="color: var(--text-dim);">${bindingPct}%</span>
-                  </div>
-                  <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
-                  </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '5.000 req/hari • 500.000 token/hari'}</div>
-                  <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">${pct}% request &bull; ${tokenPctDp}% token (scope akun)</div>
-                </td>
-                <td>
-                  <div style="font-size: 0.92rem; font-weight: 700; color: ${bindingPct >= 100 ? '#f87171' : '#34d399'};">${bindingPct >= 100 ? 'KUOTA HABIS' : 'Active Gateway'}</div>
-                  <div style="font-size: 0.72rem; color: ${bindingPct >= 100 ? '#f87171' : '#10b981'}; margin-top: 2px;">${bindingPct >= 100 ? 'Tunggu reset (rolling 24 jam)' : 'Tier 4 Primer Teks'}</div>
-                </td>
-                <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">${k.isLiveSynced ? 'Pemakaian upstream' : 'Catatan bot'}</span>
-                  <div><span class="key-badge-status ${bindingPct >= 100 ? 'status-capped' : bindingPct >= 80 ? 'status-warning' : 'status-healthy'}">${bindingPct >= 100 ? (k.bindingMetric === 'tokens' ? 'LIMIT TOKEN' : 'LIMIT REQ') : bindingPct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
-                </td>
-              </tr>
-            `);
-          } else if (p.kind === "nvidia") {
-            const keyCap = Number(k.cap) || 0;
-            const callsUsed = k.used || 0;
-            const callsRemaining = Math.max(0, keyCap - callsUsed);
-            const pct = keyCap > 0 ? Math.min(100, Math.round((callsUsed / keyCap) * 100)) : 0;
-            const tokensUsed = k.tokensUsed || 0;
-            // PERBAIKAN 09 Okt 2026: pakai metrik BINDING (token/neuron), bukan
-            // request saja — agar bar & angka sinkron dengan baris token di bawah.
-            const bindingPct = typeof k.bindingPercent === "number"
-              ? k.bindingPercent
-              : Math.max(pct, typeof k.tokenPercent === "number" ? k.tokenPercent : 0);
-            grandTotalUnboundedTokenUsed += tokensUsed;
-
-            rows.push(`
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #76b900; font-weight: 700; margin-top: 3px;">nvapi-...${escapeHtml(cleanSuffix)}</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">NVIDIA API Catalog</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">build.nvidia.com &bull; NIM Microservices</div>
-                </td>
-                <td>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #84cc16;">${callsUsed.toLocaleString("id-ID")} Panggilan</span>
-                    <span style="color: var(--text-dim);">${bindingPct}%</span>
-                  </div>
-                  <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
-                  </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.000 Free Credits/key'}</div>
-                  ${tokensUsed > 0 ? `<div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">${tokensUsed.toLocaleString("id-ID")} token terpakai</div>` : ''}
-                </td>
-                <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: ${pct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${pct >= 100 ? 'HABIS' : callsRemaining.toLocaleString("id-ID")}</div>
-                  <div style="font-size: 0.72rem; color: ${pct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${pct >= 100 ? '● Kuota habis' : '● Sisa Credits'}</div>
-                </td>
-                <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(118, 185, 0, 0.15); color: #84cc16; border-color: rgba(118, 185, 0, 0.3);">● Bot Monitored</span>
-                  <div><span class="key-badge-status ${pct >= 100 ? 'status-capped' : pct >= 80 ? 'status-warning' : 'status-healthy'}">${pct >= 100 ? 'LIMIT CAP' : pct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
-                </td>
-              </tr>
-            `);
-          } else if (p.kind === "dahl") {
-            const keyCap = k.tokenCap || 100000000;
-            const keyUsed = k.tokensUsed || 0;
-            const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);
-            const pct = k.tokenPercent || 0;
-            // PERBAIKAN 09 Okt 2026: metrik BINDING agar bar & angka sinkron.
-            const bindingPct = typeof k.bindingPercent === "number" ? k.bindingPercent : pct;
-
-            grandTotalTokenCap += keyCap;
-            grandTotalTokenUsed += keyUsed;
-            grandTotalTokenRemaining += keyRemaining;
-
-            rows.push(`
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #22d3ee; font-weight: 700; margin-top: 3px;">dahl_...${escapeHtml(cleanSuffix)}</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Dahl Enterprise Cluster</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">inference.dahl.global &bull; 1B Token Pool</div>
-                </td>
-                <td>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token</span>
-                    <span style="color: var(--text-dim);">${bindingPct}%</span>
-                  </div>
-                  <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
-                  </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : 'Saldo 100M Token/key'}</div>
-                </td>
-                <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
-                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Saldo Token Key</div>
-                </td>
-                <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(6, 182, 212, 0.15); color: #22d3ee; border-color: rgba(6, 182, 212, 0.3);">● Bot Monitored</span>
-                  <div><span class="key-badge-status ${pct >= 100 ? 'status-capped' : pct >= 80 ? 'status-warning' : 'status-healthy'}">${pct >= 100 ? 'LIMIT CAP' : pct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
-                </td>
-              </tr>
-            `);
-          } else if (p.kind === "xkiro") {
-            const keyCap = k.tokenCap || 5000000;
-            const keyUsed = k.tokensUsed || 0;
-            const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);
-            const pct = k.tokenPercent || 0;
-            // Status dari token (metrik binding untuk xKiro): key yang token hariannya
-            // sudah habis WAJIB tampil CAPPED, bukan "OPTIMAL" — temuan user: key
-            // ...6386 sudah 1.004.173/1.000.000 token tapi badge masih OPTIMAL.
-            const xkStatusClass = pct >= 100 ? "status-capped" : pct >= 80 ? "status-warning" : "status-healthy";
-            const xkStatusText = pct >= 100 ? "LIMIT TOKEN" : pct >= 80 ? "WASPADAI" : "OPTIMAL";
-
-            grandTotalTokenCap += keyCap;
-            grandTotalTokenUsed += keyUsed;
-            grandTotalTokenRemaining += keyRemaining;
-
-            rows.push(`
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #38bdf8; font-weight: 700; margin-top: 3px;">sk-xt-${escapeHtml(cleanSuffix)}</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">${escapeHtml(k.liveUserName || t('dyn.verifiedAccount', "Akun Terverifikasi"))}</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">${escapeHtml(k.liveUserEmail || "api.xkiro.com")}</div>
-                </td>
-                <td>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Token</span>
-                    <span style="color: var(--text-dim);">${bindingPct}%</span>
-                  </div>
-                  <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
-                  </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCap.toLocaleString("id-ID")} &bull; Global (Bot + IDE)</div>
-                </td>
-                <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${keyRemaining.toLocaleString("id-ID")}</div>
-                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Hari Ini</div>
-                </td>
-                <td style="text-align: right;">
-                  <span class="badge-live-sync" style="margin-bottom: 4px;">${k.isLiveSynced ? "Pemakaian upstream" : "Catatan bot"}</span>
-                  <div><span class="key-badge-status ${xkStatusClass}">${xkStatusText}</span></div>
-                </td>
-              </tr>
-            `);
-          } else if (p.kind === "openrouter") {
-            // OpenRouter /auth/key mengembalikan `usage` = TOTAL kumulatif akun dan
-            // `usage_daily` = pemakaian HARI INI. Dashboard lama memberi label
-            // "Penggunaan Hari Ini" pada angka TOTAL -> menyesatkan (temuan user:
-            // $0.06142 tampil sebagai pemakaian hari ini padahal usage_daily = $0).
-            const usageUsd = Number(k.liveUsageUsd || 0);
-            const dailyUsd = Number(k.liveDailyUsageUsd || 0);
-            totalOrUsageUsd += usageUsd;
-            // BAR DITAMBAHKAN (04 Okt): OpenRouter sebelumnya TIDAK punya progress bar
-            // sehingga sulit dilihat sekilas. Padahal endpoint /auth/key menyediakan
-            // free_model_daily_requests (limit + used + remaining) yang bisa dibar-kan.
-            const orRpdCap = Number(k.cap) || 0;
-            const orRpdUsed = typeof k.used === "number" ? k.used : 0;
-            const orRpdRemaining = (k.remaining !== null && k.remaining !== undefined)
-              ? k.remaining
-              : Math.max(0, orRpdCap - orRpdUsed);
-            const orPct = orRpdCap > 0 ? Math.min(100, Math.round((orRpdUsed / orRpdCap) * 100)) : 0;
-            const orStatusClass = orPct >= 100 ? "status-capped" : orPct >= 80 ? "status-warning" : "status-healthy";
-            const orStatusText = orPct >= 100 ? "LIMIT RPD" : orPct >= 80 ? "WASPADAI" : "OPTIMAL";
-
-            rows.push(`
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #a855f7; font-weight: 700; margin-top: 3px;">sk-or-${escapeHtml(cleanSuffix)}</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">OpenRouter Key Pool</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">openrouter.ai/keys</div>
-                </td>
-                <td>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #a855f7;">${orRpdUsed.toLocaleString("id-ID")} / ${orRpdCap > 0 ? orRpdCap.toLocaleString("id-ID") : "belum diketahui"} req</span>
-                    <span style="color: var(--text-dim);">${orPct}%</span>
-                  </div>
-                  <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${orPct >= 100 ? 'progress-rose' : orPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${orPct}%"></div>
-                  </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '50 req/hari (model :free)'}</div>
-                  <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">Pemakaian hari ini: $${k.liveDailyUsageUsd != null ? dailyUsd.toFixed(5) : "–"} &bull; Total akun: $${k.liveUsageUsd != null ? usageUsd.toFixed(5) : "–"}</div>
-                </td>
-                <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: ${orPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${orPct >= 100 ? 'HABIS' : orRpdCap > 0 ? orRpdRemaining.toLocaleString("id-ID") : "–"}</div>
-                  <div style="font-size: 0.72rem; color: ${orPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${orPct >= 100 ? '● Kuota habis' : '● Sisa Request (:free)'}</div>
-                </td>
-                <td style="text-align: right;">
-                  <span class="badge-live-sync" style="margin-bottom: 4px;">${k.isLiveSynced ? "Pemakaian upstream" : "Catatan bot"}</span>
-                  <div><span class="key-badge-status ${orStatusClass}">${orStatusText}</span></div>
-                </td>
-              </tr>
-            `);
-          } else if (p.kind === "groq") {
-            const keyCapRpd = Number(k.cap) || 0;
-            const callsUsed = k.used || 0;
-            const callsRemaining = Math.max(0, keyCapRpd - callsUsed);
-            const pct = keyCapRpd > 0 ? Math.min(100, Math.round((callsUsed / keyCapRpd) * 100)) : 0;
-            const tokensUsed = k.tokensUsed || 0;
-
-            const tpdCap = Number(k.tokenCap) || 0;
-            const tpdPct = tpdCap > 0 ? Math.min(100, Math.round((tokensUsed / tpdCap) * 100)) : 0;
-            const bindingPct = typeof k.bindingPercent === "number" ? k.bindingPercent : Math.max(pct, tpdPct);
-            const tpdBinding = tpdPct > pct;
-
-            grandTotalGroqRpd += keyCapRpd;
-            grandTotalGroqUsed += callsUsed;
-            grandTotalUnboundedTokenUsed += tokensUsed;
-
-            const callCountText = callsUsed > 0 ? ` (${callsUsed.toLocaleString("id-ID")} panggilan)` : "";
-            const statusClass = bindingPct >= 100 ? "status-capped" : bindingPct >= 80 ? "status-warning" : "status-healthy";
-            const statusText = bindingPct >= 100
-              ? (tpdBinding ? "LIMIT TPD" : "LIMIT RPD")
-              : bindingPct >= 80
-              ? "WASPADAI"
-              : "OPTIMAL";
-
-            rows.push(`
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #f97316; font-weight: 700; margin-top: 3px;">gsk_${escapeHtml(cleanSuffix)}</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Groq Cloud Console</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">console.groq.com &bull; Free Tier</div>
-                </td>
-                <td>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #fbbf24;">${tokensUsed.toLocaleString("id-ID")} / ${tpdCap > 0 ? tpdCap.toLocaleString("id-ID") : "belum diketahui"} Token${callCountText}</span>
-                    <span style="color: var(--text-dim);">${tpdCap > 0 ? tpdPct + "% TPD" : "TPD belum diketahui"} &bull; ${keyCapRpd > 0 ? pct + "% RPD" : "RPD belum diketahui"}</span>
-                  </div>
-                  <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${bindingPct}%"></div>
-                  </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${escapeHtml(k.officialLimitLabel || p.tokenLimitLabel || "Belum diketahui")}${!k.isRealTokenData && tokensUsed > 0 ? ' &bull; <span style="color:#fbbf24;">estimasi</span>' : ''}</div>
-                </td>
-                <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${tpdCap > 0 ? Math.max(0, tpdCap - tokensUsed).toLocaleString("id-ID") : "–"}</div>
-                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Harian (TPD) &bull; ${keyCapRpd > 0 ? callsRemaining.toLocaleString("id-ID") : "–"} RPD</div>
-                </td>
-                <td style="text-align: right;">
-                  <!-- BUG YANG DIPERBAIKI (06 Okt 2026): badge ini DULU HARDCODE
-                       "● Bot Monitored" padahal Groq SUDAH live-synced (header
-                       x-ratelimit-* terbaca). Laporan pemilik produk: "groq masih
-                       bot monitored?" — sekarang mengikuti data sebenarnya. -->
-                  ${k.isLiveSynced
-                    ? '<span class="badge-live-sync" style="margin-bottom: 4px;">Pemakaian upstream</span>'
-                    : '<span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3);">● Bot Monitored</span>'}
-                  <div><span class="key-badge-status ${statusClass}">${statusText}</span></div>
-                </td>
-              </tr>
-            `);
-          } else if (p.kind === "cloudflare") {
-            // Cap per-key dari payload (120), bukan konstanta 300 yang tidak sinkron
-            // dengan angka "0 / 120 panggilan" pada baris key (temuan audit dashboard).
-            const keyCap = Number(k.cap) || 0;
-            const keyUsed = k.used || 0;
-            const keyRemaining = Math.max(0, keyCap - keyUsed);
-            const pct = keyCap > 0 ? Math.min(100, Math.round((keyUsed / keyCap) * 100)) : 0;
-            // NEURON (temuan 04 Okt): Cloudflare membatasi NEURON, bukan hanya request.
-            // Dashboard sebelumnya hanya menampilkan persen request sehingga tampak
-            // "51% OPTIMAL" padahal kuota neuron SUDAH HABIS (semua request 429).
-            // Sekarang status memakai metrik BINDING (mana yang lebih dulu habis),
-            // memakai field bindingPercent/bindingMetric dari backend.
-            // ── PERBAIKAN 09 Okt 2026 ("yg bawah masih belum singkron") ──
-            // Bar & angka persen memakai `bindingPct` (metrik yang BENAR-BENAR
-            // mengikat), BUKAN `pct` (request). Contoh nyata: request 9% tapi
-            // neuron 10.000/10.000 (100%) — bar 9% menyesatkan.
-            const tokenPctCf = typeof k.tokenPercent === "number" ? k.tokenPercent : 0;
-            const bindingPct = typeof k.bindingPercent === "number"
-              ? k.bindingPercent
-              : Math.max(pct, tokenPctCf);
-
-            grandTotalCloudflareRpd += keyCap;
-            grandTotalCloudflareUsed += keyUsed;
-
-            rows.push(`
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #f38020; font-weight: 700; margin-top: 3px;">cfut_...${escapeHtml(cleanSuffix)}</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Workers AI Dashboard</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">dash.cloudflare.com/ai</div>
-                </td>
-                <td>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #fbbf24;">${keyUsed.toLocaleString("id-ID")} Req</span>
-                    <span style="color: var(--text-dim);">${bindingPct}%</span>
-                  </div>
-                  <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${Math.min(100, bindingPct)}%"></div>
-                  </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${k.officialLimitLabel ? escapeHtml(k.officialLimitLabel) : `${keyCap.toLocaleString("id-ID")} RPD`} &bull; ${k.limitIsLive ? 'Live Synced' : 'Bot Monitored'}</div>
-                </td>
-                <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: ${bindingPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${bindingPct >= 100 ? 'HABIS' : keyCap > 0 ? keyRemaining.toLocaleString("id-ID") : "–"}</div>
-                  <div style="font-size: 0.72rem; color: ${bindingPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${bindingPct >= 100 ? '● Kuota habis (tunggu reset harian)' : '● Sisa Kuota Harian (RPD)'}</div>
-                  ${typeof k.neuronUsed === "number" && k.neuronUsed > 0
-                    ? `<div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">${k.neuronUsed.toLocaleString("id-ID")} neuron (estimasi bot; cooldown dapat menandai habis)</div>`
-                    : (typeof k.tokensUsed === "number" && k.tokensUsed > 0 ? `<div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">${k.tokensUsed.toLocaleString("id-ID")} token terpakai</div>` : '')}
-                  ${typeof k.balasanTersisa === "number" && k.balasanTersisa > 0
-                    ? `<div style="font-size: 0.66rem; color: #34d399; margin-top: 2px;">≈ ${k.balasanTersisa.toLocaleString("id-ID")} balasan lagi</div>`
-                    : ''}
-                </td>
-                <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px;">${k.isLiveSynced ? 'Pemakaian upstream' : 'Catatan bot'}</span>
-                  <div><span class="key-badge-status ${bindingPct >= 100 ? 'status-capped' : bindingPct >= 80 ? 'status-warning' : 'status-healthy'}">${bindingPct >= 100 ? (k.bindingMetric === 'tokens' ? 'LIMIT NEURON/TOKEN' : 'LIMIT RPD') : bindingPct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
-                </td>
-              </tr>
-            `);
-          } else if (p.kind === "gemini") {
-            // BAR DITAMBAHKAN (04 Okt): Gemini sebelumnya tanpa progress bar.
-            // Limit dari dokumentasi resmi (endpoint kuota tidak tersedia), jadi
-            // ditandai jujur "dokumentasi resmi" agar tidak diklaim live.
-            const gmCap = Number(k.cap) || 0;
-            const gmUsed = k.used || 0;
-            const gmRemaining = Math.max(0, gmCap - gmUsed);
-            const gmPct = gmCap > 0 ? Math.min(100, Math.round((gmUsed / gmCap) * 100)) : 0;
-            const gmStatusClass = gmPct >= 100 ? "status-capped" : gmPct >= 80 ? "status-warning" : "status-healthy";
-            const gmStatusText = gmPct >= 100 ? "LIMIT RPD" : gmPct >= 80 ? "WASPADAI" : "OPTIMAL";
-            rows.push(`
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #60a5fa; font-weight: 700; margin-top: 3px;">AIza...${escapeHtml(cleanSuffix)}</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">Google AI Studio</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">aistudio.google.com</div>
-                </td>
-                <td>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #60a5fa;">${gmUsed.toLocaleString("id-ID")} / ${gmCap > 0 ? gmCap.toLocaleString("id-ID") : "belum diketahui"} req</span>
-                    <span style="color: var(--text-dim);">${gmPct}%</span>
-                  </div>
-                  <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${gmPct >= 100 ? 'progress-rose' : gmPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${gmPct}%"></div>
-                  </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.500 RPD/key'} &bull; ${k.limitIsLive ? 'Live Synced' : 'dokumentasi resmi'}</div>
-                </td>
-                <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: ${gmPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${gmPct >= 100 ? 'HABIS' : gmCap > 0 ? gmRemaining.toLocaleString("id-ID") : "–"}</div>
-                  <div style="font-size: 0.72rem; color: ${gmPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${gmPct >= 100 ? '● Kuota habis' : '● Sisa Request Harian'}</div>
-                </td>
-                <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px;">${k.isLiveSynced ? 'Pemakaian upstream' : 'Catatan bot'}</span>
-                  <div><span class="key-badge-status ${gmStatusClass}">${gmStatusText}</span></div>
-                </td>
-              </tr>
-            `);
-          } else if (p.kind === "opencode") {
-            // BAR DITAMBAHKAN (04 Okt): OpenCode Free (muse-spark-1.3 + mimo-v2.6).
-            // TIDAK BISA LIVE-SYNCED: 10 endpoint usage diuji, semua 404; header
-            // respons chat tidak memuat info kuota. Karena itu badge-nya
-            // "Bot Monitored" (catatan internal bot), bukan "Live Synced".
-            const ocCap = Number(k.cap) || 0;
-            const ocUsed = k.used || 0;
-            const ocRemaining = Math.max(0, ocCap - ocUsed);
-            const ocPct = ocCap > 0 ? Math.min(100, Math.round((ocUsed / ocCap) * 100)) : 0;
-            const ocStatusClass = ocPct >= 100 ? "status-capped" : ocPct >= 80 ? "status-warning" : "status-healthy";
-            const ocStatusText = ocPct >= 100 ? "LIMIT CAP" : ocPct >= 80 ? "WASPADAI" : "OPTIMAL";
-            rows.push(`
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: var(--text-main); font-size: 0.88rem;">${escapeHtml(p.displayName)}</div>
-                  <div style="font-family: var(--font-mono); font-size: 0.78rem; color: #E87040; font-weight: 700; margin-top: 3px;">public (no-auth)</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600; color: #cbd5e1; font-size: 0.82rem;">OpenCode Zen</div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">opencode.ai/zen/v1</div>
-                </td>
-                <td>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #E87040;">${ocUsed.toLocaleString("id-ID")} Panggilan</span>
-                    <span style="color: var(--text-dim);">${ocPct}%</span>
-                  </div>
-                  <div class="progress-bar-bg" style="height: 6px;">
-                    <div class="progress-bar-fill ${ocPct >= 100 ? 'progress-rose' : ocPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${ocPct}%"></div>
-                  </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : 'Tanpa API key • kuota per sesi'}</div>
-                  <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">Utama: ${escapeHtml(p.primaryModel || '-')} • Cadangan: ${escapeHtml(p.backupModel || '-')}</div>
-                </td>
-                <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: ${ocPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${ocPct >= 100 ? 'HABIS' : ocCap > 0 ? ocRemaining.toLocaleString("id-ID") : "–"}</div>
-                  <div style="font-size: 0.72rem; color: ${ocPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${ocPct >= 100 ? '● Kuota habis' : '● Sisa Panggilan'}</div>
-                </td>
-                <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(232, 112, 64, 0.15); color: #E87040; border-color: rgba(232, 112, 64, 0.3);">● Bot Monitored</span>
-                  <div><span class="key-badge-status ${ocStatusClass}">${ocStatusText}</span></div>
-                </td>
-              </tr>
-            `);
-          }
-        });
-      });
-
-      if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">Tidak ada data sinkronisasi upstream aktif.</td></tr>`;
-      } else {
-        setHtmlIfChanged(tbody, rows.join(""));
-      }
-
-      // Update Mini KPI Ribbon (Universal across all providers)
-      const capEl = document.getElementById("upstream-total-cap");
-      const usedEl = document.getElementById("upstream-total-used");
-      const remEl = document.getElementById("upstream-total-remaining");
-      const pctEl = document.getElementById("upstream-remaining-pct");
-      const orEl = document.getElementById("upstream-openrouter-status");
-
-      const capSubEl = document.getElementById("upstream-total-cap-sub");
-      const subEl = document.getElementById("upstream-openrouter-sub");
-
-      if (capEl) capEl.textContent = grandTotalTokenCap.toLocaleString("id-ID") + " Token";
-      if (subEl) subEl.textContent = `${pools.filter(p => (p.keys || []).length > 0).length} Provider AI Aktif`;
-      if (capSubEl) {
-        const extraParts = [];
-        if (grandTotalGroqRpd > 0) extraParts.push(`${grandTotalGroqRpd.toLocaleString("id-ID")} RPD Groq`);
-        if (grandTotalCloudflareRpd > 0) extraParts.push(`${grandTotalCloudflareRpd.toLocaleString("id-ID")} RPD Cloudflare`);
-        capSubEl.textContent = extraParts.length > 0 
-          ? `Dahl Global (+${extraParts.join(", ")})` 
-          : "Dahl Global (Token Pool)";
-      }
-      if (usedEl) {
-        // Token pool berbatas (Dahl) ditampilkan utama agar sinkron dengan cap & sisa;
-        // token provider bebas kuota (Groq) dilaporkan terpisah di subtext.
-        usedEl.textContent = grandTotalTokenUsed.toLocaleString("id-ID") + " Token";
-      }
-      const usedSubEl = document.getElementById("upstream-total-used-sub");
-      if (usedSubEl) {
-        usedSubEl.textContent = grandTotalUnboundedTokenUsed > 0
-          ? `Pool Dahl Global • +${grandTotalUnboundedTokenUsed.toLocaleString("id-ID")} Token Bebas Kuota (Groq)`
-          : "Akumulasi Global (Bot + IDE)";
-      }
-      if (remEl) remEl.textContent = grandTotalTokenRemaining.toLocaleString("id-ID") + " Token";
-      if (pctEl && grandTotalTokenCap > 0) {
-        const remainingPct = Math.round((grandTotalTokenRemaining / grandTotalTokenCap) * 100);
-        pctEl.textContent = `${remainingPct}% Kuota Bersih Tersedia`;
-      }
-      if (orEl) {
-        orEl.textContent = `${totalAllKeys} kunci aktif`;
-      }
-
-      // WhatsApp Cloud API 1.000 Sesi Percakapan / Bulan (Jendela 24 Jam per User)
-      const waSessions = data.summary?.whatsappMonthlySessions;
-      const waSessEl = document.getElementById("upstream-wa-sessions");
-      const waSessSubEl = document.getElementById("upstream-wa-sessions-sub");
-      if (waSessEl && waSessions) {
-        waSessEl.textContent = `${waSessions.used.toLocaleString("id-ID")} / ${waSessions.limit.toLocaleString("id-ID")}`;
-      }
-      if (waSessSubEl && waSessions) {
-        waSessSubEl.textContent = `Sisa ${waSessions.remaining.toLocaleString("id-ID")} Sesi (${waSessions.monthLabel})`;
-      }
-    }
+  const tbody = document.getElementById('live-upstream-tbody');
+  if (!tbody) return;
+  const pools = data.pools || [];
+  const rows = pools.flatMap(p => (p.keys || []).map(k => {
+    const state = keyStatus(k);
+    const hasUpstream = !k.upstreamStale && (k.upstreamRequestsUsed != null || k.upstreamTokensUsed != null);
+    const sourceTitle = hasUpstream ? 'Snapshot pemakaian upstream: ' + (k.upstreamCheckedAt || 'waktu belum diketahui') : 'Catatan bot dari provider_quota; tidak mencakup aplikasi lain. Saldo upstream belum terverifikasi.';
+    const upstreamLine = hasUpstream ? '<div class="key-token-line">Snapshot upstream: ' + metricNumber(k.upstreamRequestsUsed) + ' request · ' + metricNumber(k.upstreamTokensUsed) + ' token</div>' : '';
+    const remaining = k.remaining == null && k.upstreamTokensRemaining == null ? 'Belum diketahui'
+      : metricNumber(k.remaining) + ' request · ' + metricNumber(k.upstreamTokensRemaining) + ' token';
+    return '<tr data-provider="' + escapeHtml(p.kind) + '"><td><strong>' + escapeHtml(p.displayName) + '</strong><div class="key-token-line">' + escapeHtml(k.publicAccess ? 'public · tanpa API key' : '…' + k.suffix) + '</div></td><td>' + (p.endpoint ? escapeHtml(p.endpoint) : escapeHtml(p.primaryModel || 'Model belum diketahui')) + '<div class="key-token-line">' + metricNumber(k.usedPeriod) + ' panggilan tercatat · ' + escapeHtml(data.rangeLabel || data.range) + '</div></td><td>' + keyUsageHtml(k) + upstreamLine + '</td><td>' + escapeHtml(remaining) + '<div class="key-token-line">Batas: ' + escapeHtml(k.officialLimitLabel || p.tokenLimitLabel || 'Belum diketahui') + '</div></td><td class="upstream-validation"><span class="' + (hasUpstream ? 'badge-live-sync' : 'badge-bot-sync') + '" title="' + escapeHtml(sourceTitle) + '">' + (hasUpstream ? 'Upstream' : 'Catatan bot') + '</span><div class="key-badge-status ' + state.className + '" title="' + escapeHtml(state.detail) + '">' + state.label + '</div></td></tr>';
+  }));
+  setHtmlIfChanged(tbody, rows.join('') || '<tr><td colspan="5">Belum ada akses provider terkonfigurasi.</td></tr>');
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  const calls = pools.reduce((sum, p) => sum + (p.usedToday || 0), 0);
+  const tokensKnown = pools.every(p => typeof p.rawTokensToday === 'number');
+  const tokens = pools.reduce((sum, p) => sum + (p.rawTokensToday || 0), 0);
+  const blocked = pools.flatMap(p => p.keys || []).filter(k => k.status === 'capped' || k.status === 'cooldown').length;
+  const keys = pools.reduce((sum, p) => sum + (p.keyCount || 0), 0);
+  const publicCount = pools.filter(p => p.publicAccess).length;
+  set('upstream-total-cap', metricNumber(calls) + ' panggilan');
+  set('upstream-total-cap-sub', 'Hari ini (UTC) · catatan bot · semua platform');
+  set('upstream-total-used', tokensKnown ? metricNumber(tokens) + ' token' : 'Belum lengkap');
+  set('upstream-total-used-sub', 'Token tercatat hari ini (UTC); bukan neuron');
+  set('upstream-total-remaining', metricNumber(blocked) + ' akses');
+  set('upstream-remaining-pct', 'Cooldown/batas tercatat; lainnya belum tentu sehat');
+  set('upstream-openrouter-status', metricNumber(keys) + ' kunci' + (publicCount ? ' + ' + publicCount + ' publik' : ''));
+  set('upstream-openrouter-sub', pools.filter(p => (p.keys || []).length).length + ' provider terkonfigurasi');
+  const wa = data.summary?.whatsappMonthlySessions;
+  set('upstream-wa-sessions', metricNumber(wa?.used));
+  set('upstream-wa-sessions-sub', 'Estimasi sesi 24 jam dari pesan · ' + (wa?.monthLabel || 'periode belum diketahui'));
+}
 
     function debounceDatasetSearch() {
       if (datasetSearchTimeout) clearTimeout(datasetSearchTimeout);
@@ -1838,7 +1014,7 @@ function renderLiveUpstreamTable(data) {
       const platform = document.getElementById("dataset-platform-filter").value;
       const model = document.getElementById("dataset-model-filter")?.value || "";
 
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
+      const tz = "UTC"; // Sama dengan rentang statistik dan reset kuota.
       const cacheKey = `${range}_${platform}_${model}_${q}_${tz}`;
       if (!force && datasetCache.has(cacheKey)) {
         cachedDatasetPairs = datasetCache.get(cacheKey);
@@ -2103,7 +1279,7 @@ function renderLiveUpstreamTable(data) {
       const range = rangeSelect ? rangeSelect.value : "all";
       const platform = document.getElementById("dataset-platform-filter")?.value || "";
       const model = document.getElementById("dataset-model-filter")?.value || "";
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
+      const tz = "UTC"; // Sama dengan rentang statistik dan reset kuota.
 
       // Token TIDAK ditaruh di URL (bocor ke log proxy/history browser). Unduh via
       // fetch ber-header, lalu buat blob — URL hanya hidup sesaat di memori.
@@ -2181,18 +1357,20 @@ function renderLiveUpstreamTable(data) {
         clearInterval(refreshTimer);
         refreshTimer = null;
       }
-      if (!autoRefresh) return;
+      if (!autoRefresh || document.hidden) return;
       refreshTimer = setInterval(() => {
+        updateFreshness();
         fetchData();
-      }, 15000);
+      }, REFRESH_MS);
     }
 
     function toggleAutoRefresh() {
       autoRefresh = !autoRefresh;
       const btn = document.getElementById("btn-auto");
+      btn.setAttribute("aria-pressed", String(autoRefresh));
       if (autoRefresh) {
         btn.classList.add("active");
-        btn.querySelector("span").textContent = "Auto: 15s";
+        btn.querySelector("span").textContent = "Otomatis 5 dtk";
         pasangAutoRefresh();
       } else {
         btn.classList.remove("active");
@@ -2205,6 +1383,19 @@ function renderLiveUpstreamTable(data) {
     // EVENT BINDING (CSP-SAFE: replaces every removed inline on* handler)
     // =========================================================================
     function bindDashboardEvents() {
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && statsRequest) { statsRequest.controller.abort(); statsRequest = null; ++statsGeneration; }
+        pasangAutoRefresh();
+        if (!document.hidden) { updateFreshness(); if (autoRefresh) fetchData(true); }
+      });
+      document.getElementById('pool-grid')?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-toggle-keys]');
+        if (!button) return;
+        const expanded = button.getAttribute('aria-expanded') !== 'true';
+        button.setAttribute('aria-expanded', String(expanded));
+        button.closest('.provider-card').querySelector('.keys-list').classList.toggle('keys-list-scroll', !expanded);
+        button.textContent = expanded ? 'Ringkas daftar kunci' : 'Lihat semua kunci';
+      });
       const on = (id, event, handler) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener(event, handler);

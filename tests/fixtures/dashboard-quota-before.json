@@ -1,0 +1,122 @@
+{
+  "pools": [
+    {
+      "kind": "opencode",
+      "usedToday": 0,
+      "keys": [
+        {
+          "dbUsed": 11,
+          "tokensUsed": 134176
+        }
+      ]
+    },
+    {
+      "kind": "cloudflare",
+      "usedToday": 0,
+      "keys": [
+        {
+          "dbUsed": 2,
+          "tokensUsed": 880
+        },
+        {
+          "dbUsed": 1,
+          "tokensUsed": 443
+        },
+        {
+          "dbUsed": 1,
+          "tokensUsed": 10000
+        }
+      ]
+    },
+    {
+      "kind": "groq",
+      "usedToday": 15,
+      "keys": [
+        {
+          "dbUsed": 1,
+          "tokensUsed": 2941
+        },
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        },
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        },
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        },
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        }
+      ]
+    },
+    {
+      "kind": "dreamprompting",
+      "usedToday": 17,
+      "keys": [
+        {
+          "dbUsed": 0,
+          "tokensUsed": 144
+        }
+      ]
+    },
+    {
+      "kind": "openrouter",
+      "usedToday": 13,
+      "keys": [
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        },
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        },
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        },
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        },
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        }
+      ]
+    },
+    {
+      "kind": "gemini",
+      "usedToday": 0,
+      "keys": [
+        {
+          "dbUsed": 0,
+          "tokensUsed": 0
+        }
+      ]
+    }
+  ],
+  "modelsBreakdown": [
+    {
+      "name": "opencode/deepseek-v4.1-flash-free",
+      "count": 7
+    },
+    {
+      "name": "opencode/glm-5.3-flash-free",
+      "count": 2
+    },
+    {
+      "name": "reminder",
+      "count": 2
+    },
+    {
+      "name": "groq/qwen/qwen3.8-27b",
+      "count": 1
+    }
+  ]
+}

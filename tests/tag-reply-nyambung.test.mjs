@@ -51,9 +51,9 @@ test('tag-reply: prompt instruksikan LANJUTKAN pesan yang di-reply', () => {
 test('tag-reply: stiker disimpan DENGAN deskripsi (bukan penanda polos)', () => {
   // Bila hanya "[Stiker WhatsApp]", saat di-reply bot tidak tahu stiker apa.
   for (const [nama, berkas] of [['cloud', CLOUD], ['baileys', BAIL], ['telegram', TELE]]) {
-    assert.ok(/deskripsiStiker/.test(berkas), `${nama} harus simpan deskripsiStiker`);
-    assert.ok(/\[Stiker WhatsApp\] \$\{deskripsiStiker\}|\$\{labelStiker\} \$\{deskripsiStiker\}/.test(berkas),
-      `${nama} harus gabung penanda + deskripsi`);
+    assert.ok(berkas.includes('stickerUserContent('), `${nama} harus menyimpan caption/OCR pengirim`);
+    assert.ok(berkas.includes('content: kontenStikerUser,'), `${nama} memakai isi pengirim`);
+    assert.ok(!berkas.includes('const deskripsiStiker ='), `${nama} jangan menyimpan reaksi bot sebagai user`);
   }
   // TIDAK boleh lagi menyimpan penanda polos sebagai satu-satunya isi.
   const polos = /content:\s*'\[Stiker WhatsApp\]'/;

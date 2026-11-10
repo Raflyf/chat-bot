@@ -39,7 +39,7 @@ test('stiker: paksaStiker diteruskan (PNG hasil konversi tetap dianggap stiker)'
 
 test('stiker: tag stiker diambil SEBELUM sanitize', () => {
   // sanitize MEMBUANG tag -> kalau diambil sesudah, tag hilang.
-  const iTag = SKILLS.indexOf('const stickerDariModel = extractStickerTag');
+  const iTag = SKILLS.indexOf('let stickerDariModel = extractStickerTag');
   const iSan = SKILLS.indexOf('let reply = ekstraksiTsv');
   assert.ok(iTag > 0, 'harus ada stickerDariModel');
   assert.ok(iTag < iSan, 'tag harus diambil SEBELUM sanitize');

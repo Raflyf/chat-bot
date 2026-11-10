@@ -40,9 +40,9 @@ test('kesal: prompt melarang nyolot/menyindir', () => {
   assert.match(SK, /DILARANG NYOLOT/, 'harus ada larangan nyolot');
 });
 
-test('kesal: prompt melarang mengeledek saat diminta berhenti', () => {
-  assert.match(SK, /DILARANG KERAS MENGELEDEK/, 'harus ada larangan mengeledek');
-  assert.match(SK, /HENTIKAN semua ledekan PERMANEN/, 'harus ada aturan berhenti permanen');
+test('kesal: hentikan ledekan sesuai batas, bukan membekukan sesi permanen', () => {
+  assert.match(SK, /Hentikan ledekan bila dia benar-benar meminta berhenti/, 'batas eksplisit tetap dihormati');
+  assert.match(SK, /dia sendiri kembali mengajak bercanda/, 'candaan baru boleh menyesuaikan kembali');
 });
 
 test('kesal: prompt melarang mengulang hinaan user', () => {

@@ -1,5 +1,4 @@
-import { hitungNeuron, neuronPerBalasanKhas, sisaBalasan, NEURON_HARIAN_GRATIS, tarifModel } from '../src/neuron.js';
-import { probeKunciCloudflare } from '../src/providers.js';
+import { hitungNeuron, NEURON_HARIAN_GRATIS } from '../src/neuron.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import { config } from '../src/env.js';
@@ -25,13 +24,28 @@ const APP_VERSION = (() => {
 })();
 import {
   fetchOpenRouterLimits,
-  fetchGroqLimits,
-  fetchCloudflareLimits,
+  getCachedLimits,
   fetchDreamPromptingLimits,
-  geminiDocumentedLimits,
-  dreampromptingDocumentedLimits,
   type LiveLimit,
 } from '../src/limits.js';
+
+type QuotaRow = { kind: string; key_suffix: string; used: number; tokens_used?: number | null };
+
+export function getStatsPeriod(range: string, now = new Date()) {
+  const todayStr = now.toISOString().slice(0, 10);
+  const daysCount = range === 'all' ? 0 : ({ '7d': 7, '14d': 14, '30d': 30 }[range] ?? 1);
+  const startDateIso = daysCount ? new Date(Date.parse(todayStr + 'T00:00:00.000Z') - (daysCount - 1) * 86400000).toISOString() : null;
+  return { todayStr, daysCount, startDateIso, startDayStr: startDateIso?.slice(0, 10) ?? null,
+    rangeLabel: daysCount === 0 ? 'Semua waktu (UTC)' : daysCount === 1 ? 'Hari ini (UTC)' : daysCount + ' hari kalender (UTC)' };
+}
+
+export function quotaUsage(rows: QuotaRow[], kind: string, hashes: string[]) {
+  const selected = rows.filter((r) => r.kind === kind && hashes.includes(r.key_suffix));
+  const used = selected.reduce((sum, r) => sum + Math.max(0, Number(r.used) || 0), 0);
+  const recorded = selected.reduce((sum, r) => sum + Math.max(0, Number(r.tokens_used) || 0), 0);
+  const complete = selected.every((r) => !r.used || (typeof r.tokens_used === 'number' && r.tokens_used > 0));
+  return { used, tokens: complete ? recorded : null, recorded };
+}
 
 // Katalog untuk UI berasal dari konfigurasi runtime; tidak memuat kredensial.
 export function getModelCatalog() {
@@ -106,78 +120,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  const range = String(req.query.range || 'today').toLowerCase();
-  const filterPlatform = typeof req.query.platform === 'string' ? req.query.platform.toLowerCase().trim() : '';
-
+  const requestedRange = String(req.query.range || 'today').toLowerCase();
+  const range = ['today', '7d', '14d', '30d', 'all'].includes(requestedRange) ? requestedRange : 'today';
+  const filterPlatform = ['whatsapp', 'telegram'].includes(String(req.query.platform)) ? String(req.query.platform) : 'all';
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const { todayStr, startDateIso, startDayStr, rangeLabel, daysCount } = getStatsPeriod(range, now);
 
-  let startDateIso: string | null = null;
-  let startDayStr: string | null = null;
-  let rangeLabel = 'Hari Ini';
-  let daysCount = 1;
-
-  if (range === '7d') {
-    const d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    startDateIso = d.toISOString();
-    startDayStr = d.toISOString().slice(0, 10);
-    rangeLabel = '7 Hari Terakhir';
-    daysCount = 7;
-  } else if (range === '14d') {
-    const d = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-    startDateIso = d.toISOString();
-    startDayStr = d.toISOString().slice(0, 10);
-    rangeLabel = '14 Hari Terakhir';
-    daysCount = 14;
-  } else if (range === '30d') {
-    const d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    startDateIso = d.toISOString();
-    startDayStr = d.toISOString().slice(0, 10);
-    rangeLabel = '30 Hari Terakhir';
-    daysCount = 30;
-  } else if (range === 'all') {
-    startDateIso = null;
-    startDayStr = null;
-    rangeLabel = 'Semua Waktu';
-    daysCount = 0;
-  } else {
-    // default: today
-    startDateIso = `${todayStr}T00:00:00.000Z`;
-    startDayStr = todayStr;
-    rangeLabel = 'Hari Ini';
-    daysCount = 1;
-  }
 
   const c = db();
+  if (!c) {
+    res.status(503).json({ ok: false, error: 'Data monitoring belum tersedia', isDatabaseConnected: false });
+    return;
+  }
 
   try {
-    const orLivePromises = config.pools.openrouter.map(async (k) => {
-      try {
-        const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
-          headers: { Authorization: `Bearer ${k}`, Accept: 'application/json' },
-          signal: AbortSignal.timeout(2800),
-        });
-        if (!res.ok) return null;
-        const json = (await res.json()) as {
-          data?: {
-            usage?: number;
-            usage_daily?: number;
-            is_free_tier?: boolean;
-            limit_remaining?: number | null;
-          };
-        };
-        return {
-          key: k,
-          usageUsd: Number(json.data?.usage) || 0,
-          usageDailyUsd: Number(json.data?.usage_daily) || 0,
-          isFreeTier: json.data?.is_free_tier ?? true,
-          limitRemaining: json.data?.limit_remaining ?? null,
-        };
-      } catch {
-        return null;
-      }
-    });
-
     let quotasData: Array<{ kind: string; key_suffix: string; used: number; tokens_used?: number }> = [];
     let totalMessagesAllTime: number = 0;
     let waPeriod: number = 0;
@@ -187,115 +143,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let userMsgs: Array<{ content: string }> = [];
     let waMonthlyMsgs: Array<{ chat_id: string; created_at: string }> = [];
 
-    // Batas kuota LIVE dari endpoint resmi tiap provider (v0.49).
-    // Angka hardcode di .env TERBUKTI SALAH untuk beberapa provider — OpenRouter
-    // sebenarnya 50 req/hari (bukan 180), Cloudflare 1200 req/300 detik (bukan 120 RPD),
-    // Groq 8000 TPM (bukan 200K TPD). Sumber kebenaran = endpoint provider.
-    const limitsPromise = (async (): Promise<Map<string, Map<string, LiveLimit>>> => {
-      const result = new Map<string, Map<string, LiveLimit>>();
-      // SEMUA provider yang punya endpoint kuota dipanggil LIVE (paralel):
-      //   OpenRouter, Groq, Cloudflare, DreamPrompting.
-      // (xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.)
-      // DreamPrompting ditambahkan 04 Okt setelah ditemukan endpoint
-      // /api/v1/quota yang mengembalikan JSON limit + sisa (sebelumnya dikira
-      // tidak ada endpoint sehingga memakai angka dokumentasi).
-      const [or, gq, cf, dpLive] = await Promise.all([
-        fetchOpenRouterLimits(config.pools.openrouter).catch(() => new Map<string, LiveLimit>()),
-        fetchGroqLimits(config.pools.groq, config.models.groqPrimary).catch(() => new Map<string, LiveLimit>()),
-        fetchCloudflareLimits(config.pools.cloudflare, config.cloudflareAccountId).catch(() => new Map<string, LiveLimit>()),
-        fetchDreamPromptingLimits(config.pools.dreamprompting).catch(() => new Map<string, LiveLimit>()),
-      ]);
-      result.set('openrouter', or);
-      result.set('groq', gq);
-      result.set('cloudflare', cf);
-      // DreamPrompting: pakai data LIVE bila ada; fallback dokumentasi per key
-      // hanya untuk key yang tidak terjawab endpoint.
-      const dp = new Map<string, LiveLimit>();
-      for (const k of config.pools.dreamprompting) {
-        dp.set(k, dpLive.get(k) ?? dreampromptingDocumentedLimits());
-      }
-      result.set('dreamprompting', dp);
-      // Gemini: batas dokumentasi bukan saldo pemakaian upstream.
-      const gm = new Map<string, LiveLimit>();
-      for (const k of config.pools.gemini) gm.set(k, geminiDocumentedLimits());
-      result.set('gemini', gm);
-      return result;
-    })();
-
-    const liveFetchPromise = Promise.all([
-      Promise.all(orLivePromises),
-    ]);
-
-    type OrLiveItem = {
-      key: string;
-      usageUsd: number;
-      usageDailyUsd: number;
-      isFreeTier: boolean;
-      limitRemaining: number | null;
-    } | null;
-
-    let orLiveResults: OrLiveItem[] = [];
+    // Monitoring tidak mengirim inferensi; endpoint kuota murah memakai cache 30 menit.
+    const cacheKeys: Record<string, string> = {
+      groq: 'groq:' + config.pools.groq.length + ':' + config.models.groqPrimary,
+      cloudflare: 'cloudflare:' + config.pools.cloudflare.length + ':' + config.cloudflareAccountId,
+      openrouter: 'openrouter:' + config.pools.openrouter.length,
+      dreamprompting: 'dreamprompting:' + config.pools.dreamprompting.length,
+    };
+    const limitsPromise = Promise.all([
+      fetchOpenRouterLimits(config.pools.openrouter).catch(() => new Map<string, LiveLimit>()),
+      fetchDreamPromptingLimits(config.pools.dreamprompting).catch(() => new Map<string, LiveLimit>()),
+    ]).then(([or, dp]) => new Map<string, Map<string, LiveLimit>>([
+      ['openrouter', or], ['dreamprompting', dp],
+      ['groq', getCachedLimits(cacheKeys.groq)?.data ?? new Map()],
+      ['cloudflare', getCachedLimits(cacheKeys.cloudflare)?.data ?? new Map()],
+    ]));
     let liveLimitsMap = new Map<string, Map<string, LiveLimit>>();
-    let todayQuotasData: Array<{ kind: string; key_suffix: string; used: number; tokens_used?: number }> = [];
-    // ── COOLDOWN AKTIF (perbaikan 09 Okt 2026) ──
-    // LAPORAN PEMILIK PRODUK: "semua apikey habis? tapi monitoring masih hijau,
-    // berarti ini bug fatal yg kamu buat, betulkan yg benar dan valid data
-    // monitoring nya".
-    //
-    // AKAR: dashboard TIDAK PERNAH membaca `provider_cooldown`, padahal tabel itu
-    // sudah mencatat alasan='neuron' (Cloudflare habis) dengan `until_at` jelas.
-    // Akibatnya key yang SEDANG DIBEKUKAN tetap ditampilkan "OPTIMAL".
-    // SEKARANG: cooldown aktif dibaca dan MEMAKSA status key menjadi bukan-optimal.
-    // ── PROBE AKTIF (perbaikan 09 Okt 2026) ──
-    // Sebelum membaca cooldown, PASTIKAN status tiap kunci Cloudflare nyata.
-    // Alasannya: cooldown hanya tercatat bila ada request yang gagal; kunci yang
-    // kebetulan tidak pernah dicoba (karena kunci lain menang balapan) tidak punya
-    // cooldown -> tampil "Optimal" padahal neuron akun itu HABIS.
-    // Probe ringan (model termurah, 1 token) memastikan data monitoring VALID.
-    // Dijalankan best-effort: kegagalan tidak boleh menggagalkan endpoint.
-    // ── PROBE TIDAK BOLEH MEMBLOKIR RENDER (perbaikan 09 Okt 2026) ──
-    // BUG YANG DIPERBAIKI: versi pertama memakai `await probeKunciCloudflare()`
-    // secara BLOKIR. Probe memanggil API Cloudflare; bila lambat/timeout, endpoint
-    // /api/stats melewati batas waktu Vercel -> SELURUH CARD PROVIDER HILANG dari
-    // dashboard (laporan: "ini ko malah hilang card yg disini gimna sih").
-    //
-    // SEKARANG: probe dijalankan FIRE-AND-FORGET (tanpa await). Dashboard langsung
-    // render memakai data cooldown yang SUDAH ADA di DB; probe hanya MEMPERBARUI
-    // untuk permintaan berikutnya. Jadi dashboard tidak pernah gagal karena probe.
-    const PROBE_TTL_MS = 5 * 60_000;
-    const sekarang = Date.now();
-    const terakhirProbe = (globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir || 0;
-    if (sekarang - terakhirProbe > PROBE_TTL_MS) {
-      (globalThis as { __cfProbeTerakhir?: number }).__cfProbeTerakhir = sekarang;
-      // TIDAK di-await — sengaja. Lihat komentar di atas.
-      void probeKunciCloudflare().catch(() => undefined);
-    }
+    let todayQuotasData: QuotaRow[] = [];
+    let cooldownAvailable = true;
+    let dataTruncated = false;
 
     const cooldownAktif = new Map<string, { alasan: string; until: string }>();
     if (c) {
       try {
-        const { data: cds } = await c
+        const { data: cds, error: cooldownError } = await c
           .from('provider_cooldown')
           .select('kind, key_hash, alasan, until_at')
           .gt('until_at', new Date().toISOString());
+        if (cooldownError) throw cooldownError;
         for (const cd of (cds ?? []) as Array<{ kind: string; key_hash: string; alasan: string; until_at: string }>) {
           cooldownAktif.set(`${cd.kind}:${cd.key_hash}`, { alasan: cd.alasan, until: cd.until_at });
         }
       } catch {
-        // best-effort: bila tabel belum ada, lewati
+        cooldownAvailable = false;
       }
     }
 
     if (c) {
       // Ambil tokens_used juga agar TPD riil bisa ditampilkan (bukan estimasi calls × rata-rata)
-      let quotaQuery = c.from('provider_quota').select('kind, key_suffix, used, tokens_used');
-      if (startDayStr) {
-        if (range === 'today') {
-          quotaQuery = quotaQuery.eq('day', startDayStr);
-        } else {
-          quotaQuery = quotaQuery.gte('day', startDayStr);
-        }
-      }
+      const quotaQuery = () => {
+        let query = c.from('provider_quota').select('kind, key_suffix, used, tokens_used').order('day').order('kind').order('key_suffix');
+        if (startDayStr) query = range === 'today' ? query.eq('day', startDayStr) : query.gte('day', startDayStr);
+        return query;
+      };
 
       // Kuota HARI INI (terpisah) — dipakai untuk persentase/status saat rentang bukan
       // "hari ini", karena kuota provider bersifat HARIAN (reset 00:00 UTC).
@@ -322,18 +212,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         while (from < maxRecords) {
           const to = from + batchSize - 1;
           const { data, error } = await buildQuery().range(from, to);
-          if (error || !data || data.length === 0) break;
+          if (error) throw error;
+          if (!data || data.length === 0) break;
           rows.push(...(data as T[]));
           if (data.length < batchSize) break;
           from += batchSize;
         }
+        if (rows.length >= maxRecords) dataTruncated = true;
         return rows;
       }
 
       const buildAssistantQuery = () => {
         let q = c
           .from('messages')
-          .select('via, prompt_tokens, completion_tokens, total_tokens')
+          .select('via, created_at, prompt_tokens, completion_tokens, total_tokens')
           .eq('role', 'assistant')
           .order('id', { ascending: false });
         if (startDateIso) q = q.gte('created_at', startDateIso);
@@ -367,11 +259,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         userMsgsRes,
         waMonthlyMsgsRes,
         allTimeAssistantRes,
-        liveResults,
         liveLimits,
         dbTodayQuotaRes,
         ] = await Promise.all([
-        quotaQuery,
+        fetchPagedRange<QuotaRow>(quotaQuery),
         c.from('messages').select('*', { count: 'exact', head: true }),
         waPeriodQuery,
         telePeriodQuery,
@@ -383,13 +274,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         }>(buildAssistantQuery, 1000, 10000),
         fetchPagedRange<{ content: string | null }>(buildUserMsgsQuery, 1000, 10000),
         fetchPagedRange<{ chat_id: string | null; created_at: string }>(buildWaMonthlyQuery, 1000, 15000),
-        c.from('messages').select('via').eq('role', 'assistant').order('id', { ascending: false }).limit(300),
-        liveFetchPromise,
+        c.from('messages').select('via, created_at').eq('role', 'assistant').order('id', { ascending: false }).limit(300),
         limitsPromise,
         todayQuotaQuery ? todayQuotaQuery : Promise.resolve({ data: null }),
       ]);
 
-      quotasData = (dbQuotaRes.data as any) || [];
+      for (const result of [dbTotalRes, dbWaRes, dbTeleRes, allTimeAssistantRes, dbTodayQuotaRes]) {
+        if ((result as any)?.error) throw (result as any).error;
+      }
+      quotasData = dbQuotaRes as any;
       totalMessagesAllTime = dbTotalRes.count || 0;
       waPeriod = dbWaRes.count || 0;
       telePeriod = dbTeleRes.count || 0;
@@ -398,59 +291,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       userMsgs = userMsgsRes as any;
       waMonthlyMsgs = waMonthlyMsgsRes as any;
 
-      orLiveResults = liveResults[0];
       liveLimitsMap = liveLimits;
-      todayQuotasData = ((dbTodayQuotaRes as any)?.data as any[]) || [];
-    } else {
-      const [or] = await liveFetchPromise;
-      orLiveResults = or;
-      liveLimitsMap = await limitsPromise;
-    }
-
-    // (xkiroSyncMap DIHAPUS 04 Okt 2026 — xKiro disuspend permanen 403.)
-
-    const orSyncMap = new Map<string, {
-      key: string;
-      usageUsd: number;
-      usageDailyUsd: number;
-      isFreeTier: boolean;
-      limitRemaining: number | null;
-    }>();
-    for (const r of orLiveResults) {
-      if (r) orSyncMap.set(r.key, r);
-    }
-
-    // Map kuota HARI INI (dipakai untuk persentase/status saat rentang bukan "hari ini").
-    const todayQuotaMap = new Map<string, number>();
-    const todayTokenQuotaMap = new Map<string, number>();
-    // Pemakaian WEB SEARCH xKiro (kind 'xkiro-search') dihitung TERPISAH:
-    // kuotanya berbeda dari chat (10 pencarian/kunci/hari vs token), jadi
-    // mencampurnya akan mengacaukan persentase pemakaian token provider.
-    //
-    // Sumber datanya BERGANTUNG RENTANG — ini pernah jadi bug: ketika filter
-    // "Hari Ini" dipakai, `todayQuotasData` sengaja kosong (query-nya di-null
-    // karena dianggap duplikat), sehingga pemakaian web search selalu terbaca 0
-    // walau database berisi data. Yang benar: saat rentang "Hari Ini", data hari
-    // ini ada di `quotasData`; saat rentang lain, di `todayQuotasData`.
-    const webSearchSource = range === 'today' ? (quotasData ?? []) : (todayQuotasData ?? []);
-    let webSearchUsedToday = 0;
-    for (const q of webSearchSource) {
-      if (q.kind === 'xkiro-search') webSearchUsedToday += q.used || 0;
-    }
-    for (const q of todayQuotasData ?? []) {
-      if (q.kind === 'xkiro-search') continue;
-      const key = `${q.kind}:${q.key_suffix}`;
-      todayQuotaMap.set(key, (todayQuotaMap.get(key) || 0) + (q.used || 0));
-      todayTokenQuotaMap.set(key, (todayTokenQuotaMap.get(key) || 0) + (Number(q.tokens_used) || 0));
-    }
-
-    const quotaMap = new Map<string, number>();
-    // TPD riil per key dari kolom tokens_used (bukan estimasi calls × rata-rata)
-    const tokenQuotaMap = new Map<string, number>();
-    for (const q of quotasData ?? []) {
-      const key = `${q.kind}:${q.key_suffix}`;
-      quotaMap.set(key, (quotaMap.get(key) || 0) + (q.used || 0));
-      tokenQuotaMap.set(key, (tokenQuotaMap.get(key) || 0) + (Number(q.tokens_used) || 0));
+      todayQuotasData = range === 'today' ? quotasData : (((dbTodayQuotaRes as any)?.data as any[]) || []);
     }
 
     const totalMessagesPeriod =
@@ -549,8 +391,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     const overallAvgTokens = grandTotalCallsWithRealTokens > 0
       ? Math.round(grandTotalRealTokens / grandTotalCallsWithRealTokens)
-      : 2500;
-    const totalComputedTokensPeriod = grandTotalRealTokens + (Math.max(0, totalModelCalls - grandTotalCallsWithRealTokens) * overallAvgTokens);
+      : 0;
 
     const modelCatalog = getModelCatalog();
     const activeSystemModels = new Set(modelCatalog.map((m) => m.id.toLowerCase()));
@@ -717,414 +558,90 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       },
     ];
 
-    let totalPoolKeys = 0;
-    let totalCallsPeriod = 0;
-
     const pools = providerDefs.map((p) => {
-      totalPoolKeys += p.keys.length;
-      let poolUsed = 0;
-
-      // Cap efektif: untuk rentang "Semua" (daysCount=0) kita TETAP memakai cap HARIAN
-      // sebagai acuan bar/status — karena kuota provider memang harian (reset 00:00 UTC).
-      // Sebelumnya daysCount=0 membuat cap 0 -> dashboard menampilkan "Uncapped" padahal
-      // key punya limit harian dan sebagian sudah CAPPED (temuan user: "ketika filter hari
-      // jadi dipilih semua, matriks penggunaan pool api key jadi begini").
-      const effectiveCapPerKey = daysCount > 0 ? p.cap * daysCount : p.cap;
-      const effectiveTokenCapPerKey = daysCount > 0 ? p.tokenCapPerKey * daysCount : p.tokenCapPerKey;
-
-      const pStats = providerTokenStats[p.kind] || {
-        realTokens: 0,
-        promptTokens: 0,
-        completionTokens: 0,
-        callsWithRealTokens: 0,
-        totalCalls: 0,
-      };
-
-      const providerAvgTokens = pStats.callsWithRealTokens > 0
-        ? Math.round(pStats.realTokens / pStats.callsWithRealTokens)
-        : overallAvgTokens;
-
-      const legacyCalls = Math.max(0, pStats.totalCalls - pStats.callsWithRealTokens);
-      const providerComputedTokens = pStats.realTokens + (legacyCalls * providerAvgTokens);
-
-      const keysDetail = p.keys.map((k, keyIdx) => {
-        const suffix = k.slice(-4);
-        const hash12 = crypto.createHash('sha256').update(k).digest('hex').slice(0, 12);
-        // Mendukung pencocokan hash12 (standar src/quota.ts) dan suffix 4-karakter (riwayat legacy)
-        const used = (quotaMap.get(`${p.kind}:${hash12}`) || 0) + (quotaMap.get(`${p.kind}:${suffix}`) || 0);
-        poolUsed += used;
-        totalCallsPeriod += used;
-
-        // Limit LIVE dari endpoint provider (v0.49) — sumber kebenaran utama.
-        // .env hanya dipakai sebagai fallback bila endpoint tidak menyatakan limit.
-        const liveLimit = liveLimitsMap.get(p.kind)?.get(k) ?? null;
-        // Cap token untuk KEY INI. Prioritas: (1) endpoint live, (2) daftar cap per-key
-        // di .env, (3) cap seragam provider. Endpoint menang karena .env terbukti salah
-        // (mis. xKiro key1 sebenarnya 1jt, OpenRouter 50/hari bukan 180).
-        // Bila endpoint memberi data limit (isLive) tetapi TIDAK menyatakan TPD,
-        // jangan pakai angka .env sebagai fakta — itu klaim tanpa dasar. Contoh: Groq
-        // header hanya menyebut 1000 RPD + 8000 TPM (per menit), bukan TPD.
-        const endpointAuthoritative = liveLimit?.isLive === true;
-        const perKeyTokenCap = endpointAuthoritative
-          ? (liveLimit?.tokensPerDay ?? 0)
-          : (p.tokenCapPerKeyList.length > keyIdx ? p.tokenCapPerKeyList[keyIdx] : 0);
-        // RPD live per key (OpenRouter: free_model_daily_requests; Groq: header).
-        const liveRpdCap = liveLimit?.requestsPerDay ?? 0;
-
-        const xkLive = null; // (xKiro dihapus 04 Okt 2026)
-        const orLive = p.kind === 'openrouter' ? orSyncMap.get(k) : null;
-
-        // Token riil per key dari DB (kolom tokens_used) — sumber valid untuk TPD.
-        // Estimasi (used × rata-rata) hanya dipakai sebagai pelengkap saat data riil kosong.
-        const realTokensForKey =
-          (tokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (tokenQuotaMap.get(`${p.kind}:${suffix}`) || 0);
-        const isRealTokenData = realTokensForKey > 0;
-
-        // Pemakaian dari endpoint live lebih akurat daripada catatan internal bot
-        // (mencakup pemakaian dari IDE/terminal/alat lain di akun yang sama).
-        let tokensUsed = liveLimit?.tokensUsedToday ?? (isRealTokenData
-          ? realTokensForKey
-          : used > 0
-          ? Math.round(used * providerAvgTokens)
-          : 0);
-        // Pemakaian request dari endpoint (mis. OpenRouter free_model_daily_requests.used).
-        const liveCallsUsed = liveLimit?.requestsUsedToday ?? null;
-        const effectiveCallsUsed = liveCallsUsed !== null ? liveCallsUsed : used;
-        // Cap token efektif key ini.
-        // Bila endpoint LIVE menyatakan limit dan TIDAK menyebut TPD (contoh: Groq
-        // hanya 1000 RPD + 8000 TPM), maka TIDAK ADA batas token harian — jangan
-        // jatuh ke angka .env yang tidak didukung endpoint (itu klaim palsu).
-        let tokenCap: number;
-        // KHUSUS CLOUDFLARE (perbaikan 04 Okt): endpoint hanya menyatakan RATE LIMIT
-        // per jendela (header ratelimit-policy), BUKAN kuota neuron harian. Karena
-        // `endpointAuthoritative` bernilai true, cabang di bawah akan menetapkan
-        // tokenCap = 0 -> tokenPercent selalu 0% -> dashboard menampilkan "OPTIMAL"
-        // padahal neuron SUDAH HABIS (kasus nyata: 209.738 token/key, semua 429).
-        // Karena itu kuota neuron diambil dari konfigurasi (DAILY_TOKEN_CAP_CLOUDFLARE),
-        // yang memang satu-satunya sumber angka harian untuk provider ini.
-        if (p.kind === 'cloudflare') {
-          // ── BUG YANG DIPERBAIKI (06 Okt 2026) ──
-          // LAPORAN PEMILIK PRODUK: "masa baru 2 request sudah habis? kan cloudflare
-          // itu hitungannya NEURON, bukan token, betul tidak?"
-          //
-          // JAWABAN: BENAR. Sebelumnya `tokenCap` diisi 10.000 (angka NEURON dari
-          // .env) lalu dibandingkan dengan TOKEN nyata (mis. 14.000 token) ->
-          // dianggap "100% HABIS" padahal 14.000 token hanya ~573 neuron.
-          // Akibatnya dashboard salah lapor "KUOTA HABIS" dan key yang SEHAT
-          // (terbukti HTTP 200) tidak dipakai.
-          //
-          // SEKARANG: token DIKONVERSI ke neuron memakai tarif resmi per model,
-          // lalu dibandingkan dengan kuota neuron (10.000).
-          const modelUtama = String(config.models.cfPrimary || '');
-          const neuronPerBalasan = neuronPerBalasanKhas(modelUtama);
-          // Cap neuron harian (bukan token!).
-          tokenCap = NEURON_HARIAN_GRATIS;
-          // Tandai agar perhitungan di bawah memakai konversi neuron.
-          (p as { __neuron?: boolean }).__neuron = true;
-          (p as { __modelNeuron?: string }).__modelNeuron = modelUtama;
-          (p as { __neuronPerBalasan?: number }).__neuronPerBalasan = neuronPerBalasan;
-        } else if (endpointAuthoritative) {
-          tokenCap = perKeyTokenCap > 0
-            ? (daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
-            : 0;
-        } else {
-          tokenCap = perKeyTokenCap > 0
-            ? (daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
-            : effectiveTokenCapPerKey;
-        }
-        // ── CLOUDFLARE: KONVERSI TOKEN -> NEURON (perbaikan 06 Okt 2026) ──
-        // Untuk Cloudflare, `tokenCap` berisi NEURON (10.000), jadi pemakaian
-        // harus dikonversi dulu. Tanpa ini, 14.000 token dibandingkan dengan
-        // 10.000 neuron -> salah lapor "HABIS" (padahal ~573 neuron saja).
-        const adalahNeuron = Boolean((p as { __neuron?: boolean }).__neuron);
-        const modelNeuron = String((p as { __modelNeuron?: string }).__modelNeuron || '');
-        // ── KONVERSI NEURON AKURAT (perbaikan 06 Okt 2026) ──
-        // SEBELUMNYA memakai ASUMSI 80% input / 20% output. Diukur dari data nyata
-        // (kolom prompt_tokens & completion_tokens di tabel messages), komposisi
-        // sebenarnya untuk Cloudflare adalah ~99% input / ~1% output — jadi asumsi
-        // 20% output MENYALAHKAN dan angka neuron jadi terlalu besar.
-        //   Data nyata: input 66.132 token, output 495 token (10 balasan)
-        //   Akurat: 2.849 neuron  |  Asumsi 80/20: 3.803 neuron  (33% lebih besar)
-        // SEKARANG memakai prompt_tokens & completion_tokens NYATA bila tersedia.
-        // ── PERBAIKAN BESAR (09 Okt 2026): SUMBER DATA NEURON ──
-        // LAPORAN PEMILIK PRODUK: "semua apikey habis? tapi monitoring masih hijau,
-        // berarti ini bug fatal yg kamu buat, betulkan yg benar dan valid data
-        // monitoring nya".
-        //
-        // BUKTI NYATA: dashboard tampil 5.459/10.000 neuron (55%, OPTIMAL) padahal
-        // API Cloudflare balas HTTP 429 "used up daily free allocation of 10,000
-        // neurons" pada KETIGA akun. `provider_cooldown` juga sudah mencatat
-        // alasan='neuron' — jadi sistem TAHU habis, tapi dashboard tidak.
-        //
-        // AKAR: neuron dihitung dari `providerTokenStats` yang bersumber dari tabel
-        // `messages` (125.066 token hari ini). Padahal `provider_quota` mencatat
-        // 316.601 token — SELISIH 191.535 token (60% data HILANG) karena `messages`
-        // hanya menyimpan balasan yang BERHASIL dikirim, sementara `provider_quota`
-        // mencatat SEMUA panggilan (termasuk yang gagal/timeout/failover).
-        //
-        // PERBAIKAN: pakai TOKEN dari `provider_quota` (tokenQuotaMap) sebagai
-        // sumber utama — itu pencatatan pemakaian yang sebenarnya. `messages` hanya
-        // dipakai untuk KOMPOSISI input/output (rasio), bukan totalnya.
-        const statKey = p.kind as keyof typeof providerTokenStats;
-        const statNya = providerTokenStats[statKey];
-        // Token total dari provider_quota (pencatatan pemakaian sebenarnya).
-        const tokenDariQuota = (tokenQuotaMap.get(`${p.kind}:${hash12}`) || 0)
-          + (tokenQuotaMap.get(`${p.kind}:${suffix}`) || 0);
-        // Token efektif: pakai yang TERBESAR antara quota & live (jangan meremehkan).
-        const tokenEfektif = Math.max(tokensUsed, tokenDariQuota);
-        // Komposisi input/output: pakai rasio NYATA bila ada, jika tidak 99/1.
-        const rasioInput = statNya && (statNya.promptTokens + statNya.completionTokens) > 0
-          ? statNya.promptTokens / (statNya.promptTokens + statNya.completionTokens)
-          : 0.99;
-        const neuronTerpakai = adalahNeuron
-          ? hitungNeuron(Math.round(tokenEfektif * rasioInput), Math.round(tokenEfektif * (1 - rasioInput)), modelNeuron)
-          : tokensUsed;
-        const neuronCap = adalahNeuron ? NEURON_HARIAN_GRATIS : tokenCap;
-        // ── PERBAIKAN (09 Okt 2026): neuronTerpakai harus = cap bila HABIS ──
-        // LAPORAN: "bar dan perhitungannya tidak singkron". Bila cooldown aktif
-        // (neuron habis), angka neuron WAJIB menampilkan cap penuh (10.000/10.000)
-        // agar SAMA dengan bar 100% & status Capped. Tanpa ini, bar 100% tapi
-        // angka tetap 4.959/10.000 (50%) — dua angka berbeda untuk hal yang sama.
-        const cdKeyNeuron = `${p.kind}:${hash12}`;
-        const kenaCooldownNeuron = Boolean(cooldownAktif.get(cdKeyNeuron))
-          || Boolean(cooldownAktif.get(`${p.kind}:${suffix}`));
-        const neuronTampil = adalahNeuron && kenaCooldownNeuron
-          ? NEURON_HARIAN_GRATIS
-          : neuronTerpakai;
-        const sisaNeuron = Math.max(0, neuronCap - neuronTampil);
-        // ── PERBAIKAN (09 Okt 2026): balasanTersisa harus 0 bila kuota HABIS ──
-        // LAPORAN PEMILIK PRODUK: "bar dan perhitungannya tidak singkron" — dashboard
-        // menampilkan "≈ 12 balasan lagi" (hijau) padahal neuron SUDAH HABIS.
-        // SEBAB: sisaBalasan() menghitung dari (cap - neuronTerpakai) yang masih
-        // positif karena pencatatan token internal TIDAK LENGKAP. Bila cooldown
-        // aktif (neuron benar-benar habis), sisa balasan WAJIB 0.
-        const cdKeySementara = `${p.kind}:${hash12}`;
-        const neuronBenarHabis = Boolean(cooldownAktif.get(cdKeySementara))
-          || Boolean(cooldownAktif.get(`${p.kind}:${suffix}`))
-          || neuronTerpakai >= NEURON_HARIAN_GRATIS;
-        const balasanTersisa = adalahNeuron
-          ? (neuronBenarHabis ? 0 : sisaBalasan(sisaNeuron, modelNeuron))
-          : 0;
-
-        // Sisa dari endpoint bila tersedia (paling akurat — sudah memperhitungkan
-        // pemakaian dari semua aplikasi di akun yang sama).
-        let remainingTokens: number | null =
-          liveLimit?.tokensRemaining ?? (neuronCap > 0 ? sisaNeuron : null);
-        const tokensForPercent = daysCount > 0 || liveLimit?.tokensUsedToday != null
-          ? neuronTampil
-          : (todayTokenQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayTokenQuotaMap.get(`${p.kind}:${suffix}`) || 0) || neuronTerpakai;
-        let tokenPercent = neuronCap > 0 ? Math.min(100, Math.round((tokensForPercent / neuronCap) * 100)) : 0;
-        // ── PERBAIKAN (09 Okt 2026): persentase NEURON harus jujur ──
-        // Bila cooldown aktif (neuron habis menurut probe/API), persentase neuron
-        // WAJIB 100% — bukan angka internal yang lebih kecil karena pencatatan
-        // token tidak lengkap. Ini yang membuat bar & angka SINKRON dengan status.
-        if (adalahNeuron) {
-          const cdKeyPct = `${p.kind}:${hash12}`;
-          if (cooldownAktif.get(cdKeyPct) || cooldownAktif.get(`${p.kind}:${suffix}`)) {
-            tokenPercent = 100;
-          }
-        }
-
-        // (Blok xkLive DIHAPUS 04 Okt 2026 — xKiro disuspend permanen 403.
-        //  Dulu di sini nilai token diambil dari live sync xKiro.)
-
-        // Cap RPD efektif: endpoint live menang; kalau tidak ada, pakai .env.
-        // Untuk rentang "Semua", cap tetap HARIAN (kuota provider harian) — bukan cap
-        // dikali jumlah hari, karena akumulasi sepanjang waktu selalu melampaui kuota harian
-        // dan membuat semua key tampak CAPPED 100%.
-        const callCap = liveRpdCap > 0 ? liveRpdCap : p.cap;
-        // Persentase/status SELALU mencerminkan kuota HARIAN (provider reset harian).
-        // Untuk rentang "Semua": pakai pemakaian HARI INI dari DB (todayQuotaMap), bukan
-        // akumulasi — akumulasi selalu melampaui kuota harian dan membuat semua key
-        // tampak CAPPED 100% (temuan user pada filter "Semua").
-        const todayUsedForKey = (todayQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayQuotaMap.get(`${p.kind}:${suffix}`) || 0);
-        // Pemakaian HARIAN key ini — SELALU dipakai untuk baris key, karena cap provider
-        // bersifat harian. Akumulasi periode dikirim terpisah sebagai `usedPeriod`.
-        const dailyCallsUsed = liveCallsUsed ?? todayUsedForKey;
-        const percent = callCap > 0 ? Math.min(100, Math.round((dailyCallsUsed / callCap) * 100)) : 0;
-        // Status key mempertimbangkan RPD DAN TPD — mana yang lebih dulu tercapai.
-        let bindingPercent = Math.max(percent, tokenPercent);
-        let status = bindingPercent >= 100 ? 'capped' : bindingPercent >= 80 ? 'warning' : 'healthy';
-        // ── COOLDOWN MEMAKSA STATUS (perbaikan 09 Okt 2026) ──
-        // LAPORAN: "semua apikey habis? tapi monitoring masih hijau, berarti ini bug
-        // fatal yg kamu buat, betulkan yg benar dan valid data monitoring nya".
-        // Bila key SEDANG DIBEKUKAN (mis. neuron Cloudflare habis, alasan='neuron'),
-        // dashboard WAJIB menampilkan itu — bukan "OPTIMAL" — walau persentase
-        // internal masih rendah (karena pencatatan token kita tidak lengkap).
-        const cdInfo = cooldownAktif.get(`${p.kind}:${hash12}`) || cooldownAktif.get(`${p.kind}:${suffix}`);
-        const kenaCooldown = Boolean(cdInfo);
-        if (kenaCooldown) {
-          bindingPercent = 100;
-          status = 'capped';
-        }
-        // Metrik yang MENGIKAT (binding) dipakai untuk progress bar & label agar visual
-        // konsisten dengan status. Tanpa ini bar bisa 22% (calls) padahal badge CAPPED
-        // (token 100%) — sumber kebingungan di dashboard (temuan user).
-        const bindingMetric: 'tokens' | 'calls' = tokenPercent >= percent ? 'tokens' : 'calls';
-
+      const publicAccess = p.kind === 'opencode';
+      const keys = publicAccess ? ['public'] : p.keys;
+      const cached = cacheKeys[p.kind] ? getCachedLimits(cacheKeys[p.kind]) : null;
+      const cacheTtl = p.kind === 'groq' ? 6 * 3600000 : 30 * 60000;
+      const cacheFresh = !!cached && now.getTime() - cached.at < cacheTtl;
+      const usageFresh = cacheFresh && new Date(cached!.at).toISOString().slice(0, 10) === todayStr;
+      const pStats = providerTokenStats[p.kind];
+      const keysDetail = keys.map((key) => {
+        const hash = crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
+        const hashes = [hash, key.slice(-4)];
+        const period = quotaUsage(quotasData, p.kind, hashes);
+        const day = quotaUsage(todayQuotasData, p.kind, hashes);
+        const upstream = cacheFresh ? liveLimitsMap.get(p.kind)?.get(key) : null;
+        const upstreamUsed = usageFresh ? upstream?.requestsUsedToday ?? null : null;
+        const upstreamTokens = usageFresh ? upstream?.tokensUsedToday ?? null : null;
+        const cap = upstream?.requestsPerDay ?? null;
+        const isNeuron = p.kind === 'cloudflare';
+        const tokenCap = isNeuron ? NEURON_HARIAN_GRATIS : upstream?.tokensPerDay ?? null;
+        const tokensUsed = isNeuron && day.tokens !== null
+          ? hitungNeuron(Math.round(day.tokens * 0.99), Math.round(day.tokens * 0.01), p.primaryModel)
+          : day.tokens;
+        const percent = cap && cap > 0 ? Math.min(100, Math.round(day.used / cap * 100)) : null;
+        const tokenPercent = tokenCap && tokenCap > 0 && tokensUsed !== null ? Math.min(100, Math.round(tokensUsed / tokenCap * 100)) : null;
+        const cd = cooldownAktif.get(p.kind + ':' + hash) || cooldownAktif.get(p.kind + ':' + key.slice(-4));
+        const quotaBlocked = cd && ['neuron', 'rpd', 'quota', 'tpd'].includes(cd.alasan);
+        const bindingPercent = quotaBlocked ? 100 : percent === null && tokenPercent === null ? null : Math.max(percent ?? 0, tokenPercent ?? 0);
+        const upstreamRemaining = usageFresh ? upstream?.requestsRemaining ?? null : null;
+        const status = cd ? (quotaBlocked ? 'capped' : 'cooldown') : !cooldownAvailable ? 'unknown'
+          : upstreamRemaining === 0 ? 'capped'
+          : bindingPercent !== null && bindingPercent >= 80 ? 'warning'
+          : upstreamUsed !== null && cap !== null ? 'healthy' : 'unknown';
         return {
-          suffix,
-          used: dailyCallsUsed,
-          usedPeriod: effectiveCallsUsed,
-          dbUsed: used,
-          cap: callCap,
-          remaining: callCap > 0 ? Math.max(0, callCap - dailyCallsUsed) : null,
-          percent,
-          // Sumber limit: endpoint live atau fallback dokumentasi/.env — dashboard
-          // menampilkan ini agar pengguna tahu seberapa valid angkanya.
-          limitSource: liveLimit?.source ?? 'Batas pengaman bot; kuota upstream belum diketahui',
-          limitIsLive: liveLimit?.isLive ?? false,
-          officialLimitLabel: liveLimit?.officialLabel ?? null,
-          tokensPerMinute: liveLimit?.tokensPerMinute ?? null,
-          bindingPercent,
-          bindingMetric,
-          // Untuk provider NEURON (Cloudflare), kirim NEURON terpakai sebagai
-          // `tokensUsed` agar frontend menampilkan satuan yang SAMA dengan cap.
-          // (Sebelumnya token 14.000 dibandingkan dengan cap neuron 10.000 ->
-          //  tampil "14.000 / 10.000" yang mencampur satuan.)
-          tokensUsed: adalahNeuron ? neuronTampil : tokensUsed,
-          tokenCap,
-          tokenPercent,
-          // NEURON (perbaikan 06 Okt 2026): khusus Cloudflare, tampilkan neuron
-          // terpakai & perkiraan balasan tersisa — agar dashboard TIDAK lagi
-          // menyamakan neuron dengan token (dulu salah lapor "KUOTA HABIS").
-          neuronUsed: adalahNeuron ? neuronTampil : undefined,
-          neuronCap: adalahNeuron ? neuronCap : undefined,
-          balasanTersisa: adalahNeuron ? (kenaCooldownNeuron ? 0 : balasanTersisa) : undefined,
-          // Satuan untuk KEY INI (agar frontend menulis "neuron", bukan "Token").
-          satuanToken: adalahNeuron ? 'neuron' : 'token',
-          isRealTokenData,
-          tokenLimitType: p.tokenLimitType,
-          tokenLimitLabel: p.tokenLimitLabel,
-          resetCycle: p.resetCycle,
-          contextWindow: p.contextWindow,
-          avgTokensPerChat: providerAvgTokens,
-          status,
-          // "Live synced" = ada data langsung dari endpoint provider — baik pemakaian
-          // (OpenRouter) maupun batas kuota (Groq/Cloudflare via header).
-          // (xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.)
-          isLiveSynced: liveLimit?.requestsUsedToday != null || liveLimit?.tokensUsedToday != null,
-          usageSource: liveLimit?.requestsUsedToday != null || liveLimit?.tokensUsedToday != null ? 'upstream' : 'bot',
-          liveUserName: null,
-          liveUserEmail: null,
-          liveRemainingTokens: remainingTokens,
-          liveUsageUsd: orLive?.usageUsd ?? null,
-          liveDailyUsageUsd: orLive?.usageDailyUsd ?? null,
-          isFreeTier: orLive?.isFreeTier ?? true,
-          // ── INFO COOLDOWN (perbaikan 09 Okt 2026) ──
-          // Agar dashboard menampilkan ALASAN key tidak dipakai (mis. "neuron habis
-          // sampai 00:05 UTC") — bukan hanya diam-diam hijau.
-          cooldownAlasan: cdInfo?.alasan ?? null,
-          cooldownSampai: cdInfo?.until ?? null,
+          suffix: publicAccess ? 'public' : key.slice(-4), publicAccess,
+          used: day.used, usedPeriod: period.used, dbUsed: period.used,
+          rawTokensToday: day.tokens, recordedTokensToday: day.recorded,
+          rawTokensPeriod: period.tokens, recordedTokensPeriod: period.recorded,
+          cap, guardCap: p.cap || null, remaining: upstreamRemaining, percent,
+          tokensUsed, tokenCap, tokenPercent, bindingPercent,
+          bindingMetric: (tokenPercent ?? -1) >= (percent ?? 0) ? 'tokens' : 'calls',
+          satuanToken: isNeuron ? 'neuron' : 'token', tokenEstimated: isNeuron,
+          isRealTokenData: !isNeuron && day.tokens !== null,
+          neuronUsed: isNeuron ? tokensUsed : undefined, neuronCap: isNeuron ? tokenCap : undefined,
+          limitSource: upstream?.source ?? (isNeuron ? 'Dokumentasi Cloudflare' : 'Belum terverifikasi'),
+          limitIsLive: !!upstream?.isLive, officialLimitLabel: upstream?.officialLabel ?? null,
+          tokensPerMinute: upstream?.tokensPerMinute ?? null,
+          usageSource: 'bot', isLiveSynced: false,
+          upstreamRequestsUsed: upstreamUsed, upstreamTokensUsed: upstreamTokens,
+          upstreamTokensRemaining: usageFresh ? upstream?.tokensRemaining ?? null : null,
+          upstreamCheckedAt: cached ? new Date(cached.at).toISOString() : null, upstreamStale: !usageFresh,
+          status, cooldownAlasan: cd?.alasan ?? null, cooldownSampai: cd?.until ?? null,
         };
       });
-
-      const totalPoolCap = effectiveCapPerKey * p.keys.length;
-      // Total cap token pool = JUMLAH cap tiap key (bukan cap seragam x jumlah key).
-      // Untuk xKiro ini 1jt + 500k + 500k = 2jt (sebelumnya salah: 500k x 3 = 1,5jt).
-      // ── BUG YANG DIPERBAIKI (06 Okt 2026) ──
-      // LAPORAN PEMILIK PRODUK: ringkasan Cloudflare menampilkan "42K Token / 30K
-      // Token (100%)" padahal per-kunci sudah benar "14.000 / 10.000 (13%)".
-      //
-      // SEBAB: `kd.tokenCap` untuk Cloudflare berisi NEURON (10.000 per kunci),
-      // sehingga total = 30.000. Sementara `poolTokensUsed` berisi TOKEN (42.000).
-      // Membandingkan token dengan neuron = SALAH SATUAN (bug yang sama seperti
-      // sebelumnya, kali ini di tingkat RINGKASAN provider).
-      //
-      // PERBAIKAN: untuk provider ber-satuan NEURON, jumlahkan juga neuron terpakai
-      // per kunci agar pembandingannya setara.
-      const adalahProviderNeuron = Boolean((p as { __neuron?: boolean }).__neuron);
-      const totalTokenPoolCap = keysDetail.reduce((acc, kd) => {
-        const capForRange = kd.tokenCap;
-        return acc + (capForRange > 0 ? capForRange : 0);
-      }, 0);
-      const poolPercent = totalPoolCap > 0 ? Math.min(100, Math.round((poolUsed / totalPoolCap) * 100)) : 0;
-      
-      const anyRealTokenData = keysDetail.some((kd) => kd.isRealTokenData);
-      // Untuk provider NEURON (Cloudflare), jumlahkan NEURON terpakai (bukan token)
-      // agar pembandingan dengan cap neuron setara.
-      const poolNeuronUsed = adalahProviderNeuron
-        ? keysDetail.reduce((acc, kd) => acc + (Number((kd as { neuronUsed?: number }).neuronUsed) || 0), 0)
-        : 0;
-      let poolTokensUsed = 0;
-      // (Cabang khusus xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.
-      //  Dua cabang di bawah sudah mencakup semua kasus yang tersisa.)
-      if (anyRealTokenData) {
-        // Prioritas data token riil dari DB (valid untuk TPD & pelaporan)
-        for (const kd of keysDetail) {
-          poolTokensUsed += kd.tokensUsed;
-        }
-      } else {
-        poolTokensUsed = providerComputedTokens > 0
-          ? providerComputedTokens
-          : keysDetail.reduce((acc, kd) => acc + kd.tokensUsed, 0);
-      }
-      // Untuk provider NEURON: pakai neuron (bukan token) sebagai pembanding.
-      const poolNilaiDipakai = adalahProviderNeuron && poolNeuronUsed > 0 ? poolNeuronUsed : poolTokensUsed;
-      let poolTokenPercent = totalTokenPoolCap > 0 ? Math.min(100, Math.round((poolNilaiDipakai / totalTokenPoolCap) * 100)) : 0;
-      // ── PERBAIKAN (09 Okt 2026): header provider harus JUJUR ──
-      // LAPORAN: "bar dan perhitungannya tidak singkron". Gambar nyata: header
-      // menampilkan "13.819/30.000 neuron (46%)" dengan bar 46%, PADAHAL ketiga
-      // kunci sudah HABIS ("3 kunci sudah habis kuotanya"). Persentase pool yang
-      // dihitung dari penjumlahan internal selalu lebih rendah dari kenyataan
-      // (pencatatan token tidak lengkap).
-      //
-      // ATURAN: bila SEMUA kunci provider habis (capped), persentase pool WAJIB
-      // 100% — agar bar, angka, dan status SINKRON.
-      const semuaKunciHabis = keysDetail.length > 0 && keysDetail.every((kd) => kd.status === 'capped');
-      if (semuaKunciHabis && totalTokenPoolCap > 0) {
-        poolTokenPercent = 100;
-      }
-      // Pemakaian HARIAN pool — agar header kartu bisa menampilkan konteks cap harian
-      // tanpa mencampur akumulasi periode (temuan: "1728/1500" menyesatkan).
-      const poolUsedToday = keysDetail.reduce((acc, kd) => acc + (kd.used || 0), 0);
-      // Sisa token pool = jumlah sisa tiap key (menghormati cap per-key & data live).
-      const poolTokensRemaining = keysDetail.reduce((acc, kd) => acc + (kd.liveRemainingTokens ?? kd.remaining ?? 0), 0);
-      const poolCappedKeys = keysDetail.filter((kd) => kd.status === 'capped').length;
-
-      // Label limit pool: prioritaskan label resmi dari endpoint (mis. Groq
-      // "1.000 RPD • 8.000 TPM", Cloudflare "Rate limit 1.200 req/5 menit"), karena
-      // label statis di .env terbukti salah (200K TPD Groq, 120 RPD Cloudflare).
-      const firstLiveLimit = keysDetail.map((kd) => kd.officialLimitLabel).find((l) => l) ?? null;
-      const poolTokenLimitLabel = firstLiveLimit ?? p.tokenLimitLabel;
-
+      const sumKnown = (field: 'rawTokensToday' | 'rawTokensPeriod' | 'tokensUsed') => keysDetail.every((k) => k[field] !== null)
+        ? keysDetail.reduce((sum, k) => sum + (k[field] ?? 0), 0) : null;
+      const usedToday = keysDetail.reduce((sum, k) => sum + k.used, 0);
+      const usedPeriod = keysDetail.reduce((sum, k) => sum + k.usedPeriod, 0);
+      const totalTokenCap = keysDetail.length && keysDetail.every((k) => k.tokenCap !== null)
+        ? keysDetail.reduce((sum, k) => sum + (k.tokenCap ?? 0), 0) : null;
       return {
-        kind: p.kind,
-        tier: modelCatalog.find((m) => m.provider === p.kind)?.tier,
-        displayName: p.displayName,
-        primaryModel: p.primaryModel,
-        backupModel: p.backupModel,
-        allModels: p.allModels,
-        contextWindow: p.contextWindow,
-        tokenLimitType: p.tokenLimitType,
-        tokenLimitLabel: poolTokenLimitLabel,
-        limitSourceLive: keysDetail.some((kd) => kd.limitIsLive),
-        resetCycle: p.resetCycle,
-        keyCount: p.keys.length,
-        capPerKey: effectiveCapPerKey,
-        totalCap: totalPoolCap,
-        usedToday: poolUsedToday,
-        usedPeriod: poolUsed,
-        usedTodayDaily: poolUsedToday,
-        percent: poolPercent,
-        tokenCapPerKey: effectiveTokenCapPerKey,
-        tokenCapPerKeyList: p.tokenCapPerKeyList,
-        totalTokenCap: totalTokenPoolCap,
-        // Untuk provider NEURON (Cloudflare), kirim NEURON terpakai agar frontend
-        // menampilkan satuan yang sama dengan cap-nya (bug "42K/30K" 06 Okt 2026).
-        totalTokensUsed: adalahProviderNeuron && poolNeuronUsed > 0 ? poolNeuronUsed : poolTokensUsed,
-        satuanToken: adalahProviderNeuron ? 'neuron' : 'token',
-        totalTokensRemaining: poolTokensRemaining,
-        cappedKeys: poolCappedKeys,
-        tokenPercent: poolTokenPercent,
-        avgTokensPerChat: providerAvgTokens,
-        realUsageCalls: pStats.callsWithRealTokens,
-        realTokensUsed: pStats.realTokens,
-        isLiveSynced: keysDetail.some((kd) => kd.isLiveSynced),
+        kind: p.kind, tier: modelCatalog.find((m) => m.provider === p.kind)?.tier,
+        displayName: p.displayName, primaryModel: p.primaryModel, backupModel: p.backupModel, allModels: p.allModels,
+        endpoint: publicAccess ? 'opencode.ai/inference/v1' : null, publicAccess,
+        keyCount: publicAccess ? 0 : keys.length, accessCount: keys.length,
+        usedToday, usedTodayDaily: usedToday, usedPeriod,
+        repliesPeriod: pStats?.totalCalls ?? 0, recordedReplyTokensPeriod: pStats?.realTokens ?? 0,
+        rawTokensToday: sumKnown('rawTokensToday'), rawTokensPeriod: sumKnown('rawTokensPeriod'),
+        recordedTokensToday: keysDetail.reduce((sum, k) => sum + k.recordedTokensToday, 0),
+        recordedTokensPeriod: keysDetail.reduce((sum, k) => sum + k.recordedTokensPeriod, 0),
+        totalTokensUsed: sumKnown('tokensUsed'), totalTokenCap,
+        satuanToken: p.kind === 'cloudflare' ? 'neuron' : 'token', tokenEstimated: p.kind === 'cloudflare',
+        tokenLimitLabel: p.tokenLimitLabel, resetCycle: p.resetCycle,
         lastUsedAt: lastUsedByProvider[p.kind] || null,
+        cappedKeys: keysDetail.filter((k) => k.status === 'capped' || k.status === 'cooldown').length,
         keys: keysDetail,
       };
     });
+    const totalPoolKeys = pools.reduce((sum, p) => sum + p.keyCount, 0);
+    const totalCallsPeriod = pools.reduce((sum, p) => sum + p.usedPeriod, 0);
+    const totalCallsToday = pools.reduce((sum, p) => sum + p.usedToday, 0);
+    const totalRecordedTokensPeriod = pools.reduce((sum, p) => sum + p.recordedTokensPeriod, 0);
+    const totalRecordedTokensToday = pools.reduce((sum, p) => sum + p.recordedTokensToday, 0);
+    const tokensPeriodComplete = pools.every((p) => p.rawTokensPeriod !== null);
+    const tokensTodayComplete = pools.every((p) => p.rawTokensToday !== null);
 
     // 6. Hitung jenis media dari sampel pesan pengguna
     const mediaCounts = {
@@ -1170,7 +687,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     res.status(200).json({
       ok: true,
       botName: config.botName,
-      serverTime: now.toISOString(),
+      serverTime: new Date().toISOString(),
+      period: { start: startDateIso, end: now.toISOString(), timeZone: 'UTC' },
+      quotaDay: todayStr, quotaTimeZone: 'UTC', quotaPlatform: 'all',
+      dataTruncated, cooldownAvailable, refreshIntervalMs: 5000,
       range,
       rangeLabel,
       platform: filterPlatform || 'all',
@@ -1185,16 +705,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         daysCount,
         totalMessagesAllTime: totalMessagesAllTime ?? 0,
         totalMessagesPeriod: totalMessagesPeriod ?? 0,
-        totalMessagesToday: totalMessagesPeriod ?? 0,
+        totalMessagesToday: range === 'today' ? totalMessagesPeriod : null,
         whatsappPeriod: waPeriod ?? 0,
-        whatsappToday: waPeriod ?? 0,
+        whatsappToday: range === 'today' ? waPeriod : null,
         telegramPeriod: telePeriod ?? 0,
-        telegramToday: telePeriod ?? 0,
+        telegramToday: range === 'today' ? telePeriod : null,
         totalKeys: totalPoolKeys,
         totalCallsPeriod,
-        totalCallsToday: totalCallsPeriod,
-        totalTokensPeriod: totalComputedTokensPeriod,
-        totalTokensToday: totalComputedTokensPeriod,
+        totalCallsToday,
+        totalTokensPeriod: tokensPeriodComplete ? totalRecordedTokensPeriod : null,
+        totalTokensToday: tokensTodayComplete ? totalRecordedTokensToday : null,
+        recordedTokensPeriod: totalRecordedTokensPeriod, recordedTokensToday: totalRecordedTokensToday,
+        totalRepliesPeriod: totalModelCalls, quotaPlatform: 'all',
+        publicAccessCount: pools.filter((p) => p.publicAccess).length,
         avgTokensPerChat: overallAvgTokens,
         realTokensPeriod: grandTotalRealTokens,
         callsWithRealTokens: grandTotalCallsWithRealTokens,
@@ -1215,28 +738,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       modelsBreakdown,
       mediaCounts,
       version: APP_VERSION,
-      // Pemakaian WEB SEARCH (kuota terpisah dari kuota token).
-      //
-      // CATATAN (04 Okt 2026): panel ini dulu melacak kuota xKiro (8 kunci x 20
-      // pencarian/hari). Karena xKiro DIHAPUS (semua akun disuspend permanen 403),
-      // pelacakan kuota berbayar itu tidak lagi relevan.
-      //
-      // Pencarian kini sepenuhnya memakai mesin gratis tanpa kuota (Bing RSS/HTML,
-      // Google News, feed media, Wikipedia, HN). Karena tidak ada kuota, panel ini
-      // melaporkan status "tanpa batas" secara jujur — bukan angka palsu.
       webSearch: {
-        keysTotal: 0,
-        keysAvailable: 0,
-        keysCoolingDown: 0,
-        capPerKey: 0,
-        capTotal: 0,
-        usedToday: 0,
-        usedPercent: 0,
-        remainingToday: 0,
-        usedSource: 'tanpa-kuota',
-        remainingSource: 'tanpa-kuota',
-        unlimited: true,
-        note: 'Pencarian memakai mesin gratis tanpa kuota (Bing RSS/HTML, Google News, feed media, Wikipedia, HN).',
+        mode: 'public-engines', keysTotal: 0, quotaApplicable: false,
+        usedToday: null, remainingToday: null, capTotal: null, capPerKey: null,
+        usedSource: 'unmeasured', availability: 'unverified',
+        note: 'Mesin pencari publik tanpa API key. Jumlah pencarian dan ketersediaan upstream belum diukur; pembatasan layanan tetap dapat berlaku.',
       },
     });
   } catch (err) {

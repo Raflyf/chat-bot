@@ -48,7 +48,7 @@ test('OpenCode menjaga input multimodal dan sesi stabil', async () => {
   const session = load('opencodeSession', { crypto, Date, opencodeSessionCache: undefined });
   const requests = [];
   const call = load('opencodeChat', {
-    config, opencodeSession: session, process: { cwd: () => '/app', platform: 'linux' },
+    config, BASE_GEN: {temperature:0.45,presence_penalty:0,frequency_penalty:0.15}, opencodeSession: session, process: { cwd: () => '/app', platform: 'linux' },
     join: (...parts) => parts.join('/'), tmpdir: () => '/tmp', OPENCODE_BASE: 'https://opencode.ai/inference/v1',
     messagesContainImage: () => true, openAiDelta() {}, openAiUsage() {}, opencodeFetch() {},
     streamSse: async (...args) => { requests.push(args); return { text: 'ok' }; },
@@ -62,6 +62,8 @@ test('OpenCode menjaga input multimodal dan sesi stabil', async () => {
   assert.equal(requests[0][2].messages.at(-1).content, input[0].content);
   assert.equal(input.length, 1);
   assert.equal(requests[0][2].tools.map(t => t.function.name).join(','), 'read,shell');
+  assert.equal(requests[0][2].temperature, 0.45);
+  assert.equal(requests[0][2].frequency_penalty, 0.15);
 });
 
 test('neuron habis hanya membekukan key terkait', () => {

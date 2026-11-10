@@ -1052,6 +1052,14 @@ section { margin-bottom: var(--s5); }
   color: var(--ok);
   border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
 }
+.badge-live-sync, .badge-bot-sync { white-space: nowrap; flex-shrink: 0; line-height: 1.4; }
+.upstream-validation { text-align: right; min-width: 140px; }
+.upstream-validation .key-badge-status { margin-top: 6px; }
+.status-unknown { color: var(--text-secondary); }
+#live-upstream-section .data-table { min-width: 880px; }
+#live-upstream-section .table-wrap { min-width: 0; overflow-x: auto; }
+#websearch-panel .websearch-bar[hidden] { display: none; }
+
 .live-stats-ribbon {
   display: grid;
   gap: var(--s3);

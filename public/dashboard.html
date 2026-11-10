@@ -154,7 +154,7 @@
           </span>
           <span class="brand-sub">
             <span class="pulse-dot-cyan" aria-hidden="true"></span>
-            <span id="server-time">Menyambungkan ke server...</span>
+            <span id="server-time" role="status" aria-live="polite">Menyambungkan ke server...</span>
           </span>
         </span>
       </a>
@@ -162,12 +162,11 @@
       <div class="console-head-actions">
         <span class="status-pill" title="Status mesin bot dan konektivitas">
           <span class="pulse-dot-cyan" aria-hidden="true"></span>
-          <span class="status-text-full" data-i18n="dash.status.full">Sistem aktif</span>
-          <span class="status-text-short" data-i18n="dash.status.short">Aktif</span>
+          <span id="monitoring-status">Menunggu data</span>
         </span>
 
-        <button type="button" class="btn btn-ghost btn-sm active" id="btn-auto" aria-pressed="true" title="Nyalakan atau matikan muat ulang otomatis tiap 15 detik">
-          <span data-i18n="dash.auto">Otomatis 15 dtk</span>
+        <button type="button" class="btn btn-ghost btn-sm active" id="btn-auto" aria-pressed="true" title="Nyalakan atau matikan muat ulang otomatis tiap 5 detik saat tab terlihat">
+          <span data-i18n="dash.auto">Otomatis 5 dtk</span>
         </button>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-manual-refresh" title="Muat ulang metrik sekarang">
           <span id="btn-refresh-icon" aria-hidden="true">
@@ -216,7 +215,7 @@
     <div class="console-head">
       <div>
         <h1 data-i18n="dash.title">Pemantauan sistem</h1>
-        <p data-i18n="dash.desc">Kuota tiap kunci, model yang menjawab, dan riwayat percakapan. Semua angka diambil langsung dari penyedia dan basis data.</p>
+        <p data-i18n="dash.desc">Kuota tiap kunci, model yang menjawab, dan riwayat percakapan. Catatan bot terpisah dari snapshot kuota upstream; angka yang belum terukur ditandai.</p>
       </div>
       <div class="console-meta">
         <span>Sinkron terakhir: <strong id="sync-time">&ndash;</strong></span>
@@ -298,6 +297,8 @@
             <option value="healthy" data-i18n="dash.status.healthy">Sehat, di bawah 80 persen</option>
             <option value="warning" data-i18n="dash.status.warning">Waspada, 80 persen ke atas</option>
             <option value="capped" data-i18n="dash.status.capped">Limit habis</option>
+            <option value="cooldown">Cooldown sementara</option>
+            <option value="unknown">Belum diketahui</option>
           </select>
         </div>
       </div>
@@ -310,7 +311,7 @@
     <section class="live-upstream-card" id="live-upstream-section" aria-labelledby="upstream-title">
       <div class="console-head">
         <div>
-          <h2 class="card-title" id="upstream-title" data-i18n="dash.upstream.title">Sisa kuota dan pemakaian token upstream</h2>
+          <h2 class="card-title" id="upstream-title" data-i18n="dash.upstream.title">Panggilan tercatat dan snapshot kuota</h2>
           <p class="card-sub" data-i18n="dash.upstream.desc">
             Sumber per penyedia: data upstream bila tersedia, selainnya catatan internal bot. Angka internal tidak mencakup pemakaian aplikasi lain.
           </p>
@@ -322,9 +323,9 @@
 
       <div class="live-upstream-row">
         <div class="upstream-stat">
-          <span class="upstream-stat-label" data-i18n="dash.upstream.totalCap">Total batas kuota harian</span>
+          <span class="upstream-stat-label" data-i18n="dash.upstream.totalCap">Panggilan tercatat hari ini (UTC)</span>
           <span class="upstream-stat-value" id="upstream-total-cap">0</span>
-          <span class="upstream-stat-sub" id="upstream-total-cap-sub" data-i18n="dash.upstream.totalCapSub">Seluruh penyedia terdaftar</span>
+          <span class="upstream-stat-sub" id="upstream-total-cap-sub" data-i18n="dash.upstream.totalCapSub">Semua platform · provider aktif</span>
         </div>
         <div class="upstream-stat">
           <span class="upstream-stat-label" id="upstream-label-used" data-i18n="dash.upstream.usedToday">Token terpakai hari ini</span>
@@ -332,19 +333,19 @@
           <span class="upstream-stat-sub" id="upstream-total-used-sub" data-i18n="dash.upstream.usedSub">Akumulasi global</span>
         </div>
         <div class="upstream-stat">
-          <span class="upstream-stat-label" data-i18n="dash.upstream.remaining">Sisa kuota bersih</span>
+          <span class="upstream-stat-label" data-i18n="dash.upstream.remaining">Akses sedang dibatasi</span>
           <span class="upstream-stat-value" id="upstream-total-remaining">0</span>
           <span class="upstream-stat-sub" id="upstream-remaining-pct" data-i18n="dyn.waitingData">Menunggu data</span>
         </div>
         <div class="upstream-stat">
-          <span class="upstream-stat-label" data-i18n="dash.upstream.keysConnected">Kunci dan pool terhubung</span>
+          <span class="upstream-stat-label" data-i18n="dash.upstream.keysConnected">Akses terkonfigurasi</span>
           <span class="upstream-stat-value" id="upstream-openrouter-status" data-i18n="dash.kpi.zeroKeys">0 kunci</span>
           <span class="upstream-stat-sub" id="upstream-openrouter-sub" data-i18n="dyn.waitingData">Menunggu data</span>
         </div>
-        <div class="upstream-stat" title="WhatsApp Cloud API memberi 1.000 sesi percakapan gratis per bulan. Satu sesi adalah jendela 24 jam per pengguna.">
+        <div class="upstream-stat" title="Estimasi sesi 24 jam berdasarkan pesan tersimpan; bukan saldo atau tagihan Meta.">
           <span class="upstream-stat-label" data-i18n="dash.upstream.waSessions">Sesi WhatsApp Cloud</span>
-          <span class="upstream-stat-value" id="upstream-wa-sessions">0 / 1.000</span>
-          <span class="upstream-stat-sub" id="upstream-wa-sessions-sub" data-i18n="dash.upstream.waSessionsSub">Sisa sesi gratis bulan ini</span>
+          <span class="upstream-stat-value" id="upstream-wa-sessions">&ndash;</span>
+          <span class="upstream-stat-sub" id="upstream-wa-sessions-sub" data-i18n="dash.upstream.waSessionsSub">Estimasi dari pesan, bukan tagihan Meta</span>
         </div>
       </div>
 
@@ -373,30 +374,29 @@
                  sendiri: "terpakai", dengan persen eksplisit. -->
             <span class="websearch-metric-label" data-i18n="dash.websearch.used">Pencarian terpakai</span>
             <span class="websearch-metric-value" id="websearch-used">0</span>
-            <span class="websearch-metric-note" id="websearch-used-note" data-i18n="dash.websearch.usedNote">dari 0 pencarian</span>
-            <div class="websearch-bar" role="img" aria-label="Pemakaian jatah pencarian">
+            <span class="websearch-metric-note" id="websearch-used-note" data-i18n="dash.websearch.usedNote">Belum terukur</span>
+            <div class="websearch-bar" hidden>
               <span id="websearch-bar-fill" style="width: 0%"></span>
             </div>
           </div>
           <div class="websearch-metric">
-            <span class="websearch-metric-label" data-i18n="dash.websearch.remaining">Sisa jatah</span>
+            <span class="websearch-metric-label" data-i18n="dash.websearch.remaining">Kuota per key</span>
             <span class="websearch-metric-value" id="websearch-remaining">0</span>
-            <span class="websearch-metric-note" id="websearch-remaining-note" data-i18n="dash.websearch.remainingNote">pencarian tersisa</span>
+            <span class="websearch-metric-note" id="websearch-remaining-note" data-i18n="dash.websearch.remainingNote">Kuota key tidak berlaku</span>
           </div>
           <div class="websearch-metric">
-            <span class="websearch-metric-label" data-i18n="dash.websearch.keys">Kunci siap pakai</span>
+            <span class="websearch-metric-label" data-i18n="dash.websearch.keys">Akses pencarian</span>
             <span class="websearch-metric-value" id="websearch-keys">0 / 0</span>
-            <span class="websearch-metric-note" id="websearch-keys-note" data-i18n="dash.websearch.keysOk">Semua kunci tersedia</span>
+            <span class="websearch-metric-note" id="websearch-keys-note" data-i18n="dash.websearch.keysOk">Menunggu data</span>
           </div>
           <div class="websearch-metric">
-            <span class="websearch-metric-label" data-i18n="dash.websearch.cap">Batas per kunci</span>
+            <span class="websearch-metric-label" data-i18n="dash.websearch.cap">Batas layanan</span>
             <span class="websearch-metric-value" id="websearch-cap">0</span>
-            <span class="websearch-metric-note" data-i18n="dash.websearch.capNote">pencarian per kunci per hari</span>
+            <span class="websearch-metric-note" data-i18n="dash.websearch.capNote">Pembatasan upstream dapat berlaku</span>
           </div>
         </div>
         <div class="websearch-foot" id="websearch-foot">
-          Web search memakai kuota terpisah dari kuota token. Saat ini bot memakai
-          mesin pencari cadangan tanpa kuota (selalu tersedia).
+          Mesin pencari publik tanpa API key. Jumlah pemakaian dan ketersediaan upstream belum diukur.
         </div>
       </div>
 
@@ -406,7 +406,7 @@
           <thead>
             <tr>
               <th scope="col" style="min-width:180px" data-i18n="dash.table.provider">Penyedia dan kunci</th>
-              <th scope="col" style="min-width:200px" data-i18n="dash.table.account">Akun terdaftar</th>
+              <th scope="col" style="min-width:200px" data-i18n="dash.table.account">Endpoint atau model</th>
               <th scope="col" style="min-width:200px" id="th-pemakaian" data-i18n="dash.table.usageToday">Pemakaian hari ini</th>
               <th scope="col" style="min-width:180px" id="th-sisa" data-i18n="dash.table.remainingToday">Sisa kuota hari ini</th>
               <th scope="col" style="min-width:110px;text-align:right" data-i18n="dash.table.validation">Validasi</th>
@@ -428,7 +428,7 @@
           <p class="card-sub" data-i18n="dash.matrix.desc">Model terkonfigurasi, urutan enam tier, dan jumlah balasan tercatat. Kemampuan menunjukkan jalur konfigurasi, bukan hasil uji langsung.</p>
         </div>
         <div class="console-head-actions">
-          <span class="badge"><span data-i18n="dash.matrix.total">Total inferensi</span> <strong id="matrix-total-inferensi">0x</strong></span>
+          <span class="badge"><span data-i18n="dash.matrix.total">Balasan tersimpan</span> <strong id="matrix-total-inferensi">0x</strong></span>
           <div class="pill-filter-group" id="matrix-time-filters" role="group" aria-label="Rentang waktu matriks model">
             <!-- Kelima rentang harus lengkap, sama seperti filter di header.
                  Sebelumnya "14 hari" hilang di sini sehingga rentang itu tidak

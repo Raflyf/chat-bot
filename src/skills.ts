@@ -1364,6 +1364,13 @@ export function stripMediaNarration(text: string): string {
  * untuk mengirim stiker. Mengembalikan teks bersih + emoji (hanya tag PERTAMA dipakai
  * — maksimal 1 stiker per balasan). Tag yang tersisa selalu dibuang dari teks.
  */
+/** Teks stiker yang diamati dipisah dari reaksi bot; tag tidak pernah dikirim ke user. */
+export function extractStickerReadTag(text: string): { text: string; stickerText?: string } {
+  const pattern = /\[\[sticker_read:([^\[\]\r\n]{0,240})\]\]/gi;
+  const match = pattern.exec(text);
+  return { text: text.replace(pattern, '').trim(), stickerText: match?.[1].trim().slice(0, 200) || undefined };
+}
+
 export function extractStickerTag(text: string): { text: string; sticker: string | null } {
   if (!text) return { text: '', sticker: null };
   // TANGKAP SEMUA VARIAN (temuan produksi 20 Sep 12:48 — model menulis "[sticker:]"
@@ -1501,7 +1508,7 @@ export function sanitizeAssistantOutput(
       .trim();
   }
 
-  let cleaned = cleanMathAndNoise(text, userPrompt);
+  let cleaned = cleanMathAndNoise(extractStickerReadTag(text).text, userPrompt);
   // Huruf KAPITAL pertama kata terduplikasi (temuan live 21 Sep: "HHalo! Lagi siap bantu..."
   // dari xKiro qwen3.8-max). Model kadang mengetik huruf pertama dua kali; terlihat seperti
   // typo bagi user. HANYA huruf kapital -> "HHalo" jadi "Halo", sementara kata berhuruf
@@ -2879,8 +2886,6 @@ export function systemPrompt(
   // universal — maka pola diperluas ke penanda FRUSTRASI UMUM.
   const annoyRe = new RegExp(
     [
-      // hinaan langsung
-      '\\b(?:bolot|dongo|dongok|gaje|goblok|bego|tolol|idiot|garing|cringe|gajelas|ga\\s*jelas|ngaco|ngawur|apasi|apasih|bacot|bodoh|nyebelin|ga\\s*nyambung)\\b',
       // FRUSTRASI / KECEWA (kalimat biasa, tanpa hinaan)
       '\\b(?:muter\\s*-?\\s*muter|mutar\\s*-?\\s*mutar|berputar\\s*-?\\s*putar|tidak\\s*sabar|gak\\s*sabar|ga\\s*sabar|nggak\\s*sabar|sudah\\s*kesekian|kesekian\\s*kali|ketiga\\s*kali|ke\\s*\\d+\\s*kali|sudah\\s*\\d+\\s*kali|berulang\\s*-?\\s*ulang|diulang\\s*terus|ulang\\s*mulu|susah\\s*(?:banget\\s*)?dijawab|sulit\\s*(?:banget\\s*)?dijawab|tidak\\s*dijawab|gak\\s*dijawab|belum\\s*dijawab|kok\\s*susah|kok\\s*sulit|males\\s*banget|capek\\s*nanya|buang\\s*waktu|percuma|ga\\s*guna|gak\\s*guna|nggak\\s*guna|tidak\\s*membantu|ga\\s*membantu|gak\\s*membantu|mengecewakan|kecewa|sebel|kesel|marah|emosi|frustrasi|frustasi)\\b',
       // keluhan tentang balasan
@@ -2909,7 +2914,8 @@ export function systemPrompt(
     sadRe.test(userPromptText) ||
     sakitFisikRe.test(userPromptText);
   // annoyActive = trajektori kesal beruntun (2+ pesan); dipakai juga oleh guard komplain gombalan
-  const annoyActive = annoyCount >= 2;
+  // Keluhan lama bukan alasan membekukan candaan pada pesan baru.
+  const annoyActive = annoyCount >= 2 && annoyRe.test(userPromptText) && !warmRe.test(userPromptText);
   if (annoyActive) {
     instructions.push(
       '',
@@ -2951,7 +2957,7 @@ export function systemPrompt(
       //  katanya seru" -> banter/roasting SANTAI yang dinikmati user adalah FITUR,
       // bukan pelanggaran. Hentikan HANYA bila user benar-benar minta berhenti.
       '  * BANTER SANTAI DIPERBOLEHKAN & DIANJURKAN bila dia menikmatinya (tertawa, membalas ledekan, ikut roasting). Roasting ringan dua arah itu seru — lanjutkan dengan takaran yang sama.',
-      '  * DILARANG KERAS MENGELEDEK/ROASTING saat dia sudah minta berhenti atau marah. Begitu dia bilang "jangan ngeledek", "gasuka", "aku marah", "nyebelin" -> HENTIKAN semua ledekan PERMANEN untuk sesi ini. Jangan mengulanginya walau hanya sedikit atau dibungkus emoji.',
+      '  * Hentikan ledekan bila dia benar-benar meminta berhenti atau marah. Hormati batas itu; bila dia sendiri kembali mengajak bercanda, sesuaikan lagi tanpa membawa suasana lama.',
       '  * DILARANG mengulang kata hinaan yang dia tujukan ke kamu (mis. dia bilang "DONGEK"/"bego" -> JANGAN mengamini atau mengulanginya, termasuk sebagai "candaan"). Cukup tanggapi santai tanpa mengulang kata itu.',
       '  * Bila dia bilang "ulangi" setelah marah: minta maaflah ulang dengan kalimat BARU yang lebih tulus, JANGAN bercanda dan JANGAN menyebut "otak refresh" atau lelucon sejenis.',
     );
@@ -3099,7 +3105,7 @@ export function systemPrompt(
     const mintaStopLedek = /\b(?:jangan\s+ngeledek|stop\s+ngel?edek|gausah\s+ngel?edek|ga\s*suka\s+di\s*ledek|aku\s+marah|jangan\s+becanda|serius\s+dong|ini\s+serius)\b/i;
     const ledekBeruntun = riwayatUser.filter((m) => ledekRe.test(m)).length;
     const userMenikmati = /(?:wkwk+|haha+|hehe+|🤣|😂|😹|😆)/i.test(gabungRiwayat);
-    const bolehBanter = ledekBeruntun >= 2 && userMenikmati && !mintaStopLedek.test(gabungRiwayat) && !annoyActive && !sadRecent;
+    const bolehBanter = ledekBeruntun >= 1 && (ledekRe.test(userPromptText) || userMenikmati || (registerGaul.test(userPromptText) && !registerFormal.test(userPromptText))) && !mintaStopLedek.test(gabungRiwayat) && !annoyActive && !sadRecent;
 
     if (bolehBanter) {
       instructions.push(
@@ -5009,6 +5015,7 @@ export async function describeImage(
    *  Ditambahkan 10 Okt 2026: sebelumnya tag ini DIBUANG tapi tidak diteruskan,
    *  sehingga bot TIDAK PERNAH membalas stiker dengan stiker. */
   sticker?: string | null;
+  stickerText?: string;
 }> {
   const isSticker = paksaStiker || mime.includes('webp');
   const isPdf = mime === 'application/pdf';
@@ -5050,6 +5057,7 @@ export async function describeImage(
       '4. BOLEH membalas dengan stiker: sisipkan SATU tag [[sticker:<emoji>]] di AKHIR balasan, emoji yang cocok dengan makna stiker.',
       '5. Maksimal 1 emoji wajar, atau tanpa emoji. DILARANG emoji robot/jejak kaki.',
       '6. Bila benar-benar tidak yakin: reaksi netral hangat yang singkat — jauh lebih baik daripada salah tebak dengan yakin.',
+      'Tambahkan [[sticker_read:teks yang benar-benar terlihat]] di akhir, terpisah dari reaksimu. Bila tidak ada tulisan yang bisa dipastikan, pakai [[sticker_read:]]. Ini metadata isi kiriman, bukan kalimat balasan.',
     ].filter(Boolean).join('\n');
   } else if (isPdf) {
     promptText = caption && caption.trim()
@@ -5146,12 +5154,12 @@ export async function describeImage(
   }
 
   const messages: ChatMsg[] = [
-    { role: 'system', content: systemPrompt(ctx, null, promptText) },
+    { role: 'system', content: systemPrompt(ctx, null, caption?.trim() || '') },
     ...historyParts,
     { role: 'user', content: parts },
   ];
 
-  const { text, via, tokens } = await chatRetry(messages, true, ctx?.chatId);
+  let { text, via, tokens } = await chatRetry(messages, true, ctx?.chatId);
   // ==========================================================================
   // PENYELAMAT JAWABAN TERPOTONG (temuan 24 Sep, keluhan pemilik produk).
   //
@@ -5170,7 +5178,9 @@ export async function describeImage(
   // Logika deteksi + lanjutan kini ada di helper bersama `continueIfTruncated`
   // (dipakai SEMUA jalur media, bukan hanya gambar) — lihat komentarnya.
   // ==========================================================================
-  const textLengkap = await continueIfTruncated(messages, text, ctx?.chatId);
+  const observed = extractStickerReadTag(await continueIfTruncated(messages, text, ctx?.chatId));
+  const textLengkap = observed.text;
+  let stickerText = isSticker ? observed.stickerText : undefined;
 
   // Sanitasi memakai teks user asli (caption) sebagai konteks sinyal humor — bukan teks instruksi.
   // mediaReply=true: buang narasi isi kiriman (kecuali user bertanya eksplisit) — ATURAN KERAS user.
@@ -5189,7 +5199,8 @@ export async function describeImage(
   // ── AMBIL TAG STIKER SEBELUM SANITIZE (perbaikan 10 Okt 2026) ──
   // sanitizeAssistantOutput MEMBUANG tag [[sticker:emoji]], jadi bila diambil
   // sesudahnya tag sudah hilang -> bot tidak pernah membalas stiker dengan stiker.
-  const stickerDariModel = extractStickerTag(String(textLengkap || '')).sticker;
+  let stickerDariModel = extractStickerTag(String(textLengkap || '')).sticker;
+  const mediaUserPrompt = isSticker ? `[Stiker WhatsApp] ${caption?.trim() || ''}` : caption?.trim() || undefined;
 
   let reply = ekstraksiTsv
     ? bersihkanArtefakEkstraksi(textLengkap)
@@ -5198,7 +5209,7 @@ export async function describeImage(
         // Untuk STIKER: userPrompt harus '[Stiker WhatsApp]' agar penegak stiker
         // (buangBalasanStikerGenerik) aktif. Sebelumnya caption kosong -> penegak
         // tidak jalan -> "iya salah liat" lolos.
-        isSticker ? '[Stiker WhatsApp]' : caption?.trim() || undefined,
+        mediaUserPrompt,
         recentOpenings,
         true,
         // Mode profesional juga berlaku untuk media: kiriman dokumen/foto kerja
@@ -5212,23 +5223,22 @@ export async function describeImage(
         undefined,
       );
 
-  // Jika sanitasi menghabiskan balasan, bangkitkan ulang secara dinamis (teks saja, murah)
+  // Regenerasi tetap memakai gambar dan konteks yang sama, bukan tebakan teks.
   if (!reply.trim()) {
     try {
-      const regen = await autoReply(
-        isSticker
-          ? `Respon 1 celetukan pendek maksimal 12 kata untuk stiker ${caption?.trim() ? `ber-emoji ${caption.trim()} ` : ''}ini, selaras obrolan terakhir dengan gayamu sendiri.`
-          : `Tanggapi ${isPdf ? 'dokumen' : 'gambar'} ini dengan gayamu sendiri secara dinamis${caption?.trim() ? ` (konteks: ${caption.trim()})` : ''}.`,
-        ctx,
-        null,
-      );
-      const regenText = String(regen.reply || '').trim();
+      const regen = await chatRetry(messages, true, ctx?.chatId);
+      const regenRead = extractStickerReadTag(regen.text);
+      const regenText = sanitizeAssistantOutput(regenRead.text, mediaUserPrompt, recentOpenings, true).trim();
       // FIX 21 Sep 13:24: hasil regen TIDAK boleh lewat stripMediaNarration lagi.
       // Regen sudah diinstruksikan eksplisit sebagai reaksi (bukan narasi); menerapkan
       // guard yang sama dua kali membuat balasan sah ikut terpotong jadi KOSONG
       // (temuan uji: stiker sintetis -> bot tidak membalas apa pun).
       if (regenText && !MEDIA_NARRATION_RE.test(regenText)) {
         reply = regenText;
+        via = regen.via;
+        tokens = regen.tokens;
+        stickerDariModel = extractStickerTag(regen.text).sticker;
+        stickerText = regenRead.stickerText ?? stickerText;
       } else if (regenText) {
         // Narasi terdeteksi: buang hanya kalimat naratifnya, sisakan reaksi bila ada.
         const kept = regenText
@@ -5236,7 +5246,13 @@ export async function describeImage(
           .filter((s) => s.trim() && !MEDIA_NARRATION_RE.test(s))
           .join(' ')
           .trim();
-        if (kept) reply = kept;
+        if (kept) {
+          reply = kept;
+          via = regen.via;
+          tokens = regen.tokens;
+          stickerDariModel = extractStickerTag(regen.text).sticker;
+          stickerText = regenRead.stickerText ?? stickerText;
+        }
       }
     } catch {
       // abaikan, fallback di bawah
@@ -5339,12 +5355,9 @@ export async function describeImage(
     // bila penegak mengosongkan, WAJIB dibangkitkan ulang oleh AI.
     if (isSticker && !reply.trim()) {
       try {
-        const regen2 = await autoReply(
-          `Respon 1 celetukan pendek maksimal 12 kata untuk stiker ${caption?.trim() ? `ber-emoji ${caption.trim()} ` : ''}ini, selaras obrolan terakhir dengan gayamu sendiri. Jangan menyalin instruksi.`,
-          ctx,
-          null,
-        );
-        const teks2 = String(regen2.reply || '').trim();
+        const regen2 = await chatRetry(messages, true, ctx?.chatId);
+        const regenRead2 = extractStickerReadTag(regen2.text);
+        const teks2 = sanitizeAssistantOutput(regenRead2.text, mediaUserPrompt, recentOpenings, true).trim();
         // Terima hanya bila hasilnya BUKAN narasi media dan BUKAN prompt-echo.
         if (
           teks2 &&
@@ -5354,6 +5367,10 @@ export async function describeImage(
           !metaMenyerah.test(teks2)
         ) {
           reply = teks2;
+          via = regen2.via;
+          tokens = regen2.tokens;
+          stickerDariModel = extractStickerTag(regen2.text).sticker;
+          stickerText = regenRead2.stickerText ?? stickerText;
           console.warn('[skills] Balasan stiker kosong setelah penegak — diregenerasi AI (aturan anti-hardcode).');
         }
       } catch {
@@ -5398,5 +5415,5 @@ export async function describeImage(
   if (isSticker && !stickerFinal) {
     stickerFinal = emojiStikerDariMakna(`${caption ?? ''} ${reply}`);
   }
-  return { reply, via, tokens, sticker: stickerFinal };
+  return { reply, via, tokens, sticker: stickerFinal, stickerText };
 }
