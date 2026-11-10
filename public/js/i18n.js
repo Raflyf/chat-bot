@@ -194,7 +194,7 @@
       "dash.status.healthy": "Healthy, below 80 percent",
       "dash.status.warning": "Warning, 80 percent or above",
       "dash.status.capped": "Limit reached",
-      "dash.upstream.desc": "Figures come from the official provider servers. Includes usage from the bot, IDE, and terminal sharing the same keys.",
+      "dash.upstream.desc": "Source varies by provider: upstream data when available, otherwise internal bot records. Internal records exclude other applications.",
       "dash.upstream.liveSync": "Live sync",
       "dash.upstream.totalCap": "Total daily quota cap",
       "dash.upstream.totalCapSub": "All registered providers",
