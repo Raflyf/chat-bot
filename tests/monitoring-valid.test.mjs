@@ -143,8 +143,8 @@ test('render: variabel TIDAK boleh dipakai di luar blok tempat didefinisikan', (
     'bar utama harus pakai (k.tokenPercent || 0)');
 });
 
-test('render: semua pool dirender (uji data nyata)', () => {
-  // Uji nyata: 8 pool dari API -> 8 card. Bukti bahwa loop tidak berhenti.
+test('render: referensi tokenPct tidak bocor dari scope blok', () => {
+  // Pemeriksaan source, bukan klaim telah merender respons API nyata.
   assert.ok(!/bindingIsToken \? tokenPct/.test(DASH), 'tidak boleh ada pemakaian tokenPct di luar scope');
 });
 
@@ -160,9 +160,26 @@ test('sinkron: TABEL BAWAH juga pakai metrik binding (bukan request saja)', () =
   const barPct = (fn.match(/progress-bar-fill \$\{pct >= 100/g) || []).length;
   assert.equal(barPct, 0, 'bar tabel jangan pakai `pct` mentah — pakai bindingPct');
   // Provider yang punya metrik token harus memakai bindingPct.
-  for (const kind of ['nvidia', 'dahl', 'xkiro', 'cloudflare']) {
+  for (const kind of ['groq', 'cloudflare']) {
     assert.ok(fn.includes(`p.kind === "${kind}"`), `${kind} harus ada di tabel`);
   }
   assert.ok(/const bindingPct = typeof k\.bindingPercent === "number"/.test(fn),
     'tabel harus menghitung bindingPct dari k.bindingPercent');
+});
+
+test('monitoring: batas tidak diketahui bukan tak terbatas, token Groq dari API', () => {
+  assert.ok(!DASH.includes('"Uncapped"'));
+  assert.ok(!DASH.includes('const tpdCap = 200000'));
+  assert.ok(DASH.includes('const tpdCap = Number(k.tokenCap) || 0'));
+  assert.ok(DASH.includes('Batas upstream belum diketahui'));
+  assert.ok(STATS.includes('usageSource:'));
+  assert.ok(STATS.includes('isLiveSynced: liveLimit?.requestsUsedToday != null || liveLimit?.tokensUsedToday != null'));
+});
+
+test('monitoring: pool aktif tanpa menghapus klasifikasi historis', () => {
+  assert.ok(!STATS.includes('config.pools.dahl'));
+  assert.ok(!STATS.includes('config.pools.nvidia'));
+  assert.ok(STATS.includes("'dahl'"));
+  assert.ok(STATS.includes("'nvidia'"));
+  assert.ok(STATS.includes('const dailyCallsUsed = liveCallsUsed ?? todayUsedForKey'));
 });

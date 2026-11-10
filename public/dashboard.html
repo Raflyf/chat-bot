@@ -286,14 +286,12 @@
         <div class="console-head-actions">
           <div class="pill-filter-group" id="provider-filter-pills" role="group" aria-label="Penyedia">
             <button type="button" class="pill-filter-btn active" data-provider="all" data-i18n="dash.filter.all">Semua</button>
-            <button type="button" class="pill-filter-btn" data-provider="dreamprompting">DreamPrompting</button>
-            <button type="button" class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
             <button type="button" class="pill-filter-btn" data-provider="opencode">OpenCode</button>
-            <button type="button" class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
-            <button type="button" class="pill-filter-btn" data-provider="nvidia">NVIDIA NIM</button>
+            <button type="button" class="pill-filter-btn" data-provider="cloudflare">Cloudflare</button>
             <button type="button" class="pill-filter-btn" data-provider="groq">Groq</button>
+            <button type="button" class="pill-filter-btn" data-provider="dreamprompting">DreamPrompting</button>
+            <button type="button" class="pill-filter-btn" data-provider="openrouter">OpenRouter</button>
             <button type="button" class="pill-filter-btn" data-provider="gemini">Gemini</button>
-            <button type="button" class="pill-filter-btn" data-provider="dahl">Dahl</button>
           </div>
           <select id="key-status-filter" class="filter-select" aria-label="Filter status kunci">
             <option value="all" data-i18n="dash.filter.allStatus">Semua status</option>
@@ -427,7 +425,7 @@
       <div class="console-head">
         <div>
           <h2 class="card-title" id="matrix-title"><span id="models-section-title" data-i18n="dash.matrix.title">Model AI dan pemantauan inferensi</span></h2>
-          <p class="card-sub" data-i18n="dash.matrix.desc">Kesehatan, latensi rata-rata, dan jumlah eksekusi tiap model di rantai delapan tingkat.</p>
+          <p class="card-sub" data-i18n="dash.matrix.desc">Model terkonfigurasi, urutan enam tier, dan jumlah balasan tercatat. Kemampuan menunjukkan jalur konfigurasi, bukan hasil uji langsung.</p>
         </div>
         <div class="console-head-actions">
           <span class="badge"><span data-i18n="dash.matrix.total">Total inferensi</span> <strong id="matrix-total-inferensi">0x</strong></span>
@@ -544,10 +542,10 @@
             <option value="cloudflare">Cloudflare</option>
             <option value="opencode">OpenCode</option>
             <option value="openrouter">OpenRouter</option>
-            <option value="nvidia">NVIDIA NIM</option>
+            <option value="nvidia">NVIDIA NIM (riwayat)</option>
             <option value="groq">Groq</option>
             <option value="gemini">Gemini</option>
-            <option value="dahl">Dahl Global</option>
+            <option value="dahl">Dahl Global (riwayat)</option>
           </select>
         </div>
         <div class="filter-spacer"></div>

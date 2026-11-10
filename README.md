@@ -34,7 +34,7 @@ Asisten AI multimodal untuk Telegram dan WhatsApp. Dibangun dengan TypeScript, V
 - **Memori & Konteks Percakapan**: Menjaga kesinambungan alur obrolan secara alami dengan penyimpanan aman di Supabase PostgreSQL.
 - **Pencatatan Pribadi**: Catatan/jurnal, daftar tugas (dengan prioritas & tenggat), catatan keuangan (pengeluaran/pemasukan + rekap per kategori), dan pelacak kebiasaan (*streak*). Bisa lewat perintah `/` atau **bahasa alami**.
 - **Pengingat Akurat**: Dijadwalkan 1 menit s/d **30 hari** ke depan, mendukung bahasa alami (*"ingatkan besok jam 8"*, *"ingatkan minggu depan"*). Pengiriman berlapis: GitHub Actions tiap 5 menit + pemeriksaan saat ada pesan masuk.
-- **Keandalan Tinggi**: Sistem failover berlapis multi-provider dengan rotasi kunci, circuit breaker, cooldown presisi, dan **balapan model** (model utama & cadangan dikirim bersamaan; yang tercepat menang).
+- **Failover Enam Tier**: Rotasi kunci, circuit breaker, dan balapan khusus teks (`RACE_MODELS=1`): primer mulai dahulu, satu cadangan menyusul setelah 400 ms. Vision mengikuti rantai eksplisit tanpa balapan.
 - **Zona Waktu Dinamis**: Mengenali waktu lokal secara akurat (WIB, WITA, WIT, dan waktu internasional) berdasarkan deteksi nomor atau lokasi GPS.
 
 ---
@@ -84,7 +84,22 @@ Deteksi niat tetap konservatif (berlapis), sehingga obrolan biasa (mis. *"aku ta
 
 Sistem merutekan setiap percakapan melalui rantai failover bertingkat secara mandiri. Bila pemrosesan pada satu jalur mengalami kegagalan, timeout, atau menyentuh batas kapasitas, sistem secara otomatis mengalihkan permintaan ke jalur berikutnya tanpa intervensi manual.
 
-Algoritma pemantau latensi dan circuit breaker terus mengevaluasi kesehatan tiap rute, memprioritaskan jalur yang paling responsif, dan memastikan kelangsungan layanan percakapan tetap stabil 24/7.
+Konfigurasi model bersumber dari [env.ts](<src/env.ts>); urutan eksekusi dari [providers.ts](<src/providers.ts>). Kontrak 10 November 2026:
+
+| Tier | Provider | Primer teks | Cadangan teks |
+| --- | --- | --- | --- |
+| 1 | OpenCode | `deepseek-v4.1-flash-free` | `glm-5.3-flash-free` |
+| 2 | Cloudflare | `@cf/qwen/qwen3.8-27b` | `@cf/nvidia/nemotron-3-120b-a12b` |
+| 3 | Groq | `qwen/qwen3.8-27b` | `openai/gpt-oss-120b` |
+| 4 | DreamPrompting | `groq/qwen/qwen3.8-27b` | Tidak ada |
+| 5 | OpenRouter | `nvidia/nemotron-3.5-super-vl:free` | `nvidia/nemotron-3-ultra-550b-a55b:free` |
+| 6 | Gemini | `gemini-2.5-flash` | `gemini-flash-lite-latest` |
+
+Foto/stiker memakai `visionChain` terpisah. PDF/audio/video native memakai `geminiVision`: Gemini 2.5 Flash, lalu Flash Lite Latest. Transkripsi memakai `groqWhisperPrimary`, `groqWhisperBackup`, dan `cfWhisper` dari konfigurasi.
+
+Dahl dan NVIDIA NIM tidak masuk pool aktif; riwayat pemakaian lama tetap disimpan. Semua kunci Cloudflare tetap dipertahankan: batas harian memicu cooldown sementara, bukan penghapusan kunci.
+
+Dashboard mengambil katalog dari API, bukan daftar model salinan. Angka bot dibedakan dari pemakaian upstream; batas yang belum terverifikasi bukan berarti tak terbatas. Respons HTTP 200 tanpa isi tidak membuktikan inferensi berhasil.
 
 ---
 

@@ -10,11 +10,9 @@ import { db } from './db.js';
 export type ProviderKind =
   | 'dreamprompting'
   | 'cloudflare'
-  | 'nvidia'
   | 'openrouter'
   | 'groq'
   | 'gemini'
-  | 'dahl'
   | 'opencode';
 // CATATAN (04 Okt 2026): 'xkiro' DIHAPUS dari union ini — semua 8 akun
 // disuspend permanen (HTTP 403 error 1010). 'xkiro-search' juga dihapus karena

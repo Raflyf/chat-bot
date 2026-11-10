@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { config } from './env.js';
 import { cooldownMemori, setCooldown, hapusCooldown, mulaiHidrasiLatar } from './cooldown.js';
 import { hitungNeuron } from './neuron.js';
@@ -130,9 +132,8 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   // Neuron direset harian -> cooldown sampai reset UTC + margin.
   if (kind === 'cloudflare' && /neurons|daily free allocation|4006|workers paid/i.test(msg)) {
     const cd = Date.now() + msUntilDailyResetUtc();
-    for (const other of config.pools.cloudflare) {
-      setCooldownPersist(`cloudflare:${keyHash(other)}`, cd, 'neuron');
-    }
+    // Kuota habis pada satu key tidak mematikan akun Cloudflare lain.
+    setCooldownPersist(kh, cd, 'neuron');
     return;
   }
 
@@ -450,6 +451,7 @@ async function fetchJsonWithLifecycle(
   options: RequestInit,
   connectTimeoutMs: number,
   totalTimeoutMs: number,
+  parentSignal?: AbortSignal,
 ): Promise<unknown> {
   const controller = new AbortController();
   let connectTimeoutHit = false;
@@ -465,7 +467,7 @@ async function fetchJsonWithLifecycle(
   try {
     res = await fetch(url, {
       ...options,
-      signal: controller.signal,
+      signal: parentSignal ? AbortSignal.any([controller.signal, parentSignal]) : controller.signal,
     });
   } catch (err: any) {
     if (connectTimeoutHit) throw new Error('CONNECT_TIMEOUT');
@@ -523,6 +525,7 @@ async function postJson(
   body: unknown,
   totalTimeoutMs: number = config.timeoutMs,
   connectTimeoutMs: number = config.connectTimeoutMs,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   return await fetchJsonWithLifecycle(
     url,
@@ -538,6 +541,7 @@ async function postJson(
     },
     connectTimeoutMs,
     totalTimeoutMs,
+    signal,
   );
 }
 
@@ -574,6 +578,8 @@ async function streamSse(
   timeouts: StreamPhaseTimeouts,
   extractDelta: (json: unknown) => StreamDelta,
   extractUsage: (json: unknown) => ProviderResult['tokens'] | undefined,
+  parentSignal?: AbortSignal,
+  fetcher: typeof fetch = fetch,
 ): Promise<ProviderResult & { firstTokenMs: number }> {
   const controller = new AbortController();
   let phaseTimeout: string | null = null;
@@ -593,11 +599,11 @@ async function streamSse(
   let usage: ProviderResult['tokens'] | undefined;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetcher(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: parentSignal ? AbortSignal.any([controller.signal, parentSignal]) : controller.signal,
     });
 
     if (res.status === 429) {
@@ -806,6 +812,7 @@ async function openAiChat(
   extraBody?: Record<string, unknown>,
   totalTimeoutMs: number = config.timeoutMs,
   connectTimeoutMs?: number,
+  signal?: AbortSignal,
 ): Promise<ProviderResult> {
   const hasImage = messagesContainImage(messages);
   // Timeout koneksi adaptif: request berisi gambar (base64 besar) butuh waktu upload lebih lama.
@@ -878,13 +885,13 @@ async function openAiChat(
       firstTokenMs,
       idleMs: config.streamIdleTimeoutMs,
       totalMs: totalTimeoutMs,
-    }, openAiDelta, openAiUsage);
+    }, openAiDelta, openAiUsage, signal);
     return { text: result.text, tokens: result.tokens };
   } catch (e) {
     const msg = e instanceof Error ? e.message : '';
     // Provider tanpa dukungan SSE (mis. Dahl → HTTP405): ulangi non-streaming sekali.
     if (msg.startsWith('PROVIDER_405') || msg.includes('NO_STREAM_BODY')) {
-      const data = (await postJson(`${baseUrl}/chat/completions`, key, { ...body, stream: undefined, stream_options: undefined }, totalTimeoutMs, connectMs)) as {
+      const data = (await postJson(`${baseUrl}/chat/completions`, key, { ...body, stream: undefined, stream_options: undefined }, totalTimeoutMs, connectMs, signal)) as {
         choices?: Array<{ message?: { content?: string } }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
       };
@@ -961,6 +968,7 @@ async function cloudflareVisionChat(
   model: string,
   messages: ChatMsg[],
   totalTimeoutMs: number = config.timeoutMs,
+  signal?: AbortSignal,
 ): Promise<ProviderResult> {
   let prompt = '';
   let imageBytes: number[] = [];
@@ -1002,6 +1010,7 @@ async function cloudflareVisionChat(
     },
     config.visionConnectTimeoutMs,
     totalTimeoutMs,
+    signal,
   )) as {
     result?: {
       // Llama 3.2 Vision membalas `response`; LLaVA membalas `description`.
@@ -1031,6 +1040,7 @@ async function cloudflareChat(
   model: string,
   messages: ChatMsg[],
   totalTimeoutMs: number = config.timeoutMs,
+  signal?: AbortSignal,
 ): Promise<ProviderResult> {
   const { accountId, token } = await resolveCloudflareKey(rawKey);
   if (!accountId) {
@@ -1039,13 +1049,13 @@ async function cloudflareChat(
   // Hanya model vision native (Llama 3.2 Vision, LLaVA) yang memakai endpoint /ai/run
   // dengan payload byte array. Qwen & Gemma vision memakai endpoint OpenAI-compat /ai/v1.
   if (model.includes('vision') || model.includes('llava')) {
-    return await cloudflareVisionChat(accountId, token, model, messages, totalTimeoutMs);
+    return await cloudflareVisionChat(accountId, token, model, messages, totalTimeoutMs, signal);
   }
   const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`;
   // Matikan mode thinking SEMUA model Cloudflare (keputusan user: thinking=false):
   // tanpa ini qwen3.8-27b bisa "berpikir" puluhan detik dan gemma membuang ~1.000
   // token thinking untuk balasan pendek — penyebab utama respons stiker/foto lambat.
-  return await openAiChat(baseUrl, token, model, messages, undefined, { chat_template_kwargs: { enable_thinking: false } }, totalTimeoutMs);
+  return await openAiChat(baseUrl, token, model, messages, undefined, { chat_template_kwargs: { enable_thinking: false } }, totalTimeoutMs, undefined, signal);
 }
 
 /**
@@ -1058,7 +1068,7 @@ export function geminiThinkingConfig(model: string): { thinkingConfig: Record<st
   return { thinkingConfig: { thinkingBudget: 0 } };
 }
 
-async function geminiChat(key: string, model: string, messages: ChatMsg[], totalTimeoutMs: number = config.timeoutMs, connectTimeoutMs?: number): Promise<ProviderResult> {
+async function geminiChat(key: string, model: string, messages: ChatMsg[], totalTimeoutMs: number = config.timeoutMs, connectTimeoutMs?: number, signal?: AbortSignal): Promise<ProviderResult> {
   // Timeout koneksi adaptif: upload gambar ke Gemini butuh waktu lebih lama.
   const hasImage = messagesContainImage(messages);
   const connectMs = connectTimeoutMs ?? (hasImage ? config.visionConnectTimeoutMs : config.connectTimeoutMs);
@@ -1123,6 +1133,7 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[], total
     },
     geminiDelta,
     geminiUsage,
+    signal,
   );
   return { text: result.text, tokens: result.tokens };
 }
@@ -1244,7 +1255,7 @@ interface Step {
    */
   maxPromptTokens: number;
   /** `t` = sisa anggaran waktu (ms) untuk attempt ini, agar satu model yang menggantung tidak menghabiskan seluruh deadline rantai. */
-  run: (key: string, model: string, messages: ChatMsg[], t: number) => Promise<ProviderResult>;
+  run: (key: string, model: string, messages: ChatMsg[], t: number, signal?: AbortSignal) => Promise<ProviderResult>;
 }
 
 // ============================================================================
@@ -1282,399 +1293,149 @@ const BASE_GEN_TIGHT = {
   maxTokens: 800,
 } as const;
 
-/**
- * OpenCode Free — LANGSUNG ke opencode.ai, TANPA 9Router, TANPA API key.
- * Diverifikasi 04 Okt: mimo-v2.6 3/3 & muse-spark-1.3 3/3 berhasil.
- *
- * RAHASIA (dibedah dari repo 9router, open-sse/executors/opencode.js +
- * open-sse/utils/opencodeFingerprint.js):
- *
- * 1. FINGERPRINT TOOLS (WAJIB). Gate free-tier memeriksa apakah request memuat
- *    4 tool file-search: bash, glob, grep, read. Tanpa ini -> 403
- *    "OpenCode's free tier can only be used from within OpenCode".
- *    Tool ini hanya "sidik jari" — deskripsinya sengaja dibuat tidak bisa dipakai.
- *
- * 2. FORMAT BERBEDA PER ENDPOINT:
- *    - muse-spark  -> /zen/v1/responses  (format Responses API: input[], tool FLAT,
- *                     tool_choice "auto", max_output_tokens, reasoning{effort,summary})
- *    - model lain  -> /zen/v1/chat/completions (messages[], tool NESTED,
- *                     tool_choice "none" bila klien tak mengirim tool)
- *
- * 3. SESSION STABIL. Kuota free-tier dihitung PER SESI. Membuat sesi baru tiap
- *    request menghabiskan kuota cepat dan memicu 429. Sesuatu sesi panjang dipakai
- *    ulang per identitas — di sini satu sesi per proses.
- *
- * 4. SELALU STREAMING (stream=true). Free tier menolak permintaan non-stream
- *    dengan 403.
- *
- * 5. Authorization: "Bearer public" (endpoint noAuth).
- */
-const OPENCODE_BASE = 'https://opencode.ai/zen/v1';
-const OPENCODE_UA = 'opencode/1.18.31';
-const OPENCODE_FINGERPRINT_TOOLS = ['bash', 'glob', 'grep', 'read'] as const;
-
-// Satu sesi stabil per proses (kuota free-tier dihitung per sesi).
-let opencodeSessionCache: string | null = null;
-let opencodeSessionAt = 0;
-const OPENCODE_SESSION_TTL_MS = 30 * 60_000;
+// OpenCode Free mengikuti kontrak inference v2 dari 9router lokal.
+const OPENCODE_BASE = 'https://opencode.ai/inference/v1';
+const OPENCODE_CIPHERS = 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA:AES256-SHA';
+let opencodeTransport: Promise<import('wreq-js').Session> | undefined;
+let opencodeSessionCache: string | undefined;
 
 function opencodeSession(): string {
-  const now = Date.now();
-  if (opencodeSessionCache && now - opencodeSessionAt < OPENCODE_SESSION_TTL_MS) {
-    return opencodeSessionCache;
+  // ponytail: sesi stabil per proses; persist per percakapan bila cold-start perlu kesinambungan.
+  if (!opencodeSessionCache) {
+    const prefix = (~(BigInt(Date.now()) * 4096n + 1n) & ((1n << 48n) - 1n)).toString(16).padStart(12, '0');
+    const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    const suffix = Array.from(crypto.randomBytes(14), (b) => alphabet[b % alphabet.length]).join('');
+    opencodeSessionCache = 'ses_' + prefix + suffix;
   }
-  const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  const bytes = crypto.randomBytes(14);
-  let rnd = '';
-  for (let i = 0; i < 14; i++) rnd += B62[bytes[i] % 62];
-  const t = Array.from({ length: 6 }, (_, i) =>
-    Number((BigInt(now) * 0x1000n >> BigInt(40 - 8 * i)) & 0xffn).toString(16).padStart(2, '0')).join('');
-  opencodeSessionCache = `ses_${t}${rnd}`;
-  opencodeSessionAt = now;
   return opencodeSessionCache;
 }
 
-function opencodeRequestId(): string {
-  const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  const bytes = crypto.randomBytes(14);
-  let rnd = '';
-  for (let i = 0; i < 14; i++) rnd += B62[bytes[i] % 62];
-  const now = Date.now();
-  const t = Array.from({ length: 6 }, (_, i) =>
-    Number((BigInt(now) * 0x1000n >> BigInt(40 - 8 * i)) & 0xffn).toString(16).padStart(2, '0')).join('');
-  return `msg_${t}${rnd}`;
-}
-
-/** Tool fingerprint format FLAT (untuk /responses). */
-function fingerprintFlat() {
-  return OPENCODE_FINGERPRINT_TOOLS.map((name) => ({
-    type: 'function',
-    name,
-    description: 'This tool is currently unavailable and must not be used.',
-    parameters: { type: 'object', properties: {} },
-  }));
-}
-/** Tool fingerprint format NESTED (untuk /chat/completions). */
-function fingerprintNested() {
-  return OPENCODE_FINGERPRINT_TOOLS.map((name) => ({
-    type: 'function',
-    function: {
-      name,
-      description: 'This tool is currently unavailable and must not be used.',
-      parameters: { type: 'object', properties: {} },
-    },
-  }));
-}
-
-function isOpencodeResponsesModel(model: string): boolean {
-  const base = model.replace(/\([^()]+\)\s*$/, '').trim();
-  return /^muse[-_]?spark/i.test(base);
-}
-
-async function opencodeChat(
-  _key: string,
-  model: string,
-  msgs: ChatMsg[],
-  timeoutMs: number,
-): Promise<ProviderResult> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const pakaiResponses = isOpencodeResponsesModel(model);
-    const url = pakaiResponses ? `${OPENCODE_BASE}/responses` : `${OPENCODE_BASE}/chat/completions`;
-
-    let body: Record<string, unknown>;
-    if (pakaiResponses) {
-      // Format Responses API.
-      const input = msgs.map((m) => ({
-        type: 'message',
-        role: m.role,
-        content: [{ type: m.role === 'assistant' ? 'output_text' : 'input_text', text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
-      }));
-      body = {
-        model,
-        input,
-        tools: fingerprintFlat(),
-        tool_choice: 'auto',
-        stream: true,
-        store: false,
-        // EFFORT/THINKING (diuji 04 Okt): OpenCode TIDAK menerima effort "none"
-        // (HTTP 400), tapi menerima "low" — dan "low" terukur 2,3x LEBIH CEPAT
-        // dari tanpa effort (780ms vs 1838ms) dengan jawaban tetap benar.
-        reasoning: { effort: 'low' },
-      };
-    } else {
-      body = {
-        model,
-        messages: msgs,
-        tools: fingerprintNested(),
-        tool_choice: 'none',
-        stream: true,
-        // Minta upstream menyertakan usage (token asli) di akhir stream —
-        // tanpa ini angka token di dashboard memakai estimasi panjang teks
-        // yang jauh lebih kecil dari kenyataan (bug 04 Okt).
-        stream_options: { include_usage: true },
-        // Model OpenCode jalur chat/completions memakai chat_template_kwargs
-        // untuk mematikan thinking (pola sama dengan provider lain).
-        chat_template_kwargs: { enable_thinking: false },
-        reasoning_effort: 'none',
-      };
-    }
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer public',
-        'User-Agent': OPENCODE_UA,
-        'x-opencode-client': 'desktop',
-        'x-opencode-session': opencodeSession(),
-        'x-opencode-request': opencodeRequestId(),
-        'x-opencode-project': 'global',
-        Accept: 'text/event-stream',
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    if (!res.ok) {
-      const teks = await res.text().catch(() => '');
-      throw new Error(`PROVIDER_${res.status}:${teks.slice(0, 300)}`);
-    }
-
-    // Baca SSE dan rangkai teks.
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error('NO_STREAM_BODY');
-    const dec = new TextDecoder();
-    let buf = '';
-    let out = '';
-    // USAGE ASLI dari upstream (DIPERBAIKI 04 Okt).
-    //
-    // BUG LAMA: opencodeChat selalu mengembalikan tokens {0,0,0} dengan alasan
-    // "OpenCode tidak mengirim usage pada stream". Itu SALAH — endpoint
-    // /responses mengirim event `response.completed` yang memuat:
-    //   { input_tokens, output_tokens, total_tokens, output_tokens_details }
-    // Akibat bug itu dashboard menghitung token dengan ESTIMASI panjang teks
-    // (panjang/3.8) sehingga angkanya jauh lebih kecil dari kenyataan
-    // (mis. 2.419 tk padahal sesungguhnya ~8.000 karena prompt sistem panjang).
-    // Kini usage asli dibaca dan dilaporkan apa adanya.
-    let usageAsli: { prompt: number; completion: number; total: number } | undefined;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const baris = buf.split('\n');
-      buf = baris.pop() || '';
-      for (const l of baris) {
-        if (!l.startsWith('data:')) continue;
-        const d = l.slice(5).trim();
-        if (!d || d === '[DONE]') continue;
-        try {
-          // Tiga bentuk respons yang harus didukung:
-          //  1. /chat/completions (OpenAI) -> choices[0].delta.content
-          //  2. /responses (Responses API) -> event "response.output_text.delta"
-          //     dengan field `delta` (string)
-          //  3. /responses "response.completed" -> response.usage (usage ASLI)
-          // BUG YANG DIPERBAIKI (04 Okt): dulu `if (!out && typeof j.delta...)`
-          // sehingga begitu `out` terisi 1 karakter, SELURUH delta berikutnya
-          // diabaikan -> jawaban terpotong ("Halo! Saya", "Halo! Kab").
-          const j = JSON.parse(d) as {
-            choices?: Array<{ delta?: { content?: string } }>;
-            delta?: string | { content?: string };
-            type?: string;
-            usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
-            response?: {
-              usage?: {
-                input_tokens?: number;
-                output_tokens?: number;
-                total_tokens?: number;
-              };
-            };
-          };
-          const dariChoices = j.choices?.[0]?.delta?.content || '';
-          const dariDelta =
-            typeof j.delta === 'string'
-              ? j.delta
-              : typeof j.delta === 'object' && j.delta
-                ? j.delta.content || ''
-                : '';
-          out += dariChoices || dariDelta;
-
-          // Bentuk usage A: gaya OpenAI (chat/completions) — usage di root.
-          if (j.usage && typeof j.usage.total_tokens === 'number') {
-            usageAsli = {
-              prompt: Number(j.usage.prompt_tokens) || 0,
-              completion: Number(j.usage.completion_tokens) || 0,
-              total: Number(j.usage.total_tokens) || 0,
-            };
-          }
-          // Bentuk usage B: gaya Responses API — usage di dalam response.completed.
-          const ru = j.response?.usage;
-          if (ru && typeof ru.total_tokens === 'number') {
-            usageAsli = {
-              prompt: Number(ru.input_tokens) || 0,
-              completion: Number(ru.output_tokens) || 0,
-              total: Number(ru.total_tokens) || 0,
-            };
-          }
-        } catch {
-          // potongan tidak lengkap
-        }
-      }
-    }
-    reader.cancel().catch(() => {});
-    const text = out.trim();
-    if (!text) throw new Error('EMPTY_REPLY');
-    // Kembalikan USAGE ASLI dari upstream bila tersedia (bug lama: selalu 0).
-    // Bila upstream tidak mengirim usage, baru 0 — dan lapisan atas boleh
-    // mengestimasi. Tetapi dengan perbaikan ini, angka token jadi akurat.
-    return { text, tokens: usageAsli ?? { prompt: 0, completion: 0, total: 0 } };
-  } finally {
-    clearTimeout(timer);
+async function opencodeFetch(url: string | URL | Request, init?: RequestInit): Promise<Response> {
+  if (!opencodeTransport) {
+    opencodeTransport = import('wreq-js')
+      .then(({ createSession }) => createSession({ emulation: { tlsOptions: { cipherList: OPENCODE_CIPHERS } } }))
+      .catch((err) => { opencodeTransport = undefined; throw err; });
   }
+  const transport = await opencodeTransport;
+  const response = await transport.fetch(String(url), { ...init, body: init?.body as string, timeout: config.timeoutMs });
+  return new Response(response.body as unknown as BodyInit, {
+    status: response.status, statusText: response.statusText,
+    headers: Object.fromEntries(response.headers.entries()),
+  });
+}
+
+async function opencodeChat(_key: string, model: string, msgs: ChatMsg[], timeoutMs: number, signal?: AbortSignal): Promise<ProviderResult> {
+  const session = opencodeSession();
+  const environment = [
+    'Here is some useful information about the environment you are running in:', '<env>',
+    '  Working directory: ' + process.cwd(), '  Workspace root folder: ' + process.cwd(),
+    '  Is directory a git repo: no', '  Platform: ' + process.platform,
+    '  Prefer ' + join(tmpdir(), 'opencode') + ' over generic system temporary directories such as /tmp; it is pre-created and approved for external access.',
+    '</env>',
+    'Do not call the read or shell tools; they are placeholders that do nothing. Answer the user directly.',
+  ].join('\n');
+  const messages = msgs.map((m) => m.role === 'assistant' ? { ...m, reasoning_content: ' ' } : { ...m });
+  const systemIndex = messages.findIndex((m) => m.role === 'system');
+  if (systemIndex < 0) messages.unshift({ role: 'system', content: environment });
+  else {
+    const message = messages[systemIndex];
+    message.content = typeof message.content === 'string'
+      ? message.content + '\n\n' + environment
+      : [...message.content, { type: 'text', text: environment }];
+  }
+  const builtins = {
+    read: {
+      description: 'Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.',
+      parameters: { type: 'object', properties: {
+        path: { type: 'string', description: 'File or directory to read' },
+        offset: { type: 'integer', minimum: 0, description: 'The line or directory entry to start reading from (1-based)' },
+        limit: { type: 'integer', minimum: 0, description: 'The maximum number of lines or directory entries to read (defaults to and capped at 2000)' },
+      }, required: ['path'], additionalProperties: false },
+    },
+    shell: {
+      description: 'Execute a shell command and return its output. Commands run on Linux using bash. Quote file paths containing spaces or special characters. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.',
+      parameters: { type: 'object', properties: {
+        command: { type: 'string', description: 'Shell command string to execute' },
+        workdir: { type: 'string', description: 'Working directory to execute the command in. Defaults to the current working directory. When possible, avoid changing directories in the command and set the working directory here instead.' },
+        timeout: { type: 'integer', minimum: 0, description: 'Timeout in milliseconds. Set to 0 to disable the timeout. Defaults to 120000 for foreground commands. Background commands have no timeout by default.' },
+        background: { type: 'boolean', description: "Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion." },
+      }, required: ['command'], additionalProperties: false },
+    },
+  };
+  const result = await streamSse(OPENCODE_BASE + '/chat/completions', {
+    'Content-Type': 'application/json', Authorization: 'Bearer public',
+    'User-Agent': 'opencode/latest/2.0.26/cli', 'x-opencode-client': 'cli',
+    'x-opencode-session': session, 'x-opencode-session-id': session,
+    'x-session-affinity': session, 'x-session-id': session,
+    'x-opencode-project': 'global', Accept: 'text/event-stream',
+  }, {
+    model, messages, stream: true, stream_options: { include_usage: true },
+    max_tokens: config.maxOutputTokens,
+    ...(model.startsWith('deepseek-') ? { reasoning_effort: 'low' } : {}),
+    tools: Object.entries(builtins).map(([name, schema]) => ({ type: 'function', function: { name, ...schema } })),
+  }, {
+    firstTokenMs: messagesContainImage(msgs) ? config.visionFirstTokenMs : config.firstTokenTimeoutMs,
+    idleMs: config.streamIdleTimeoutMs, totalMs: timeoutMs,
+  }, openAiDelta, openAiUsage, signal, opencodeFetch);
+  return { text: result.text, tokens: result.tokens };
 }
 
 function steps(): Step[] {
   return [
-    // --- TIER 1: DreamPrompting (100 RPM, rolling free tier) ---
-    // User instruction: Primary Qwen, Backup GPT; reasoning/thinking none untuk minimal token per chat (<8000)
+    // Tier 1: OpenCode DeepSeek, lalu GLM menyusul dalam race.
     {
-      kind: 'dreamprompting',
-      keys: config.pools.dreamprompting,
-      models: [config.models.dpPrimary, ...config.models.dpBackup],
-      cap: config.dailyCap.dreamprompting,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) => {
-        // ── PERBAIKAN 16 Okt 2026: DreamPrompting HAMPIR TIDAK PERNAH DIPAKAI ──
-        // GEJALA: seluruh percakapan selalu jatuh ke Cloudflare (Tier 2), padahal
-        // DreamPrompting adalah Tier 1. Terakhir dipakai 9 Okt 08:30.
-        //
-        // AKAR: guard `maxPromptTokens: 7000` memeriksa ukuran prompt MENTAH.
-        // Ukuran prompt nyata: median 8.752 token (p75 9.556, p90 10.971), sehingga
-        // ~75% permintaan DILEWATI sebelum sempat dicoba. Padahal fungsi ini SUDAH
-        // memangkas sendiri lewat trimMessagesToTokenBudget di bawah — guard itu
-        // membatalkan pemangkasan yang sudah disiapkan.
-        //
-        // BUKTI DreamPrompting SANGGUP: pemakaian nyata 7-9 Okt berhasil pada
-        // prompt 9.097-9.916 token (bukan 7.000). Sejalan dengan instruksi pemilik
-        // produk: "jangan terlalu di kompres... dream bisa merespon walapun lebih
-        // dari 8000".
-        //
-        // SEKARANG: tidak ada skip (0 = tanpa batas), dan pagar pemangkasan
-        // dinaikkan 7.000 -> 12.000 token (menutup ~94% percakapan) agar tidak
-        // dikompres berlebihan namun tetap terlindung dari prompt ekstrem.
-        const dpMsgs = trimMessagesToTokenBudget(msgs, 12000);
-        return openAiChat('https://dreamprompting.com/api/v1', k, m, dpMsgs, BASE_GEN_TIGHT.maxTokens, {
-          reasoning_effort: 'none',
-          reasoning: { effort: 'none' },
-          ...BASE_GEN,
-        }, t);
-      },
-    },
-    // --- TIER 2: Cloudflare Workers AI (Kepatuhan terbukti 4/4) ---
-    {
-      kind: 'cloudflare',
-      keys: config.pools.cloudflare,
-      models: [config.models.cfPrimary, ...config.models.cfBackup],
-      cap: config.dailyCap.cloudflare,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) => cloudflareChat(k, m, msgs, t),
-    },
-    // --- TIER 3: OpenCode Free (mimo-v2.6 + muse-spark-1.3) ---
-    // LANGSUNG ke opencode.ai, TANPA 9Router, TANPA API key.
-    // Terverifikasi 04 Okt: mimo 3/3 & muse 3/3 berhasil.
-    // Wajib: 4 tool fingerprint + format per-endpoint + session stabil + streaming.
-    //
-    // TANPA BATAS TOKEN PER CHAT (permintaan user): maxPromptTokens: 0 artinya
-    // prompt tidak dipangkas/dilewati. Batas 8.000 token per respons SUDAH
-    // ditegakkan endpoint OpenCode sendiri, jadi tidak perlu dibatasi lagi di sini.
-    {
-      kind: 'opencode',
-      keys: config.pools.opencode,
+      kind: 'opencode', keys: config.pools.opencode,
       models: [config.models.opencodePrimary, ...config.models.opencodeBackup],
-      cap: config.dailyCap.opencode,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) => opencodeChat(k, m, msgs, t),
+      cap: config.dailyCap.opencode, maxPromptTokens: 0,
+      run: (k, m, msgs, t, signal) => opencodeChat(k, m, msgs, t, signal),
     },
-    // --- TIER 4: OpenRouter (free models) ---
-    // User instruction: Primary Nemotron Ultra, Backup Ling; reasoning none untuk minimal token
+    // Tier 2: Cloudflare Workers AI.
     {
-      kind: 'openrouter',
-      keys: config.pools.openrouter,
-      models: [config.models.orPrimary, ...config.models.orBackup],
-      cap: config.dailyCap.openrouter,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) =>
-        openAiChat('https://openrouter.ai/api/v1', k, m, msgs, undefined, {
-          reasoning: { effort: 'none' },
-          reasoning_effort: 'none',
-          ...BASE_GEN,
-        }, t),
+      kind: 'cloudflare', keys: config.pools.cloudflare,
+      models: [config.models.cfPrimary, ...config.models.cfBackup],
+      cap: config.dailyCap.cloudflare, maxPromptTokens: 0,
+      run: (k, m, msgs, t, signal) => cloudflareChat(k, m, msgs, t, signal),
     },
-    // --- TIER 5: NVIDIA NIM (1.000 free credits / key) ---
+    // Tier 3: Groq; batas prompt/output lama tetap dipertahankan.
     {
-      kind: 'nvidia',
-      keys: config.pools.nvidia,
-      models: [config.models.nvidiaPrimary, ...config.models.nvidiaBackup],
-      cap: config.dailyCap.nvidia,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) => {
-        // DiffusionGemma mendukung reasoning_effort 'none'; Llama 3.2 Vision menolaknya (HTTP 400).
-        const extraReasoning = m.includes('diffusiongemma')
-          ? { reasoning_effort: 'none', chat_template_kwargs: { enable_thinking: false } }
-          : { chat_template_kwargs: { enable_thinking: false } };
-        return openAiChat('https://integrate.api.nvidia.com/v1', k, m, msgs, undefined, {
-          ...extraReasoning,
-          ...BASE_GEN,
-        }, t);
-      },
-    },
-    // --- TIER 6: Groq Cloud API (LPU Ultra-Fast Inference) ---
-    // Prompt & output dijaga <8000 token; reasoning none pada Qwen, low pada GPT-OSS
-    {
-      kind: 'groq',
-      keys: config.pools.groq,
+      kind: 'groq', keys: config.pools.groq,
       models: [config.models.groqPrimary, ...config.models.groqBackup],
-      cap: config.dailyCap.groq,
-      maxPromptTokens: 7000,
-      run: (k, m, msgs, t) => {
-        const groqMsgs = trimMessagesToTokenBudget(msgs, 7000);
-        // Groq menolak reasoning_effort 'none' pada model reasoning (mis. openai/gpt-oss-120b harus low).
-        // Model Qwen mendukung 'none' untuk 0 token reasoning.
-        const extraReasoning = m.includes('gpt-oss') ? { reasoning_effort: 'low' } : { reasoning_effort: 'none' };
-        return openAiChat('https://api.groq.com/openai/v1', k, m, groqMsgs, BASE_GEN_TIGHT.maxTokens, {
-          ...extraReasoning,
-          ...BASE_GEN,
-          frequency_penalty: 0.3,
-        }, t);
-      },
+      cap: config.dailyCap.groq, maxPromptTokens: 7000,
+      run: (k, m, msgs, t, signal) => openAiChat('https://api.groq.com/openai/v1', k, m,
+        trimMessagesToTokenBudget(msgs, 7000), BASE_GEN_TIGHT.maxTokens, {
+          reasoning_effort: m.includes('gpt-oss') ? 'low' : 'none',
+          ...BASE_GEN, frequency_penalty: 0.3,
+        }, t, undefined, signal),
     },
-    // --- TIER 7: Google Gemini API (1M Konteks) ---
+    // Tier 4: DreamPrompting Qwen 3.8 saja, bukan race dua model.
     {
-      kind: 'gemini',
-      keys: config.pools.gemini,
+      kind: 'dreamprompting', keys: config.pools.dreamprompting,
+      models: [config.models.dpPrimary, ...config.models.dpBackup],
+      cap: config.dailyCap.dreamprompting, maxPromptTokens: 0,
+      run: (k, m, msgs, t, signal) => openAiChat('https://dreamprompting.com/api/v1', k, m,
+        trimMessagesToTokenBudget(msgs, 12000), BASE_GEN_TIGHT.maxTokens, {
+          reasoning_effort: 'none', reasoning: { effort: 'none' }, ...BASE_GEN,
+        }, t, undefined, signal),
+    },
+    // Tier 5: OpenRouter Nemotron Super VL / Ultra.
+    {
+      kind: 'openrouter', keys: config.pools.openrouter,
+      models: [config.models.orPrimary, ...config.models.orBackup],
+      cap: config.dailyCap.openrouter, maxPromptTokens: 0,
+      run: (k, m, msgs, t, signal) => openAiChat('https://openrouter.ai/api/v1', k, m, msgs,
+        undefined, { reasoning: { effort: 'none' }, reasoning_effort: 'none', ...BASE_GEN },
+        t, undefined, signal),
+    },
+    // Tier 6: Gemini, termasuk model media native.
+    {
+      kind: 'gemini', keys: config.pools.gemini,
       models: [config.models.geminiPrimary, ...config.models.geminiBackup],
-      cap: config.dailyCap.gemini,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) => geminiChat(k, m, msgs, t),
-    },
-    // --- TIER 8: Dahl Global (Saldo 1 Miliar Token) ---
-    {
-      kind: 'dahl',
-      keys: config.pools.dahl,
-      models: [config.models.dahlPrimary, ...config.models.dahlBackup],
-      cap: config.dailyCap.dahl,
-      maxPromptTokens: 0,
-      run: (k, m, msgs, t) => {
-        return openAiChat(config.dahlProxyUrl, k, m, msgs, BASE_GEN_TIGHT.maxTokens, {
-          reasoning_effort: 'none',
-          chat_template_kwargs: { enable_thinking: false },
-          ...BASE_GEN,
-        }, t);
-      },
+      cap: config.dailyCap.gemini, maxPromptTokens: 0,
+      run: (k, m, msgs, t, signal) => geminiChat(k, m, msgs, t, undefined, signal),
     },
   ];
 }
+
 
 /**
  * Bangun urutan step khusus VISION dari `config.models.visionChain` — daftar
@@ -1815,7 +1576,7 @@ async function balapanModelDalamTier(
       if (remainingMs < 1500) throw new Error('CHAIN_DEADLINE');
       const attemptStart = Date.now();
       try {
-        const result = await step.run(key, model, messages, Math.min(remainingMs, config.timeoutMs));
+        const result = await step.run(key, model, messages, Math.min(remainingMs, config.timeoutMs), controller.signal);
         if (controller.signal.aborted) throw new Error('RACE_ABORTED');
         recordKeySuccess(step.kind, key, model);
         recordModelLatency(step.kind, model, Date.now() - attemptStart);
@@ -1824,7 +1585,7 @@ async function balapanModelDalamTier(
         return { text: result.text, tokens: result.tokens, model };
       } catch (e) {
         lastErr = e instanceof Error ? e : new Error('UNKNOWN');
-        if (lastErr.message === 'RACE_ABORTED') throw lastErr;
+        if (controller.signal.aborted || lastErr.message === 'RACE_ABORTED') throw new Error('RACE_ABORTED');
         recordKeyFailure(step.kind, key, e);
         const m = lastErr.message;
         if (
@@ -1867,16 +1628,9 @@ async function balapanModelDalamTier(
 }
 
 /**
- * Chat dengan failover cerdas:
- * - Teks umum / matematika / koding: xKiro (Qwen 3.8 Max > Qwen 3.7 Max > Qwen 3.6 Max Preview) > Cloudflare (GLM 4.7 Flash > GPT-OSS 120B > Qwen 3.8 27B > Llama 3.3 70B) > Groq (Qwen 3.8 27B > GPT-OSS 120B) > Dahl (DeepSeek V4 Flash > GLM 5.3) > OpenRouter (Nex N2.5 Pro > Nemotron Lightning > GLM 5.2) > Groq (Qwen 3.8 > GPT-OSS 120B) > Cloudflare (Qwen 3.8 > GLM 4.7 > GPT-OSS > Llama 3.3) > Gemini (3.8 > 3.5).
- *   Dahl dinaikkan ke Tier 2 (20 Sep) berdasarkan benchmark latensi nyata: p50 234ms
- *   (lebih cepat dari Groq 351ms & Cloudflare 1668ms) dan TIDAK punya batas ITPM ketat
- *   sehingga aman untuk percakapan panjang — beda dari Groq (ITPM 7.000).
- * - Vision / foto / stiker: rantai eksplisit `config.models.visionChain` — Groq > Cloudflare (Qwen > Gemma > Llama Vision > LLaVA) > xKiro (MiniMax M3) > Gemini (3.6 Flash > 3.5 Flash Lite > 2.5 Flash) > xKiro (Qwen 3.8 Max > Qwen Omni Flash).
- * Failover antar-tier otomatis: bila SEMUA model dalam satu tier gagal/timeout, lanjut ke tier berikutnya.
- * Failover dalam-tier berbasis WAKTU RESPONS: model yang rata-rata lambat diturunkan prioritasnya
- * (config.slowModelMs) agar request berikutnya mencoba model cadangan yang lebih gesit lebih dulu.
- * Melempar jika semua gagal agar caller memutuskan retry/pesan status.
+ * Teks: OpenCode > Cloudflare > Groq > DreamPrompting > OpenRouter > Gemini.
+ * Vision: urutan eksplisit config.models.visionChain, tanpa race.
+ * Kegagalan seluruh tier tetap dilempar ke caller.
  */
 export async function chat(
   rawMessages: ChatMsg[],

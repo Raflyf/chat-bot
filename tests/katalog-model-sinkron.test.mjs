@@ -1,73 +1,66 @@
-/**
- * TEST OTOMATIS — katalog model dashboard WAJIB sinkron dengan config.
- *
- * LAPORAN PEMILIK PRODUK (12 Okt 2026): "update juga model AI distribusinya agar
- * singkron dengan semua model yg dipakai dan yg tidak dipakai nya hilangkan".
- *
- * TEMUAN NYATA pada katalog dashboard (public/js/dashboard.js):
- *   - "GPT-OSS 20B (CF)" masih tampil padahal SUDAH DIHAPUS dari config.
- *   - "Mistral Small 3.1 24B (CF)" masih tampil padahal sudah diganti.
- *   - Model baru "Llama 3.2 11B Vision (CF)" belum ada.
- *   - "Gemini 3.1 Flash Lite" salah nama (config: gemini-flash-lite-latest).
- *   - Model OpenCode tertulis "Tier 8" padahal Tier 3.
- *
- * Test ini memastikan: setiap model di config ADA di katalog, dan tidak ada entri
- * katalog yang modelnya sudah tidak dipakai lagi.
- */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
+import { config } from '../src/env.ts';
+import { getModelCatalog } from '../api/stats.ts';
 
-const ENV = fs.readFileSync(new URL('../src/env.ts', import.meta.url), 'utf8');
 const DASH = fs.readFileSync(new URL('../public/js/dashboard.js', import.meta.url), 'utf8');
+const STATS = fs.readFileSync(new URL('../api/stats.ts', import.meta.url), 'utf8');
+const helper = DASH.slice(DASH.indexOf('function modelUsageId('), DASH.indexOf('const SESSION_TOKEN_KEY'));
+const modelUsageId = vm.runInNewContext(helper + '; modelUsageId');
+const catalog = getModelCatalog();
+const m = config.models;
+const text = [
+  ['opencode', [m.opencodePrimary, ...m.opencodeBackup]],
+  ['cloudflare', [m.cfPrimary, ...m.cfBackup]],
+  ['groq', [m.groqPrimary, ...m.groqBackup]],
+  ['dreamprompting', [m.dpPrimary, ...m.dpBackup]],
+  ['openrouter', [m.orPrimary, ...m.orBackup]],
+  ['gemini', [m.geminiPrimary, ...m.geminiBackup]],
+];
 
-function modelConfig() {
-  const blok = ENV.slice(ENV.indexOf('models: {'), ENV.indexOf('visionChain:'));
-  const set = new Set();
-  for (const m of blok.matchAll(/'([^']+)'/g)) {
-    const v = m[1];
-    if (v.includes('/') || v.startsWith('@cf/') || /^(mimo|muse|big-|gemini-)/.test(v)) set.add(v);
+test('katalog API mencakup semua model runtime tepat sekali per provider', () => {
+  const expected = new Set(text.flatMap(([p, models]) => models.map(model => p + '/' + model)));
+  for (const v of m.visionChain) expected.add(v.kind + '/' + v.model);
+  for (const model of m.geminiVision) expected.add('gemini/' + model);
+  for (const model of [m.groqWhisperPrimary, m.groqWhisperBackup]) expected.add('groq/' + model);
+  expected.add('cloudflare/' + m.cfWhisper);
+  assert.deepEqual(new Set(catalog.map(c => c.id)), expected);
+  assert.equal(catalog.length, expected.size);
+  assert.deepEqual([...new Set(catalog.map(c => c.provider))], text.map(([p]) => p));
+  for (const [index, [p, models]] of text.entries()) {
+    for (const model of models) assert.equal(catalog.find(c => c.id === p + '/' + model)?.tier, index + 1);
   }
-  const vb = ENV.slice(ENV.indexOf('visionChain: ['), ENV.indexOf('] as Array', ENV.indexOf('visionChain: [')));
-  for (const m of vb.matchAll(/model: '([^']+)'/g)) set.add(m[1]);
-  return set;
-}
-
-function katalog() {
-  const cat = DASH.slice(DASH.indexOf('      const catalog = ['), DASH.indexOf('      ];\n\n      // Urutan Model Berbasis MRU'));
-  return [...cat.matchAll(/name:\s*"([^"]+)"[\s\S]*?matchKeys:\s*\[([^\]]+)\]/g)]
-    .map((m) => ({ nama: m[1], keys: [...m[2].matchAll(/"([^"]+)"/g)].map((k) => k[1]) }));
-}
-
-const norm = (s) => s.toLowerCase().replace(/^[a-z]+\//, '');
-const cocok = (a, b) => a === b || a.endsWith(b) || b.endsWith(a);
-
-test('katalog model: setiap model di config ADA di katalog', () => {
-  const cfg = modelConfig();
-  const cat = katalog();
-  const catKeys = cat.flatMap((e) => e.keys.map(norm));
-  const hilang = [...cfg].filter((m) => !catKeys.some((k) => cocok(k, norm(m))));
-  assert.deepEqual(hilang, [], `model config yang belum ada di katalog: ${hilang.join(', ')}`);
+  assert.ok(catalog.every(c => !['dahl', 'nvidia'].includes(c.provider)));
+  assert.ok(DASH.includes('data.modelCatalog'));
 });
 
-test('katalog model: tidak ada entri USANG (model sudah tidak dipakai)', () => {
-  const cfg = [...modelConfig()].map(norm);
-  const cat = katalog();
-  // "Groq Whisper Turbo" = model transkripsi (dipakai di media.ts, bukan config.models).
-  const pengecualian = ['groq whisper turbo'];
-  const usang = cat
-    .filter((e) => !pengecualian.includes(e.nama.toLowerCase()))
-    .filter((e) => !e.keys.map(norm).some((k) => cfg.some((c) => cocok(k, c))))
-    .map((e) => e.nama);
-  assert.deepEqual(usang, [], `entri katalog usang: ${usang.join(', ')}`);
+test('model qualified dan prefiks media cocok tepat satu kartu, tanpa silang gateway', () => {
+  for (const card of catalog) {
+    for (const via of [card.id, 'local-parser/' + card.id + '#t=12,3,15']) {
+      assert.equal(catalog.filter(c => c.id.toLowerCase() === modelUsageId(via)).length, 1, via);
+    }
+  }
+  assert.notEqual(modelUsageId('groq/qwen/qwen3.8-27b'), modelUsageId('dreamprompting/groq/qwen/qwen3.8-27b'));
+  assert.notEqual(modelUsageId('openrouter/nvidia/nemotron-3.5-super-vl:free'), modelUsageId('nvidia/nemotron-3.5-super-vl:free'));
+  assert.equal(modelUsageId('qwen3.8'), '');
 });
 
-test('katalog model: mistral & gpt-oss-20b SUDAH TIDAK ADA', () => {
-  const cat = katalog();
-  const nama = cat.map((e) => e.nama.toLowerCase()).join(' | ');
-  const keys = cat.flatMap((e) => e.keys).join(' ').toLowerCase();
-  assert.ok(!/mistral/.test(nama + keys), 'mistral harus sudah dihapus dari katalog');
-  assert.ok(!/gpt-oss-20b/.test(keys), 'gpt-oss-20b harus sudah dihapus dari katalog');
+test('penghitungan menjumlahkan prefiks media tanpa mengambil hit pertama saja', () => {
+  const match = DASH.match(/function getCount\(matchKeys\) \{[\s\S]*?\n      \}/);
+  assert.ok(match);
+  const count = vm.runInNewContext(helper + '\n' + match[0] + '; getCount', {
+    modelsBreakdown: [
+      { name: 'groq/qwen/qwen3.8-27b', count: 2 },
+      { name: 'local-parser/groq/qwen/qwen3.8-27b#t=1,2,3', count: 3 },
+      { name: 'dreamprompting/groq/qwen/qwen3.8-27b', count: 7 },
+    ],
+  });
+  assert.equal(count(['groq/qwen/qwen3.8-27b']), 5);
+  assert.equal(count(['dreamprompting/groq/qwen/qwen3.8-27b']), 7);
+  assert.ok(!STATS.includes('&& isModelActive(model) &&'), 'histori tidak boleh disaring dengan katalog aktif');
+  assert.ok(!DASH.includes('keyLower.includes(kl)'), 'MRU tidak boleh cocok substring');
 });
 
 test('cooldown: "concurrency capacity" BUKAN limit harian (rpd)', () => {

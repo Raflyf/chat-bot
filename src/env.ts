@@ -51,156 +51,62 @@ export const config = {
   telegramToken: cleanStr('TELEGRAM_BOT_TOKEN'),
   ownerChatId: cleanStr('OWNER_CHAT_ID'),
   ownerWaNumber: cleanStr('OWNER_WA_NUMBER'),
-  // Endpoint Dahl. DAHL_PROXY_URL (Cloudflare Worker) DIHAPUS 04 Okt 2026 —
-  // proxy-nya sudah mati (HTTP 403 error 1010, akun diblokir), dan folder
-  // cloudflare-worker/dahl-proxy dihapus dari repo. Dahl diakses langsung
-  // lewat DAHL_BASE_URL, atau default resmi bila tidak diisi.
-  dahlProxyUrl: cleanStr('DAHL_BASE_URL') || 'https://inference.dahl.global/v1',
   pools: {
-    dreamprompting: csv('DREAMPROMPTING_KEYS'),
-    cloudflare: csv('CLOUDFLARE_KEYS'),
-    nvidia: csv('NVIDIA_KEYS'),
-    openrouter: csv('OPENROUTER_KEYS'),
-    groq: csv('GROQ_KEYS'),
-    gemini: csv('GEMINI_KEYS'),
-    dahl: csv('DAHL_KEYS'),
     opencode: csv('OPENCODE_KEYS'),
+    cloudflare: csv('CLOUDFLARE_KEYS'),
+    groq: csv('GROQ_KEYS'),
+    dreamprompting: csv('DREAMPROMPTING_KEYS'),
+    openrouter: csv('OPENROUTER_KEYS'),
+    gemini: csv('GEMINI_KEYS'),
   },
   cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
   models: {
-    // Tier 1: DreamPrompting (100 RPM, Rolling Free Tier)
-    // Model Utama: groq/qwen/qwen3.6-27b (teruji cepat dan patuh penuh)
-    // Cadangan: groq/openai/gpt-oss-120b (penalaran kuat)
-    dpPrimary: 'groq/qwen/qwen3.6-27b',
-    dpBackup: [
-      'groq/openai/gpt-oss-120b',
-    ],
+    // Tier 1: OpenCode Free. Model ID mengikuti katalog yang sudah diuji.
+    opencodePrimary: 'deepseek-v4.1-flash-free',
+    opencodeBackup: ['glm-5.3-flash-free'],
 
-    // Tier 2: Cloudflare Workers AI
-    // cfPrimary : qwen3.8-27b (2026-08-17, 262K, reasoning+vision+tool)
-    // cfBackup  : nemotron-3-120b-a12b (2026-02-24, 256K, 120B MoE) — MENGGANTIKAN
-    //             gpt-oss-20b (2025-08-05) yang sudah lawas.
-    //             BUKTI UJI (12 Okt 2026): nemotron 0.60s dengan enable_thinking:false
-    //             (tanpa itu 8.02s), JSON benar, reasoning+tool.
-    //
-    // CATATAN (16 Okt 2026 — instruksi pemilik produk): llama-4-scout DIKELUARKAN
-    // dari cfBackup. Model itu VISION (multimodal) dan tempatnya di `cfVision`,
-    // bukan di rantai TEKS — teks punya model khusus yang lebih tepat.
-    // CATATAN: model terbaru (glm-5.3, kimi-k2.6/2.7, deepseek-v4) SEMUA BERBAYAR
-    //          ("not available on Workers Free plan") — tidak bisa dipakai.
+    // Tier 2: Cloudflare Workers AI.
     cfPrimary: '@cf/qwen/qwen3.8-27b',
     cfBackup: ['@cf/nvidia/nemotron-3-120b-a12b'],
     cfVision: [
+      '@cf/qwen/qwen3.8-27b',
       '@cf/meta/llama-4-scout-17b-16e-instruct',
       '@cf/meta/llama-3.2-11b-vision-instruct',
-      '@cf/qwen/qwen3.8-27b',
     ],
 
-    // Tier 3: NVIDIA NIM (1.000 Free Credits / key)
-    // Model Utama: google/diffusiongemma-26b-a4b-it (590ms)
-    // Cadangan: meta/llama-3.2-11b-vision-instruct (711ms, multimodal & reasoning)
-    // OpenCode Free (langsung ke opencode.ai, TANPA 9Router):
-    // 2 model sesuai permintaan user. Terverifikasi 3/3 stabil.
-    // Wajib: 4 tool fingerprint + format per-endpoint (lihat opencodeChat).
-    opencodePrimary: 'muse-spark-1.3-contributor-free',
-    opencodeBackup: ['mimo-v2.6-flash-free'],
-    nvidiaPrimary: 'google/diffusiongemma-26b-a4b-it',
-    nvidiaBackup: [
-      'meta/llama-3.2-11b-vision-instruct',
-    ],
-
-    // Tier 4: OpenRouter (model :free)
-    // Model Utama: nvidia/nemotron-3-ultra-550b-a55b:free (1M konteks, 409ms)
-    // Cadangan: inclusionai/ling-3.0-flash-sante:free (262K konteks, 723ms)
-    orPrimary: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-    orBackup: ['inclusionai/ling-3.0-flash-sante:free'],
-
-    // Tier 5: Groq Cloud API (LPU Ultra-Fast Inference)
+    // Tier 3: Groq. GPT-OSS hanya teks, Qwen juga menangani gambar.
     groqPrimary: 'qwen/qwen3.8-27b',
     groqBackup: ['openai/gpt-oss-120b'],
+    groqWhisperPrimary: 'whisper-large-v3',
+    groqWhisperBackup: 'whisper-large-v3-turbo',
+    cfWhisper: '@cf/openai/whisper-large-v3-turbo',
 
-    // Tier 6: Google Gemini API (1M Konteks)
-    geminiPrimary: 'gemini-3.8-flash',
+    // Tier 4: DreamPrompting, Qwen 3.8 saja.
+    dpPrimary: 'groq/qwen/qwen3.8-27b',
+    dpBackup: [] as string[],
+
+    // Tier 5: prefix provider openrouter/ tidak dikirim ke upstream.
+    orPrimary: 'nvidia/nemotron-3.5-super-vl:free',
+    orBackup: ['nvidia/nemotron-3-ultra-550b-a55b:free'],
+
+    // Tier 6: model yang sudah merespons; 3.8 tidak dipilih karena timeout.
+    geminiPrimary: 'gemini-2.5-flash',
     geminiBackup: ['gemini-flash-lite-latest'],
-    geminiVision: ['gemini-flash-lite-latest', 'gemini-3.6-flash'],
+    geminiVision: ['gemini-2.5-flash', 'gemini-flash-lite-latest'],
 
-    // Tier 7: Dahl Global API (1B Token Pool)
-    // Model Utama: deepseek-ai/DeepSeek-V4-Flash-0731
-    // Cadangan: zai-org/GLM-5.3-Flash (teruji live HTTP 200, 1.794ms)
-    dahlPrimary: 'deepseek-ai/DeepSeek-V4-Flash-0731',
-    dahlBackup: [
-      'zai-org/GLM-5.3-Flash',
-    ],
-
-    // CATATAN (04 Okt 2026): xKiro DIHAPUS — semua 8 akun disuspend permanen
-    // (HTTP 403 error 1010). Entri xkiroPrimary/xkiroBackup dihapus dari sini.
-    // Rantai vision eksplisit. DIROMBAK 21 Sep berdasarkan UJI GAMBAR NYATA (2 blok
-    // biru/kuning): model yang terbukti BENAR + cepat didahulukan, yang membalas KOSONG
-    // atau error 400 DIBUANG (bukan ditebak):
-    //   BENAR  : groq/qwen3.8-27b, cf/llama-4-scout (716ms!), cf/mistral-small-3.1,
-    //            cf/qwen3.8-27b, gemini-3.1-flash-lite (1213ms), gemini-2.5-flash,
-    //            gemini-3.6-flash, xkiro qwen3.8-max, xkiro qwen3.8-omni-flash
-    //   DIBUANG: @cf/google/gemma-4-26b-a4b-it (KOSONG), @cf/llava-1.5-7b (KOSONG),
-    //            @cf/meta/llama-3.2-11b-vision (HTTP 400 "unable to add image"),
-    //            gemini-3.5-flash-lite (HTTP 400 invalid argument), minimax-m3 (tidak lolos)
-    // Dipakai chat({ vision: true }) untuk foto, stiker, dan gambar di dalam dokumen Word.
+    // Foto, stiker, dan gambar Word memakai urutan vision, bukan race teks.
     visionChain: [
-      // ══════════════════════════════════════════════════════════════════════
-      // RANTAI VISION — DISUSUN ULANG 10 Okt 2026 BERDASARKAN UJI NYATA
-      // ══════════════════════════════════════════════════════════════════════
-      // LAPORAN PEMILIK PRODUK: "tidak ada model vision yg jalan sama sekali?
-      // dari semua apikey endpoint kan itu banyak model bisa vision, kaya mimo
-      // v2.6 dari opencode atau dari gemini dan masih banyak lagi. coba perbaiki
-      // penggunaan model vision dan rantai tier fallback nya."
-      //
-      // CARA UJI: gambar PNG berisi teks "DONGO" dikirim ke TIAP endpoint
-      // langsung (bypass rantai), lalu dinilai: apakah model menyebut "DONGO".
-      //
-      // HASIL UJI NYATA (10 Okt 2026):
-      //   ✅ groq/qwen3.8-27b                  0,8-15s  "DONGO" BENAR (primer)
-      //   ✅ openrouter/nemotron-3-nano-omni   3,0s     "DONGO" BENAR
-      //   ✅ nvidia/llama-3.2-11b-vision       1,7s     "DONGO" BENAR
-      //   ✅ gemini/gemini-flash-lite-latest   2,4s     "DONGO" BENAR
-      //   ✅ gemini/gemini-3.6-flash           4,5s     "DONGO" BENAR
-      //   ✅ opencode/mimo-v2.6-flash-free     (butuh stream+fingerprint; lihat
-      //                                          komentar OpenCode di providers.ts)
-      //   ❌ opencode/* TANPA stream -> 401/403 FreeTierError
-      //   ❌ cloudflare/* -> 429 neuron habis (pulih saat reset harian)
-      //   ❌ openrouter model free lain -> 404 (sudah dihapus OpenRouter)
-      //   ❌ nvidia/llama-3.2-90b-vision -> timeout 40s (terlalu lambat)
-      //
-      // URUTAN: yang TERBUKTI BENAR & CEPAT lebih dulu. Cloudflare tetap dipasang
-      // (pulih saat kuota reset) tetapi di belakang model yang sudah terbukti.
-      // ══════════════════════════════════════════════════════════════════════
-      // ── URUTAN BARU (12 Okt 2026) — berdasarkan UJI AKURASI BACA STIKER ──
-      // Uji: 4 stiker ber-teks (NGAPAIN INJR / BABI / DASAR TUMAN / BODOH AMAT).
-      //   ✅ 4/4 : gemini-flash-lite, gemini-3.6-flash, nvidia/llama-3.2-11b-vision,
-      //            cloudflare/qwen3.8-27b, cloudflare/llama-4-scout,
-      //            cloudflare/mistral-small-3.1-24b
-      //   ❌ 2/4 : openrouter/nemotron-3-nano-omni (dipindah ke belakang)
-      //   ⚠️ groq/qwen3.8-27b: tidak bisa diuji langsung (Cloudflare blokir request
-      //      non-browser → HTTP 403 code 1010), TETAPI lewat rantai asli terbukti
-      //      BENAR & TERCEPAT (1,3–2,4 dtk). Tetap di posisi 1.
-      // URUTAN: akurat + cepat dulu; Cloudflare ditaruh setelah Gemini agar neuron
-      // tidak cepat habis; OpenRouter/OpenCode jadi cadangan terakhir.
       { kind: 'groq', model: 'qwen/qwen3.8-27b' },
-      { kind: 'nvidia', model: 'meta/llama-3.2-11b-vision-instruct' },
+      { kind: 'openrouter', model: 'nvidia/nemotron-3.5-super-vl:free' },
+      { kind: 'gemini', model: 'gemini-2.5-flash' },
       { kind: 'gemini', model: 'gemini-flash-lite-latest' },
-      { kind: 'gemini', model: 'gemini-3.6-flash' },
       { kind: 'cloudflare', model: '@cf/qwen/qwen3.8-27b' },
       { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
-      // mistral-small DIGANTI (12 Okt 2026) — keluhan pemilik produk: "mistral itu
-      // sering halu, ngaco, suka menyisipkan bahasa mandarin, dan jelek".
-      // Diganti dengan model VISION KHUSUS (bukan model umum) — sekeluarga dengan
-      // meta/llama-3.2-11b-vision-instruct di NVIDIA yang sudah terbukti 4/4.
       { kind: 'cloudflare', model: '@cf/meta/llama-3.2-11b-vision-instruct' },
-      { kind: 'gemini', model: 'gemini-2.5-flash' },
-      { kind: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
-      { kind: 'opencode', model: 'mimo-v2.6-flash-free' },
-      { kind: 'opencode', model: 'big-pickle' },
-      { kind: 'opencode', model: 'mimo-v2.5-free' },
+      { kind: 'opencode', model: 'deepseek-v4.1-flash-free' },
+      { kind: 'opencode', model: 'glm-5.3-flash-free' },
     ] as Array<{
-      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'opencode';
+      kind: 'opencode' | 'cloudflare' | 'groq' | 'dreamprompting' | 'openrouter' | 'gemini';
       model: string;
     }>,
   },
@@ -280,11 +186,9 @@ export const config = {
   dailyCap: {
     dreamprompting: num('DAILY_CAP_DREAMPROMPTING', 1000),
     cloudflare: num('DAILY_CAP_CLOUDFLARE', 120),
-    nvidia: num('DAILY_CAP_NVIDIA', 1000),
     openrouter: num('DAILY_CAP_OPENROUTER', 50),
     groq: num('DAILY_CAP_GROQ', 1000),
     gemini: num('DAILY_CAP_GEMINI', 1500),
-    dahl: num('DAILY_CAP_DAHL', 5000),
     opencode: num('DAILY_CAP_OPENCODE', 1000),
   },
   // Batas TOKEN per hari (TPD) per key. 0 = tidak dibatasi.
@@ -294,11 +198,9 @@ export const config = {
     opencode: numAllowZero('DAILY_TOKEN_CAP_OPENCODE', 0),
     dreamprompting: numAllowZero('DAILY_TOKEN_CAP_DREAMPROMPTING', 0),
     cloudflare: numAllowZero('DAILY_TOKEN_CAP_CLOUDFLARE', 0),
-    nvidia: numAllowZero('DAILY_TOKEN_CAP_NVIDIA', 0),
     openrouter: numAllowZero('DAILY_TOKEN_CAP_OPENROUTER', 0),
     groq: numAllowZero('DAILY_TOKEN_CAP_GROQ', 200000),
     gemini: numAllowZero('DAILY_TOKEN_CAP_GEMINI', 0),
-    dahl: numAllowZero('DAILY_TOKEN_CAP_DAHL', 0),
   },
   // Cap token PER-KEY (urut sama dengan urutan key di pool). Dipakai bila tiap key
   // punya limit BERBEDA — kasus nyata xKiro: key #1 limit 1.000.000 token/hari
@@ -308,11 +210,9 @@ export const config = {
     opencode: numList('DAILY_TOKEN_CAP_PER_KEY_OPENCODE'),
     dreamprompting: numList('DAILY_TOKEN_CAP_PER_KEY_DREAMPROMPTING'),
     cloudflare: numList('DAILY_TOKEN_CAP_PER_KEY_CLOUDFLARE'),
-    nvidia: numList('DAILY_TOKEN_CAP_PER_KEY_NVIDIA'),
     openrouter: numList('DAILY_TOKEN_CAP_PER_KEY_OPENROUTER'),
     groq: numList('DAILY_TOKEN_CAP_PER_KEY_GROQ'),
     gemini: numList('DAILY_TOKEN_CAP_PER_KEY_GEMINI'),
-    dahl: numList('DAILY_TOKEN_CAP_PER_KEY_DAHL'),
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
@@ -378,11 +278,9 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
   const totalKeys =
     config.pools.dreamprompting.length +
     config.pools.cloudflare.length +
-    config.pools.nvidia.length +
     config.pools.openrouter.length +
     config.pools.groq.length +
     config.pools.gemini.length +
-    config.pools.dahl.length +
     config.pools.opencode.length;
 
   if (totalKeys === 0) throw new Error('Semua pool key kosong. Isi minimal satu provider di .env.');

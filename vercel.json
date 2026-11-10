@@ -4,16 +4,20 @@
   "outputDirectory": "public",
   "functions": {
     "api/webhook.ts": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "node_modules/@wreq-js/binding-linux-x64-gnu/**"
     },
     "api/whatsapp.ts": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "node_modules/@wreq-js/binding-linux-x64-gnu/**"
     },
     "api/cron/reminders.ts": {
-      "maxDuration": 30
+      "maxDuration": 30,
+      "includeFiles": "node_modules/@wreq-js/binding-linux-x64-gnu/**"
     },
     "api/stats.ts": {
-      "maxDuration": 45
+      "maxDuration": 45,
+      "includeFiles": "node_modules/@wreq-js/binding-linux-x64-gnu/**"
     },
     "api/dataset.ts": {
       "maxDuration": 20
@@ -29,6 +33,9 @@
     },
     "api/cron/arsip.ts": {
       "maxDuration": 30
+    },
+    "api/laporan.ts": {
+      "includeFiles": "node_modules/@wreq-js/binding-linux-x64-gnu/**"
     }
   },
   "headers": [

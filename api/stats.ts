@@ -29,11 +29,44 @@ import {
   fetchCloudflareLimits,
   fetchDreamPromptingLimits,
   geminiDocumentedLimits,
-  dahlDocumentedLimits,
   dreampromptingDocumentedLimits,
-  nvidiaDocumentedLimits,
   type LiveLimit,
 } from '../src/limits.js';
+
+// Katalog untuk UI berasal dari konfigurasi runtime; tidak memuat kredensial.
+export function getModelCatalog() {
+  const m = config.models;
+  const tiers = [
+    { provider: 'opencode', primary: m.opencodePrimary, backup: m.opencodeBackup },
+    { provider: 'cloudflare', primary: m.cfPrimary, backup: m.cfBackup },
+    { provider: 'groq', primary: m.groqPrimary, backup: m.groqBackup },
+    { provider: 'dreamprompting', primary: m.dpPrimary, backup: m.dpBackup },
+    { provider: 'openrouter', primary: m.orPrimary, backup: m.orBackup },
+    { provider: 'gemini', primary: m.geminiPrimary, backup: m.geminiBackup },
+  ];
+  return tiers.flatMap((p, index) => {
+    const textModels = [p.primary, ...p.backup];
+    const visionModels = m.visionChain.filter((v) => v.kind === p.provider).map((v) => v.model);
+    const nativeModels = p.provider === 'gemini' ? m.geminiVision : [];
+    const audioModels = p.provider === 'groq' ? [m.groqWhisperPrimary, m.groqWhisperBackup]
+      : p.provider === 'cloudflare' ? [m.cfWhisper] : [];
+    return [...new Set([...textModels, ...visionModels, ...nativeModels, ...audioModels])].map((model) => {
+      const capabilities = [];
+      if (textModels.includes(model)) capabilities.push('Text');
+      if (visionModels.includes(model)) capabilities.push('Vision');
+      if (nativeModels.includes(model)) capabilities.push('Audio', 'PDF', 'Video');
+      if (audioModels.includes(model)) capabilities.push('Voice');
+      const textIndex = textModels.indexOf(model);
+      const visionIndex = m.visionChain.findIndex((v) => v.kind === p.provider && v.model === model);
+      return {
+        id: p.provider + '/' + model, model, provider: p.provider, tier: index + 1, capabilities,
+        desc: ['Tier ' + (index + 1), textIndex === 0 ? 'Primer teks' : textIndex > 0 ? 'Cadangan teks #' + textIndex : '',
+          visionIndex >= 0 ? 'Vision #' + (visionIndex + 1) : '', nativeModels.includes(model) ? 'Media native' : '',
+          audioModels.includes(model) ? 'Transkripsi' : ''].filter(Boolean).join(' · '),
+      };
+    });
+  });
+}
 
 function detectMessageType(content: string): 'voice' | 'document' | 'image' | 'sticker' | 'video' | 'text' {
   // Tanpa kurung tutup agar varian grup ("[Voice Note dari X]: ...") ikut terdeteksi
@@ -182,17 +215,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         dp.set(k, dpLive.get(k) ?? dreampromptingDocumentedLimits());
       }
       result.set('dreamprompting', dp);
-      const nv = new Map<string, LiveLimit>();
-      for (const k of config.pools.nvidia) nv.set(k, nvidiaDocumentedLimits());
-      result.set('nvidia', nv);
-      // Gemini & Dahl: tidak ada endpoint kuota publik -> pakai dokumentasi resmi,
-      // ditandai isLive:false agar dashboard jujur soal sumbernya.
+      // Gemini: batas dokumentasi bukan saldo pemakaian upstream.
       const gm = new Map<string, LiveLimit>();
       for (const k of config.pools.gemini) gm.set(k, geminiDocumentedLimits());
       result.set('gemini', gm);
-      const dh = new Map<string, LiveLimit>();
-      for (const k of config.pools.dahl) dh.set(k, dahlDocumentedLimits());
-      result.set('dahl', dh);
       return result;
     })();
 
@@ -526,56 +552,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       : 2500;
     const totalComputedTokensPeriod = grandTotalRealTokens + (Math.max(0, totalModelCalls - grandTotalCallsWithRealTokens) * overallAvgTokens);
 
-    // Daftar model aktif sistem untuk memfilter histori DB lama yang sudah didepresiasi
-    // Urutan mengikuti rantai failover teks runtime 7 Tier:
-    // DreamPrompting > Cloudflare > NIM > OpenRouter > Groq > Gemini > Dahl.
-    const activeSystemModels = [
-      // Tier 1: DreamPrompting
-      config.models.dpPrimary,
-      ...config.models.dpBackup,
-      // Tier 2: Cloudflare Workers AI (teks + seluruh model vision)
-      config.models.cfPrimary,
-      ...config.models.cfBackup,
-      ...config.models.cfVision,
-      // Tier 3: OpenCode Free (mimo/muse, tanpa API key)
-      // DITAMBAHKAN 04 Okt 2026 — BUG YANG DIPERBAIKI:
-      // Sebelumnya OpenCode TIDAK terdaftar di sini, sehingga isModelActive()
-      // mengembalikan false untuk semua balasan OpenCode. Akibatnya model yang
-      // PALING BARU merespons (muse-spark / mimo) DIBUANG dari daftar MRU, dan
-      // dashboard menampilkan model lain (Nemotron) di posisi #1 — padahal bukan
-      // dia yang terakhir menjawab. Keluhan user: "kenapa yg #1 tidak model yg
-      // sedang merespon".
-      config.models.opencodePrimary,
-      ...config.models.opencodeBackup,
-      // Tier 4: OpenRouter
-      config.models.orPrimary,
-      ...config.models.orBackup,
-      // Tier 5: NVIDIA NIM
-      config.models.nvidiaPrimary,
-      ...config.models.nvidiaBackup,
-      // Tier 6: Groq
-      config.models.groqPrimary,
-      ...config.models.groqBackup,
-      // Tier 7: Gemini (teks + model vision khusus)
-      config.models.geminiPrimary,
-      ...config.models.geminiBackup,
-      ...config.models.geminiVision,
-      // Tier 8: Dahl Global
-      config.models.dahlPrimary,
-      ...config.models.dahlBackup,
-      // CATATAN: xKiro DIHAPUS 04 Okt 2026 (8 akun disuspend permanen 403).
-      // Entri xkiroPrimary/xkiroBackup yang lama sudah dibuang dari daftar ini.
-      // Rantai vision eksplisit (model yang bisa muncul sebagai `via`)
-      ...config.models.visionChain.map((v) => v.model),
-      'whisper-large-v3-turbo',
-      'whisper-large-v3',
-    ].map((m) => m.toLowerCase());
-
+    const modelCatalog = getModelCatalog();
+    const activeSystemModels = new Set(modelCatalog.map((m) => m.id.toLowerCase()));
     const isModelActive = (modelStr: string): boolean => {
-      const lower = modelStr.toLowerCase();
-      return activeSystemModels.some(
-        (act) => lower === act || lower.endsWith('/' + act) || act.endsWith('/' + lower)
-      );
+      const parts = modelStr.toLowerCase().split('/');
+      const at = parts.findIndex((part) => KNOWN_PROVIDER_KINDS.includes(part));
+      return at >= 0 && activeSystemModels.has(parts.slice(at).join('/'));
     };
 
     // Urutan MRU (Most Recently Used) All-Time:
@@ -587,7 +569,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     for (const m of candidateRecentMsgs) {
       const rawModel = m?.via || 'unknown';
       const model = rawModel.split('#')[0].trim();
-      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && isModelActive(model) && !seenRecent.has(model)) {
+      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && !seenRecent.has(model)) {
         seenRecent.add(model);
         recentModelOrder.push(model);
       }
@@ -597,13 +579,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     for (const m of assistantMsgs ?? []) {
       const rawModel = m?.via || 'unknown';
       const model = rawModel.split('#')[0].trim();
-      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && isModelActive(model) && !seenRecent.has(model)) {
+      if (model && model !== 'unknown' && model !== 'cache' && !model.startsWith('system/') && !seenRecent.has(model)) {
         seenRecent.add(model);
         recentModelOrder.push(model);
       }
     }
 
-    const latestActiveModel = recentModelOrder[0] || null;
+    const latestActiveModel = recentModelOrder.find(isModelActive) || null;
 
     const modelsBreakdown = Object.entries(modelCounts)
       .map(([name, count]) => ({
@@ -613,9 +595,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }))
       .sort((a, b) => b.count - a.count);
 
-    // 4. Bangun status Pool per Provider & tiap API Key (7 Tier Resmi Runtime Sistem)
+    // 4. Bangun status Pool per Provider & tiap API Key (6 Tier Runtime)
     const providerDefs: Array<{
-      kind: 'dreamprompting' | 'cloudflare' | 'nvidia' | 'openrouter' | 'groq' | 'gemini' | 'dahl' | 'opencode';
+      kind: 'opencode' | 'cloudflare' | 'groq' | 'dreamprompting' | 'openrouter' | 'gemini';
       displayName: string;
       keys: string[];
       cap: number;
@@ -631,23 +613,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       allModels: string[];
     }> = [
       {
-        kind: 'dreamprompting',
-        displayName: 'DreamPrompting',
-        keys: config.pools.dreamprompting,
-        cap: config.dailyCap.dreamprompting,
-        tokenCapPerKey: config.dailyTokenCap.dreamprompting,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.dreamprompting,
-        // DIPERBAIKI 04 Okt: label lama "100 RPM • Rolling 24h Free Tier" SALAH.
-        // Endpoint /api/v1/quota menyatakan: 5.000 req/hari DAN 500.000 token/hari,
-        // scope AKUN (bukan per key), dengan rate limit 100 req/menit.
-        // Dua batas berjalan bersamaan — mana yang habis lebih dulu mengikat.
+        kind: 'opencode',
+        displayName: 'OpenCode Free',
+        keys: config.pools.opencode,
+        cap: config.dailyCap.opencode,
+        tokenCapPerKey: config.dailyTokenCap.opencode,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.opencode,
         tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '5.000 req/hari • 500.000 token/hari (scope akun) • 100 req/menit',
-        resetCycle: 'Rolling 24 jam',
-        contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.dpPrimary,
-        backupModel: config.models.dpBackup.join(' / '),
-        allModels: [config.models.dpPrimary, ...config.models.dpBackup],
+        // OpenCode Free: TIDAK BISA LIVE-SYNCED. Diuji 04 Okt ke 10 endpoint kandidat
+        // (/zen/v1/usage, /quota, /limits, /me, /account, /key, /credits, /api/v1/...)
+        // -> SEMUA 404; header respons chat juga TIDAK memuat info kuota/limit.
+        // Karena itu dashboard memakai catatan internal bot (dihitung dari pemakaian
+        // nyata), ditandai "Bot Monitored" — bukan "Live Synced" — agar jujur.
+        tokenLimitLabel: 'Tanpa API key; batas upstream belum diketahui',
+        resetCycle: 'Mengikuti kuota upstream',
+        contextWindow: 'Belum terverifikasi per model',
+        primaryModel: config.models.opencodePrimary,
+        backupModel: config.models.opencodeBackup.join(' / '),
+        allModels: modelCatalog.filter((m) => m.provider === 'opencode').map((m) => m.model),
       },
       {
         kind: 'cloudflare',
@@ -663,60 +646,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         tokenLimitType: 'neuron',
         tokenLimitLabel: '10.000 Neuron/hari (batas utama) • 1.200 req/5 menit (rate limit)',
         resetCycle: 'Harian (00:00 UTC)',
-        contextWindow: '131.072 Token (131K)',
+        contextWindow: 'Belum terverifikasi per model',
         primaryModel: config.models.cfPrimary,
         backupModel: config.models.cfBackup.join(' / '),
-        allModels: [config.models.cfPrimary, ...config.models.cfBackup, ...config.models.cfVision],
-      },
-      {
-        kind: 'opencode',
-        displayName: 'OpenCode Free',
-        keys: config.pools.opencode,
-        cap: config.dailyCap.opencode,
-        tokenCapPerKey: config.dailyTokenCap.opencode,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.opencode,
-        tokenLimitType: 'daily_cap',
-        // OpenCode Free: TIDAK BISA LIVE-SYNCED. Diuji 04 Okt ke 10 endpoint kandidat
-        // (/zen/v1/usage, /quota, /limits, /me, /account, /key, /credits, /api/v1/...)
-        // -> SEMUA 404; header respons chat juga TIDAK memuat info kuota/limit.
-        // Karena itu dashboard memakai catatan internal bot (dihitung dari pemakaian
-        // nyata), ditandai "Bot Monitored" — bukan "Live Synced" — agar jujur.
-        tokenLimitLabel: 'Tanpa API key (Bearer public) • kuota per sesi di upstream • 8.000 token/respons',
-        resetCycle: 'Rolling (per sesi)',
-        contextWindow: '1.000.000 Token (1M)',
-        primaryModel: config.models.opencodePrimary,
-        backupModel: config.models.opencodeBackup.join(' / '),
-        allModels: [config.models.opencodePrimary, ...config.models.opencodeBackup],
-      },
-      {
-        kind: 'openrouter',
-        displayName: 'OpenRouter AI',
-        keys: config.pools.openrouter,
-        cap: config.dailyCap.openrouter,
-        tokenCapPerKey: config.dailyTokenCap.openrouter,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.openrouter,
-        tokenLimitType: 'requests_tpm',
-        tokenLimitLabel: 'Bebas Kuota Harian (Model :free • Rate Limit 50-1.000 RPD)',
-        resetCycle: 'Harian (00:00 UTC)',
-        contextWindow: '1.000.000 Token (1M)',
-        primaryModel: config.models.orPrimary,
-        backupModel: config.models.orBackup.join(' / '),
-        allModels: [config.models.orPrimary, ...config.models.orBackup],
-      },
-      {
-        kind: 'nvidia',
-        displayName: 'NVIDIA NIM',
-        keys: config.pools.nvidia,
-        cap: config.dailyCap.nvidia,
-        tokenCapPerKey: config.dailyTokenCap.nvidia,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.nvidia,
-        tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '1.000 Free Credits / Key (NVIDIA NIM)',
-        resetCycle: 'Kredit Akun NIM',
-        contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.nvidiaPrimary,
-        backupModel: config.models.nvidiaBackup.join(' / '),
-        allModels: [config.models.nvidiaPrimary, ...config.models.nvidiaBackup],
+        allModels: modelCatalog.filter((m) => m.provider === 'cloudflare').map((m) => m.model),
       },
       {
         kind: 'groq',
@@ -726,12 +659,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         tokenCapPerKey: config.dailyTokenCap.groq,
         tokenCapPerKeyList: config.dailyTokenCapPerKey.groq,
         tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '1.000 RPD/key • 8K TPM • 200K TPD (Free Tier resmi)',
+        tokenLimitLabel: 'Batas per model mengikuti header upstream; pemakaian bot dicatat terpisah',
         resetCycle: 'Harian (00:00 UTC)',
-        contextWindow: '131.072 Token (131K)',
+        contextWindow: 'Belum terverifikasi per model',
         primaryModel: config.models.groqPrimary,
         backupModel: config.models.groqBackup.join(' / '),
-        allModels: [config.models.groqPrimary, ...config.models.groqBackup, 'whisper-large-v3-turbo'],
+        allModels: modelCatalog.filter((m) => m.provider === 'groq').map((m) => m.model),
+      },
+      {
+        kind: 'dreamprompting',
+        displayName: 'DreamPrompting',
+        keys: config.pools.dreamprompting,
+        cap: config.dailyCap.dreamprompting,
+        tokenCapPerKey: config.dailyTokenCap.dreamprompting,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.dreamprompting,
+        // DIPERBAIKI 04 Okt: label lama "100 RPM • Rolling 24h Free Tier" SALAH.
+        // Endpoint /api/v1/quota menyatakan: 5.000 req/hari DAN 500.000 token/hari,
+        // scope AKUN (bukan per key), dengan rate limit 100 req/menit.
+        // Dua batas berjalan bersamaan — mana yang habis lebih dulu mengikat.
+        tokenLimitType: 'daily_cap',
+        tokenLimitLabel: 'Batas akun mengikuti endpoint kuota; fallback dokumentasi ditandai',
+        resetCycle: 'Rolling 24 jam',
+        contextWindow: 'Belum terverifikasi per model',
+        primaryModel: config.models.dpPrimary,
+        backupModel: config.models.dpBackup.join(' / '),
+        allModels: modelCatalog.filter((m) => m.provider === 'dreamprompting').map((m) => m.model),
+      },
+      {
+        kind: 'openrouter',
+        displayName: 'OpenRouter AI',
+        keys: config.pools.openrouter,
+        cap: config.dailyCap.openrouter,
+        tokenCapPerKey: config.dailyTokenCap.openrouter,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.openrouter,
+        tokenLimitType: 'requests_tpm',
+        tokenLimitLabel: 'Model :free tetap memiliki batas request; ikuti endpoint kuota',
+        resetCycle: 'Harian (00:00 UTC)',
+        contextWindow: 'Belum terverifikasi per model',
+        primaryModel: config.models.orPrimary,
+        backupModel: config.models.orBackup.join(' / '),
+        allModels: modelCatalog.filter((m) => m.provider === 'openrouter').map((m) => m.model),
       },
       {
         kind: 'gemini',
@@ -741,29 +708,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         tokenCapPerKey: config.dailyTokenCap.gemini,
         tokenCapPerKeyList: config.dailyTokenCapPerKey.gemini,
         tokenLimitType: 'requests_tpm',
-        tokenLimitLabel: '1.500 RPD/key • 1M TPM Tier (Bebas Kuota Token Harian)',
-        resetCycle: 'Harian (00:00 PT / 14:00 WIB)',
-        contextWindow: '1.000.000 Token (1M)',
+        tokenLimitLabel: 'Batas per model/proyek belum terverifikasi; bukan kuota tak terbatas',
+        resetCycle: 'Mengikuti kuota upstream',
+        contextWindow: 'Belum terverifikasi per model',
         primaryModel: config.models.geminiPrimary,
         backupModel: config.models.geminiBackup.join(' / '),
-        allModels: [config.models.geminiPrimary, ...config.models.geminiBackup, ...config.models.geminiVision],
+        allModels: modelCatalog.filter((m) => m.provider === 'gemini').map((m) => m.model),
       },
-      {
-        kind: 'dahl',
-        displayName: 'Dahl Global API',
-        keys: config.pools.dahl,
-        cap: config.dailyCap.dahl,
-        tokenCapPerKey: 100000000,
-        tokenCapPerKeyList: config.dailyTokenCapPerKey.dahl,
-        tokenLimitType: 'daily_cap',
-        tokenLimitLabel: '1 Miliar Token Pool (100M/key • 5.000 RPD)',
-        resetCycle: 'Token Balance (1B Pool)',
-        contextWindow: '131.072 Token (131K)',
-        primaryModel: config.models.dahlPrimary,
-        backupModel: config.models.dahlBackup.join(' / '),
-        allModels: [config.models.dahlPrimary, ...config.models.dahlBackup],
-      },
-      // (Blok pool xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.)
     ];
 
     let totalPoolKeys = 0;
@@ -779,10 +730,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       // key punya limit harian dan sebagian sudah CAPPED (temuan user: "ketika filter hari
       // jadi dipilih semua, matriks penggunaan pool api key jadi begini").
       const effectiveCapPerKey = daysCount > 0 ? p.cap * daysCount : p.cap;
-      // Saldo token Dahl adalah pool 1B (bukan kuota harian), jadi TIDAK dikali jumlah hari —
-      // sisa saldo tetap sama berapa pun rentang tanggal yang dipilih.
-      const effectiveTokenCapPerKey =
-        p.kind === 'dahl' ? p.tokenCapPerKey : daysCount > 0 ? p.tokenCapPerKey * daysCount : 0;
+      const effectiveTokenCapPerKey = daysCount > 0 ? p.tokenCapPerKey * daysCount : p.tokenCapPerKey;
 
       const pStats = providerTokenStats[p.kind] || {
         realTokens: 0,
@@ -877,11 +825,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           (p as { __neuronPerBalasan?: number }).__neuronPerBalasan = neuronPerBalasan;
         } else if (endpointAuthoritative) {
           tokenCap = perKeyTokenCap > 0
-            ? (p.kind === 'dahl' ? perKeyTokenCap : daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
+            ? (daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
             : 0;
         } else {
           tokenCap = perKeyTokenCap > 0
-            ? (p.kind === 'dahl' ? perKeyTokenCap : daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
+            ? (daysCount > 0 ? perKeyTokenCap * daysCount : perKeyTokenCap)
             : effectiveTokenCapPerKey;
         }
         // ── CLOUDFLARE: KONVERSI TOKEN -> NEURON (perbaikan 06 Okt 2026) ──
@@ -984,7 +932,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         // Untuk rentang "Semua", cap tetap HARIAN (kuota provider harian) — bukan cap
         // dikali jumlah hari, karena akumulasi sepanjang waktu selalu melampaui kuota harian
         // dan membuat semua key tampak CAPPED 100%.
-        const callCap = liveRpdCap > 0 ? liveRpdCap : (daysCount > 0 ? p.cap * daysCount : p.cap);
+        const callCap = liveRpdCap > 0 ? liveRpdCap : p.cap;
         // Persentase/status SELALU mencerminkan kuota HARIAN (provider reset harian).
         // Untuk rentang "Semua": pakai pemakaian HARI INI dari DB (todayQuotaMap), bukan
         // akumulasi — akumulasi selalu melampaui kuota harian dan membuat semua key
@@ -992,7 +940,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const todayUsedForKey = (todayQuotaMap.get(`${p.kind}:${hash12}`) || 0) + (todayQuotaMap.get(`${p.kind}:${suffix}`) || 0);
         // Pemakaian HARIAN key ini — SELALU dipakai untuk baris key, karena cap provider
         // bersifat harian. Akumulasi periode dikirim terpisah sebagai `usedPeriod`.
-        const dailyCallsUsed = liveCallsUsed ?? (daysCount > 0 ? effectiveCallsUsed : todayUsedForKey);
+        const dailyCallsUsed = liveCallsUsed ?? todayUsedForKey;
         const percent = callCap > 0 ? Math.min(100, Math.round((dailyCallsUsed / callCap) * 100)) : 0;
         // Status key mempertimbangkan RPD DAN TPD — mana yang lebih dulu tercapai.
         let bindingPercent = Math.max(percent, tokenPercent);
@@ -1020,11 +968,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           usedPeriod: effectiveCallsUsed,
           dbUsed: used,
           cap: callCap,
-          remaining: callCap > 0 ? Math.max(0, callCap - effectiveCallsUsed) : null,
+          remaining: callCap > 0 ? Math.max(0, callCap - dailyCallsUsed) : null,
           percent,
           // Sumber limit: endpoint live atau fallback dokumentasi/.env — dashboard
           // menampilkan ini agar pengguna tahu seberapa valid angkanya.
-          limitSource: liveLimit?.source ?? 'konfigurasi .env',
+          limitSource: liveLimit?.source ?? 'Batas pengaman bot; kuota upstream belum diketahui',
           limitIsLive: liveLimit?.isLive ?? false,
           officialLimitLabel: liveLimit?.officialLabel ?? null,
           tokensPerMinute: liveLimit?.tokensPerMinute ?? null,
@@ -1055,7 +1003,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           // "Live synced" = ada data langsung dari endpoint provider — baik pemakaian
           // (OpenRouter) maupun batas kuota (Groq/Cloudflare via header).
           // (xKiro DIHAPUS 04 Okt 2026 — provider disuspend permanen 403.)
-          isLiveSynced: !!orLive || (liveLimit?.isLive ?? false),
+          isLiveSynced: liveLimit?.requestsUsedToday != null || liveLimit?.tokensUsedToday != null,
+          usageSource: liveLimit?.requestsUsedToday != null || liveLimit?.tokensUsedToday != null ? 'upstream' : 'bot',
           liveUserName: null,
           liveUserEmail: null,
           liveRemainingTokens: remainingTokens,
@@ -1141,6 +1090,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
       return {
         kind: p.kind,
+        tier: modelCatalog.find((m) => m.provider === p.kind)?.tier,
         displayName: p.displayName,
         primaryModel: p.primaryModel,
         backupModel: p.backupModel,
@@ -1259,6 +1209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         },
       },
       pools,
+      modelCatalog,
       activeModel: latestActiveModel,
       recentModels: recentModelOrder,
       modelsBreakdown,

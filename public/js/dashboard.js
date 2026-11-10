@@ -1,3 +1,9 @@
+function modelUsageId(value) {
+  const parts = String(value || '').split('#')[0].trim().toLowerCase().split('/');
+  const at = parts.findIndex((part) => ['opencode', 'cloudflare', 'groq', 'dreamprompting', 'openrouter', 'gemini', 'dahl', 'nvidia', 'xkiro'].includes(part));
+  return at >= 0 ? parts.slice(at).join('/') : '';
+}
+
 const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
     const SESSION_EXP_KEY = "freeaibot_admin_session_exp";
 
@@ -623,7 +629,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // Pool reset label
       const poolReset = document.getElementById("pool-reset-label");
       if (poolReset) {
-        if (data.range === "today") poolReset.textContent = "Reset: 00:00 UTC (Cloudflare, OpenRouter, Groq, Dahl) \u2022 00:00 PT (Gemini) \u2022 Rolling 24h (DreamPrompting) \u2022 per sesi (OpenCode)";
+        if (data.range === "today") poolReset.textContent = "Kuota harian dan cooldown mengikuti provider; angka bot bukan saldo upstream.";
         else poolReset.textContent = `Akumulasi Periode ${rangeLabel}`;
       }
 
@@ -707,268 +713,16 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         btn.classList.toggle("active", btn.getAttribute("data-range") === currentTimeRange);
       });
 
-      // Pemetaan frekuensi pemanggilan model dari database
-      const countMap = new Map();
-      modelsBreakdown.forEach(m => {
-        const rawName = (m.name || "").toLowerCase();
-        countMap.set(rawName, m.count || 0);
-      });
-
-      /**
-       * Hitung pemakaian model dari data DB.
-       *
-       * PENTING — bug lama: pencocokan dua arah (`name.includes(key) || key.includes(name)`)
-       * terlalu longgar. Dengan data nyata hanya 3 entri (9x qwen3.8-max, 1x nex, 1x reset),
-       * SEMUA kartu menampilkan "9x" karena key pendek seperti "qwen3.8-max" dianggap cocok
-       * dengan nama model apa pun yang mengandungnya — termasuk yang tidak berhubungan.
-       *
-       * Aturan baru: cocokkan dari key PALING SPESIFIK (terpanjang) dan utamakan kecocokan
-       * penuh nama model (setelah normalisasi namespace provider). Kecocokan longgar hanya
-       * dipakai bila tidak ada kecocokan spesifik sama sekali.
-       */
+      // Identitas tetap provider-qualified; nama model sama di gateway lain tidak digabung.
       function getCount(matchKeys) {
-        // Normalisasi: buang prefiks provider + suffix ":free" agar "xkiro/qwen/qwen3.8-max:free"
-        // setara dengan "qwen/qwen3.8-max".
-        const norm = (s) => String(s).toLowerCase()
-          .replace(/^(dreamprompting|cloudflare|nvidia|openrouter|groq|gemini|dahl|xkiro)\//, '')
-          .replace(/^@cf\//, '')
-          .replace(/:free$/, '')
-          .trim();
-        const normEntries = [...countMap.entries()].map(([n, c]) => [norm(n), c]);
-
-        // Urutkan key dari terpanjang (paling spesifik) ke terpendek.
-        const sortedKeys = [...matchKeys].map((k) => k.toLowerCase()).sort((a, b) => b.length - a.length);
-
-        for (const key of sortedKeys) {
-          const nk = norm(key);
-          // 1) Kecocokan PERSIS (paling akurat) — mis. "qwen/qwen3.8-max" === "qwen/qwen3.8-max".
-          const exact = normEntries.find(([n]) => n === nk);
-          if (exact) return exact[1];
-          // 2) Kecocokan penuh nama model terhadap key (name mengandung key) — hanya bila
-          //    key cukup spesifik (>= 12 char) agar tidak menyerap model lain.
-          if (nk.length >= 12) {
-            const hit = normEntries.find(([n]) => n.includes(nk));
-            if (hit) return hit[1];
-          }
-        }
-        return 0;
+        return modelsBreakdown.reduce((sum, row) =>
+          sum + (matchKeys.includes(modelUsageId(row.name)) ? Number(row.count) || 0 : 0), 0);
       }
 
-      // Katalog model router multi-tier.
-      // SINKRONISASI: setiap entri wajib punya `matchKeys` yang merujuk model NYATA di
-      // config sistem (src/env.ts). Diverifikasi otomatis oleh
-      // scratch/verify_v50_model_catalog.mjs — jangan tambah entri tanpa model di config.
-      // Katalog model router multi-tier.
-      // ── SINKRONISASI PENUH (12 Okt 2026) ──────────────────────────────────
-      // Katalog ini WAJIB sama persis dengan `config.models` di src/env.ts.
-      // Sebelumnya katalog ini TERTINGGAL dari config: ada 2 entri model yang
-      // sudah tidak dipakai, 1 model baru belum terdaftar, 1 nama model salah,
-      // dan label tier OpenCode keliru. Semua sudah dibetulkan 12 Okt 2026.
-      // URUTAN TIER (sama dengan steps() di src/providers.ts):
-      //   1 DreamPrompting | 2 Cloudflare | 3 OpenCode | 4 OpenRouter
-      //   5 NVIDIA | 6 Groq | 7 Gemini | 8 Dahl
-      const catalog = [
-        // --- Tier 1: DreamPrompting Gateway (100 RPM Free Tier) ---
-        {
-          name: "Qwen 3.6 27B",
-          provider: "DREAMPROMPTING",
-          tagClass: "tag-dreamprompting",
-          capabilities: ["Text", "Reasoning", "Fast Latency"],
-          desc: "Prioritas #1 Tier 1 - Primer teks via DreamPrompting, latensi ~370ms; limit 100 RPM",
-          matchKeys: ["dreamprompting/groq/qwen/qwen3.6-27b", "groq/qwen/qwen3.6-27b", "qwen/qwen3.6-27b", "qwen3.6-27b"],
-        },
-        {
-          name: "GPT-OSS 120B (DP)",
-          provider: "DREAMPROMPTING",
-          tagClass: "tag-dreamprompting",
-          capabilities: ["Text", "Reasoning", "Backup"],
-          desc: "Cadangan #1 Tier 1 - Penalaran besar GPT-OSS 120B via DreamPrompting",
-          matchKeys: ["dreamprompting/groq/openai/gpt-oss-120b", "groq/openai/gpt-oss-120b", "openai/gpt-oss-120b", "gpt-oss-120b"],
-        },
-        // --- Tier 2: Cloudflare Workers AI ---
-        {
-          name: "Qwen 3.8 27B (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Text", "Reasoning", "Vision"],
-          desc: "Prioritas #1 Tier 2 - Primer teks Cloudflare Workers AI (262K konteks)",
-          matchKeys: ["cloudflare/@cf/qwen/qwen3.8-27b", "@cf/qwen/qwen3.8-27b", "cf/qwen/qwen3.8-27b"],
-        },
-        {
-          name: "Nemotron 3 120B A12B (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Text", "Reasoning", "Fast"],
-          desc: "Cadangan #1 Tier 2 - 120B MoE (12B aktif), 256K konteks; 0,60s dengan enable_thinking:false",
-          matchKeys: ["cloudflare/@cf/nvidia/nemotron-3-120b-a12b", "@cf/nvidia/nemotron-3-120b-a12b", "nemotron-3-120b"],
-        },
-        {
-          name: "Llama 4 Scout 17B (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Vision", "Multimodal", "Fast"],
-          desc: "Vision prioritas #2 - uji baca teks stiker 4/4 BENAR; 0,56s tercepat di rantai vision",
-          matchKeys: ["cloudflare/@cf/meta/llama-4-scout-17b-16e-instruct", "@cf/meta/llama-4-scout-17b-16e-instruct", "llama-4-scout"],
-        },
-        {
-          name: "Llama 3.2 11B Vision (CF)",
-          provider: "CLOUDFLARE",
-          tagClass: "tag-cloudflare",
-          capabilities: ["Vision", "Multimodal"],
-          desc: "Vision prioritas #3 - model vision khusus Cloudflare (pengganti 12 Okt)",
-          matchKeys: ["cloudflare/@cf/meta/llama-3.2-11b-vision-instruct", "@cf/meta/llama-3.2-11b-vision-instruct"],
-        },
-        // --- Tier 3: OpenCode Free (tanpa API key) ---
-        {
-          name: "Muse Spark 1.3 Contributor",
-          provider: "OPENCODE",
-          tagClass: "tag-opencode",
-          capabilities: ["Text", "Reasoning", "Multimodal", "No API Key"],
-          desc: "Prioritas #1 Tier 3 - Primer teks OpenCode Free; gratis tanpa API key, effort low ~780ms",
-          matchKeys: ["opencode/muse-spark-1.3-contributor-free", "muse-spark-1.3-contributor-free", "muse-spark-1.3"],
-        },
-        {
-          name: "MiMo v2.6 Flash",
-          provider: "OPENCODE",
-          tagClass: "tag-opencode",
-          capabilities: ["Text", "Reasoning", "Multimodal", "No API Key"],
-          desc: "Cadangan #1 Tier 3 - ikut balapan (race) dengan primer, menang saat primer lambat",
-          matchKeys: ["opencode/mimo-v2.6-flash-free", "mimo-v2.6-flash-free", "mimo-v2.6-flash"],
-        },
-        {
-          name: "Big Pickle",
-          provider: "OPENCODE",
-          tagClass: "tag-opencode",
-          capabilities: ["Vision", "Multimodal", "No API Key"],
-          desc: "Vision OpenCode #1 - Terukur 1261ms, benar + taat instruksi",
-          matchKeys: ["opencode/big-pickle", "big-pickle"],
-        },
-        {
-          name: "MiMo v2.5 Free",
-          provider: "OPENCODE",
-          tagClass: "tag-opencode",
-          capabilities: ["Vision", "Multimodal", "No API Key"],
-          desc: "Vision OpenCode #2 - Terukur 1536ms, benar + taat instruksi",
-          matchKeys: ["opencode/mimo-v2.5-free", "mimo-v2.5-free"],
-        },
-        // --- Tier 4: OpenRouter (model :free) ---
-        {
-          name: "Nemotron 3 Ultra 550B Free",
-          provider: "OPENROUTER",
-          tagClass: "tag-openrouter",
-          capabilities: ["Text", "Reasoning", "Ultra 550B"],
-          desc: "Prioritas #1 Tier 4 - model 550B free tier, 1M konteks, ~409ms",
-          matchKeys: ["openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "nemotron-3-ultra-550b-a55b"],
-        },
-        {
-          name: "Ling 3.0 Flash Sante Free",
-          provider: "OPENROUTER",
-          tagClass: "tag-openrouter",
-          capabilities: ["Text", "Reasoning", "Fast"],
-          desc: "Cadangan #1 Tier 4 - model cepat, 262K konteks, ~723ms",
-          matchKeys: ["openrouter/inclusionai/ling-3.0-flash-sante:free", "inclusionai/ling-3.0-flash-sante:free", "ling-3.0-flash-sante"],
-        },
-        {
-          name: "Nemotron 3 Nano Omni 30B Free",
-          provider: "OPENROUTER",
-          tagClass: "tag-openrouter",
-          capabilities: ["Vision", "Multimodal"],
-          desc: "Vision OpenRouter - cadangan terakhir jalur vision (akurasi baca teks 2/4)",
-          matchKeys: ["openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "nemotron-3-nano-omni"],
-        },
-        // --- Tier 5: NVIDIA NIM ---
-        {
-          name: "Diffusion Gemma 26B A4B IT",
-          provider: "NVIDIA",
-          tagClass: "tag-nvidia",
-          capabilities: ["Text", "Reasoning", "NIM Speed"],
-          desc: "Prioritas #1 Tier 5 - Primer teks NVIDIA NIM, ~590ms; 1.000 credits pool",
-          matchKeys: ["nvidia/google/diffusiongemma-26b-a4b-it", "google/diffusiongemma-26b-a4b-it", "diffusiongemma-26b-a4b-it", "diffusiongemma"],
-        },
-        {
-          name: "Llama 3.2 11B Vision Instruct",
-          provider: "NVIDIA",
-          tagClass: "tag-nvidia",
-          capabilities: ["Text", "Vision", "NIM Speed"],
-          desc: "Cadangan #1 Tier 5 - uji baca teks stiker 4/4 BENAR; ~1,7s",
-          matchKeys: ["nvidia/meta/llama-3.2-11b-vision-instruct", "meta/llama-3.2-11b-vision-instruct", "llama-3.2-11b-vision-instruct", "llama-3.2-11b"],
-        },
-        // --- Tier 6: Groq Cloud API (LPU) ---
-        {
-          name: "Qwen 3.8 27B",
-          provider: "GROQ",
-          tagClass: "tag-groq",
-          capabilities: ["Text", "Reasoning", "Vision", "LPU Speed"],
-          desc: "Prioritas #1 Tier 6 - 370ms = TERCEPAT; vision prioritas #1 rantai multimodal",
-          matchKeys: ["groq/qwen/qwen3.8-27b", "groq/qwen3.8", "qwen/qwen3.8-27b", "qwen3.8-27b"],
-        },
-        {
-          name: "GPT-OSS 120B (Groq)",
-          provider: "GROQ",
-          tagClass: "tag-groq",
-          capabilities: ["Text", "Reasoning", "LPU Speed"],
-          desc: "Prioritas #2 Tier 6 - Penalaran kuat di LPU Groq (reasoning_effort: low)",
-          matchKeys: ["groq/openai/gpt-oss-120b", "openai/gpt-oss-120b"],
-        },
-        {
-          name: "Groq Whisper Turbo",
-          provider: "GROQ",
-          tagClass: "tag-groq",
-          capabilities: ["Voice Note (VN)"],
-          desc: "Transkripsi Voice Note audio sub-detik ~500ms",
-          matchKeys: ["whisper-large-v3-turbo", "whisper-large-v3", "whisper", "groq/whisper"],
-        },
-        // --- Tier 7: Google Gemini API (1M konteks) ---
-        {
-          name: "Gemini 3.8 Flash",
-          provider: "GEMINI",
-          tagClass: "tag-gemini",
-          capabilities: ["Text", "Reasoning", "PDF & Video"],
-          desc: "Prioritas #1 Tier 7 - Primer teks & dokumen/video native (1M konteks)",
-          matchKeys: ["gemini/gemini-3.8-flash", "gemini-3.8-flash"],
-        },
-        {
-          name: "Gemini Flash Lite Latest",
-          provider: "GEMINI",
-          tagClass: "tag-gemini",
-          capabilities: ["Vision", "PDF & Video", "Audio VN", "Fast"],
-          desc: "Cadangan #1 Tier 7 - uji baca teks stiker 4/4 BENAR; vision prioritas #3 rantai multimodal",
-          matchKeys: ["gemini/gemini-flash-lite-latest", "gemini-flash-lite-latest"],
-        },
-        {
-          name: "Gemini 3.6 Flash",
-          provider: "GEMINI",
-          tagClass: "tag-gemini",
-          capabilities: ["Vision", "PDF & Video", "Audio VN"],
-          desc: "Vision prioritas #4 - vision native, PDF, video & audio (1M konteks)",
-          matchKeys: ["gemini/gemini-3.6-flash", "gemini-3.6-flash"],
-        },
-        {
-          name: "Gemini 2.5 Flash",
-          provider: "GEMINI",
-          tagClass: "tag-gemini",
-          capabilities: ["Vision", "PDF & Video", "Audio VN"],
-          desc: "Vision prioritas #8 - vision native stabil, cadangan terakhir jalur Gemini",
-          matchKeys: ["gemini/gemini-2.5-flash", "gemini-2.5-flash"],
-        },
-        // --- Tier 8: Dahl Global API (1 Miliar Token Pool) ---
-        {
-          name: "DeepSeek V4 Flash 0731",
-          provider: "DAHL",
-          tagClass: "tag-dahl",
-          capabilities: ["Fast Reasoning", "Text", "Code"],
-          desc: "Prioritas #1 Tier 8 - SOTA reasoning kilat & pool 1 Miliar token",
-          matchKeys: ["dahl/deepseek-ai/deepseek-v4-flash-0731", "deepseek-ai/deepseek-v4-flash-0731", "deepseek-v4-flash-0731"],
-        },
-        {
-          name: "GLM 5.3 Flash",
-          provider: "DAHL",
-          tagClass: "tag-dahl",
-          capabilities: ["Text", "Reasoning", "Thinking"],
-          desc: "Cadangan #1 Tier 8 - Zhipu AI GLM 5.3 Flash via proxy Dahl Global",
-          matchKeys: ["dahl/zai-org/glm-5.3-flash", "zai-org/glm-5.3-flash", "glm-5.3-flash"],
-        },
-      ];
+      const catalog = (Array.isArray(data.modelCatalog) ? data.modelCatalog : []).map((m) => ({
+        name: m.model, provider: m.provider, tagClass: 'tag-' + m.provider,
+        capabilities: m.capabilities, desc: m.desc, matchKeys: [m.id.toLowerCase()],
+      }));
 
       // Urutan Model Berbasis MRU (Most Recently Used):
       // Jika ada model baru terpakai jadi #1, maka model #1 sebelumnya bergeser jadi #2, #3, dst.
@@ -1001,7 +755,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       }
 
       // Jika ada activeModel saat ini, pastikan ia berada mutlak di posisi paling puncak (#1)
-      const currentActive = data.activeModel || (modelsBreakdown[0]?.name);
+      const currentActive = data.activeModel || null;
       if (currentActive) {
         const existingIdx = window.__mruModelHistory.findIndex(k => k.toLowerCase() === currentActive.toLowerCase());
         if (existingIdx !== -1) {
@@ -1020,17 +774,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         }
       });
 
-      // Purge sembarang model historis yang sudah tidak ada di katalog aktif sistem
-      window.__mruModelHistory = (window.__mruModelHistory || []).filter(mruKey => {
-        if (!mruKey) return false;
-        const keyLower = mruKey.toLowerCase();
-        return catalog.some(item =>
-          item.matchKeys.some(k => {
-            const kl = k.toLowerCase();
-            return keyLower === kl || keyLower.endsWith('/' + kl) || kl.endsWith('/' + keyLower) || keyLower.includes(kl) || kl.includes(keyLower);
-          })
-        );
-      });
+      // Riwayat model lama tetap disimpan; hanya kartu aktif mengikuti katalog API.
 
       // Simpan state MRU bersih terkini ke localStorage
       try {
@@ -1046,10 +790,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const keyLower = mruKey.toLowerCase();
         const catIdx = catalog.findIndex((item, i) => {
           if (usedCatalogIndices.has(i)) return false;
-          return item.matchKeys.some(k => {
-            const kl = k.toLowerCase();
-            return keyLower === kl || keyLower.endsWith('/' + kl) || kl.endsWith('/' + keyLower) || keyLower.includes(kl) || kl.includes(keyLower);
-          });
+          return item.matchKeys.includes(modelUsageId(mruKey));
         });
 
         if (catIdx !== -1) {
@@ -1068,7 +809,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       // Render kartu dengan urutan baru: posisi #1 selalu model yang sedang aktif
       const __htmlGrid = orderedCatalog.map((c, i) => {
         const count = getCount(c.matchKeys);
-        const isActive = i === 0; // Posisi #1 selalu aktif terbaru
+        const isActive = Boolean(currentActive) && c.matchKeys.includes(modelUsageId(currentActive));
         const activeBadge = isActive
           ? `<span class="badge-active-live"><span class="pulse-dot-cyan"></span>AKTIF TERBARU</span>`
           : ``;
@@ -1087,14 +828,14 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const providerKey = (c.provider || "").toLowerCase();
 
         return `
-          <div class="${cardClass}" data-provider="${providerKey}">
+          <div class="${cardClass}" data-provider="${escapeHtml(providerKey)}">
             <div>
               <div class="card-top-row">
                 <div class="card-num-group">
                   <span class="card-number">#${i + 1}</span>
                   ${activeBadge}
                 </div>
-                <span class="tag-provider ${c.tagClass}">${c.provider}</span>
+                <span class="tag-provider ${escapeHtml(c.tagClass)}">${escapeHtml(c.provider)}</span>
               </div>
               <div class="card-model-name">${escapeHtml(c.name)}</div>
               ${capBadgesHtml ? `<div class="card-caps-row">${capBadgesHtml}</div>` : ""}
@@ -1307,7 +1048,7 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
         const usedValue = p.usedTodayDaily ?? p.usedToday ?? p.usedPeriod ?? 0;
         const usedPeriodValue = p.usedPeriod ?? usedValue;
         const showPeriodInfo = usedPeriodValue > usedValue;
-        const capInfo = p.totalCap > 0 ? `Batas: ${(Number(p.totalCap) || 0).toLocaleString("id-ID")} panggilan` : "Uncapped";
+        const capInfo = p.totalCap > 0 ? `Batas: ${(Number(p.totalCap) || 0).toLocaleString("id-ID")} panggilan` : "Batas upstream belum diketahui";
         // Konteks token pada header kartu: provider yang dibatasi TOKEN (Dahl/Groq)
         // tidak boleh hanya menampilkan panggilan — pengguna perlu tahu batas mana yang mengikat.
         const hasTokenContext = (p.totalTokenCap || 0) > 0 && (p.totalTokensUsed || 0) > 0;
@@ -1570,7 +1311,7 @@ function renderLiveUpstreamTable(data) {
           totalAllKeys++;
           const cleanSuffix = String(k.suffix || "").startsWith("...") ? k.suffix : "..." + (k.suffix || "????");
           if (p.kind === "dreamprompting") {
-            const keyCap = p.capPerKey || p.cap || 1000;
+            const keyCap = Number(k.cap) || 0;
             const callsUsed = k.used || 0;
             const callsRemaining = Math.max(0, keyCap - callsUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((callsUsed / keyCap) * 100)) : 0;
@@ -1607,16 +1348,16 @@ function renderLiveUpstreamTable(data) {
                 </td>
                 <td>
                   <div style="font-size: 0.92rem; font-weight: 700; color: ${bindingPct >= 100 ? '#f87171' : '#34d399'};">${bindingPct >= 100 ? 'KUOTA HABIS' : 'Active Gateway'}</div>
-                  <div style="font-size: 0.72rem; color: ${bindingPct >= 100 ? '#f87171' : '#10b981'}; margin-top: 2px;">${bindingPct >= 100 ? 'Tunggu reset (rolling 24 jam)' : 'Tier 1 Primer Teks'}</div>
+                  <div style="font-size: 0.72rem; color: ${bindingPct >= 100 ? '#f87171' : '#10b981'}; margin-top: 2px;">${bindingPct >= 100 ? 'Tunggu reset (rolling 24 jam)' : 'Tier 4 Primer Teks'}</div>
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">${k.limitIsLive ? '● Live Synced' : '● Bot Monitored'}</span>
+                  <span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">${k.isLiveSynced ? 'Pemakaian upstream' : 'Catatan bot'}</span>
                   <div><span class="key-badge-status ${bindingPct >= 100 ? 'status-capped' : bindingPct >= 80 ? 'status-warning' : 'status-healthy'}">${bindingPct >= 100 ? (k.bindingMetric === 'tokens' ? 'LIMIT TOKEN' : 'LIMIT REQ') : bindingPct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
                 </td>
               </tr>
             `);
           } else if (p.kind === "nvidia") {
-            const keyCap = p.capPerKey || p.cap || 1000;
+            const keyCap = Number(k.cap) || 0;
             const callsUsed = k.used || 0;
             const callsRemaining = Math.max(0, keyCap - callsUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((callsUsed / keyCap) * 100)) : 0;
@@ -1741,7 +1482,7 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Hari Ini</div>
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-live-sync" style="margin-bottom: 4px;">● Live Synced</span>
+                  <span class="badge-live-sync" style="margin-bottom: 4px;">${k.isLiveSynced ? "Pemakaian upstream" : "Catatan bot"}</span>
                   <div><span class="key-badge-status ${xkStatusClass}">${xkStatusText}</span></div>
                 </td>
               </tr>
@@ -1752,12 +1493,12 @@ function renderLiveUpstreamTable(data) {
             // "Penggunaan Hari Ini" pada angka TOTAL -> menyesatkan (temuan user:
             // $0.06142 tampil sebagai pemakaian hari ini padahal usage_daily = $0).
             const usageUsd = Number(k.liveUsageUsd || 0);
-            const dailyUsd = Number(k.liveUsageDailyUsd || 0);
+            const dailyUsd = Number(k.liveDailyUsageUsd || 0);
             totalOrUsageUsd += usageUsd;
             // BAR DITAMBAHKAN (04 Okt): OpenRouter sebelumnya TIDAK punya progress bar
             // sehingga sulit dilihat sekilas. Padahal endpoint /auth/key menyediakan
             // free_model_daily_requests (limit + used + remaining) yang bisa dibar-kan.
-            const orRpdCap = Number(k.cap) > 0 ? Number(k.cap) : 50;
+            const orRpdCap = Number(k.cap) || 0;
             const orRpdUsed = typeof k.used === "number" ? k.used : 0;
             const orRpdRemaining = (k.remaining !== null && k.remaining !== undefined)
               ? k.remaining
@@ -1778,37 +1519,35 @@ function renderLiveUpstreamTable(data) {
                 </td>
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #a855f7;">${orRpdUsed.toLocaleString("id-ID")} / ${orRpdCap.toLocaleString("id-ID")} req</span>
+                    <span style="font-weight: 700; color: #a855f7;">${orRpdUsed.toLocaleString("id-ID")} / ${orRpdCap > 0 ? orRpdCap.toLocaleString("id-ID") : "belum diketahui"} req</span>
                     <span style="color: var(--text-dim);">${orPct}%</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${orPct >= 100 ? 'progress-rose' : orPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${orPct}%"></div>
                   </div>
                   <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '50 req/hari (model :free)'}</div>
-                  <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">Pemakaian hari ini: $${dailyUsd.toFixed(5)} &bull; Total akun: $${usageUsd.toFixed(5)}</div>
+                  <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">Pemakaian hari ini: $${k.liveDailyUsageUsd != null ? dailyUsd.toFixed(5) : "–"} &bull; Total akun: $${k.liveUsageUsd != null ? usageUsd.toFixed(5) : "–"}</div>
                 </td>
                 <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: ${orPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${orPct >= 100 ? 'HABIS' : orRpdRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: ${orPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${orPct >= 100 ? 'HABIS' : orRpdCap > 0 ? orRpdRemaining.toLocaleString("id-ID") : "–"}</div>
                   <div style="font-size: 0.72rem; color: ${orPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${orPct >= 100 ? '● Kuota habis' : '● Sisa Request (:free)'}</div>
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-live-sync" style="margin-bottom: 4px;">● Live Synced</span>
+                  <span class="badge-live-sync" style="margin-bottom: 4px;">${k.isLiveSynced ? "Pemakaian upstream" : "Catatan bot"}</span>
                   <div><span class="key-badge-status ${orStatusClass}">${orStatusText}</span></div>
                 </td>
               </tr>
             `);
           } else if (p.kind === "groq") {
-            const keyCapRpd = p.cap || 1000;
+            const keyCapRpd = Number(k.cap) || 0;
             const callsUsed = k.used || 0;
             const callsRemaining = Math.max(0, keyCapRpd - callsUsed);
             const pct = keyCapRpd > 0 ? Math.min(100, Math.round((callsUsed / keyCapRpd) * 100)) : 0;
             const tokensUsed = k.tokensUsed || 0;
 
-            // Groq Free Tier resmi juga dibatasi 200K TPD — mana yang lebih dulu tercapai,
-            // itulah yang menentukan status (TPD biasanya habis lebih cepat dari RPD).
-            const tpdCap = 200000;
-            const tpdPct = Math.min(100, Math.round((tokensUsed / tpdCap) * 100));
-            const bindingPct = Math.max(pct, tpdPct);
+            const tpdCap = Number(k.tokenCap) || 0;
+            const tpdPct = tpdCap > 0 ? Math.min(100, Math.round((tokensUsed / tpdCap) * 100)) : 0;
+            const bindingPct = typeof k.bindingPercent === "number" ? k.bindingPercent : Math.max(pct, tpdPct);
             const tpdBinding = tpdPct > pct;
 
             grandTotalGroqRpd += keyCapRpd;
@@ -1835,25 +1574,25 @@ function renderLiveUpstreamTable(data) {
                 </td>
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #fbbf24;">${tokensUsed.toLocaleString("id-ID")} / ${tpdCap.toLocaleString("id-ID")} Token${callCountText}</span>
-                    <span style="color: var(--text-dim);">${tpdPct}% TPD &bull; ${pct}% RPD</span>
+                    <span style="font-weight: 700; color: #fbbf24;">${tokensUsed.toLocaleString("id-ID")} / ${tpdCap > 0 ? tpdCap.toLocaleString("id-ID") : "belum diketahui"} Token${callCountText}</span>
+                    <span style="color: var(--text-dim);">${tpdCap > 0 ? tpdPct + "% TPD" : "TPD belum diketahui"} &bull; ${keyCapRpd > 0 ? pct + "% RPD" : "RPD belum diketahui"}</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
                     <div class="progress-bar-fill ${bindingPct >= 100 ? 'progress-rose' : bindingPct >= 80 ? 'progress-amber' : 'progress-emerald'}" style="width: ${bindingPct}%"></div>
                   </div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${keyCapRpd.toLocaleString("id-ID")} RPD &bull; 8K TPM &bull; 200K TPD (Free Tier resmi)${!k.isRealTokenData && tokensUsed > 0 ? ' &bull; <span style="color:#fbbf24;">estimasi</span>' : ''}</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${escapeHtml(k.officialLimitLabel || p.tokenLimitLabel || "Belum diketahui")}${!k.isRealTokenData && tokensUsed > 0 ? ' &bull; <span style="color:#fbbf24;">estimasi</span>' : ''}</div>
                 </td>
                 <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${Math.max(0, tpdCap - tokensUsed).toLocaleString("id-ID")}</div>
-                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Harian (TPD) &bull; ${callsRemaining.toLocaleString("id-ID")} RPD</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: #34d399; font-family: var(--font-mono);">${tpdCap > 0 ? Math.max(0, tpdCap - tokensUsed).toLocaleString("id-ID") : "–"}</div>
+                  <div style="font-size: 0.72rem; color: #10b981; font-weight: 600; margin-top: 2px;">● Sisa Token Harian (TPD) &bull; ${keyCapRpd > 0 ? callsRemaining.toLocaleString("id-ID") : "–"} RPD</div>
                 </td>
                 <td style="text-align: right;">
                   <!-- BUG YANG DIPERBAIKI (06 Okt 2026): badge ini DULU HARDCODE
                        "● Bot Monitored" padahal Groq SUDAH live-synced (header
                        x-ratelimit-* terbaca). Laporan pemilik produk: "groq masih
                        bot monitored?" — sekarang mengikuti data sebenarnya. -->
-                  ${k.limitIsLive
-                    ? '<span class="badge-live-sync" style="margin-bottom: 4px;">● Live Synced</span>'
+                  ${k.isLiveSynced
+                    ? '<span class="badge-live-sync" style="margin-bottom: 4px;">Pemakaian upstream</span>'
                     : '<span class="badge-bot-sync" style="margin-bottom: 4px; background: rgba(249, 115, 22, 0.15); color: #fb923c; border-color: rgba(249, 115, 22, 0.3);">● Bot Monitored</span>'}
                   <div><span class="key-badge-status ${statusClass}">${statusText}</span></div>
                 </td>
@@ -1862,7 +1601,7 @@ function renderLiveUpstreamTable(data) {
           } else if (p.kind === "cloudflare") {
             // Cap per-key dari payload (120), bukan konstanta 300 yang tidak sinkron
             // dengan angka "0 / 120 panggilan" pada baris key (temuan audit dashboard).
-            const keyCap = p.capPerKey || p.cap || 120;
+            const keyCap = Number(k.cap) || 0;
             const keyUsed = k.used || 0;
             const keyRemaining = Math.max(0, keyCap - keyUsed);
             const pct = keyCap > 0 ? Math.min(100, Math.round((keyUsed / keyCap) * 100)) : 0;
@@ -1904,17 +1643,17 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Limit: ${k.officialLimitLabel ? escapeHtml(k.officialLimitLabel) : `${keyCap.toLocaleString("id-ID")} RPD`} &bull; ${k.limitIsLive ? 'Live Synced' : 'Bot Monitored'}</div>
                 </td>
                 <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: ${bindingPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${bindingPct >= 100 ? 'HABIS' : keyRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: ${bindingPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${bindingPct >= 100 ? 'HABIS' : keyCap > 0 ? keyRemaining.toLocaleString("id-ID") : "–"}</div>
                   <div style="font-size: 0.72rem; color: ${bindingPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${bindingPct >= 100 ? '● Kuota habis (tunggu reset harian)' : '● Sisa Kuota Harian (RPD)'}</div>
                   ${typeof k.neuronUsed === "number" && k.neuronUsed > 0
-                    ? `<div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">${k.neuronUsed.toLocaleString("id-ID")} neuron terpakai (≈ ${(k.tokensUsed || 0).toLocaleString("id-ID")} token)</div>`
+                    ? `<div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">${k.neuronUsed.toLocaleString("id-ID")} neuron (estimasi bot; cooldown dapat menandai habis)</div>`
                     : (typeof k.tokensUsed === "number" && k.tokensUsed > 0 ? `<div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 2px;">${k.tokensUsed.toLocaleString("id-ID")} token terpakai</div>` : '')}
                   ${typeof k.balasanTersisa === "number" && k.balasanTersisa > 0
                     ? `<div style="font-size: 0.66rem; color: #34d399; margin-top: 2px;">≈ ${k.balasanTersisa.toLocaleString("id-ID")} balasan lagi</div>`
                     : ''}
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px;">${k.limitIsLive ? '● Live Synced' : '● Bot Monitored'}</span>
+                  <span class="badge-bot-sync" style="margin-bottom: 4px;">${k.isLiveSynced ? 'Pemakaian upstream' : 'Catatan bot'}</span>
                   <div><span class="key-badge-status ${bindingPct >= 100 ? 'status-capped' : bindingPct >= 80 ? 'status-warning' : 'status-healthy'}">${bindingPct >= 100 ? (k.bindingMetric === 'tokens' ? 'LIMIT NEURON/TOKEN' : 'LIMIT RPD') : bindingPct >= 80 ? 'WASPADAI' : 'OPTIMAL'}</span></div>
                 </td>
               </tr>
@@ -1923,7 +1662,7 @@ function renderLiveUpstreamTable(data) {
             // BAR DITAMBAHKAN (04 Okt): Gemini sebelumnya tanpa progress bar.
             // Limit dari dokumentasi resmi (endpoint kuota tidak tersedia), jadi
             // ditandai jujur "dokumentasi resmi" agar tidak diklaim live.
-            const gmCap = p.capPerKey || p.cap || 1500;
+            const gmCap = Number(k.cap) || 0;
             const gmUsed = k.used || 0;
             const gmRemaining = Math.max(0, gmCap - gmUsed);
             const gmPct = gmCap > 0 ? Math.min(100, Math.round((gmUsed / gmCap) * 100)) : 0;
@@ -1941,7 +1680,7 @@ function renderLiveUpstreamTable(data) {
                 </td>
                 <td>
                   <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-family: var(--font-mono); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: #60a5fa;">${gmUsed.toLocaleString("id-ID")} / ${gmCap.toLocaleString("id-ID")} req</span>
+                    <span style="font-weight: 700; color: #60a5fa;">${gmUsed.toLocaleString("id-ID")} / ${gmCap > 0 ? gmCap.toLocaleString("id-ID") : "belum diketahui"} req</span>
                     <span style="color: var(--text-dim);">${gmPct}%</span>
                   </div>
                   <div class="progress-bar-bg" style="height: 6px;">
@@ -1950,11 +1689,11 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px;">Batas: ${p.tokenLimitLabel ? escapeHtml(p.tokenLimitLabel) : '1.500 RPD/key'} &bull; ${k.limitIsLive ? 'Live Synced' : 'dokumentasi resmi'}</div>
                 </td>
                 <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: ${gmPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${gmPct >= 100 ? 'HABIS' : gmRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: ${gmPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${gmPct >= 100 ? 'HABIS' : gmCap > 0 ? gmRemaining.toLocaleString("id-ID") : "–"}</div>
                   <div style="font-size: 0.72rem; color: ${gmPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${gmPct >= 100 ? '● Kuota habis' : '● Sisa Request Harian'}</div>
                 </td>
                 <td style="text-align: right;">
-                  <span class="badge-bot-sync" style="margin-bottom: 4px;">${k.limitIsLive ? '● Live Synced' : '● Bot Monitored'}</span>
+                  <span class="badge-bot-sync" style="margin-bottom: 4px;">${k.isLiveSynced ? 'Pemakaian upstream' : 'Catatan bot'}</span>
                   <div><span class="key-badge-status ${gmStatusClass}">${gmStatusText}</span></div>
                 </td>
               </tr>
@@ -1964,7 +1703,7 @@ function renderLiveUpstreamTable(data) {
             // TIDAK BISA LIVE-SYNCED: 10 endpoint usage diuji, semua 404; header
             // respons chat tidak memuat info kuota. Karena itu badge-nya
             // "Bot Monitored" (catatan internal bot), bukan "Live Synced".
-            const ocCap = p.capPerKey || p.cap || 1000;
+            const ocCap = Number(k.cap) || 0;
             const ocUsed = k.used || 0;
             const ocRemaining = Math.max(0, ocCap - ocUsed);
             const ocPct = ocCap > 0 ? Math.min(100, Math.round((ocUsed / ocCap) * 100)) : 0;
@@ -1992,7 +1731,7 @@ function renderLiveUpstreamTable(data) {
                   <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">Utama: ${escapeHtml(p.primaryModel || '-')} • Cadangan: ${escapeHtml(p.backupModel || '-')}</div>
                 </td>
                 <td>
-                  <div style="font-size: 1.05rem; font-weight: 800; color: ${ocPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${ocPct >= 100 ? 'HABIS' : ocRemaining.toLocaleString("id-ID")}</div>
+                  <div style="font-size: 1.05rem; font-weight: 800; color: ${ocPct >= 100 ? '#f87171' : '#34d399'}; font-family: var(--font-mono);">${ocPct >= 100 ? 'HABIS' : ocCap > 0 ? ocRemaining.toLocaleString("id-ID") : "–"}</div>
                   <div style="font-size: 0.72rem; color: ${ocPct >= 100 ? '#f87171' : '#10b981'}; font-weight: 600; margin-top: 2px;">${ocPct >= 100 ? '● Kuota habis' : '● Sisa Panggilan'}</div>
                 </td>
                 <td style="text-align: right;">

@@ -275,41 +275,6 @@ export function geminiDocumentedLimits(): LiveLimit {
   };
 }
 
-/**
- * Dahl: AUDIT LIVE 04 Okt — 10/10 key TERVERIFIKASI bisa inference (HTTP 200).
- *
- * Endpoint yang diuji: /v1/usage, /v1/me, /v1/credits, /v1/balance, /v1/quota
- * -> semua mengembalikan HTML (bukan JSON), /v1/account -> 401.
- * Jadi sisa saldo token TIDAK diekspos lewat API — hanya lewat dashboard akun.
- * Karena itu isLive: false (jujur: angka dari dashboard, bukan endpoint).
- */
-export function dahlDocumentedLimits(): LiveLimit {
-  return {
-    // SUMBER VALID (dashboard akun Dahl, dikonfirmasi user 20 Sep 2026):
-    //   "On keys: 100.0M   Total: 100.0M"  -> saldo akun 100 juta token
-    //   "Tokens are charged only for successful responses. Errors such as 429, 402,
-    //    and technical failures do not consume your balance."
-    //
-    // Kesimpulan dari sumber resmi + audit endpoint:
-    // 1. Kuota 100M token per key TERKONFIRMASI (bukan asumsi).
-    // 2. Model billing Dahl = SALDO TOKEN (pool), BUKAN rate limit harian ->
-    //    karena itu RPD memang tidak berlaku (bukan "tidak diketahui").
-    // 3. Endpoint API tidak mengekspos sisa saldo -> sisa hanya di dashboard akun.
-    // 4. DIUJI EMPIRIS 04 Okt: ke-10 key Dahl di pool SEMUANYA inference HTTP 200
-    //    dengan model deepseek-ai/DeepSeek-V4-Flash-0731 (usage terukur: 148 token).
-    //    Jadi tidak ada key tanpa saldo.
-    requestsPerDay: null,
-    tokensPerDay: 100_000_000,
-    tokensPerMinute: null,
-    requestsUsedToday: null,
-    tokensUsedToday: null,
-    requestsRemaining: null,
-    tokensRemaining: null,
-    officialLabel: 'Saldo 100M Token/key (dashboard akun Dahl) • tanpa batas RPD • 10/10 key aktif',
-    source: 'dashboard akun inference.dahl.global/account — saldo token, bukan rate limit harian',
-    isLive: false,
-  };
-}
 
 /**
  * DreamPrompting: AUDIT LIVE 04 Okt — DITEMUKAN endpoint kuota JSON resmi!
@@ -426,23 +391,6 @@ export function dreampromptingDocumentedLimits(): LiveLimit {
   };
 }
 
-/**
- * NVIDIA NIM: 1.000 Free Credits per key untuk inferensi model akselerasi NIM.
- */
-export function nvidiaDocumentedLimits(): LiveLimit {
-  return {
-    requestsPerDay: 1000,
-    tokensPerDay: null,
-    tokensPerMinute: null,
-    requestsUsedToday: null,
-    tokensUsedToday: null,
-    requestsRemaining: null,
-    tokensRemaining: null,
-    officialLabel: '1.000 Free Credits / Key (NVIDIA NIM)',
-    source: 'dokumentasi resmi NVIDIA NIM integrate.api.nvidia.com',
-    isLive: false,
-  };
-}
 
 // ============================================================================
 // CACHE HASIL PROBE LIMIT (temuan audit v0.79 — F3)

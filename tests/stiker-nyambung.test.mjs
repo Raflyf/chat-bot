@@ -123,7 +123,7 @@ test('vision: rantai fallback punya >=4 tier provider', () => {
   const kinds = new Set([...chain[1].matchAll(/kind: '(\w+)'/g)].map(m => m[1]));
   // Hasil uji nyata 10 Okt: groq, nvidia, gemini, openrouter, opencode, cloudflare
   assert.ok(kinds.size >= 4, `harus >=4 provider berbeda, dapat: ${[...kinds].join(',')}`);
-  for (const k of ['groq', 'nvidia', 'gemini', 'openrouter']) {
+  for (const k of ['groq', 'cloudflare', 'gemini', 'openrouter']) {
     assert.ok(kinds.has(k), `provider terbukti benar harus ada: ${k}`);
   }
 });

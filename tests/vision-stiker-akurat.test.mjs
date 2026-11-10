@@ -81,7 +81,7 @@ test('vision: chain >= 8 model & model lemah tidak di posisi awal', () => {
   const atas = model.slice(0, 3).map(x => x.model).join(' ');
   assert.ok(!/nemotron-3-nano/.test(atas), 'model akurasi rendah jangan di posisi awal');
   // Model terbukti 4/4 harus ada.
-  for (const wajib of ['gemini-flash-lite-latest', 'meta/llama-3.2-11b-vision-instruct']) {
+  for (const wajib of ['gemini-flash-lite-latest', '@cf/meta/llama-3.2-11b-vision-instruct']) {
     assert.ok(model.some(x => x.model === wajib), `model terbukti akurat harus ada: ${wajib}`);
   }
 });

@@ -566,10 +566,10 @@ async function transcribeViaGemini(buffer: Buffer, mime: string, model: string):
 
       if (!res.ok) continue;
       const data = (await res.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
         usageMetadata?: { totalTokenCount?: number };
       };
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      const text = data?.candidates?.[0]?.content?.parts?.filter((part) => !part.thought).map((part) => part.text || '').join('').trim();
       if (text) {
         // Catat pemakaian kuota Gemini (transkripsi audio memakai kuota provider yang sama)
         keyUsed('gemini', key);
@@ -631,15 +631,15 @@ async function transcribeViaCloudflare(buffer: Buffer, model: string): Promise<s
  */
 export async function transcribeAudio(buffer: Buffer, mime: string = 'audio/ogg'): Promise<string> {
   // 1. Primary: Groq whisper-large-v3
-  const t1 = await transcribeViaGroq(buffer, mime, 'whisper-large-v3');
+  const t1 = await transcribeViaGroq(buffer, mime, config.models.groqWhisperPrimary);
   if (t1) return t1;
 
   // 2. Cadangan 1: Cloudflare Whisper (pool & kuota berbeda dari Groq)
-  const t2 = await transcribeViaCloudflare(buffer, '@cf/openai/whisper-large-v3-turbo');
+  const t2 = await transcribeViaCloudflare(buffer, config.models.cfWhisper);
   if (t2) return t2;
 
   // 3. Cadangan 2: Groq whisper-large-v3-turbo
-  const t3 = await transcribeViaGroq(buffer, mime, 'whisper-large-v3-turbo');
+  const t3 = await transcribeViaGroq(buffer, mime, config.models.groqWhisperBackup);
   if (t3) return t3;
 
   // 4. Cadangan 3: Gemini native audio
@@ -723,14 +723,14 @@ async function processPdfViaGemini(
 
       if (!res.ok) continue;
       const data = (await res.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
         usageMetadata?: {
           promptTokenCount?: number;
           candidatesTokenCount?: number;
           totalTokenCount?: number;
         };
       };
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      const text = data?.candidates?.[0]?.content?.parts?.filter((part) => !part.thought).map((part) => part.text || '').join('').trim();
       if (text) {
         // Catat pemakaian kuota Gemini (analisis PDF native memakai kuota provider yang sama)
         keyUsed('gemini', key);
@@ -1277,14 +1277,14 @@ export async function processIncomingVideo(
 
         if (!res.ok) continue;
         const data = (await res.json()) as {
-          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
           usageMetadata?: {
             promptTokenCount?: number;
             candidatesTokenCount?: number;
             totalTokenCount?: number;
           };
         };
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        const text = data?.candidates?.[0]?.content?.parts?.filter((part) => !part.thought).map((part) => part.text || '').join('').trim();
         if (text) {
           // Catat pemakaian kuota Gemini (analisis video native memakai kuota provider yang sama)
           keyUsed('gemini', key);
