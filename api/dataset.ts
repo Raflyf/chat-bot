@@ -134,7 +134,6 @@ function calculateTimeBounds(
         timeZoneName: 'shortOffset',
       }).formatToParts(date);
       const tzPart = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT+7';
-      if (tzPart === 'GMT' || tzPart === 'UTC') return '+00:00';
       const m = tzPart.match(/GMT([+-]\d+)(?::(\d+))?/);
       if (m) {
         const sign = m[1][0];
@@ -168,13 +167,13 @@ function calculateTimeBounds(
     startDateIso = new Date(`${localTodayStr}T00:00:00${offset}`).toISOString();
     fileLabel = `hari_ini_${localTodayStr}_jam_${localTimeStr}`;
   } else if (range === '7d') {
-    startDateIso = new Date((tz === 'UTC' ? Date.parse(now.toISOString().slice(0, 10) + 'T00:00:00Z') - 6 * 86400000 : now.getTime() - 7 * 86400000)).toISOString();
+    startDateIso = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     fileLabel = `7_hari_${localTodayStr}_jam_${localTimeStr}`;
   } else if (range === '14d') {
-    startDateIso = new Date((tz === 'UTC' ? Date.parse(now.toISOString().slice(0, 10) + 'T00:00:00Z') - 13 * 86400000 : now.getTime() - 14 * 86400000)).toISOString();
+    startDateIso = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
     fileLabel = `14_hari_${localTodayStr}_jam_${localTimeStr}`;
   } else if (range === '30d') {
-    startDateIso = new Date((tz === 'UTC' ? Date.parse(now.toISOString().slice(0, 10) + 'T00:00:00Z') - 29 * 86400000 : now.getTime() - 30 * 86400000)).toISOString();
+    startDateIso = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
     fileLabel = `30_hari_${localTodayStr}_jam_${localTimeStr}`;
   } else {
     fileLabel = `semua_${localTodayStr}_jam_${localTimeStr}`;
