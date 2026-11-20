@@ -161,7 +161,7 @@ test('nimbrung cerdas: skip basa-basi & @orang lain, jeda anti-spam 5 detik, aut
   assert.equal(skipOther.action, 'passive_ignore');
   assert.equal(skipOther.reason, 'nimbrung_mentions_other');
 
-  // Obrolan bermakna dibalas bila lewat jeda cooldown 5 detik
+  // Obrolan bermakna langsung dibalas tanpa jeda cooldown (pesan cepat beruntun tetap tertangkap)
   const okChat = evaluasiResponGrup({
     mode: 'nimbrung',
     text: 'menurut kalian besok hujan ga sih?',
@@ -175,8 +175,7 @@ test('nimbrung cerdas: skip basa-basi & @orang lain, jeda anti-spam 5 detik, aut
   });
   assert.equal(okChat.action, 'reply');
 
-  // Terlalu cepat (< 5 detik setelah balasan bot sebelumnya) -> cooldown
-  const throttled = evaluasiResponGrup({
+  const rapidFollow = evaluasiResponGrup({
     mode: 'nimbrung',
     text: 'kalian mau makan apa nanti malam?',
     actorId: '628222',
@@ -184,11 +183,10 @@ test('nimbrung cerdas: skip basa-basi & @orang lain, jeda anti-spam 5 detik, aut
     isReplyToBot: false,
     isTargetedCommand: false,
     hasWakeWord: false,
-    nowMs: t0 + 10_000 + NIMBRUNG_COOLDOWN_MS - 1_000,
+    nowMs: t0 + 10_500,
     lastBotReplyAt: t0 + 10_000,
   });
-  assert.equal(throttled.action, 'passive_ignore');
-  assert.equal(throttled.reason, 'nimbrung_cooldown');
+  assert.equal(rapidFollow.action, 'reply');
 
   // Auto-revert setelah 30 menit sepi
   touchGroupActivity(gk, t0);

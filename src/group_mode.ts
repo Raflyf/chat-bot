@@ -54,7 +54,7 @@ export interface GroupEvaluationResult {
 
 export const GROUP_MODE_STATE_FILENAME = '__group_mode_state.json';
 export const NIMBRUNG_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-export const NIMBRUNG_COOLDOWN_MS = 5_000;
+export const NIMBRUNG_COOLDOWN_MS = 0;
 export const FOLLOW_UP_WINDOW_MS = 75_000;
 export const PASSIVE_BUFFER_MAX = 15;
 export const PASSIVE_BUFFER_TTL_MS = 30 * 60 * 1000;
@@ -677,16 +677,6 @@ export function evaluasiResponGrup(input: GroupEvaluationInput): GroupEvaluation
     return {
       action: 'passive_ignore',
       reason: 'empty',
-      cleanedText: baseCleaned,
-      shouldSetFollowUp: false,
-    };
-  }
-
-  const lastReplyAt = input.lastBotReplyAt ?? 0;
-  if (lastReplyAt > 0 && nowMs - lastReplyAt < NIMBRUNG_COOLDOWN_MS) {
-    return {
-      action: 'passive_ignore',
-      reason: 'nimbrung_cooldown',
       cleanedText: baseCleaned,
       shouldSetFollowUp: false,
     };
