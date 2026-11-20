@@ -97,6 +97,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     waKirim = undefined;
   }
 
+  const waBackupDigits = String(config.whatsappBackupNumber || '').replace(/\D/g, '');
+  const waBackupUrl = waBackupDigits.length >= 8 ? `https://wa.me/${waBackupDigits}` : undefined;
+
   res.status(sehat ? 200 : 503).json({
     status: sehat ? 'sehat' : 'bermasalah',
     waktu: new Date().toISOString(),
@@ -105,6 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     whatsapp_maintenance: waMaintenance,
     whatsapp_maintenance_sumber: waMaintSumber,
     ...(autoMaint.aktif ? { whatsapp_maintenance_alasan: autoMaint.alasan } : {}),
+    ...(waMaintenance && waBackupUrl ? { whatsapp_backup_url: waBackupUrl } : {}),
     whatsapp_kirim: waKirim,
     cek,
   });

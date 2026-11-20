@@ -147,3 +147,14 @@ test('6. Isolasi sumber: error model AI (providers/skills) dan Baileys tidak mem
     assert.ok(!src.includes('statusAutoMaintenanceWa'), `${file} tidak boleh bergantung ke statusAutoMaintenanceWa`);
   }
 });
+
+test('7. Landing page & health endpoint mengarahkan tombol WA ke nomor cadangan saat maintenance', () => {
+  const healthSrc = baca('api/health.ts');
+  const statusWaSrc = baca('public/js/status-wa.js');
+
+  assert.match(healthSrc, /whatsapp_backup_url/, 'api/health.ts harus mengekspos whatsapp_backup_url');
+  assert.match(healthSrc, /waMaintenance && waBackupUrl/, 'whatsapp_backup_url hanya dikirim saat maintenance aktif');
+  assert.match(statusWaSrc, /https:\/\/wa\.me\/6287789587654/, 'status-wa.js harus punya fallback nomor cadangan');
+  assert.match(statusWaSrc, /WA_URL_AMAN\s*=\s*\/\^https:\\\/\\\/wa\\\.me\\\/\\d\{8,16\}\$\//, 'URL cadangan harus divalidasi ketat');
+  assert.match(statusWaSrc, /document\.querySelector\('a\.btn-wa'\)/, 'status-wa.js harus mengalihkan tombol a.btn-wa');
+});

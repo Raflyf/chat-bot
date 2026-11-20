@@ -217,6 +217,7 @@ export const config = {
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
   whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
   whatsappPhoneNumber: cleanStr('WHATSAPP_PHONE_NUMBER'),
+  whatsappBackupNumber: cleanStr('WHATSAPP_BACKUP_NUMBER') || '6287789587654',
   whatsappToken: cleanStr('WHATSAPP_TOKEN'),
   whatsappPhoneNumberId: cleanStr('WHATSAPP_PHONE_NUMBER_ID'),
   whatsappVerifyToken: cleanStr('WHATSAPP_VERIFY_TOKEN'),
