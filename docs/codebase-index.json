@@ -1,0 +1,3994 @@
+[
+ {
+  "path": "api/admin-otp.ts",
+  "lines": 362,
+  "kind": "api",
+  "exports": [
+   "fn handler"
+  ],
+  "imports": [
+   "../src/rate_limit.js",
+   "../src/chat_id.js",
+   "@vercel/node",
+   "../src/env.js",
+   "../src/db.js",
+   "../src/admin_auth.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "api/cron/arsip.ts",
+  "lines": 67,
+  "kind": "api",
+  "exports": [
+   "fn handler"
+  ],
+  "imports": [
+   "crypto",
+   "@vercel/node",
+   "../../src/db.js",
+   "../../src/env.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "api/cron/backup.ts",
+  "lines": 103,
+  "kind": "api",
+  "exports": [
+   "fn handler"
+  ],
+  "imports": [
+   "crypto",
+   "@vercel/node",
+   "../../src/db.js",
+   "../../src/env.js",
+   "../../src/group_db.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "api/cron/reminders.ts",
+  "lines": 106,
+  "kind": "api",
+  "exports": [
+   "fn handler"
+  ],
+  "imports": [
+   "crypto",
+   "@vercel/node",
+   "../../src/env.js",
+   "../../src/telegram.js",
+   "../../src/remind.js",
+   "../../src/whatsapp_cloud.js",
+   "../../src/vps_monitor.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "api/dataset.ts",
+  "lines": 582,
+  "kind": "api",
+  "exports": [
+   "iface DatasetPair",
+   "fn formatLocalComponents",
+   "fn handler"
+  ],
+  "imports": [
+   "@vercel/node",
+   "../src/db.js",
+   "../src/env.js",
+   "../src/chat_id.js",
+   "../src/group_db.js",
+   "../src/admin_auth.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "api/health.ts",
+  "lines": 116,
+  "kind": "api",
+  "exports": [
+   "fn handler"
+  ],
+  "imports": [
+   "@vercel/node",
+   "../src/db.js",
+   "../src/env.js",
+   "../src/wa_monitor.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "api/laporan.ts",
+  "lines": 408,
+  "kind": "api",
+  "exports": [
+   "const maxDuration",
+   "fn handler"
+  ],
+  "imports": [
+   "crypto",
+   "@vercel/node",
+   "../src/db.js",
+   "../src/env.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "api/stats.ts",
+  "lines": 1295,
+  "kind": "api",
+  "exports": [
+   "fn getModelCatalog",
+   "fn handler"
+  ],
+  "imports": [
+   "../src/neuron.js",
+   "../src/providers.js",
+   "@vercel/node",
+   "crypto",
+   "../src/env.js",
+   "../src/db.js",
+   "../src/group_db.js",
+   "../src/admin_auth.js",
+   "fs",
+   "url",
+   "path",
+   "../src/limits.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "api/webhook.ts",
+  "lines": 72,
+  "kind": "api",
+  "exports": [
+   "const maxDuration",
+   "fn handler"
+  ],
+  "imports": [
+   "@vercel/node",
+   "crypto",
+   "../src/env.js",
+   "../src/telegram.js",
+   "../src/logger.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "api/whatsapp.ts",
+  "lines": 103,
+  "kind": "api",
+  "exports": [
+   "const maxDuration",
+   "const config",
+   "fn handler"
+  ],
+  "imports": [
+   "@vercel/node",
+   "../src/whatsapp_cloud.js",
+   "../src/logger.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "public/css/console.css",
+  "lines": 3260,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/css/landing.css",
+  "lines": 1264,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/dashboard.html",
+  "lines": 625,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/index.html",
+  "lines": 196,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/console-theme.js",
+  "lines": 51,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/dashboard-pre.js",
+  "lines": 25,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/dashboard.js",
+  "lines": 2504,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/doc-theme.js",
+  "lines": 10,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/glass-dropdown.js",
+  "lines": 215,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/home.js",
+  "lines": 108,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/i18n.js",
+  "lines": 399,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/laporan.js",
+  "lines": 166,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/lenis.min.js",
+  "lines": 2,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/smooth-scroll.js",
+  "lines": 88,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/status-wa.js",
+  "lines": 102,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/theme-pre.js",
+  "lines": 11,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/privacy.html",
+  "lines": 87,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/privacy/index.html",
+  "lines": 87,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/audit_git_history_secrets.py",
+  "lines": 124,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/audit_secret_leak.py",
+  "lines": 185,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/build_sticker_manifest.py",
+  "lines": 359,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/check_github_gc.py",
+  "lines": 102,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/fix_sticker_labels.py",
+  "lines": 224,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/gen_sticker_manifest.py",
+  "lines": 82,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/gen-codebase-map.ts",
+  "lines": 246,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [
+   "node:fs",
+   "node:path",
+   "typescript"
+  ],
+  "tests": []
+ },
+ {
+  "path": "scripts/label_stickers.py",
+  "lines": 232,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/make_sticker_sheets.py",
+  "lines": 104,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/scrub_git_history.py",
+  "lines": 188,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/set_deskripsi_bot.ts",
+  "lines": 140,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [
+   "../src/env.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "scripts/set_perintah_telegram.ts",
+  "lines": 85,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [
+   "../src/env.js",
+   "../src/commands.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "scripts/uji_jev.mjs",
+  "lines": 177,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/uji_jev2.mjs",
+  "lines": 105,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/uji_model_cloudflare.py",
+  "lines": 164,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/verify_scrub.py",
+  "lines": 144,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v08.sql",
+  "lines": 24,
+  "kind": "sql",
+  "exports": [
+   "sql summaries",
+   "sql corrections",
+   "sql corrections_chat_idx"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v09_hardened.sql",
+  "lines": 79,
+  "kind": "sql",
+  "exports": [
+   "sql reminders",
+   "sql reminders_due_idx",
+   "sql messages",
+   "sql messages_chat_idx",
+   "sql summaries",
+   "sql corrections",
+   "sql corrections_chat_idx",
+   "sql provider_quota"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v10_whatsapp_sessions.sql",
+  "lines": 27,
+  "kind": "sql",
+  "exports": [
+   "sql whatsapp_sessions"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v12_admin_auth.sql",
+  "lines": 253,
+  "kind": "sql",
+  "exports": [
+   "sql public.admin_auth_config",
+   "sql public.rpc_admin_verify_pin",
+   "sql public.rpc_admin_save_otp",
+   "sql public.rpc_admin_verify_otp_and_reset_pin",
+   "sql public.rpc_admin_change_pin"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v13_performance_indexes.sql",
+  "lines": 16,
+  "kind": "sql",
+  "exports": [
+   "sql idx_messages_created_at_desc",
+   "sql idx_messages_role_created_at",
+   "sql idx_messages_platform_created_at",
+   "sql idx_provider_quota_day_desc"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v14_web_knowledge.sql",
+  "lines": 35,
+  "kind": "sql",
+  "exports": [
+   "sql web_knowledge",
+   "sql idx_web_knowledge_lookup"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v15_message_tokens.sql",
+  "lines": 10,
+  "kind": "sql",
+  "exports": [
+   "sql idx_messages_tokens_created"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v16_security_hardening_and_rpc.sql",
+  "lines": 136,
+  "kind": "sql",
+  "exports": [
+   "sql public.increment_knowledge_hit",
+   "sql public.atomic_increment_provider_quota",
+   "sql idx_reminders_status_due_platform",
+   "sql idx_reminders_lease_until",
+   "sql idx_web_knowledge_entity_key_trgm"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v17_ops.sql",
+  "lines": 94,
+  "kind": "sql",
+  "exports": [
+   "sql public.schema_migrations",
+   "sql idx_messages_created_at",
+   "sql public.rpc_purge_user_data",
+   "sql public.rpc_purge_expired_web_knowledge"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v18_daily_token_tracking.sql",
+  "lines": 73,
+  "kind": "sql",
+  "exports": [
+   "sql public.atomic_increment_provider_tokens",
+   "sql public.atomic_increment_provider_quota"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v19_audit_fixes.sql",
+  "lines": 29,
+  "kind": "sql",
+  "exports": [
+   "sql idx_web_knowledge_expires_at",
+   "sql idx_reminders_chat_id"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v20_audit_fixes_batch2.sql",
+  "lines": 134,
+  "kind": "sql",
+  "exports": [
+   "sql public.rpc_admin_change_pin",
+   "sql public.rpc_admin_verify_otp_and_reset_pin",
+   "sql public.schema_migrations"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v21_riddle_memory.sql",
+  "lines": 95,
+  "kind": "sql",
+  "exports": [
+   "sql riddle_memory",
+   "sql idx_riddle_memory_pick",
+   "sql increment_riddle_use"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v22_personal_notes.sql",
+  "lines": 152,
+  "kind": "sql",
+  "exports": [
+   "sql public.notes",
+   "sql idx_notes_chat_created",
+   "sql idx_notes_tags",
+   "sql public.todos",
+   "sql idx_todos_chat_status",
+   "sql idx_todos_due",
+   "sql public.expenses",
+   "sql idx_expenses_chat_occurred",
+   "sql idx_expenses_category",
+   "sql public.habits",
+   "sql idx_habits_chat_active",
+   "sql public.habit_logs",
+   "sql idx_habit_logs_habit_date",
+   "sql public.sum_expenses"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v23_pending_confirmations.sql",
+  "lines": 118,
+  "kind": "sql",
+  "exports": [
+   "sql public.pending_confirmations",
+   "sql idx_pending_conf_expires",
+   "sql public.set_pending_confirmation",
+   "sql public.take_pending_confirmation",
+   "sql public.clear_pending_confirmation"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v24_game_engine.sql",
+  "lines": 95,
+  "kind": "sql",
+  "exports": [
+   "sql public.game_sessions",
+   "sql idx_game_kind",
+   "sql public.set_game_state",
+   "sql public.get_game_state",
+   "sql public.end_game"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v25_user_profiles.sql",
+  "lines": 87,
+  "kind": "sql",
+  "exports": [
+   "sql public.user_profiles",
+   "sql idx_user_profiles_tz",
+   "sql public.set_user_timezone",
+   "sql public.get_user_timezone"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v26_provider_cooldown.sql",
+  "lines": 93,
+  "kind": "sql",
+  "exports": [
+   "sql public.provider_cooldown",
+   "sql idx_cooldown_until",
+   "sql idx_cooldown_kind",
+   "sql public.set_provider_cooldown",
+   "sql public.get_provider_cooldowns",
+   "sql public.bersihkan_cooldown_kadaluarsa"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v27_reminder_recurring.sql",
+  "lines": 27,
+  "kind": "sql",
+  "exports": [
+   "sql idx_reminders_repeat"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v28_message_archive.sql",
+  "lines": 51,
+  "kind": "sql",
+  "exports": [
+   "sql public.messages_archive",
+   "sql idx_archive_chat",
+   "sql idx_archive_created",
+   "sql public.arsipkan_pesan_lama"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v29_cleanup.sql",
+  "lines": 29,
+  "kind": "sql",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v30_rls_hardening.sql",
+  "lines": 149,
+  "kind": "sql",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v31_laporan.sql",
+  "lines": 76,
+  "kind": "sql",
+  "exports": [
+   "sql public.laporan",
+   "sql idx_laporan_created",
+   "sql idx_laporan_status"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v32_documents.sql",
+  "lines": 58,
+  "kind": "sql",
+  "exports": [
+   "sql public.documents",
+   "sql idx_documents_chat"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v33_security_hardening_audit.sql",
+  "lines": 341,
+  "kind": "sql",
+  "exports": [
+   "sql public.increment_knowledge_hit",
+   "sql public.increment_riddle_use",
+   "sql public.arsipkan_pesan_lama",
+   "sql public.rpc_purge_user_data"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v34_integritas_data.sql",
+  "lines": 332,
+  "kind": "sql",
+  "exports": [
+   "sql idx_expenses_chat_kind_amount_created",
+   "sql idx_messages_archive_created_at",
+   "sql idx_messages_dedup_hotpath",
+   "sql public.rpc_catat_gagal_pin",
+   "sql public.rpc_reset_gagal_pin"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/migrate_v35_group_database.sql",
+  "lines": 296,
+  "kind": "sql",
+  "exports": [
+   "sql IF",
+   "sql public.group_messages",
+   "sql idx_group_messages_chat_created",
+   "sql idx_group_messages_tokens_created",
+   "sql public.group_reminders",
+   "sql idx_group_reminders_status_due_platform",
+   "sql idx_group_reminders_lease_until",
+   "sql idx_group_reminders_chat_id",
+   "sql idx_group_reminders_repeat",
+   "sql public.group_notes",
+   "sql idx_group_notes_chat_created",
+   "sql idx_group_notes_tags",
+   "sql public.group_todos",
+   "sql idx_group_todos_chat_status",
+   "sql idx_group_todos_due",
+   "sql public.group_expenses",
+   "sql idx_group_expenses_chat_occurred",
+   "sql idx_group_expenses_category",
+   "sql public.group_corrections",
+   "sql idx_group_corrections_chat_idx",
+   "sql public.group_summaries",
+   "sql public.group_documents",
+   "sql idx_group_documents_chat",
+   "sql public.group_settings"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "sql/schema.sql",
+  "lines": 49,
+  "kind": "sql",
+  "exports": [
+   "sql messages",
+   "sql messages_chat_idx",
+   "sql reminders",
+   "sql idx_reminders_status_due_platform",
+   "sql idx_reminders_lease_until",
+   "sql provider_quota"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/admin_auth.ts",
+  "lines": 1334,
+  "kind": "src",
+  "exports": [
+   "iface AdminAuthConfig",
+   "fn hashValue",
+   "fn isScryptHash",
+   "fn verifyPinHash",
+   "fn resolveMatchingHash",
+   "fn timingSafeMatch",
+   "fn getClientIp",
+   "fn getAuthConfig",
+   "fn saveAuthConfig",
+   "fn createSessionToken",
+   "fn inspectSessionToken",
+   "fn verifySessionToken",
+   "fn extractSessionToken",
+   "fn logoutSession",
+   "fn verifyPin",
+   "fn sendOtp",
+   "fn verifyOtpAndResetPin",
+   "fn updatePin",
+   "fn getPublicAuthState"
+  ],
+  "imports": [
+   "crypto",
+   "@vercel/node",
+   "./db.js",
+   "./env.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/baileys_brain.ts",
+  "lines": 43,
+  "kind": "src",
+  "exports": [
+   "fn baileysAutoReply",
+   "fn baileysDescribeImage",
+   "fn baileysDynamicNotice"
+  ],
+  "imports": [
+   "./memory.js",
+   "./skills.js",
+   "./chat_id.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/bot_growth.ts",
+  "lines": 328,
+  "kind": "src",
+  "exports": [
+   "fn extractUrlsFromSearch",
+   "fn growMemory",
+   "fn getOrGrowMemory",
+   "fn needsGrowth"
+  ],
+  "imports": [
+   "./web.js",
+   "./bot_memory.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/bot_memory.ts",
+  "lines": 517,
+  "kind": "src",
+  "exports": [
+   "type MemoryKind",
+   "iface MemoryItem",
+   "fn slugify",
+   "fn memoryKey",
+   "fn saveMemoryItem",
+   "fn saveMemoryItems",
+   "fn pickMemoryItem",
+   "fn markMemoryUsed",
+   "fn countMemory",
+   "fn isMemoryRelevant",
+   "fn extractQAFromText",
+   "fn extractKnowledgeFromText",
+   "fn guessCategory"
+  ],
+  "imports": [
+   "./db.js",
+   "./knowledge.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/chat_id.ts",
+  "lines": 138,
+  "kind": "src",
+  "exports": [
+   "fn normChatId",
+   "fn nomorWhatsApp",
+   "const BAILEYS_CHAT_PREFIX",
+   "const BAILEYS_GROUP_PREFIX",
+   "fn baileysGroupChatKey",
+   "fn isGroupChatKey",
+   "fn baileysChatKey",
+   "fn isBaileysChatKey",
+   "fn sharedChatKeyDari"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/commands.ts",
+  "lines": 257,
+  "kind": "src",
+  "exports": [
+   "iface PerintahBot",
+   "const PERINTAH_BOT",
+   "const PERINTAH_BERARGUMEN",
+   "const PERINTAH_BANTUAN",
+   "const PERINTAH_DIGABUNG",
+   "fn daftarPerintahTelegram",
+   "fn teksDaftarPerintah",
+   "fn teksBantuan",
+   "fn petunjukPemakaian",
+   "fn konteksBantuanUntukAi"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/cooldown.ts",
+  "lines": 119,
+  "kind": "src",
+  "exports": [
+   "fn cooldownMemori",
+   "fn setCooldown",
+   "fn hapusCooldown",
+   "fn hidrasiCooldown",
+   "fn mulaiHidrasiLatar"
+  ],
+  "imports": [
+   "./db.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/db.ts",
+  "lines": 356,
+  "kind": "src",
+  "exports": [
+   "fn db",
+   "fn saveMessage",
+   "fn isMessageProcessed",
+   "fn markMessageProcessed",
+   "fn claimIncomingMessage",
+   "fn cariPesanByMsgId",
+   "fn pesanBotTerakhir"
+  ],
+  "imports": [
+   "@supabase/supabase-js",
+   "./env.js",
+   "./chat_id.js",
+   "./group_db.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/documents.ts",
+  "lines": 164,
+  "kind": "src",
+  "exports": [
+   "iface DokumenTersimpan",
+   "fn simpanDokumen",
+   "fn dokumenTerakhir",
+   "fn ekstrakTeksDokumen",
+   "fn ekstrakTeksPdf"
+  ],
+  "imports": [
+   "./db.js",
+   "./chat_id.js",
+   "./group_db.js",
+   "./logger.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/env.ts",
+  "lines": 295,
+  "kind": "src",
+  "exports": [
+   "const config",
+   "fn assertRuntime"
+  ],
+  "imports": [
+   "dotenv/config"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/games/cards.ts",
+  "lines": 304,
+  "kind": "src",
+  "exports": [
+   "type Jenis",
+   "type Nilai",
+   "iface Kartu",
+   "const SIMBOL",
+   "const NILAI_ANGKA",
+   "fn dekRemi",
+   "fn kartuTeks",
+   "fn daftarKartuTeks",
+   "fn kocok",
+   "fn ambil",
+   "type WarnaUno",
+   "type KartuUno",
+   "const SIMBOL_WARNA",
+   "fn dekUno",
+   "fn kartuUnoTeks",
+   "fn daftarUnoTeks",
+   "fn unoBoleh",
+   "type Papan",
+   "fn papanAwal",
+   "fn papanTeks",
+   "fn posKe",
+   "fn halmaAwal",
+   "type TicTac",
+   "fn ticTacAwal",
+   "fn ticTacPemenang",
+   "fn ticTacTeks",
+   "fn ticTacBot",
+   "const KATA_HANGMAN",
+   "fn hangmanTeks",
+   "const DAFTAR_GAME",
+   "fn cariGame",
+   "fn mintaBerhenti"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/games/engine.ts",
+  "lines": 1275,
+  "kind": "src",
+  "exports": [
+   "iface HasilGame",
+   "fn unoMulai",
+   "fn unoLangkah",
+   "fn capsaMulai",
+   "fn capsaKombinasiTerbaik",
+   "fn capsaLangkah",
+   "fn remiMulai",
+   "fn remiLangkah",
+   "fn cangkulanMulai",
+   "fn cangkulanLangkah",
+   "fn gapleMulai",
+   "fn gapleLangkah",
+   "fn qiuqiuMulai",
+   "fn qiuqiuLangkah",
+   "fn caturMulai",
+   "fn caturLangkah",
+   "fn halmaMulai",
+   "fn halmaLangkah",
+   "fn tictactoeMulai",
+   "fn tictactoeLangkah",
+   "fn hangmanMulai",
+   "fn hangmanLangkah",
+   "fn tebakAngkaMulai",
+   "fn tebakAngkaLangkah",
+   "fn daduMulai",
+   "fn daduLangkah",
+   "const EMOJI_BGK",
+   "fn batuMulai",
+   "fn batuLangkah",
+   "const EMOJI_SUIT",
+   "fn suitJawaMulai",
+   "fn suitJawaLangkah",
+   "fn monopoliMulai",
+   "fn monopoliLangkah",
+   "fn kuisMulai",
+   "fn kuisLangkah",
+   "fn mulaiGame",
+   "fn langkahGame",
+   "fn pembukaGame"
+  ],
+  "imports": [
+   "./cards.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/games/index.ts",
+  "lines": 374,
+  "kind": "src",
+  "exports": [
+   "iface HasilTanganiGame",
+   "fn ambilGame",
+   "fn simpanGame",
+   "fn akhiriGame",
+   "fn daftarGameTeks",
+   "fn tanganiGame",
+   "fn buangAjakanGameLama"
+  ],
+  "imports": [
+   "../db.js",
+   "../chat_id.js",
+   "../group_db.js",
+   "./engine.js",
+   "./cards.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/group_db.ts",
+  "lines": 105,
+  "kind": "src",
+  "exports": [
+   "type GroupTableBase",
+   "fn isTableMissingError",
+   "fn hasDedicatedGroupTables",
+   "fn resolveTableName",
+   "fn markGroupTablesUnavailable",
+   "fn resetGroupDbCacheUntukTest"
+  ],
+  "imports": [
+   "./db.js",
+   "./chat_id.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/group_mode.ts",
+  "lines": 716,
+  "kind": "src",
+  "exports": [
+   "type GroupMode",
+   "iface GroupModeRecord",
+   "type GroupCommandKind",
+   "iface GroupEvaluationInput",
+   "iface GroupEvaluationResult",
+   "const GROUP_MODE_STATE_FILENAME",
+   "const NIMBRUNG_IDLE_TIMEOUT_MS",
+   "const NIMBRUNG_COOLDOWN_MS",
+   "const FOLLOW_UP_WINDOW_MS",
+   "const PASSIVE_BUFFER_MAX",
+   "const PASSIVE_BUFFER_TTL_MS",
+   "fn resetGroupModeUntukTest",
+   "fn getGroupModeRecord",
+   "fn setGroupMode",
+   "fn touchGroupActivity",
+   "fn markGroupBotReply",
+   "fn isInFollowUpWindow",
+   "fn clearFollowUpWindow",
+   "fn clearGroupRuntimeState",
+   "fn recordPassiveGroupMessage",
+   "fn peekPassiveGroupContext",
+   "fn consumePassiveGroupContext",
+   "fn deteksiPanggilanNatural",
+   "fn deteksiPerintahModeGrup",
+   "fn adalahPesanBasaBasiPenutup",
+   "fn adalahPesanLayakNimbrung",
+   "fn evaluasiResponGrup",
+   "fn formatStatusModeGrup"
+  ],
+  "imports": [
+   "./db.js",
+   "./group_db.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/index.ts",
+  "lines": 19,
+  "kind": "src",
+  "exports": [],
+  "imports": [
+   "./env.js",
+   "./telegram.js",
+   "./logger.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/knowledge.ts",
+  "lines": 263,
+  "kind": "src",
+  "exports": [
+   "type KnowledgeCategory",
+   "iface CachedKnowledge",
+   "fn sanitizeKnowledgeText",
+   "fn normalizeEntityKey",
+   "fn determineCategoryAndTTL",
+   "fn getKnowledge",
+   "fn saveKnowledge"
+  ],
+  "imports": [
+   "./db.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/limits.ts",
+  "lines": 484,
+  "kind": "src",
+  "exports": [
+   "iface LiveLimit",
+   "fn geminiDocumentedLimits",
+   "fn dreampromptingDocumentedLimits",
+   "fn getCachedLimits",
+   "fn fetchOpenRouterLimits",
+   "fn fetchGroqLimits",
+   "fn fetchCloudflareLimits",
+   "fn fetchDreamPromptingLimits"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/logger.ts",
+  "lines": 129,
+  "kind": "src",
+  "exports": [
+   "type LogLevel",
+   "iface LogContext",
+   "iface Logger",
+   "fn log",
+   "fn logInfo",
+   "fn logWarn",
+   "fn logError",
+   "fn withContext",
+   "fn redactUrl",
+   "fn redactSecret"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/markers.ts",
+  "lines": 62,
+  "kind": "src",
+  "exports": [
+   "iface DurableMarkers",
+   "fn encodeMarkers",
+   "fn stripRiddleMarker",
+   "fn lastRiddleAnswer"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/media_guard.ts",
+  "lines": 87,
+  "kind": "src",
+  "exports": [
+   "fn adaMagicBytesBerbahaya",
+   "fn periksaBerkasAman",
+   "const DAFTAR_EKSTENSI_TERLARANG"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/media.ts",
+  "lines": 1446,
+  "kind": "src",
+  "exports": [
+   "fn transcribeAudio",
+   "fn extractPdfTextSimple",
+   "fn sniffMimeType",
+   "fn extractDocumentText",
+   "fn processIncomingDocument",
+   "fn processIncomingVideo",
+   "fn stickerUserContent",
+   "fn imageUserContent",
+   "fn processIncomingSticker"
+  ],
+  "imports": [
+   "./env.js",
+   "./skills.js",
+   "./providers.js",
+   "./memory.js",
+   "./quota.js",
+   "mammoth",
+   "node:zlib",
+   "./media_guard.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/memory.ts",
+  "lines": 565,
+  "kind": "src",
+  "exports": [
+   "iface ChatContext",
+   "fn withChatLock",
+   "fn adalahTestChatId",
+   "fn invalidateContextCache",
+   "fn updateContextCache",
+   "fn isResetCommand",
+   "fn resetSession",
+   "fn saringNoiseRiwayat",
+   "fn getContext",
+   "fn noteExchange",
+   "iface CorrectionValidationResult",
+   "fn validateCorrection",
+   "fn saveCorrection"
+  ],
+  "imports": [
+   "./db.js",
+   "./chat_id.js",
+   "./group_db.js",
+   "./providers.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/neuron.ts",
+  "lines": 82,
+  "kind": "src",
+  "exports": [
+   "iface TarifNeuron",
+   "const TARIF_NEURON",
+   "const TARIF_DEFAULT",
+   "fn tarifModel",
+   "const NEURON_HARIAN_GRATIS",
+   "fn hitungNeuron",
+   "fn neuronPerBalasanKhas",
+   "fn sisaBalasan"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/notes.ts",
+  "lines": 4313,
+  "kind": "src",
+  "exports": [
+   "type NoteKind",
+   "type ExpenseKind",
+   "iface NiatTerdeteksi",
+   "iface CatatanRingkas",
+   "iface TugasRingkas",
+   "iface UangRingkas",
+   "iface RekapUang",
+   "fn parseNominal",
+   "fn tebakKategori",
+   "fn angkaKataKeDigit",
+   "fn parseWaktuAlami",
+   "fn pecahItemKeuangan",
+   "fn panduanJenisSaja",
+   "fn deteksiMintaPanduan",
+   "fn teksPanduanLengkap",
+   "fn deteksiNiat",
+   "fn simpanCatatan",
+   "fn daftarCatatan",
+   "fn nomorUrutCatatan",
+   "fn idDariNomorCatatan",
+   "fn hapusCatatan",
+   "fn simpanTugas",
+   "fn daftarUang",
+   "fn formatDaftarUang",
+   "fn nomorUrutUang",
+   "fn idDariNomorUang",
+   "fn daftarTugas",
+   "fn nomorUrutTugas",
+   "fn idDariNomorTugas",
+   "fn selesaikanTugas",
+   "fn hapusTugas",
+   "fn simpanUang",
+   "fn rekapUang",
+   "fn cariCatatan",
+   "fn hapusUang",
+   "fn formatDaftarCatatan",
+   "fn formatDaftarTugas",
+   "fn formatRekapUang",
+   "fn adalahPertanyaanKonfirmasiPengingat",
+   "fn tanganiPencatatan",
+   "fn deteksiNiatImplisit",
+   "fn deteksiPertanyaan",
+   "fn jawabPertanyaan"
+  ],
+  "imports": [
+   "node:async_hooks",
+   "./db.js",
+   "./chat_id.js",
+   "./group_db.js",
+   "./commands.js",
+   "./timezone.js",
+   "./games/index.js",
+   "./reminder-ubah.js",
+   "./user-profile.js",
+   "./reminder-repeat.js",
+   "./ringkasan.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/providers.ts",
+  "lines": 2046,
+  "kind": "src",
+  "exports": [
+   "fn getOrderedKeys",
+   "iface TextPart",
+   "iface ImagePart",
+   "type ContentPart",
+   "iface ChatMsg",
+   "iface ProviderResult",
+   "fn geminiThinkingConfig",
+   "fn trimMessagesToTokenBudget",
+   "fn ringkasUntukGroqTeks",
+   "fn ringkasUntukGroqVision",
+   "fn chat",
+   "fn probeKunciCloudflare"
+  ],
+  "imports": [
+   "crypto",
+   "node:path",
+   "node:os",
+   "./env.js",
+   "./cooldown.js",
+   "./neuron.js",
+   "./quota.js",
+   "./logger.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/quota.ts",
+  "lines": 374,
+  "kind": "src",
+  "exports": [
+   "type ProviderKind",
+   "type QuotaKind",
+   "fn keyHash",
+   "fn keyTokensUsedToday",
+   "fn keyRequestsUsedToday",
+   "fn hydrateKeyQuota",
+   "fn ensureKeyQuotaHydrated",
+   "fn isKeyAllowed",
+   "fn keyUsed",
+   "fn keyTokensUsed",
+   "fn keyTokenAbsolute",
+   "fn keyUsedAbsolute"
+  ],
+  "imports": [
+   "crypto",
+   "./db.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/rate_limit.ts",
+  "lines": 61,
+  "kind": "src",
+  "exports": [
+   "iface HasilRateLimit",
+   "fn cekRateLimit"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/remind.ts",
+  "lines": 757,
+  "kind": "src",
+  "exports": [
+   "iface ReminderItem",
+   "iface HasilSimpanReminder",
+   "fn saveReminderToDb",
+   "fn simpanReminderCerdas",
+   "const BAILEYS_REMINDER_MARKER",
+   "const BAILEYS_STRICT_MARKER",
+   "fn tandaiPengingatBaileys",
+   "fn tandaiPengingatBaileysEksklusif",
+   "fn adalahPengingatBaileys",
+   "fn adalahPengingatBaileysEksklusif",
+   "fn bersihkanTeksPengingat",
+   "const BAILEYS_FALLBACK_KE_CLOUD_MS",
+   "const CLOUD_FALLBACK_KE_BAILEYS_MS",
+   "iface OpsiFilterKanalPengingat",
+   "fn bolehProsesKanalPengingat",
+   "fn checkDueReminders",
+   "fn handleRemind",
+   "fn startReminderWorker"
+  ],
+  "imports": [
+   "node-telegram-bot-api",
+   "./skills.js",
+   "./db.js",
+   "./env.js",
+   "./reminder-dedup.js",
+   "./reminder-repeat.js",
+   "./chat_id.js",
+   "./group_db.js",
+   "./wa_monitor.js",
+   "./user-profile.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/reminder-dedup.ts",
+  "lines": 75,
+  "kind": "src",
+  "exports": [
+   "fn normalisasiUntukBanding",
+   "fn kemiripanPesan",
+   "const TOLERANSI_WAKTU_MENIT",
+   "const AMBANG_GABUNG",
+   "const AMBANG_MIRIP"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/reminder-multihari.ts",
+  "lines": 216,
+  "kind": "src",
+  "exports": [
+   "iface PermintaanMultiHari",
+   "fn deteksiMultiHari",
+   "fn susunDaftarPengingat"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/reminder-repeat.ts",
+  "lines": 243,
+  "kind": "src",
+  "exports": [
+   "type RepeatKind",
+   "iface AturanUlang",
+   "fn deteksiPengulangan",
+   "fn berikutnya",
+   "fn labelUlang"
+  ],
+  "imports": [
+   "./timezone.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/reminder-ubah.ts",
+  "lines": 262,
+  "kind": "src",
+  "exports": [
+   "iface PengingatRingkas",
+   "type AksiUbah",
+   "iface PermintaanUbah",
+   "fn daftarPengingatPending",
+   "fn ubahPengingat",
+   "fn batalkanPengingat",
+   "fn deteksiPermintaanUbah",
+   "fn pilihTarget"
+  ],
+  "imports": [
+   "./db.js",
+   "./chat_id.js",
+   "./group_db.js",
+   "./notes.js",
+   "./reminder-dedup.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/riddles.ts",
+  "lines": 64,
+  "kind": "src",
+  "exports": [
+   "iface SeedRiddle",
+   "const RIDDLE_SEED",
+   "const GOMBAL_SEED"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/ringkasan.ts",
+  "lines": 184,
+  "kind": "src",
+  "exports": [
+   "iface OpsiRingkasan",
+   "fn susunRingkasan",
+   "fn mintaRingkasan"
+  ],
+  "imports": [
+   "./notes.js",
+   "./reminder-ubah.js",
+   "./reminder-repeat.js",
+   "./user-profile.js",
+   "./chat_id.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/skills.ts",
+  "lines": 5594,
+  "kind": "src",
+  "exports": [
+   "fn cleanMathAndNoise",
+   "fn userAskedAboutMedia",
+   "fn stripMediaNarration",
+   "fn adalahReaksiVisualStiker",
+   "fn extractStickerReadTag",
+   "fn extractImageDescTag",
+   "fn extractStickerTag",
+   "fn extractRiddleTag",
+   "fn isTsvExtraction",
+   "fn sanitizeAssistantOutput",
+   "fn ekstrakPesanInti",
+   "fn buangKlaimTidakLihatStiker",
+   "fn buangKlaimLirikAsli",
+   "fn buangBalasanStikerGenerik",
+   "fn buangTemplateKosong",
+   "fn cegahMulaiGameTanpaDiminta",
+   "fn bersihkanFrasaNgawur",
+   "fn buangKonfabulasiKonteks",
+   "fn buangBocorInstruksi",
+   "fn perbaikiSalahInfoKemampuan",
+   "fn splitMessageSmart",
+   "iface PickedMemory",
+   "fn adalahPesanSistemOtomatis",
+   "fn systemPrompt",
+   "fn isTruncatedReply",
+   "fn continueIfTruncated",
+   "fn adalahEchoPesanUser",
+   "fn bolehPicuGuardAmnesia",
+   "fn autoReply",
+   "fn dynamicNotice",
+   "fn emojiStikerDariMakna",
+   "fn bersihkanArtefakEkstraksi",
+   "fn describeImage"
+  ],
+  "imports": [
+   "./env.js",
+   "./games/index.js",
+   "./providers.js",
+   "./memory.js",
+   "./chat_id.js",
+   "./timezone.js",
+   "./knowledge.js",
+   "./stickers.js",
+   "./sticker-manifest.js",
+   "./markers.js",
+   "./bot_growth.js",
+   "./bot_memory.js",
+   "./riddles.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/sticker-manifest.ts",
+  "lines": 262,
+  "kind": "src",
+  "exports": [
+   "const STICKER_MANIFEST",
+   "const STICKER_INFO",
+   "const EDGY_STICKER_EMOJIS"
+  ],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/stickers.ts",
+  "lines": 395,
+  "kind": "src",
+  "exports": [
+   "fn isEdgyStickerEmoji",
+   "fn isPlayfulContext",
+   "type StickerMood",
+   "fn stickerMood",
+   "fn stickerFitsMood",
+   "fn stickerFileForEmoji",
+   "fn hasStickerForEmoji",
+   "fn stickerPublicUrl",
+   "fn fetchStickerBuffer",
+   "fn allowStickerForChat",
+   "const STICKER_MIN_TURNS_SINCE_LAST",
+   "fn isStickerMarker",
+   "fn stripStickerMarker",
+   "fn lastStickerEmoji",
+   "fn assistantTurnsSinceLastSticker"
+  ],
+  "imports": [
+   "node:fs/promises",
+   "node:path",
+   "node:url",
+   "./sticker-manifest.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/telegram.ts",
+  "lines": 1388,
+  "kind": "src",
+  "exports": [
+   "fn getTelegramBot",
+   "fn sendTelegramMessageSafe",
+   "fn sendTelegramStickerSafe",
+   "fn deteksiPanggilSlash",
+   "fn handleIncomingMessage",
+   "fn processTelegramUpdate",
+   "fn startTelegram"
+  ],
+  "imports": [
+   "node-telegram-bot-api",
+   "./skills.js",
+   "./env.js",
+   "./media.js",
+   "./db.js",
+   "./memory.js",
+   "./notes.js",
+   "./commands.js",
+   "./user_facts.js",
+   "./documents.js",
+   "./stickers.js",
+   "./markers.js",
+   "./web.js",
+   "./remind.js",
+   "./timezone.js",
+   "./group_mode.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/timezone.ts",
+  "lines": 587,
+  "kind": "src",
+  "exports": [
+   "iface FormattedTime",
+   "fn formatInZone",
+   "iface CountryTz",
+   "fn detectUserCountry",
+   "iface LocationEntry",
+   "iface LocationMatch",
+   "fn detectLocation",
+   "fn isAskingTime",
+   "fn detectUserLocationDeclaration",
+   "fn resolveTimezoneFromCoords",
+   "fn buildUniversalTimePrompt",
+   "fn registerPembacaProfil",
+   "fn ambilProfilCache"
+  ],
+  "imports": [
+   "./chat_id.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/types/pdf-parse.d.ts",
+  "lines": 20,
+  "kind": "src",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "src/user_facts.ts",
+  "lines": 277,
+  "kind": "src",
+  "exports": [
+   "const PENANDA_FAKTA",
+   "iface FaktaPersonal",
+   "fn deteksiFaktaPersonal",
+   "fn simpanFaktaPersonal",
+   "fn tangkapFaktaPersonal"
+  ],
+  "imports": [
+   "./db.js",
+   "./chat_id.js",
+   "./group_db.js",
+   "./memory.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/user-profile.ts",
+  "lines": 390,
+  "kind": "src",
+  "exports": [
+   "iface ProfilWaktu",
+   "fn ambilProfilWaktu",
+   "fn simpanProfilWaktu",
+   "fn profilDariLokasi",
+   "iface KeputusanWaktu",
+   "fn tentukanProfilWaktu",
+   "fn berkaitanDenganWaktu",
+   "fn butuhLokasiAtauWaktu",
+   "fn waktuDiZona",
+   "fn setCacheProfil",
+   "fn getCacheProfil"
+  ],
+  "imports": [
+   "./db.js",
+   "./chat_id.js",
+   "./group_db.js",
+   "./memory.js",
+   "./timezone.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/vps_monitor.ts",
+  "lines": 531,
+  "kind": "src",
+  "exports": [
+   "const STATE_FILENAME",
+   "iface InstaboxMachineSnapshot",
+   "iface VpsMonitorState",
+   "iface VpsMonitorEvent",
+   "iface CekLifecycleDeps",
+   "iface CekLifecycleResult",
+   "fn resetVpsMonitorUntukTest",
+   "fn escapeHtml",
+   "fn formatWaktuWib",
+   "fn parseInstaboxMachine",
+   "fn evaluasiStatusVps",
+   "fn bacaStateMonitorVps",
+   "fn simpanStateMonitorVps",
+   "fn kirimNotifTelegramPemilik",
+   "fn cekLifecycleVps",
+   "fn laporShutdownVps",
+   "fn mulaiTimerPeringatanLokalVps"
+  ],
+  "imports": [
+   "./db.js",
+   "./env.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/wa_monitor.ts",
+  "lines": 474,
+  "kind": "src",
+  "exports": [
+   "iface MetaErrorInfo",
+   "type KategoriErrorMeta",
+   "fn klasifikasiErrorMeta",
+   "fn resetMonitorWaUntukTest",
+   "fn statistikKirimWa",
+   "fn catatHasilKirimWa",
+   "fn statusAutoMaintenanceWa",
+   "fn evaluasiHealthStatusMeta",
+   "fn periksaHealthStatusMeta",
+   "fn catatHasilKirimMeta",
+   "fn catatStatusDeliveryMeta"
+  ],
+  "imports": [
+   "./env.js",
+   "./db.js",
+   "./cooldown.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/web.ts",
+  "lines": 2220,
+  "kind": "src",
+  "exports": [
+   "fn isSafePublicUrl",
+   "fn fetchAmanSsrf",
+   "fn cleanStr",
+   "fn decodeBingUrl",
+   "fn isJunkArticle",
+   "fn extractFitMarkdownContent",
+   "fn scrapeWebpage",
+   "fn extractSpaMetadata",
+   "fn needsSearch",
+   "fn extractCoreEntity",
+   "fn formulateSmartSearchQueries",
+   "fn keywords",
+   "fn searchWeb"
+  ],
+  "imports": [
+   "./knowledge.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/whatsapp_baileys.ts",
+  "lines": 1963,
+  "kind": "src",
+  "exports": [
+   "iface BaileysGroupTargetInfo",
+   "fn unwrapBaileysMessage",
+   "fn deteksiTargetBotBaileys",
+   "fn startBaileysReminderWorker",
+   "fn stopBaileysReminderWorker",
+   "fn extractPnDigits",
+   "fn resolveBaileysSenderNumber",
+   "fn sendWhatsAppMessageSafe",
+   "fn sendWhatsAppStickerSafe",
+   "fn startWhatsApp"
+  ],
+  "imports": [
+   "fs",
+   "path",
+   "./skills.js",
+   "pino",
+   "qrcode-terminal",
+   "@whiskeysockets/baileys",
+   "./env.js",
+   "./baileys_brain.js",
+   "./media.js",
+   "./db.js",
+   "./memory.js",
+   "./notes.js",
+   "./user_facts.js",
+   "./documents.js",
+   "./stickers.js",
+   "./markers.js",
+   "./web.js",
+   "./timezone.js",
+   "./remind.js",
+   "./chat_id.js",
+   "./wa_monitor.js",
+   "./group_mode.js",
+   "./vps_monitor.js",
+   "./whatsapp_session.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/whatsapp_cloud.ts",
+  "lines": 1285,
+  "kind": "src",
+  "exports": [
+   "fn verifyWhatsAppWebhook",
+   "fn verifyMetaSignature",
+   "const verifyWhatsAppSignature",
+   "fn sendWhatsAppCloudMessageSafe",
+   "fn sendWhatsAppCloudStickerSafe",
+   "fn markWhatsAppCloudMessageRead",
+   "fn processWhatsAppCloudWebhook"
+  ],
+  "imports": [
+   "crypto",
+   "./env.js",
+   "./skills.js",
+   "./media.js",
+   "./db.js",
+   "./memory.js",
+   "./stickers.js",
+   "./markers.js",
+   "./web.js",
+   "./timezone.js",
+   "./remind.js",
+   "./notes.js",
+   "./user_facts.js",
+   "./documents.js",
+   "./wa_monitor.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "src/whatsapp_session.ts",
+  "lines": 116,
+  "kind": "src",
+  "exports": [
+   "fn restoreSessionFromSupabase",
+   "fn syncSessionDirToSupabase",
+   "fn clearSessionInSupabase"
+  ],
+  "imports": [
+   "fs",
+   "path",
+   "./db.js"
+  ],
+  "tests": []
+ },
+ {
+  "path": "tests/adaptasi-universal.test.mjs",
+  "lines": 102,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/notes.js",
+   "../src/user_facts.js"
+  ],
+  "tests": [
+   "universal: TANGGAL berbagai gaya (bukan hanya contoh user)",
+   "universal: JADWAL kegiatan apa pun tersimpan (bukan hanya badminton)",
+   "universal: TUGAS vs KEUANGAN konsisten",
+   "universal: fakta sah gaya apa pun tersimpan",
+   "universal: sampah gaya apa pun ditolak",
+   "universal: pola FRUSTRASI diperluas (bukan hanya hinaan)",
+   "universal: instruksi BACA SUASANA SENDIRI ada"
+  ]
+ },
+ {
+  "path": "tests/angka-bukan-tugas.test.mjs",
+  "lines": 36,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "angka: guard \"bukan tentang tugas\" ada",
+   "angka: \"udah\" tidak lagi langsung diikuti angka",
+   "angka: pola \"tandai N selesai\" ditambahkan",
+   "angka: pola selesai-tugas yang BENAR tetap ada"
+  ]
+ },
+ {
+  "path": "tests/anti-echo-pesan-user.test.mjs",
+  "lines": 99,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "echo: balasan PERSIS sama dengan pesan user terdeteksi",
+   "echo: balasan sangat mirip (kata berbeda) terdeteksi",
+   "echo: sapaan pendek TIDAK dianggap echo (wajar diulang)",
+   "echo: balasan yang benar-benar berbeda TIDAK dianggap echo",
+   "echo: input kosong aman (tidak melempar)",
+   "echo: guard terpasang di autoReply (berlaku semua platform)",
+   "echo: banter yang DISUKAI pemilik produk TIDAK boleh diblokir",
+   "perspektif: prompt melarang MEMBELOKKAN topik & MENGARANG klaim orang lain",
+   "perspektif stiker: prompt stiker melarang menulis dari sudut pandang user",
+   "tidak ada balasan hardcode: perbaikan ini hanya instruksi + regenerasi"
+  ]
+ },
+ {
+  "path": "tests/anti-factchecker.test.mjs",
+  "lines": 36,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "fact-checker: teks hardcoded dihapus dari KODE",
+   "fact-checker: guard konteksPersonal ada",
+   "fact-checker: return kosong untuk regenerasi (bukan teks statis)",
+   "fact-checker: klaim faktual tetap dijaga"
+  ]
+ },
+ {
+  "path": "tests/anti-konfabulasi.test.mjs",
+  "lines": 103,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "konfabulasi: pesan pendek + topik baru -> DIBUANG",
+   "bocor instruksi: balasan soal gaya sendiri -> DIBUANG",
+   "salah info: bot mengaku tidak bisa stiker -> DIKOSONGKAN (regenerasi)",
+   "tiba-tiba game: ajakan main tanpa diminta -> DIBUANG",
+   "frasa ngawur: \"salah liat\" / \"monyet\" -> DIBUANG",
+   "template kosong: \"siap bantu X\" -> DIBUANG",
+   "balasan NORMAL tidak boleh dirusak",
+   "stiker: balasan generik/ngawur -> DIBUANG",
+   "lirik: klaim tahu lirik asli -> DIKOSONGKAN (regenerasi)",
+   "stiker: balasan yang BENAR tidak dirusak"
+  ]
+ },
+ {
+  "path": "tests/anti-kontaminasi.test.mjs",
+  "lines": 42,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "kontaminasi: balasan konfirmasi LAMA dibuang dari riwayat",
+   "kontaminasi: \"Belum ada jadwal rutin\" dibuang dari riwayat",
+   "kontaminasi: gaya norak berlebihan dibuang",
+   "kontaminasi: \"Halah\" pembuka dibuang dari riwayat",
+   "tebakan: keluhan \"kenapa suka tebak-tebakan\" menghentikan mode",
+   "tebakan: minta dongeng menghentikan mode tebakan",
+   "tebakan: \"stop tebakannya\" tertangkap"
+  ]
+ },
+ {
+  "path": "tests/audit-07okt-2.test.mjs",
+  "lines": 42,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/user_facts.js"
+  ],
+  "tests": [
+   "fakta: pertanyaan \"suka buah apa\" TIDAK jadi fakta",
+   "fakta: kesukaan SUNGGUHAN tetap tersimpan",
+   "fakta: \"Nama kamu X\" dikenali",
+   "pengingat: alur tanya-jam ada",
+   "kontaminasi: \"putri manis\" disaring dari riwayat"
+  ]
+ },
+ {
+  "path": "tests/audit-08okt-2.test.mjs",
+  "lines": 54,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "auto-reply DISIMPAN ke riwayat di 3 platform (AI tahu)",
+   "dedup: berbasis KONTEN (bukan hanya msg_id)",
+   "pertanyaan keuangan: ter-trigger untuk kalimat nyata",
+   "pertanyaan keuangan: obrolan biasa TIDAK ter-trigger"
+  ]
+ },
+ {
+  "path": "tests/audit-08okt.test.mjs",
+  "lines": 67,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js",
+   "../src/memory.js"
+  ],
+  "tests": [
+   "Rp1: jumlah barang TIDAK jadi nominal",
+   "nominal: ambil angka TERBESAR, bukan tanggal",
+   "multi-item: pesan campuran -> pemasukan & pengeluaran TERPISAH",
+   "multi-item: \"tunjangan makan\" = PEMASUKAN (bukan pengeluaran)",
+   "pecah: pesan panjang terpecah per item",
+   "reset: bahasa alami dikenali",
+   "reset: obrolan biasa TIDAK memicu"
+  ]
+ },
+ {
+  "path": "tests/audit-final-fixes.test.mjs",
+  "lines": 225,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:vm",
+   "typescript",
+   "../src/env.ts",
+   "../src/providers.js",
+   "../src/skills.js",
+   "../src/memory.js"
+  ],
+  "tests": [
+   "audit #2: 401/403 & Cloudflare neuron 400 lanjut ke key berikutnya tanpa model cooldown",
+   "audit #3: OpenCode 429 FreeUsageLimitError (fullBody) tersimpan persisten",
+   "audit #1: ringkasUntukGroqTeks menurunkan systemPrompt full ke bawah 7.000 token tanpa hilangkan persona",
+   "audit #8a: ringkasUntukGroqVision mempertahankan persona & konteks, bukan header jam",
+   "audit #6 & #7: buangKonfabulasiKonteks sadar riwayat + buangBocorInstruksi tangkap maaf amnesia",
+   "audit #9: systemPrompt saring pesan otomatis sistem & deteksi alur obrolan",
+   "audit #14: adalahTestChatId & saveCorrection menolak id test agar DB produksi bersih",
+   "audit #12 & #13: notes.ts + kanal Baileys/Cloud/Telegram paritas & urutan aman"
+  ]
+ },
+ {
+  "path": "tests/audit-lengkap-v36.test.mjs",
+  "lines": 92,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/timezone.js",
+   "../src/skills.js",
+   "../src/web.js"
+  ],
+  "tests": [
+   "detectUserCountry mengabaikan grup & ID Telegram namun mengenali nomor WA asli +1 / +62",
+   "ekstrakPesanInti melepas wrapper grup pasif, membalas, dan penutur",
+   "guard stiker bekerja untuk label stiker grup WA, stiker animasi, dan stiker Telegram",
+   "isSafePublicUrl menolak rentang CGNAT 100.64.0.0/10",
+   "perbaikan struktural audit v36 terpasang lengkap di seluruh modul target"
+  ]
+ },
+ {
+  "path": "tests/auto-maintenance-meta.test.mjs",
+  "lines": 161,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "1. klasifikasiErrorMeta membedakan blokir akun, gangguan sementara, dan error per-penerima",
+   "2. Blokir silent-HTTP-200 (141006): langsung aktif, tidak mati oleh HTTP 200, hanya pulih oleh delivered",
+   "3. Gangguan sementara / tidak merespon: butuh 3x berturut-turut, pulih oleh HTTP 200",
+   "4. Error per-penerima (131047 lewat 24 jam) tidak pernah menyalakan maintenance meski berulang",
+   "5. evaluasiHealthStatusMeta mengabaikan SIP BLOCKED & LIMITED, menangkap WABA BLOCKED",
+   "6. Isolasi sumber: error model AI (providers/skills) dan Baileys tidak memicu auto-maintenance Meta",
+   "7. Landing page & health endpoint mengarahkan tombol WA ke nomor cadangan saat maintenance"
+  ]
+ },
+ {
+  "path": "tests/baileys-lid-dan-stiker.test.mjs",
+  "lines": 114,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/whatsapp_baileys.js",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "extractPnDigits hanya menerima JID nomor telepon dan menolak LID/grup",
+   "resolveBaileysSenderNumber meresolusi @lid lewat remoteJidAlt",
+   "resolveBaileysSenderNumber meresolusi @lid lewat lidMapping.getPNForLID",
+   "resolveBaileysSenderNumber fallback aman saat mapping belum ada + jaga JID normal & grup",
+   "stiker kucing tidak dikosongkan oleh anti-konfabulasi atau filter generik",
+   "konfabulasi teks & balasan stiker ngawur tetap dibuang",
+   "systemPrompt tidak mengaktifkan ENERGI RENDAH dan memakai register gaul pada slang santai",
+   "buangBocorInstruksi membersihkan janji meta kaku ala bot CS"
+  ]
+ },
+ {
+  "path": "tests/batas-kemampuan.test.mjs",
+  "lines": 48,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "batas: prompt punya blok BATAS KEMAMPUAN",
+   "batas: melarang mengaku bisa memutar musik",
+   "batas: melarang klaim kemampuan lain yang tidak ada",
+   "batas: menginstruksikan AKUI JUJUR + tawarkan yang bisa",
+   "batas: melarang berpura-pura memutar"
+  ]
+ },
+ {
+  "path": "tests/berulang.test.mjs",
+  "lines": 97,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/reminder-repeat.js"
+  ],
+  "tests": [
+   "deteksiPengulangan: tiap hari",
+   "deteksiPengulangan: nama hari",
+   "deteksiPengulangan: hari kerja",
+   "deteksiPengulangan: tanggal",
+   "deteksiPengulangan: bukan berulang -> null",
+   "berikutnya: daily -> +1 hari, jam sama",
+   "berikutnya: weekly Senin -> 7 hari lagi",
+   "berikutnya: lewat batas akhir -> null",
+   "berikutnya: none -> null",
+   "deteksiPengulangan: interval sub-harian (\"setiap 29 menit\", \"tiap 2 jam\", \"setiap jam\")",
+   "berikutnya & labelUlang: interval_minutes"
+  ]
+ },
+ {
+  "path": "tests/chat-id-konsisten.test.mjs",
+  "lines": 101,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/chat_id.js"
+  ],
+  "tests": [
+   "chat_id: WhatsApp SELALU berprefix wa_",
+   "chat_id: Telegram JUGA berprefix wa_ (selaras data produksi)",
+   "chat_id: TULIS == BACA untuk SEMUA platform (anti-regresi)",
+   "chat_id: kunci non-nomor dibiarkan (fixture test)",
+   "chat_id: normalisasi IDEMPOTEN (aman diulang)",
+   "KIRIM: nomor WhatsApp dibersihkan dari prefix",
+   "chat_id: SATU SUMBER — dipakai di semua jalur tulis utama",
+   "chat_id: getContext menormalisasi saat BACA (data lama tetap terbaca)",
+   "KIRIM: Telegram Number() dibersihkan dari prefix"
+  ]
+ },
+ {
+  "path": "tests/cloudflare-neuron.test.mjs",
+  "lines": 44,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/neuron.js"
+  ],
+  "tests": [
+   "cloudflare: ada helper cekKeyBolehDipakai (satuan benar)",
+   "cloudflare: token dikonversi ke neuron sebelum dibandingkan",
+   "cloudflare: DIPAKAI saat token jauh di bawah cap neuron",
+   "cloudflare: dilewati HANYA bila neuron benar-benar habis",
+   "cloudflare: kedua jalur (balapan + sekuensial) pakai helper"
+  ]
+ },
+ {
+  "path": "tests/dedup-laporan-jujur.test.mjs",
+  "lines": 47,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "header jenis + daftar -> tercatat",
+   "info pendapatan tanpa header -> TIDAK tercatat",
+   "tanpa header & tanpa kata kerja -> TIDAK tercatat",
+   "laporan JUJUR saat duplikat (tidak bilang \"Tercatat\")"
+  ]
+ },
+ {
+  "path": "tests/dokumen-tersimpan.test.mjs",
+  "lines": 60,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "dokumen: modul documents.ts punya fungsi yang diperlukan",
+   "dokumen: penyimpanan DISAMBUNGKAN ke alur WhatsApp",
+   "dokumen: impor pdf-parse lewat lib/ (hindari bug kode tes)",
+   "dokumen: tahan banting bila tabel belum ada",
+   "dokumen: migrasi v32 ada & punya kolom penting",
+   "dokumen: teks dibatasi agar DB tidak membengkak"
+  ]
+ },
+ {
+  "path": "tests/empati-sakit.test.mjs",
+  "lines": 47,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "sakit: keluhan fisik dikenali sebagai suasana rapuh",
+   "sakit: \"sakit kaki/kepala/perut\" dikenali",
+   "sakit: prompt melarang menyuruh pergi",
+   "sakit: prompt melarang meremehkan keluhan",
+   "sakit: prompt minta tanggapi SEMUA keluhan",
+   "sakit: ada penegak kode anti-mengusir",
+   "sakit: contoh nada yang benar ada di prompt"
+  ]
+ },
+ {
+  "path": "tests/evaluasi-07okt.test.mjs",
+  "lines": 71,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js",
+   "../src/user-profile.js",
+   "../src/user_facts.js"
+  ],
+  "tests": [
+   "pengingat: \"oh iya ingetin ... setiap hari\" TERSIMPAN",
+   "pengingat: pesan bersih dari jam kedua & kata sambung",
+   "pengingat: pengantar 2 kata (oh iya) didukung",
+   "curhat: salinan chat TIDAK memicu tanya-zona",
+   "curhat: pertanyaan waktu SUNGGUHAN tetap memicu",
+   "nama: \"nama saya Dhea\" -> bersih tanpa kata ganti",
+   "nama: kalimat GASUKA dipanggil TIDAK disimpan sebagai nama",
+   "nama: kalimat tebak huruf TIDAK disimpan sebagai nama",
+   "nama: \"panggil aku bub\" TETAP tersimpan"
+  ]
+ },
+ {
+  "path": "tests/fakta-personal-bersih.test.mjs",
+  "lines": 64,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/user_facts.js"
+  ],
+  "tests": [
+   "fakta: PERTANYAAN tidak disimpan sebagai fakta",
+   "fakta: keterangan kabur bukan pekerjaan",
+   "fakta: kebiasaan kabur tidak disimpan",
+   "fakta: partikel bukan nama",
+   "fakta: fakta SAH tetap tersimpan",
+   "fakta: pekerjaan SAH tetap tersimpan"
+  ]
+ },
+ {
+  "path": "tests/fakta-personal.test.mjs",
+  "lines": 68,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/user_facts.js"
+  ],
+  "tests": [
+   "fakta: NAMA ditangkap",
+   "fakta: KESUKAAN ditangkap",
+   "fakta: PEKERJAAN ditangkap",
+   "fakta: HOBI ditangkap",
+   "fakta: KULINER ditangkap",
+   "fakta: KEBIASAAN ditangkap",
+   "fakta: TIDAK salah tangkap obrolan biasa",
+   "fakta: penanda [FAKTA] ada",
+   "fakta: prompt memakai fakta personal secara natural",
+   "fakta: tersambung di semua platform"
+  ]
+ },
+ {
+  "path": "tests/format-angka.test.mjs",
+  "lines": 59,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict"
+  ],
+  "tests": [
+   "format: 3.803 TIDAK dibulatkan jadi 4K",
+   "format: angka kecil tampil utuh",
+   "format: 100.000+ baru disingkat (1 desimal)",
+   "format: juta dengan 1 desimal",
+   "format: nol dan negatif",
+   "format: satuan default \"Token\" bila tidak diberi",
+   "format: satuan neuron dihormati"
+  ]
+ },
+ {
+  "path": "tests/game.test.mjs",
+  "lines": 95,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/games/engine.js",
+   "../src/games/cards.js"
+  ],
+  "tests": [
+   "semua game bisa dimulai & punya pembuka",
+   "dek remi = 52 kartu, semua unik",
+   "dek UNO = 108 kartu",
+   "kocok: mempertahankan elemen, tidak mengubah asli",
+   "UNO: langkah valid berjalan tanpa error",
+   "catur: gerakan tidak sah ditolak",
+   "catur: gerakan sah diterima",
+   "tic-tac-toe: bot TIDAK BISA menang bila user main optimal",
+   "game: \"berhenti\" mengakhiri permainan"
+  ]
+ },
+ {
+  "path": "tests/gaya-cs.test.mjs",
+  "lines": 57,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "gaya CS: harapan generik dibuang",
+   "gaya CS: tawaran layanan dibuang",
+   "gaya CS: basa-basi kosong dibuang",
+   "balasan TEMAN dipertahankan"
+  ]
+ },
+ {
+  "path": "tests/grup-database-terpisah.test.mjs",
+  "lines": 98,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/group_db.js",
+   "../src/remind.js"
+  ],
+  "tests": [
+   "sql/migrate_v35_group_database.sql mendeklarasikan 9 tabel grup aman dengan RLS & tanpa DELETE/DROP",
+   "isTableMissingError dan resolveTableName aman untuk DB belum termigrasi",
+   "bolehProsesKanalPengingat memaksa pengingat grup WA lewat baileys_only dan menolak cloud_only",
+   "ringkasan.ts membedakan header Ringkasan Grup vs privat",
+   "isolasi kunci grup & wiring group_messages pada whatsapp_baileys, telegram, dataset, dan stats"
+  ]
+ },
+ {
+  "path": "tests/grup-mode.test.mjs",
+  "lines": 369,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/group_mode.js",
+   "../src/whatsapp_baileys.js"
+  ],
+  "tests": [
+   "default mode grup adalah mention",
+   "deteksiPanggilanNatural menangkap kata panggil natural tanpa salah tangkap robot/botol",
+   "deteksiPerintahModeGrup menangkap slash command & bahasa natural dengan guard negasi",
+   "izin mode: anggota biasa boleh toggle mention<->nimbrung, /diam dikunci admin/owner",
+   "nimbrung cerdas: skip basa-basi & @orang lain, jeda anti-spam 5 detik, auto-revert 30 menit sepi",
+   "follow-up window 75 detik aktif setelah dipanggil dan berhenti pada penutup atau timeout",
+   "passive listening buffer menyimpan maks 15 pesan, dikonsumsi sekali, dan diam mengabaikan total",
+   "deteksiTargetBotBaileys mengenali mention via nomor PN maupun @lid Baileys v7",
+   "wiring whatsapp_baileys.ts, telegram.ts, dan commands.ts terhubung ke group_mode",
+   "deteksiPerintahModeGrup mengenali /nimbrung setelah sapaan dan alias /status",
+   "stiker & media tanpa caption tetap dibalas saat nimbrung dan di jendela follow-up 75 detik",
+   "unwrapBaileysMessage membuka pembungkus ephemeral, viewOnceV2, documentWithCaption, lottieSticker, dan edited"
+  ]
+ },
+ {
+  "path": "tests/i18n-kunci-lengkap.test.mjs",
+  "lines": 91,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:path",
+   "node:url"
+  ],
+  "tests": [
+   "i18n: kamus EN tidak kosong",
+   "i18n: SETIAP kunci yang dipakai ADA di kamus EN",
+   "i18n: kunci dinamis dash.* & dyn.* tersedia",
+   "i18n: helper t() mengembalikan fallback, bukan kunci mentah"
+  ]
+ },
+ {
+  "path": "tests/i18n-lengkap.test.mjs",
+  "lines": 90,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:child_process"
+  ],
+  "tests": [
+   "i18n.js: sintaks valid (koma lengkap)",
+   "i18n.js: dashboard.js juga sintaks valid",
+   "landing: SEMUA data-i18n ada di kamus EN",
+   "dashboard: SEMUA data-i18n ada di kamus EN",
+   "form laporan: 9 kunci lapor.* ada di kamus",
+   "dashboard: minimal 100 elemen ditandai data-i18n",
+   "i18n.js: <option> ditangani eksplisit",
+   "i18n.js: helper t() tersedia untuk teks dinamis",
+   "HTML: tidak ada sisipan rusak \"> data-i18n=\"",
+   "HTML: tag <select> seimbang"
+  ]
+ },
+ {
+  "path": "tests/integrasi.test.mjs",
+  "lines": 110,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict"
+  ],
+  "tests": [
+   "integrasi: alur pencatatan & klasifikasi",
+   "integrasi: pengingat berulang tersimpan dengan kolom benar",
+   "integrasi: zona waktu per-user tersimpan"
+  ]
+ },
+ {
+  "path": "tests/interjeksi-halah.test.mjs",
+  "lines": 40,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "halah: ada di daftar interjeksi",
+   "halah: ada set INTERJEKSI_BERLEBIHAN",
+   "halah: ada fungsi cooldown batasiInterjeksiBerlebihan",
+   "halah: prompt melarang pakai di setiap balasan",
+   "halah: prompt minta variasikan pembuka"
+  ]
+ },
+ {
+  "path": "tests/isolasi-laporan.test.mjs",
+  "lines": 85,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:path"
+  ],
+  "tests": [
+   "ISOLASI: tidak ada kode di src/ yang membaca tabel laporan",
+   "ISOLASI: getContext hanya membaca messages, summaries, corrections",
+   "ISOLASI: ada peringatan eksplisit di memory.ts",
+   "ANALISIS: api/laporan.ts menganalisis keluhan lewat AI",
+   "ANALISIS: analisis TIDAK ditulis ke memori (messages/corrections)",
+   "ISOLASI: jaminan tertulis di api/laporan.ts"
+  ]
+ },
+ {
+  "path": "tests/jadwal-kegiatan.test.mjs",
+  "lines": 73,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "waktu: tanggal lengkap diparse BENAR (bukan 1 Jan 2027)",
+   "waktu: tahun 4 digit TIDAK dibaca sebagai jeda jam",
+   "waktu: rentang tanpa kata \"jam\" didukung",
+   "jadwal: pesan jadwal nyata TERSIMPAN sebagai pengingat",
+   "jadwal: undangan sosialisasi TERSIMPAN",
+   "tanya: \"rekap tugas aku\" = TUGAS (bukan keuangan)",
+   "anti-bohong: prompt melarang mengaku mencatat tanpa bukti"
+  ]
+ },
+ {
+  "path": "tests/katalog-model-sinkron.test.mjs",
+  "lines": 77,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:vm",
+   "../src/env.ts",
+   "../api/stats.ts"
+  ],
+  "tests": [
+   "katalog API mencakup semua model runtime tepat sekali per provider",
+   "model qualified dan prefiks media cocok tepat satu kartu, tanpa silang gateway",
+   "penghitungan menjumlahkan prefiks media tanpa mengambil hit pertama saja",
+   "cooldown: \"concurrency capacity\" BUKAN limit harian (rpd)"
+  ]
+ },
+ {
+  "path": "tests/keamanan.test.mjs",
+  "lines": 119,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:crypto",
+   "../src/media_guard.js"
+  ],
+  "tests": [
+   "berkas: .exe ditolak",
+   "berkas: .sh/.bat/.ps1/.js ditolak",
+   "berkas: .docx/.pdf/.txt DIIZINKAN",
+   "berkas: magic bytes MZ (Windows executable) ditolak walau ekstensi .txt",
+   "berkas: magic bytes ELF (Linux executable) ditolak",
+   "berkas: shebang (#!) ditolak",
+   "berkas: path traversal ditolak",
+   "berkas: PDF asli DIIZINKAN (magic %PDF)",
+   "berkas: PNG asli DIIZINKAN",
+   "berkas: daftar ekstensi terlarang tidak kosong",
+   "berkas: buffer kosong tidak crash",
+   "pin: scrypt menghasilkan hash berbeda tiap kali (salt acak)",
+   "pin: scrypt bisa diverifikasi (round-trip)",
+   "env: PIN_SALT tidak punya fallback hardcoded"
+  ]
+ },
+ {
+  "path": "tests/kebiasaan-otomatis.test.mjs",
+  "lines": 68,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/user_facts.js",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "kebiasaan: tersimpan OTOMATIS tanpa perintah",
+   "kebiasaan: TIDAK ada perintah /kebiasaan (desain baru)",
+   "kebiasaan: TIDAK bentrok dengan fitur REMIND",
+   "kebiasaan: dipakai sebagai REFERENSI bot (via corrections)"
+  ]
+ },
+ {
+  "path": "tests/keluar-topik-game.test.mjs",
+  "lines": 105,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/games/index.js"
+  ],
+  "tests": [
+   "game: memakai WHITELIST, bukan blacklist",
+   "game: \"Jadiin stiker\" BUKAN langkah game",
+   "game: TIDAK menawarkan main lagi saat berhenti",
+   "game: engine.ts JUGA tidak mengajak main lagi (celah yang lolos)",
+   "game: buangAjakanGameLama membuang ajakan kembali ke game",
+   "game: buangAjakanGameLama TIDAK merusak balasan normal",
+   "game: pembersih DITEGAKKAN di sanitizeAssistantOutput",
+   "prompt: ada aturan universal jangan tarik balik ke topik lama"
+  ]
+ },
+ {
+  "path": "tests/keuangan-masuk.test.mjs",
+  "lines": 69,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "keuangan: kata pemasukan mencakup gajian/bonus/thr/komisi",
+   "keuangan: daftar pemasukan di jalur implisit disamakan",
+   "keuangan: klasifikasi in/out punya daftar lengkap",
+   "keuangan: \"gajian 5 juta\" -> PEMASUKAN",
+   "keuangan: \"bonus 2 juta\" -> PEMASUKAN",
+   "keuangan: \"thr 1 juta\" -> PEMASUKAN",
+   "keuangan: \"beli makan 25rb\" -> PENGELUARAN",
+   "keuangan: \"bayar listrik 200rb\" -> PENGELUARAN"
+  ]
+ },
+ {
+  "path": "tests/klasifikasi-presisi.test.mjs",
+  "lines": 89,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "presisi: CURHAT tidak boleh dicatat sebagai fitur",
+   "presisi: PERMINTAAN fitur HARUS terdeteksi",
+   "presisi: \"aku habis 50rb buat makan\" (tanpa tadi) boleh dicatat"
+  ]
+ },
+ {
+  "path": "tests/larangan-arahkan-lapor.test.mjs",
+  "lines": 53,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "bot: ajakan melapor dibuang",
+   "bot: balasan normal TIDAK terpengaruh",
+   "prompt: ada larangan eksplisit mengarahkan user",
+   "prompt: TIDAK ada lagi instruksi menyebut landing page",
+   "penegak kode: ada penyaring ajakan lapor"
+  ]
+ },
+ {
+  "path": "tests/lokasi-tertunda.test.mjs",
+  "lines": 65,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/user-profile.js"
+  ],
+  "tests": [
+   "butuhLokasi: cuaca terdeteksi",
+   "butuhLokasi: waktu & pengingat tetap terdeteksi",
+   "butuhLokasi: kiblat, matahari, puasa terdeteksi",
+   "butuhLokasi: lokasi & perjalanan terdeteksi",
+   "butuhLokasi: obrolan biasa TIDAK terdeteksi",
+   "butuhLokasi: mencakup SEMUA yang berkaitanDenganWaktu",
+   "butuhLokasi: tidak ada false positive pada kalimat panjang"
+  ]
+ },
+ {
+  "path": "tests/memori-bot.test.mjs",
+  "lines": 45,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "memori: riwayat dari DB diperbesar (40 pesan)",
+   "memori: fakta/koreksi diperbesar (15)",
+   "memori: riwayat di prompt diperbesar (30)",
+   "memori: ringkasan otomatis tiap 6 pesan",
+   "memori: sumber ringkasan 60 pesan",
+   "memori: ringkasan menangkap fakta personal",
+   "memori: prompt pakai memori secara AKTIF"
+  ]
+ },
+ {
+  "path": "tests/memori-pikun.test.mjs",
+  "lines": 40,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "pikun: ringkasan AKUMULATIF (gabung lama + baru)",
+   "pikun: ringkasan lama dibaca sebelum diperbarui",
+   "pikun: counter berbasis DB (bukan hanya memori)",
+   "pikun: ringkasan dibatasi 1500 karakter",
+   "pikun: instruksi perbarui bila bertentangan"
+  ]
+ },
+ {
+  "path": "tests/monitoring-valid.test.mjs",
+  "lines": 186,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "monitoring: ada PROBE AKTIF untuk kunci Cloudflare",
+   "monitoring: dashboard MEMBACA provider_cooldown",
+   "monitoring: cooldown MEMAKSA status capped",
+   "monitoring: cooldown dikirim ke frontend",
+   "monitoring: neuron dari provider_quota, bukan messages",
+   "monitoring: rasio input/output KONSISTEN (99/1)",
+   "sinkron: bar & angka TIDAK boleh beda saat kuota habis",
+   "sinkron: bar utama memakai metrik binding yang sama dengan label",
+   "sinkron: neuronUsed harus = cap saat kuota habis",
+   "stabilitas: PROBE TIDAK BOLEH MEMBLOKIR render",
+   "stabilitas: probe PARALEL dengan timeout pendek",
+   "render: variabel TIDAK boleh dipakai di luar blok tempat didefinisikan",
+   "render: referensi tokenPct tidak bocor dari scope blok",
+   "sinkron: TABEL BAWAH juga pakai metrik binding (bukan request saja)",
+   "monitoring: batas tidak diketahui bukan tak terbatas, token Groq dari API",
+   "monitoring: pool aktif tanpa menghapus klasifikasi historis"
+  ]
+ },
+ {
+  "path": "tests/neuron.test.mjs",
+  "lines": 61,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/neuron.js"
+  ],
+  "tests": [
+   "tarifModel: model dikenal mengembalikan tarif resmi",
+   "tarifModel: model tak dikenal pakai tarif konservatif",
+   "hitungNeuron: 14.000 token BUKAN 14.000 neuron (inti bug)",
+   "hitungNeuron: token 0 -> neuron 0",
+   "hitungNeuron: model murah lebih hemat dari model mahal",
+   "neuronPerBalasanKhas: masuk akal (< kuota harian)",
+   "sisaBalasan: kuota penuh -> puluhan balasan",
+   "sisaBalasan: kuota nol -> 0",
+   "hitungNeuron: output lebih mahal dari input"
+  ]
+ },
+ {
+  "path": "tests/noise-catatan.test.mjs",
+  "lines": 67,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "noise: frasa tujuan \"ke watchlist movie ku\" dibuang",
+   "noise: \"ke daftar belanja:\" dibuang",
+   "noise: \"ke notes:\" dibuang",
+   "noise: isi normal TIDAK rusak",
+   "noise: varian gaul \"masukin\" dikenali"
+  ]
+ },
+ {
+  "path": "tests/nominal-bukan-nomor.test.mjs",
+  "lines": 48,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "parseNominal: nomor HP TIDAK dianggap nominal",
+   "parseNominal: nomor rekening TIDAK dianggap nominal",
+   "parseNominal: nominal besar yang SAH tetap terbaca",
+   "parseNominal: format satuan tetap benar",
+   "parseNominal: tanggal TIDAK menang atas nominal"
+  ]
+ },
+ {
+  "path": "tests/nomor-tugas.test.mjs",
+  "lines": 63,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict"
+  ],
+  "tests": [
+   "nomor: tugas pertama selalu #1 (walau id global #13)",
+   "nomor: urutan 1,2,3 meski id melompat",
+   "nomor: stabil setelah tugas selesai (tidak renumber)",
+   "nomor: konversi nomor -> id asli benar",
+   "nomor: konversi id -> nomor benar"
+  ]
+ },
+ {
+  "path": "tests/obrolan-santai.test.mjs",
+  "lines": 143,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/skills.js",
+   "../src/user-profile.js"
+  ],
+  "tests": [
+   "lokasi: \"gaul dimana\" TIDAK memicu tanya lokasi",
+   "lokasi: pertanyaan lokasi NYATA tetap memicu",
+   "kesal: prompt melarang menyuruh user pergi",
+   "kesal: prompt melarang nyolot/menyindir",
+   "kesal: hentikan ledekan sesuai batas, bukan membekukan sesi permanen",
+   "kesal: prompt melarang mengulang hinaan user",
+   "konteks: prompt melarang mengarang dari satu kata",
+   "konteks: prompt atur saat user bilang \"ulangi\"",
+   "kode: ada penegak anti-ledek saat user marah",
+   "tebakan: prompt melarang pertanyaan pengetahuan umum",
+   "tebakan: kode deteksi tebakan palsu",
+   "tebakan: user menolak -> keluar mode",
+   "emoji: ditunda berdasarkan suasana (bukan dihapus)",
+   "tawaran: \"Lanjut?\" dan \"kamu pilih\" dibuang",
+   "lokasi: permintaan tertunda disimpan ke database",
+   "bocor: ada penegak anti-bocor aturan prompt",
+   "bocor: prompt melarang menyalin aturan internal",
+   "bocor: ada penegak anti-bocor proses berpikir",
+   "meta: ada penegak anti-metafora mesin",
+   "banter: prompt membolehkan banter santai",
+   "banter: emoji tawa TIDAK dianggap sindiran",
+   "banter: uji perilaku — tawa wajar tidak dibuang"
+  ]
+ },
+ {
+  "path": "tests/opsi-b-tanya-dulu.test.mjs",
+  "lines": 57,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "Opsi B: jalur \"tanya-catat-keuangan\" ada",
+   "Opsi B: pertanyaan dihasilkan AI, BUKAN template statis",
+   "Opsi B: cek perintah eksplisit sebelum tanya",
+   "Opsi B: hanya KEUANGAN yang ditanya (catatan/tugas tetap langsung)",
+   "Opsi B: konfirmasi tertunda dipakai (bukan state baru)",
+   "Opsi B: daftar item dilampirkan (data presisi, bukan dari model)",
+   "Opsi B: ctx hanya dipakai bila valid (cegah gangguan koneksi)"
+  ]
+ },
+ {
+  "path": "tests/otak-terpisah-dan-konteks.test.mjs",
+  "lines": 165,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/chat_id.js",
+   "../src/memory.js",
+   "../src/media.js",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "kunci chat Baileys vs Cloud: riwayat chat terpisah, data bersama tetap konsisten",
+   "systemPrompt: Baileys membuang aturan Cloud-only & tidak ada blok duplikat",
+   "bolehPicuGuardAmnesia: ping/sapaan singkat tidak memicu guard, keluhan nyata memicu",
+   "saringNoiseRiwayat: buang [baileys-msg], batasi reminder & ringkasan, jaga obrolan normal",
+   "extractImageDescTag & imageUserContent: metadata gambar terpisah dan bersih di output user",
+   "wiring otak terpisah Baileys, Cloud API, dan Telegram",
+   "perbaikan kontinuitas & kebersihan DB: reminder sync, quote DB fallback, summary filter, upsert update fallback"
+  ]
+ },
+ {
+  "path": "tests/panduan-hapus.test.mjs",
+  "lines": 70,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "hapus: /uang tanpa isi menampilkan daftar (agar bisa hapus)",
+   "hapus: /hapus-uang <nomor> tersedia",
+   "hapus: /hapus memakai nomor urut untuk catatan & keuangan",
+   "panduan: deteksi minta panduan ada",
+   "panduan: mencakup semua fitur utama",
+   "panduan: deteksi berbagai cara bertanya",
+   "panduan: obrolan biasa TIDAK terdeteksi"
+  ]
+ },
+ {
+  "path": "tests/panduan-menu.test.mjs",
+  "lines": 63,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "panduan: permintaan menu dengan kata kerja DITERIMA",
+   "panduan: permintaan fitur/perintah/tutorial DITERIMA",
+   "panduan: TUGAS NYATA tidak dianggap panduan"
+  ]
+ },
+ {
+  "path": "tests/panduan-vs-tugas.test.mjs",
+  "lines": 59,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "panduan: permintaan TUGAS nyata TIDAK jadi panduan",
+   "panduan: permintaan panduan SUNGGUHAN tetap dikenali",
+   "panduan: sinyal tugas nyata (hitung/rekap/spreadsheet/URL) dideteksi",
+   "Google Sheets: link /edit dikonversi ke export CSV",
+   "Google Sheets: ada fallback gviz bila export gagal"
+  ]
+ },
+ {
+  "path": "tests/pemasukan-eksplisit.test.mjs",
+  "lines": 100,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "pemasukan: INFORMASI pendapatan TIDAK dicatat",
+   "pemasukan: PERMINTAAN catat HARUS tercatat",
+   "pengeluaran: tetap dicatat otomatis",
+   "dedup: simpanUang menolak duplikat 10 menit",
+   "simpanUang: menolak nominal tidak masuk akal (audit 14 Okt 2026)",
+   "rekapUang: memakai paginasi eksplisit (audit 14 Okt 2026)",
+   "guard pemasukan ada di KEDUA jalur (deteksiNiat + implisit)"
+  ]
+ },
+ {
+  "path": "tests/pengingat-bersih.test.mjs",
+  "lines": 70,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "pengingat: kalimat bersih dari pengantar & frasa gaul",
+   "pengingat: menang atas keuangan saat ada kata bayar/beli",
+   "keuangan: TIDAK terpengaruh gerbang pengingat",
+   "pengingat interval sub-harian: kata \"menit\"/\"jam\" bersih dan repeat_kind = interval_minutes"
+  ]
+ },
+ {
+  "path": "tests/pengingat-kanal-baileys.test.mjs",
+  "lines": 135,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/remind.js",
+   "../src/reminder-dedup.js"
+  ],
+  "tests": [
+   "marker Baileys: idempoten, terdeteksi, dan bisa dibersihkan bersih",
+   "dedup: kata pendek bertanda Baileys (\"ON\") tetap cocok 100% dengan polos (\"ON\")",
+   "routing normal: pengingat Baileys tepat waktu hanya diproses Baileys, bukan Cloud",
+   "failover VPS mati: pengingat Baileys telat > 60 detik diambil alih Cloud API",
+   "routing normal: pengingat Cloud API tidak dicuri Baileys saat baru jatuh tempo atau telat <= 180s",
+   "failover gangguan senyap: pengingat Cloud telat > 180 detik diambil alih Baileys",
+   "failover maintenance Cloud API: Baileys langsung ambil semua WA, Cloud tunda WA tapi tetap proses Telegram",
+   "wiring: Baileys, Cloud, Cron, dan Multi-Hari terpasang konsisten tanpa kebocoran",
+   "marker Baileys eksklusif: idempoten, terdeteksi sebagai Baileys & eksklusif, bersih saat di-strip",
+   "eksklusif Baileys: telat 1 jam pun TETAP hanya diproses Baileys dan ditolak Cloud API"
+  ]
+ },
+ {
+  "path": "tests/pengingat-kirim.test.mjs",
+  "lines": 71,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "kirim WA: mengembalikan status (bukan void)",
+   "kirim WA: gagal HTTP/network menandai gagal",
+   "cron: callback mengembalikan status kirim",
+   "remind: periksa hasil kirim sebelum majukan jadwal",
+   "remind: pengingat terkirim DISIMPAN ke riwayat",
+   "remind: urutan benar (simpan riwayat SETELAH kirim sukses)",
+   "remind: pengingat BERULANG tidak mati permanen saat gagal",
+   "remind: pengingat berulang tidak memajukan due_at saat gagal"
+  ]
+ },
+ {
+  "path": "tests/pengingat-konfirmasi-dobel.test.mjs",
+  "lines": 69,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "kasus nyata: \"jadi pengingat rutin ... itu WIB ya\" terdeteksi konfirmasi",
+   "konfirmasi dengan tanda tanya juga terdeteksi",
+   "PERINTAH pengingat baru TIDAK dianggap konfirmasi",
+   "obrolan biasa yang kebetulan berakhiran \"ya\" tidak dianggap konfirmasi",
+   "input kosong aman",
+   "guard terpasang di jalur pengingat & memakai kemiripan subjek"
+  ]
+ },
+ {
+  "path": "tests/pengingat-rutin.test.mjs",
+  "lines": 77,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/reminder-ubah.js"
+  ],
+  "tests": [
+   "hapus: \"hapus jadwal rutin\" terdeteksi sebagai BATAL",
+   "hapus: \"hapus tugas\" TIDAK dianggap batal pengingat",
+   "hapus: pola mencakup jadwal/rutin/alarm/timer",
+   "konfirmasi: menyebut pengulangan dengan label ramah",
+   "konfirmasi: pengingat SEKALI tidak menyebut berulang",
+   "hapus: perubahan tidak menyentuh jalur \"batalin rapat\"",
+   "pilihTarget batal: target spesifik (\"menit ON\") tepat sasaran dan tidak salah hapus \"bangun\"",
+   "delivery: format pengingat lugas tanpa basa-basi AI (cukup \"⏰ Pengingat: <pesan>\")"
+  ]
+ },
+ {
+  "path": "tests/pengingat.test.mjs",
+  "lines": 38,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/reminder-dedup.js"
+  ],
+  "tests": [
+   "kemiripanPesan: pengingat SAMA dengan kalimat berbeda -> tinggi",
+   "kemiripanPesan: pengingat BERBEDA -> rendah",
+   "normalisasiUntukBanding: buang kata perintah & filler",
+   "kemiripanPesan: identik -> 1.0",
+   "kemiripanPesan: kosong tidak crash"
+  ]
+ },
+ {
+  "path": "tests/penomoran-per-user.test.mjs",
+  "lines": 71,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "penomoran: keenam fungsi nomor-urut ada (catatan/tugas/uang)",
+   "penomoran: TIDAK ada yang menampilkan ID global di pesan simpan",
+   "penomoran: daftar memakai nomor urut per-user",
+   "penomoran: /hapus mengkonversi NOMOR -> ID (bukan pakai nomor sebagai ID)",
+   "penomoran: normalisasi chat_id dipakai di fungsi nomor urut"
+  ]
+ },
+ {
+  "path": "tests/persona-adaptif.test.mjs",
+  "lines": 62,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "persona: register formal dideteksi",
+   "persona: register gaul dideteksi",
+   "persona: PRIORITAS menjawab ISI pesan (anti-ngawur)",
+   "persona: banter diperbolehkan dengan batas aman",
+   "persona: banter berhenti bila user minta berhenti",
+   "persona: transisi keluar dari mode serius",
+   "persona: dihitung dari RIWAYAT (bukan hanya pesan terakhir)"
+  ]
+ },
+ {
+  "path": "tests/persona-media-context.test.mjs",
+  "lines": 98,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:vm",
+   "node:module",
+   "typescript"
+  ],
+  "tests": [
+   "stiker: mood dari caption asli, bukan teks instruksi buatan sistem",
+   "gaya: saling ledek tanpa kata tawa tidak otomatis kesal",
+   "gaya: keluhan lama tidak membekukan candaan baru",
+   "gaya: sakit dan batas berhenti tetap dihormati",
+   "regen stiker tetap membawa gambar dan mengganti atribusi model",
+   "metadata stiker tidak tampil ke user atau menjadi reaksi user",
+   "cold start tetap memuat user via null dan batas cache sama"
+  ]
+ },
+ {
+  "path": "tests/pesan-sendiri-terbaca.test.mjs",
+  "lines": 87,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/remind.js"
+  ],
+  "tests": [
+   "chat_id: WhatsApp SELALU berprefix wa_ (konsisten dengan messages)",
+   "chat_id: normalisasi DIPAKAI saat menyimpan & mengirim pengingat",
+   "quote: ada fungsi cari pesan lama di database",
+   "quote: fallback ke DB DIPAKAI saat Meta tidak kirim isi pesan",
+   "quote: label \"Membalas\" tetap disisipkan ke teks untuk AI",
+   "KIRIM: nomor WA dibersihkan dari prefix wa_ (jangan sampai gagal kirim)",
+   "KIRIM: cron & baileys memakai nomorWhatsApp()"
+  ]
+ },
+ {
+  "path": "tests/presisi-waktu.test.mjs",
+  "lines": 78,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "presisi: \"2 menit lagi\" pada :57 -> janji == kirim (tidak ngaret)",
+   "presisi: berbagai detik permintaan tetap tepat",
+   "presisi: melewati tengah malam dengan benar",
+   "presisi: \"5 menit lagi\" juga tepat",
+   "presisi: due_at selalu pada detik 0 (tepat awal menit)"
+  ]
+ },
+ {
+  "path": "tests/provider-routing.test.mjs",
+  "lines": 77,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:vm",
+   "typescript",
+   "node:crypto",
+   "../src/env.ts"
+  ],
+  "tests": [
+   "runtime tier mengikuti kontrak tanpa Dahl/NIM",
+   "race memilih hasil pertama dan membatalkan request yang kalah",
+   "OpenCode menjaga input multimodal dan sesi stabil",
+   "neuron habis hanya membekukan key terkait"
+  ]
+ },
+ {
+  "path": "tests/quoted-ke-ai.test.mjs",
+  "lines": 43,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "whatsapp-cloud: teks ke AI MEMUAT penanda [Membalas ...]",
+   "whatsapp-cloud: autoReply TIDAK lagi pakai teks mentah",
+   "whatsapp-cloud: penanda disisipkan SETELAH deteksi perintah",
+   "telegram: promptText (dengan penanda) dipakai autoReply",
+   "baileys: promptFinal (dengan penanda) dipakai autoReply"
+  ]
+ },
+ {
+  "path": "tests/quoted-message.test.mjs",
+  "lines": 96,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "whatsapp-cloud: membaca m.context (quoted message)",
+   "whatsapp-cloud: deteksi pesan yang dibalas milik BOT",
+   "telegram: membaca reply_to_message",
+   "baileys: membaca contextInfo.quotedMessage",
+   "prompt: ada aturan memakai konteks balasan",
+   "semua platform: format penanda SAMA",
+   "3 label: ada label untuk pesan user SENDIRI",
+   "3 label: ada label untuk pesan ORANG LAIN",
+   "3 label: variabel quotedPengirim ada di semua platform",
+   "3 label: prompt menjelaskan cara bedakan 3 label",
+   "3 label: user reply pesan SENDIRI terdeteksi",
+   "3 label: user reply pesan BOT terdeteksi",
+   "3 label: reply pesan orang lain terdeteksi"
+  ]
+ },
+ {
+  "path": "tests/rate-limit.test.mjs",
+  "lines": 24,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/rate_limit.js"
+  ],
+  "tests": [
+   "rate limit: mengizinkan sampai batas, lalu menolak",
+   "rate limit: jendela berbeda tidak saling ganggu"
+  ]
+ },
+ {
+  "path": "tests/redaksi-log.test.mjs",
+  "lines": 76,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/logger.js"
+  ],
+  "tests": [
+   "redactUrl: key di query string dibuang",
+   "redactUrl: berbagai nama parameter kredensial",
+   "redactUrl: Authorization Bearer dibuang",
+   "redactUrl: bentuk key lazim (sk-/gsk_/AIza) dibuang walau tanpa ?key=",
+   "redactUrl: URL tanpa kredensial TIDAK diubah (tidak over-redact)",
+   "redactSecret: hanya 4 karakter terakhir yang tampak",
+   "providers.ts: TIDAK ada log yang mencetak url/key mentah",
+   "providers.ts: URL Gemini memuat key -> pemakaian WAJIB diredaksi saat dicetak"
+  ]
+ },
+ {
+  "path": "tests/reminder-multihari.test.mjs",
+  "lines": 90,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/reminder-multihari.js",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "multi-hari: \"3, 2, 1 hari sebelum\" dideteksi",
+   "multi-hari: notasi H-N didukung",
+   "multi-hari: \"seminggu sebelum\" = H-7",
+   "multi-hari: kata angka (\"tiga hari\") didukung",
+   "multi-hari: susun pengingat termasuk hari-H",
+   "multi-hari: H-N yang jatuh di MASA LALU dibuang (audit 14 Okt 2026)",
+   "multi-hari: BUKAN multi-hari ditolak",
+   "multi-hari: tidak menyentuh prompt/persona"
+  ]
+ },
+ {
+  "path": "tests/reply-quote.test.mjs",
+  "lines": 44,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "whatsapp-cloud: kirim pesan dukung quote (context.message_id)",
+   "whatsapp-cloud: quote hanya chunk pertama",
+   "telegram: kirim pesan dukung reply_parameters",
+   "baileys: kirim pesan dukung quoted",
+   "semua platform: quote dipakai saat user membalas pesan lama",
+   "semua platform: quote TIDAK dipakai untuk obrolan biasa"
+  ]
+ },
+ {
+  "path": "tests/selesai-nama.test.mjs",
+  "lines": 85,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict"
+  ],
+  "tests": [
+   "selesai: \"tugas upload jurnal selesai\" cocok tugas \"upload jurnal\"",
+   "selesai: \"upload jurnal selesai\" cocok tugas \"upload jurnal\"",
+   "selesai: \"selesai tugas upload jurnal\" cocok tugas \"upload jurnal\"",
+   "selesai: \"selesaikan rapat\" cocok tugas \"rapat\"",
+   "selesai: \"beli susu selesai\" cocok tugas \"susu\"",
+   "selesai: \"udah selesai beli susu\" cocok tugas \"susu\"",
+   "selesai: nama yang tidak ada di daftar -> tidak cocok",
+   "selesai: CERITA LAMPAU tidak ditangkap",
+   "selesai: kalimat tanpa kata selesai tidak ditangkap",
+   "selesai: angka saja tidak jadi nama"
+  ]
+ },
+ {
+  "path": "tests/sesi-upgrade.test.mjs",
+  "lines": 82,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:crypto"
+  ],
+  "tests": [
+   "sesi: token dengan hash LAMA tetap valid setelah PIN di-upgrade",
+   "sesi: token dengan hash BARU juga valid",
+   "sesi: token dengan hash yang tidak dikenal DITOLAK",
+   "sesi: signature salah DITOLAK",
+   "sesi: previousPinHashes dibatasi maksimal 3",
+   "sesi: kandidat hash tidak duplikat"
+  ]
+ },
+ {
+  "path": "tests/stiker-balas-bukan-reaksi.test.mjs",
+  "lines": 59,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "adalahReaksiVisualStiker menangkap komentar hewan/tokoh/gesture/ekspresi stiker",
+   "adalahReaksiVisualStiker tidak menangkap balasan chat natural",
+   "stripMediaNarration membersihkan kalimat reaksi gesture jempol",
+   "prompt & regenerasi stiker: perlakukan sebagai pesan/ucapan + regenerate korektif"
+  ]
+ },
+ {
+  "path": "tests/stiker-balas-seimbang.test.mjs",
+  "lines": 74,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/stickers.js",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "stiker: stiker normal BOLEH dibalas stiker (tidak diblokir suasana)",
+   "stiker: tetap TOLAK mood kesal & sedih (jangan terlalu longgar)",
+   "stiker: konteks TEKS tetap dihormati (perilaku lama tidak rusak)",
+   "stiker: fallback emoji HANYA yang lolos filter",
+   "bocor: \"aku jawab singkat / tetap nyambung\" DIBUANG",
+   "stiker VPS/Baileys: fetchStickerBuffer membaca file .webp lokal meski tanpa env Vercel, dan stickerFitsMood mengenali stiker animasi grup"
+  ]
+ },
+ {
+  "path": "tests/stiker-caption.test.mjs",
+  "lines": 94,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:path"
+  ],
+  "tests": [
+   "media.ts: processIncomingSticker menerima parameter caption",
+   "media.ts: caption pengirim dipakai, bukan hanya emoji",
+   "telegram.ts: caption stiker diteruskan ke processIncomingSticker",
+   "wa_baileys.ts: caption stiker diteruskan",
+   "wa_cloud.ts: caption stiker diteruskan",
+   "describeImage: caption membuat baris \"Emoji/catatan stiker\" terisi"
+  ]
+ },
+ {
+  "path": "tests/stiker-klasifikasi.test.mjs",
+  "lines": 65,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/stickers.js",
+   "../src/sticker-manifest.js"
+  ],
+  "tests": [
+   "stiker: teks EJEKAN tidak boleh bermood lucu",
+   "stiker: mood cocok dengan teks (audit 221 stiker)",
+   "stiker: user sedih tidak dapat stiker lucu",
+   "stiker: user kesal tidak dapat stiker lucu",
+   "stiker: suasana formal tidak ada stiker"
+  ]
+ },
+ {
+  "path": "tests/stiker-nyambung.test.mjs",
+  "lines": 130,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "stiker: WebP transparan DIKONVERSI ke PNG putih sebelum vision",
+   "stiker: paksaStiker diteruskan (PNG hasil konversi tetap dianggap stiker)",
+   "stiker: tag stiker diambil SEBELUM sanitize",
+   "stiker: fallback emoji bila model tidak menulis tag",
+   "stiker: balasan \"tidak lihat stiker\" DIBUANG",
+   "stiker: balasan generik/ngawur DIBUANG",
+   "stiker: jalur kirim WAJIB sanitize + kirim stiker balasan",
+   "stiker: prompt minta balas dengan stiker",
+   "stiker: TIDAK BOLEH ada hardcode teks jawaban",
+   "vision: rantai fallback punya >=4 tier provider"
+  ]
+ },
+ {
+  "path": "tests/stiker-obrolan.test.mjs",
+  "lines": 60,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "obrolan: \"Lu harus paksa gue...\" TIDAK jadi tugas",
+   "obrolan: tugas SUNGGUHAN tetap terdeteksi",
+   "stiker: ada penegak anti-\"mengaku tak bisa baca\"",
+   "stiker: prompt melarang bilang tulisan kecil/tidak kebaca",
+   "stiker: prompt melarang menebak ekspresi yang tidak terlihat",
+   "stiker: batas panjang balasan 120 -> 200",
+   "stiker: tidak lagi memotong ke 1 kalimat saja"
+  ]
+ },
+ {
+  "path": "tests/stiker-teks-konsep.test.mjs",
+  "lines": 67,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/sticker-manifest.js"
+  ],
+  "tests": [
+   "manifest: STICKER_INFO tersedia dengan teks + konsep",
+   "manifest: setiap emoji STICKER_INFO ada file-nya",
+   "prompt: aturan stiker didorong (bukan \"jangan berlebihan\")",
+   "prompt: TEKS stiker dikirim ke model (hemat token)",
+   "prompt: URUTAN teks -> konsep -> ekspresi ditegaskan",
+   "manifest: urutan berlaku untuk stiker BOT maupun USER"
+  ]
+ },
+ {
+  "path": "tests/tag-reply-nyambung.test.mjs",
+  "lines": 63,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "bocor: balasan soal \"pesan sistem\"/riwayat/amnesia DIBUANG",
+   "bocor: prompt punya larangan bahas proses internal",
+   "tag-reply: prompt instruksikan LANJUTKAN pesan yang di-reply",
+   "tag-reply: stiker disimpan DENGAN deskripsi (bukan penanda polos)"
+  ]
+ },
+ {
+  "path": "tests/tanpa-konfirmasi.test.mjs",
+  "lines": 132,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "konfirmasi keuangan: hanya untuk KEUANGAN tanpa perintah (Opsi B)",
+   "konfirmasi: pemanggilan simpanKonfirmasi HANYA di jalur keuangan",
+   "konfirmasi: kata perintah eksplisit -> LANGSUNG simpan",
+   "multi-item: fungsi pecahItemKeuangan ada",
+   "multi-item: simpanDariNiat menangani daftar items",
+   "multi-item: pecah 3 baris pengeluaran",
+   "multi-item: total benar Rp185.000",
+   "multi-item: satu item tetap satu",
+   "multi-item: pemisah titik-koma & \"lalu\"",
+   "multi-item: baris tanpa nominal dilewati",
+   "anti-kosong: whatsapp_cloud punya penjaga balasan kosong",
+   "permintaan tertunda: disimpan ke DATABASE (bukan hanya memori)",
+   "panduan: fungsi panduanJenisSaja ada",
+   "panduan: hanya jenis tanpa isi TIDAK disimpan sebagai catatan",
+   "mabar: prompt punya aturan jujur tidak bisa mabar",
+   "mabar: ada penegak di kode (bukan hanya prompt)"
+  ]
+ },
+ {
+  "path": "tests/telegram-grup-panggil.test.mjs",
+  "lines": 112,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/telegram.js"
+  ],
+  "tests": [
+   "panggil /namabot di AKHIR pesan — pertanyaan dibersihkan",
+   "panggil /namabot di AWAL pesan — pertanyaan dibersihkan",
+   "panggil /namabot di TENGAH pesan — pertanyaan dibersihkan",
+   "huruf besar/kecil tidak masalah",
+   "panggil TANPA pertanyaan — dipanggil true, bersih kosong",
+   "TIDAK salah tangkap username bot lain yang mirip",
+   "pesan biasa tanpa panggilan tidak berubah",
+   "panggil dua kali tetap bersih",
+   "input kosong aman",
+   "handler grup: panggilan slash ikut memicu bot",
+   "daftar putih grup: konfigurasi ada & terdokumentasi",
+   "privasi grup: data grup terisolasi total dari chat pribadi (tidak membocorkan ringkasan DM)",
+   "indikator menulis aktif saat memproses",
+   "identitas bot dikunci ke BOT_NAME, bukan perusahaan AI lain"
+  ]
+ },
+ {
+  "path": "tests/telegram-menu-perintah.test.mjs",
+  "lines": 193,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/commands.js"
+  ],
+  "tests": [
+   "semua perintah sah menurut aturan Telegram (a-z, 0-9, garis bawah)",
+   "deskripsi memenuhi batas Telegram (3-256 karakter)",
+   "tidak lebih dari 100 perintah (batas Telegram)",
+   "fitur utama SEMUA terdaftar",
+   "HANYA ADA SATU perintah bantuan: /help",
+   "ANTI-DUPLIKAT: tidak ada dua perintah dengan isi/deskripsi sama",
+   "perintah lama yang digabung diarahkan ke perintah utama",
+   "konteks bantuan untuk AI memuat daftar perintah & contoh pemakaian",
+   "perintah berargumen punya contoh format",
+   "handler bantuan memakai SATU teks pasti (konsisten untuk semua alias)",
+   "panduan: ringkas, muat satu pesan Telegram, dan lengkap",
+   "perintah berargumen punya petunjuk singkat saat diketik telanjang",
+   "skrip pendaftaran memakai setMyCommands + verifikasi getMyCommands",
+   "ANTI-TERSEMBUNYI: perintah yang DISEBUT di balasan wajib terdaftar di menu",
+   "/ringkasan terdaftar & ada di panduan",
+   "ANTI-DUPLIKAT nyata: tiap perintah punya jalur penanganan sendiri"
+  ]
+ },
+ {
+  "path": "tests/usage-groq.test.mjs",
+  "lines": 62,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict"
+  ],
+  "tests": [
+   "usage: format standar OpenAI terbaca",
+   "usage: format KHUSUS Groq (x_groq.usage) terbaca",
+   "usage: format Groq LENGKAP (keduanya ada) -> pakai yang standar",
+   "usage: tidak ada usage -> undefined (jangan catat 0)",
+   "usage: semua nol -> undefined (jangan timpa data nyata)",
+   "usage: hanya total -> tetap terbaca",
+   "usage: chunk dengan choices kosong tetap punya usage"
+  ]
+ },
+ {
+  "path": "tests/vision-stiker-akurat.test.mjs",
+  "lines": 103,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "stiker: balasan ROBOTIK dibuang",
+   "stiker: enforcer tak-bisa-baca WAJIB context-aware (jangan buang balasan sah)",
+   "stiker: bocoran prefix \"Jawaban:\" dibuang",
+   "stiker: penegak prompt-echo, meta, tanya-balik ADA",
+   "stiker: prompt dipangkas (fokus model kecil)",
+   "vision: chain >= 8 model & model lemah tidak di posisi awal",
+   "vision: mistral TIDAK dipakai (sering halu + sisip bahasa Mandarin)"
+  ]
+ },
+ {
+  "path": "tests/vps-monitor.test.mjs",
+  "lines": 299,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "1. parseInstaboxMachine mendukung flat camelCase, wrapper { machine }, snake_case, dan menolak invalid",
+   "2. evaluasiStatusVps TIDAK mengirim peringatan bila sisa waktu > 5 menit (menit ke-114 dari 120)",
+   "3. evaluasiStatusVps mengirim peringatan_limit SEKALI pada menit ke-115 (sisa 5 menit) dan tidak spam di menit 117/121",
+   "4. evaluasiStatusVps mengaktifkan ulang peringatan_limit saat runStartedAt baru muncul setelah restart",
+   "5. evaluasiStatusVps tidak mengirim peringatan bila maxRunMinutes <= 0 (paket unlimited)",
+   "6. evaluasiStatusVps mengirim vps_mati SEKALI saat paused/stopped dan vps_pulih SEKALI saat kembali running",
+   "7. evaluasiStatusVps tidak menduplikasi vps_mati jika down_notified_at sudah dicatat hook SIGTERM",
+   "8. cekLifecycleVps skip saat env kosong dan hanya memanggil GET /v1/machines/{id} dengan Bearer auth",
+   "9. Kepatuhan pasif & wiring: tidak ada /exec, /activity-leases, setInterval, dan cron/baileys terhubung benar"
+  ]
+ },
+ {
+  "path": "tests/waktu.test.mjs",
+  "lines": 94,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "parseNominal: digit & satuan",
+   "parseNominal: ANGKA KATA (penting untuk Voice Note)",
+   "parseNominal: tidak salah baca",
+   "angkaKataKeDigit",
+   "parseWaktuAlami: menit/jam lagi (digit)",
+   "parseWaktuAlami: menit/jam lagi (ANGKA KATA)",
+   "parseWaktuAlami: setengah jam",
+   "parseWaktuAlami: jam absolut",
+   "parseWaktuAlami: rentang waktu (jam 9 sampai jam 10)",
+   "parseWaktuAlami: bagian hari tanpa jam",
+   "parseWaktuAlami: teks tanpa waktu -> null"
+  ]
+ },
+ {
+  "path": "tests/web-search.test.mjs",
+  "lines": 108,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/web.js"
+  ],
+  "tests": [
+   "search: pertanyaan faktual & terkini memicu penelusuran",
+   "search: \"apa itu X\" & \"cara X\" memicu penelusuran",
+   "search: obrolan biasa TIDAK memicu penelusuran",
+   "query: TIDAK ada kata \"release\" untuk topik non-teknologi",
+   "query: frasa waktu \"hari ini\" tetap utuh",
+   "query: tidak ada kata berulang berdekatan",
+   "query: topik teknologi tetap dapat query rilis",
+   "query: selalu menghasilkan minimal 1 query",
+   "ssrf: URL publik diizinkan",
+   "ssrf: URL internal/lokal DITOLAK",
+   "ssrf: protokol non-http DITOLAK",
+   "keywords: mengembalikan string tidak kosong"
+  ]
+ },
+ {
+  "path": "tests/web-sync-and-perf.test.mjs",
+  "lines": 116,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "api/stats.ts: allTimeAssistantMsgs mengambil created_at & inisialisasi dreamprompting",
+   "api/dataset.ts & dashboard.js: mendukung prefix wa_baileys_ dan pemisahan Grup vs Privat",
+   "dashboard.js: bindingPct tersedia di cabang xkiro, _datasetTick di dalam interval, refreshDashboardI18n diekspos",
+   "i18n & dropdown: label dropdown disinkronkan saat bahasa diubah",
+   "public/privacy/index.html: bebas inline script sesuai CSP",
+   "performa scroll & animasi: single-pass blur ringan, tanpa zero-delta lockup, & reveal aman tanpa kotak kosong"
+  ]
+ },
+ {
+  "path": "tests/whatsapp-maintenance.test.mjs",
+  "lines": 113,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs"
+  ],
+  "tests": [
+   "1. WHATSAPP_MAINTENANCE_MODE: terdokumentasi & default NONAKTIF",
+   "2. Hasil kirim pemberitahuan pemeliharaan DIPERIKSA (tidak diabaikan)",
+   "3. Landing page tidak mengklaim \"Online 24/7\" untuk WhatsApp saat pemeliharaan",
+   "4. Monitor kegagalan beruntun -> notifikasi pemilik",
+   "5. Dokumentasi: langkah payment method + cara mematikan mode"
+  ]
+ },
+ {
+  "path": "tests/zona-parse.test.mjs",
+  "lines": 93,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/notes.js"
+  ],
+  "tests": [
+   "zona: \"jam 6 pagi\" -> 06:00 WIB (bukan 13:00)",
+   "zona: \"buatkan jadwal rutin tiap jam 6 pagi\" -> 06:00 WIB",
+   "zona: \"besok jam 9\" -> 09:00 WIB",
+   "zona: \"tiap Senin jam 9\" -> 09:00 WIB",
+   "zona: \"jam 8 malam\" -> 20:00 WIB",
+   "zona: \"jam 5 subuh\" -> 05:00 WIB",
+   "zona: WITA berbeda dari WIB (jam lokal sama)",
+   "zona: tanpa zona (fallback) tetap menghasilkan waktu wajar",
+   "zona: \"tiap tanggal 1\" -> jam 08:00 WIB",
+   "zona: \"nanti malam\" -> 19:00 WIB",
+   "zona: hasil SELALU di masa depan"
+  ]
+ }
+]

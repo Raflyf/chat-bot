@@ -32,6 +32,9 @@ scripts/verify_scrub.py
 __pycache__/
 *.pyc
 
+# Graf graphify: artefak lokal besar, hasilnya diringkas di CODEBASE_MAP.md
+ graphify-out/
+
 # === Pencegahan sampah (ditambahkan 25 Sep) ===
 # Backup files
 *.bak
