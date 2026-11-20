@@ -66,3 +66,11 @@ test('pilihTarget batal: target spesifik ("menit ON") tepat sasaran dan tidak sa
   const targetAsal = pilihTarget(pAsal, daftar);
   assert.equal(targetAsal, null, 'bila nama tidak cocok, harus tanya user (tidak boleh hapus sembarang)');
 });
+
+test('delivery: format pengingat lugas tanpa basa-basi AI (cukup "⏰ Pengingat: <pesan>")', async () => {
+  const fs = await import('fs');
+  const code = fs.readFileSync('src/remind.ts', 'utf8');
+  // Memastikan susunTeksPengingat tidak memanggil autoReply untuk mengarang basa-basi
+  assert.ok(!code.includes('TUGAS: Kamu sedang MENGIRIM PENGINGAT'), 'prompt LLM pengingat harus dihapus');
+  assert.match(code, /⏰ Pengingat: \$\{p\}/);
+});

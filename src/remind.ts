@@ -223,61 +223,21 @@ export async function simpanReminderCerdas(
 function teksPengingatCadangan(pesan: string): string {
   const p = String(pesan || '').trim().replace(/\s+/g, ' ');
   if (!p) return '⏰ Pengingat!';
-  const kapital = p.charAt(0).toUpperCase() + p.slice(1);
   // Bila isi pesan sudah mengandung kata pengingat/waktu, jangan diulang.
   if (/^(pengingat|waktu|ingat|jangan lupa|jgn lupa)\b/i.test(p)) {
-    return `⏰ ${kapital}`;
+    return `⏰ ${p}`;
   }
-  return `⏰ Pengingat: ${kapital}`;
+  return `⏰ Pengingat: ${p}`;
 }
 
 /**
- * Susun teks pengingat dengan gaya bot (AI), dengan BATAS WAKTU.
- * Bila AI tidak menjawab dalam `batasMs`, kembalikan teks cadangan yang tetap wajar.
+ * Susun teks pengingat ringkas dan lugas (audit 20 Nov 2026).
+ * Sesuai arahan pemilik: tanpa basa-basi AI ("ini pengingatmu yang tadi", dll),
+ * cukup format konsisten: "⏰ Pengingat: <isi>" atau "⏰ <isi>" bila sudah berawalan pengingat/waktu.
  */
 async function susunTeksPengingat(
   item: { message: string; due_at: string; created_at?: string | null },
-  batasMs = 12_000,
 ): Promise<string> {
-  const dibuatPada = item.created_at ? new Date(item.created_at) : new Date(item.due_at);
-  const createdAtStr = dibuatPada.toLocaleString('id-ID', {
-    timeZone: 'Asia/Jakarta', dateStyle: 'full', timeStyle: 'short',
-  });
-  try {
-    const gen = await Promise.race([
-      autoReply(
-        `TUGAS: Kamu sedang MENGIRIM PENGINGAT yang sudah dijadwalkan user sebelumnya. ` +
-        `Isi pengingat user: "${item.message}".\n\n` +
-        `ATURAN KERAS:\n` +
-        `- Awali dengan kata/penanda pengingat (mis. "Pengingat!" / "⏰ Pengingat:" / "Woy, waktunya..." ).\n` +
-        `- Sebut KEMBALI isi pengingatnya secara jelas supaya user tahu apa yang diingatkan.\n` +
-        `- DILARANG menasihati, menyuruh, mengucapkan selamat, atau menambah kalimat motivasi ` +
-        `(contoh SALAH: "Istirahat yang nyenyak ya", "Jangan begadang terus", "Semangat ya!").\n` +
-        `- DILARANG bertanya balik atau menambah obrolan baru.\n` +
-        // BUG YANG DIPERBAIKI (04 Okt 2026): bot pernah menulis
-        // "waktunya login sesuai jadwalmu KEMARIN", padahal pengingat dibuat
-        // BARU SAJA. AI MENGARANG keterangan waktu karena tidak diberi tahu
-        // kapan pengingat ini dibuat.
-        `- Waktu SEKARANG: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'full', timeStyle: 'short' })} WIB.\n` +
-        `- Pengingat ini dibuat user pada: ${createdAtStr} WIB.\n` +
-        `- DILARANG menyebut "kemarin", "besok", "minggu lalu", atau keterangan waktu lain ` +
-        `yang TIDAK disebutkan di atas. Kalau ragu soal waktu, JANGAN sebut waktu sama sekali.\n` +
-        `- Boleh 1 kalimat pendek saja. Gaya boleh santai/hangat, tapi TETAP sebuah pengingat.\n\n` +
-        `Contoh BENAR (bentuknya seperti ini, kalimatnya bebas kamu susun sendiri):\n` +
-        `- "Pengingat! Waktunya tidur 🌙"\n` +
-        `- "⏰ Woy, waktunya login game nih!"\n` +
-        `- "Pengingat: jangan lupa minum obat ya 💊"\n\n` +
-        `Sekarang tulis pengingatnya:`,
-      ),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('batas-waktu')), batasMs)),
-    ]);
-    const teks = String(gen.reply || '').trim();
-    if (teks) return teks;
-  } catch {
-    // jatuh ke cadangan di bawah
-  }
-  // CADANGAN: tetap wajar dibaca (bukan teks mentah user).
   return teksPengingatCadangan(item.message);
 }
 
