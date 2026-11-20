@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { normChatId, isBaileysChatKey, sharedChatKeyDari } from './chat_id.js';
+import { normChatId, isBaileysChatKey, isGroupChatKey, sharedChatKeyDari } from './chat_id.js';
 import { chat, type ChatMsg } from './providers.js';
 
 export interface ChatContext {
@@ -70,6 +70,7 @@ export function invalidateContextCache(chatKey: string): void {
   const key = normChatId(chatKey);
   if (!key) return;
   contextCache.delete(key);
+  if (isGroupChatKey(key)) return;
   if (isBaileysChatKey(key)) {
     const shared = sharedChatKeyDari(key);
     if (shared) contextCache.delete(shared);
@@ -306,7 +307,7 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
     });
 
     let corrections = ((k.data ?? []) as Array<{ correction: string }>).map((r) => r.correction);
-    if (isBaileysChatKey(chatKey)) {
+    if (isBaileysChatKey(chatKey) && !isGroupChatKey(chatKey)) {
       const sharedKey = sharedChatKeyDari(chatKey);
       if (sharedKey && sharedKey !== chatKey) {
         try {

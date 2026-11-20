@@ -215,7 +215,7 @@ export const config = {
     gemini: numList('DAILY_TOKEN_CAP_PER_KEY_GEMINI'),
   },
   whatsappPrefix: process.env.WHATSAPP_PREFIX ?? '',
-  whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS === '1' || process.env.WHATSAPP_RESPOND_GROUPS === 'true',
+  whatsappRespondGroups: process.env.WHATSAPP_RESPOND_GROUPS !== '0' && process.env.WHATSAPP_RESPOND_GROUPS !== 'false',
   whatsappPhoneNumber: cleanStr('WHATSAPP_PHONE_NUMBER'),
   whatsappBackupNumber: cleanStr('WHATSAPP_BACKUP_NUMBER') || '6287789587654',
   whatsappToken: cleanStr('WHATSAPP_TOKEN'),

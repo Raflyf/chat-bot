@@ -4,7 +4,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { baileysChatKey, isBaileysChatKey, sharedChatKeyDari, normChatId, nomorWhatsApp } from '../src/chat_id.js';
+import {
+  baileysChatKey,
+  baileysGroupChatKey,
+  isBaileysChatKey,
+  isGroupChatKey,
+  sharedChatKeyDari,
+  normChatId,
+  nomorWhatsApp,
+} from '../src/chat_id.js';
 import { saringNoiseRiwayat } from '../src/memory.js';
 import { imageUserContent } from '../src/media.js';
 import {
@@ -25,6 +33,16 @@ test('kunci chat Baileys vs Cloud: riwayat chat terpisah, data bersama tetap kon
   assert.equal(nomorWhatsApp(bKey), '628991333323');
   assert.equal(sharedChatKeyDari(bKey), 'wa_628991333323');
   assert.equal(sharedChatKeyDari('wa_628991333323'), 'wa_628991333323');
+
+  // Kunci grup WA & Telegram terisolasi total dari data privat owner/member
+  const grpKey = baileysGroupChatKey('12036312345678@g.us');
+  assert.equal(grpKey, 'wa_baileys_group_12036312345678');
+  assert.equal(baileysChatKey('12036312345678@g.us'), grpKey);
+  assert.equal(isBaileysChatKey(grpKey), true);
+  assert.equal(isGroupChatKey(grpKey), true);
+  assert.equal(isGroupChatKey('wa_-1001234567890'), true);
+  assert.equal(isGroupChatKey('wa_baileys_628991333323'), false);
+  assert.equal(sharedChatKeyDari(grpKey), grpKey, 'sharedChatKeyDari tidak boleh memetakan grup ke wa_<angka>');
 });
 
 test('systemPrompt: Baileys membuang aturan Cloud-only & tidak ada blok duplikat', () => {
@@ -51,6 +69,16 @@ test('systemPrompt: Baileys membuang aturan Cloud-only & tidak ada blok duplikat
   assert.ok(!cPrompt.includes('\nNama kamu FreeAIBot.\n'), 'baris redundant "Nama kamu" harus digabung');
   assert.ok(cPrompt.includes('Rafly Firmansyah'), 'status terverifikasi owner tetap berlaku untuk Cloud');
   assert.ok(bPrompt.includes('Rafly Firmansyah'), 'status terverifikasi owner tetap berlaku untuk Baileys');
+
+  // Di grup, status chat privat owner tidak boleh bocor meskipun ID grup memuat digit owner atau owner menjadi anggota
+  const grpPrompt = systemPrompt(
+    { history: [], corrections: [], summary: null, chatId: 'wa_baileys_group_628991333323' },
+    null,
+    '[Pesan di Grup dari Rafly]: halo',
+  );
+  assert.ok(!grpPrompt.includes('Lawan bicaramu SEKARANG adalah Rafly Firmansyah'), 'grup tidak boleh membuka blok owner DM');
+  assert.ok(grpPrompt.includes('Lawan bicaramu saat ini adalah teman ngobrol biasa'), 'grup harus diperlakukan sebagai obrolan biasa');
+  assert.ok(grpPrompt.includes('KONTEKS GRUP (ATURAN KHUSUS OBROLAN GRUP)'), 'grup harus mendapat blok batasan grup');
 });
 
 test('bolehPicuGuardAmnesia: ping/sapaan singkat tidak memicu guard, keluhan nyata memicu', () => {
@@ -102,8 +130,9 @@ test('wiring otak terpisah Baileys, Cloud API, dan Telegram', () => {
   const CLOUD = baca('src/whatsapp_cloud.ts');
   const TELE = baca('src/telegram.ts');
 
-  assert.match(BAIL, /const chatKey = baileysChatKey\(nomorBaileys\)/);
-  assert.match(BAIL, /const sharedDataKey = normChatId\(nomorBaileys, 'whatsapp'\)/);
+  assert.match(BAIL, /const chatKey = isGroup \? baileysGroupChatKey\(nomorBaileys\) : baileysChatKey\(nomorBaileys\)/);
+  assert.match(BAIL, /const personalOwnerId = isGroup && actorGrup \? actorGrup : nomorBaileys/);
+  assert.match(BAIL, /const sharedDataKey = normChatId\(personalOwnerId, 'whatsapp'\)/);
   assert.match(BAIL, /baileysAutoReply\(/);
   assert.match(BAIL, /baileysDescribeImage\(/);
   assert.match(BAIL, /baileysDynamicNotice\(/);

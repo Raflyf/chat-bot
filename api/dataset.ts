@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../src/db.js';
 import { config } from '../src/env.js';
+import { isGroupChatKey } from '../src/chat_id.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
 
 function maskChatId(chatId: string): string {
@@ -13,8 +14,10 @@ export interface DatasetPair {
   id: number;
   platform: string;
   chatIdMasked: string;
-  /** chat_id penuh apa adanya dari DB (mis. "wa_628991333323" / "wa_1073504871"). */
+  /** chat_id penuh apa adanya dari DB (mis. "wa_628991333323" / "wa_baileys_group_120363xxx" / "wa_-100xxx"). */
   chatId: string;
+  isGroup?: boolean;
+  chatScope?: 'group' | 'private';
   userPrompt: string;
   botReply: string;
   via: string;
@@ -214,7 +217,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     if (format === 'csv') {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="riwayat_percakapan_empty.csv"');
-      res.status(200).send('ID,Tanggal,Jam,Waktu_Lokal,Platform,Chat_ID,Pertanyaan_User,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n');
+      res.status(200).send('ID,Tanggal,Jam,Waktu_Lokal,Platform,Ruang,Chat_ID,Pertanyaan_User,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n');
       return;
     }
     if (format === 'jsonl') {
@@ -237,9 +240,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   // Pencarian nomor WA / ID Telegram: query yang isinya cuma digit (boleh
   // berprefix "wa_"/"tg_", spasi, "+", "-") dicari langsung ke kolom chat_id
   // lewat SQL, bukan hanya menyaring 600 baris terakhir di memori.
-  const searchDigits = search.replace(/^(wa_baileys_|wa_|tg_)/, '').replace(/[\s+-]/g, '');
+  const searchDigits = search.replace(/^(wa_baileys_group_|wa_baileys_|wa_|tg_)/, '').replace(/[\s+-]/g, '');
   const isIdSearch = /^\d{6,}$/.test(searchDigits);
   const platform = typeof req.query.platform === 'string' ? req.query.platform.toLowerCase().trim() : '';
+  const scope = typeof req.query.scope === 'string' ? req.query.scope.toLowerCase().trim() : 'all';
   const range = typeof req.query.range === 'string' ? req.query.range.toLowerCase().trim() : 'all';
   const dateParam = typeof req.query.date === 'string' ? req.query.date.trim() : null;
   const tzParam = typeof req.query.tz === 'string' ? req.query.tz.trim() : 'Asia/Jakarta';
@@ -256,7 +260,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const isExport = format === 'jsonl' || format === 'csv';
     const dbLimit = explicitLimit
       ? Math.min(5000, explicitLimit * 2 + 60)
-      : (isExport ? 3000 : Math.min(600, limit * 2 + 60));
+      : (isExport ? 3000 : scope === 'group' ? 1500 : Math.min(600, limit * 2 + 60));
 
     let query = c
       .from('messages')
@@ -354,14 +358,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const reply = botMsg ? (botMsg.content || '') : '';
         const rawVia = botMsg?.via || '-';
         const pForm = userMsg.platform || 'whatsapp';
+        const rowIsGroup = isGroupChatKey(userMsg.chat_id);
 
         // Terapkan filter model/via
         if (modelFilter && modelFilter !== 'all' && !rawVia.toLowerCase().includes(modelFilter)) {
           continue;
         }
 
-        // Terapkan filter pencarian
+        // Terapkan filter platform, ruang (grup/privat), dan pencarian
         if (platform && platform !== 'all' && pForm !== platform) continue;
+        if (scope === 'group' && !rowIsGroup) continue;
+        if (scope === 'private' && rowIsGroup) continue;
         if (search) {
           const matchUser = prompt.toLowerCase().includes(search);
           const matchBot = reply.toLowerCase().includes(search);
@@ -369,8 +376,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           const chatIdRaw = String(userMsg.chat_id || '').toLowerCase();
           const matchChat =
             chatIdRaw.includes(search) ||
-            (searchDigits.length >= 4 && chatIdRaw.replace(/^(wa_baileys_|wa_)/, '').includes(searchDigits));
-          if (!matchUser && !matchBot && !matchVia && !matchChat) continue;
+            (searchDigits.length >= 4 && chatIdRaw.replace(/^(wa_baileys_group_|wa_baileys_|wa_)/, '').includes(searchDigits));
+          const matchScope =
+            (search === 'grup' || search === 'group') ? rowIsGroup
+            : (search === 'privat' || search === 'private' || search === 'dm') ? !rowIsGroup
+            : false;
+          if (!matchUser && !matchBot && !matchVia && !matchChat && !matchScope) continue;
         }
 
         // Ekstraksi Token Usage Asli Upstream (Bukan Estimasi Buatan)
@@ -414,6 +425,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           platform: pForm,
           chatIdMasked: maskChatId(userMsg.chat_id),
           chatId: String(userMsg.chat_id || ''),
+          isGroup: rowIsGroup,
+          chatScope: rowIsGroup ? 'group' : 'private',
           userPrompt: prompt,
           botReply: reply,
           via,
@@ -439,6 +452,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     if (platform && platform !== 'all') {
       exportFileLabel += `_${platform}`;
     }
+    if (scope === 'group' || scope === 'private') {
+      exportFileLabel += `_${scope}`;
+    }
     if (modelFilter && modelFilter !== 'all') {
       exportFileLabel += `_${modelFilter.replace(/[^a-z0-9_-]/gi, '')}`;
     }
@@ -458,6 +474,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
             metadata: {
               id: p.id,
               platform: p.platform,
+              chat_scope: p.chatScope ?? (p.isGroup ? 'group' : 'private'),
               model_via: p.via,
               timestamp_lokal: p.fullLocalStr,
               tanggal_lokal: p.dateStr,
@@ -489,7 +506,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         return s;
       };
       const escapeCsv = (str: unknown): string => `"${sanitizeCsvCell(str).replace(/"/g, '""')}"`;
-      const csvHeader = 'ID,Tanggal,Jam,Waktu_Lokal,Platform,Chat_ID,Pertanyaan_User,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n';
+      const csvHeader = 'ID,Tanggal,Jam,Waktu_Lokal,Platform,Ruang,Chat_ID,Pertanyaan_User,Jawaban_Bot,Model_Via,Context_Tokens,Output_Tokens,Total_Tokens,Waktu_UTC\n';
       const csvRows = finalPairs
         .map((p) =>
           [
@@ -498,6 +515,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
             escapeCsv(p.timeStr),
             escapeCsv(p.fullLocalStr),
             escapeCsv(p.platform),
+            escapeCsv(p.isGroup ? 'Grup' : 'Privat'),
             escapeCsv(p.chatId),
             escapeCsv(p.userPrompt),
             escapeCsv(p.botReply),

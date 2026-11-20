@@ -2,7 +2,7 @@ import { config } from './env.js';
 import { buangAjakanGameLama } from './games/index.js';
 import { chat, type ChatMsg, type ContentPart } from './providers.js';
 import { saveCorrection, type ChatContext } from './memory.js';
-import { isBaileysChatKey, sharedChatKeyDari } from './chat_id.js';
+import { isBaileysChatKey, isGroupChatKey, sharedChatKeyDari } from './chat_id.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
 import { stripStickerMarker, hasStickerForEmoji, stickerFitsMood, assistantTurnsSinceLastSticker, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
@@ -245,7 +245,7 @@ function stripInventedUrls(text: string, webData: string | null): string {
  * sama persis dengan digit owner. Grup tidak pernah lolos walau owner anggota.
  */
 function isOwnerChatKey(chatId: string | undefined): boolean {
-  if (!chatId) return false;
+  if (!chatId || isGroupChatKey(chatId)) return false;
   const digits = chatId.replace(/\D/g, '');
   if (!digits) return false;
   const ownerIds = [config.ownerChatId, config.ownerWaNumber]
@@ -2438,6 +2438,17 @@ export function systemPrompt(
   );
   const isPlayfulTopicActive = playfulUserTurn || playfulHistory;
 
+  const iniGrup = /\[Pesan di Grup dari |\[Konteks obrolan grup/i.test(userPromptText);
+  const blokBatasanGrup = iniGrup
+    ? [
+        '- KONTEKS GRUP (ATURAN KHUSUS OBROLAN GRUP):',
+        '  * Di grup, pesan berlabel "[Pesan di Grup dari Nama]: ..." dan riwayat memuat "[Nama]: ...". Bedakan setiap anggota berdasarkan namanya, dan jangan mencampur identitas atau preferensi orang yang berbeda.',
+        '  * Jika ada "[Konteks obrolan grup sebelumnya yang kamu dengar diam-diam]", gunakan informasi itu secara natural untuk nyambung dengan topik yang baru saja dibicarakan di grup.',
+        '  * Jawab ringkas, santai, dan langsung ke poin agar nyaman dibaca di grup yang ramai.',
+        '  * Mode grup: `/nimbrung` (ikut ngobrol), `/mention` (tag/reply saja), `/diam` (diam total khusus admin/owner), `/statusgrup`.',
+      ]
+    : [];
+
   const instructions: string[] = [
     // Panjang respons — satu-satunya sumber aturan panjang (topik teknis/koding/fakta dikecualikan):
     [
@@ -2753,6 +2764,7 @@ export function systemPrompt(
     '  * Menelepon, menelepon video, atau mengirim suara.',
     '  * Mengakses kamera, mikrofon, layar, atau perangkatnya.',
     '  * Membuka/mengubah akun lain (Spotify, YouTube, dll) atau menambah lagu ke playlist.',
+    ...blokBatasanGrup,
     '  -> Bila dia meminta salah satunya: AKUI JUJUR dengan santai bahwa kamu tidak bisa (mis. "Aku nggak bisa muter lagu, tapi kalau mau cerita soal lagunya, boleh banget"), lalu TAWARKAN yang benar-benar bisa kamu lakukan (ngobrol, mengingatkan, mencatat, cari info). DILARANG berpura-pura memutar, DILARANG bilang "lagi diputar", dan DILARANG memuji lagunya seolah kamu sedang memutarnya.',
   ];
 

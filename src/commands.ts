@@ -91,6 +91,12 @@ export const PERINTAH_BOT: PerintahBot[] = [
   // ── Pengingat & preferensi ──
   { command: 'remind', description: 'Pengingat — /remind <menit> <pesan>' },
   { command: 'salah', description: 'Koreksi preferensi personal — /salah <koreksi>' },
+
+  // ── Mode grup (WA Baileys & Telegram) ──
+  { command: 'nimbrung', description: 'Mode grup: aktifkan bot ikut nimbrung di obrolan grup' },
+  { command: 'mention', description: 'Mode grup: hentikan nimbrung, balas saat ditag/reply saja' },
+  { command: 'diam', description: 'Mode grup (admin/owner): kunci bot agar diam total di grup' },
+  { command: 'statusgrup', description: 'Mode grup: cek status mode aktif bot di grup ini' },
 ];
 
 /**
@@ -211,6 +217,9 @@ export function teksBantuan(): string {
     '',
     '*Pengingat*',
     '`/remind <menit> <pesan>`',
+    '',
+    '*Grup*',
+    '`/nimbrung` · `/mention` · `/diam` · `/statusgrup`',
     '',
     '*Lainnya*',
     '`/salah <koreksi>` — perbaiki data tentangmu',

@@ -86,12 +86,38 @@ export function nomorWhatsApp(chatId: string): string {
 /** Prefix kunci riwayat obrolan khusus WhatsApp Baileys (terpisah dari Cloud API). */
 export const BAILEYS_CHAT_PREFIX = 'wa_baileys_';
 
-/** Kunci riwayat obrolan khusus Baileys (`wa_baileys_<nomor>`), terpisah dari Cloud API (`wa_<nomor>`). */
+/** Prefix kunci ruang grup WhatsApp Baileys — anti tabrakan dengan ID/nomor privat. */
+export const BAILEYS_GROUP_PREFIX = 'wa_baileys_group_';
+
+/** Bangun kunci chat khusus grup WhatsApp Baileys (`wa_baileys_group_<groupId>`). */
+export function baileysGroupChatKey(groupIdOrJid: string): string {
+  const raw = String(groupIdOrJid ?? '').trim();
+  if (!raw) return '';
+  if (raw.startsWith(BAILEYS_GROUP_PREFIX)) return raw;
+  const clean = raw
+    .replace(/^wa_baileys_/, '')
+    .replace(/@.*$/, '')
+    .replace(/:\d+$/, '')
+    .trim();
+  return clean ? `${BAILEYS_GROUP_PREFIX}${clean}` : '';
+}
+
+/** True bila chat_id menunjuk ke ruang grup (WhatsApp `@g.us`/`wa_baileys_group_*` atau grup Telegram ID negatif). */
+export function isGroupChatKey(chatId?: string | null): boolean {
+  const raw = String(chatId ?? '').trim();
+  if (!raw) return false;
+  if (raw.startsWith(BAILEYS_GROUP_PREFIX) || raw.endsWith('@g.us')) return true;
+  return /^(?:wa_|tg_)?-\d+$/.test(raw);
+}
+
+/** Kunci riwayat obrolan khusus Baileys (`wa_baileys_<nomor>` atau `wa_baileys_group_<id>`), terpisah dari Cloud API (`wa_<nomor>`). */
 export function baileysChatKey(nomor: string): string {
   const raw = String(nomor ?? '').trim();
   if (!raw) return '';
+  if (raw.startsWith(BAILEYS_GROUP_PREFIX)) return raw;
+  if (raw.endsWith('@g.us')) return baileysGroupChatKey(raw);
   if (raw.startsWith(BAILEYS_CHAT_PREFIX)) return raw;
-  const clean = raw.endsWith('@g.us') ? raw.replace(/@.*$/, '') : (nomorWhatsApp(raw) || raw);
+  const clean = nomorWhatsApp(raw) || raw;
   return clean ? `${BAILEYS_CHAT_PREFIX}${clean}` : '';
 }
 
@@ -102,6 +128,7 @@ export function isBaileysChatKey(chatId?: string | null): boolean {
 /** Petakan kunci Baileys ke kunci data bersama (`wa_<nomor>`) untuk fakta, pengingat, catatan, dan timezone. */
 export function sharedChatKeyDari(chatId: string): string {
   const raw = String(chatId ?? '').trim();
+  if (isGroupChatKey(raw)) return raw;
   if (isBaileysChatKey(raw)) {
     const rest = raw.slice(BAILEYS_CHAT_PREFIX.length);
     return normChatId(rest, 'whatsapp');

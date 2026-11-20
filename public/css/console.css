@@ -620,6 +620,21 @@ section { margin-bottom: var(--s5); }
 }
 .badge-wa   { background: var(--ok-soft);   color: var(--ok);   border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
 .badge-tele { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.badge-group {
+  background: rgba(167, 139, 250, 0.16);
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.36);
+}
+[data-theme="light"] .badge-group {
+  background: rgba(109, 40, 217, 0.12);
+  color: #5b21b6;
+  border-color: rgba(109, 40, 217, 0.28);
+}
+.badge-private {
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  border-color: var(--separator);
+}
 
 /* ---- Grid pool ---- */
 .pool-grid {

@@ -14,6 +14,20 @@ import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
+import {
+  getGroupModeRecord,
+  setGroupMode,
+  touchGroupActivity,
+  markGroupBotReply,
+  isInFollowUpWindow,
+  clearFollowUpWindow,
+  recordPassiveGroupMessage,
+  consumePassiveGroupContext,
+  deteksiPanggilanNatural,
+  evaluasiResponGrup,
+  formatStatusModeGrup,
+  type GroupCommandKind,
+} from './group_mode.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
 const PROMPT_VERSION = 'v0.66.0';
@@ -159,6 +173,97 @@ export function deteksiPanggilSlash(
   return { dipanggil, bersih };
 }
 
+const tgAdminCache = new Map<string, { at: number; admins: Set<string> }>();
+
+async function isTelegramGroupAdminOrOwner(
+  bot: TelegramBot,
+  chatId: number,
+  userId?: string,
+): Promise<boolean> {
+  if (!userId) return false;
+  if (config.ownerChatId && String(config.ownerChatId).trim() === userId) return true;
+  const key = String(chatId);
+  const now = Date.now();
+  let cached = tgAdminCache.get(key);
+  if (!cached || now - cached.at > 60_000) {
+    try {
+      const list = await bot.getChatAdministrators(chatId);
+      const admins = new Set<string>();
+      for (const a of list || []) {
+        if (a.user?.id) admins.add(String(a.user.id));
+      }
+      cached = { at: now, admins };
+      tgAdminCache.set(key, cached);
+    } catch {
+      return false;
+    }
+  }
+  return cached.admins.has(userId);
+}
+
+function simpanPasifGrupTg(
+  shouldRecord: boolean,
+  groupKey: string,
+  senderName: string,
+  textOrCaption: string,
+  isNimbrung: boolean,
+  reason?: string,
+  actorId?: string,
+): void {
+  if (reason === 'followup_ended_by_filler_or_other' && actorId) {
+    clearFollowUpWindow(groupKey, actorId);
+  }
+  if (isNimbrung) touchGroupActivity(groupKey);
+  if (shouldRecord && textOrCaption.trim()) {
+    recordPassiveGroupMessage(groupKey, senderName, textOrCaption);
+  }
+}
+
+async function tanganiPerintahModeGrupTg(
+  bot: TelegramBot,
+  chatId: number,
+  replyToMsgId: number | undefined,
+  groupKey: string,
+  command: GroupCommandKind,
+  actorId: string,
+  senderName: string,
+): Promise<void> {
+  if (command === 'status') {
+    const { record } = await getGroupModeRecord(groupKey);
+    await sendTelegramMessageSafe(bot, chatId, formatStatusModeGrup(record), replyToMsgId);
+    return;
+  }
+
+  const { record: current } = await getGroupModeRecord(groupKey);
+  const perluAdmin = command === 'diam' || (current.mode === 'diam' && current.lockedByAdmin);
+  const isAdminOrOwner = perluAdmin
+    ? await isTelegramGroupAdminOrOwner(bot, chatId, actorId)
+    : false;
+
+  const res = await setGroupMode(groupKey, command, {
+    actorId,
+    actorName: senderName,
+    isAdminOrOwner,
+  });
+
+  if (!res.ok) {
+    const msgTolak =
+      res.reason === 'admin_only'
+        ? 'Mode `/diam` hanya bisa diaktifkan oleh *Admin Grup* atau *Owner Bot*.'
+        : 'Grup sedang dikunci pada mode *DIAM* oleh Admin Grup atau Owner Bot. Hanya Admin Grup / Owner yang bisa membukanya kembali.';
+    await sendTelegramMessageSafe(bot, chatId, msgTolak, replyToMsgId);
+    return;
+  }
+
+  const msgOk =
+    command === 'nimbrung'
+      ? 'Siap, mode *NIMBRUNG AKTIF* di grup ini! Aku bakal ikut ngobrol dan otomatis kembali ke mode mention kalau grup sepi 30 menit. Ketik `/mention` atau bilang "berhenti nimbrung" kapan saja untuk berhenti.'
+      : command === 'diam'
+        ? 'Oke, mode *DIAM* aktif dan dikunci admin/owner. Aku tidak akan merespons pesan apa pun sampai admin/owner mengaktifkan `/mention` atau `/nimbrung` lagi.'
+        : 'Oke, balik ke mode *MENTION*. Aku berhenti nimbrung dan hanya membalas kalau di-`@mention`, reply, `/namabot`, atau dipanggil (mis. "bot ...").';
+  await sendTelegramMessageSafe(bot, chatId, msgOk, replyToMsgId);
+}
+
 /**
  * Wrapper publik: serialkan pemrosesan per-chat agar balasan tidak keluar urutan
  * saat dua pesan tiba beruntun (audit F3.1). Handler inti dipakai bersama oleh
@@ -284,7 +389,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         if (targetBot !== botUsername) return; // Command spesifik untuk bot lain di grup -> abaikan
         isTargetedCommand = true;
       } else {
-        const knownCommands = ['start', 'reset', 'clear', 'remind', 'salah', 'tanya', 'ai', 'help', 'bantuan'];
+        const knownCommands = ['start', 'reset', 'clear', 'remind', 'salah', 'tanya', 'ai', 'help', 'bantuan', 'nimbrung', 'mention', 'diam', 'statusgrup', 'stop'];
         if (!isGroup || knownCommands.includes(cmdMatch[1].toLowerCase())) {
           isTargetedCommand = true;
         }
@@ -298,39 +403,116 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     const hasSticker = Boolean(msg.sticker);
     const hasMedia = hasPhoto || hasVideo || hasDoc || hasAudio || hasSticker;
 
+    // Bersihkan mention & kata panggil sementara untuk evaluasi mode grup
+    const cleanForGroupCheck = panggilText.bersih
+      .replace(new RegExp(`@${botUsername}\\b`, 'gi'), '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+    const cleanCapForGroupCheck = panggilCaption.bersih
+      .replace(new RegExp(`@${botUsername}\\b`, 'gi'), '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+
+    const naturalWakeTg = deteksiPanggilanNatural(cleanForGroupCheck || cleanCapForGroupCheck, [botUsername]);
+    const hasEntityOtherMention = (msg.entities || msg.caption_entities || []).some((e) => {
+      if (e.type !== 'mention' && e.type !== 'text_mention') return false;
+      if (e.type === 'mention') {
+        const str = (rawText || rawCaption).slice(e.offset, e.offset + e.length).toLowerCase();
+        return str !== `@${botUsername}`;
+      }
+      return true;
+    });
+    const mentionsOtherOnlyTg = !hasMention && !hasEntityMention && hasEntityOtherMention;
+
+    const tgGroupKey = isGroup ? `tg_g:${chatKey}` : '';
+    const tgActorId = msg.from?.id ? String(msg.from.id) : '';
+    let tgGroupModeCmd: GroupCommandKind | undefined;
+    let tgShouldSetFollowUp = false;
+    let tgGroupRecMode: 'mention' | 'nimbrung' | 'diam' = 'mention';
+    let tgPassiveSkipReason: string | undefined;
+    let tgShouldRecordPassive = false;
     let isDirectedToBot = !isGroup;
+
     if (isGroup) {
-      if (isTargetedCommand || hasMention || hasEntityMention || isReplyToBot || hasSlashPanggil) {
+      const { record: groupRec } = await getGroupModeRecord(tgGroupKey);
+      tgGroupRecMode = groupRec.mode;
+      const inFollowUp = isInFollowUpWindow(tgGroupKey, tgActorId);
+      const groupEval = evaluasiResponGrup({
+        mode: groupRec.mode,
+        text: cleanForGroupCheck || cleanCapForGroupCheck,
+        actorId: tgActorId,
+        isMentioned: hasMention || hasEntityMention || hasMentionInCaption,
+        isReplyToBot,
+        isTargetedCommand,
+        isSlashPanggil: hasSlashPanggil,
+        hasWakeWord: naturalWakeTg.dipanggil,
+        wakeCleanedText: naturalWakeTg.dipanggil ? naturalWakeTg.bersih : (cleanForGroupCheck || cleanCapForGroupCheck),
+        hasMedia,
+        hasSticker,
+        mentionsOtherOnly: mentionsOtherOnlyTg,
+        inFollowUpWindow: inFollowUp,
+        botUsername,
+        lastBotReplyAt: groupRec.lastBotReplyAt,
+      });
+
+      if (groupEval.action === 'silent_ignore') {
+        isDirectedToBot = false;
+        tgShouldRecordPassive = false;
+      } else if (groupEval.action === 'passive_ignore') {
+        isDirectedToBot = false;
+        tgShouldRecordPassive = true;
+        tgPassiveSkipReason = groupEval.reason;
+      } else if (groupEval.action === 'mode_command' && groupEval.command) {
         isDirectedToBot = true;
-      } else if (hasMedia) {
-        // Untuk stiker di grup: wajib reply ke pesan bot
-        if (hasSticker && isReplyToBot) {
-          isDirectedToBot = true;
-        } else if ((hasPhoto || hasVideo || hasDoc || hasAudio) && (hasMentionInCaption || isReplyToBot)) {
-          isDirectedToBot = true;
-        }
+        tgGroupModeCmd = groupEval.command;
+      } else if (isTargetedCommand || hasMention || hasEntityMention || isReplyToBot || hasSlashPanggil) {
+        isDirectedToBot = true;
+        tgShouldSetFollowUp = groupEval.shouldSetFollowUp;
+        touchGroupActivity(tgGroupKey);
+      } else {
+        isDirectedToBot = true;
+        tgShouldSetFollowUp = groupEval.shouldSetFollowUp;
+        touchGroupActivity(tgGroupKey);
       }
     }
 
-    // Jika di grup dan pesan BUKAN untuk bot: abaikan seketika (zero overhead, no DB claim)
+    // Jika di grup dan pesan BUKAN untuk bot: rekam ke buffer pasif lalu keluar tanpa beban DB
+    const rekamPasifTg = () => simpanPasifGrupTg(
+      tgShouldRecordPassive,
+      tgGroupKey,
+      senderName,
+      rawText || rawCaption || (hasPhoto ? '[foto]' : hasAudio ? '[voice note]' : hasDoc ? '[dokumen]' : hasVideo ? '[video]' : hasSticker ? '[stiker]' : ''),
+      tgGroupRecMode === 'nimbrung',
+      tgPassiveSkipReason,
+      tgActorId,
+    );
     if (isGroup && !isDirectedToBot) {
+      rekamPasifTg();
       return;
     }
 
-    // Bersihkan mention dan prefix command.
+    // Bersihkan mention, wake word, dan prefix command.
     // Kata panggil `/namabot` sudah dibuang oleh deteksiPanggilSlash() di atas
     // (panggilText.bersih / panggilCaption.bersih) — di sini tinggal mention & prefix.
-    let text = panggilText.bersih
+    const textPascaMention = panggilText.bersih
       .replace(new RegExp(`@${botUsername}\\b`, 'gi'), '')
       .replace(/^\/(?:tanya|ai)(?:@\w+)?\s*/i, '')
       .replace(/^\/([a-zA-Z0-9_]+)@\w+/i, '/$1')
       .replace(/[ \t]{2,}/g, ' ')
       .trim();
+    const wakeStrippedText = isGroup && naturalWakeTg.dipanggil
+      ? deteksiPanggilanNatural(textPascaMention, [botUsername]).bersih
+      : textPascaMention;
+    let text = wakeStrippedText;
 
     let caption = panggilCaption.bersih
       .replace(new RegExp(`@${botUsername}\\b`, 'gi'), '')
       .replace(/[ \t]{2,}/g, ' ')
       .trim();
+    if (isGroup && caption) {
+      const capWake = deteksiPanggilanNatural(caption, [botUsername]);
+      if (capWake.dipanggil) caption = capWake.bersih;
+    }
 
     // Tentukan konten awal pesan untuk klaim atomik agar teks asli dan jenis media langsung tercatat
     let initialContent = text;
@@ -356,6 +538,29 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
     }
+
+    // Perintah mode grup (/nimbrung, /mention, /diam, /statusgrup, atau frasa natural)
+    if (isGroup && tgGroupModeCmd) {
+      await tanganiPerintahModeGrupTg(
+        bot,
+        chatId,
+        msg.message_id,
+        tgGroupKey,
+        tgGroupModeCmd,
+        tgActorId,
+        senderName,
+      );
+      if (msgId) void markMessageProcessed('telegram', msgId);
+      return;
+    }
+
+    const tgReplyRef = isGroup && msg.message_id ? msg.message_id : undefined;
+    const tgPassivePrefix = isGroup ? consumePassiveGroupContext(tgGroupKey) : '';
+    const tandaiBalasGrupTg = () => {
+      if (isGroup) {
+        markGroupBotReply(tgGroupKey, tgActorId, Date.now(), tgShouldSetFollowUp);
+      }
+    };
 
     // 1. Perintah /start (sapaan 100% dinamis via LLM — ZERO teks statis)
     if (text === '/start') {
@@ -465,22 +670,17 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         // LANJUTAN KE AI (06 Okt 2026): permintaan non-pencatatan yang tertunda
         // karena lokasi (mis. "cuaca hari ini") -> kirim pengantar, lalu lanjut
         // proses permintaan ASLI lewat AI di bawah (jangan `return`).
+        await sendTelegramMessageSafe(bot, chatId, hasilCatat.reply, tgReplyRef);
+        if (msgId) void markMessageProcessed('telegram', msgId);
+        if (!hasilCatat.teruskanKeAi) tandaiBalasGrupTg();
+        await saveMessage({
+          platform: 'telegram', chat_id: chatKey, role: 'assistant',
+          content: hasilCatat.reply, via: `notes/${hasilCatat.jalur}`,
+        }).catch(() => undefined);
+        updateContextCache(chatKey, 'assistant', hasilCatat.reply);
         if (hasilCatat.teruskanKeAi) {
-          await sendTelegramMessageSafe(bot, chatId, hasilCatat.reply);
-          await saveMessage({
-            platform: 'telegram', chat_id: chatKey, role: 'assistant',
-            content: hasilCatat.reply, via: `notes/${hasilCatat.jalur}`,
-          }).catch(() => undefined);
-          updateContextCache(chatKey, 'assistant', hasilCatat.reply);
           text = hasilCatat.teruskanKeAi;
         } else {
-          await sendTelegramMessageSafe(bot, chatId, hasilCatat.reply);
-          if (msgId) void markMessageProcessed('telegram', msgId);
-          await saveMessage({
-            platform: 'telegram', chat_id: chatKey, role: 'assistant',
-            content: hasilCatat.reply, via: `notes/${hasilCatat.jalur}`,
-          }).catch(() => undefined);
-          updateContextCache(chatKey, 'assistant', hasilCatat.reply);
           return;
         }
       } else {
@@ -620,7 +820,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
               // best-effort: jangan sampai menggagalkan balasan ke user
             }
           })();
-          await sendTelegramMessageSafe(bot, chatId, reply);
+          await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+          tandaiBalasGrupTg();
           if (msgId) void markMessageProcessed('telegram', msgId);
           await saveMessage({
             platform: 'telegram',
@@ -695,7 +896,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             ? `[Pesan Suara / Voice Note di Grup dari ${senderName}]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih di grup. Tanggapi langsung apa yang dibicarakan ${senderName} secara wajar, hangat, dan bersahabat).`
             : `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
           const { reply, via, tokens } = await autoReply(prompt, ctx, web);
-          await sendTelegramMessageSafe(bot, chatId, reply);
+          await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+          tandaiBalasGrupTg();
           if (msgId) void markMessageProcessed('telegram', msgId);
           await saveMessage({
             platform: 'telegram',
@@ -852,8 +1054,9 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         ? (isGroup ? `Pengguna ${senderName} di grup mengirim video dengan catatan: "${promptCaption}". Tolong tanggapi secara relevan, hangat, dan bersahabat.` : `User mengirim video dengan catatan: "${promptCaption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`)
         : (isGroup ? `Pengguna ${senderName} di grup mengirim pesan video. Sampaikan secara ramah bahwa videonya diterima, dan tanyakan apa yang ingin dibahas.` : 'User mengirim pesan video. Sampaikan secara ramah bahwa videonya diterima, dan tanyakan apa yang ingin didiskusikan.');
 
-      const { reply, via, tokens } = await autoReply(prompt, ctx);
-      await sendTelegramMessageSafe(bot, chatId, reply);
+      const { reply, via, tokens } = await autoReply((tgPassivePrefix ? `${tgPassivePrefix}\n` : '') + prompt, ctx);
+      await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+      tandaiBalasGrupTg();
       if (msgId) void markMessageProcessed('telegram', msgId);
       await saveMessage({
         platform: 'telegram',
@@ -867,45 +1070,39 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       return;
     }
 
-    // 9. Pesan teks umum
-    if (!text) {
-      if (isGroup) {
-        // Pengguna men-tag bot di grup tanpa ada teks lanjutan
-        const prompt = `Pengguna ${senderName} memanggil atau men-tag kamu di grup Telegram. Sapa dia secara hangat, santai, dan tanyakan apa yang bisa kamu bantu di grup ini.`;
-        const ctx = await getContext(chatKey, msgSentAt);
-        const { reply, via, tokens } = await autoReply(prompt, ctx);
-        await sendTelegramMessageSafe(bot, chatId, reply);
-        if (msgId) void markMessageProcessed('telegram', msgId);
-        await saveMessage({
-          platform: 'telegram',
-          chat_id: chatKey,
-          role: 'assistant',
-          content: reply,
-          via,
-          tokens,
-        }).catch((e) => console.warn('[telegram] Gagal simpan sapaan tag grup:', e));
-        return;
-      }
-      return;
-    }
-
-    // Panggil bot TANPA pertanyaan (mis. di grup hanya menulis "/namabot").
+    // Panggil bot TANPA pertanyaan (mis. di grup hanya menulis "/namabot" atau "@namabot" atau "bot").
     // Balas dengan sapaan yang DIGENERASI model (bukan teks statis), lalu minta
     // dia menuliskan pertanyaannya.
-    if (!text && isGroup && hasSlashPanggil) {
+    if (!text && !hasMedia && !msg.location && isGroup) {
       try {
         const ctxPanggil = await getContext(chatKey, msgSentAt);
-        const { reply } = await autoReply(
-          `Anggota grup bernama ${senderName} memanggilmu dengan /${botUsername} tetapi belum menuliskan pertanyaannya. Sapa dia singkat dan santai, lalu minta dia menuliskan pertanyaannya.`,
-          ctxPanggil,
-        );
-        if (reply.trim()) await sendTelegramMessageSafe(bot, chatId, reply);
+        const promptGreet =
+          (tgPassivePrefix ? `${tgPassivePrefix}\n` : '') +
+          (hasSlashPanggil
+            ? `Anggota grup bernama ${senderName} memanggilmu dengan /${botUsername} tetapi belum menuliskan pertanyaannya. Sapa dia singkat dan santai, lalu minta dia menuliskan pertanyaannya.`
+            : `Pengguna ${senderName} memanggil atau men-tag kamu di grup Telegram. Sapa dia secara hangat, santai, dan tanyakan apa yang bisa kamu bantu di grup ini.`);
+        const { reply, via, tokens } = await autoReply(promptGreet, ctxPanggil);
+        if (reply.trim()) {
+          await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+          tandaiBalasGrupTg();
+          await saveMessage({
+            platform: 'telegram',
+            chat_id: chatKey,
+            role: 'assistant',
+            content: reply,
+            via,
+            tokens,
+          }).catch((e) => console.warn('[telegram] Gagal simpan sapaan tag grup:', e));
+        }
       } catch {
         // diam — ZERO teks statis
       }
       if (msgId) void markMessageProcessed('telegram', msgId);
       return;
     }
+
+    // 9. Pesan teks umum
+    if (!text) return;
 
     if (text.startsWith('/')) return;
 
@@ -916,9 +1113,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       quotedPengirim === 'bot' ? 'pesan KAMU (bot)'
       : quotedPengirim === 'lain' ? 'pesan ORANG LAIN'
       : 'pesan DIA SENDIRI (bukan kamu, bukan orang lain)';
-    const promptText = (quotedText
-      ? `[Membalas ${quotedLabel}: "${quotedText.slice(0, 300)}"] `
-      : '') + (isGroup ? `[Pesan di Grup dari ${senderName}]: ${text}` : text);
+    const promptText =
+      (tgPassivePrefix ? `${tgPassivePrefix}\n` : '') +
+      (quotedText ? `[Membalas ${quotedLabel}: "${quotedText.slice(0, 300)}"] ` : '') +
+      (isGroup ? `[Pesan di Grup dari ${senderName}]: ${text}` : text);
     const savedUserContent = isGroup ? `[${senderName}]: ${text}` : text;
 
     // Update cache in-memory & pastikan pesan teks user tersimpan (non-blocking agar autoReply langsung jalan)
@@ -950,10 +1148,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     const tStart = Date.now();
     const { reply, escalate, via, tokens, sticker, riddleAnswer } = await autoReply(promptText, ctx, web);
     const latencyMs = Date.now() - tStart;
-    // Balas (quote) pesan user HANYA bila dia membalas pesan lama (perbaikan 06 Okt 2026).
-    // Menghindari salah konteks tanpa membuat setiap balasan penuh quote.
-    const idUntukQuoteTg = quotedText && msg.message_id ? msg.message_id : undefined;
+    // Di grup selalu reply pesan penanya; di DM quote hanya bila dia membalas pesan lama.
+    const idUntukQuoteTg = quotedText && msg.message_id ? msg.message_id : tgReplyRef;
     await sendTelegramMessageSafe(bot, chatId, reply, idUntukQuoteTg);
+    tandaiBalasGrupTg();
     // Stiker balasan (opsional) — hormati cooldown DURABLE (riwayat chat) + fast-path lokal.
     // Emoji "keras" (🖕/🤬/👊) hanya boleh saat konteks bercanda (user bercanda/roasting dulu).
     const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text || rawText);

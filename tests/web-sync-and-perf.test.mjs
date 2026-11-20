@@ -14,12 +14,20 @@ test('api/stats.ts: allTimeAssistantMsgs mengambil created_at & inisialisasi dre
   assert.match(src, /wa_baileys_/, 'waMonthlyMsgs harus mengecualikan wa_baileys_ dari kuota sesi Meta Cloud');
 });
 
-test('api/dataset.ts & dashboard.js: mendukung prefix wa_baileys_', () => {
+test('api/dataset.ts & dashboard.js: mendukung prefix wa_baileys_ dan pemisahan Grup vs Privat', () => {
   const api = read('api/dataset.ts');
   const dash = read('public/js/dashboard.js');
+  const html = read('public/dashboard.html');
   assert.match(api, /wa_baileys_\|wa_\|tg_/, 'api/dataset searchDigits harus menstrip wa_baileys_');
   assert.match(api, /wa_baileys_\|wa_/, 'api/dataset matchChat harus menstrip wa_baileys_');
+  assert.match(api, /wa_baileys_group_/, 'api/dataset harus mendukung prefix wa_baileys_group_');
+  assert.match(api, /isGroupChatKey/, 'api/dataset harus menandai isGroup lewat isGroupChatKey');
+  assert.match(api, /scope === 'group'/, 'api/dataset harus mendukung filter scope=group/private');
   assert.match(dash, /wa_baileys_/, 'dashboard.js harus melabeli dan menstrip prefix wa_baileys_');
+  assert.match(dash, /wa_baileys_group_/, 'dashboard.js harus melabeli wa_baileys_group_ sebagai Grup WA');
+  assert.match(dash, /badge-group/, 'dashboard.js harus merender badge-group');
+  assert.match(dash, /dataset-scope-filter/, 'dashboard.js harus membaca filter ruang grup/privat');
+  assert.match(html, /id="dataset-scope-filter"/, 'dashboard.html harus menyediakan dropdown filter grup/privat');
 });
 
 test('dashboard.js: bindingPct tersedia di cabang xkiro, _datasetTick di dalam interval, refreshDashboardI18n diekspos', () => {

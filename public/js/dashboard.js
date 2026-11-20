@@ -1862,10 +1862,11 @@ function renderLiveUpstreamTable(data) {
       const q = document.getElementById("dataset-search").value.trim();
       const range = document.getElementById("dataset-range-filter")?.value || "all";
       const platform = document.getElementById("dataset-platform-filter").value;
+      const scope = document.getElementById("dataset-scope-filter")?.value || "";
       const model = document.getElementById("dataset-model-filter")?.value || "";
 
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
-      const cacheKey = `${range}_${platform}_${model}_${q}_${tz}`;
+      const cacheKey = `${range}_${platform}_${scope}_${model}_${q}_${tz}`;
       if (!force && datasetCache.has(cacheKey)) {
         cachedDatasetPairs = datasetCache.get(cacheKey);
         currentDatasetPage = 1;
@@ -1883,7 +1884,7 @@ function renderLiveUpstreamTable(data) {
       const timeoutId = setTimeout(() => ctrl.abort(), 25_000);
 
       try {
-        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=300&_t=${Date.now()}`;
+        const url = `/api/dataset?format=json&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&scope=${encodeURIComponent(scope)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=300&_t=${Date.now()}`;
         const res = await fetch(url, {
           headers: { "x-admin-token": token },
           signal: ctrl.signal,
@@ -1993,16 +1994,29 @@ function renderLiveUpstreamTable(data) {
           ? `<span class="badge badge-wa">WhatsApp</span>`
           : `<span class="badge badge-tele">Telegram</span>`;
 
-        // Identitas pengirim: tampilkan PENUH tanpa prefix internal "wa_" / "wa_baileys_", dan
-        // beri label supaya ID Telegram / Baileys / Cloud API jelas dibedakan.
+        // Identitas pengirim vs ruang grup: bedakan tegas antara Grup WA, Grup Telegram, WA Baileys, WA Cloud, dan ID Telegram.
         const rawChatId = String(p.chatId || p.chatIdMasked || "-");
         const isWaChat = p.platform === "whatsapp";
+        const isGroupChat = p.isGroup === true
+          || /^wa_baileys_group_/.test(rawChatId)
+          || /@g\.us$/i.test(rawChatId)
+          || (!isWaChat && /^(?:wa_|tg_)?-\d+$/.test(rawChatId));
         const isBaileys = /^wa_baileys_/.test(rawChatId);
-        const idLabel = isWaChat ? (isBaileys ? "WA Baileys" : "Nomor WA") : "ID Telegram";
-        const idValue = rawChatId.replace(/^(wa_baileys_|wa_|tg_)/, "");
-        const idTitle = isWaChat
-          ? (isBaileys ? "Nomor WhatsApp pengirim (Baileys VPS)" : "Nomor WhatsApp pengirim")
-          : "ID internal Telegram (bukan nomor HP)";
+        const scopeText = isGroupChat ? t("dyn.scopeGroup", "Grup") : t("dyn.scopePrivate", "Privat");
+        const scopeBadge = isGroupChat
+          ? `<span class="badge badge-group">${escapeHtml(scopeText)}</span>`
+          : `<span class="badge badge-private">${escapeHtml(scopeText)}</span>`;
+        const idLabel = isWaChat
+          ? (isGroupChat ? "Grup WA" : isBaileys ? "WA Baileys" : "WA Cloud")
+          : (isGroupChat ? "Grup Telegram" : "ID Telegram");
+        const idValue = rawChatId
+          .replace(/^(wa_baileys_group_|wa_baileys_|wa_|tg_)/, "")
+          .replace(/@g\.us$/i, "");
+        const idTitle = isGroupChat
+          ? (isWaChat ? "ID Grup WhatsApp (terpisah 100% dari nomor HP & data pribadi)" : "ID Grup Telegram (negatif, terpisah dari chat privat)")
+          : isWaChat
+            ? (isBaileys ? "Nomor WhatsApp privat (Baileys VPS)" : "Nomor WhatsApp privat (Cloud API)")
+            : "ID internal Telegram privat (bukan nomor HP)";
 
         // Metrik token per chat (Input Prompt, Context total, Output Reply, Total Terpakai)
         const promptTk = Number(p.promptTokens) || Math.max(1, Math.ceil(((p.userPrompt || "")).length / 3.8));
@@ -2018,7 +2032,7 @@ function renderLiveUpstreamTable(data) {
         tr.innerHTML = `
           <td>
             <div style="font-size: 0.775rem; color: var(--text-muted); font-family: var(--font-mono);">${formatDateTime(p.createdAt)}</div>
-            <div style="margin-top: 0.25rem;">${platformBadge}</div>
+            <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">${platformBadge}${scopeBadge}</div>
           </td>
           <td>
             <div style="font-family: var(--font-mono); font-size: 0.775rem; color: var(--text-dim); display: flex; align-items: baseline; gap: 0.35rem; flex-wrap: wrap;">
@@ -2130,12 +2144,13 @@ function renderLiveUpstreamTable(data) {
       const rangeSelect = document.getElementById("dataset-range-filter");
       const range = rangeSelect ? rangeSelect.value : "all";
       const platform = document.getElementById("dataset-platform-filter")?.value || "";
+      const scope = document.getElementById("dataset-scope-filter")?.value || "";
       const model = document.getElementById("dataset-model-filter")?.value || "";
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
 
       // Token TIDAK ditaruh di URL (bocor ke log proxy/history browser). Unduh via
       // fetch ber-header, lalu buat blob — URL hanya hidup sesaat di memori.
-      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=3000`;
+      const url = `/api/dataset?format=${format}&q=${encodeURIComponent(q)}&range=${encodeURIComponent(range)}&platform=${encodeURIComponent(platform)}&scope=${encodeURIComponent(scope)}&model=${encodeURIComponent(model)}&tz=${encodeURIComponent(tz)}&limit=3000`;
 
       const filePrefix = "riwayat_percakapan";
       const rangeLabel = range === "today" ? "hari_ini" : range === "all" ? "semua" : range;
@@ -2146,6 +2161,7 @@ function renderLiveUpstreamTable(data) {
 
       let filterSuffix = "";
       if (platform) filterSuffix += `_${platform}`;
+      if (scope) filterSuffix += `_${scope}`;
       if (model) filterSuffix += `_${model.replace(/[^a-z0-9_-]/gi, "")}`;
 
       const filename = `${filePrefix}_${rangeLabel}_${dateTag}_jam_${timeTag}${filterSuffix}.${format}`;
@@ -2285,6 +2301,7 @@ function renderLiveUpstreamTable(data) {
       on("dataset-search", "input", debounceDatasetSearch);
       on("dataset-range-filter", "change", () => fetchDataset());
       on("dataset-platform-filter", "change", () => fetchDataset());
+      on("dataset-scope-filter", "change", () => fetchDataset());
       on("dataset-model-filter", "change", () => fetchDataset());
       on("btn-download-csv", "click", () => downloadDataset("csv"));
       on("btn-download-jsonl", "click", () => downloadDataset("jsonl"));
