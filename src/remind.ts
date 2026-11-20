@@ -116,7 +116,14 @@ export async function simpanReminderCerdas(
       // Pilih pesan yang lebih INFORMATIF (lebih panjang) agar tidak kehilangan detail.
       const cleanOld = bersihkanTeksPengingat(palingMirip.message);
       const cleanFinal = cleanNew.length >= cleanOld.length ? cleanNew : cleanOld;
-      const pesanFinal = adalahPengingatBaileys(message) ? tandaiPengingatBaileys(cleanFinal) : cleanFinal;
+      const isStrict =
+        adalahPengingatBaileysEksklusif(message) ||
+        adalahPengingatBaileysEksklusif(palingMirip.message);
+      const pesanFinal = isStrict
+        ? tandaiPengingatBaileysEksklusif(cleanFinal)
+        : adalahPengingatBaileys(message)
+          ? tandaiPengingatBaileys(cleanFinal)
+          : cleanFinal;
       // ── PERBAIKAN AUDIT 14 Okt 2026: IKUT PERBARUI ATURAN BERULANG ──
       // BUG LAMA: merge hanya menulis `message` & `due_at`, TIDAK menyentuh
       // `repeat_kind`/`repeat_value`. Akibatnya:
@@ -228,18 +235,30 @@ export async function simpanReminderCerdas(
  */
 /** Penanda asal kanal pengingat Baileys (zero-width space anti-gangguan). */
 export const BAILEYS_REMINDER_MARKER = '\u200B';
+/** Penanda pengingat eksklusif Baileys — tidak boleh diambil alih Cloud API saat terlambat. */
+export const BAILEYS_STRICT_MARKER = '\u200C';
 
 export function tandaiPengingatBaileys(pesan: string): string {
   const p = String(pesan || '');
   return p.includes(BAILEYS_REMINDER_MARKER) ? p : `${p}${BAILEYS_REMINDER_MARKER}`;
 }
 
+export function tandaiPengingatBaileysEksklusif(pesan: string): string {
+  const p = tandaiPengingatBaileys(pesan);
+  return p.includes(BAILEYS_STRICT_MARKER) ? p : `${p}${BAILEYS_STRICT_MARKER}`;
+}
+
 export function adalahPengingatBaileys(pesan: string): boolean {
-  return String(pesan ?? '').includes(BAILEYS_REMINDER_MARKER);
+  const s = String(pesan ?? '');
+  return s.includes(BAILEYS_REMINDER_MARKER) || s.includes(BAILEYS_STRICT_MARKER);
+}
+
+export function adalahPengingatBaileysEksklusif(pesan: string): boolean {
+  return String(pesan ?? '').includes(BAILEYS_STRICT_MARKER);
 }
 
 export function bersihkanTeksPengingat(pesan: string): string {
-  return String(pesan ?? '').replace(new RegExp(BAILEYS_REMINDER_MARKER, 'g'), '');
+  return String(pesan ?? '').replace(/[\u200B\u200C]/g, '');
 }
 
 /** Batas keterlambatan pengingat Baileys sebelum diambil alih Cloud API (failover bila VPS mati). */
@@ -278,6 +297,7 @@ export function bolehProsesKanalPengingat(
   if (isTelegram) return true;
   if (opsi.cloudMaintenance) return false;
   if (!isBaileys) return true;
+  if (adalahPengingatBaileysEksklusif(String(item.message ?? ''))) return false;
   return telatMs > BAILEYS_FALLBACK_KE_CLOUD_MS;
 }
 
@@ -341,31 +361,72 @@ export async function checkDueReminders(
   const c = db();
   if (!c) return 0;
   try {
+    const filterKanalAktif =
+      options?.channelFilter === 'baileys_only' || options?.channelFilter === 'cloud_only';
+    let cloudMaintenance: boolean | undefined;
+    if (filterKanalAktif) {
+      const autoMaint = await statusAutoMaintenanceWa().catch(() => ({ aktif: false, alasan: '', sampai: null }));
+      cloudMaintenance = config.whatsappMaintenanceMode === true || autoMaint.aktif;
+    }
+
     // ── TUNGGU SEBENTAR BILA ADA PENGINGAT YANG HAMPIR JATUH TEMPO ──
     const TUNGGU_MAKS_MS = options?.allowWait === false ? 0 : 20_000;
     if (TUNGGU_MAKS_MS > 0) {
     try {
+      const cekBolehUntukKanal = (row: Record<string, unknown>, nowMs: number): boolean => {
+        const p = String((row as { platform?: string }).platform ?? '').toLowerCase();
+        if (platformFilter && p !== platformFilter && p !== '') return false;
+        if (!filterKanalAktif || !options?.channelFilter) return true;
+        return bolehProsesKanalPengingat(
+          row as { message?: string; due_at?: string; platform?: string },
+          { channelFilter: options.channelFilter, nowMs, cloudMaintenance },
+        );
+      };
+
       // 1) Ada yang SUDAH jatuh tempo? -> jangan menunggu, kirim sekarang.
+      const nowIso = new Date().toISOString();
       const { data: sudahTelat } = await c
         .from('reminders')
-        .select('id')
+        .select('id, message, due_at, platform')
         .eq('status', 'pending')
-        .lte('due_at', new Date().toISOString())
-        .limit(1);
-      const adaYangTelat = ((sudahTelat ?? []) as unknown[]).length > 0;
+        .lte('due_at', nowIso)
+        .limit(filterKanalAktif || platformFilter ? 20 : 1);
+      const nowCekMs = Date.now();
+      const adaYangTelat = ((sudahTelat ?? []) as unknown as Array<Record<string, unknown>>)
+        .some((r) => cekBolehUntukKanal(r, nowCekMs));
 
       if (!adaYangTelat) {
         // 2) Tidak ada yang telat -> boleh menunggu yang HAMPIR jatuh tempo.
         const batasCek = new Date(Date.now() + TUNGGU_MAKS_MS + 2000).toISOString();
         const { data: hampir } = await c
           .from('reminders')
-          .select('due_at')
+          .select('due_at, message, platform')
           .eq('status', 'pending')
-          .gt('due_at', new Date().toISOString())   // belum jatuh tempo
-          .lte('due_at', batasCek)                  // tapi sangat dekat
+          .gt('due_at', nowIso)   // belum jatuh tempo
+          .lte('due_at', batasCek) // tapi sangat dekat
           .order('due_at', { ascending: true })
-          .limit(1);
-        const terdekat = (hampir ?? [])[0] as { due_at?: string } | undefined;
+          .limit(filterKanalAktif || platformFilter ? 20 : 1);
+        const hampirList = ((hampir ?? []) as unknown as Array<Record<string, unknown>>)
+          .filter((r) => {
+            if (!filterKanalAktif && !platformFilter) return true;
+            const p = String((r as { platform?: string }).platform ?? '').toLowerCase();
+            if (platformFilter && p !== platformFilter && p !== '') return false;
+            if (!filterKanalAktif) return true;
+            if (options?.channelFilter === 'cloud_only' && adalahPengingatBaileysEksklusif(String((r as { message?: string }).message ?? ''))) {
+              return false;
+            }
+            if (options?.channelFilter === 'cloud_only' && p !== 'telegram' && cloudMaintenance) {
+              return false;
+            }
+            if (options?.channelFilter === 'baileys_only' && p === 'telegram') {
+              return false;
+            }
+            const dueMs = new Date(String((r as { due_at?: string }).due_at ?? '')).getTime();
+            return Number.isFinite(dueMs)
+              ? cekBolehUntukKanal(r, dueMs + 1_000)
+              : true;
+          });
+        const terdekat = hampirList[0] as { due_at?: string } | undefined;
         if (terdekat?.due_at) {
           const selisih = new Date(terdekat.due_at).getTime() - Date.now();
           if (selisih > 0 && selisih <= TUNGGU_MAKS_MS) {
@@ -457,9 +518,7 @@ export async function checkDueReminders(
     }
 
     // ── PEMISAH KANAL: BAILEYS vs CLOUD API (audit 20 Nov 2026) ──
-    if (options?.channelFilter === 'baileys_only' || options?.channelFilter === 'cloud_only') {
-      const autoMaint = await statusAutoMaintenanceWa().catch(() => ({ aktif: false, alasan: '', sampai: null }));
-      const cloudMaintenance = config.whatsappMaintenanceMode === true || autoMaint.aktif;
+    if (filterKanalAktif && options?.channelFilter) {
       const nowMs = Date.now();
       const filter = options.channelFilter;
       data = data.filter((r) =>

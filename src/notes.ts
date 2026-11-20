@@ -3343,7 +3343,7 @@ export async function tanganiPencatatan(
       if (permintaan.aksi === 'batal') {
         if (target) {
           const okBatal = await batalkanPengingat(target.id);
-          const cleanNama = target.message.replace(/\u200B/g, '');
+          const cleanNama = target.message.replace(/[\u200B\u200C]/g, '');
           return {
             ditangani: true,
             reply: okBatal
@@ -3352,7 +3352,7 @@ export async function tanganiPencatatan(
             jalur: 'ubah-batal',
           };
         }
-        const daftarB = daftar.map((r, i) => `${i + 1}. "${r.message.replace(/\u200B/g, '')}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
+        const daftarB = daftar.map((r, i) => `${i + 1}. "${r.message.replace(/[\u200B\u200C]/g, '')}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
         return {
           ditangani: true,
           reply: `Pengingat aktif kamu:\n${daftarB}\n\nSebutkan yang mana, mis. *batalin rapat*.`,
@@ -3374,7 +3374,7 @@ export async function tanganiPencatatan(
         const okUbah = await ubahPengingat(target.id, waktuBaru);
         if (okUbah) {
           const label = permintaan.aksi === 'majukan' ? 'dimajukan' : 'diundur';
-          const cleanNama = target.message.replace(/\u200B/g, '');
+          const cleanNama = target.message.replace(/[\u200B\u200C]/g, '');
           return {
             ditangani: true,
             reply: [
@@ -3391,7 +3391,7 @@ export async function tanganiPencatatan(
       }
 
       // Tidak bisa hitung waktu baru -> tanya user (jangan mengarang).
-      const daftarTeks = daftar.map((r, i) => `${i + 1}. "${r.message.replace(/\u200B/g, '')}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
+      const daftarTeks = daftar.map((r, i) => `${i + 1}. "${r.message.replace(/[\u200B\u200C]/g, '')}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
       return {
         ditangani: true,
         reply: `Pengingat aktif kamu:\n${daftarTeks}\n\nSebutkan waktu barunya, mis. *undur rapat jadi jam 10* atau *undur satu jam*.`,

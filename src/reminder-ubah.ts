@@ -221,7 +221,7 @@ export function pilihTarget(
     let utuh: PengingatRingkas | null = null;
     let panjang = 0;
     for (const r of daftar) {
-      const nama = r.message.replace(/\u200B/g, '').trim().toLowerCase();
+      const nama = r.message.replace(/[\u200B\u200C]/g, '').trim().toLowerCase();
       if (nama.length < 2) continue;
       const re = new RegExp(`(?:^|[^a-z0-9])${escapeRegex(nama)}(?:$|[^a-z0-9])`);
       if (re.test(teks) && nama.length > panjang) { utuh = r; panjang = nama.length; }
@@ -233,7 +233,7 @@ export function pilihTarget(
     // Satu-satunya pengingat: aman dipilih, KECUALI untuk hapus bila user menyebut
     // nama yang jelas-jelas tidak cocok dengan pengingat itu.
     if (permintaan.aksi === 'batal' && permintaan.kataKunci
-      && skorKataKunci(permintaan.kataKunci, daftar[0].message.replace(/\u200B/g, '')) <= 0.3) {
+      && skorKataKunci(permintaan.kataKunci, daftar[0].message.replace(/[\u200B\u200C]/g, '')) <= 0.3) {
       return null;
     }
     return daftar[0];
@@ -244,7 +244,7 @@ export function pilihTarget(
     let terbaik: PengingatRingkas | null = null;
     let skor = 0;
     for (const r of daftar) {
-      const total = skorKataKunci(permintaan.kataKunci, r.message.replace(/\u200B/g, ''));
+      const total = skorKataKunci(permintaan.kataKunci, r.message.replace(/[\u200B\u200C]/g, ''));
       if (total > skor) { skor = total; terbaik = r; }
     }
     if (terbaik && skor > 0.3) return terbaik;

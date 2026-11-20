@@ -6,10 +6,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   BAILEYS_REMINDER_MARKER,
+  BAILEYS_STRICT_MARKER,
   BAILEYS_FALLBACK_KE_CLOUD_MS,
   CLOUD_FALLBACK_KE_BAILEYS_MS,
   tandaiPengingatBaileys,
+  tandaiPengingatBaileysEksklusif,
   adalahPengingatBaileys,
+  adalahPengingatBaileysEksklusif,
   bersihkanTeksPengingat,
   bolehProsesKanalPengingat,
 } from '../src/remind.js';
@@ -107,4 +110,25 @@ test('wiring: Baileys, Cloud, Cron, dan Multi-Hari terpasang konsisten tanpa keb
   assert.match(CLOUD, /channelFilter:\s*'cloud_only'/);
   assert.match(CRON, /channelFilter:\s*'cloud_only'/);
   assert.match(NOTES, /opts\.channel === 'baileys' \? tandaiPengingatBaileys\(item\.pesan\)/);
+});
+
+test('marker Baileys eksklusif: idempoten, terdeteksi sebagai Baileys & eksklusif, bersih saat di-strip', () => {
+  const m = tandaiPengingatBaileysEksklusif('ON');
+  assert.ok(m.includes(BAILEYS_REMINDER_MARKER));
+  assert.ok(m.includes(BAILEYS_STRICT_MARKER));
+  assert.equal(tandaiPengingatBaileysEksklusif(m), m);
+  assert.equal(adalahPengingatBaileys(m), true);
+  assert.equal(adalahPengingatBaileysEksklusif(m), true);
+  assert.equal(bersihkanTeksPengingat(m), 'ON');
+  assert.equal(kemiripanPesan('ON', m), 1);
+  assert.equal(adalahPengingatBaileysEksklusif(tandaiPengingatBaileys('ON')), false);
+});
+
+test('eksklusif Baileys: telat 1 jam pun TETAP hanya diproses Baileys dan ditolak Cloud API', () => {
+  const now = Date.UTC(2026, 10, 20, 12, 0, 0);
+  const due = new Date(now - (BAILEYS_FALLBACK_KE_CLOUD_MS + 3_600_000)).toISOString();
+  const item = { message: tandaiPengingatBaileysEksklusif('ON'), due_at: due, platform: 'whatsapp' };
+
+  assert.equal(bolehProsesKanalPengingat(item, { channelFilter: 'baileys_only', nowMs: now }), true);
+  assert.equal(bolehProsesKanalPengingat(item, { channelFilter: 'cloud_only', nowMs: now }), false);
 });
