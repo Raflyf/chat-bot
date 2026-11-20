@@ -1416,15 +1416,29 @@ export async function processIncomingSticker(
   // vision. Model lalu benar-benar melihat isinya.
   let bufferFinal = buffer;
   let mimeFinal = mime;
+  let sharpConverted = false;
   try {
     const sharpMod = (await import('sharp')).default;
-    bufferFinal = await sharpMod(buffer)
+    bufferFinal = await sharpMod(buffer, { page: 0, failOn: 'none' })
       .flatten({ background: { r: 255, g: 255, b: 255 } })  // buang alpha -> latar putih
       .png()
       .toBuffer();
     mimeFinal = 'image/png';
+    sharpConverted = true;
   } catch {
-    // sharp tidak tersedia -> pakai buffer asli (jangan gagalkan permintaan).
+    // sharp tidak tersedia atau format non-raster -> cek fallback di bawah.
+  }
+
+  const isLottieJson =
+    mimeFinal.toLowerCase().includes('lottie') ||
+    mimeFinal.toLowerCase().includes('json') ||
+    (bufferFinal.length > 0 && bufferFinal[0] === 0x7b);
+  if (!sharpConverted && isLottieJson) {
+    const ar = await autoReply(
+      `Temanmu baru mengirim stiker animasi (Lottie). ${stickerCaption ? `Keterangan pengirim: ${stickerCaption}. ` : ''}Balas singkat dan santai sesuai suasana obrolan.`,
+      ctx,
+    );
+    return { reply: ar.reply, via: ar.via, tokens: ar.tokens, sticker: ar.sticker ?? null };
   }
 
   return await describeImage(bufferFinal.toString('base64'), mimeFinal, stickerCaption, ctx, true);

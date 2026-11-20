@@ -27,7 +27,7 @@ import {
   formatStatusModeGrup,
   resetGroupModeUntukTest,
 } from '../src/group_mode.js';
-import { deteksiTargetBotBaileys } from '../src/whatsapp_baileys.js';
+import { deteksiTargetBotBaileys, unwrapBaileysMessage } from '../src/whatsapp_baileys.js';
 
 const baca = (p) => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8');
 
@@ -298,4 +298,73 @@ test('wiring whatsapp_baileys.ts, telegram.ts, dan commands.ts terhubung ke grou
   assert.match(CMD, /command:\s*'mention'/);
   assert.match(CMD, /command:\s*'diam'/);
   assert.match(CMD, /command:\s*'statusgrup'/);
+});
+
+test('deteksiPerintahModeGrup mengenali /nimbrung setelah sapaan dan alias /status', () => {
+  assert.equal(deteksiPerintahModeGrup('oyy /nimbrung', { isDirected: true, currentMode: 'mention' }), 'nimbrung');
+  assert.equal(deteksiPerintahModeGrup('halo bot /stopnimbrung', { isDirected: true, currentMode: 'nimbrung' }), 'mention');
+  assert.equal(deteksiPerintahModeGrup('/status', { isDirected: false, currentMode: 'mention' }), 'status');
+  assert.equal(deteksiPerintahModeGrup('status', { isDirected: true, currentMode: 'mention' }), 'status');
+  assert.equal(deteksiPerintahModeGrup('status', { isDirected: false, currentMode: 'mention' }), null);
+});
+
+test('stiker & media tanpa caption tetap dibalas saat nimbrung dan di jendela follow-up 75 detik', () => {
+  const nimbrungStiker = evaluasiResponGrup({
+    mode: 'nimbrung',
+    text: '',
+    actorId: 'u1',
+    isMentioned: false,
+    isReplyToBot: false,
+    isTargetedCommand: false,
+    hasWakeWord: false,
+    wakeCleanedText: '',
+    hasMedia: true,
+    hasSticker: true,
+  });
+  assert.equal(nimbrungStiker.action, 'reply');
+
+  const followStiker = evaluasiResponGrup({
+    mode: 'mention',
+    text: '',
+    actorId: 'u1',
+    isMentioned: false,
+    isReplyToBot: false,
+    isTargetedCommand: false,
+    hasWakeWord: false,
+    wakeCleanedText: '',
+    hasMedia: true,
+    hasSticker: true,
+    inFollowUpWindow: true,
+    lastBotReplyAt: Date.now() - 5000,
+  });
+  assert.equal(followStiker.action, 'reply');
+  assert.equal(followStiker.shouldSetFollowUp, true);
+
+  const followFoto = evaluasiResponGrup({
+    mode: 'mention',
+    text: '',
+    actorId: 'u2',
+    isMentioned: false,
+    isReplyToBot: false,
+    isTargetedCommand: false,
+    hasWakeWord: false,
+    wakeCleanedText: '',
+    hasMedia: true,
+    hasSticker: false,
+    inFollowUpWindow: true,
+    lastBotReplyAt: Date.now() - 5000,
+  });
+  assert.equal(followFoto.action, 'reply');
+  assert.equal(followFoto.shouldSetFollowUp, true);
+});
+
+test('unwrapBaileysMessage membuka pembungkus ephemeral, viewOnceV2, documentWithCaption, lottieSticker, dan edited', () => {
+  const stiker = { stickerMessage: { mimetype: 'image/webp' } };
+  assert.deepEqual(unwrapBaileysMessage({ ephemeralMessage: { message: stiker } }), stiker);
+  assert.deepEqual(unwrapBaileysMessage({ viewOnceMessageV2: { message: stiker } }), stiker);
+  const dok = { documentMessage: { fileName: 'uji.pdf' } };
+  assert.deepEqual(unwrapBaileysMessage({ documentWithCaptionMessage: { message: dok } }), dok);
+  assert.deepEqual(unwrapBaileysMessage({ lottieStickerMessage: { message: stiker } }), stiker);
+  const teks = { conversation: 'editan' };
+  assert.deepEqual(unwrapBaileysMessage({ editedMessage: { message: teks } }), teks);
 });

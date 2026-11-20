@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import { normChatId, isBaileysChatKey, isGroupChatKey, sharedChatKeyDari } from './chat_id.js';
+import { resolveTableName } from './group_db.js';
 import { chat, type ChatMsg } from './providers.js';
 
 export interface ChatContext {
@@ -153,25 +154,21 @@ export async function resetSession(chatKey: string, platform: string = 'whatsapp
   if (!c) return;
 
   try {
-    // /reset = hapus RIWAYAT PESAN + PREFERENSI (permintaan user 04 Okt 2026).
-    //
-    // CATATAN PENTING (temuan nyata): sebelumnya /reset HANYA menghapus riwayat
-    // pesan + ringkasan, sedangkan preferensi personal (/salah) TETAP ADA. Itulah
-    // sebab user merasa "/reset seperti tidak ada pengaruhnya" — bot masih ingat
-    // preferensi lama.
-    //
-    // Sesuai permintaan user: yang dihapus adalah RIWAYAT PESAN dan PREFERENSI.
-    // Data LAIN (catatan, tugas, keuangan, kebiasaan, pengingat) TIDAK disentuh.
+    const [msgTbl, sumTbl, corTbl] = await Promise.all([
+      resolveTableName('messages', chatKey),
+      resolveTableName('summaries', chatKey),
+      resolveTableName('corrections', chatKey),
+    ]);
     await Promise.all([
-      c.from('messages').insert({
+      (msgTbl === 'group_messages' ? c.from('group_messages') : c.from('messages')).insert({
         platform,
         chat_id: chatKey,
         role: 'user',
         content: '[SESSION_RESET]',
         via: 'system/reset',
       }),
-      c.from('summaries').delete().eq('chat_id', chatKey),
-      c.from('corrections').delete().eq('chat_id', chatKey),
+      (sumTbl === 'group_summaries' ? c.from('group_summaries') : c.from('summaries')).delete().eq('chat_id', chatKey),
+      (corTbl === 'group_corrections' ? c.from('group_corrections') : c.from('corrections')).delete().eq('chat_id', chatKey),
     ]);
   } catch {
     // best-effort
@@ -249,25 +246,17 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
   const c = db();
   if (!c) return empty;
   try {
+    const [msgTbl, sumTbl, corTbl] = await Promise.all([
+      resolveTableName('messages', chatKey),
+      resolveTableName('summaries', chatKey),
+      resolveTableName('corrections', chatKey),
+    ]);
     const [h, s, k] = await Promise.all([
-      // `via` ikut dipilih + difilter: baris dengan via 'system/*' adalah sinyal
-      // internal (mis. 'system/pending-confirmation' untuk konfirmasi tertunda)
-      // yang TIDAK boleh muncul di riwayat percakapan yang dibaca model.
-      // ── DIPERBESAR (permintaan pemilik produk 06 Okt 2026) ──
-      // "tambahkan memory bot nya agar mengingat lebih banyak chat dan lebih
-      //  pintar tidak ngaco jawabannya"
-      //
-      // SEBELUMNYA: 15 pesan terakhir + 5 koreksi. Terlalu sedikit -> bot cepat
-      // "lupa" konteks obrolan beberapa pesan lalu dan menjawab ngawur.
-      //
-      // SEKARANG: 40 pesan + 15 fakta/koreksi. Token tetap aman karena:
-      //   - prompt hanya memakai sebagian riwayat yang relevan (lihat skills.ts)
-      //   - ada ringkasan otomatis untuk percakapan yang lebih lama lagi
-      c.from('messages').select('role,content,feedback,via').eq('chat_id', chatKey)
+      (msgTbl === 'group_messages' ? c.from('group_messages') : c.from('messages')).select('role,content,feedback,via').eq('chat_id', chatKey)
         .or('via.is.null,via.not.like.system/%')
         .order('created_at', { ascending: false }).limit(40),
-      c.from('summaries').select('summary').eq('chat_id', chatKey).limit(1).maybeSingle(),
-      c.from('corrections').select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(15),
+      (sumTbl === 'group_summaries' ? c.from('group_summaries') : c.from('summaries')).select('summary').eq('chat_id', chatKey).limit(1).maybeSingle(),
+      (corTbl === 'group_corrections' ? c.from('group_corrections') : c.from('corrections')).select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(15),
     ]);
     if (h.error) warnOnce('messages', h.error.message);
     if (s.error && s.error.code !== 'PGRST116') warnOnce('summaries', s.error.message);
@@ -381,16 +370,24 @@ export function noteExchange(chatKey: string): void {
     const c = db();
     if (!c) return;
     try {
+      const [msgTbl, sumTbl] = await Promise.all([
+        resolveTableName('messages', chatKey),
+        resolveTableName('summaries', chatKey),
+      ]);
       const [{ count }, { data: ringkasanLama }] = await Promise.all([
-        c.from('messages').select('id', { count: 'exact', head: true }).eq('chat_id', chatKey),
-        c.from('summaries').select('summary').eq('chat_id', chatKey).maybeSingle(),
+        (msgTbl === 'group_messages' ? c.from('group_messages') : c.from('messages')).select('id', { count: 'exact', head: true }).eq('chat_id', chatKey),
+        (sumTbl === 'group_summaries'
+          ? c.from('group_summaries').select('summary')
+          : c.from('summaries').select('summary')
+        )
+          .eq('chat_id', chatKey)
+          .maybeSingle(),
       ]);
       const lama = String((ringkasanLama as { summary?: string } | null)?.summary ?? '').trim();
       if (!count || count < 8) return;
       if (lama && count % 6 !== 0) return;
 
-      const h = await c
-        .from('messages')
+      const h = await (msgTbl === 'group_messages' ? c.from('group_messages') : c.from('messages'))
         .select('role,content,via')
         .eq('chat_id', chatKey)
         .order('created_at', { ascending: false })
@@ -450,8 +447,7 @@ export function noteExchange(chatKey: string): void {
         .join('\n')
         .trim();
       if (!summary || summary.length < 10) return;
-      await c
-        .from('summaries')
+      await (sumTbl === 'group_summaries' ? c.from('group_summaries') : c.from('summaries'))
         .upsert(
           { chat_id: chatKey, summary, updated_at: new Date().toISOString() },
           { onConflict: 'chat_id' },
@@ -530,9 +526,11 @@ export async function saveCorrection(chatKey: string, correction: string): Promi
   const c = db();
   if (!c) return false;
   try {
-    const { error } = await c.from('corrections').insert({ chat_id: chatKey, correction: correction.slice(0, 1000) });
+    const corTbl = await resolveTableName('corrections', chatKey);
+    const { error } = await (corTbl === 'group_corrections' ? c.from('group_corrections') : c.from('corrections'))
+      .insert({ chat_id: chatKey, correction: correction.slice(0, 1000) });
     if (error) {
-      warnOnce('corrections', error.message);
+      warnOnce(corTbl, error.message);
       return false;
     }
     invalidateContextCache(chatKey);

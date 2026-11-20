@@ -24,7 +24,7 @@ import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStic
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
-import { saveReminderToDb, checkDueReminders, nomorWhatsApp, tandaiPengingatBaileys } from './remind.js';
+import { saveReminderToDb, checkDueReminders, nomorWhatsApp, tandaiPengingatBaileys, tandaiPengingatBaileysEksklusif } from './remind.js';
 // Memisahkan memori chat biasa Baileys (wa_baileys_*) dan grup (wa_baileys_group_*) dari Cloud API (wa_*), sementara data bersama tetap pakai wa_*.
 import { normChatId, baileysChatKey, baileysGroupChatKey, BAILEYS_GROUP_PREFIX } from './chat_id.js';
 // Monitor pengiriman: deteksi kegagalan beruntun -> beri tahu pemilik via Telegram.
@@ -49,6 +49,34 @@ export interface BaileysGroupTargetInfo {
   isMentioned: boolean;
   mentionsOtherOnly: boolean;
   cleanedText: string;
+}
+
+/**
+ * Buka lapisan pembungkus pesan WhatsApp Baileys (`ephemeralMessage`,
+ * `viewOnceMessage`, `viewOnceMessageV2`, `viewOnceMessageV2Extension`,
+ * `documentWithCaptionMessage`, `lottieStickerMessage`, `editedMessage`,
+ * dan `protocolMessage.editedMessage`) sampai maksimal 5 tingkat agar
+ * media/stiker/dokumen/teks di chat disappearing atau grup tetap terbaca.
+ */
+export function unwrapBaileysMessage(
+  message: WAMessage['message'],
+): WAMessage['message'] {
+  let cur = message;
+  for (let i = 0; i < 5 && cur; i++) {
+    const next =
+      cur.ephemeralMessage?.message ||
+      cur.viewOnceMessage?.message ||
+      cur.viewOnceMessageV2?.message ||
+      cur.viewOnceMessageV2Extension?.message ||
+      cur.documentWithCaptionMessage?.message ||
+      cur.lottieStickerMessage?.message ||
+      cur.editedMessage?.message ||
+      cur.protocolMessage?.editedMessage ||
+      null;
+    if (!next) break;
+    cur = next;
+  }
+  return cur;
 }
 
 /**
@@ -158,14 +186,70 @@ function deskripsiMediaPasifWa(flags: {
   hasAudio: boolean;
   hasSticker: boolean;
   hasVideo: boolean;
+  isGif?: boolean;
+  hasLocation?: boolean;
+  hasContact?: boolean;
+  hasPoll?: boolean;
   docName?: string;
 }): string {
   if (flags.hasImage) return '[mengirim foto]';
   if (flags.hasDoc) return `[mengirim dokumen: ${flags.docName || 'berkas'}]`;
   if (flags.hasAudio) return '[mengirim voice note]';
   if (flags.hasSticker) return '[mengirim stiker]';
-  if (flags.hasVideo) return '[mengirim video]';
+  if (flags.hasVideo) return flags.isGif ? '[mengirim GIF]' : '[mengirim video]';
+  if (flags.hasLocation) return '[mengirim lokasi]';
+  if (flags.hasContact) return '[mengirim kontak]';
+  if (flags.hasPoll) return '[mengirim polling]';
   return '';
+}
+
+function ekstrakTelVcard(vcard?: string | null): string {
+  if (!vcard) return '';
+  const m = String(vcard).match(/TEL[^:]*:([^\r\n]+)/i);
+  return m ? m[1].trim() : '';
+}
+
+function ekstrakTeksKontakDanPoll(innerMsg: WAMessage['message']): {
+  contactText: string;
+  pollText: string;
+  hasContact: boolean;
+  hasPoll: boolean;
+} {
+  let contactText = '';
+  let hasContact = false;
+  if (innerMsg?.contactMessage) {
+    hasContact = true;
+    const name = innerMsg.contactMessage.displayName?.trim() || 'Kontak';
+    const tel = ekstrakTelVcard(innerMsg.contactMessage.vcard);
+    contactText = tel ? `[Kontak dibagikan: ${name} (${tel})]` : `[Kontak dibagikan: ${name}]`;
+  } else if (innerMsg?.contactsArrayMessage?.contacts?.length) {
+    hasContact = true;
+    const items = innerMsg.contactsArrayMessage.contacts.slice(0, 10).map((c) => {
+      const name = c.displayName?.trim() || 'Kontak';
+      const tel = ekstrakTelVcard(c.vcard);
+      return tel ? `${name} (${tel})` : name;
+    });
+    contactText = `[Kontak dibagikan: ${items.join(', ')}]`;
+  }
+
+  let pollText = '';
+  let hasPoll = false;
+  const poll =
+    innerMsg?.pollCreationMessage ||
+    innerMsg?.pollCreationMessageV2 ||
+    innerMsg?.pollCreationMessageV3 ||
+    innerMsg?.pollCreationMessageV5;
+  if (poll) {
+    hasPoll = true;
+    const judul = poll.name?.trim() || 'Polling';
+    const opsi = (poll.options || [])
+      .map((o) => o.optionName?.trim())
+      .filter((x): x is string => Boolean(x))
+      .slice(0, 15);
+    pollText = opsi.length ? `[Polling: ${judul} | Opsi: ${opsi.join(', ')}]` : `[Polling: ${judul}]`;
+  }
+
+  return { contactText, pollText, hasContact, hasPoll };
 }
 
 async function tanganiPerintahModeGrupWa(
@@ -591,13 +675,20 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     }
   })();
 
-  // Ekstrak teks atau caption dari berbagai tipe pesan
+  const innerMsg = unwrapBaileysMessage(m.message);
+  const mediaMsg = innerMsg && innerMsg !== m.message ? ({ ...m, message: innerMsg } as WAMessage) : m;
+
+  const { contactText, pollText, hasContact: hasContactPre, hasPoll: hasPollPre } = ekstrakTeksKontakDanPoll(innerMsg);
+
+  // Ekstrak teks atau caption dari berbagai tipe pesan (termasuk pesan di dalam pembungkus ephemeral/viewOnce/caption)
   let text =
-    m.message?.conversation ||
-    m.message?.extendedTextMessage?.text ||
-    m.message?.imageMessage?.caption ||
-    m.message?.documentMessage?.caption ||
-    m.message?.videoMessage?.caption ||
+    innerMsg?.conversation ||
+    innerMsg?.extendedTextMessage?.text ||
+    innerMsg?.imageMessage?.caption ||
+    innerMsg?.documentMessage?.caption ||
+    innerMsg?.videoMessage?.caption ||
+    contactText ||
+    pollText ||
     '';
   text = text.trim();
 
@@ -608,13 +699,21 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   //
   // Baileys menaruh pesan yang dibalas di `contextInfo.quotedMessage`
   // (bisa conversation / extendedTextMessage.text / caption media).
-  const ctxInfo = (m.message?.extendedTextMessage?.contextInfo ||
-    m.message?.imageMessage?.contextInfo ||
-    m.message?.videoMessage?.contextInfo ||
-    m.message?.documentMessage?.contextInfo ||
-    m.message?.stickerMessage?.contextInfo ||
-    m.message?.audioMessage?.contextInfo ||
-    (m.message as { contextInfo?: unknown } | undefined)?.contextInfo) as
+  const ctxInfo = (innerMsg?.extendedTextMessage?.contextInfo ||
+    innerMsg?.imageMessage?.contextInfo ||
+    innerMsg?.videoMessage?.contextInfo ||
+    innerMsg?.documentMessage?.contextInfo ||
+    innerMsg?.stickerMessage?.contextInfo ||
+    innerMsg?.audioMessage?.contextInfo ||
+    innerMsg?.locationMessage?.contextInfo ||
+    innerMsg?.liveLocationMessage?.contextInfo ||
+    innerMsg?.contactMessage?.contextInfo ||
+    innerMsg?.contactsArrayMessage?.contextInfo ||
+    innerMsg?.pollCreationMessage?.contextInfo ||
+    innerMsg?.pollCreationMessageV2?.contextInfo ||
+    innerMsg?.pollCreationMessageV3?.contextInfo ||
+    innerMsg?.pollCreationMessageV5?.contextInfo ||
+    (innerMsg as { contextInfo?: unknown } | undefined)?.contextInfo) as
     | {
         participant?: string;
         stanzaId?: string;
@@ -623,10 +722,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           conversation?: string;
           extendedTextMessage?: { text?: string };
           imageMessage?: { caption?: string };
-          videoMessage?: { caption?: string };
+          videoMessage?: { caption?: string; gifPlayback?: boolean | null };
           documentMessage?: { caption?: string };
           stickerMessage?: unknown;
           audioMessage?: unknown;
+          locationMessage?: unknown;
+          liveLocationMessage?: unknown;
+          contactMessage?: { displayName?: string | null };
+          pollCreationMessage?: { name?: string | null };
         };
       }
     | undefined;
@@ -641,11 +744,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     ? ((m.pushName || '').trim() || actorGrup || 'Anggota Grup')
     : (m.pushName || '').trim();
 
-  // Di grup: percakapan memakai kunci grup (`wa_baileys_group_<groupId>`), sedangkan data pribadi
-  // (pengingat, catatan, tugas, keuangan, koreksi, fakta) dikunci per pengirim agar aman.
+  // Di grup: percakapan DAN data terstruktur memakai kunci grup terisolasi (`wa_baileys_group_<groupId>`),
+  // sedangkan chat privat memakai `wa_baileys_<nomor>` & `wa_<nomor>` agar data pribadi tak pernah bocor ke grup.
   const chatKey = isGroup ? baileysGroupChatKey(nomorBaileys) : baileysChatKey(nomorBaileys);
-  const personalOwnerId = isGroup && actorGrup ? actorGrup : nomorBaileys;
-  const sharedDataKey = normChatId(personalOwnerId, 'whatsapp');
+  const personalOwnerId = isGroup ? chatKey : nomorBaileys;
+  const sharedDataKey = isGroup ? chatKey : normChatId(personalOwnerId, 'whatsapp');
+  const groupActorLabel = isGroup ? (senderName || actorGrup) : undefined;
 
   let quotedText = '';
   let quotedFromBot = false;
@@ -658,8 +762,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     if (!quotedText) {
       if (qm.stickerMessage) quotedText = '[stiker]';
       else if (qm.imageMessage) quotedText = '[foto]';
+      else if (qm.videoMessage) quotedText = qm.videoMessage.gifPlayback ? '[GIF]' : '[video]';
       else if (qm.audioMessage) quotedText = '[voice note]';
       else if (qm.documentMessage) quotedText = '[dokumen]';
+      else if (qm.locationMessage || qm.liveLocationMessage) quotedText = '[lokasi]';
+      else if (qm.contactMessage) quotedText = `[kontak: ${qm.contactMessage.displayName || 'kontak'}]`;
+      else if (qm.pollCreationMessage) quotedText = `[polling: ${qm.pollCreationMessage.name || 'polling'}]`;
     }
     // Siapa pengirim pesan yang dibalas: 'bot' | 'diri' (user sendiri) | 'lain'.
     const botPn = botIdentities.botPn;
@@ -708,12 +816,13 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
   // Filter grup SEBELUM klaim DB & read receipt supaya pesan grup yang diabaikan
   // tidak membebani Supabase maupun mengirim centang biru prematur.
-  const hasImagePre = !!m.message?.imageMessage;
-  const hasDocPre = !!m.message?.documentMessage;
-  const hasAudioPre = !!m.message?.audioMessage;
-  const hasStickerPre = !!m.message?.stickerMessage;
-  const hasVideoPre = !!m.message?.videoMessage;
-  const hasMediaPre = hasImagePre || hasDocPre || hasAudioPre || hasStickerPre || hasVideoPre;
+  const hasImagePre = !!innerMsg?.imageMessage;
+  const hasDocPre = !!innerMsg?.documentMessage;
+  const hasAudioPre = !!innerMsg?.audioMessage;
+  const hasStickerPre = !!innerMsg?.stickerMessage;
+  const hasVideoPre = !!innerMsg?.videoMessage;
+  const hasLocPre = !!(innerMsg?.locationMessage || innerMsg?.liveLocationMessage);
+  const hasMediaPre = hasImagePre || hasDocPre || hasAudioPre || hasStickerPre || hasVideoPre || hasLocPre || hasContactPre || hasPollPre;
 
   let groupEvalShouldSetFollowUp = false;
   let groupCommandPending: GroupCommandKind | undefined;
@@ -740,7 +849,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const { record: groupRec } = await getGroupModeRecord(groupKey);
     const actorFollowKey = actorGrup || String(rawParticipantJid || '').split('@')[0];
     const inFollowUp = isInFollowUpWindow(groupKey, actorFollowKey);
-    const isCmdSlash = /^\/(?:help|start|reset|clear|salah|remind|catat|catatan|cari|tugas|list|uang|masuk|rekap|hapusuang|barang|ringkasan|tanya|ai|nimbrung|mention|stop|stopnimbrung|diam|mute|statusgrup)\b/i.test(
+    const isCmdSlash = /(?:^|\s)\/(?:help|start|reset|clear|salah|remind|catat|catatan|cari|tugas|list|uang|masuk|rekap|hapusuang|barang|ringkasan|tanya|ai|nimbrung|mention|stop|stopnimbrung|diam|mute|statusgrup|status)\b/i.test(
       targetMention.cleanedText,
     );
 
@@ -757,6 +866,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       hasSticker: hasStickerPre,
       mentionsOtherOnly: targetMention.mentionsOtherOnly,
       inFollowUpWindow: inFollowUp,
+      lastBotReplyAt: groupRec.lastBotReplyAt,
     });
 
     if (groupEval.action === 'silent_ignore') {
@@ -778,7 +888,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           hasAudio: hasAudioPre,
           hasSticker: hasStickerPre,
           hasVideo: hasVideoPre,
-          docName: m.message?.documentMessage?.fileName || undefined,
+          isGif: Boolean(innerMsg?.videoMessage?.gifPlayback),
+          hasLocation: hasLocPre,
+          hasContact: hasContactPre,
+          hasPoll: hasPollPre,
+          docName: innerMsg?.documentMessage?.fileName || undefined,
         });
       if (deskPasif) {
         recordPassiveGroupMessage(groupKey, senderName, deskPasif);
@@ -817,7 +931,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   const msgSentAt = msgTs > 0 ? new Date(msgTs * 1000) : undefined;
   if (msgTs > 0 && (nowSec - msgTs) > 180) {
     console.warn(`[whatsapp] Mengabaikan pesan basi/history sync (umur: ${nowSec - msgTs} detik, id: ${messageId}). Tandai selesai tanpa memanggil AI.`);
-    if (messageId) void markMessageProcessed('whatsapp', messageId);
+    if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
     return;
   }
 
@@ -830,7 +944,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       '👉 https://t.me/chatkita_bot';
     const terkirim = await sendWhatsAppMessageSafe(sock, remoteJid, maintenanceMsg);
     if (terkirim) {
-      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       void saveMessage({
         platform: 'whatsapp',
         chat_id: chatKey,
@@ -852,11 +966,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     return;
   }
 
-  const hasImage = !!m.message?.imageMessage;
-  const hasDoc = !!m.message?.documentMessage;
-  const hasAudio = !!m.message?.audioMessage;
-  const hasSticker = !!m.message?.stickerMessage;
-  const hasVideo = !!m.message?.videoMessage;
+  const hasImage = !!innerMsg?.imageMessage;
+  const hasDoc = !!innerMsg?.documentMessage;
+  const hasAudio = !!innerMsg?.audioMessage;
+  const hasSticker = !!innerMsg?.stickerMessage;
+  const hasVideo = !!innerMsg?.videoMessage;
+  const isGif = Boolean(innerMsg?.videoMessage?.gifPlayback);
 
   // Jika di dalam grup, eksekusi perintah mode grup bila diminta (/nimbrung, /mention, /diam, /statusgrup, dll)
   if (isGroup && groupCommandPending) {
@@ -870,7 +985,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       rawParticipantJid,
       senderName,
     );
-    if (messageId) void markMessageProcessed('whatsapp', messageId);
+    if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
     return;
   }
 
@@ -907,7 +1022,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     try {
       await sock.sendPresenceUpdate('composing', remoteJid);
       const buffer = await downloadMediaMessage(
-        m,
+        mediaMsg,
         'buffer',
         {},
         {
@@ -917,23 +1032,26 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       );
 
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
-        const mime = m.message?.imageMessage?.mimetype || 'image/jpeg';
+        const mime = innerMsg?.imageMessage?.mimetype || 'image/jpeg';
         const base64 = buffer.toString('base64');
         const context = await getContext(chatKey, msgSentAt);
-        const { reply, via, tokens, imageDesc } = await baileysDescribeImage(base64, mime, text || undefined, context);
+        const imgCaptionForAi = isGroup && passiveGroupPrefix
+          ? (text ? `${passiveGroupPrefix}\n${text}` : passiveGroupPrefix)
+          : (text || undefined);
+        const { reply, via, tokens, imageDesc } = await baileysDescribeImage(base64, mime, imgCaptionForAi, context);
         const kontenGambarUser = imageUserContent(text || undefined, imageDesc);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'user',
-          content: kontenGambarUser,
+          content: isGroup ? `[${senderName}]: ${kontenGambarUser}` : kontenGambarUser,
           msg_id: messageId || undefined,
         });
-        updateContextCache(chatKey, 'user', kontenGambarUser);
+        updateContextCache(chatKey, 'user', isGroup ? `[${senderName}]: ${kontenGambarUser}` : kontenGambarUser);
 
         await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
         tandaiBalasGrup();
-        if (messageId) void markMessageProcessed('whatsapp', messageId);
+        if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -945,6 +1063,18 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         updateContextCache(chatKey, 'assistant', reply);
         noteExchange(chatKey);
         return;
+      } else if (buffer && buffer.length > 20_000_000) {
+        await sendWhatsAppMessageSafe(
+          sock,
+          remoteJid,
+          await baileysDynamicNotice(
+            'Ukuran foto melebihi batas 20 MB sehingga tidak bisa dianalisis. Minta pengirim mengompres atau mengirim foto lebih kecil dengan bahasa santai.',
+            await getContext(chatKey, msgSentAt),
+          ),
+          groupReplyRef,
+        );
+        tandaiBalasGrup();
+        if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       }
     } catch (err) {
       console.error('[whatsapp] Gagal memproses gambar:', err);
@@ -955,6 +1085,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           'Gambar dari temanmu gagal diproses atau tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang.',
           await getContext(chatKey, msgSentAt),
         ),
+        groupReplyRef,
       );
     } finally {
       try {
@@ -963,6 +1094,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         // best-effort
       }
     }
+    return;
   }
 
   // Kasus 2: Dokumen (PDF, Word .docx, Teks, CSV, JSON, Kode)
@@ -970,7 +1102,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     try {
       await sock.sendPresenceUpdate('composing', remoteJid);
       const buffer = await downloadMediaMessage(
-        m,
+        mediaMsg,
         'buffer',
         {},
         {
@@ -980,9 +1112,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       );
 
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
-        const filename = m.message?.documentMessage?.fileName || 'dokumen';
-        const mime = m.message?.documentMessage?.mimetype || 'application/octet-stream';
-        const caption = m.message?.documentMessage?.caption?.trim() || text || undefined;
+        const filename = innerMsg?.documentMessage?.fileName || 'dokumen';
+        const mime = innerMsg?.documentMessage?.mimetype || 'application/octet-stream';
+        const caption = innerMsg?.documentMessage?.caption?.trim() || text || undefined;
+        const captionForAi = isGroup && passiveGroupPrefix
+          ? (caption ? `${passiveGroupPrefix}\n${caption}` : passiveGroupPrefix)
+          : caption;
         const context = await getContext(chatKey, msgSentAt);
 
         const docUserContent = `[Dokumen: ${filename}] ${caption || ''}`.trim();
@@ -990,16 +1125,16 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'user',
-          content: docUserContent,
+          content: isGroup ? `[${senderName}]: ${docUserContent}` : docUserContent,
           msg_id: messageId || undefined,
         });
-        updateContextCache(chatKey, 'user', docUserContent);
+        updateContextCache(chatKey, 'user', isGroup ? `[${senderName}]: ${docUserContent}` : docUserContent);
 
         const { reply, via, tokens } = await processIncomingDocument(
           buffer,
           mime,
           filename,
-          caption,
+          captionForAi,
           context,
         );
 
@@ -1022,7 +1157,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
         await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
         tandaiBalasGrup();
-        if (messageId) void markMessageProcessed('whatsapp', messageId);
+        if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -1034,6 +1169,18 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         updateContextCache(chatKey, 'assistant', reply);
         noteExchange(chatKey);
         return;
+      } else if (buffer && buffer.length > 20_000_000) {
+        await sendWhatsAppMessageSafe(
+          sock,
+          remoteJid,
+          await baileysDynamicNotice(
+            'Ukuran dokumen melebihi batas 20 MB sehingga tidak bisa dibaca. Minta pengirim meringkas atau mengirim dokumen lebih kecil dengan bahasa santai.',
+            await getContext(chatKey, msgSentAt),
+          ),
+          groupReplyRef,
+        );
+        tandaiBalasGrup();
+        if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       }
     } catch (err) {
       console.error('[whatsapp] Gagal memproses dokumen:', err);
@@ -1044,6 +1191,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           'Dokumen dari temanmu gagal diproses atau isinya tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik isinya lewat teks.',
           await getContext(chatKey, msgSentAt),
         ),
+        groupReplyRef,
       );
     } finally {
       try {
@@ -1052,6 +1200,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         // best-effort
       }
     }
+    return;
   }
 
   // Kasus 3: Voice Note / Rekaman Audio
@@ -1059,7 +1208,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     try {
       await sock.sendPresenceUpdate('composing', remoteJid);
       const buffer = await downloadMediaMessage(
-        m,
+        mediaMsg,
         'buffer',
         {},
         {
@@ -1069,11 +1218,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       );
 
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
-        const mime = m.message?.audioMessage?.mimetype || 'audio/ogg';
+        const mime = innerMsg?.audioMessage?.mimetype || 'audio/ogg';
         try {
           let transcription = await transcribeAudio(buffer, mime);
           let context = await getContext(chatKey, msgSentAt);
-          const vnUserContent = `[Voice Note]: "${transcription}"`;
+          const vnUserContent = isGroup ? `[Voice Note dari ${senderName}]: "${transcription}"` : `[Voice Note]: "${transcription}"`;
 
           await saveMessage({
             platform: 'whatsapp',
@@ -1084,8 +1233,8 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           });
           updateContextCache(chatKey, 'user', vnUserContent);
 
-          const hasilCatatVn = await tanganiPencatatan(transcription, personalOwnerId, context, {
-            actor: actorGrup,
+          const hasilCatatVn = await tanganiPencatatan(transcription, isGroup ? chatKey : nomorBaileys, context, {
+            actor: groupActorLabel,
             platform: 'whatsapp',
             channel: 'baileys',
           });
@@ -1105,14 +1254,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
               updateContextCache(chatKey, 'user', transcription);
             } else {
               tandaiBalasGrup();
-              if (messageId) void markMessageProcessed('whatsapp', messageId);
+              if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
               noteExchange(chatKey);
               return;
             }
           } else {
             try {
-              const faktaBaruVn = isGroup && actorGrup
-                ? await tangkapFaktaPersonal(actorGrup, transcription)
+              const faktaBaruVn = isGroup
+                ? await tangkapFaktaPersonal(chatKey, transcription)
                 : await tangkapFaktaPersonal(nomorBaileys, transcription);
               if (faktaBaruVn) context = await getContext(chatKey, msgSentAt);
             } catch {
@@ -1135,11 +1284,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             }
           }
 
-          const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
+          const vnPromptBase = isGroup
+            ? `[Pesan Suara / Voice Note di Grup dari ${senderName}]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih di grup. Tanggapi langsung apa yang dibicarakan ${senderName} secara wajar, hangat, dan bersahabat).`
+            : `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
+          const prompt = (isGroup && passiveGroupPrefix ? `${passiveGroupPrefix}\n` : '') + vnPromptBase;
           const { reply, via, tokens } = await baileysAutoReply(prompt, context, web);
           await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
           tandaiBalasGrup();
-          if (messageId) void markMessageProcessed('whatsapp', messageId);
+          if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
           await saveMessage({
             platform: 'whatsapp',
             chat_id: chatKey,
@@ -1159,9 +1311,22 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
               'Rekaman suara dari temanmu gagal diproses atau tidak terdengar jelas. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik lewat teks.',
               await getContext(chatKey, msgSentAt),
             ),
+            groupReplyRef,
           );
         }
         return;
+      } else if (buffer && buffer.length > 20_000_000) {
+        await sendWhatsAppMessageSafe(
+          sock,
+          remoteJid,
+          await baileysDynamicNotice(
+            'Ukuran rekaman suara atau audio melebihi batas 20 MB. Minta pengirim mengirim pesan suara yang lebih pendek atau mengetik lewat teks dengan santai.',
+            await getContext(chatKey, msgSentAt),
+          ),
+          groupReplyRef,
+        );
+        tandaiBalasGrup();
+        if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       }
     } catch (err) {
       console.error('[whatsapp] Gagal memproses voice note:', err);
@@ -1172,6 +1337,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           'Rekaman suara dari temanmu gagal diunduh atau diproses. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik lewat teks.',
           await getContext(chatKey, msgSentAt),
         ),
+        groupReplyRef,
       );
     } finally {
       try {
@@ -1180,14 +1346,15 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         // best-effort
       }
     }
+    return;
   }
 
-  // Kasus 4: Stiker WhatsApp (.webp)
+  // Kasus 4: Stiker WhatsApp (.webp / animasi)
   if (hasSticker) {
     try {
       await sock.sendPresenceUpdate('composing', remoteJid);
       const buffer = await downloadMediaMessage(
-        m,
+        mediaMsg,
         'buffer',
         {},
         {
@@ -1197,25 +1364,21 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       );
 
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
-        const mime = m.message?.stickerMessage?.mimetype || 'image/webp';
-        // CATATAN PENTING (diverifikasi 04 Okt dari tipe proto Baileys):
-        // protokol WhatsApp TIDAK mengirim field `emoji` pada StickerMessage
-        // (IStickerMessage hanya punya url/mimetype/dimensi/contextInfo/dll).
-        // Jadi parameter emoji memang TIDAK BISA diisi untuk WhatsApp — ini
-        // batasan protokol, bukan bug kode. Emoji hanya tersedia di Telegram
-        // (msg.sticker.emoji). Karena itu analisis stiker WhatsApp sepenuhnya
-        // bergantung pada VISION terhadap gambar, dan prompt vision sudah
-        // memuat aturan "amati isi stiker dengan teliti".
+        const mime = innerMsg?.stickerMessage?.mimetype || 'image/webp';
         const context = await getContext(chatKey, msgSentAt);
+        const stickerCaptionArg = isGroup && passiveGroupPrefix
+          ? (text ? `${passiveGroupPrefix}\n${text}` : passiveGroupPrefix)
+          : (text || undefined);
 
-        // PERBAIKAN 16 Okt 2026: teruskan `text` sebagai caption, sama seperti
-        // jalur WhatsApp Cloud & Telegram. Tanpa ini, bila pengguna mengetik
-        // teks/caption BERSAMAAN dengan stiker, maksudnya tidak pernah sampai
-        // ke vision dan balasan jadi terkesan tidak membaca caption.
-        const { reply: replyStiker, via, tokens, sticker: stickerBalasan, stickerText } = await processIncomingSticker(buffer, mime, undefined, context, text || undefined);
+        const stickerArg = stickerCaptionArg || text || undefined;
 
+        const { reply: replyStiker, via, tokens, sticker: stickerBalasan, stickerText } = await processIncomingSticker(buffer, mime, undefined, context, stickerArg);
+
+        const stickerLabel = innerMsg?.stickerMessage?.isAnimated
+          ? (isGroup ? `[Stiker Animasi WhatsApp dari ${senderName}]` : '[Stiker Animasi WhatsApp]')
+          : (isGroup ? `[Stiker WhatsApp dari ${senderName}]` : '[Stiker WhatsApp]');
         // Simpan isi pengirim, bukan reaksi bot sebagai ucapan user.
-        const kontenStikerUser = stickerUserContent('[Stiker WhatsApp]', text, stickerText);
+        const kontenStikerUser = stickerUserContent(stickerLabel, text, stickerText);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -1224,8 +1387,6 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           msg_id: messageId || undefined,
         });
         updateContextCache(chatKey, 'user', kontenStikerUser);
-        // PERBAIKAN 10 Okt 2026: sanitize + kirim stiker balasan (sama seperti
-        // jalur WhatsApp Cloud).
         let teksStiker = sanitizeAssistantOutput(replyStiker, kontenStikerUser, undefined, true).trim();
         if (teksStiker) {
           await sendWhatsAppMessageSafe(sock, remoteJid, teksStiker, groupReplyRef);
@@ -1246,7 +1407,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           }
         }
         tandaiBalasGrup();
-        if (messageId) void markMessageProcessed('whatsapp', messageId);
+        if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
         const kontenAssistant = [teksStiker, stikerBaileys ? `[Stiker terkirim: ${stickerBalasan}]` : '']
           .filter(Boolean)
           .join('\n');
@@ -1261,6 +1422,18 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         updateContextCache(chatKey, 'assistant', kontenAssistant);
         noteExchange(chatKey);
         return;
+      } else if (buffer && buffer.length > 20_000_000) {
+        await sendWhatsAppMessageSafe(
+          sock,
+          remoteJid,
+          await baileysDynamicNotice(
+            'Ukuran stiker terlalu besar (>20 MB) sehingga gagal dibuka. Beri tahu pengirim singkat dan santai.',
+            await getContext(chatKey, msgSentAt),
+          ),
+          groupReplyRef,
+        );
+        tandaiBalasGrup();
+        if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       }
     } catch (err) {
       console.error('[whatsapp] Gagal memproses stiker:', err);
@@ -1271,6 +1444,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           'Stiker dari temanmu gagal diproses. Beri tahu dia dengan gayamu sendiri, singkat dan santai, lalu minta kirim ulang.',
           await getContext(chatKey, msgSentAt),
         ),
+        groupReplyRef,
       );
     } finally {
       try {
@@ -1279,27 +1453,30 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         // best-effort
       }
     }
+    return;
   }
 
-  // Kasus 5: Video via Google Gemini Multimodal API
+  // Kasus 5: Video / GIF via Google Gemini Multimodal API
   if (hasVideo) {
     try {
       await sock.sendPresenceUpdate('composing', remoteJid);
-      const caption = m.message?.videoMessage?.caption?.trim() || text;
+      const caption = innerMsg?.videoMessage?.caption?.trim() || text;
       const context = await getContext(chatKey, msgSentAt);
+      const mediaTag = isGif ? '[GIF]' : '[Video]';
+      const mediaFile = isGif ? 'gif.mp4' : 'video.mp4';
 
-      const videoUserContent = caption ? `[Video] ${caption}` : '[Video]';
+      const videoUserContent = caption ? `${mediaTag} ${caption}` : mediaTag;
       await saveMessage({
         platform: 'whatsapp',
         chat_id: chatKey,
         role: 'user',
-        content: videoUserContent,
+        content: isGroup ? `[${senderName}]: ${videoUserContent}` : videoUserContent,
         msg_id: messageId || undefined,
       });
-      updateContextCache(chatKey, 'user', videoUserContent);
+      updateContextCache(chatKey, 'user', isGroup ? `[${senderName}]: ${videoUserContent}` : videoUserContent);
 
       const buffer = await downloadMediaMessage(
-        m,
+        mediaMsg,
         'buffer',
         {},
         {
@@ -1309,11 +1486,15 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       );
 
       if (buffer && buffer.length > 0 && buffer.length <= 20_000_000) {
-        const mime = m.message?.videoMessage?.mimetype || 'video/mp4';
-        const { reply, via, tokens } = await processIncomingVideo(buffer, mime, 'video.mp4', caption, await getContext(chatKey, msgSentAt));
+        const mime = innerMsg?.videoMessage?.mimetype || 'video/mp4';
+        const captionForVideo = [
+          isGroup && passiveGroupPrefix ? passiveGroupPrefix : '',
+          isGif && !caption ? 'Pengguna mengirim GIF animasi sebagai reaksi. Balas singkat, santai, dan nyambung.' : caption,
+        ].filter(Boolean).join('\n') || undefined;
+        const { reply, via, tokens } = await processIncomingVideo(buffer, mime, mediaFile, captionForVideo, await getContext(chatKey, msgSentAt));
         await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
         tandaiBalasGrup();
-        if (messageId) void markMessageProcessed('whatsapp', messageId);
+        if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
@@ -1328,13 +1509,13 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       }
 
       const prompt = caption
-        ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
-        : 'User mengirim berkas video. Beritahukan dengan ramah bahwa videonya diterima, dan tanyakan apa yang ingin dibahas.';
+        ? `User ${isGroup ? `${senderName} di grup ` : ''}mengirim ${isGif ? 'GIF' : 'video'} dengan catatan: "${caption}". Tolong tanggapi secara relevan, santai, dan bersahabat.`
+        : `User ${isGroup ? `${senderName} di grup ` : ''}mengirim berkas ${isGif ? 'GIF' : 'video'}. Beritahukan dengan ramah bahwa medianya diterima, dan tanyakan apa yang ingin dibahas.`;
 
-      const { reply, via, tokens } = await baileysAutoReply(prompt, context);
+      const { reply, via, tokens } = await baileysAutoReply((isGroup && passiveGroupPrefix ? `${passiveGroupPrefix}\n` : '') + prompt, context);
       await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
       tandaiBalasGrup();
-      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       await saveMessage({
         platform: 'whatsapp',
         chat_id: chatKey,
@@ -1352,9 +1533,10 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         sock,
         remoteJid,
         await baileysDynamicNotice(
-          'Video dari temanmu gagal diproses atau tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik isinya lewat teks.',
+          'Video atau GIF dari temanmu gagal diproses atau tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik isinya lewat teks.',
           await getContext(chatKey, msgSentAt),
         ),
+        groupReplyRef,
       );
     } finally {
       try {
@@ -1363,29 +1545,34 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         // best-effort
       }
     }
+    return;
   }
 
   // Kasus 6: Lokasi Pengguna (Share Location Pin / Live Location)
-  const locMsg = m.message?.locationMessage || m.message?.liveLocationMessage;
+  const locMsg = innerMsg?.locationMessage || innerMsg?.liveLocationMessage;
   if (locMsg) {
     const lat = locMsg.degreesLatitude;
     const lon = locMsg.degreesLongitude;
     if (typeof lat === 'number' && typeof lon === 'number') {
       const tzInfo = resolveTimezoneFromCoords(lat, lon);
       const teksLokasi = `Lokasi pengguna berada di koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`;
-      await Promise.all([
-        saveCorrection(sharedDataKey, teksLokasi),
-        saveCorrection(chatKey, teksLokasi),
-      ]);
+      if (isGroup) {
+        await saveCorrection(chatKey, `[Lokasi dari ${senderName}]: ${teksLokasi}`);
+      } else {
+        await Promise.all([
+          saveCorrection(sharedDataKey, teksLokasi),
+          saveCorrection(chatKey, teksLokasi),
+        ]);
+      }
       const locTime = formatInZone(new Date(), tzInfo.zone);
       // Konfirmasi 100% dinamis: model menyusun kalimatnya sendiri dari data waktu (ZERO teks statis)
       const reply = await baileysDynamicNotice(
-        `Temanmu baru membagikan lokasi: ${tzInfo.label}. Waktu setempat saat ini ${locTime.time} ${locTime.tzName} (${locTime.full}). Konfirmasi singkat dengan gayamu sendiri bahwa lokasinya sudah dicatat dan sebutkan waktu setempat itu; nyatakan kamu akan mengingat lokasinya.`,
+        `Temanmu ${isGroup ? `(di grup) ${senderName} ` : ''}baru membagikan lokasi: ${tzInfo.label}. Waktu setempat saat ini ${locTime.time} ${locTime.tzName} (${locTime.full}). Konfirmasi singkat dengan gayamu sendiri bahwa lokasinya sudah dicatat dan sebutkan waktu setempat itu; nyatakan kamu akan mengingat lokasinya.`,
         await getContext(chatKey, msgSentAt),
       );
       await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
       tandaiBalasGrup();
-      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       await saveMessage({
         platform: 'whatsapp',
         chat_id: chatKey,
@@ -1418,7 +1605,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         });
         updateContextCache(chatKey, 'assistant', reply);
       }
-      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
     }
     return;
   }
@@ -1438,7 +1625,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       // diam — ZERO teks statis
     }
     await sendWhatsAppMessageSafe(sock, remoteJid, reply);
-    if (messageId) void markMessageProcessed('whatsapp', messageId);
+    if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
     void saveMessage({
       platform: 'whatsapp',
       chat_id: chatKey,
@@ -1457,7 +1644,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       const { reply } = await baileysAutoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
       await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
       tandaiBalasGrup();
-      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       return;
     }
     const check = validateCorrection(rawCorrection);
@@ -1468,10 +1655,10 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       );
       await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
       tandaiBalasGrup();
-      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       return;
     }
-    const saved = await saveCorrection(sharedDataKey, check.cleaned);
+    const saved = await saveCorrection(sharedDataKey, isGroup ? `[${senderName}]: ${check.cleaned}` : check.cleaned);
     const { reply } = await baileysAutoReply(
       `User ${senderName || ''} menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!` +
         (saved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa catatan mungkin tidak tersimpan lama.'),
@@ -1479,7 +1666,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     );
     await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
     tandaiBalasGrup();
-    if (messageId) void markMessageProcessed('whatsapp', messageId);
+    if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
     return;
   }
 
@@ -1495,7 +1682,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       );
       await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
       tandaiBalasGrup();
-      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       return;
     }
     const minutes = Number(mRemind[1]);
@@ -1507,42 +1694,33 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       );
       await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
       tandaiBalasGrup();
-      if (messageId) void markMessageProcessed('whatsapp', messageId);
+      if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       return;
     }
-    // PRESISI (06 Okt 2026): bulatkan ke awal menit lalu -5 detik, agar cron
-          // per menit mengirim TEPAT WAKTU (bukan ngaret 1 menit karena detik).
-          const dueAt = (() => {
-            const d = new Date(Date.now() + minutes * 60_000);
-            // Bulatkan ke BAWAH ke awal menit (TANPA -5 detik) agar MENIT yang
-            // ditampilkan == MENIT pengiriman. Cron per menit dieksekusi sedikit
-            // setelah detik 0, sehingga `due_at <= now` tetap terpenuhi tepat waktu.
-            d.setSeconds(0, 0);
-            return d;
-          })();
-    const targetChat = personalOwnerId;
-    const reminderSaved = await saveReminderToDb(targetChat, tandaiPengingatBaileys(message), dueAt, 'whatsapp');
+    const dueAt = (() => {
+      const d = new Date(Date.now() + minutes * 60_000);
+      d.setSeconds(0, 0);
+      return d;
+    })();
+    const targetChat = isGroup ? chatKey : nomorBaileys;
+    const msgRemindTagged = isGroup ? tandaiPengingatBaileysEksklusif(`[Untuk ${senderName}]: ${message}`) : tandaiPengingatBaileys(message);
+    const reminderSaved = await saveReminderToDb(targetChat, msgRemindTagged, dueAt, 'whatsapp');
     const { reply } = await baileysAutoReply(
-      `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.` +
+      `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat${isGroup ? ' di grup ini' : ''} dan akan dikirim ${minutes} menit lagi.` +
         (reminderSaved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa pengingat mungkin tidak tersimpan.'),
       remindCtx,
     );
     await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
     tandaiBalasGrup();
-    if (messageId) void markMessageProcessed('whatsapp', messageId);
+    if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
     return;
   }
 
-  // ── PENCATATAN PRIBADI (catatan, tugas, keuangan, kebiasaan) ──
-  // Dua jalur: (A) perintah / eksplisit, (B) deteksi niat dari bahasa alami.
-  // Keduanya DIKONFIRMASI dulu sebelum disimpan (permintaan user: aman dulu).
+  // ── PENCATATAN (catatan, tugas, keuangan) — grup memakai ruang grup, privat memakai ruang privat ──
   {
     const catatCtx = await getContext(chatKey, msgSentAt);
-    const targetChat = personalOwnerId;
-    // WhatsApp (Baileys) tidak menyediakan nama tampilan pengirim secara andal.
-    // Di grup, pakai nomor/nama pengirim (participant) sebagai pemisah identitas;
-    // di chat privat tidak perlu (semua catatan milik satu orang).
-    const hasil = await tanganiPencatatan(text, targetChat, catatCtx, { actor: actorGrup, platform: 'whatsapp', channel: 'baileys' });
+    const targetChat = isGroup ? chatKey : nomorBaileys;
+    const hasil = await tanganiPencatatan(text, targetChat, catatCtx, { actor: groupActorLabel, platform: 'whatsapp', channel: 'baileys' });
     if (hasil.ditangani) {
       updateContextCache(chatKey, 'user', isGroup ? `[${senderName}]: ${text}` : text);
       if (hasil.teruskanKeAi) {
@@ -1556,7 +1734,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       } else {
         await sendWhatsAppMessageSafe(sock, remoteJid, hasil.reply, groupReplyRef);
         tandaiBalasGrup();
-        if (messageId) void markMessageProcessed('whatsapp', messageId);
+        if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
         void saveMessage({
           platform: 'whatsapp', chat_id: chatKey, role: 'assistant',
           content: hasil.reply, via: `notes/${hasil.jalur}`,
@@ -1565,8 +1743,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         return;
       }
     } else {
-      // Tangkap fakta personal hanya bila bukan perintah pencatatan (mencegah perintah pengingat dianggap kebiasaan).
-      try { await tangkapFaktaPersonal(targetChat, text); } catch { /* best-effort */ }
+      try { await tangkapFaktaPersonal(targetChat, isGroup ? `${senderName}: ${text}` : text); } catch { /* best-effort */ }
     }
   }
 
@@ -1678,7 +1855,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         stickerSent = true;
       }
     }
-    if (messageId) void markMessageProcessed('whatsapp', messageId);
+    if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
 
     // 6. Update cache memori & simpan balasan asisten ke database secara non-blocking
     updateContextCache(

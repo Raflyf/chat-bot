@@ -26,7 +26,8 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { db } from './db.js';
-import { normChatId } from './chat_id.js';
+import { normChatId, isGroupChatKey } from './chat_id.js';
+import { resolveTableName, hasDedicatedGroupTables } from './group_db.js';
 import { PERINTAH_BERARGUMEN, petunjukPemakaian } from './commands.js';
 import { formatInZone } from './timezone.js';
 import { tanganiGame } from './games/index.js';
@@ -1654,7 +1655,8 @@ export async function simpanCatatan(
   const c = db();
   if (!c) return null;
   try {
-    const { data, error } = await c.from('notes').insert({
+    const tbl = await resolveTableName('notes', chatId);
+    const { data, error } = await c.from(tbl).insert({
       chat_id: chatId,
       content: content.slice(0, 4000),
       title: opts?.title?.slice(0, 120) ?? null,
@@ -1674,9 +1676,10 @@ export async function daftarCatatan(chatId: string, limit = 10): Promise<Catatan
   const c = db();
   if (!c) return [];
   try {
+    const tbl = await resolveTableName('notes', chatId);
     // Ambil SEMUA catatan user (bukan hanya `limit`) agar nomor urut STABIL:
     // catatan pertama tetap #1 meski ada catatan lain yang dihapus.
-    const { data: semua, error } = await c.from('notes')
+    const { data: semua, error } = await c.from(tbl)
       .select('id, title, content, tags, created_at')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -1710,8 +1713,9 @@ export async function nomorUrutCatatan(chatId: string, id: number): Promise<numb
   const c = db();
   if (!c) return null;
   try {
+    const tbl = await resolveTableName('notes', chatId);
     const { data, error } = await c
-      .from('notes')
+      .from(tbl)
       .select('id')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -1731,8 +1735,9 @@ export async function idDariNomorCatatan(chatId: string, nomor: number): Promise
   const c = db();
   if (!c) return null;
   try {
+    const tbl = await resolveTableName('notes', chatId);
     const { data, error } = await c
-      .from('notes')
+      .from(tbl)
       .select('id')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -1751,7 +1756,8 @@ export async function hapusCatatan(chatId: string, id: number): Promise<boolean>
   const c = db();
   if (!c) return false;
   try {
-    const { error } = await c.from('notes').delete().eq('chat_id', chatId).eq('id', id);
+    const tbl = await resolveTableName('notes', chatId);
+    const { error } = await c.from(tbl).delete().eq('chat_id', chatId).eq('id', id);
     return !error;
   } catch {
     return false;
@@ -1769,7 +1775,8 @@ export async function simpanTugas(
   const c = db();
   if (!c) return null;
   try {
-    const { data, error } = await c.from('todos').insert({
+    const tbl = await resolveTableName('todos', chatId);
+    const { data, error } = await c.from(tbl).insert({
       chat_id: chatId,
       task: task.slice(0, 500),
       priority: opts?.priority ?? 2,
@@ -1792,8 +1799,9 @@ export async function daftarUang(chatId: string, limit = 10): Promise<Array<{
   const c = db();
   if (!c) return [];
   try {
+    const tbl = await resolveTableName('expenses', chatId);
     // Ambil SEMUA (bukan hanya `limit`) agar nomor urut STABIL per-user.
-    const { data: semua, error } = await c.from('expenses')
+    const { data: semua, error } = await c.from(tbl)
       .select('id, amount, kind, category, note, created_at')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -1840,8 +1848,9 @@ export async function nomorUrutUang(chatId: string, id: number): Promise<number 
   const c = db();
   if (!c) return null;
   try {
+    const tbl = await resolveTableName('expenses', chatId);
     const { data, error } = await c
-      .from('expenses')
+      .from(tbl)
       .select('id')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -1861,8 +1870,9 @@ export async function idDariNomorUang(chatId: string, nomor: number): Promise<nu
   const c = db();
   if (!c) return null;
   try {
+    const tbl = await resolveTableName('expenses', chatId);
     const { data, error } = await c
-      .from('expenses')
+      .from(tbl)
       .select('id')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -1881,11 +1891,12 @@ export async function daftarTugas(chatId: string, hanyaBelumSelesai = true): Pro
   const c = db();
   if (!c) return [];
   try {
+    const tbl = await resolveTableName('todos', chatId);
     // Ambil SEMUA tugas user (semua status) agar nomor urut STABIL: tugas
     // pertama tetap #1 meski ada tugas lain yang sudah selesai/dihapus.
     // Tanpa ini, nomor berubah setiap ada tugas yang selesai (membingungkan).
     const { data: semua, error } = await c
-      .from('todos')
+      .from(tbl)
       .select('id, task, priority, status, due_at, created_at')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -1908,21 +1919,14 @@ export async function daftarTugas(chatId: string, hanyaBelumSelesai = true): Pro
   }
 }
 
-/**
- * Cari ID asli dari NOMOR URUT per-user (dipakai /selesai & /hapus).
- * Nomor dihitung dari urutan `created_at` semua tugas user (stabil).
- */
-/**
- * Cari NOMOR URUT per-user dari sebuah ID tugas (kebalikan idDariNomorTugas).
- * Dipakai untuk menampilkan "Tugas dicatat (#N)" dengan nomor yang konsisten.
- */
 export async function nomorUrutTugas(chatId: string, id: number): Promise<number | null> {
   chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return null;
   try {
+    const tbl = await resolveTableName('todos', chatId);
     const { data, error } = await c
-      .from('todos')
+      .from(tbl)
       .select('id')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -1941,8 +1945,9 @@ export async function idDariNomorTugas(chatId: string, nomor: number): Promise<n
   const c = db();
   if (!c) return null;
   try {
+    const tbl = await resolveTableName('todos', chatId);
     const { data, error } = await c
-      .from('todos')
+      .from(tbl)
       .select('id')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -1961,7 +1966,8 @@ export async function selesaikanTugas(chatId: string, id: number): Promise<boole
   const c = db();
   if (!c) return false;
   try {
-    const { error } = await c.from('todos')
+    const tbl = await resolveTableName('todos', chatId);
+    const { error } = await c.from(tbl)
       .update({ status: 'done', done_at: new Date().toISOString() })
       .eq('chat_id', chatId).eq('id', id);
     return !error;
@@ -1975,7 +1981,8 @@ export async function hapusTugas(chatId: string, id: number): Promise<boolean> {
   const c = db();
   if (!c) return false;
   try {
-    const { error } = await c.from('todos').delete().eq('chat_id', chatId).eq('id', id);
+    const tbl = await resolveTableName('todos', chatId);
+    const { error } = await c.from(tbl).delete().eq('chat_id', chatId).eq('id', id);
     return !error;
   } catch {
     return false;
@@ -2035,12 +2042,13 @@ export async function simpanUang(
     // Contoh nyata: "catat 20rb" lalu "catat 20rb" untuk dua hal berbeda -> yang
     // kedua HILANG. Tanpa catatan tidak ada cara membedakan transaksi, jadi
     // lebih aman TIDAK melakukan dedup (duplikat bisa dihapus, data hilang tidak).
+    const tbl = await resolveTableName('expenses', chatId);
     const catatanDedup = (note ?? '').trim().slice(0, 300);
     if (catatanDedup.length >= 3) {
       const JENDELA_DEDUP_MS = 10 * 60_000;
       const sejak = new Date(Date.now() - JENDELA_DEDUP_MS).toISOString();
       const { data: kembar } = await c
-        .from('expenses')
+        .from(tbl)
         .select('id')
         .eq('chat_id', chatId)
         .eq('amount', amount)
@@ -2059,7 +2067,7 @@ export async function simpanUang(
       }
     }
 
-    const { data, error } = await c.from('expenses').insert({
+    const { data, error } = await c.from(tbl).insert({
       chat_id: chatId,
       amount,
       kind,
@@ -2083,18 +2091,14 @@ export async function rekapUang(chatId: string, dariHari: number = 30): Promise<
   const c = db();
   if (!c) return kosong;
   try {
+    const tbl = await resolveTableName('expenses', chatId);
     const sejak = new Date(Date.now() - dariHari * 86_400_000).toISOString();
-    // ── PERBAIKAN AUDIT 14 Okt 2026: PAGINASI EKSPLISIT ──
-    // BUG LAMA: satu query tanpa `range`. Supabase/PostgREST membatasi jumlah
-    // baris per permintaan (default 1000). Bila user punya >1000 transaksi dalam
-    // rentang waktu itu, rekap DIAM-DIAM menghitung sebagian saja — total
-    // pemasukan/pengeluaran jadi lebih kecil dari kenyataan dan user tidak tahu.
-    // SEKARANG: ambil berulang dalam batch 1000 sampai habis.
+    // PAGINASI EKSPLISIT per 1000 baris agar semua transaksi terhitung.
     const BATCH = 1000;
     const data: Array<{ kind: string; amount: number; category: string }> = [];
     for (let offset = 0; ; offset += BATCH) {
       const { data: batch, error } = await c
-        .from('expenses')
+        .from(tbl)
         .select('kind, amount, category')
         .eq('chat_id', chatId)
         .gte('occurred_at', sejak)
@@ -2140,8 +2144,9 @@ export async function cariCatatan(chatId: string, kata: string, limit = 10): Pro
   const c = db();
   if (!c) return [];
   try {
+    const tbl = await resolveTableName('notes', chatId);
     // Ambil semua catatan user untuk menentukan nomor urut yang KONSISTEN.
-    const { data: semua, error: errSemua } = await c.from('notes')
+    const { data: semua, error: errSemua } = await c.from(tbl)
       .select('id, title, content, tags, created_at')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
@@ -2151,7 +2156,7 @@ export async function cariCatatan(chatId: string, kata: string, limit = 10): Pro
     const nomorDari = new Map<number, number>();
     (semua as CatatanRingkas[]).forEach((r, i) => nomorDari.set(r.id, i + 1));
 
-    const { data, error } = await c.from('notes')
+    const { data, error } = await c.from(tbl)
       .select('id, title, content, tags, created_at')
       .eq('chat_id', chatId)
       .ilike('content', `%${kata}%`)
@@ -2169,7 +2174,8 @@ export async function hapusUang(chatId: string, id: number): Promise<boolean> {
   const c = db();
   if (!c) return false;
   try {
-    const { error } = await c.from('expenses').delete().eq('chat_id', chatId).eq('id', id);
+    const tbl = await resolveTableName('expenses', chatId);
+    const { error } = await c.from(tbl).delete().eq('chat_id', chatId).eq('id', id);
     return !error;
   } catch {
     return false;
@@ -2301,15 +2307,26 @@ async function simpanPermintaanTertunda(
   // Lapisan 2: database (bertahan lintas instance serverless).
   try {
     const c = db();
-    if (c) {
-      await c.from('pending_confirmations').upsert({
-        chat_id: chatId,
+    if (!c) return;
+    if (isGroupChatKey(chatId) && await hasDedicatedGroupTables()) {
+      await c.from('group_messages').delete()
+        .eq('chat_id', chatId).eq('via', 'system/pending-zona');
+      await c.from('group_messages').insert({
         platform,
-        actor: actor ?? null,
-        niat: { kind: '_tunggu_zona', teks, platform, actor: actor ?? null, jenis, channel: channel ?? null },
-        expires_at: new Date(Date.now() + PERMINTAAN_TERTUNDA_TTL_MS).toISOString(),
-      }, { onConflict: 'chat_id' });
+        chat_id: chatId,
+        role: 'user',
+        content: JSON.stringify(v),
+        via: 'system/pending-zona',
+      });
+      return;
     }
+    await c.from('pending_confirmations').upsert({
+      chat_id: chatId,
+      platform,
+      actor: actor ?? null,
+      niat: { kind: '_tunggu_zona', teks, platform, actor: actor ?? null, jenis, channel: channel ?? null },
+      expires_at: new Date(Date.now() + PERMINTAAN_TERTUNDA_TTL_MS).toISOString(),
+    }, { onConflict: 'chat_id' });
   } catch (e) {
     console.warn('[notes] Gagal simpan permintaan tertunda ke DB:', e);
   }
@@ -2327,6 +2344,24 @@ async function ambilPermintaanTertunda(chatId: string): Promise<PermintaanTertun
   try {
     const c = db();
     if (!c) return null;
+    if (isGroupChatKey(chatId) && await hasDedicatedGroupTables()) {
+      const { data: gRows } = await c
+        .from('group_messages')
+        .select('content, created_at')
+        .eq('chat_id', chatId)
+        .eq('via', 'system/pending-zona')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const r0 = (gRows ?? [])[0] as { content?: string; created_at?: string } | undefined;
+      if (r0?.content) {
+        const parsed = JSON.parse(r0.content) as PermintaanTertunda;
+        if (parsed?.teks && Date.now() - (parsed.at || new Date(String(r0.created_at)).getTime()) <= PERMINTAAN_TERTUNDA_TTL_MS) {
+          permintaanTertunda.set(chatId, parsed);
+          return parsed;
+        }
+      }
+      return null;
+    }
     const { data } = await c
       .from('pending_confirmations')
       .select('niat, platform, actor, created_at, expires_at')
@@ -2360,11 +2395,15 @@ async function buangPermintaanTertunda(chatId: string): Promise<void> {
   permintaanTertunda.delete(chatId);
   try {
     const c = db();
-    if (c) {
-      await c.from('pending_confirmations').delete()
-        .eq('chat_id', chatId)
-        .eq('niat->>kind', '_tunggu_zona');
+    if (!c) return;
+    if (isGroupChatKey(chatId) && await hasDedicatedGroupTables()) {
+      await c.from('group_messages').delete()
+        .eq('chat_id', chatId).eq('via', 'system/pending-zona');
+      return;
     }
+    await c.from('pending_confirmations').delete()
+      .eq('chat_id', chatId)
+      .eq('niat->>kind', '_tunggu_zona');
   } catch {
     // abaikan
   }
@@ -2378,6 +2417,22 @@ async function simpanKonfirmasi(
   const c = db();
   if (!c) return;
   const payload = opts.channel ? { ...(niat as unknown as Record<string, unknown>), _channel: opts.channel } : (niat as unknown as Record<string, unknown>);
+  if (isGroupChatKey(chatId) && await hasDedicatedGroupTables()) {
+    try {
+      await c.from('group_messages').delete()
+        .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
+      await c.from('group_messages').insert({
+        platform: opts.platform,
+        chat_id: chatId,
+        role: 'user',
+        content: JSON.stringify({ ...payload, _actor: opts.actor ?? null }),
+        via: 'system/pending-confirmation',
+      });
+    } catch {
+      // best-effort: memori tetap dipakai
+    }
+    return;
+  }
   try {
     await c.rpc('set_pending_confirmation', {
       p_chat_id: chatId,
@@ -2389,9 +2444,10 @@ async function simpanKonfirmasi(
   } catch {
     // Tabel v23 belum ada -> cadangan di tabel `messages`
     try {
-      await c.from('messages').delete()
+      const msgTbl = await resolveTableName('messages', chatId);
+      await c.from(msgTbl).delete()
         .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
-      await c.from('messages').insert({
+      await c.from(msgTbl).insert({
         platform: opts.platform,
         chat_id: chatId,
         role: 'user',
@@ -2410,23 +2466,9 @@ async function ambilKonfirmasi(
 ): Promise<{ niat: NiatTerdeteksi; actor?: string; platform: string; channel?: string } | null> {
   const c = db();
   if (c) {
-    try {
-      const { data } = await c.rpc('take_pending_confirmation', { p_chat_id: chatId });
-      const row = Array.isArray(data) ? data[0] : data;
-      if (row && row.niat) {
-        konfirmasiTertunda.delete(chatId);
-        const rawNiat = row.niat as NiatTerdeteksi & { _channel?: string };
-        return {
-          niat: rawNiat as NiatTerdeteksi,
-          actor: (row.actor as string | null) ?? undefined,
-          platform: (row.platform as string) ?? 'whatsapp',
-          channel: rawNiat._channel,
-        };
-      }
-    } catch {
-      // Tabel v23 belum ada -> cadangan `messages`
+    if (isGroupChatKey(chatId) && await hasDedicatedGroupTables()) {
       try {
-        const { data: rows } = await c.from('messages')
+        const { data: rows } = await c.from('group_messages')
           .select('content,platform')
           .eq('chat_id', chatId)
           .eq('via', 'system/pending-confirmation')
@@ -2434,19 +2476,60 @@ async function ambilKonfirmasi(
           .limit(1);
         const r0 = (rows ?? [])[0] as { content?: string; platform?: string } | undefined;
         if (r0?.content) {
-          await c.from('messages').delete()
+          await c.from('group_messages').delete()
             .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
           konfirmasiTertunda.delete(chatId);
-          const rawNiat = JSON.parse(r0.content) as NiatTerdeteksi & { _channel?: string };
+          const rawNiat = JSON.parse(r0.content) as NiatTerdeteksi & { _channel?: string; _actor?: string | null };
           return {
             niat: rawNiat as NiatTerdeteksi,
-            actor: undefined,
+            actor: rawNiat._actor ?? undefined,
             platform: r0.platform ?? 'whatsapp',
             channel: rawNiat._channel,
           };
         }
       } catch {
         // lanjut ke memori
+      }
+    } else {
+      try {
+        const { data } = await c.rpc('take_pending_confirmation', { p_chat_id: chatId });
+        const row = Array.isArray(data) ? data[0] : data;
+        if (row && row.niat) {
+          konfirmasiTertunda.delete(chatId);
+          const rawNiat = row.niat as NiatTerdeteksi & { _channel?: string };
+          return {
+            niat: rawNiat as NiatTerdeteksi,
+            actor: (row.actor as string | null) ?? undefined,
+            platform: (row.platform as string) ?? 'whatsapp',
+            channel: rawNiat._channel,
+          };
+        }
+      } catch {
+        // Tabel v23 belum ada -> cadangan `messages`
+        try {
+          const msgTbl = await resolveTableName('messages', chatId);
+          const { data: rows } = await c.from(msgTbl)
+            .select('content,platform')
+            .eq('chat_id', chatId)
+            .eq('via', 'system/pending-confirmation')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          const r0 = (rows ?? [])[0] as { content?: string; platform?: string } | undefined;
+          if (r0?.content) {
+            await c.from(msgTbl).delete()
+              .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
+            konfirmasiTertunda.delete(chatId);
+            const rawNiat = JSON.parse(r0.content) as NiatTerdeteksi & { _channel?: string };
+            return {
+              niat: rawNiat as NiatTerdeteksi,
+              actor: undefined,
+              platform: r0.platform ?? 'whatsapp',
+              channel: rawNiat._channel,
+            };
+          }
+        } catch {
+          // lanjut ke memori
+        }
       }
     }
   }
@@ -2465,11 +2548,21 @@ async function buangKonfirmasi(chatId: string): Promise<void> {
   konfirmasiTertunda.delete(chatId);
   const c = db();
   if (!c) return;
+  if (isGroupChatKey(chatId) && await hasDedicatedGroupTables()) {
+    try {
+      await c.from('group_messages').delete()
+        .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
+    } catch {
+      // best-effort
+    }
+    return;
+  }
   try {
     await c.rpc('clear_pending_confirmation', { p_chat_id: chatId });
   } catch {
     try {
-      await c.from('messages').delete()
+      const msgTbl = await resolveTableName('messages', chatId);
+      await c.from(msgTbl).delete()
         .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
     } catch {
       // best-effort
@@ -2536,8 +2629,9 @@ async function pertanyaanKonfirmasiPengingat(
   try {
     const c = db();
     if (!c) return false;
+    const remTbl = await resolveTableName('reminders', chatId);
     const { data } = await c
-      .from('reminders')
+      .from(remTbl)
       .select('message')
       .eq('chat_id', normChatId(chatId, platform))
       .eq('status', 'pending')
@@ -3296,10 +3390,11 @@ export async function tanganiPencatatan(
         const { db } = await import('./db.js');
         const c = db();
         if (c) {
-          const { data: sblm } = await c.from('todos').select('id').eq('chat_id', chatId);
+          const todoTbl = await resolveTableName('todos', chatId);
+          const { data: sblm } = await c.from(todoTbl).select('id').eq('chat_id', chatId);
           const n = (sblm ?? []).length;
           if (n > 0) {
-            await c.from('todos').delete().eq('chat_id', chatId);
+            await c.from(todoTbl).delete().eq('chat_id', chatId);
           }
           return {
             ditangani: true,
@@ -3342,7 +3437,7 @@ export async function tanganiPencatatan(
       // BATAL -> batalkan pengingat yang dituju.
       if (permintaan.aksi === 'batal') {
         if (target) {
-          const okBatal = await batalkanPengingat(target.id);
+          const okBatal = await batalkanPengingat(target.id, chatId);
           const cleanNama = target.message.replace(/[\u200B\u200C]/g, '');
           return {
             ditangani: true,
@@ -3371,7 +3466,7 @@ export async function tanganiPencatatan(
       }
 
       if (target && waktuBaru) {
-        const okUbah = await ubahPengingat(target.id, waktuBaru);
+        const okUbah = await ubahPengingat(target.id, waktuBaru, undefined, chatId);
         if (okUbah) {
           const label = permintaan.aksi === 'majukan' ? 'dimajukan' : 'diundur';
           const cleanNama = target.message.replace(/[\u200B\u200C]/g, '');

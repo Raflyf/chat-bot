@@ -4,6 +4,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import { config } from '../src/env.js';
 import { db } from '../src/db.js';
+import { hasDedicatedGroupTables } from '../src/group_db.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
 // (xKiro DIHAPUS 04 Okt 2026 — semua akun disuspend permanen 403)
 import { readFileSync } from 'fs';
@@ -303,12 +304,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         ? null
         : c.from('provider_quota').select('kind, key_suffix, used, tokens_used').eq('day', todayStr);
 
+      const groupTablesReady = await hasDedicatedGroupTables();
+
       let waPeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'whatsapp');
       let telePeriodQuery = c.from('messages').select('*', { count: 'exact', head: true }).eq('platform', 'telegram');
+      let grpWaPeriodQuery = groupTablesReady
+        ? c.from('group_messages').select('*', { count: 'exact', head: true }).eq('platform', 'whatsapp')
+        : null;
+      let grpTelePeriodQuery = groupTablesReady
+        ? c.from('group_messages').select('*', { count: 'exact', head: true }).eq('platform', 'telegram')
+        : null;
 
       if (startDateIso) {
         waPeriodQuery = waPeriodQuery.gte('created_at', startDateIso);
         telePeriodQuery = telePeriodQuery.gte('created_at', startDateIso);
+        if (grpWaPeriodQuery) grpWaPeriodQuery = grpWaPeriodQuery.gte('created_at', startDateIso);
+        if (grpTelePeriodQuery) grpTelePeriodQuery = grpTelePeriodQuery.gte('created_at', startDateIso);
       }
 
       // Helper pagination bertahap (.range()) untuk mencegah pemotongan senyap data (B9)
@@ -330,9 +341,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         return rows;
       }
 
-      const buildAssistantQuery = () => {
+      const buildAssistantQuery = (tbl: 'messages' | 'group_messages') => () => {
         let q = c
-          .from('messages')
+          .from(tbl)
           .select('via, prompt_tokens, completion_tokens, total_tokens')
           .eq('role', 'assistant')
           .order('id', { ascending: false });
@@ -341,8 +352,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         return q;
       };
 
-      const buildUserMsgsQuery = () => {
-        let q = c.from('messages').select('content').eq('role', 'user').order('id', { ascending: false });
+      const buildUserMsgsQuery = (tbl: 'messages' | 'group_messages') => () => {
+        let q = c.from(tbl).select('content').eq('role', 'user').order('id', { ascending: false });
         if (startDateIso) q = q.gte('created_at', startDateIso);
         if (filterPlatform && filterPlatform !== 'all') q = q.eq('platform', filterPlatform);
         return q;
@@ -370,6 +381,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         liveResults,
         liveLimits,
         dbTodayQuotaRes,
+        grpTotalRes,
+        grpWaRes,
+        grpTeleRes,
+        grpAssistantMsgsRes,
+        grpUserMsgsRes,
+        grpAllTimeAssistantRes,
         ] = await Promise.all([
         quotaQuery,
         c.from('messages').select('*', { count: 'exact', head: true }),
@@ -380,22 +397,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           prompt_tokens?: number | null;
           completion_tokens?: number | null;
           total_tokens?: number | null;
-        }>(buildAssistantQuery, 1000, 10000),
-        fetchPagedRange<{ content: string | null }>(buildUserMsgsQuery, 1000, 10000),
+        }>(buildAssistantQuery('messages'), 1000, 10000),
+        fetchPagedRange<{ content: string | null }>(buildUserMsgsQuery('messages'), 1000, 10000),
         fetchPagedRange<{ chat_id: string | null; created_at: string }>(buildWaMonthlyQuery, 1000, 15000),
         c.from('messages').select('via, created_at').eq('role', 'assistant').order('id', { ascending: false }).limit(300),
         liveFetchPromise,
         limitsPromise,
         todayQuotaQuery ? todayQuotaQuery : Promise.resolve({ data: null }),
+        groupTablesReady ? c.from('group_messages').select('*', { count: 'exact', head: true }) : Promise.resolve({ count: 0 }),
+        grpWaPeriodQuery ? grpWaPeriodQuery : Promise.resolve({ count: 0 }),
+        grpTelePeriodQuery ? grpTelePeriodQuery : Promise.resolve({ count: 0 }),
+        groupTablesReady
+          ? fetchPagedRange<{
+              via: string | null;
+              prompt_tokens?: number | null;
+              completion_tokens?: number | null;
+              total_tokens?: number | null;
+            }>(buildAssistantQuery('group_messages'), 1000, 10000)
+          : Promise.resolve([]),
+        groupTablesReady
+          ? fetchPagedRange<{ content: string | null }>(buildUserMsgsQuery('group_messages'), 1000, 10000)
+          : Promise.resolve([]),
+        groupTablesReady
+          ? c.from('group_messages').select('via, created_at').eq('role', 'assistant').order('id', { ascending: false }).limit(300)
+          : Promise.resolve({ data: [] }),
       ]);
 
       quotasData = (dbQuotaRes.data as any) || [];
-      totalMessagesAllTime = dbTotalRes.count || 0;
-      waPeriod = dbWaRes.count || 0;
-      telePeriod = dbTeleRes.count || 0;
-      assistantMsgs = assistantMsgsRes as any;
-      allTimeAssistantMsgs = ((allTimeAssistantRes?.data as any) || []) as Array<{ via: string | null; created_at?: string | null }>;
-      userMsgs = userMsgsRes as any;
+      totalMessagesAllTime = (dbTotalRes.count || 0) + ((grpTotalRes as any)?.count || 0);
+      waPeriod = (dbWaRes.count || 0) + ((grpWaRes as any)?.count || 0);
+      telePeriod = (dbTeleRes.count || 0) + ((grpTeleRes as any)?.count || 0);
+      assistantMsgs = [...(assistantMsgsRes as any[]), ...(grpAssistantMsgsRes as any[])];
+      const mergedAllTimeAssistant = [
+        ...(((allTimeAssistantRes?.data as any) || []) as Array<{ via: string | null; created_at?: string | null }>),
+        ...((((grpAllTimeAssistantRes as any)?.data as any) || []) as Array<{ via: string | null; created_at?: string | null }>),
+      ].sort((a, b) => {
+        const ta = a.created_at ? Date.parse(a.created_at) : 0;
+        const tb = b.created_at ? Date.parse(b.created_at) : 0;
+        return tb - ta;
+      }).slice(0, 300);
+      allTimeAssistantMsgs = mergedAllTimeAssistant;
+      userMsgs = [...(userMsgsRes as any[]), ...(grpUserMsgsRes as any[])];
       waMonthlyMsgs = waMonthlyMsgsRes as any;
 
       orLiveResults = liveResults[0];

@@ -21,7 +21,8 @@
  * `corrections` (menyimpan baris bertanda khusus) bila migrasi belum dijalankan.
  */
 import { db } from './db.js';
-import { normChatId } from './chat_id.js';
+import { normChatId, isGroupChatKey } from './chat_id.js';
+import { hasDedicatedGroupTables, resolveTableName } from './group_db.js';
 import { invalidateContextCache, adalahTestChatId } from './memory.js';
 import {
   detectUserCountry, detectLocation, detectUserLocationDeclaration,
@@ -50,26 +51,31 @@ export async function ambilProfilWaktu(chatId: string): Promise<ProfilWaktu | nu
   const c = db();
   if (!c) return null;
 
-  // 1. Tabel v25
-  try {
-    const { data, error } = await c.rpc('get_user_timezone', { p_chat_id: chatId });
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!error && row && row.timezone) {
-      return {
-        timezone: String(row.timezone),
-        label: String(row.label ?? ''),
-        kota: (row.kota as string | null) ?? null,
-        sumber: (String(row.sumber ?? 'manual') as ProfilWaktu['sumber']),
-        terverifikasi: Boolean(row.terverifikasi),
-      };
+  const isGroupDedicated = isGroupChatKey(chatId) && await hasDedicatedGroupTables();
+
+  // 1. Tabel v25 (khusus chat privat; grup memakai group_corrections agar terisolasi)
+  if (!isGroupDedicated) {
+    try {
+      const { data, error } = await c.rpc('get_user_timezone', { p_chat_id: chatId });
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!error && row && row.timezone) {
+        return {
+          timezone: String(row.timezone),
+          label: String(row.label ?? ''),
+          kota: (row.kota as string | null) ?? null,
+          sumber: (String(row.sumber ?? 'manual') as ProfilWaktu['sumber']),
+          terverifikasi: Boolean(row.terverifikasi),
+        };
+      }
+    } catch {
+      // lanjut ke fallback
     }
-  } catch {
-    // lanjut ke fallback
   }
 
-  // 2. Fallback: baris bertanda di tabel `corrections`
+  // 2. Fallback (dan jalur utama grup): baris bertanda di `corrections` / `group_corrections`
   try {
-    const { data: rows } = await c.from('corrections')
+    const corTbl = await resolveTableName('corrections', chatId);
+    const { data: rows } = await c.from(corTbl)
       .select('correction')
       .eq('chat_id', chatId)
       .ilike('correction', `${TANDA_FALLBACK}%`)
@@ -111,31 +117,36 @@ export async function simpanProfilWaktu(
   const c = db();
   if (!c) return false;
 
-  // 1. Tabel v25
-  try {
-    const { error } = await c.rpc('set_user_timezone', {
-      p_chat_id: chatId,
-      p_platform: platform,
-      p_timezone: profil.timezone,
-      p_label: profil.label,
-      p_kota: profil.kota ?? null,
-      p_sumber: profil.sumber,
-      p_terverifikasi: profil.terverifikasi,
-    });
-    if (!error) {
-      invalidateContextCache(chatId);
-      return true;
+  const isGroupDedicated = isGroupChatKey(chatId) && await hasDedicatedGroupTables();
+
+  // 1. Tabel v25 (chat privat saja; grup memakai group_corrections agar tidak masuk user_profiles)
+  if (!isGroupDedicated) {
+    try {
+      const { error } = await c.rpc('set_user_timezone', {
+        p_chat_id: chatId,
+        p_platform: platform,
+        p_timezone: profil.timezone,
+        p_label: profil.label,
+        p_kota: profil.kota ?? null,
+        p_sumber: profil.sumber,
+        p_terverifikasi: profil.terverifikasi,
+      });
+      if (!error) {
+        invalidateContextCache(chatId);
+        return true;
+      }
+    } catch {
+      // lanjut ke fallback
     }
-  } catch {
-    // lanjut ke fallback
   }
 
-  // 2. Fallback: simpan di `corrections` dengan tanda khusus (idempoten).
+  // 2. Fallback / grup: simpan di `corrections` atau `group_corrections` (idempoten).
   try {
-    await c.from('corrections').delete()
+    const corTbl = await resolveTableName('corrections', chatId);
+    await c.from(corTbl).delete()
       .eq('chat_id', chatId).ilike('correction', `${TANDA_FALLBACK}%`);
     const isi = `${TANDA_FALLBACK} zone=${profil.timezone}; label=${profil.label}; kota=${profil.kota ?? ''}; sumber=${profil.sumber}; verif=${profil.terverifikasi ? '1' : '0'}`;
-    const { error } = await c.from('corrections').insert({ chat_id: chatId, correction: isi });
+    const { error } = await c.from(corTbl).insert({ chat_id: chatId, correction: isi });
     if (!error) invalidateContextCache(chatId);
     return !error;
   } catch {

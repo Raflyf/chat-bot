@@ -21,6 +21,7 @@
  */
 import { db } from './db.js';
 import { normChatId } from './chat_id.js';
+import { resolveTableName } from './group_db.js';
 import { invalidateContextCache, adalahTestChatId } from './memory.js';
 
 /** Penanda agar fakta personal bisa dibedakan dari koreksi /salah biasa. */
@@ -234,16 +235,18 @@ export async function simpanFaktaPersonal(
   if (!c) return false;
   const isi = `${PENANDA_FAKTA} ${fakta.kategori}: ${fakta.fakta}`.slice(0, 300);
   try {
+    const corTbl = await resolveTableName('corrections', chatId);
+    const tbl = corTbl === 'group_corrections' ? c.from('group_corrections') : c.from('corrections');
     // Cek duplikat: fakta yang sama tidak perlu disimpan dua kali.
-    const { data } = await c
-      .from('corrections')
+    const { data } = await tbl
       .select('correction')
       .eq('chat_id', chatId)
       .ilike('correction', `%${fakta.fakta.slice(0, 60)}%`)
       .limit(1);
     if (data && data.length > 0) return false; // sudah ada
 
-    const { error } = await c.from('corrections').insert({ chat_id: chatId, correction: isi });
+    const { error } = await (corTbl === 'group_corrections' ? c.from('group_corrections') : c.from('corrections'))
+      .insert({ chat_id: chatId, correction: isi });
     if (error) return false;
     invalidateContextCache(chatId);
     return true;

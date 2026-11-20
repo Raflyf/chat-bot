@@ -16,6 +16,7 @@ function isTestChatKey(chatKey: string): boolean {
 
 /** Simpan pesan best-effort: gagal DB tidak boleh menggagalkan balasan chat. */
 import { normChatId } from './chat_id.js';
+import { resolveTableName, hasDedicatedGroupTables } from './group_db.js';
 
 export async function saveMessage(row: {
   platform: string;
@@ -37,6 +38,7 @@ export async function saveMessage(row: {
   row = { ...row, chat_id: normChatId(row.chat_id, row.platform) };
   const c = db();
   if (!c) return;
+  const msgTbl = await resolveTableName('messages', row.chat_id);
   try {
     let viaStr = row.via ?? null;
     if (viaStr && row.tokens && (row.tokens.prompt > 0 || row.tokens.total > 0)) {
@@ -68,18 +70,18 @@ export async function saveMessage(row: {
       // Bila DB masih memakai index partial (migrasi v19 belum di-apply), PostgREST
       // menolak dengan 42P10 — fallback ke insert biasa agar pesan tetap tersimpan.
       const { error: upsertErr } = await c
-        .from('messages')
+        .from(msgTbl)
         .upsert(insertPayload, { onConflict: 'platform,msg_id' });
       if (upsertErr) {
         if (upsertErr.code === '42P10' || /no unique|exclusion constraint/i.test(upsertErr.message || '')) {
           const { data: updatedRows, error: updateErr } = await c
-            .from('messages')
+            .from(msgTbl)
             .update(insertPayload)
             .eq('platform', row.platform)
             .eq('msg_id', row.msg_id)
             .select('id');
           if (updateErr || !updatedRows || updatedRows.length === 0) {
-            const { error: insertErr } = await c.from('messages').insert(insertPayload);
+            const { error: insertErr } = await c.from(msgTbl).insert(insertPayload);
             if (insertErr && insertErr.code !== '23505') {
               console.warn('[db] saveMessage insert fallback error:', insertErr.message);
             }
@@ -89,7 +91,7 @@ export async function saveMessage(row: {
         }
       }
     } else {
-      const { error: insErr } = await c.from('messages').insert(insertPayload);
+      const { error: insErr } = await c.from(msgTbl).insert(insertPayload);
       if (insErr && insErr.code !== '23505') {
         console.warn('[db] saveMessage insert error:', insErr.message);
       }
@@ -104,20 +106,32 @@ export async function saveMessage(row: {
 /**
  * Cek apakah pesan dengan platform dan msg_id sudah pernah diproses di database.
  */
-export async function isMessageProcessed(platform: string, msgId: string): Promise<boolean> {
+export async function isMessageProcessed(platform: string, msgId: string, chatId?: string): Promise<boolean> {
   if (!msgId) return false;
   const c = db();
   if (!c) return false;
   try {
+    const primaryTbl = chatId ? await resolveTableName('messages', chatId) : 'messages';
     const { data, error } = await c
-      .from('messages')
+      .from(primaryTbl)
       .select('id')
       .eq('platform', platform)
       .eq('msg_id', msgId)
       .limit(1)
       .maybeSingle();
 
-    return !error && !!data;
+    if (!error && data) return true;
+    if (!chatId && await hasDedicatedGroupTables()) {
+      const { data: gData, error: gErr } = await c
+        .from('group_messages')
+        .select('id')
+        .eq('platform', platform)
+        .eq('msg_id', msgId)
+        .limit(1)
+        .maybeSingle();
+      return !gErr && !!gData;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -126,16 +140,25 @@ export async function isMessageProcessed(platform: string, msgId: string): Promi
 /**
  * Tandai pesan masuk telah selesai diproses oleh asisten (durability & anti-lockout).
  */
-export async function markMessageProcessed(platform: string, msgId: string): Promise<void> {
+export async function markMessageProcessed(platform: string, msgId: string, chatId?: string): Promise<void> {
   if (!msgId) return;
   const c = db();
   if (!c) return;
+  const nowIso = new Date().toISOString();
   try {
+    const targetTbl = chatId ? await resolveTableName('messages', chatId) : 'messages';
     await c
-      .from('messages')
-      .update({ processed_at: new Date().toISOString() })
+      .from(targetTbl)
+      .update({ processed_at: nowIso })
       .eq('platform', platform)
       .eq('msg_id', msgId);
+    if (!chatId && await hasDedicatedGroupTables()) {
+      await c
+        .from('group_messages')
+        .update({ processed_at: nowIso })
+        .eq('platform', platform)
+        .eq('msg_id', msgId);
+    }
   } catch {
     // best-effort
   }
@@ -159,28 +182,15 @@ export async function claimIncomingMessage(
   if (!msgId) return true;
   const c = db();
   if (!c) return false; // fail-closed jika DB tidak terhubung
+  const msgTbl = await resolveTableName('messages', chatId);
 
-  // ── DEDUP BERBASIS KONTEN (temuan nyata 08 Okt 2026) ──
-  // LAPORAN: satu pesan user diproses DUA KALI sehingga data keuangan tercatat
-  // ganda (#117 & #118) dan rekap jadi salah (Rp5.100.000 padahal Rp4.100.000).
-  //
-  // AKAR: dedup lama HANYA berdasarkan `msg_id`. WhatsApp mengirim ulang pesan
-  // yang sama dengan `msg_id` BERBEDA (retry dari sisi Meta), sehingga lolos.
-  //
-  // SEKARANG: selain msg_id, periksa juga pesan USER dengan KONTEN IDENTIK dari
-  // chat yang sama dalam jendela waktu singkat (60 detik). Bila ada dan SUDAH
-  // diproses, blokir sebagai duplikat.
-  //
-  // PENTING: jendela 60 detik & konten identik -> aman, karena user yang benar-
-  // benar mengirim ulang pesan yang sama dalam <60 detik memang tidak wajar
-  // (dan lebih baik dianggap duplikat daripada mencatat data ganda).
-  // Jendela dipersingkat 60s -> 10s (20 Nov 2026): retry webhook Meta datang dalam hitungan
-  // detik, sedangkan 60s membuang pesan sah yang diulang user ("ringkasan" 2x tak dibalas).
+  // DEDUP BERBASIS KONTEN (audit 08 Okt 2026): cegah webhook/retry dengan msg_id berbeda
+  // memproses pesan identik dua kali dalam 10 detik.
   if (opts.dedupKonten !== false) try {
     const JENDELA_MS = 10_000;
     const batas = new Date(Date.now() - JENDELA_MS).toISOString();
     const { data: kembar } = await c
-      .from('messages')
+      .from(msgTbl)
       .select('id, processed_at, msg_id')
       .eq('platform', platform)
       .eq('chat_id', chatId)
@@ -203,7 +213,7 @@ export async function claimIncomingMessage(
 
   try {
     const { error } = await c
-      .from('messages')
+      .from(msgTbl)
       .insert({
         platform,
         chat_id: chatId,
@@ -220,11 +230,12 @@ export async function claimIncomingMessage(
     if (
       error.code === '23505' ||
       error.message?.includes('duplicate key') ||
-      error.message?.includes('idx_messages_platform_msg_id')
+      error.message?.includes('idx_messages_platform_msg_id') ||
+      error.message?.includes('idx_group_messages_platform_msg_id')
     ) {
       try {
         const { data: existing } = await c
-          .from('messages')
+          .from(msgTbl)
           .select('processed_at, created_at')
           .eq('platform', platform)
           .eq('msg_id', msgId)
@@ -279,20 +290,37 @@ export async function claimIncomingMessage(
 export async function cariPesanByMsgId(
   platform: string,
   msgId: string,
+  chatId?: string,
 ): Promise<{ content: string; role: string } | null> {
   const c = db();
   if (!c || !msgId) return null;
   try {
+    const primaryTbl = chatId ? await resolveTableName('messages', chatId) : 'messages';
     const { data, error } = await c
-      .from('messages')
+      .from(primaryTbl)
       .select('content, role')
       .eq('platform', platform)
       .eq('msg_id', msgId)
       .order('created_at', { ascending: false })
       .limit(1);
-    if (error || !data || data.length === 0) return null;
-    const row = data[0] as { content?: string; role?: string };
-    return { content: String(row.content ?? ''), role: String(row.role ?? '') };
+    if (!error && data && data.length > 0) {
+      const row = data[0] as { content?: string; role?: string };
+      return { content: String(row.content ?? ''), role: String(row.role ?? '') };
+    }
+    if (!chatId && await hasDedicatedGroupTables()) {
+      const { data: gData, error: gErr } = await c
+        .from('group_messages')
+        .select('content, role')
+        .eq('platform', platform)
+        .eq('msg_id', msgId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!gErr && gData && gData.length > 0) {
+        const row = gData[0] as { content?: string; role?: string };
+        return { content: String(row.content ?? ''), role: String(row.role ?? '') };
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -310,8 +338,9 @@ export async function pesanBotTerakhir(
   const c = db();
   if (!c || !chatId) return null;
   try {
+    const msgTbl = await resolveTableName('messages', chatId);
     const { data, error } = await c
-      .from('messages')
+      .from(msgTbl)
       .select('content')
       .eq('platform', platform)
       .eq('chat_id', chatId)

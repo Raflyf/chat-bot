@@ -4,7 +4,8 @@ import { db } from './db.js';
 import { config } from './env.js';
 import { kemiripanPesan, AMBANG_MIRIP, TOLERANSI_WAKTU_MENIT } from './reminder-dedup.js';
 import { berikutnya, type AturanUlang } from './reminder-repeat.js';
-import { normChatId, nomorWhatsApp, baileysChatKey } from './chat_id.js';
+import { normChatId, nomorWhatsApp, baileysChatKey, isGroupChatKey } from './chat_id.js';
+import { resolveTableName, hasDedicatedGroupTables } from './group_db.js';
 import { statusAutoMaintenanceWa } from './wa_monitor.js';
 
 // Re-export agar pemakai lama (cron, baileys) tetap bekerja tanpa perubahan.
@@ -85,15 +86,19 @@ export async function simpanReminderCerdas(
 ): Promise<HasilSimpanReminder> {
   // NORMALISASI: pastikan chat_id konsisten dengan `messages` (lihat normChatId).
   chatId = normChatId(chatId, platform === 'telegram' ? 'telegram' : 'whatsapp');
+  if (platform === 'whatsapp' && isGroupChatKey(chatId)) {
+    message = tandaiPengingatBaileysEksklusif(message);
+  }
   const c = db();
   if (!c) return { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Database tidak tersedia.' };
   const dueIso = waktuJatuhTempo(dueAt).toISOString();
+  const remTbl = await resolveTableName('reminders', chatId);
 
   try {
     // 1. Cari pengingat PENDING yang waktunya dekat (<= TOLERANSI menit).
     const batas = new Date(new Date(dueIso).getTime() + TOLERANSI_WAKTU_MENIT * 60_000).toISOString();
     const batasBawah = new Date(new Date(dueIso).getTime() - TOLERANSI_WAKTU_MENIT * 60_000).toISOString();
-    const { data: dekat } = await c.from('reminders')
+    const { data: dekat } = await c.from(remTbl)
       .select('id, message, due_at')
       .eq('chat_id', chatId)
       .eq('status', 'pending')
@@ -143,7 +148,7 @@ export async function simpanReminderCerdas(
         patch.repeat_kind = null;
         patch.repeat_value = null;
       }
-      const { error } = await c.from('reminders').update(patch).eq('id', palingMirip.id);
+      const { error } = await c.from(remTbl).update(patch).eq('id', palingMirip.id);
       if (!error) {
         return {
           ok: true,
@@ -181,7 +186,7 @@ export async function simpanReminderCerdas(
       ? { ...barisDasar, repeat_kind: ulang.repeat_kind, repeat_value: ulang.repeat_value }
       : barisDasar;
 
-    let { error } = await c.from('reminders').insert(barisUlang);
+    let { error } = await c.from(remTbl).insert(barisUlang);
     // Fallback: kolom v27 belum ada (kode PGRST204 / 42703) -> insert tanpa kolom itu.
     const kolomTidakAda = (e: unknown): boolean => {
       const kode = (e as { code?: string })?.code || '';
@@ -189,7 +194,7 @@ export async function simpanReminderCerdas(
       return kode === 'PGRST204' || kode === '42703' || /repeat_kind|column/i.test(pesan);
     };
     if (error && barisUlang !== barisDasar && kolomTidakAda(error)) {
-      const retry = await c.from('reminders').insert(barisDasar);
+      const retry = await c.from(remTbl).insert(barisDasar);
       error = retry.error;
     }
     if (error) return { ok: false, aksi: 'gagal', pesan: cleanNew, keterangan: 'Gagal menyimpan pengingat.' };
@@ -205,7 +210,7 @@ export async function simpanReminderCerdas(
     // Fallback: insert langsung (perilaku lama) agar tetap tersimpan.
     try {
       const cleanMsg = bersihkanTeksPengingat(message);
-      const { error } = await c.from('reminders').insert({
+      const { error } = await c.from(remTbl).insert({
         chat_id: chatId, message, due_at: dueIso, status: 'pending', platform,
       });
       return error
@@ -277,11 +282,15 @@ export interface OpsiFilterKanalPengingat {
  * Memisahkan rute Baileys vs Cloud API sambil menyediakan failover dua arah.
  */
 export function bolehProsesKanalPengingat(
-  item: { message?: string; due_at?: string; platform?: string },
+  item: { chat_id?: string; message?: string; due_at?: string; platform?: string },
   opsi: OpsiFilterKanalPengingat = {},
 ): boolean {
   if (!opsi.channelFilter || opsi.channelFilter === 'all') return true;
   const isTelegram = String(item.platform ?? '').toLowerCase() === 'telegram';
+  // Pengingat grup WhatsApp tidak didukung Cloud API Meta — selalu wajib diproses Baileys.
+  if (!isTelegram && isGroupChatKey(item.chat_id)) {
+    return opsi.channelFilter === 'baileys_only';
+  }
   const isBaileys = adalahPengingatBaileys(String(item.message ?? ''));
   const nowMs = opsi.nowMs ?? Date.now();
   const dueMs = new Date(String(item.due_at ?? 0)).getTime();
@@ -339,19 +348,6 @@ async function zonaWaktuChat(chatId: string): Promise<string> {
 
 export async function checkDueReminders(
   sendFn: (chatId: string, text: string, platform?: 'telegram' | 'whatsapp') => Promise<unknown>,
-  /**
-   * Batasi HANYA pengingat platform ini (opsional).
-   *
-   * KENAPA ADA (temuan audit 14 Okt 2026):
-   *   Lazy-check di `whatsapp_cloud.ts` / `whatsapp_baileys.ts` hanya bisa
-   *   mengirim WhatsApp. Sebelumnya mereka ikut MENGAMBIL pengingat Telegram
-   *   lalu "melewatinya" (`return` tanpa nilai) — dan karena nilai balik
-   *   `undefined` tidak sama dengan `false`, checkDueReminders menganggapnya
-   *   SUKSES -> status 'sent' + jadwal berulang dimajukan -> PENGINGAT
-   *   TELEGRAM HILANG PERMANEN tanpa pernah dikirim.
-   *   Dengan filter ini, tiap pengirim hanya memproses platform yang benar-benar
-   *   bisa ia kirim; sisanya dibiarkan `pending` untuk cron/worker.
-   */
   platformFilter?: 'whatsapp' | 'telegram',
   options?: {
     channelFilter?: 'baileys_only' | 'cloud_only' | 'all';
@@ -369,6 +365,8 @@ export async function checkDueReminders(
       cloudMaintenance = config.whatsappMaintenanceMode === true || autoMaint.aktif;
     }
 
+    const useGroupTable = await hasDedicatedGroupTables();
+
     // ── TUNGGU SEBENTAR BILA ADA PENGINGAT YANG HAMPIR JATUH TEMPO ──
     const TUNGGU_MAKS_MS = options?.allowWait === false ? 0 : 20_000;
     if (TUNGGU_MAKS_MS > 0) {
@@ -378,41 +376,38 @@ export async function checkDueReminders(
         if (platformFilter && p !== platformFilter && p !== '') return false;
         if (!filterKanalAktif || !options?.channelFilter) return true;
         return bolehProsesKanalPengingat(
-          row as { message?: string; due_at?: string; platform?: string },
+          row as { chat_id?: string; message?: string; due_at?: string; platform?: string },
           { channelFilter: options.channelFilter, nowMs, cloudMaintenance },
         );
       };
 
-      // 1) Ada yang SUDAH jatuh tempo? -> jangan menunggu, kirim sekarang.
       const nowIso = new Date().toISOString();
-      const { data: sudahTelat } = await c
-        .from('reminders')
-        .select('id, message, due_at, platform')
-        .eq('status', 'pending')
-        .lte('due_at', nowIso)
-        .limit(filterKanalAktif || platformFilter ? 20 : 1);
+      const queriesTelat = [
+        c.from('reminders').select('id, chat_id, message, due_at, platform').eq('status', 'pending').lte('due_at', nowIso).limit(filterKanalAktif || platformFilter ? 20 : 1),
+        ...(useGroupTable ? [c.from('group_reminders').select('id, chat_id, message, due_at, platform').eq('status', 'pending').lte('due_at', nowIso).limit(filterKanalAktif || platformFilter ? 20 : 1)] : []),
+      ];
+      const resTelat = await Promise.all(queriesTelat);
+      const sudahTelatRows = resTelat.flatMap((r) => (r.data ?? []) as Array<Record<string, unknown>>);
       const nowCekMs = Date.now();
-      const adaYangTelat = ((sudahTelat ?? []) as unknown as Array<Record<string, unknown>>)
-        .some((r) => cekBolehUntukKanal(r, nowCekMs));
+      const adaYangTelat = sudahTelatRows.some((r) => cekBolehUntukKanal(r, nowCekMs));
 
       if (!adaYangTelat) {
-        // 2) Tidak ada yang telat -> boleh menunggu yang HAMPIR jatuh tempo.
         const batasCek = new Date(Date.now() + TUNGGU_MAKS_MS + 2000).toISOString();
-        const { data: hampir } = await c
-          .from('reminders')
-          .select('due_at, message, platform')
-          .eq('status', 'pending')
-          .gt('due_at', nowIso)   // belum jatuh tempo
-          .lte('due_at', batasCek) // tapi sangat dekat
-          .order('due_at', { ascending: true })
-          .limit(filterKanalAktif || platformFilter ? 20 : 1);
-        const hampirList = ((hampir ?? []) as unknown as Array<Record<string, unknown>>)
+        const queriesHampir = [
+          c.from('reminders').select('chat_id, due_at, message, platform').eq('status', 'pending').gt('due_at', nowIso).lte('due_at', batasCek).order('due_at', { ascending: true }).limit(filterKanalAktif || platformFilter ? 20 : 1),
+          ...(useGroupTable ? [c.from('group_reminders').select('chat_id, due_at, message, platform').eq('status', 'pending').gt('due_at', nowIso).lte('due_at', batasCek).order('due_at', { ascending: true }).limit(filterKanalAktif || platformFilter ? 20 : 1)] : []),
+        ];
+        const resHampir = await Promise.all(queriesHampir);
+        const hampirRows = resHampir.flatMap((r) => (r.data ?? []) as Array<Record<string, unknown>>);
+        const hampirList = hampirRows
           .filter((r) => {
             if (!filterKanalAktif && !platformFilter) return true;
             const p = String((r as { platform?: string }).platform ?? '').toLowerCase();
             if (platformFilter && p !== platformFilter && p !== '') return false;
             if (!filterKanalAktif) return true;
-            if (options?.channelFilter === 'cloud_only' && adalahPengingatBaileysEksklusif(String((r as { message?: string }).message ?? ''))) {
+            const chatIdRow = String((r as { chat_id?: string }).chat_id ?? '');
+            const msgRow = String((r as { message?: string }).message ?? '');
+            if (options?.channelFilter === 'cloud_only' && (isGroupChatKey(chatIdRow) || adalahPengingatBaileysEksklusif(msgRow))) {
               return false;
             }
             if (options?.channelFilter === 'cloud_only' && p !== 'telegram' && cloudMaintenance) {
@@ -425,7 +420,8 @@ export async function checkDueReminders(
             return Number.isFinite(dueMs)
               ? cekBolehUntukKanal(r, dueMs + 1_000)
               : true;
-          });
+          })
+          .sort((a, b) => new Date(String(a.due_at ?? 0)).getTime() - new Date(String(b.due_at ?? 0)).getTime());
         const terdekat = hampirList[0] as { due_at?: string } | undefined;
         if (terdekat?.due_at) {
           const selisih = new Date(terdekat.due_at).getTime() - Date.now();
@@ -440,281 +436,211 @@ export async function checkDueReminders(
     }
     }
 
-    const now = new Date().toISOString();
+    const prosesTabelPengingat = async (remTable: 'reminders' | 'group_reminders'): Promise<number> => {
+      const client = c;
+      const now = new Date().toISOString();
 
-    // 1. Reaper: Kembalikan reminder 'processing' yang lease-nya kadaluwarsa ke 'pending'
-    // Prioritas: cek kolom lease_until (B4)
-    // ── PERBAIKAN AUDIT 14 Okt 2026: PERIKSA HASIL UPDATE ──
-    // Sebelumnya hasil kedua query reaper TIDAK diperiksa. Bila update gagal
-    // (DB error / RLS menolak / kolom lease_until belum ada), baris 'processing'
-    // yang macet TIDAK pernah dikembalikan ke 'pending' — pengingat hilang
-    // SENYAP tanpa jejak apa pun di log. Sekarang setiap kegagalan dilaporkan.
-    const { error: reapErr1 } = await c
-      .from('reminders')
-      .update({ status: 'pending', lease_until: null })
-      .eq('status', 'processing')
-      .lte('lease_until', now);
-    if (reapErr1) {
-      console.error('[remind] reaper lease_until GAGAL:', reapErr1.message);
-    }
+      // 1. Reaper lease_until
+      const { error: reapErr1 } = await client
+        .from(remTable)
+        .update({ status: 'pending', lease_until: null })
+        .eq('status', 'processing')
+        .lte('lease_until', now);
+      if (reapErr1) {
+        console.error(`[remind] reaper ${remTable} lease_until GAGAL:`, reapErr1.message);
+      }
 
-    // Fallback reaper hanya untuk DB pra-migrasi lease_until (lease_until IS NULL).
-    // Ambang dinaikkan ke 30 menit (dari 10 menit): pengiriman yang masih in-flight
-    // tidak boleh di-reap lalu diklaim ulang worker/cron lain -> cegah dobel kirim.
-    // Tradeoff: baris yang benar-benar macet baru pulih setelah 30 menit, bukan 10.
-    const staleThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    const { error: reapErr2 } = await c
-      .from('reminders')
-      .update({ status: 'pending', lease_until: null })
-      .eq('status', 'processing')
-      .is('lease_until', null)
-      .lte('due_at', staleThreshold);
-    if (reapErr2) {
-      console.error('[remind] reaper fallback GAGAL:', reapErr2.message);
-    }
+      const staleThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { error: reapErr2 } = await client
+        .from(remTable)
+        .update({ status: 'pending', lease_until: null })
+        .eq('status', 'processing')
+        .is('lease_until', null)
+        .lte('due_at', staleThreshold);
+      if (reapErr2) {
+        console.error(`[remind] reaper ${remTable} fallback GAGAL:`, reapErr2.message);
+      }
 
-    // 2. Ambil pengingat yang jatuh tempo
-    // Kolom berulang (v27) diambil bila ada. Bila migrasi v27 belum dijalankan,
-    // query dengan kolom itu GAGAL -> fallback ke kolom dasar.
-    const KOLOM_DASAR = 'id, chat_id, message, due_at, status, platform, lease_until, created_at';
-    const KOLOM_LENGKAP = `${KOLOM_DASAR}, repeat_kind, repeat_value, repeat_until, repeat_count`;
-    // Tipe dibuat longgar (Record) agar tidak bentrok saat kolom v27 belum ada.
-    let data: Array<Record<string, unknown>> | null = null;
-    let error: unknown = null;
-    {
-      const h1 = await c
-        .from('reminders')
-        .select(KOLOM_LENGKAP)
-        .eq('status', 'pending')
-        .lte('due_at', now)
-        .order('due_at', { ascending: true })
-        .limit(50);
-      if (!h1.error) {
-        data = (h1.data ?? []) as Array<Record<string, unknown>>;
-      } else {
-        const h2 = await c
-          .from('reminders')
-          .select(KOLOM_DASAR)
+      // 2. Ambil pengingat yang jatuh tempo
+      const KOLOM_DASAR = 'id, chat_id, message, due_at, status, platform, lease_until, created_at';
+      const KOLOM_LENGKAP = `${KOLOM_DASAR}, repeat_kind, repeat_value, repeat_until, repeat_count`;
+      let data: Array<Record<string, unknown>> | null = null;
+      let error: unknown = null;
+      {
+        const h1 = await client
+          .from(remTable)
+          .select(KOLOM_LENGKAP)
           .eq('status', 'pending')
           .lte('due_at', now)
           .order('due_at', { ascending: true })
           .limit(50);
-        data = (h2.data ?? []) as Array<Record<string, unknown>>;
-        error = h2.error;
+        if (!h1.error) {
+          data = (h1.data ?? []) as Array<Record<string, unknown>>;
+        } else {
+          const h2 = await client
+            .from(remTable)
+            .select(KOLOM_DASAR)
+            .eq('status', 'pending')
+            .lte('due_at', now)
+            .order('due_at', { ascending: true })
+            .limit(50);
+          data = (h2.data ?? []) as Array<Record<string, unknown>>;
+          error = h2.error;
+        }
       }
-    }
 
-    if (error || !data || data.length === 0) return 0;
+      if (error || !data || data.length === 0) return 0;
 
-    // Batasi ke platform yang bisa dikirim oleh pemanggil (bila diminta).
-    // Baris tanpa platform (data lama) DIBIARKAN agar fallback routing tetap
-    // berjalan — sama seperti perilaku `api/cron/reminders.ts`.
-    if (platformFilter) {
-      data = data.filter((r) => {
-        const p = String((r as { platform?: string }).platform ?? '').toLowerCase();
-        return p === platformFilter || p === '';
-      });
-      if (data.length === 0) return 0;
-    }
+      if (platformFilter) {
+        data = data.filter((r) => {
+          const p = String((r as { platform?: string }).platform ?? '').toLowerCase();
+          return p === platformFilter || p === '';
+        });
+        if (data.length === 0) return 0;
+      }
 
-    // ── PEMISAH KANAL: BAILEYS vs CLOUD API (audit 20 Nov 2026) ──
-    if (filterKanalAktif && options?.channelFilter) {
-      const nowMs = Date.now();
-      const filter = options.channelFilter;
-      data = data.filter((r) =>
-        bolehProsesKanalPengingat(r as { message?: string; due_at?: string; platform?: string }, {
-          channelFilter: filter,
-          nowMs,
-          cloudMaintenance,
-        }),
-      );
-      if (data.length === 0) return 0;
-    }
+      if (filterKanalAktif && options?.channelFilter) {
+        const nowMs = Date.now();
+        const filter = options.channelFilter;
+        data = data.filter((r) =>
+          bolehProsesKanalPengingat(r as { chat_id?: string; message?: string; due_at?: string; platform?: string }, {
+            channelFilter: filter,
+            nowMs,
+            cloudMaintenance,
+          }),
+        );
+        if (data.length === 0) return 0;
+      }
 
-    let processed = 0;
-    for (const itemRaw of data) {
-      const item = itemRaw as unknown as ReminderItem & { repeat_kind?: string; repeat_value?: string | null; repeat_until?: string | null; repeat_count?: number };
-      // Atomic claim dengan lease_until 10 menit tanpa memodifikasi due_at asli (B4)
-      const leaseExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-      let claimSuccess = false;
+      let processed = 0;
+      for (const itemRaw of data) {
+        const item = itemRaw as unknown as ReminderItem & { repeat_kind?: string; repeat_value?: string | null; repeat_until?: string | null; repeat_count?: number };
+        const leaseExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        let claimSuccess = false;
 
-      // Klaim atomik menggunakan kolom lease_until
-      const { data: claimed, error: claimErr } = await c
-        .from('reminders')
-        .update({ status: 'processing', lease_until: leaseExpiry })
-        .eq('id', item.id)
-        .eq('status', 'pending')
-        .select('id');
-
-      if (!claimErr && claimed && claimed.length > 0) {
-        claimSuccess = true;
-      } else if (claimErr) {
-        // Fallback jika database belum memiliki kolom lease_until
-        const { data: directClaim, error: directErr } = await c
-          .from('reminders')
-          .update({ status: 'processing' })
+        const { data: claimed, error: claimErr } = await client
+          .from(remTable)
+          .update({ status: 'processing', lease_until: leaseExpiry })
           .eq('id', item.id)
           .eq('status', 'pending')
           .select('id');
 
-        if (!directErr && directClaim && directClaim.length > 0) {
+        if (!claimErr && claimed && claimed.length > 0) {
           claimSuccess = true;
-        }
-      }
+        } else if (claimErr) {
+          const { data: directClaim, error: directErr } = await client
+            .from(remTable)
+            .update({ status: 'processing' })
+            .eq('id', item.id)
+            .eq('status', 'pending')
+            .select('id');
 
-      // Jika baris sudah diklaim worker/cron lain, lewati
-      if (!claimSuccess) {
-        continue;
-      }
-
-      try {
-        // Teks pengingat disusun AI dengan gaya bot + BATAS WAKTU.
-        //
-        // Bila AI gagal/timeout, dipakai teks CADANGAN yang tetap wajar dibaca
-        // (mis. "⏰ Pengingat: Login"), BUKAN teks mentah user, protes pemilik
-        // produk: "jangan gitu dong, jadi aneh kalo gitu responnya".
-        const deliveryText = await susunTeksPengingat({
-          message: item.message,
-          due_at: item.due_at,
-          created_at: item.created_at,
-        });
-
-        // ── PERIKSA HASIL KIRIM (temuan nyata 08 Okt 2026) ──
-        // LAPORAN PEMILIK PRODUK: "kenapa pengingat waktu bangun saya ko ga aktif
-        // ya hari ini? padahal pada saat ringkasan itu masih ada".
-        //
-        // AKAR: `sendFn` dipanggil TANPA memeriksa hasil. Bila pengiriman GAGAL
-        // (mis. WhatsApp API error / jaringan), kode tetap lanjut menaikkan
-        // `repeat_count` dan memajukan `due_at` ke besok -> pengingat hari itu
-        // HILANG PERMANEN (tidak pernah terkirim, tidak pernah diulang).
-        //
-        // SEKARANG: bila hasil kirim JELAS gagal (false), LEMPAR error agar
-        // ditangani blok catch -> status 'failed' dan TIDAK memajukan jadwal,
-        // sehingga percobaan berikutnya masih bisa mengirim.
-        const hasilKirim = await sendFn(item.chat_id, deliveryText, item.platform);
-        if (hasilKirim === false) {
-          throw new Error('PENGIRIMAN_GAGAL');
+          if (!directErr && directClaim && directClaim.length > 0) {
+            claimSuccess = true;
+          }
         }
 
-        // ── SIMPAN KE RIWAYAT (temuan nyata 08 Okt 2026) ──
-        // Pengingat yang terkirim WAJIB masuk tabel `messages` supaya:
-        //   1. ada jejak (bisa diaudit)
-        //   2. AI tahu pengingat sudah dikirim (konteks percakapan utuh)
-        // Sebelumnya TIDAK disimpan -> riwayat user kosong & AI bisa mengulang.
+        if (!claimSuccess) {
+          continue;
+        }
+
         try {
-          const { saveMessage } = await import('./db.js');
-          const targetHistoryChatId =
-            options?.channelFilter === 'baileys_only' && item.platform !== 'telegram'
-              ? baileysChatKey(item.chat_id)
-              : item.chat_id;
-          await saveMessage({
-            platform: item.platform === 'telegram' ? 'telegram' : 'whatsapp',
-            chat_id: targetHistoryChatId,
-            role: 'assistant',
-            content: deliveryText,
-            via: 'reminder',
+          const deliveryText = await susunTeksPengingat({
+            message: item.message,
+            due_at: item.due_at,
+            created_at: item.created_at,
           });
-          const { updateContextCache } = await import('./memory.js');
-          updateContextCache(targetHistoryChatId, 'assistant', deliveryText);
-        } catch (simpanErr) {
-          console.warn('[remind] gagal simpan pesan pengingat ke riwayat:', simpanErr);
-        }
 
-        // ── PENGINGAT BERULANG (fitur baru 05 Okt 2026) ──
-        // Bila punya aturan pengulangan, JANGAN ditandai 'sent' (itu akan
-        // menghentikannya). Sebaliknya, hitung kemunculan berikutnya lalu
-        // perbarui due_at dan kembalikan status ke 'pending'.
-        const it = item;
-        const kindUlang = it.repeat_kind && it.repeat_kind !== 'none' ? it.repeat_kind : 'none';
+          const hasilKirim = await sendFn(item.chat_id, deliveryText, item.platform);
+          if (hasilKirim === false) {
+            throw new Error('PENGIRIMAN_GAGAL');
+          }
 
-        if (kindUlang !== 'none') {
-          const aturan: AturanUlang = {
-            repeat_kind: kindUlang as AturanUlang['repeat_kind'],
-            repeat_value: it.repeat_value ?? null,
-            repeat_until: it.repeat_until ?? null,
-            repeat_count: it.repeat_count ?? 0,
-          };
-          const zona = await zonaWaktuChat(item.chat_id);
-          let next = berikutnya(new Date(item.due_at), aturan, zona);
-          // ── CATCH-UP (05 Okt 2026) ──
-          // Bila cron sempat MATI berhari-hari, pengingat berulang tertinggal jauh.
-          // Jangan kirim bertubi-tubi (mis. 5x "minum obat" sekaligus), kirim
-          // SEKALI, lalu LOMPATKAN jadwal ke kemunculan berikutnya setelah SEKARANG.
-          // Batas 30 iterasi (~1 bulan untuk harian) agar tidak menggantung.
-          let iterasi = 0;
-          const sekarang = Date.now();
-          if (kindUlang === 'interval_minutes' && next && next.getTime() <= sekarang) {
-            const stepMs = Math.max(1, Math.round(Number(it.repeat_value) || 0)) * 60_000;
-            const lompat = Math.floor((sekarang - next.getTime()) / stepMs) + 1;
-            next = new Date(next.getTime() + lompat * stepMs);
-            if (aturan.repeat_until && next.getTime() > new Date(aturan.repeat_until).getTime()) {
-              next = null;
+          try {
+            const { saveMessage } = await import('./db.js');
+            const targetHistoryChatId =
+              options?.channelFilter === 'baileys_only' && item.platform !== 'telegram'
+                ? baileysChatKey(item.chat_id)
+                : item.chat_id;
+            await saveMessage({
+              platform: item.platform === 'telegram' ? 'telegram' : 'whatsapp',
+              chat_id: targetHistoryChatId,
+              role: 'assistant',
+              content: deliveryText,
+              via: 'reminder',
+            });
+            const { updateContextCache } = await import('./memory.js');
+            updateContextCache(targetHistoryChatId, 'assistant', deliveryText);
+          } catch (simpanErr) {
+            console.warn('[remind] gagal simpan pesan pengingat ke riwayat:', simpanErr);
+          }
+
+          const it = item;
+          const kindUlang = it.repeat_kind && it.repeat_kind !== 'none' ? it.repeat_kind : 'none';
+
+          if (kindUlang !== 'none') {
+            const aturan: AturanUlang = {
+              repeat_kind: kindUlang as AturanUlang['repeat_kind'],
+              repeat_value: it.repeat_value ?? null,
+              repeat_until: it.repeat_until ?? null,
+              repeat_count: it.repeat_count ?? 0,
+            };
+            const zona = await zonaWaktuChat(item.chat_id);
+            let next = berikutnya(new Date(item.due_at), aturan, zona);
+            let iterasi = 0;
+            const sekarang = Date.now();
+            if (kindUlang === 'interval_minutes' && next && next.getTime() <= sekarang) {
+              const stepMs = Math.max(1, Math.round(Number(it.repeat_value) || 0)) * 60_000;
+              const lompat = Math.floor((sekarang - next.getTime()) / stepMs) + 1;
+              next = new Date(next.getTime() + lompat * stepMs);
+              if (aturan.repeat_until && next.getTime() > new Date(aturan.repeat_until).getTime()) {
+                next = null;
+              }
+            } else {
+              while (next && next.getTime() <= sekarang && iterasi < 30) {
+                next = berikutnya(next, aturan, zona);
+                iterasi++;
+              }
+            }
+            if (next) {
+              await client.from(remTable).update({
+                due_at: next.toISOString(),
+                status: 'pending',
+                lease_until: null,
+                repeat_count: (it.repeat_count ?? 0) + 1,
+              }).eq('id', item.id);
+            } else {
+              await client.from(remTable).update({ status: 'sent', lease_until: null }).eq('id', item.id);
             }
           } else {
-            while (next && next.getTime() <= sekarang && iterasi < 30) {
-              next = berikutnya(next, aturan, zona);
-              iterasi++;
+            await client.from(remTable).update({ status: 'sent', lease_until: null }).eq('id', item.id);
+          }
+          processed++;
+        } catch (err) {
+          console.error(`[remind] gagal kirim reminder id ${item.id} (${remTable}):`, err);
+          const iniBerulang = item.repeat_kind && item.repeat_kind !== 'none';
+          if (iniBerulang) {
+            await client.from(remTable).update({ status: 'pending', lease_until: null }).eq('id', item.id);
+            console.warn(`[remind] pengingat berulang #${item.id} akan dicoba lagi (status dikembalikan ke pending).`);
+          } else {
+            const dueMs = new Date(String((item as { due_at?: string }).due_at ?? '')).getTime();
+            const masihDalamJendela = Number.isFinite(dueMs) && Date.now() - dueMs < 30 * 60_000;
+            if (masihDalamJendela) {
+              await client.from(remTable).update({ status: 'pending', lease_until: null }).eq('id', item.id);
+              console.warn(`[remind] pengingat #${item.id} gagal terkirim — akan dicoba lagi (jendela 30 menit).`);
+            } else {
+              await client.from(remTable).update({ status: 'failed', lease_until: null }).eq('id', item.id);
+              console.error(`[remind] pengingat #${item.id} GAGAL PERMANEN (lewat jendela percobaan ulang).`);
             }
-          }
-          if (next) {
-            await c.from('reminders').update({
-              due_at: next.toISOString(),
-              status: 'pending',
-              lease_until: null,
-              repeat_count: (it.repeat_count ?? 0) + 1,
-            }).eq('id', item.id);
-          } else {
-            // Lewat batas akhir -> hentikan.
-            await c.from('reminders').update({ status: 'sent', lease_until: null }).eq('id', item.id);
-          }
-        } else {
-          // Tandai selesai (sent) HANYA setelah pesan benar-benar sukses terkirim (C1)
-          await c.from('reminders').update({ status: 'sent', lease_until: null }).eq('id', item.id);
-        }
-        processed++;
-      } catch (err) {
-        console.error(`[remind] gagal kirim reminder id ${item.id}:`, err);
-        // ── PENGINGAT BERULANG TIDAK BOLEH MATI PERMANEN (temuan 08 Okt 2026) ──
-        // LAPORAN PEMILIK PRODUK: "kenapa pengingat waktu bangun saya ko ga aktif
-        // ya hari ini? padahal pada saat ringkasan itu masih ada".
-        //
-        // BUG LAMA: saat kirim gagal, status diubah ke 'failed'. Padahal query
-        // pengambilan HANYA mengambil status='pending' -> pengingat 'failed'
-        // TIDAK PERNAH dicoba lagi = MATI PERMANEN. Inilah sebab pengingat
-        // "bangun" hilang padahal sudah terdaftar.
-        //
-        // SEKARANG:
-        //   - Pengingat BERULANG (daily/weekly/...) -> kembalikan ke 'pending'
-        //     dengan due_at TETAP (akan dicoba lagi pada cron berikutnya).
-        //   - Pengingat SEKALI -> 'failed' (memang tidak diulang).
-        const iniBerulang = item.repeat_kind && item.repeat_kind !== 'none';
-        if (iniBerulang) {
-          // Kembalikan ke pending TANPA memajukan due_at -> dicoba lagi nanti.
-          await c.from('reminders').update({ status: 'pending', lease_until: null }).eq('id', item.id);
-          console.warn(`[remind] pengingat berulang #${item.id} akan dicoba lagi (status dikembalikan ke pending).`);
-        } else {
-          // ── PERBAIKAN AUDIT 14 Okt 2026: pengingat SEKALI juga dicoba ulang ──
-          // BUG LAMA: sekali gagal -> 'failed' SELAMANYA. Karena query hanya
-          // mengambil status='pending', satu gangguan jaringan sesaat (WhatsApp
-          // API down 1 detik, timeout) membuat pengingat MATI PERMANEN — padahal
-          // isinya bisa penting (mis. "minum obat").
-          // SEKARANG: beri JENDELA PERCOBAAN ULANG 30 MENIT. Selama due_at masih
-          // di dalam jendela itu, kembalikan ke 'pending' supaya cron berikutnya
-          // mencoba lagi. Setelah 30 menit, baru tandai 'failed' agar tidak
-          // mencoba selamanya (dan tidak menumpuk beban).
-          const dueMs = new Date(String((item as { due_at?: string }).due_at ?? '')).getTime();
-          const masihDalamJendela = Number.isFinite(dueMs) && Date.now() - dueMs < 30 * 60_000;
-          if (masihDalamJendela) {
-            await c.from('reminders').update({ status: 'pending', lease_until: null }).eq('id', item.id);
-            console.warn(`[remind] pengingat #${item.id} gagal terkirim — akan dicoba lagi (jendela 30 menit).`);
-          } else {
-            await c.from('reminders').update({ status: 'failed', lease_until: null }).eq('id', item.id);
-            console.error(`[remind] pengingat #${item.id} GAGAL PERMANEN (lewat jendela percobaan ulang).`);
           }
         }
       }
-    }
-    return processed;
+      return processed;
+    };
+
+    const totalPrivate = await prosesTabelPengingat('reminders');
+    const totalGroup = useGroupTable ? await prosesTabelPengingat('group_reminders') : 0;
+    return totalPrivate + totalGroup;
   } catch (err) {
     console.error('[remind] error checkDueReminders:', err);
     return 0;

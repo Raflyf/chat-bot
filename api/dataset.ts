@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../src/db.js';
 import { config } from '../src/env.js';
 import { isGroupChatKey } from '../src/chat_id.js';
+import { hasDedicatedGroupTables, isTableMissingError, markGroupTablesUnavailable } from '../src/group_db.js';
 import { extractSessionToken, verifySessionToken } from '../src/admin_auth.js';
 
 function maskChatId(chatId: string): string {
@@ -262,33 +263,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       ? Math.min(5000, explicitLimit * 2 + 60)
       : (isExport ? 3000 : scope === 'group' ? 1500 : Math.min(600, limit * 2 + 60));
 
-    let query = c
-      .from('messages')
-      .select('id, platform, chat_id, role, content, via, created_at')
-      .order('id', { ascending: false })
-      .limit(dbLimit);
+    const applyFilters = (tableName: 'messages' | 'group_messages') => {
+      let q = c
+        .from(tableName)
+        .select('id, platform, chat_id, role, content, via, created_at')
+        .order('id', { ascending: false })
+        .limit(dbLimit);
+      if (startDateIso) q = q.gte('created_at', startDateIso);
+      if (endDateIso) q = q.lte('created_at', endDateIso);
+      if (isIdSearch) q = q.ilike('chat_id', `%${searchDigits}%`);
+      return q;
+    };
 
-    // Filter tanggal dinamis
-    if (startDateIso) {
-      query = query.gte('created_at', startDateIso);
-    }
-    if (endDateIso) {
-      query = query.lte('created_at', endDateIso);
-    }
+    const useGroupTable = scope !== 'private' && (await hasDedicatedGroupTables());
+    // Tetap baca tabel `messages` termasuk saat `scope === 'group'` agar riwayat grup pra-migrasi v35 tetap muncul.
+    const usePrivateTable = true;
 
-    // Filter ID di sisi SQL supaya pencarian nomor/ID menjangkau SELURUH tabel,
-    // bukan hanya jendela dbLimit baris terakhir.
-    if (isIdSearch) {
-      query = query.ilike('chat_id', `%${searchDigits}%`);
-    }
+    const [privRes, grpRes] = await Promise.all([
+      usePrivateTable ? applyFilters('messages') : Promise.resolve({ data: [], error: null }),
+      useGroupTable ? applyFilters('group_messages') : Promise.resolve({ data: [], error: null }),
+    ]);
 
-    const { data: messagesRaw, error } = await query;
-
-    if (error) {
-      console.error('[api/dataset] Database query error:', error);
+    if (privRes.error) {
+      console.error('[api/dataset] Database query error:', privRes.error);
       res.status(500).json({ ok: false, error: 'Gagal mengambil riwayat pesan dari database.' });
       return;
     }
+
+    let grpRowsRaw: any[] = [];
+    if (grpRes.error) {
+      if (isTableMissingError(grpRes.error)) {
+        markGroupTablesUnavailable();
+      } else {
+        console.error('[api/dataset] Group database query error:', grpRes.error);
+        res.status(500).json({ ok: false, error: 'Gagal mengambil riwayat pesan grup dari database.' });
+        return;
+      }
+    } else {
+      grpRowsRaw = (grpRes.data || []).map((row: any) => ({ ...row, __fromGroupTable: true }));
+    }
+
+    const messagesRaw = [...(privRes.data || []), ...grpRowsRaw];
 
     // ── BUANG BARIS SISTEM DARI RIWAYAT (perbaikan 04 Okt 2026) ──
     //
@@ -319,8 +334,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     };
     const messages = (messagesRaw || []).filter((m: { via?: string | null }) => !isBarisSistem(m.via));
 
-    // Rekonstruksi pasangan prompt user dan jawaban bot
-    const rawList = (messages || []).slice().reverse();
+    // Rekonstruksi pasangan prompt user dan jawaban bot secara kronologis
+    const rawList = (messages || []).slice().reverse().sort((a: any, b: any) => {
+      const ta = a.created_at ? Date.parse(a.created_at) : 0;
+      const tb = b.created_at ? Date.parse(b.created_at) : 0;
+      if (ta !== tb) return ta - tb;
+      const ga = a.__fromGroupTable ? 1 : 0;
+      const gb = b.__fromGroupTable ? 1 : 0;
+      if (ga === gb) return Number(a.id || 0) - Number(b.id || 0);
+      return ga - gb;
+    });
     const pairs: DatasetPair[] = [];
 
     // ── PERBAIKAN AUDIT 14 Okt 2026: dari O(n²) ke O(n) ──
@@ -337,8 +360,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const indeksJawaban = new Map<string, number>();
     const pasangan = new Map<number, number>(); // index pesan user -> index jawaban bot
     for (let k = rawList.length - 1; k >= 0; k--) {
-      const r = rawList[k] as { chat_id?: string; platform?: string; role?: string };
-      const key = `${r.chat_id}|${r.platform}`;
+      const r = rawList[k] as { chat_id?: string; platform?: string; role?: string; __fromGroupTable?: boolean };
+      const key = `${r.chat_id}|${r.platform}|${r.__fromGroupTable ? 'g' : 'p'}`;
       if (r.role === 'assistant') {
         indeksJawaban.set(key, k);
       } else if (r.role === 'user') {
@@ -349,7 +372,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     for (let i = 0; i < rawList.length; i++) {
-      const userMsg = rawList[i];
+      const userMsg: any = rawList[i];
       if (userMsg.role === 'user') {
         const j = pasangan.get(i);
         const botMsg: any = j !== undefined ? rawList[j] : null;
@@ -358,7 +381,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const reply = botMsg ? (botMsg.content || '') : '';
         const rawVia = botMsg?.via || '-';
         const pForm = userMsg.platform || 'whatsapp';
-        const rowIsGroup = isGroupChatKey(userMsg.chat_id);
+        const rowIsGroup = Boolean(userMsg.__fromGroupTable) || isGroupChatKey(userMsg.chat_id);
 
         // Terapkan filter model/via
         if (modelFilter && modelFilter !== 'all' && !rawVia.toLowerCase().includes(modelFilter)) {
@@ -421,7 +444,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const timeInfo = formatLocalComponents(tsRaw, tzParam);
 
         pairs.push({
-          id: userMsg.id,
+          id: userMsg.__fromGroupTable ? -Math.abs(Number(userMsg.id || 0)) : userMsg.id,
           platform: pForm,
           chatIdMasked: maskChatId(userMsg.chat_id),
           chatId: String(userMsg.chat_id || ''),
@@ -444,7 +467,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     // Urutkan dari yang terbaru untuk tampilan evaluasi
-    pairs.reverse();
+    pairs.sort((a, b) => {
+      const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+      if (tb !== ta) return tb - ta;
+      return b.id - a.id;
+    });
     const finalPairs = explicitLimit ? pairs.slice(0, explicitLimit) : (isExport ? pairs : pairs.slice(0, limit));
 
     // Susun nama file ekspor yang mencerminkan filter aktif

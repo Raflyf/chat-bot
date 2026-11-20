@@ -299,7 +299,9 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     // dikirim ke chat PRIBADI orang itu. Bila dia belum pernah memulai chat pribadi
     // dengan bot, Telegram menolak — pengingat tetap `pending` dan dicoba lagi,
     // bukan hilang.
-    const identityKey = isGroup && msg.from?.id ? String(msg.from.id) : chatKey;
+    // Data grup disimpan terpisah memakai ruang grup (`chatKey`) dan dibedakan lewat `actor`,
+    // supaya data privat pengirim tidak pernah bocor masuk ke grup dan sebaliknya.
+    const identityKey = chatKey;
     const msgId = msg.message_id ? String(msg.message_id) : '';
     const ownerId = config.ownerChatId;
     const rawText = msg.text?.trim() ?? '';
@@ -389,7 +391,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         if (targetBot !== botUsername) return; // Command spesifik untuk bot lain di grup -> abaikan
         isTargetedCommand = true;
       } else {
-        const knownCommands = ['start', 'reset', 'clear', 'remind', 'salah', 'tanya', 'ai', 'help', 'bantuan', 'nimbrung', 'mention', 'diam', 'statusgrup', 'stop'];
+        const knownCommands = ['start', 'reset', 'clear', 'remind', 'salah', 'tanya', 'ai', 'help', 'bantuan', 'nimbrung', 'mention', 'diam', 'statusgrup', 'status', 'stop'];
         if (!isGroup || knownCommands.includes(cmdMatch[1].toLowerCase())) {
           isTargetedCommand = true;
         }
@@ -535,7 +537,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     const msgDateSec = msg.date || 0;
     if (msgDateSec > 0 && (nowSec - msgDateSec) > 180) {
       console.warn(`[telegram] Mengabaikan pesan basi/retry (umur: ${nowSec - msgDateSec} detik, id: ${msgId}). Tandai selesai tanpa memanggil AI.`);
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       return;
     }
 
@@ -550,7 +552,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         tgActorId,
         senderName,
       );
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       return;
     }
 
@@ -577,7 +579,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       } catch {
         // diam — ZERO teks statis
       }
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       return;
     }
 
@@ -599,7 +601,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     // dan dijamin muat dalam satu pesan. Balasan obrolan tetap digenerate AI.
     if (PERINTAH_BANTUAN.has(text.replace(/^\//, '').trim().toLowerCase())) {
       await sendTelegramMessageSafe(bot, chatId, teksBantuan());
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       return;
     }
 
@@ -612,7 +614,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       const pengganti = PERINTAH_DIGABUNG[cmdLama];
       if (pengganti) {
         await sendTelegramMessageSafe(bot, chatId, `Perintah \`/${cmdLama}\` sudah digabung. Pakai \`/${pengganti}\` ya.`);
-        if (msgId) void markMessageProcessed('telegram', msgId);
+        if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
         return;
       }
     }
@@ -624,7 +626,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       if (!rawCorrection) {
         const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
         await sendTelegramMessageSafe(bot, chatId, reply);
-        if (msgId) void markMessageProcessed('telegram', msgId);
+        if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
         return;
       }
       const check = validateCorrection(rawCorrection);
@@ -634,7 +636,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           ctx,
         );
         await sendTelegramMessageSafe(bot, chatId, reply);
-        if (msgId) void markMessageProcessed('telegram', msgId);
+        if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
         return;
       }
       const saved = await saveCorrection(identityKey, isGroup ? `[${senderName}]: ${check.cleaned}` : check.cleaned);
@@ -644,7 +646,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         ctx,
       );
       await sendTelegramMessageSafe(bot, chatId, reply);
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       return;
     }
 
@@ -652,7 +654,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     if (text.startsWith('/remind')) {
       const args = text.replace(/^\/remind\s*/, '').trim();
       await handleRemind(bot, chatId, args, 'telegram', isGroup ? senderName : undefined);
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       return;
     }
 
@@ -671,7 +673,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         // karena lokasi (mis. "cuaca hari ini") -> kirim pengantar, lalu lanjut
         // proses permintaan ASLI lewat AI di bawah (jangan `return`).
         await sendTelegramMessageSafe(bot, chatId, hasilCatat.reply, tgReplyRef);
-        if (msgId) void markMessageProcessed('telegram', msgId);
+        if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
         if (!hasilCatat.teruskanKeAi) tandaiBalasGrupTg();
         await saveMessage({
           platform: 'telegram', chat_id: chatKey, role: 'assistant',
@@ -704,7 +706,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         // diam — ZERO teks statis
       }
       await sendTelegramMessageSafe(bot, chatId, resetReply);
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
@@ -754,7 +756,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       if (dl) {
         const { reply, via, tokens } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', promptCaption, await getContext(chatKey, msgSentAt));
         await sendTelegramMessageSafe(bot, chatId, reply);
-        if (msgId) void markMessageProcessed('telegram', msgId);
+        if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
         await saveMessage({
           platform: 'telegram',
           chat_id: chatKey,
@@ -822,7 +824,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           })();
           await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
           tandaiBalasGrupTg();
-          if (msgId) void markMessageProcessed('telegram', msgId);
+          if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
           await saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
@@ -898,7 +900,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           const { reply, via, tokens } = await autoReply(prompt, ctx, web);
           await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
           tandaiBalasGrupTg();
-          if (msgId) void markMessageProcessed('telegram', msgId);
+          if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
           await saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
@@ -948,7 +950,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         await getContext(chatKey, msgSentAt),
       );
       await sendTelegramMessageSafe(bot, chatId, reply);
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply })
         .catch((err) => console.warn('[telegram] Gagal simpan pesan lokasi assistant:', err));
       return;
@@ -1000,7 +1002,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
               await sendTelegramMessageSafe(bot, chatId, teksStiker);
             }
           }
-          if (msgId) void markMessageProcessed('telegram', msgId);
+          if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
           const kontenAssistant = [teksStiker, stikerTele ? `[Stiker terkirim: ${stickerBalasan}]` : '']
             .filter(Boolean)
             .join('\n');
@@ -1024,7 +1026,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         : `Pengguna mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya seorang sahabat mengobrol.`;
       const { reply, via, tokens } = await autoReply(prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply);
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
@@ -1057,7 +1059,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       const { reply, via, tokens } = await autoReply((tgPassivePrefix ? `${tgPassivePrefix}\n` : '') + prompt, ctx);
       await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
       tandaiBalasGrupTg();
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
@@ -1097,7 +1099,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       } catch {
         // diam — ZERO teks statis
       }
-      if (msgId) void markMessageProcessed('telegram', msgId);
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       return;
     }
 

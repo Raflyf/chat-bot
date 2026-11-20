@@ -10,6 +10,7 @@
  * Juga menyediakan passive listening buffer (15 pesan / TTL 30 menit per grup) agar bot nyambung saat dipanggil.
  */
 import { db } from './db.js';
+import { hasDedicatedGroupTables } from './group_db.js';
 
 export type GroupMode = 'mention' | 'nimbrung' | 'diam';
 
@@ -115,31 +116,68 @@ async function hydrateFromDbIfNeeded(nowMs = Date.now()): Promise<void> {
   }
   hydratingPromise = (async () => {
     try {
-      const { data, error } = await c
-        .from('whatsapp_sessions')
-        .select('content')
-        .eq('filename', GROUP_MODE_STATE_FILENAME)
-        .maybeSingle();
-      if (!error && data?.content) {
-        const parsed = JSON.parse(String(data.content)) as Record<string, Partial<GroupModeRecord>>;
-        if (parsed && typeof parsed === 'object') {
-          for (const [k, raw] of Object.entries(parsed)) {
-            if (!raw || typeof raw !== 'object') continue;
+      let loadedFromDedicated = false;
+      if (await hasDedicatedGroupTables()) {
+        const { data: rows, error: errGrp } = await c
+          .from('group_settings')
+          .select('group_key, mode, locked_by_admin, updated_by, last_group_activity_at, last_bot_reply_at, updated_at')
+          .limit(500);
+        if (!errGrp && Array.isArray(rows)) {
+          loadedFromDedicated = true;
+          for (const row of rows as Array<Record<string, unknown>>) {
+            const k = String(row.group_key ?? '').trim();
+            if (!k) continue;
             const mode: GroupMode =
-              raw.mode === 'nimbrung' || raw.mode === 'diam' || raw.mode === 'mention'
-                ? raw.mode
+              row.mode === 'nimbrung' || row.mode === 'diam' || row.mode === 'mention'
+                ? row.mode
                 : 'mention';
+            const remoteUpdated = row.updated_at ? new Date(String(row.updated_at)).getTime() : 0;
             const local = modeCache.get(k);
-            const remoteUpdated = Number(raw.updatedAt || 0);
             if (!local || remoteUpdated >= local.updatedAt) {
               modeCache.set(k, {
                 mode,
-                lockedByAdmin: Boolean(raw.lockedByAdmin),
+                lockedByAdmin: Boolean(row.locked_by_admin),
                 updatedAt: remoteUpdated || nowMs,
-                updatedBy: typeof raw.updatedBy === 'string' ? raw.updatedBy : undefined,
-                lastGroupActivityAt: Number(raw.lastGroupActivityAt || remoteUpdated || nowMs),
-                lastBotReplyAt: Number(raw.lastBotReplyAt || 0),
+                updatedBy: typeof row.updated_by === 'string' ? row.updated_by : undefined,
+                lastGroupActivityAt: row.last_group_activity_at
+                  ? new Date(String(row.last_group_activity_at)).getTime()
+                  : (remoteUpdated || nowMs),
+                lastBotReplyAt: row.last_bot_reply_at
+                  ? new Date(String(row.last_bot_reply_at)).getTime()
+                  : 0,
               });
+            }
+          }
+        }
+      }
+
+      if (!loadedFromDedicated) {
+        const { data, error } = await c
+          .from('whatsapp_sessions')
+          .select('content')
+          .eq('filename', GROUP_MODE_STATE_FILENAME)
+          .maybeSingle();
+        if (!error && data?.content) {
+          const parsed = JSON.parse(String(data.content)) as Record<string, Partial<GroupModeRecord>>;
+          if (parsed && typeof parsed === 'object') {
+            for (const [k, raw] of Object.entries(parsed)) {
+              if (!raw || typeof raw !== 'object') continue;
+              const mode: GroupMode =
+                raw.mode === 'nimbrung' || raw.mode === 'diam' || raw.mode === 'mention'
+                  ? raw.mode
+                  : 'mention';
+              const local = modeCache.get(k);
+              const remoteUpdated = Number(raw.updatedAt || 0);
+              if (!local || remoteUpdated >= local.updatedAt) {
+                modeCache.set(k, {
+                  mode,
+                  lockedByAdmin: Boolean(raw.lockedByAdmin),
+                  updatedAt: remoteUpdated || nowMs,
+                  updatedBy: typeof raw.updatedBy === 'string' ? raw.updatedBy : undefined,
+                  lastGroupActivityAt: Number(raw.lastGroupActivityAt || remoteUpdated || nowMs),
+                  lastBotReplyAt: Number(raw.lastBotReplyAt || 0),
+                });
+              }
             }
           }
         }
@@ -165,6 +203,21 @@ async function persistModeStateToDb(): Promise<void> {
   }
   persistingPromise = (async () => {
     try {
+      if (await hasDedicatedGroupTables() && entries.length > 0) {
+        const rows = entries.map(([groupKey, rec]) => ({
+          group_key: groupKey,
+          platform: groupKey.startsWith('tg_') ? 'telegram' : 'whatsapp',
+          mode: rec.mode,
+          locked_by_admin: rec.lockedByAdmin,
+          updated_by: rec.updatedBy ?? null,
+          last_group_activity_at: new Date(rec.lastGroupActivityAt || Date.now()).toISOString(),
+          last_bot_reply_at: rec.lastBotReplyAt ? new Date(rec.lastBotReplyAt).toISOString() : null,
+          updated_at: new Date(rec.updatedAt || Date.now()).toISOString(),
+        }));
+        const { error: errUp } = await c.from('group_settings').upsert(rows, { onConflict: 'group_key' });
+        if (!errUp) return;
+      }
+
       await c.from('whatsapp_sessions').upsert({
         filename: GROUP_MODE_STATE_FILENAME,
         content: JSON.stringify(snapshot),
@@ -402,8 +455,8 @@ export function deteksiPerintahModeGrup(
   const raw = String(text ?? '').trim();
   if (!raw) return null;
 
-  // 1. Slash / bang commands (selalu aktif)
-  const mCmd = raw.match(/^[\/!](nimbrung|mention|stopnimbrung|stop|diam|mute|statusgrup)(?:@([a-zA-Z0-9_]+))?(?:\s|$)/i);
+  // 1. Slash / bang commands (boleh di awal pesan maupun setelah sapaan, mis. "@bot oyy /nimbrung")
+  const mCmd = raw.match(/(?:^|\s)[\/!](nimbrung|mention|stopnimbrung|stop|diam|mute|statusgrup|status)(?:@([a-zA-Z0-9_]+))?(?=$|[\s.,!?])/i);
   if (mCmd) {
     const cmd = mCmd[1].toLowerCase();
     const targetBot = mCmd[2]?.toLowerCase();
@@ -413,7 +466,7 @@ export function deteksiPerintahModeGrup(
     if (cmd === 'nimbrung') return 'nimbrung';
     if (cmd === 'mention' || cmd === 'stopnimbrung' || cmd === 'stop') return 'mention';
     if (cmd === 'diam' || cmd === 'mute') return 'diam';
-    if (cmd === 'statusgrup') return 'status';
+    if (cmd === 'statusgrup' || cmd === 'status') return 'status';
   }
 
   // 2. Bahasa natural: hanya aktif jika pesan ditujukan ke bot ATAU bot sedang mode nimbrung
@@ -446,12 +499,16 @@ export function deteksiPerintahModeGrup(
   }
 
   if (
-    /\b(?:ikut(?:an)?\s+nimbrung|nimbrung\s+(?:terus|aja|saja|dong|yuk|ya)|gabung\s+nimbrung|mode\s+nimbrung|terus\s+(?:nimbrung|membalas|balas)\s+di\s+grup|nyalakan\s+nimbrung|aktif(?:kan)?\s+nimbrung)\b/.test(lower)
+    /\b(?:ikut(?:an)?\s+nimbrung|nimbrung\s+(?:terus|aja|saja|dong|yuk|ya)|gabung\s+nimbrung|mode\s+nimbrung|terus\s+(?:nimbrung|membalas|balas)\s+di\s+grup|nyalakan\s+nimbrung|aktif(?:kan)?\s+nimbrung)\b/.test(lower) ||
+    (opts.isDirected && lower.split(/\s+/).length <= 4 && /\bnimbrung\b/.test(lower))
   ) {
     return 'nimbrung';
   }
 
-  if (/^(?:status\s+grup|mode\s+grup|cek\s+mode(?:\s+grup)?)\??$/.test(lower)) {
+  if (
+    /^(?:(?:cek\s+)?status\s+grup|mode\s+grup|cek\s+mode(?:\s+grup)?)\??$/.test(lower) ||
+    (opts.isDirected && /^(?:cek\s+)?status\??$/.test(lower))
+  ) {
     return 'status';
   }
 
@@ -551,7 +608,7 @@ export function evaluasiResponGrup(input: GroupEvaluationInput): GroupEvaluation
       };
     }
     if (input.inFollowUpWindow) {
-      if (input.mentionsOtherOnly || (raw && adalahPesanBasaBasiPenutup(raw)) || input.hasSticker) {
+      if (input.mentionsOtherOnly || (raw && adalahPesanBasaBasiPenutup(raw))) {
         return {
           action: 'passive_ignore',
           reason: 'followup_ended_by_filler_or_other',
@@ -559,7 +616,7 @@ export function evaluasiResponGrup(input: GroupEvaluationInput): GroupEvaluation
           shouldSetFollowUp: false,
         };
       }
-      if (raw || input.hasMedia) {
+      if (raw || input.hasMedia || input.hasSticker) {
         return {
           action: 'reply',
           reason: 'follow_up_window',
@@ -586,16 +643,6 @@ export function evaluasiResponGrup(input: GroupEvaluationInput): GroupEvaluation
     };
   }
 
-  // Stiker acak di grup saat nimbrung dilewati kecuali me-reply bot langsung
-  if (input.hasSticker && !raw) {
-    return {
-      action: 'passive_ignore',
-      reason: 'nimbrung_skip_random_sticker',
-      cleanedText: baseCleaned,
-      shouldSetFollowUp: false,
-    };
-  }
-
   if (input.mentionsOtherOnly) {
     return {
       action: 'passive_ignore',
@@ -614,7 +661,7 @@ export function evaluasiResponGrup(input: GroupEvaluationInput): GroupEvaluation
     };
   }
 
-  if (!raw && !input.hasMedia) {
+  if (!raw && !input.hasMedia && !input.hasSticker) {
     return {
       action: 'passive_ignore',
       reason: 'empty',

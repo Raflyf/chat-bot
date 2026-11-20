@@ -12,6 +12,7 @@ import { rekapUang, daftarTugas, daftarCatatan } from './notes.js';
 import { daftarPengingatPending } from './reminder-ubah.js';
 import { labelUlang } from './reminder-repeat.js';
 import { ambilProfilWaktu } from './user-profile.js';
+import { isGroupChatKey } from './chat_id.js';
 
 /** Format rupiah singkat. */
 function rp(n: number): string {
@@ -64,7 +65,7 @@ export async function susunRingkasan(chatId: string, opsi: OpsiRingkasan = {}): 
   ]);
 
   const baris: string[] = [];
-  baris.push(`📊 *Ringkasan (${labelPeriode})*`);
+  baris.push(isGroupChatKey(chatId) ? `📊 *Ringkasan Grup (${labelPeriode})*` : `📊 *Ringkasan (${labelPeriode})*`);
   baris.push('');
 
   // ── KEUANGAN ──

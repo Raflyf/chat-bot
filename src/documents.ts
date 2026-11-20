@@ -18,6 +18,7 @@
  */
 import { db } from './db.js';
 import { normChatId } from './chat_id.js';
+import { resolveTableName } from './group_db.js';
 import { logWarn } from './logger.js';
 
 /** Batas karakter teks yang disimpan (agar DB tidak membengkak). */
@@ -46,7 +47,8 @@ export async function simpanDokumen(d: DokumenTersimpan): Promise<boolean> {
   d.chatId = normChatId(d.chatId);   // konsistensi chat_id (satu sumber)
   const teksAsli = typeof d.teks === 'string' ? d.teks : '';
   try {
-    const { error } = await c.from('documents').insert({
+    const docTbl = await resolveTableName('documents', d.chatId);
+    const { error } = await c.from(docTbl).insert({
       chat_id: d.chatId,
       platform: d.platform ?? 'whatsapp',
       filename: String(d.filename).slice(0, 300),
@@ -85,8 +87,9 @@ export async function dokumenTerakhir(
   const c = db();
   if (!c || !chatId) return [];
   try {
+    const docTbl = await resolveTableName('documents', chatId);
     const { data, error } = await c
-      .from('documents')
+      .from(docTbl)
       .select('filename, teks, ringkasan, created_at')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: false })

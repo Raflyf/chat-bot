@@ -131,8 +131,8 @@ test('wiring otak terpisah Baileys, Cloud API, dan Telegram', () => {
   const TELE = baca('src/telegram.ts');
 
   assert.match(BAIL, /const chatKey = isGroup \? baileysGroupChatKey\(nomorBaileys\) : baileysChatKey\(nomorBaileys\)/);
-  assert.match(BAIL, /const personalOwnerId = isGroup && actorGrup \? actorGrup : nomorBaileys/);
-  assert.match(BAIL, /const sharedDataKey = normChatId\(personalOwnerId, 'whatsapp'\)/);
+  assert.match(BAIL, /const personalOwnerId = isGroup \? chatKey : nomorBaileys/);
+  assert.match(BAIL, /const sharedDataKey = isGroup \? chatKey : normChatId\(personalOwnerId, 'whatsapp'\)/);
   assert.match(BAIL, /baileysAutoReply\(/);
   assert.match(BAIL, /baileysDescribeImage\(/);
   assert.match(BAIL, /baileysDynamicNotice\(/);

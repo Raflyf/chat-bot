@@ -14,6 +14,7 @@
  */
 import { db } from './db.js';
 import { normChatId } from './chat_id.js';
+import { resolveTableName } from './group_db.js';
 import { parseWaktuAlami } from './notes.js';
 import { kemiripanPesan } from './reminder-dedup.js';
 
@@ -46,7 +47,8 @@ export async function daftarPengingatPending(chatId: string): Promise<PengingatR
   const c = db();
   if (!c) return [];
   try {
-    const { data } = await c.from('reminders')
+    const remTbl = await resolveTableName('reminders', chatId);
+    const { data } = await c.from(remTbl)
       .select('id, message, due_at, status')
       .eq('chat_id', chatId)
       .eq('status', 'pending')
@@ -59,13 +61,19 @@ export async function daftarPengingatPending(chatId: string): Promise<PengingatR
 }
 
 /** Ubah waktu (dan pesan) pengingat. */
-export async function ubahPengingat(id: number, waktuBaru: Date, pesanBaru?: string): Promise<boolean> {
+export async function ubahPengingat(
+  id: number,
+  waktuBaru: Date,
+  pesanBaru?: string,
+  chatId?: string,
+): Promise<boolean> {
   const c = db();
   if (!c) return false;
   try {
+    const remTbl = await resolveTableName('reminders', chatId);
     const patch: Record<string, unknown> = { due_at: waktuBaru.toISOString() };
     if (pesanBaru) patch.message = pesanBaru;
-    const { error } = await c.from('reminders').update(patch).eq('id', id).eq('status', 'pending');
+    const { error } = await c.from(remTbl).update(patch).eq('id', id).eq('status', 'pending');
     return !error;
   } catch {
     return false;
@@ -74,18 +82,13 @@ export async function ubahPengingat(id: number, waktuBaru: Date, pesanBaru?: str
 
 /**
  * Batalkan pengingat dengan MENGHAPUS barisnya.
- *
- * CATATAN (05 Okt 2026): awalnya memakai status 'cancelled', tetapi kolom
- * `status` punya CHECK CONSTRAINT yang hanya mengizinkan
- * pending/processing/sent/failed — update ditolak (kode 23514). Karena
- * pembatalan berarti pengingat TIDAK BOLEH terkirim, menghapus baris adalah
- * cara paling bersih dan tidak butuh migrasi skema.
  */
-export async function batalkanPengingat(id: number): Promise<boolean> {
+export async function batalkanPengingat(id: number, chatId?: string): Promise<boolean> {
   const c = db();
   if (!c) return false;
   try {
-    const { error } = await c.from('reminders').delete().eq('id', id).eq('status', 'pending');
+    const remTbl = await resolveTableName('reminders', chatId);
+    const { error } = await c.from(remTbl).delete().eq('id', id).eq('status', 'pending');
     return !error;
   } catch {
     return false;

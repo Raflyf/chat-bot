@@ -92,12 +92,12 @@ test('daftar putih grup: konfigurasi ada & terdokumentasi', () => {
   assert.match(ENV_EX, /\/namabot|nama bot/i, '.env.example harus menjelaskan cara panggil');
 });
 
-test('privasi grup: data pribadi dipisah per anggota (audit P1-2)', () => {
-  assert.match(TG, /const identityKey = isGroup && msg\.from\?\.id \? String\(msg\.from\.id\) : chatKey/);
-  // Data pribadi memakai identityKey, BUKAN id grup.
-  assert.match(TG, /tanganiPencatatan\(text, identityKey,/, 'catatan/tugas/keuangan harus per-anggota');
-  assert.match(TG, /tangkapFaktaPersonal\(identityKey, text\)/, 'fakta personal harus per-anggota');
-  assert.match(TG, /saveCorrection\(identityKey,/, 'koreksi harus per-anggota');
+test('privasi grup: data grup terisolasi total dari chat pribadi (tidak membocorkan ringkasan DM)', () => {
+  assert.match(TG, /const identityKey = chatKey;/);
+  // Data grup memakai identityKey (kunci grup), sehingga ringkasan/catatan/tugas/fakta DM pribadi tidak pernah bocor ke grup.
+  assert.match(TG, /tanganiPencatatan\(text, identityKey,/, 'catatan/tugas/keuangan harus terisolasi per grup');
+  assert.match(TG, /tangkapFaktaPersonal\(identityKey, text\)/, 'fakta personal harus terisolasi per grup');
+  assert.match(TG, /saveCorrection\(identityKey,/, 'koreksi harus terisolasi per grup');
 });
 
 test('indikator menulis aktif saat memproses', () => {
