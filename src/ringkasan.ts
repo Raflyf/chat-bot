@@ -109,7 +109,7 @@ export async function susunRingkasan(chatId: string, opsi: OpsiRingkasan = {}): 
       const tandaUlang = ulang && ulang !== 'none'
         ? ` 🔁 ${labelUlang({ repeat_kind: ulang as never, repeat_value: (p as { repeat_value?: string | null }).repeat_value ?? null, repeat_until: null, repeat_count: 0 })}`
         : '';
-      baris.push(`   • ${p.message.slice(0, 40)}, ${tanggalRamah(p.due_at, zona)}${tandaUlang}`);
+      baris.push(`   • ${p.message.replace(/\u200B/g, '').slice(0, 40)}, ${tanggalRamah(p.due_at, zona)}${tandaUlang}`);
     }
     if (pengingat.length > 5) baris.push(`   ... dan ${pengingat.length - 5} pengingat lain`);
   }

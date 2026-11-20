@@ -76,7 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         console.error('[cron/reminders] gagal kirim telegram (fallback):', e);
         return false;
       }
-    });
+    }, undefined, { channelFilter: 'cloud_only' });
 
     let vpsMonitor: { checked: boolean; state: string | null; events: string[]; skipped?: string } = {
       checked: false,

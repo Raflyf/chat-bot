@@ -22,7 +22,7 @@ import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStic
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
-import { saveReminderToDb, checkDueReminders, nomorWhatsApp } from './remind.js';
+import { saveReminderToDb, checkDueReminders, nomorWhatsApp, tandaiPengingatBaileys } from './remind.js';
 // normChatId: SATU SUMBER normalisasi chat_id (audit 14 Okt 2026 — chatKey Baileys
 // dulu memakai JID penuh sehingga identitas user terpecah dari Cloud API).
 import { normChatId } from './chat_id.js';
@@ -37,7 +37,60 @@ const MAX_RECONNECT = 8;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let reconnectCount = 0;
 let activeSock: WASocket | null = null;
-import { sendWhatsAppCloudMessageSafe } from './whatsapp_cloud.js';
+let reminderInitTimer: NodeJS.Timeout | null = null;
+let reminderWorkerTimer: NodeJS.Timeout | null = null;
+let checkingReminders = false;
+
+function baileysJidDariChatId(chatId: string): string {
+  const raw = String(chatId ?? '').trim();
+  if (raw.endsWith('@g.us')) return raw;
+  return `${nomorWhatsApp(raw)}@s.whatsapp.net`;
+}
+
+async function jalankanCekPengingatBaileys(label: string): Promise<void> {
+  if (!activeSock || checkingReminders) return;
+  checkingReminders = true;
+  try {
+    await checkDueReminders(async (chatId, text) => {
+      if (!activeSock) return false;
+      const jid = baileysJidDariChatId(String(chatId));
+      return await sendWhatsAppMessageSafe(activeSock, jid, text);
+    }, 'whatsapp', { channelFilter: 'baileys_only', allowWait: false });
+  } catch (err) {
+    console.warn(`[baileys-remind] Cek pengingat ${label} gagal:`, err);
+  } finally {
+    checkingReminders = false;
+  }
+}
+
+/**
+ * Worker pengingat Baileys: mengecek pengingat jatuh tempo setiap 10 detik
+ * dan mengirimkannya langsung dari nomor WhatsApp Baileys.
+ */
+export function startBaileysReminderWorker(): void {
+  stopBaileysReminderWorker();
+  // Cek cepat pertama kali saat tersambung
+  reminderInitTimer = setTimeout(() => {
+    reminderInitTimer = null;
+    void jalankanCekPengingatBaileys('awal');
+  }, 3_000);
+
+  // Interval berkala setiap 10 detik
+  reminderWorkerTimer = setInterval(() => {
+    void jalankanCekPengingatBaileys('berkala');
+  }, 10_000);
+}
+
+export function stopBaileysReminderWorker(): void {
+  if (reminderInitTimer) {
+    clearTimeout(reminderInitTimer);
+    reminderInitTimer = null;
+  }
+  if (reminderWorkerTimer) {
+    clearInterval(reminderWorkerTimer);
+    reminderWorkerTimer = null;
+  }
+}
 import { laporShutdownVps, mulaiTimerPeringatanLokalVps } from './vps_monitor.js';
 import {
   restoreSessionFromSupabase,
@@ -244,9 +297,11 @@ export async function startWhatsApp(): Promise<void> {
       console.log('[whatsapp] Berhasil terhubung ke jaringan WhatsApp.');
       console.log('[whatsapp] Bot siap menerima dan membalas pesan 24 jam nonstop.');
       await syncSessionDirToSupabase(sessionDir);
+      startBaileysReminderWorker();
     }
 
     if (connection === 'close') {
+      stopBaileysReminderWorker();
       if (activeSock === sock) activeSock = null;
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
@@ -339,14 +394,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // Dijalankan tanpa `await` (fire-and-forget) agar TIDAK menambah latensi balasan.
   void (async () => {
     try {
-      // HANYA platform 'whatsapp' — pengingat Telegram dibiarkan `pending`
-      // untuk cron/worker Telegram (lihat catatan di checkDueReminders).
+      // HANYA platform 'whatsapp' dan kanal 'baileys_only' — pengingat dikirim langsung
+      // via soket Baileys lokal, bukan dialihkan ke Cloud API (audit 20 Nov 2026).
       await checkDueReminders(async (chatId, text) => {
-        // WAJIB `return`: tanpa ini kegagalan kirim dianggap sukses (audit 14 Okt 2026).
-        return await sendWhatsAppCloudMessageSafe(nomorWhatsApp(String(chatId)), text);
-      }, 'whatsapp');
+        const jid = baileysJidDariChatId(String(chatId));
+        return await sendWhatsAppMessageSafe(sock, jid, text);
+      }, 'whatsapp', { channelFilter: 'baileys_only', allowWait: false });
     } catch (err) {
-      console.warn('[remind] Lazy-check gagal:', String((err as Error)?.message ?? err).slice(0, 120));
+      console.warn('[remind] Lazy-check Baileys gagal:', String((err as Error)?.message ?? err).slice(0, 120));
     }
   })();
 
@@ -1016,7 +1071,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             return d;
           })();
     const targetChat = nomorBaileys;
-    const reminderSaved = await saveReminderToDb(targetChat, message, dueAt, 'whatsapp');
+    const reminderSaved = await saveReminderToDb(targetChat, tandaiPengingatBaileys(message), dueAt, 'whatsapp');
     const { reply } = await autoReply(
       `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.` +
         (reminderSaved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa pengingat mungkin tidak tersimpan.'),
@@ -1041,7 +1096,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       : undefined;
     // Tangkap fakta personal (diam-diam) — lihat user_facts.ts.
     try { await tangkapFaktaPersonal(targetChat, text); } catch { /* best-effort */ }
-    const hasil = await tanganiPencatatan(text, targetChat, catatCtx, { actor: actorGrup, platform: 'whatsapp' });
+    const hasil = await tanganiPencatatan(text, targetChat, catatCtx, { actor: actorGrup, platform: 'whatsapp', channel: 'baileys' });
     if (hasil.ditangani) {
       await sendWhatsAppMessageSafe(sock, remoteJid, hasil.reply);
       if (messageId) void markMessageProcessed('whatsapp', messageId);
@@ -1208,6 +1263,7 @@ if (process.argv[1] && process.argv[1].includes('whatsapp_baileys')) {
     if (stopping) return;
     stopping = true;
     stopVpsTimer();
+    stopBaileysReminderWorker();
     console.log(`\n[whatsapp] Proses dihentikan (${signal}).`);
     void laporShutdownVps(signal).finally(() => {
       process.exit(0);

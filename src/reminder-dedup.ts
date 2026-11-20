@@ -55,7 +55,7 @@ export function kemiripanPesan(a: string, b: string): number {
   // SEKARANG: bila keduanya kosong, bandingkan teks MENTAH — hanya identik
   // (setelah trim+lowercase) yang dianggap sama.
   if (wa.length === 0 && wb.length === 0) {
-    return a.trim().toLowerCase() === b.trim().toLowerCase() ? 1 : 0;
+    return a.replace(/\u200B/g, '').trim().toLowerCase() === b.replace(/\u200B/g, '').trim().toLowerCase() ? 1 : 0;
   }
   if (wa.length === 0 || wb.length === 0) return 0;
 

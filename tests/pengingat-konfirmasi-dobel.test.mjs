@@ -58,7 +58,7 @@ test('guard terpasang di jalur pengingat & memakai kemiripan subjek', () => {
   assert.match(NOTES, /async function pertanyaanKonfirmasiPengingat/);
   // Dipanggil SEBELUM menyimpan pengingat.
   const idxGuard = NOTES.indexOf('await pertanyaanKonfirmasiPengingat(asli, chatId');
-  const idxSimpan = NOTES.indexOf('const r = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform, teksAsli: asli });', idxGuard);
+  const idxSimpan = NOTES.indexOf('const r = await simpanDariNiat(chatId, niat, {', idxGuard);
   assert.notEqual(idxGuard, -1, 'guard harus dipanggil di jalur pengingat');
   assert.ok(idxSimpan > idxGuard, 'guard harus berjalan SEBELUM penyimpanan');
   // Bila terdeteksi konfirmasi -> diserahkan ke AI (bukan teks template).

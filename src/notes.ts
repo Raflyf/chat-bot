@@ -2567,7 +2567,7 @@ async function pertanyaanKonfirmasiPengingat(
 /** Bentuk entri dari niat yang sudah dikonfirmasi. */
 async function simpanDariNiat(
   chatId: string, niat: NiatTerdeteksi,
-  opts: { actor?: string; platform: string; teksAsli?: string },
+  opts: { actor?: string; platform: string; channel?: string; teksAsli?: string },
 ): Promise<{ ok: boolean; pesan: string }> {
   const d = niat.data;
   if (niat.kind === 'expense') {
@@ -2690,13 +2690,14 @@ async function simpanDariNiat(
       const teksSumber = String(opts.teksAsli || d.message || '');
       const mh = deteksiMultiHari(teksSumber, new Date(), (t, s2) => parseWaktuAlami(t, s2));
       if (mh) {
-        const { simpanReminderCerdas } = await import('./remind.js');
+        const { simpanReminderCerdas, tandaiPengingatBaileys } = await import('./remind.js');
         const daftar = susunDaftarPengingat(mh);
         const jam = (x: Date) => x.toLocaleString('id-ID', { timeZone: zonaWaktuAktif(), weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace('.', ':');
         const berhasil: string[] = [];
         for (const item of daftar) {
+          const pesanItem = opts.channel === 'baileys' ? tandaiPengingatBaileys(item.pesan) : item.pesan;
           const r = await simpanReminderCerdas(
-            chatId, item.pesan, item.due,
+            chatId, pesanItem, item.due,
             opts.platform === 'telegram' ? 'telegram' : 'whatsapp',
           );
           if (r.ok) berhasil.push(`   • ${jam(item.due)} — ${item.pesan}`);
@@ -2713,9 +2714,12 @@ async function simpanDariNiat(
       // Gagal deteksi multi-hari -> lanjut ke jalur pengingat biasa di bawah.
     }
 
-    const { simpanReminderCerdas } = await import('./remind.js');
+    const { simpanReminderCerdas, tandaiPengingatBaileys } = await import('./remind.js');
+    const isiPesan = opts.channel === 'baileys'
+      ? tandaiPengingatBaileys(String(d.message || 'Pengingat'))
+      : String(d.message || 'Pengingat');
     const hasil = await simpanReminderCerdas(
-      chatId, String(d.message || 'Pengingat'), new Date(String(d.due_at)),
+      chatId, isiPesan, new Date(String(d.due_at)),
       opts.platform === 'telegram' ? 'telegram' : 'whatsapp',
       d.repeat_kind && d.repeat_kind !== 'none'
         ? { repeat_kind: String(d.repeat_kind), repeat_value: d.repeat_value ? String(d.repeat_value) : null }
@@ -2896,7 +2900,7 @@ export async function tanganiPencatatan(
   teks: string,
   chatId: string,
   ctx: unknown,
-  opts: { actor?: string; platform: string; lanjutkanTertunda?: boolean },
+  opts: { actor?: string; platform: string; lanjutkanTertunda?: boolean; channel?: string },
 ): Promise<{ ditangani: boolean; reply: string; jalur: string; teruskanKeAi?: string }> {
   const s = teks.trim();
   const asli = teks.trim();
@@ -2938,7 +2942,7 @@ export async function tanganiPencatatan(
         const gabung = `${tertundaJam.teks} ${asli}`;
         const niatGabung = deteksiNiat(gabung);
         if (niatGabung && niatGabung.kind === 'note' && niatGabung.data.pengingat) {
-          const r = await simpanDariNiat(chatId, niatGabung, { actor: opts.actor, platform: opts.platform, teksAsli: asli });
+          const r = await simpanDariNiat(chatId, niatGabung, { actor: opts.actor, platform: opts.platform, channel: opts.channel, teksAsli: asli });
           return { ditangani: true, reply: r.pesan, jalur: 'lanjut-pengingat-jam' };
         }
       }
@@ -3347,15 +3351,16 @@ export async function tanganiPencatatan(
       if (permintaan.aksi === 'batal') {
         if (target) {
           const okBatal = await batalkanPengingat(target.id);
+          const cleanNama = target.message.replace(/\u200B/g, '');
           return {
             ditangani: true,
             reply: okBatal
-              ? `🗑️ Pengingat "${target.message}" (${formatWaktuUser(new Date(target.due_at))}) sudah dibatalkan.`
+              ? `🗑️ Pengingat "${cleanNama}" (${formatWaktuUser(new Date(target.due_at))}) sudah dibatalkan.`
               : '⚠️ Gagal membatalkan pengingat. Coba lagi ya.',
             jalur: 'ubah-batal',
           };
         }
-        const daftarB = daftar.map((r, i) => `${i + 1}. "${r.message}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
+        const daftarB = daftar.map((r, i) => `${i + 1}. "${r.message.replace(/\u200B/g, '')}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
         return {
           ditangani: true,
           reply: `Pengingat aktif kamu:\n${daftarB}\n\nSebutkan yang mana, mis. *batalin rapat*.`,
@@ -3377,13 +3382,14 @@ export async function tanganiPencatatan(
         const okUbah = await ubahPengingat(target.id, waktuBaru);
         if (okUbah) {
           const label = permintaan.aksi === 'majukan' ? 'dimajukan' : 'diundur';
+          const cleanNama = target.message.replace(/\u200B/g, '');
           return {
             ditangani: true,
             reply: [
               `✅ Pengingat ${label} (TIDAK dobel, yang lama diperbarui).`,
               ``,
-              `*Sebelumnya:* "${target.message}", ${formatWaktuUser(new Date(target.due_at))}`,
-              `*Sekarang :* "${target.message}", ${formatWaktuUser(waktuBaru)}`,
+              `*Sebelumnya:* "${cleanNama}", ${formatWaktuUser(new Date(target.due_at))}`,
+              `*Sekarang :* "${cleanNama}", ${formatWaktuUser(waktuBaru)}`,
               catatanKonfirmasiZona,
             ].join('\n'),
             jalur: 'ubah-undur',
@@ -3393,7 +3399,7 @@ export async function tanganiPencatatan(
       }
 
       // Tidak bisa hitung waktu baru -> tanya user (jangan mengarang).
-      const daftarTeks = daftar.map((r, i) => `${i + 1}. "${r.message}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
+      const daftarTeks = daftar.map((r, i) => `${i + 1}. "${r.message.replace(/\u200B/g, '')}", ${formatWaktuUser(new Date(r.due_at))}`).join('\n');
       return {
         ditangani: true,
         reply: `Pengingat aktif kamu:\n${daftarTeks}\n\nSebutkan waktu barunya, mis. *undur rapat jadi jam 10* atau *undur satu jam*.`,
@@ -3636,7 +3642,7 @@ export async function tanganiPencatatan(
         return { ditangani: false, reply: '', jalur: 'konfirmasi-pengingat' };
       }
       // Pengingat: langsung simpan (tidak boleh ada balasan tanya-jawab).
-      const r = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform, teksAsli: asli });
+      const r = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform, channel: opts.channel, teksAsli: asli });
       return { ditangani: true, reply: r.pesan, jalur: `niat-${niat.kind}` };
     }
 
@@ -3664,7 +3670,7 @@ export async function tanganiPencatatan(
     // Catatan / tugas / keuangan (dengan perintah eksplisit): langsung simpan.
     // LAPORAN PEMILIK PRODUK (06 Okt 2026): "Bisa langsung catat aja?" -> user
     // MERASA terganggu oleh konfirmasi ya/tidak untuk permintaan eksplisit.
-    const hasilSimpan = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform });
+    const hasilSimpan = await simpanDariNiat(chatId, niat, { actor: opts.actor, platform: opts.platform, channel: opts.channel });
     if (!hasilSimpan.ok) {
       return { ditangani: true, reply: hasilSimpan.pesan, jalur: `niat-${niat.kind}-gagal` };
     }
@@ -3707,7 +3713,7 @@ export async function tanganiPencatatan(
         jalur: 'tanya-catat-keuangan',
       };
     }
-    const r = await simpanDariNiat(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform, teksAsli: asli });
+    const r = await simpanDariNiat(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform, channel: opts.channel, teksAsli: asli });
     return { ditangani: true, reply: r.pesan, jalur: `implisit-${niatImplisit.kind}` };
   }
 

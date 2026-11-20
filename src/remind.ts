@@ -5,6 +5,7 @@ import { config } from './env.js';
 import { kemiripanPesan, AMBANG_MIRIP, TOLERANSI_WAKTU_MENIT } from './reminder-dedup.js';
 import { berikutnya, type AturanUlang } from './reminder-repeat.js';
 import { normChatId, nomorWhatsApp } from './chat_id.js';
+import { statusAutoMaintenanceWa } from './wa_monitor.js';
 
 // Re-export agar pemakai lama (cron, baileys) tetap bekerja tanpa perubahan.
 export { normChatId, nomorWhatsApp };
@@ -103,15 +104,19 @@ export async function simpanReminderCerdas(
     // 2. Cari yang isinya paling mirip.
     let palingMirip: { id: number; message: string } | null = null;
     let skorTerbaik = 0;
+    const cleanNew = bersihkanTeksPengingat(message);
     for (const r of (dekat ?? []) as Array<{ id: number; message: string }>) {
-      const skor = kemiripanPesan(message, r.message);
+      const cleanOld = bersihkanTeksPengingat(r.message);
+      const skor = kemiripanPesan(cleanNew, cleanOld);
       if (skor > skorTerbaik) { skorTerbaik = skor; palingMirip = r; }
     }
 
     // 3. Sangat mirip / mirip -> PERBARUI (anti-dobel).
     if (palingMirip && skorTerbaik >= AMBANG_MIRIP) {
       // Pilih pesan yang lebih INFORMATIF (lebih panjang) agar tidak kehilangan detail.
-      const pesanFinal = message.length >= palingMirip.message.length ? message : palingMirip.message;
+      const cleanOld = bersihkanTeksPengingat(palingMirip.message);
+      const cleanFinal = cleanNew.length >= cleanOld.length ? cleanNew : cleanOld;
+      const pesanFinal = adalahPengingatBaileys(message) ? tandaiPengingatBaileys(cleanFinal) : cleanFinal;
       // ── PERBAIKAN AUDIT 14 Okt 2026: IKUT PERBARUI ATURAN BERULANG ──
       // BUG LAMA: merge hanya menulis `message` & `due_at`, TIDAK menyentuh
       // `repeat_kind`/`repeat_value`. Akibatnya:
@@ -136,8 +141,8 @@ export async function simpanReminderCerdas(
         return {
           ok: true,
           aksi: 'digabung',
-          pesan: pesanFinal,
-          keterangan: `Pengingat ini sudah ada (${palingMirip.message}), sudah saya perbarui, tidak dobel.`,
+          pesan: cleanFinal,
+          keterangan: `Pengingat ini sudah ada (${cleanOld}), sudah saya perbarui, tidak dobel.`,
         };
       }
       // Gagal update -> jatuh ke insert biasa di bawah
@@ -154,7 +159,7 @@ export async function simpanReminderCerdas(
         const jam = r.due_at
           ? new Date(r.due_at).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' })
           : '?';
-        return `"${r.message}" (${jam})`;
+        return `"${bersihkanTeksPengingat(r.message)}" (${jam})`;
       });
       peringatanBentrok = `\n\n⚠️ _Catatan: waktunya berdekatan dengan pengingat lain, ${namaDekat.join(', ')}. Pastikan tidak bentrok ya._`;
     }
@@ -180,26 +185,27 @@ export async function simpanReminderCerdas(
       const retry = await c.from('reminders').insert(barisDasar);
       error = retry.error;
     }
-    if (error) return { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Gagal menyimpan pengingat.' };
+    if (error) return { ok: false, aksi: 'gagal', pesan: cleanNew, keterangan: 'Gagal menyimpan pengingat.' };
     return {
       ok: true,
       aksi: 'baru',
-      pesan: message,
+      pesan: cleanNew,
       keterangan: palingMirip
-        ? `Pengingat ditambahkan (beda dengan "${palingMirip.message}" yang sudah ada).${peringatanBentrok}`
+        ? `Pengingat ditambahkan (beda dengan "${bersihkanTeksPengingat(palingMirip.message)}" yang sudah ada).${peringatanBentrok}`
         : peringatanBentrok.trim(),
     };
   } catch {
     // Fallback: insert langsung (perilaku lama) agar tetap tersimpan.
     try {
+      const cleanMsg = bersihkanTeksPengingat(message);
       const { error } = await c.from('reminders').insert({
         chat_id: chatId, message, due_at: dueIso, status: 'pending', platform,
       });
       return error
-        ? { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Gagal menyimpan pengingat.' }
-        : { ok: true, aksi: 'baru', pesan: message, keterangan: '' };
+        ? { ok: false, aksi: 'gagal', pesan: cleanMsg, keterangan: 'Gagal menyimpan pengingat.' }
+        : { ok: true, aksi: 'baru', pesan: cleanMsg, keterangan: '' };
     } catch {
-      return { ok: false, aksi: 'gagal', pesan: message, keterangan: 'Gagal menyimpan pengingat.' };
+      return { ok: false, aksi: 'gagal', pesan: bersihkanTeksPengingat(message), keterangan: 'Gagal menyimpan pengingat.' };
     }
   }
 }
@@ -220,8 +226,63 @@ export async function simpanReminderCerdas(
  *   "waktunya login"  -> "⏰ Waktunya login"        (tidak diulang "waktunya")
  *   "jangan lupa obat"-> "⏰ Jangan lupa obat"       (tidak diulang "jangan lupa")
  */
+/** Penanda asal kanal pengingat Baileys (zero-width space anti-gangguan). */
+export const BAILEYS_REMINDER_MARKER = '\u200B';
+
+export function tandaiPengingatBaileys(pesan: string): string {
+  const p = String(pesan || '');
+  return p.includes(BAILEYS_REMINDER_MARKER) ? p : `${p}${BAILEYS_REMINDER_MARKER}`;
+}
+
+export function adalahPengingatBaileys(pesan: string): boolean {
+  return String(pesan ?? '').includes(BAILEYS_REMINDER_MARKER);
+}
+
+export function bersihkanTeksPengingat(pesan: string): string {
+  return String(pesan ?? '').replace(new RegExp(BAILEYS_REMINDER_MARKER, 'g'), '');
+}
+
+/** Batas keterlambatan pengingat Baileys sebelum diambil alih Cloud API (failover bila VPS mati). */
+export const BAILEYS_FALLBACK_KE_CLOUD_MS = 60_000;
+/** Batas keterlambatan pengingat Cloud API sebelum diambil alih Baileys (failover gangguan senyap). */
+export const CLOUD_FALLBACK_KE_BAILEYS_MS = 180_000;
+
+export interface OpsiFilterKanalPengingat {
+  channelFilter?: 'baileys_only' | 'cloud_only' | 'all';
+  nowMs?: number;
+  cloudMaintenance?: boolean;
+}
+
+/**
+ * Menentukan apakah satu baris pengingat boleh diproses oleh worker/cron tertentu.
+ * Memisahkan rute Baileys vs Cloud API sambil menyediakan failover dua arah.
+ */
+export function bolehProsesKanalPengingat(
+  item: { message?: string; due_at?: string; platform?: string },
+  opsi: OpsiFilterKanalPengingat = {},
+): boolean {
+  if (!opsi.channelFilter || opsi.channelFilter === 'all') return true;
+  const isTelegram = String(item.platform ?? '').toLowerCase() === 'telegram';
+  const isBaileys = adalahPengingatBaileys(String(item.message ?? ''));
+  const nowMs = opsi.nowMs ?? Date.now();
+  const dueMs = new Date(String(item.due_at ?? 0)).getTime();
+  const telatMs = Number.isFinite(dueMs) ? nowMs - dueMs : 0;
+
+  if (opsi.channelFilter === 'baileys_only') {
+    if (isTelegram) return false;
+    if (isBaileys || opsi.cloudMaintenance) return true;
+    return telatMs > CLOUD_FALLBACK_KE_BAILEYS_MS;
+  }
+
+  // opsi.channelFilter === 'cloud_only'
+  if (isTelegram) return true;
+  if (opsi.cloudMaintenance) return false;
+  if (!isBaileys) return true;
+  return telatMs > BAILEYS_FALLBACK_KE_CLOUD_MS;
+}
+
 function teksPengingatCadangan(pesan: string): string {
-  const p = String(pesan || '').trim().replace(/\s+/g, ' ');
+  const p = bersihkanTeksPengingat(pesan).trim().replace(/\s+/g, ' ');
   if (!p) return '⏰ Pengingat!';
   // Bila isi pesan sudah mengandung kata pengingat/waktu, jangan diulang.
   if (/^(pengingat|waktu|ingat|jangan lupa|jgn lupa)\b/i.test(p)) {
@@ -272,35 +333,17 @@ export async function checkDueReminders(
    *   bisa ia kirim; sisanya dibiarkan `pending` untuk cron/worker.
    */
   platformFilter?: 'whatsapp' | 'telegram',
+  options?: {
+    channelFilter?: 'baileys_only' | 'cloud_only' | 'all';
+    allowWait?: boolean;
+  },
 ): Promise<number> {
   const c = db();
   if (!c) return 0;
   try {
     // ── TUNGGU SEBENTAR BILA ADA PENGINGAT YANG HAMPIR JATUH TEMPO ──
-    //
-    // MASALAH (keluhan: "tidak bisa diperkecil lagi jadi 5 atau 10 detik?"):
-    // cron-job.org memanggil tiap 60 detik dengan jitter 4-40 detik. Bila
-    // panggilan datang sedikit SEBELUM due_at, pengingat harus menunggu
-    // panggilan berikutnya (~60 detik lagi) -> terasa ngaret.
-    //
-    // SOLUSI: bila ada pengingat yang jatuh tempo dalam <= TUNGGU_MAKS detik,
-    // endpoint MENUNGGU sebentar (sleep) lalu mengirimnya di panggilan yang SAMA.
-    // Hasil simulasi (20.000 sampel):
-    //   tanpa tunggu : rata-rata 31,9s | median 30,1s | <=10s hanya 17%
-    //   tunggu 25s   : rata-rata 12,0s | median  5,1s | <=10s jadi 58%
-    //
-    // BATAS AMAN: cron-job.org timeout 30 detik dan Vercel maxDuration 30 detik
-    // untuk endpoint cron. Karena itu tunggu maksimum dibatasi 20 detik (sisakan
-    // 10 detik untuk proses kirim + respons).
-    //
-    // PENTING, MENUNGGU HANYA BILA TIDAK ADA YANG SUDAH JATUH TEMPO.
-    // BUG YANG DIPERBAIKI (04 Okt 2026, temuan pemilik produk: "kalo gitu yg lama
-    // jadi nunggu nya dong?"): versi pertama menunggu TANPA memeriksa apakah ada
-    // pengingat yang SUDAH telat. Akibatnya, bila ada pengingat telat 5 menit DAN
-    // satu lagi jatuh tempo 15 detik lagi, pengingat yang sudah telat itu IKUT
-    // TERTUNDA 15 detik, padahal seharusnya langsung dikirim.
-    // Sekarang: kalau ada yang sudah jatuh tempo, kirim SEGERA (jangan menunggu).
-    const TUNGGU_MAKS_MS = 20_000;
+    const TUNGGU_MAKS_MS = options?.allowWait === false ? 0 : 20_000;
+    if (TUNGGU_MAKS_MS > 0) {
     try {
       // 1) Ada yang SUDAH jatuh tempo? -> jangan menunggu, kirim sekarang.
       const { data: sudahTelat } = await c
@@ -333,6 +376,7 @@ export async function checkDueReminders(
       }
     } catch {
       // best-effort: bila gagal, lanjut tanpa menunggu
+    }
     }
 
     const now = new Date().toISOString();
@@ -409,6 +453,22 @@ export async function checkDueReminders(
         const p = String((r as { platform?: string }).platform ?? '').toLowerCase();
         return p === platformFilter || p === '';
       });
+      if (data.length === 0) return 0;
+    }
+
+    // ── PEMISAH KANAL: BAILEYS vs CLOUD API (audit 20 Nov 2026) ──
+    if (options?.channelFilter === 'baileys_only' || options?.channelFilter === 'cloud_only') {
+      const autoMaint = await statusAutoMaintenanceWa().catch(() => ({ aktif: false, alasan: '', sampai: null }));
+      const cloudMaintenance = config.whatsappMaintenanceMode === true || autoMaint.aktif;
+      const nowMs = Date.now();
+      const filter = options.channelFilter;
+      data = data.filter((r) =>
+        bolehProsesKanalPengingat(r as { message?: string; due_at?: string; platform?: string }, {
+          channelFilter: filter,
+          nowMs,
+          cloudMaintenance,
+        }),
+      );
       if (data.length === 0) return 0;
     }
 

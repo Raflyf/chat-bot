@@ -383,7 +383,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // nomorWhatsApp() membuang prefix "wa_" + "@s.whatsapp.net" — Meta MENOLAK
         // nomor berprefix.
         return await sendWhatsAppCloudMessageSafe(nomorWhatsApp(String(chatId)), text);
-      }, 'whatsapp');
+      }, 'whatsapp', { channelFilter: 'cloud_only', allowWait: false });
     } catch (err) {
       console.warn('[remind] Lazy-check gagal:', String((err as Error)?.message ?? err).slice(0, 120));
     }
