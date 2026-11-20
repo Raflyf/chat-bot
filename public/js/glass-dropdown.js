@@ -180,6 +180,32 @@
 
   window.setupGlassDropdowns = initGlassDropdowns;
 
+  window.syncGlassDropdownLabels = function () {
+    document.querySelectorAll(".glass-select-container[data-target-select]").forEach(function (container) {
+      var selectId = container.getAttribute("data-target-select");
+      var select = selectId ? document.getElementById(selectId) : null;
+      if (!select) return;
+
+      var opt = select.options[select.selectedIndex] || select.options[0];
+      var labelSpan = container.querySelector(".glass-select-label");
+      if (labelSpan && opt) {
+        labelSpan.textContent = opt.textContent;
+      }
+
+      var items = container.querySelectorAll(".glass-select-item");
+      items.forEach(function (item) {
+        var val = item.getAttribute("data-value");
+        var matched = Array.prototype.find.call(select.options, function (o) {
+          return o.value === val;
+        });
+        if (matched) {
+          var itemText = item.querySelector(".glass-select-item-text");
+          if (itemText) itemText.textContent = matched.textContent;
+        }
+      });
+    });
+  };
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initGlassDropdowns);
   } else {

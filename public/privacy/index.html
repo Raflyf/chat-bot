@@ -10,15 +10,7 @@
 <link rel="shortcut icon" href="/favicon.svg" />
 <link rel="apple-touch-icon" href="/favicon.svg" />
 <link rel="stylesheet" href="/css/console.css" />
-<script>
-/* Tema dipasang sebelum render supaya tidak ada kedipan warna. */
-(function () {
-  var stored = null;
-  try { stored = localStorage.getItem('freeaibot-theme'); } catch (e) { stored = null; }
-  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  document.documentElement.setAttribute('data-theme', stored || (prefersDark ? 'dark' : 'light'));
-})();
-</script>
+<script src="/js/theme-pre.js"></script>
 <style>
 /* Halaman ini hanya dokumen teks: satu kolom sempit, tanpa panel dekoratif. */
 .doc-page { max-width: 720px; margin-inline: auto; padding-block: var(--s6); }
@@ -89,16 +81,6 @@
   </p>
 </main>
 
-<script>
-/* Tombol tema tidak ada di halaman ini, tapi preferensi tetap dihormati:
-   halaman mengikuti setelan tersimpan dari halaman lain. */
-(function () {
-  var meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) {
-    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    meta.setAttribute('content', dark ? '#000000' : '#f2f2f7');
-  }
-})();
-</script>
+<script src="/js/doc-theme.js"></script>
 </body>
 </html>

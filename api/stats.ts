@@ -183,7 +183,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let waPeriod: number = 0;
     let telePeriod: number = 0;
     let assistantMsgs: Array<{ via: string | null }> = [];
-    let allTimeAssistantMsgs: Array<{ via: string | null }> = [];
+    let allTimeAssistantMsgs: Array<{ via: string | null; created_at?: string | null }> = [];
     let userMsgs: Array<{ content: string }> = [];
     let waMonthlyMsgs: Array<{ chat_id: string; created_at: string }> = [];
 
@@ -383,7 +383,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         }>(buildAssistantQuery, 1000, 10000),
         fetchPagedRange<{ content: string | null }>(buildUserMsgsQuery, 1000, 10000),
         fetchPagedRange<{ chat_id: string | null; created_at: string }>(buildWaMonthlyQuery, 1000, 15000),
-        c.from('messages').select('via').eq('role', 'assistant').order('id', { ascending: false }).limit(300),
+        c.from('messages').select('via, created_at').eq('role', 'assistant').order('id', { ascending: false }).limit(300),
         liveFetchPromise,
         limitsPromise,
         todayQuotaQuery ? todayQuotaQuery : Promise.resolve({ data: null }),
@@ -394,7 +394,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       waPeriod = dbWaRes.count || 0;
       telePeriod = dbTeleRes.count || 0;
       assistantMsgs = assistantMsgsRes as any;
-      allTimeAssistantMsgs = ((allTimeAssistantRes?.data as any) || []) as Array<{ via: string | null }>;
+      allTimeAssistantMsgs = ((allTimeAssistantRes?.data as any) || []) as Array<{ via: string | null; created_at?: string | null }>;
       userMsgs = userMsgsRes as any;
       waMonthlyMsgs = waMonthlyMsgsRes as any;
 
@@ -473,6 +473,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     const providerTokenStats: Record<string, ProviderTokenAccumulator> = {
+      dreamprompting: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       dahl: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       groq: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       gemini: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
@@ -1150,6 +1151,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     for (const m of waMonthlyMsgs ?? []) {
       const chatId = String(m.chat_id || 'unknown');
+      // Pesan dari VPS Baileys (`wa_baileys_*`) tidak memakan kuota 1.000 sesi gratis Meta Cloud API
+      if (chatId.startsWith('wa_baileys_')) continue;
       const msgTime = new Date(m.created_at).getTime();
       const lastEnd = userLastSessionEnd.get(chatId) || 0;
 

@@ -43,10 +43,14 @@
       rootMargin: "-15px 0px -15px 0px"
     });
 
-    targets.forEach(function(el) {
+    var rectCache = new Array(targets.length);
+    targets.forEach(function(el, i) {
+      rectCache[i] = el.getBoundingClientRect().top;
+    });
+
+    targets.forEach(function(el, i) {
       el.classList.add("reveal-init");
-      var rect = el.getBoundingClientRect();
-      if (rect.top < 0) {
+      if (rectCache[i] < 0) {
         el.classList.add("reveal-from-top");
       } else {
         el.classList.add("reveal-from-bottom");

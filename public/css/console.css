@@ -175,48 +175,29 @@ html::before {
   inset: 0;
   z-index: -3;
   pointer-events: none;
-  /* FOTO STATIS (langit malam + meteor), sama seperti landing page.
-     Menggantikan WebP animasi: 628 KB + 1,4 MB -> 44-196 KB, dan nol biaya
-     decode berkala. Dashboard khusus dipantau terus-menerus, jadi beban render
-     yang berulang di sini paling terasa (permintaan pemilik produk: "agar lebih
-     ringan"). */
-  background-image: url('/assets/bg-mob.webp');
-  background-size: cover;
-  /* Posisi 50% 45%: meteor ada di tengah-atas, sedangkan siluet pepohonan yang
-     gelap digeser sedikit keluar agar area kartu jatuh di langit yang rata. */
-  background-position: 50% 45%;
-  /* TANPA filter blur: foto ini sudah gelap & halus, dan blur full-screen
-     memaksa compositor bekerja ulang setiap saat (biang frame drop). */
+  contain: strict;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  background-image:
+    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
+    linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%),
+    url('/assets/bg-mob.webp');
+  background-size: cover, cover, cover;
+  background-position: 50% 45%, 50% 45%, 50% 45%;
   opacity: 1;
 }
 
-/* Layar besar: versi 1920px (196 KB) agar bintang & meteor tetap tajam.
-   Browser hanya mengunduh file yang cocok media query, jadi tidak ada biaya
-   ganda. */
 @media (min-width: 1200px) {
   html::before {
-    background-image: url('/assets/bg-hd.webp');
+    background-image:
+      radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
+      linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%),
+      url('/assets/bg-hd.webp');
   }
 }
 
-/* Scrim: lapisan gelap bertingkat DI ATAS video, DI BAWAH konten.
-   Fungsinya menggantikan blur untuk menjaga keterbacaan teks: area tengah
-   (tempat kartu & teks berada) digelapkan lebih kuat, sementara tepi layar
-   dibiarkan lebih terang supaya wallpaper tetap terlihat.
-   Ini jauh lebih murah daripada blur karena hanya gradien statis. */
 html::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  pointer-events: none;
-  /* Scrim RINGAN. Versi sebelumnya memakai radial 0,72 yang membuat wallpaper
-     hampir tidak terlihat. Sekarang hanya 0,45 di area tengah dan 0,2 di tepi,
-     cukup untuk menurunkan kontras wallpaper tanpa menyembunyikannya.
-     Keterbacaan teks dijaga oleh latar kartu (bukan oleh scrim full-screen). */
-  background:
-    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
-    linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%);
+  display: none;
 }
 
 /* Perangkat yang tidak mendukung WebP animasi tetap mendapat aurora di atas —
@@ -264,37 +245,17 @@ html.lenis, html.lenis body {
 .lenis.lenis-scrolling iframe {
   pointer-events: none;
 }
-.kpi-card,
-.provider-card,
-.model-matrix-card,
-.live-upstream-card,
-.token-matrix-section,
-.smart-gateway-banner,
-.key-row,
-.site-header {
-  transform: translateZ(0);
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
 
-/* Latar atmosfer: enam bidang warna, sama seperti landing page.
-   KENAPA INI PENTING: blur pada kaca hanya terlihat bila ada sesuatu di
-   belakangnya untuk dibiaskan. Versi sebelumnya memakai tiga bidang dengan
-   opacity 0,05-0,10 — terlalu redup di atas latar #020814, sehingga kartu
-   ber-blur tampak seperti kotak gelap biasa dan efek kacanya hilang.
-   Nilai di sini disamakan dengan landing (0,12-0,24) supaya blur benar-benar
-   terbaca. Titik-titiknya ditaruh di area yang dilalui kartu, bukan di sudut
-   layar yang tidak pernah terlihat. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  contain: strict;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   background:
-    /* Cahaya utama di tengah viewport — lihat catatan di landing.css.
-       Dashboard penuh kartu di area tengah, jadi lapisan ini yang paling
-       banyak membuat blur terlihat. */
     radial-gradient(56rem 40rem at 50% 45%, rgba(0, 240, 255, 0.28), transparent 60%),
     radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.11), transparent 62%),
     radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.10), transparent 64%),
@@ -306,25 +267,20 @@ body::before {
 }
 [data-theme="light"] body::before { opacity: 0.5; }
 
-/* Kisi halus di atas aurora: memberi variasi permukaan sehingga blur punya
-   tekstur untuk dibiaskan, bukan sekadar gradasi rata. Dipudarkan di tepi
-   agar tidak terbaca seperti tabel. */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  /* Kisi ini yang memberi detail bertepi untuk diblur kaca. */
+  contain: strict;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   opacity: 0.25;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.038) 1px, transparent 1px);
   background-size: 64px 64px;
-  /* Mask dibuat jauh lebih longgar (dulu 72% 58% at 50% 30% dengan pudar di 78%):
-     kisi hampir hilang tepat di area kartu, sehingga blur tidak punya detail
-     bertepi untuk diblur dan efek kaca tidak terbaca. Sekarang kisi bertahan
-     di seluruh area konten dan hanya memudar di tepi layar. */
   mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
   -webkit-mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
 }
@@ -574,8 +530,6 @@ section { margin-bottom: var(--s5); }
   padding: 3px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--text) 7%, transparent);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
   min-width: 0;
   max-width: 100%;
 }
@@ -762,16 +716,11 @@ section { margin-bottom: var(--s5); }
   padding: 9px 11px;
   border-radius: var(--r-control);
   background: var(--surface-sunken);
-  /* Baris kunci juga diberi kaca supaya seluruh permukaan seragam. */
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--separator);
 }
 [data-theme="dark"] .key-row {
-  background: rgba(3, 8, 18, 0.6);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(3, 8, 18, 0.58);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 .key-row.status-warning { border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
 .key-row.status-capped  { border-color: color-mix(in srgb, var(--stop) 45%, transparent); }
@@ -871,18 +820,14 @@ section { margin-bottom: var(--s5); }
 .websearch-panel {
   display: grid;
   gap: var(--s3);
-  /* Panel ini berdiri di antara ringkasan upstream dan tabel penyedia.
-     Margin dibuat SIMETRIS (24px atas dan bawah): versi sebelumnya memakai
-     24px atas / 32px bawah, sehingga panel terbaca menempel ke kartu statistik
-     di atasnya tetapi mengambang jauh dari tabel di bawahnya. */
   margin: var(--s5, 24px) 0;
   padding: var(--s4);
   border-radius: var(--r-panel);
   border: 1px solid var(--separator);
-  background: var(--surface-raised);
-  /* Kaca mewah, sama seperti kartu lain. */
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  background: rgba(3, 8, 18, 0.56);
+}
+[data-theme="light"] .websearch-panel {
+  background: var(--surface-sunken);
 }
 
 .websearch-head {
@@ -1063,16 +1008,12 @@ section { margin-bottom: var(--s5); }
   padding: var(--s3);
   border-radius: var(--r-control);
   background: var(--surface-sunken);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-[data-theme="dark"] .live-stat-box { background: rgba(3, 8, 18, 0.44);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%); }
+[data-theme="dark"] .live-stat-box { background: rgba(3, 8, 18, 0.56); }
 .live-stat-label { font-size: 12px; color: var(--text-secondary); }
 .live-stat-val { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
 .live-stat-sub { font-size: 11px; color: var(--text-secondary); }
@@ -1082,9 +1023,12 @@ section { margin-bottom: var(--s5); }
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
-
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);}
+  background: rgba(3, 8, 18, 0.48);
+}
+[data-theme="light"] .token-table-container,
+[data-theme="light"] .table-container {
+  background: var(--surface-sunken);
+}
 table, .token-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td {
   padding: 10px var(--s3);
@@ -1224,25 +1168,26 @@ td:nth-child(1) { font-variant-numeric: normal; }
 .model-matrix-card[data-provider="gemini"]         { --card-provider-color: var(--p-gemini); }
 .model-matrix-card[data-provider="dahl"]           { --card-provider-color: var(--p-dahl); }
 .model-matrix-card[data-provider="xkiro"]          { --card-provider-color: var(--p-xkiro); }
+.model-matrix-card[data-provider="opencode"]       { --card-provider-color: var(--p-opencode); }
 
 .model-matrix-card {
   position: relative;
   overflow: hidden;
   padding: 1rem 1.05rem 0.95rem;
   border-radius: var(--r-panel);
-  background: var(--surface-raised);
-  /* Kaca mewah: blur 20px + saturate, sama seperti navbar landing. */
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  background: rgba(6, 14, 28, 0.56);
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 10px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 10px 30px rgba(0, 0, 0, 0.32);
-  transition: transform 0.2s var(--ease), border-color 0.2s ease, box-shadow 0.2s ease;
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 26px rgba(0, 0, 0, 0.28);
+  transition: transform 0.22s var(--ease), border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+[data-theme="light"] .model-matrix-card {
+  background: var(--surface-raised);
 }
 .model-matrix-card::before {
   content: "";
@@ -1333,16 +1278,12 @@ td:nth-child(1) { font-variant-numeric: normal; }
   padding: var(--s3);
   border-radius: var(--r-control);
   background: var(--surface-sunken);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-[data-theme="dark"] .media-box { background: rgba(3, 8, 18, 0.44);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%); }
+[data-theme="dark"] .media-box { background: rgba(3, 8, 18, 0.56); }
 .media-box-count { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.018em; }
 .media-box-label { font-size: 12px; color: var(--text-secondary); }
 
@@ -1868,13 +1809,11 @@ tbody tr { animation: row-in 0.34s var(--ease) both; }
   .key-stats { text-align: left; }
   .search-input { min-width: 100%; }
   .table-container, .token-table-container {
-  overflow-x: auto;
-  border: 1px solid var(--separator);
-  border-radius: var(--r-control);
-  -webkit-overflow-scrolling: touch;
-
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);}
+    overflow-x: auto;
+    border: 1px solid var(--separator);
+    border-radius: var(--r-control);
+    -webkit-overflow-scrolling: touch;
+  }
   th, td { padding: 9px 10px; }
   .auth-card { padding: var(--s5) var(--s3) var(--s4); max-width: 100%; }
   .auth-shield-icon { width: 46px; height: 46px; border-radius: 13px; }
@@ -2382,19 +2321,17 @@ body {
 }
 
 .console-meta {
-  /* Diberi latar chip gelap: elemen ini berada di area yang bertabrakan dengan
-     wallpaper terang sehingga teksnya tenggelam. Latar chip memisahkannya. */
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.48);
-  /* Kaca juga di sini agar seragam dengan elemen lain. */
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  background: rgba(4, 10, 22, 0.56);
   border: 1px solid var(--separator);
   white-space: nowrap;
+}
+[data-theme="light"] .console-meta {
+  background: var(--surface-raised);
 }
 
 .console-meta strong { color: var(--text); font-weight: 600; }
@@ -2535,6 +2472,16 @@ body {
 }
 
 /* Pemicu: permukaan kaca yang sama dengan kontrol lain. */
+#dataset-section .filter-dashboard-bar {
+  background: rgba(3, 8, 18, 0.56);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+[data-theme="light"] #dataset-section .filter-dashboard-bar {
+  background: var(--surface-sunken);
+}
+
 .glass-select-trigger {
   display: inline-flex;
   align-items: center;
@@ -2545,9 +2492,7 @@ body {
   padding: 0.45rem 0.9rem;
   border-radius: var(--r-control, 8px);
   border: 1px solid var(--separator-strong);
-  background: var(--surface-raised);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  background: rgba(6, 14, 28, 0.68);
   color: var(--text);
   font-family: inherit;
   font-size: 0.82rem;
@@ -2759,9 +2704,7 @@ body {
   gap: 2px;
   padding: 3px;
   border-radius: var(--r-control);
-  background: rgba(4, 10, 22, 0.45);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  background: rgba(4, 10, 22, 0.56);
   border: 1px solid var(--separator);
   max-width: 100%;
 }
@@ -2813,13 +2756,11 @@ body {
 .status-panel {
   padding: clamp(1rem, 2.5vw, 1.5rem);
   border-radius: var(--r-panel);
-  background: rgba(4, 10, 22, 0.46);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: rgba(4, 10, 22, 0.56);
   border: 1px solid var(--separator);
 }
 
-[data-theme="light"] .status-panel { background: var(--surface-raised); }
+[data-theme="light"] .status-panel { background: var(--surface-sunken); }
 
 .status-grid {
   display: grid;
@@ -2830,9 +2771,7 @@ body {
 .status-item {
   padding: 0.9rem;
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.6);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  background: rgba(3, 8, 18, 0.58);
   border: 1px solid var(--separator);
 }
 
@@ -2873,15 +2812,10 @@ body {
 }
 
 .upstream-stat {
-  /* Kartu metrik di dalam panel "Sisa kuota". Sebelumnya TIDAK punya
-     backdrop-filter sehingga terlihat solid/datar di antara kartu lain yang
-     berkaca. Sekarang diberi kaca yang sama agar seragam. */
   position: relative;
   padding: 0.8rem;
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.6);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  background: rgba(3, 8, 18, 0.58);
   border: 1px solid var(--separator);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   display: flex;
@@ -2917,11 +2851,12 @@ body {
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
-  /* Pembungkus tabel diberi kaca; tabel di dalamnya tetap rata agar teks tajam. */
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
+  background: rgba(3, 8, 18, 0.48);
   scrollbar-width: thin;
   scrollbar-color: var(--separator-strong) transparent;
+}
+[data-theme="light"] .table-wrap {
+  background: var(--surface-sunken);
 }
 .table-wrap::-webkit-scrollbar {
   height: 6px;
@@ -2984,9 +2919,7 @@ body {
 .media-item {
   padding: 0.85rem;
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.6);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  background: rgba(3, 8, 18, 0.56);
   border: 1px solid var(--separator);
   text-align: center;
 }
@@ -3286,8 +3219,6 @@ body {
     min-height: 36px;
     padding: 0.3rem 0.85rem;
     background: rgba(4, 10, 22, 0.68);
-    -webkit-backdrop-filter: blur(10px) saturate(150%);
-    backdrop-filter: blur(10px) saturate(150%);
     border: 1px solid var(--separator);
     border-radius: var(--r-control);
     font-size: 0.82rem;
@@ -3303,23 +3234,30 @@ body {
 /* ---------- Animasi Reveal Dua Arah Fisika Murni Konsol ---------- */
 .reveal-init {
   opacity: 0;
-  will-change: opacity, transform;
   transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.reveal-init:not(.revealed) {
+  will-change: opacity, transform;
+}
+
 .reveal-init.reveal-from-bottom {
-  transform: translateY(32px) translateZ(0);
+  transform: translate3d(0, 32px, 0);
 }
 
 .reveal-init.reveal-from-top {
-  transform: translateY(-32px) translateZ(0);
+  transform: translate3d(0, -32px, 0);
 }
 
-.reveal-init.reveal-from-bottom.revealed,
-.reveal-init.reveal-from-top.revealed,
 .reveal-init.revealed {
   opacity: 1;
   transform: none;
   will-change: auto;
+}
+
+.kpi-card.revealed:hover,
+.provider-card.revealed:hover,
+.model-matrix-card.revealed:hover {
+  transform: translateY(-3px);
 }

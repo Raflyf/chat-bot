@@ -97,61 +97,38 @@ html::before {
   inset: 0;
   z-index: -3;
   pointer-events: none;
-  background-image: url('/assets/bg-mob.webp');
-  background-size: cover;
-  /* Posisi 85% 50%: dipilih dengan membandingkan empat posisi lewat screenshot
-     (65/60, 85/50, 100/45, 100/60). Nilai ini menampilkan bagian robot yang
-     paling mudah dikenali — kepala dengan dua lensa mata bercahaya cyan di
-     kanan-atas plus armor bahu — sementara teks tetap terbaca karena berada di
-     kartu berlatar gelap. Subjek video ada di KANAN frame; `center` memotongnya. */
-  background-position: 85% 50%;
-  /* TANPA filter blur.
-     Alasan: `filter: blur()` pada elemen berisi animasi memaksa browser
-     mem-blur ulang SELURUH layar setiap frame (10x/detik) — itu penyebab
-     frame drop. Blur sudah "dibakar" ke dalam file WebP (ffmpeg gblur 3px),
-     jadi hasilnya sama tapi biaya render nol.
-     Tanpa blur CSS juga membuat objek di video (robot) tetap terlihat,
-     sesuai permintaan pemilik produk. */
+  contain: strict;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  background-image:
+    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
+    linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%),
+    url('/assets/bg-mob.webp');
+  background-size: cover, cover, cover;
+  background-position: 85% 50%, 85% 50%, 85% 50%;
   opacity: 1;
 }
 
-/* Layar besar: pakai versi 1280px yang lebih tajam.
-   Versi 800px cukup untuk ponsel (layar kecil, perbesaran rendah), tapi di
-   layar >=1200px ia diperbesar ~1,8x sehingga detail robot melunak. Browser
-   hanya mengunduh file yang cocok media query, jadi tidak ada biaya ganda. */
 @media (min-width: 1200px) {
   html::before {
-    background-image: url('/assets/bg-hd.webp');
+    background-image:
+      radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
+      linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%),
+      url('/assets/bg-hd.webp');
   }
 }
 
-/* Ponsel & tablet kecil: versi 800px (44 KB) sudah tajam karena layar kecil. */
 @media (max-width: 1199px) {
   html::before {
-    background-image: url('/assets/bg-mob.webp');
+    background-image:
+      radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
+      linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%),
+      url('/assets/bg-mob.webp');
   }
 }
 
-/* Scrim: lapisan gelap bertingkat DI ATAS video, DI BAWAH konten.
-   Fungsinya menggantikan blur untuk menjaga keterbacaan teks: area tengah
-   (tempat kartu & teks berada) digelapkan lebih kuat, sementara tepi layar
-   dibiarkan lebih terang supaya wallpaper tetap terlihat.
-   Ini jauh lebih murah daripada blur karena hanya gradien statis. */
 html::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  pointer-events: none;
-  /* Scrim DIPERKECIL (perbaikan 24 Sep: "ada lapisan lain di atas background,
-     jadi tidak HD"). Pengukuran: lapisan sebelumnya mengubah 88% piksel dan
-     menurunkan ketajaman 9% — foto praktis tertutup.
-     Foto langit malam ini SUDAH gelap dan punya bintang sendiri, jadi tidak
-     perlu digelapkan lagi sebanyak dulu. Keterbacaan teks sudah dijaga oleh
-     latar kartu (rgba 0,62-0,82), bukan oleh scrim full-screen. */
-  background:
-    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
-    linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%);
+  display: none;
 }
 
 /* Perangkat yang tidak mendukung WebP animasi tetap mendapat aurora di atas —
@@ -193,18 +170,13 @@ body::before {
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  contain: strict;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   background:
-    /* Cahaya utama di TENGAH viewport. Lapisan ini yang membuat setiap kartu
-       selalu punya sesuatu untuk dibiaskan, karena konten hampir selalu berada
-       di area tengah layar saat digulir. Tanpa ini, aurora hanya terlihat di
-       posisi tertentu dan blur kartu tampak tidak bekerja.
-       Opacity dihitung: cyan α=0,30 di atas latar #020814 menghasilkan
-       rgb(2, 78, 90) — cukup terang untuk dibiaskan, tidak sampai menyilaukan. */
     radial-gradient(56rem 40rem at 50% 45%, rgba(0, 240, 255, 0.06), transparent 60%),
     radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.05), transparent 62%),
     radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.11), transparent 64%),
-    /* Lapisan pendukung di tepi: memberi variasi warna saat kartu digulir
-       melewatinya, sehingga kaca tidak terlihat rata. */
     radial-gradient(34rem 26rem at 22% 78%, rgba(0, 240, 255, 0.11), transparent 62%),
     radial-gradient(30rem 24rem at 82% 88%, rgba(120, 96, 255, 0.10), transparent 64%),
     radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.07), transparent 60%),
@@ -212,29 +184,20 @@ body::before {
     radial-gradient(70rem 56rem at 46% 108%, rgba(0, 240, 255, 0.06), transparent 66%);
 }
 
-/* Kisi halus: mengacu pada papan sirkuit, memberi tekstur agar blur punya
-   variasi permukaan. Dipudarkan di tepi supaya tidak terlihat seperti tabel. */
 body::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  /* Kisi ini yang memberi detail bertepi untuk diblur kaca — tanpa itu
-     backdrop-filter tidak punya apa pun untuk di-blur dan kaca tampak seperti
-     panel datar. TAPI kisi yang terlalu kuat terlihat sebagai "pola kotak-kotak
-     kotor" di atas foto (keluhan pemilik produk 24 Sep).
-     Dikurangi 0,7 -> 0,25 dan garisnya diperhalus: cukup untuk memberi tekstur
-     pada kaca, tidak cukup untuk terlihat sebagai kotak. */
+  contain: strict;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   opacity: 0.25;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.024) 1px, transparent 1px);
   background-size: 64px 64px;
-  /* Mask dibuat jauh lebih longgar (dulu 72% 58% at 50% 30% dengan pudar di 78%):
-     kisi hampir hilang tepat di area kartu, sehingga blur tidak punya detail
-     bertepi untuk diblur dan efek kaca tidak terbaca. Sekarang kisi bertahan
-     di seluruh area konten dan hanya memudar di tepi layar. */
   mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
   -webkit-mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
 }
@@ -524,8 +487,6 @@ header {
   cursor: pointer;
   font-family: inherit;
   font-weight: 600;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   transition: all 0.2s var(--ease-spring);
 }
 
@@ -882,25 +843,38 @@ header {
 /* Reveal Animasi Dua Arah Fisika Murni (Scroll Atas & Bawah) */
 .reveal-init {
   opacity: 0;
-  will-change: opacity, transform;
   transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0s),
               transform 0.65s cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0s);
 }
 
+.reveal-init:not(.revealed) {
+  will-change: opacity, transform;
+}
+
 .reveal-init.reveal-from-bottom {
-  transform: translateY(36px) translateZ(0);
+  transform: translate3d(0, 36px, 0);
 }
 
 .reveal-init.reveal-from-top {
-  transform: translateY(-36px) translateZ(0);
+  transform: translate3d(0, -36px, 0);
 }
 
-.reveal-init.reveal-from-bottom.revealed,
-.reveal-init.reveal-from-top.revealed,
 .reveal-init.revealed {
   opacity: 1;
   transform: none;
   will-change: auto;
+}
+
+.hero-badge.revealed:hover {
+  transform: translateY(-1px);
+}
+
+.feature-card.revealed:hover {
+  transform: translateY(-5px);
+}
+
+.dashboard-teaser.revealed:hover {
+  transform: translateY(-2px);
 }
 
 /* Stagger delay kartu kemampuan */
@@ -1173,18 +1147,6 @@ html.lenis, html.lenis body {
 
 .lenis.lenis-scrolling iframe {
   pointer-events: none;
-}
-
-/* Akselerasi perangkat keras GPU untuk rendering mulus 60-120fps tanpa framedrop */
-.feature-card,
-.dashboard-teaser,
-.section-title-wrap,
-footer,
-header,
-.btn {
-  transform: translateZ(0);
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
 }
 
 @media print {

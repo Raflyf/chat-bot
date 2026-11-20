@@ -237,7 +237,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   // Pencarian nomor WA / ID Telegram: query yang isinya cuma digit (boleh
   // berprefix "wa_"/"tg_", spasi, "+", "-") dicari langsung ke kolom chat_id
   // lewat SQL, bukan hanya menyaring 600 baris terakhir di memori.
-  const searchDigits = search.replace(/^(wa_|tg_)/, '').replace(/[\s+-]/g, '');
+  const searchDigits = search.replace(/^(wa_baileys_|wa_|tg_)/, '').replace(/[\s+-]/g, '');
   const isIdSearch = /^\d{6,}$/.test(searchDigits);
   const platform = typeof req.query.platform === 'string' ? req.query.platform.toLowerCase().trim() : '';
   const range = typeof req.query.range === 'string' ? req.query.range.toLowerCase().trim() : 'all';
@@ -369,7 +369,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           const chatIdRaw = String(userMsg.chat_id || '').toLowerCase();
           const matchChat =
             chatIdRaw.includes(search) ||
-            (searchDigits.length >= 4 && chatIdRaw.replace(/^wa_/, '').includes(searchDigits));
+            (searchDigits.length >= 4 && chatIdRaw.replace(/^(wa_baileys_|wa_)/, '').includes(searchDigits));
           if (!matchUser && !matchBot && !matchVia && !matchChat) continue;
         }
 

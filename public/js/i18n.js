@@ -354,6 +354,14 @@
       );
     }
 
+    if (window.syncGlassDropdownLabels) {
+      window.syncGlassDropdownLabels();
+    }
+
+    if (window.refreshDashboardI18n) {
+      window.refreshDashboardI18n();
+    }
+
     if (window.updateThemeUI) {
       window.updateThemeUI();
     }

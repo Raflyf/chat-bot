@@ -1466,6 +1466,7 @@ function renderLiveUpstreamTable(data) {
             const keyUsed = k.tokensUsed || 0;
             const keyRemaining = (k.liveRemainingTokens !== null && k.liveRemainingTokens !== undefined) ? k.liveRemainingTokens : Math.max(0, keyCap - keyUsed);
             const pct = k.tokenPercent || 0;
+            const bindingPct = typeof k.bindingPercent === "number" ? k.bindingPercent : pct;
             // Status dari token (metrik binding untuk xKiro): key yang token hariannya
             // sudah habis WAJIB tampil CAPPED, bukan "OPTIMAL" — temuan user: key
             // ...6386 sudah 1.004.173/1.000.000 token tapi badge masih OPTIMAL.
@@ -1992,13 +1993,15 @@ function renderLiveUpstreamTable(data) {
           ? `<span class="badge badge-wa">WhatsApp</span>`
           : `<span class="badge badge-tele">Telegram</span>`;
 
-        // Identitas pengirim: tampilkan PENUH tanpa prefix internal "wa_", dan
-        // beri label supaya ID Telegram tidak terbaca sebagai nomor WhatsApp.
+        // Identitas pengirim: tampilkan PENUH tanpa prefix internal "wa_" / "wa_baileys_", dan
+        // beri label supaya ID Telegram / Baileys / Cloud API jelas dibedakan.
+        const rawChatId = String(p.chatId || p.chatIdMasked || "-");
         const isWaChat = p.platform === "whatsapp";
-        const idLabel = isWaChat ? "Nomor WA" : "ID Telegram";
-        const idValue = String(p.chatId || p.chatIdMasked || "-").replace(/^(wa_|tg_)/, "");
+        const isBaileys = /^wa_baileys_/.test(rawChatId);
+        const idLabel = isWaChat ? (isBaileys ? "WA Baileys" : "Nomor WA") : "ID Telegram";
+        const idValue = rawChatId.replace(/^(wa_baileys_|wa_|tg_)/, "");
         const idTitle = isWaChat
-          ? "Nomor WhatsApp pengirim"
+          ? (isBaileys ? "Nomor WhatsApp pengirim (Baileys VPS)" : "Nomor WhatsApp pengirim")
           : "ID internal Telegram (bukan nomor HP)";
 
         // Metrik token per chat (Input Prompt, Context total, Output Reply, Total Terpakai)
@@ -2208,7 +2211,11 @@ function renderLiveUpstreamTable(data) {
       }
       if (!autoRefresh) return;
       refreshTimer = setInterval(() => {
+        if (document.hidden) return;
         fetchData();
+        if (!window._datasetTick) window._datasetTick = 0;
+        window._datasetTick++;
+        if (window._datasetTick % 3 === 0) fetchDataset(true);
       }, 15000);
     }
 
@@ -2349,23 +2356,6 @@ function renderLiveUpstreamTable(data) {
     function initDashboardScrollReveal() {
       if (typeof window === "undefined" || !("IntersectionObserver" in window)) return;
 
-      // ---------------------------------------------------------------------
-      // ANIMASI MASUK HANYA SEKALI (perbaikan blink 24 Sep).
-      //
-      // BUG: fungsi ini dipanggil setiap kali dashboard selesai render
-      // (renderDashboard -> setTimeout(initDashboardScrollReveal)). Setiap
-      // panggilan menambahkan kelas `reveal-init` (opacity: 0) ke elemen yang
-      // SUDAH terlihat, lalu observer baru menambahkan `revealed` beberapa saat
-      // kemudian. Karena render berjalan tiap 15 detik, seluruh kartu berkedip
-      // hilang-muncul — inilah "blink blink glitch" yang terlihat.
-      //
-      // Perbaikan: animasi masuk hanya dijalankan SEKALI per pemuatan halaman.
-      // Render berikutnya (refresh data) tidak menyentuh kelas animasi, jadi
-      // angka berubah mulus tanpa kedip.
-      // ---------------------------------------------------------------------
-      if (window._dashRevealDone) return;
-      window._dashRevealDone = true;
-
       const targets = document.querySelectorAll(
         ".console-head, .kpi-card, .smart-gateway-banner, .matrix-section, .provider-card, .live-upstream-card, #dataset-section, .model-matrix-card"
       );
@@ -2394,19 +2384,34 @@ function renderLiveUpstreamTable(data) {
         });
       }
 
+      const pending = [];
       targets.forEach((el) => {
-        if (!el.classList.contains("reveal-init")) {
-          el.classList.add("reveal-init");
-          const rect = el.getBoundingClientRect();
-          if (rect.top < 0) {
-            el.classList.add("reveal-from-top");
-          } else {
-            el.classList.add("reveal-from-bottom");
-          }
-          window._dashRevealObserver.observe(el);
-        }
+        if (el.dataset.revealInit === "1") return;
+        pending.push(el);
       });
+      if (!pending.length) return;
+
+      const tops = new Array(pending.length);
+      for (let i = 0; i < pending.length; i++) {
+        tops[i] = pending[i].getBoundingClientRect().top;
+      }
+      for (let i = 0; i < pending.length; i++) {
+        const el = pending[i];
+        el.dataset.revealInit = "1";
+        el.classList.add("reveal-init");
+        if (tops[i] < 0) {
+          el.classList.add("reveal-from-top");
+        } else {
+          el.classList.add("reveal-from-bottom");
+        }
+        window._dashRevealObserver.observe(el);
+      }
     }
+
+    window.refreshDashboardI18n = function () {
+      if (cachedDashboardData) renderDashboard(cachedDashboardData);
+      if (cachedDatasetPairs && cachedDatasetPairs.length) renderDatasetTable();
+    };
 
     // =========================================================================
     // INITIALIZATION
@@ -2422,12 +2427,5 @@ function renderLiveUpstreamTable(data) {
         fetchData();
         fetchDataset(true);
         pasangAutoRefresh();
-        // Dataset ikut disegarkan pada interval yang sama, tapi TIDAK di setiap
-        // tick: tabel riwayat ditulis ulang penuh, dan menyegarkannya tiap 15
-        // detik membuat baris tabel berkedip tanpa manfaat (datanya jarang
-        // berubah). Cukup tiap 3 siklus (~45 detik).
-        if (!window._datasetTick) window._datasetTick = 0;
-        window._datasetTick++;
-        if (window._datasetTick % 3 === 0) fetchDataset(true);
       }
     })();
