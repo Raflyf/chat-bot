@@ -48,7 +48,7 @@ test('public/privacy/index.html: bebas inline script sesuai CSP', () => {
   assert.match(html, /\/js\/doc-theme\.js/);
 });
 
-test('performa scroll & animasi: tanpa nested backdrop-filter berlebih & animasi/motion tetap utuh', () => {
+test('performa scroll & animasi: single-pass blur ringan, tanpa zero-delta lockup, & reveal aman tanpa kotak kosong', () => {
   const consoleCss = read('public/css/console.css');
   const landingCss = read('public/css/landing.css');
   const smoothJs = read('public/js/smooth-scroll.js');
@@ -58,25 +58,46 @@ test('performa scroll & animasi: tanpa nested backdrop-filter berlebih & animasi
   assert.match(consoleCss, /\.model-matrix-card\[data-provider="opencode"\]/, 'opencode harus punya warna card di console.css');
   assert.match(consoleCss, /contain:\s*strict/, 'layer background fixed console harus diisolasi dengan contain: strict');
   assert.match(landingCss, /contain:\s*strict/, 'layer background fixed landing harus diisolasi dengan contain: strict');
+  assert.match(landingCss, /overflow-x:\s*clip/, 'landing body harus memakai overflow-x: clip');
+  assert.match(consoleCss, /overflow-x:\s*clip/, 'console body harus memakai overflow-x: clip');
+
+  // Pastikan body::after tidak memakai mask-image yang memberatkan Firefox WebRender
+  const landingAfter = landingCss.match(/body::after\s*\{[\s\S]*?\}/);
+  const consoleAfter = consoleCss.match(/body::after\s*\{[\s\S]*?\}/);
+  assert.ok(landingAfter && !/mask-image/.test(landingAfter[0]), 'landing body::after tidak boleh memakai mask-image');
+  assert.ok(consoleAfter && !/mask-image/.test(consoleAfter[0]), 'console body::after tidak boleh memakai mask-image');
+
+  // Pastikan tidak ada jebakan .reveal-init > * { opacity: 0 } yang menghasilkan kotak kosong
+  assert.ok(!/\.reveal-init\s*>\s*\*/.test(landingCss), 'landing.css tidak boleh menyembunyikan anak via .reveal-init > *');
+  assert.ok(!/\.reveal-init\s*>\s*\*/.test(consoleCss), 'console.css tidak boleh menyembunyikan anak via .reveal-init > *');
+
   assert.match(consoleCss, /\.reveal-init\.revealed/, 'animasi reveal console tetap aktif');
   assert.match(landingCss, /\.reveal-init\.revealed/, 'animasi reveal landing tetap aktif');
   assert.match(landingCss, /@keyframes heroReveal/, 'animasi heroReveal landing tetap aktif');
   assert.match(consoleCss, /@keyframes card-in/, 'animasi card-in dashboard tetap aktif');
-  assert.match(homeJs, /unobserve/, 'home.js harus unobserve setelah reveal agar tidak freeze saat scroll bolak-balik');
-  assert.match(dashJs, /unobserve/, 'dashboard.js harus unobserve setelah reveal agar tidak freeze saat scroll bolak-balik');
-  assert.match(smoothJs, /lerp:\s*0\.14/, 'smooth-scroll.js harus memakai lerp cepat 0.14 agar ringan');
-  assert.match(smoothJs, /lenis\.time\s*=\s*0/, 'smooth-scroll.js harus mereset lenis.time = 0 saat wake');
+  assert.match(homeJs, /unobserve/, 'home.js harus unobserve setelah reveal');
+  assert.match(homeJs, /addEventListener\("scroll"[\s\S]{0,60}passive:\s*true/, 'home.js harus punya jaring pengaman scroll pasif');
+  assert.match(dashJs, /unobserve/, 'dashboard.js harus unobserve setelah reveal');
+  assert.match(dashJs, /addEventListener\("scroll"[\s\S]{0,60}passive:\s*true/, 'dashboard.js harus punya jaring pengaman scroll pasif');
 
-  // Pastikan kartu dan section utama TETAP punya efek blur kaca, sementara elemen anak bersarang TIDAK menumpuk blur
+  // Pastikan Lenis pakai lerp 0.13, kompensasi deltaMode === 1 Firefox, dan TIDAK pernah mereset lenis.time di listener scroll
+  assert.match(smoothJs, /lerp:\s*0\.13/, 'smooth-scroll.js harus memakai lerp ringan 0.13');
+  assert.match(smoothJs, /wheelMultiplier:\s*1\.15/, 'smooth-scroll.js harus memakai wheelMultiplier 1.15');
+  assert.match(smoothJs, /deltaMode\s*===\s*1/, 'smooth-scroll.js harus mengkompensasi DOM_DELTA_LINE Firefox Windows');
+  assert.ok(!/lenis\.on\s*\(/.test(smoothJs), 'smooth-scroll.js tidak boleh memasang lenis.on("scroll"/"virtual-scroll") yang bisa memicu loop lenis.time = 0');
+
+  // Pastikan kartu/section utama tetap pakai single-pass backdrop-filter blur(8px) tanpa saturate(), sementara elemen anak bebas blur
   for (const sel of ['.kpi-card', '.provider-card', '.live-upstream-card, .token-matrix-section, .matrix-section, .activity-card']) {
     const escaped = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const block = consoleCss.match(new RegExp(escaped + '\\s*\\{[\\s\\S]*?\\}'));
-    assert.ok(block && /backdrop-filter:\s*blur\(/.test(block[0]), `${sel} harus mempertahankan backdrop-filter blur`);
+    assert.ok(block && /backdrop-filter:\s*blur\(8px\)/.test(block[0]), `${sel} harus memakai single-pass backdrop-filter: blur(8px)`);
+    assert.ok(block && !/saturate\(/.test(block[0]), `${sel} tidak boleh memakai multi-pass saturate()`);
   }
-  for (const sel of ['.feature-card', '.lapor-card']) {
+  for (const sel of ['.feature-card', '.lapor-card', '.dashboard-teaser']) {
     const escaped = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const block = landingCss.match(new RegExp(escaped + '\\s*\\{[\\s\\S]*?\\}'));
-    assert.ok(block && /backdrop-filter:\s*blur\(/.test(block[0]), `${sel} harus mempertahankan backdrop-filter blur`);
+    assert.ok(block && /backdrop-filter:\s*blur\(8px\)/.test(block[0]), `${sel} harus memakai single-pass backdrop-filter: blur(8px)`);
+    assert.ok(block && !/saturate\(/.test(block[0]), `${sel} tidak boleh memakai multi-pass saturate()`);
   }
   for (const sel of ['.key-row', '.model-matrix-card', '.upstream-stat', '.table-wrap']) {
     const escaped = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

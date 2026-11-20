@@ -9,28 +9,72 @@
   } catch (_) {}
 })();
 
-// Observer animasi reveal pada saat elemen masuk ke viewport
+// Observer animasi reveal pada saat elemen masuk ke viewport + jaring pengaman scroll pasif
 (function() {
   if (typeof window === "undefined") return;
 
   function initRevealObserver() {
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+    if (!("IntersectionObserver" in window)) return;
+
     var targets = document.querySelectorAll(
       ".section-title-wrap, .feature-card, .dashboard-teaser, .lapor-card, footer"
     );
     if (!targets.length) return;
 
-    // Reveal sekali saat masuk viewport lalu unobserve agar tidak re-trigger dan freeze saat scroll bolak-balik
-    var observer = new IntersectionObserver(function(entries, obs) {
+    var remaining = new Set();
+    var observer = null;
+    var rafPending = false;
+
+    function detachFallbacks() {
+      window.removeEventListener("scroll", scheduleCheck, { passive: true });
+      window.removeEventListener("resize", scheduleCheck, { passive: true });
+      window.removeEventListener("load", scheduleCheck);
+    }
+
+    function revealEl(el) {
+      el.classList.add("revealed");
+      if (observer) observer.unobserve(el);
+      remaining.delete(el);
+      if (remaining.size === 0) detachFallbacks();
+    }
+
+    observer = new IntersectionObserver(function(entries) {
       entries.forEach(function(entry) {
         if (!entry.isIntersecting) return;
-        var el = entry.target;
-        el.classList.add("revealed");
-        obs.unobserve(el);
+        revealEl(entry.target);
       });
     }, {
-      threshold: 0.04,
-      rootMargin: "40px 0px -10px 0px"
+      threshold: 0,
+      rootMargin: "120px 0px 120px 0px"
     });
+
+    function checkRemaining() {
+      rafPending = false;
+      if (!remaining.size) {
+        detachFallbacks();
+        return;
+      }
+      var vh = window.innerHeight || document.documentElement.clientHeight || 800;
+      var toReveal = [];
+      remaining.forEach(function(el) {
+        if (el.getBoundingClientRect().top < vh + 120) {
+          toReveal.push(el);
+        }
+      });
+      toReveal.forEach(revealEl);
+    }
+
+    function scheduleCheck() {
+      if (rafPending || !remaining.size) return;
+      rafPending = true;
+      requestAnimationFrame(checkRemaining);
+    }
 
     var vh = window.innerHeight || document.documentElement.clientHeight || 800;
     var rectCache = new Array(targets.length);
@@ -39,13 +83,20 @@
     });
 
     targets.forEach(function(el, i) {
-      el.classList.add("reveal-init", "reveal-from-bottom");
-      if (rectCache[i] < vh * 0.96) {
-        el.classList.add("revealed");
-      } else {
-        observer.observe(el);
+      if (rectCache[i] < vh + 80) {
+        // Sudah terlihat saat load: jangan sembunyikan dulu
+        return;
       }
+      el.classList.add("reveal-init", "reveal-from-bottom");
+      remaining.add(el);
+      observer.observe(el);
     });
+
+    if (remaining.size > 0) {
+      window.addEventListener("scroll", scheduleCheck, { passive: true });
+      window.addEventListener("resize", scheduleCheck, { passive: true });
+      window.addEventListener("load", scheduleCheck);
+    }
   }
 
   if (document.readyState === "loading") {

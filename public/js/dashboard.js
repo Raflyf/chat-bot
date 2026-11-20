@@ -2354,49 +2354,112 @@ function renderLiveUpstreamTable(data) {
     })();
 
     function initDashboardScrollReveal() {
-      if (typeof window === "undefined" || !("IntersectionObserver" in window)) return;
+      if (typeof window === "undefined") return;
+      if (
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        return;
+      }
+      if (!("IntersectionObserver" in window)) return;
 
       // Target section utama saja; kartu (.kpi-card, .provider-card, .model-matrix-card) sudah punya @keyframes card-in
       const targets = document.querySelectorAll(
-        ".filter-dashboard-bar, .live-upstream-card, .matrix-section, .activity-card"
+        ".console-main > .wrap > .filter-dashboard-bar, .live-upstream-card, .matrix-section, .activity-card"
       );
       if (!targets.length) return;
 
+      if (!window._dashRevealPending) {
+        window._dashRevealPending = new Set();
+      }
+      const pendingSet = window._dashRevealPending;
+
+      const revealDashEl = (el) => {
+        el.classList.add("revealed");
+        if (window._dashRevealObserver) window._dashRevealObserver.unobserve(el);
+        pendingSet.delete(el);
+        if (pendingSet.size === 0 && window._dashRevealDetach) {
+          window._dashRevealDetach();
+        }
+      };
+
       if (!window._dashRevealObserver) {
-        window._dashRevealObserver = new IntersectionObserver((entries, obs) => {
+        window._dashRevealObserver = new IntersectionObserver((entries) => {
           entries.forEach((entry) => {
             if (!entry.isIntersecting) return;
-            const el = entry.target;
-            el.classList.add("revealed");
-            obs.unobserve(el);
+            revealDashEl(entry.target);
           });
         }, {
-          threshold: 0.02,
-          rootMargin: "40px 0px -10px 0px"
+          threshold: 0,
+          rootMargin: "120px 0px 120px 0px"
         });
       }
 
-      const pending = [];
+      if (!window._dashRevealScheduleCheck) {
+        let rafPending = false;
+        const checkDashRemaining = () => {
+          rafPending = false;
+          if (!pendingSet.size) {
+            if (window._dashRevealDetach) window._dashRevealDetach();
+            return;
+          }
+          const vh = window.innerHeight || document.documentElement.clientHeight || 800;
+          const toReveal = [];
+          pendingSet.forEach((el) => {
+            if (el.getBoundingClientRect().top < vh + 120) {
+              toReveal.push(el);
+            }
+          });
+          toReveal.forEach(revealDashEl);
+        };
+        const scheduleCheck = () => {
+          if (rafPending || !pendingSet.size) return;
+          rafPending = true;
+          requestAnimationFrame(checkDashRemaining);
+        };
+        window._dashRevealScheduleCheck = scheduleCheck;
+        window._dashRevealAttach = () => {
+          if (window._dashRevealListenersAttached) return;
+          window._dashRevealListenersAttached = true;
+          window.addEventListener("scroll", scheduleCheck, { passive: true });
+          window.addEventListener("resize", scheduleCheck, { passive: true });
+          window.addEventListener("load", scheduleCheck);
+        };
+        window._dashRevealDetach = () => {
+          if (!window._dashRevealListenersAttached) return;
+          window._dashRevealListenersAttached = false;
+          window.removeEventListener("scroll", scheduleCheck, { passive: true });
+          window.removeEventListener("resize", scheduleCheck, { passive: true });
+          window.removeEventListener("load", scheduleCheck);
+        };
+      }
+
+      const candidates = [];
       targets.forEach((el) => {
         if (el.dataset.revealInit === "1") return;
-        pending.push(el);
+        candidates.push(el);
       });
-      if (!pending.length) return;
+      if (!candidates.length) return;
 
       const vh = window.innerHeight || document.documentElement.clientHeight || 800;
-      const tops = new Array(pending.length);
-      for (let i = 0; i < pending.length; i++) {
-        tops[i] = pending[i].getBoundingClientRect().top;
+      const tops = new Array(candidates.length);
+      for (let i = 0; i < candidates.length; i++) {
+        tops[i] = candidates[i].getBoundingClientRect().top;
       }
-      for (let i = 0; i < pending.length; i++) {
-        const el = pending[i];
+      for (let i = 0; i < candidates.length; i++) {
+        const el = candidates[i];
         el.dataset.revealInit = "1";
-        el.classList.add("reveal-init", "reveal-from-bottom");
-        if (tops[i] < vh * 0.96) {
-          el.classList.add("revealed");
-        } else {
-          window._dashRevealObserver.observe(el);
+        if (tops[i] < vh + 80) {
+          // Sudah terlihat saat inisialisasi: biarkan tampil langsung
+          continue;
         }
+        el.classList.add("reveal-init", "reveal-from-bottom");
+        pendingSet.add(el);
+        window._dashRevealObserver.observe(el);
+      }
+
+      if (pendingSet.size > 0 && window._dashRevealAttach) {
+        window._dashRevealAttach();
       }
     }
 

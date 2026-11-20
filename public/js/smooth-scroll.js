@@ -1,4 +1,4 @@
-// Feather-light Lenis Smooth Scroll with stale-timestamp reset on wake
+// Smooth Scroll Lenis ringan dengan kompensasi DOM_DELTA_LINE (Firefox Windows)
 (function () {
   if (typeof window === "undefined") return;
 
@@ -6,15 +6,32 @@
     if (typeof window.Lenis !== "function") return;
     if (window.__lenisInstance) return;
 
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
     var lenis = new window.Lenis({
-      lerp: 0.14,
+      lerp: 0.13,
       orientation: "vertical",
       gestureOrientation: "vertical",
       smoothWheel: true,
       syncTouch: false,
-      wheelMultiplier: 1.05,
+      wheelMultiplier: 1.15,
       touchMultiplier: 1.5,
       infinite: false,
+      virtualScroll: function (data) {
+        if (
+          data &&
+          data.event &&
+          data.event.type === "wheel" &&
+          data.event.deltaMode === 1
+        ) {
+          data.deltaY *= 1.9;
+        }
+      },
       prevent: function (node) {
         if (!node || !node.closest) return false;
         return Boolean(
@@ -28,54 +45,38 @@
     var rafId = null;
 
     function raf(time) {
-      rafId = null;
-      if (document.hidden) return;
-      lenis.raf(time);
-      if (lenis.isScrolling || lenis.animate?.isRunning) {
-        rafId = requestAnimationFrame(raf);
+      if (document.hidden) {
+        rafId = null;
+        return;
       }
-    }
-
-    function kickRaf() {
-      if (document.hidden || rafId !== null) return;
-      // Reset timestamp sebelum wake agar frame pertama tidak menghitung delta > 1 detik
-      lenis.time = 0;
+      lenis.raf(time);
       rafId = requestAnimationFrame(raf);
     }
 
-    function stopRaf() {
+    function startLoop() {
+      if (document.hidden || rafId !== null) return;
+      rafId = requestAnimationFrame(raf);
+    }
+
+    function stopLoop() {
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      lenis.time = 0;
     }
-
-    lenis.on("virtual-scroll", kickRaf);
-    lenis.on("scroll", kickRaf);
-    window.addEventListener("wheel", kickRaf, { passive: true });
-    window.addEventListener("keydown", function (e) {
-      if (
-        e.key === "ArrowDown" ||
-        e.key === "ArrowUp" ||
-        e.key === "PageDown" ||
-        e.key === "PageUp" ||
-        e.key === "Home" ||
-        e.key === "End" ||
-        e.key === " "
-      ) {
-        kickRaf();
-      }
-    }, { passive: true });
 
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
-        stopRaf();
+        stopLoop();
         lenis.stop();
       } else {
+        lenis.time = 0;
         lenis.start();
+        startLoop();
       }
     });
+
+    startLoop();
   }
 
   if (document.readyState === "loading") {

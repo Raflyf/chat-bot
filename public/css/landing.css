@@ -31,10 +31,9 @@
   --border-glow-soft: rgba(0, 240, 255, 0.22);
   --accent-cyan: #00f0ff;
   --accent-cyan-dim: rgba(0, 240, 255, 0.12);
-  /* Blur kaca: 20px untuk SEMUA permukaan (dulu kartu 12px, navbar 20px —
-     sehingga hanya navbar yang terlihat mewah). Sekarang seragam. */
-  --blur-amt: 10px;
-  --blur-strong: 12px;
+  /* Blur kaca: seragam single-pass agar ringan di WebRender Firefox. */
+  --blur-amt: 8px;
+  --blur-strong: 10px;
 
   --text: #ffffff;
   /* Dinaikkan dari #9fb2c9 / #7488a0: wallpaper sekarang lebih terlihat,
@@ -147,7 +146,7 @@ body {
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.65;
-  overflow-x: hidden;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -164,14 +163,9 @@ body::before {
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   background:
-    radial-gradient(56rem 40rem at 50% 45%, rgba(0, 240, 255, 0.06), transparent 60%),
-    radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.05), transparent 62%),
-    radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.11), transparent 64%),
-    radial-gradient(34rem 26rem at 22% 78%, rgba(0, 240, 255, 0.11), transparent 62%),
-    radial-gradient(30rem 24rem at 82% 88%, rgba(120, 96, 255, 0.10), transparent 64%),
-    radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.07), transparent 60%),
-    radial-gradient(46rem 34rem at 98% 40%, rgba(88, 120, 255, 0.08), transparent 64%),
-    radial-gradient(70rem 56rem at 46% 108%, rgba(0, 240, 255, 0.06), transparent 66%);
+    radial-gradient(56rem 40rem at 50% 40%, rgba(0, 240, 255, 0.08), transparent 62%),
+    radial-gradient(44rem 34rem at 16% 74%, rgba(120, 96, 255, 0.09), transparent 64%),
+    radial-gradient(46rem 34rem at 86% 68%, rgba(88, 140, 255, 0.11), transparent 64%);
 }
 
 body::after {
@@ -183,13 +177,11 @@ body::after {
   contain: strict;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  opacity: 0.25;
+  opacity: 0.16;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.024) 1px, transparent 1px);
   background-size: 64px 64px;
-  mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
-  -webkit-mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
 }
 
 h1,
@@ -245,9 +237,11 @@ svg {
 
 @keyframes heroReveal {
   from {
-    transform: translate3d(0, 18px, 0) scale(0.985);
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.985);
   }
   to {
+    opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
   }
 }
@@ -282,8 +276,8 @@ header {
   top: 0;
   z-index: 50;
   background: rgba(4, 10, 20, 0.88);
-  -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(150%);
-  backdrop-filter: blur(var(--blur-strong)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--blur-strong));
+  backdrop-filter: blur(var(--blur-strong));
   border-bottom: 1px solid var(--glass-border);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
   animation: fadeInDown 0.6s var(--ease-spring) both;
@@ -561,8 +555,8 @@ header {
     rgba(4, 10, 22, 0.42) 55%,
     rgba(6, 16, 32, 0.48) 100%
   );
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
@@ -697,8 +691,8 @@ header {
   padding: 1.6rem;
   border-radius: var(--radius);
   background: rgba(5, 12, 24, 0.46);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
   overflow: hidden;
   box-shadow:
@@ -817,30 +811,24 @@ header {
    SCROLL REVEAL — Efek Muncul Berjenjang (Stagger) Saat Digulir
    ========================================================================== */
 
-/* Reveal Animasi Fisika Murni: BackdropRoot container tetap opacity 1, fade pada anak langsung */
+/* Reveal Animasi GPU: tanpa menyembunyikan anak elemen agar tidak tampil kotak kosong */
 .reveal-init {
-  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s);
-}
-
-.reveal-init > * {
   opacity: 0;
-  transition: opacity 0.38s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s);
+  transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s),
+              transform 0.4s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s);
 }
 
 .reveal-init.reveal-from-bottom {
-  transform: translate3d(0, 22px, 0);
+  transform: translate3d(0, 18px, 0);
 }
 
 .reveal-init.reveal-from-top {
-  transform: translate3d(0, -22px, 0);
+  transform: translate3d(0, -18px, 0);
 }
 
 .reveal-init.revealed {
-  transform: translate3d(0, 0, 0);
-}
-
-.reveal-init.revealed > * {
   opacity: 1;
+  transform: translate3d(0, 0, 0);
 }
 
 .hero-badge.revealed:hover {
@@ -856,12 +844,12 @@ header {
 }
 
 /* Stagger delay kartu kemampuan */
-.features-grid .feature-card:nth-child(1) { --reveal-delay: 0.04s; }
-.features-grid .feature-card:nth-child(2) { --reveal-delay: 0.12s; }
-.features-grid .feature-card:nth-child(3) { --reveal-delay: 0.20s; }
-.features-grid .feature-card:nth-child(4) { --reveal-delay: 0.28s; }
-.features-grid .feature-card:nth-child(5) { --reveal-delay: 0.36s; }
-.features-grid .feature-card:nth-child(6) { --reveal-delay: 0.44s; }
+.features-grid .feature-card:nth-child(1) { --reveal-delay: 0.02s; }
+.features-grid .feature-card:nth-child(2) { --reveal-delay: 0.06s; }
+.features-grid .feature-card:nth-child(3) { --reveal-delay: 0.10s; }
+.features-grid .feature-card:nth-child(4) { --reveal-delay: 0.14s; }
+.features-grid .feature-card:nth-child(5) { --reveal-delay: 0.18s; }
+.features-grid .feature-card:nth-child(6) { --reveal-delay: 0.22s; }
 
 /* Menghilangkan delay saat kartu di-hover */
 .feature-card.revealed:hover {
@@ -894,25 +882,25 @@ header {
      tenggelam ke wallpaper, plus border cyan (`--border-glow-soft`) yang
      membuat warnanya berbeda dari kartu lain di halaman yang sama. */
   background: rgba(5, 12, 24, 0.46);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.09),
     0 24px 60px var(--shadow);
   overflow: hidden;
-  transition: opacity 0.75s var(--ease-spring),
-              transform 0.75s var(--ease-spring),
-              border-color 0.3s ease,
-              box-shadow 0.3s ease;
+  transition: opacity 0.42s var(--ease-spring),
+              transform 0.42s var(--ease-spring),
+              border-color 0.25s ease,
+              box-shadow 0.25s ease;
 }
 
 .dashboard-teaser.reveal-init {
-  transform: translateY(32px) scale(0.985);
+  transform: translate3d(0, 18px, 0);
 }
 
 .dashboard-teaser.reveal-init.revealed {
-  transform: translateY(0) scale(1);
+  transform: translate3d(0, 0, 0);
 }
 
 .dashboard-teaser:hover {
@@ -969,13 +957,14 @@ footer {
   font-size: 0.83rem;
   border-top: 1px solid var(--glass-border);
   background: rgba(1, 5, 13, 0.5);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  backdrop-filter: blur(10px) saturate(140%);
-  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 footer.reveal-init {
-  transform: translate3d(0, 16px, 0);
+  transform: translate3d(0, 18px, 0);
 }
 
 footer.reveal-init.revealed {
@@ -1156,8 +1145,8 @@ html.lenis, html.lenis body {
   padding: 1.6rem 1.5rem;
   border-radius: var(--radius-lg);
   background: rgba(5, 12, 24, 0.46);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 10px 36px var(--shadow);
   display: flex;

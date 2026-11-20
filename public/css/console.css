@@ -70,9 +70,9 @@
   /* Blur kaca: 20px, sama dengan navbar landing (--blur-strong).
      Dinaikkan dari 12px atas permintaan pemilik produk: efek kaca harus
      terasa mewah dan SERAGAM di semua elemen, bukan hanya navbar. */
-  --glass-blur:       10px;
-  --glass-blur-strong: 12px;
-  --glass-saturate:   160%;
+  --glass-blur:       8px;
+  --glass-blur-strong: 10px;
+  --glass-saturate:   100%;
 
   /* Radius jadi alat hierarki: kontrol 8, kartu 16, panel 20. */
   --r-control: 8px;
@@ -216,7 +216,7 @@ body {
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Tema terang: warna dasar tetap di html (bukan body) agar aurora terlihat. */
@@ -250,14 +250,9 @@ body::before {
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   background:
-    radial-gradient(56rem 40rem at 50% 45%, rgba(0, 240, 255, 0.28), transparent 60%),
-    radial-gradient(44rem 34rem at 18% 30%, rgba(120, 96, 255, 0.11), transparent 62%),
-    radial-gradient(40rem 32rem at 84% 62%, rgba(88, 140, 255, 0.10), transparent 64%),
-    radial-gradient(34rem 26rem at 22% 78%, rgba(0, 240, 255, 0.10), transparent 62%),
-    radial-gradient(30rem 24rem at 82% 88%, rgba(120, 96, 255, 0.20), transparent 64%),
-    radial-gradient(62rem 44rem at 4% -8%, rgba(0, 240, 255, 0.15), transparent 60%),
-    radial-gradient(46rem 34rem at 98% 40%, rgba(88, 120, 255, 0.17), transparent 64%),
-    radial-gradient(70rem 56rem at 46% 108%, rgba(0, 240, 255, 0.13), transparent 66%);
+    radial-gradient(56rem 40rem at 50% 42%, rgba(0, 240, 255, 0.22), transparent 62%),
+    radial-gradient(44rem 34rem at 16% 74%, rgba(120, 96, 255, 0.16), transparent 64%),
+    radial-gradient(46rem 34rem at 86% 64%, rgba(88, 140, 255, 0.15), transparent 64%);
 }
 [data-theme="light"] body::before { opacity: 0.5; }
 
@@ -270,15 +265,13 @@ body::after {
   contain: strict;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  opacity: 0.25;
+  opacity: 0.16;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.038) 1px, transparent 1px);
   background-size: 64px 64px;
-  mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
-  -webkit-mask-image: radial-gradient(140% 120% at 50% 50%, #000 0%, #000 55%, transparent 100%);
 }
-[data-theme="light"] body::after { opacity: 0.25; }
+[data-theme="light"] body::after { opacity: 0.16; }
 
 /* ---- Glass: hanya untuk layer kontrol ---- */
 .glass {
@@ -286,8 +279,8 @@ body::after {
     linear-gradient(180deg,
       rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.92)),
       rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.55)));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+          backdrop-filter: blur(var(--glass-blur-strong));
   border: 1px solid rgb(255 255 255 / var(--glass-edge));
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.28),
@@ -324,8 +317,8 @@ header.header-hidden { transform: translateY(-105%); }
     linear-gradient(180deg,
       rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.92)),
       rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.55)));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+          backdrop-filter: blur(var(--glass-blur-strong));
   border: 1px solid rgb(255 255 255 / var(--glass-edge));
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.28),
@@ -504,8 +497,8 @@ section { margin-bottom: var(--s5); }
   border-radius: var(--r-panel);
   margin-bottom: var(--s5);
   background: rgba(4, 10, 22, 0.48);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--separator);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 8px 24px rgba(0, 0, 0, 0.28);
   position: relative;
@@ -562,8 +555,8 @@ section { margin-bottom: var(--s5); }
 .kpi-card {
   position: relative;
   background: var(--surface-raised);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
@@ -644,8 +637,8 @@ section { margin-bottom: var(--s5); }
 .provider-card {
   position: relative;
   background: var(--surface-raised);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
@@ -966,8 +959,8 @@ section { margin-bottom: var(--s5); }
 .live-upstream-card, .token-matrix-section, .matrix-section, .activity-card {
   position: relative;
   background: var(--surface-raised);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
@@ -1109,8 +1102,8 @@ td:nth-child(1) { font-variant-numeric: normal; }
   padding: var(--s4);
   border-radius: var(--r-panel);
   background: var(--surface-raised);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--separator);
   margin-bottom: var(--s4);
   position: relative;
@@ -1356,8 +1349,8 @@ td:nth-child(1) { font-variant-numeric: normal; }
     linear-gradient(180deg,
       rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.96)),
       rgb(var(--glass-tint) / calc(var(--glass-fill) * 0.72)));
-  -webkit-backdrop-filter: blur(10px) saturate(var(--glass-saturate));
-          backdrop-filter: blur(10px) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+          backdrop-filter: blur(var(--glass-blur-strong));
   border: 1px solid rgb(255 255 255 / var(--glass-edge));
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.3),
@@ -2173,8 +2166,8 @@ body {
   top: 0;
   z-index: 100;
   background: rgba(2, 8, 20, 0.62);
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
-  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  backdrop-filter: blur(var(--glass-blur-strong));
   border-bottom: 1px solid var(--separator);
   transition: transform 0.22s ease, background-color 0.25s ease;
 }
@@ -2356,16 +2349,16 @@ body {
   margin-bottom: 1.2rem;
   border-radius: var(--r-panel);
   background: rgba(3, 8, 18, 0.44);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--separator);
   position: relative;
 }
 
 [data-theme="light"] .filter-dashboard-bar {
   background: var(--surface-raised);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 
 .filter-dashboard-bar.has-open-dropdown,
@@ -2546,8 +2539,8 @@ body {
   overscroll-behavior: contain;
 
   background: rgba(10, 16, 28, 0.92);
-  -webkit-backdrop-filter: blur(12px) saturate(160%);
-  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  backdrop-filter: blur(var(--glass-blur-strong));
 
   border: 1px solid var(--separator-strong);
   border-radius: var(--r-panel, 16px);
@@ -2984,8 +2977,8 @@ body {
   background: rgba(6, 14, 28, 0.94);
   border: 1px solid var(--separator-strong);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
-  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  backdrop-filter: blur(var(--glass-blur-strong));
 }
 
 [data-theme="light"] .pin-card { background: #fff; }
@@ -2995,8 +2988,8 @@ body {
   border-top: 1px solid var(--separator);
   padding-block: 1.5rem;
   background: rgba(2, 8, 20, 0.5);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 
 [data-theme="light"] .site-footer { background: rgba(238, 242, 249, 0.7); }
@@ -3224,30 +3217,24 @@ body {
   }
 }
 
-/* ---------- Animasi Reveal Fisika Murni Konsol (BackdropRoot container tetap opacity 1) ---------- */
+/* ---------- Animasi Reveal GPU Konsol (tanpa menyembunyikan anak agar tidak tampil kotak kosong) ---------- */
 .reveal-init {
-  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.reveal-init > * {
   opacity: 0;
-  transition: opacity 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .reveal-init.reveal-from-bottom {
-  transform: translate3d(0, 22px, 0);
+  transform: translate3d(0, 18px, 0);
 }
 
 .reveal-init.reveal-from-top {
-  transform: translate3d(0, -22px, 0);
+  transform: translate3d(0, -18px, 0);
 }
 
 .reveal-init.revealed {
-  transform: translate3d(0, 0, 0);
-}
-
-.reveal-init.revealed > * {
   opacity: 1;
+  transform: translate3d(0, 0, 0);
 }
 
 .kpi-card.revealed:hover,
