@@ -425,7 +425,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   return await withChatLock(chatKey, async () => {
   const messageId = m.key.id;
   // Klaim atomik anti-TOCTOU
-  if (messageId && !(await claimIncomingMessage('whatsapp', messageId, chatKey, text || '[baileys-msg]'))) return;
+  if (messageId && !(await claimIncomingMessage('whatsapp', messageId, chatKey, text || '[baileys-msg]', { dedupKonten: false }))) return;
 
   // Anti-Stale Message Guard: abaikan pesan basi hasil history sync atau saat bot offline (> 180 detik)
   const nowSec = Math.floor(Date.now() / 1000);

@@ -48,3 +48,21 @@ test('hapus: perubahan tidak menyentuh jalur "batalin rapat"', () => {
   assert.ok(p, '"batalin rapat" harus terdeteksi');
   assert.equal(p.aksi, 'batal');
 });
+
+test('pilihTarget batal: target spesifik ("menit ON") tepat sasaran dan tidak salah hapus "bangun"', async () => {
+  const { pilihTarget } = await import('../src/reminder-ubah.js');
+  const daftar = [
+    { id: 1, message: 'bangun', due_at: '2026-11-21T06:00:00Z', status: 'pending' },
+    { id: 2, message: 'menit ON', due_at: '2026-11-21T12:02:00Z', status: 'pending' },
+  ];
+  const p = deteksiPermintaanUbah('hapus pengingat menit ON');
+  assert.ok(p);
+  const target = pilihTarget(p, daftar);
+  assert.equal(target?.id, 2, 'target harus menit ON (#2), TIDAK boleh bangun (#1)');
+
+  // Keamanan anti-salah-hapus: bila nama tidak cocok, JANGAN menebak
+  const pAsal = deteksiPermintaanUbah('hapus pengingat seminar');
+  assert.ok(pAsal);
+  const targetAsal = pilihTarget(pAsal, daftar);
+  assert.equal(targetAsal, null, 'bila nama tidak cocok, harus tanya user (tidak boleh hapus sembarang)');
+});

@@ -36,6 +36,8 @@ export interface PermintaanUbah {
   selisihMenit: number | null;
   /** Kata kunci target dari pesan user (mis. "rapat"). */
   kataKunci: string | null;
+  /** Teks asli user (untuk mencocokkan nama pengingat yang disebut utuh, mis. "menit ON"). */
+  teksAsli?: string;
 }
 
 /** Ambil pengingat pending milik chat. */
@@ -137,7 +139,7 @@ export function deteksiPermintaanUbah(teks: string): PermintaanUbah | null {
 
   const aksi: AksiUbah = adaBatal ? 'batal' : adaMajukan ? 'majukan' : adaUndur ? 'undur' : 'geser';
 
-  return { aksi, target: null, waktuBaru, selisihMenit, kataKunci };
+  return { aksi, target: null, waktuBaru, selisihMenit, kataKunci, teksAsli: asli };
 }
 
 /** Ambil kata kunci target dari pesan (kata bermakna, bukan kata perintah). */
@@ -149,11 +151,16 @@ function ambilKataKunciTarget(teks: string): string | null {
     'rapat', 'jadwal', 'waktu', 'pengingat', 'reminder', 'jam', 'menit', 'satu', 'dua',
     'tiga', 'setengah', 'jadi', 'sampai', 'dari', 'yang', 'nya', 'di', 'ke', 'dan',
     'aku', 'saya', 'tolong', 'mohon', 'ya', 'dong', 'itu', 'ini', 'sama', 'buat',
+    // Kata perintah hapus (BUG 20 Nov 2026: "hapus" jadi kata kunci -> tidak cocok
+    // dengan pengingat mana pun -> jatuh ke pengingat paling awal ("bangun") dan terhapus).
+    'hapus', 'hapusin', 'hapuskan', 'dihapus', 'buang', 'hilangkan', 'delete', 'remove',
+    'semua', 'pengingatnya', 'jadwalnya', 'rutin', 'alarm', 'timer', 'yg', 'deh', 'sih', 'lah',
   ]);
+  // Panjang minimal 2 agar nama pendek seperti "ON" atau "PR" tetap bisa jadi kata kunci.
   const kata = teks.toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter((w) => w.length > 2 && !ABAI.has(w) && !/^\d+$/.test(w));
+    .filter((w) => w.length >= 2 && !ABAI.has(w) && !/^\d+$/.test(w));
   // Kembalikan kata terpanjang (paling spesifik)
   kata.sort((a, b) => b.length - a.length);
   return kata[0] ?? null;
@@ -180,27 +187,70 @@ function hitungSelisihMenit(teks: string): number | null {
   return null;
 }
 
-/** Pilih pengingat yang paling mungkin dituju (berdasarkan kata kunci). */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Skor kecocokan satu kata kunci terhadap satu pengingat (kata utuh untuk kata pendek). */
+function skorKataKunci(kata: string, pesan: string): number {
+  const p = pesan.toLowerCase();
+  const kmr = kemiripanPesan(kata, pesan);
+  const sub = kata.length <= 3
+    ? (new RegExp(`(?:^|[^a-z0-9])${escapeRegex(kata)}(?:$|[^a-z0-9])`).test(p) ? 0.5 : 0)
+    : (p.includes(kata) ? 0.5 : 0);
+  return kmr + sub;
+}
+
+/**
+ * Pilih pengingat yang paling mungkin dituju.
+ *
+ * ATURAN KEAMANAN (temuan 20 Nov 2026): untuk PEMBATALAN/HAPUS, jangan pernah menebak.
+ * Dulu bila kata kunci tidak cocok, fungsi ini jatuh ke pengingat paling awal sehingga
+ * "hapus pengingat menit ON" malah menghapus pengingat "bangun". Sekarang mengembalikan
+ * null (bot menampilkan daftar dan bertanya) bila target tidak jelas.
+ */
 export function pilihTarget(
   permintaan: PermintaanUbah,
   daftar: PengingatRingkas[],
 ): PengingatRingkas | null {
   if (daftar.length === 0) return null;
-  if (daftar.length === 1) return daftar[0];
+
+  // 0. Nama pengingat disebut UTUH di pesan (mis. "hapus pengingat menit ON").
+  const teks = String(permintaan.teksAsli ?? '').toLowerCase();
+  if (teks) {
+    let utuh: PengingatRingkas | null = null;
+    let panjang = 0;
+    for (const r of daftar) {
+      const nama = r.message.trim().toLowerCase();
+      if (nama.length < 2) continue;
+      const re = new RegExp(`(?:^|[^a-z0-9])${escapeRegex(nama)}(?:$|[^a-z0-9])`);
+      if (re.test(teks) && nama.length > panjang) { utuh = r; panjang = nama.length; }
+    }
+    if (utuh) return utuh;
+  }
+
+  if (daftar.length === 1) {
+    // Satu-satunya pengingat: aman dipilih, KECUALI untuk hapus bila user menyebut
+    // nama yang jelas-jelas tidak cocok dengan pengingat itu.
+    if (permintaan.aksi === 'batal' && permintaan.kataKunci
+      && skorKataKunci(permintaan.kataKunci, daftar[0].message) <= 0.3) {
+      return null;
+    }
+    return daftar[0];
+  }
 
   // 1. Cocokkan kata kunci dengan isi pesan (kemiripan + substring)
   if (permintaan.kataKunci) {
     let terbaik: PengingatRingkas | null = null;
     let skor = 0;
     for (const r of daftar) {
-      const kmr = kemiripanPesan(permintaan.kataKunci, r.message);
-      const sub = r.message.toLowerCase().includes(permintaan.kataKunci) ? 0.5 : 0;
-      const total = kmr + sub;
+      const total = skorKataKunci(permintaan.kataKunci, r.message);
       if (total > skor) { skor = total; terbaik = r; }
     }
     if (terbaik && skor > 0.3) return terbaik;
   }
 
-  // 2. Tidak yakin -> pilih yang paling dekat waktunya (paling awal).
+  // 2. Tidak yakin: HAPUS tidak boleh menebak; aksi lain tetap pilih yang paling awal.
+  if (permintaan.aksi === 'batal') return null;
   return daftar[0];
 }

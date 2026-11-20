@@ -142,7 +142,10 @@ export async function claimIncomingMessage(
   platform: string,
   msgId: string,
   chatId: string,
-  content: string = '[incoming]'
+  content: string = '[incoming]',
+  // dedupKonten=false untuk transport yang msg_id-nya stabil (Baileys/WA Web): user yang
+  // sengaja mengirim teks sama dua kali (mis. "ringkasan") TIDAK boleh dibuang senyap.
+  opts: { dedupKonten?: boolean } = {},
 ): Promise<boolean> {
   chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   if (!msgId) return true;
@@ -163,8 +166,10 @@ export async function claimIncomingMessage(
   // PENTING: jendela 60 detik & konten identik -> aman, karena user yang benar-
   // benar mengirim ulang pesan yang sama dalam <60 detik memang tidak wajar
   // (dan lebih baik dianggap duplikat daripada mencatat data ganda).
-  try {
-    const JENDELA_MS = 60_000;
+  // Jendela dipersingkat 60s -> 10s (20 Nov 2026): retry webhook Meta datang dalam hitungan
+  // detik, sedangkan 60s membuang pesan sah yang diulang user ("ringkasan" 2x tak dibalas).
+  if (opts.dedupKonten !== false) try {
+    const JENDELA_MS = 10_000;
     const batas = new Date(Date.now() - JENDELA_MS).toISOString();
     const { data: kembar } = await c
       .from('messages')
