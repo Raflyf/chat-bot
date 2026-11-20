@@ -216,8 +216,8 @@ export async function tentukanProfilWaktu(
   }
 
   // 2. Belum ada profil -> coba tebak dari kode negara nomor telepon.
-  //    Hanya WhatsApp (chat key memuat nomor asli); ID Telegram BUKAN nomor.
-  const negara = /^wa[_:]/i.test(chatId) ? detectUserCountry(chatId) : null;
+  //    Hanya WhatsApp privat (chat key memuat nomor asli); ID Telegram dan grup BUKAN nomor telepon.
+  const negara = /^wa[_:]/i.test(chatId) && !isGroupChatKey(chatId) ? detectUserCountry(chatId) : null;
   if (negara && negara.country !== 'Indonesia') {
     // Negara di luar Indonesia: zona biasanya tunggal -> tebak, tapi konfirmasi.
     const profil: ProfilWaktu = {

@@ -1022,7 +1022,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   const userShowsHumor = Boolean(
     userPrompt &&
       (/^\[Stiker\b/i.test(userPrompt) ||
-        /(?:wkwk+|kwkwk+|haha+|hehe+|hihi+|ngakak|kocak|lucu|garing|cringe|joke|lelucon|banyolan|lawak|candaan|bercanda|becanda|iseng|gabut|roast|ledek|tebak|gombal|rayu|anjay|gokil|buset|jir+|bjir+|woy+|woi+|bott?|santuy|santai\s+dulu|malah\s+ilang|kaku\s+(?:bet|bgt|banget)|troll|prank|😹|😂|🤣|😆|😅|😄|😁)/i.test(
+        /(?:wkwk+|kwkwk+|haha+|hehe+|hihi+|ngakak|kocak|lucu|garing|cringe|joke|lelucon|banyolan|lawak|candaan|bercanda|becanda|iseng|gabut|roast|ledek|tebak|gombal|rayu|anjay|gokil|buset|jir+|bjir+|woy+|woi+|\bbott?\b|santuy|santai\s+dulu|malah\s+ilang|kaku\s+(?:bet|bgt|banget)|troll|prank|😹|😂|🤣|😆|😅|😄|😁)/i.test(
           userPrompt,
         )),
   );
@@ -1597,10 +1597,19 @@ export function sanitizeAssistantOutput(
  * ATURAN: bila user mengirim stiker, DILARANG bilang tidak melihat/menerimanya.
  * Balasan seperti itu -> kosongkan agar autoReply meregenerasi.
  */
+export function ekstrakPesanInti(raw: string): string {
+  if (!raw || typeof raw !== 'string') return '';
+  let s = raw.trim();
+  s = s.replace(/^\[Konteks obrolan grup[^\]]*\]\s*/i, '').trim();
+  s = s.replace(/^\[Membalas pesan (?:KAMU \(bot\)|ORANG LAIN|DIA SENDIRI[^\]]*?):\s*"[\s\S]*?"\]\s*/i, '').trim();
+  s = s.replace(/^\[(?:Pesan di Grup dari|Dari) [^\]\n]{1,80}\]:\s*/i, '').trim();
+  return s || raw.trim();
+}
+
 export function buangKlaimTidakLihatStiker(reply: string, userPrompt: string): string {
   if (!reply) return reply;
   const u = String(userPrompt || '');
-  if (!/\[Stiker\s*WhatsApp\]/i.test(u) && !/^\s*stiker\s*$/i.test(u)) return reply;
+  if (!/\[Stiker(?:\s+Animasi)?\s+(?:WhatsApp|Telegram)\b/i.test(u) && !/^\s*stiker\s*$/i.test(u)) return reply;
   // Klaim tidak melihat / minta kirim ulang.
   const klaimButa =
     /\b(?:stiker(?:nya)?|gambarnya|fotonya|kirimannya)\s*(?:nya)?\s*(?:belum|nggak|gak|tidak|ga)\s*(?:kelihatan|masuk|sampai|terlihat|ada|muncul|kelihatan|keterima|terkirim)\b/i.test(reply) ||
@@ -1652,7 +1661,7 @@ export function buangBalasanStikerGenerik(reply: string, userPrompt: string): st
   if (!reply) return reply;
   const u = String(userPrompt || '');
   // Hanya berlaku bila user mengirim STIKER.
-  if (!/\[Stiker\s*WhatsApp\]/i.test(u) && !/^\s*stiker\s*$/i.test(u)) return reply;
+  if (!/\[Stiker(?:\s+Animasi)?\s+(?:WhatsApp|Telegram)\b/i.test(u) && !/^\s*stiker\s*$/i.test(u)) return reply;
   const generik = /^\s*(?:iya|ya|hehe|haha|wkwk|😄|😂|🤣)?[\s,]*(?:tuh\s+)?(?:lucu|lucu\s+banget|gemas|imut|keren|bagus|ngakak)\b[^.!?\n]*[.!]?\s*$/i;
   const mengarang = /\b(?:patrick|spongebob|monyet|kucing\s+yang\s+(?:nggak|gak|tidak|ga)\s+bisa\s+nyanyi|salah\s+lia?t|maksa\s+liha?t)\b/i;
   // Balasan NADA ASISTEN ROBOTIK — tidak pernah wajar sebagai reaksi stiker.
@@ -1762,7 +1771,7 @@ export function bersihkanFrasaNgawur(reply: string): string {
  */
 export function buangKonfabulasiKonteks(reply: string, userPrompt: string, recentHistoryText?: string): string {
   if (!reply) return reply;
-  const u = String(userPrompt || '').trim().toLowerCase();
+  const u = ekstrakPesanInti(String(userPrompt || '')).trim().toLowerCase();
   if (!u) return reply;
   if (/^\[(?:stiker|gambar|foto|video|dokumen|voice\s+note)\b/i.test(u)) return reply;
 
@@ -2403,7 +2412,8 @@ export function systemPrompt(
   // bawah melempar "Cannot read properties of null". Jalur nyata yang bisa mengirim null:
   // pemrosesan media tanpa teks (stiker/gambar tanpa caption). Diganti di sini agar
   // seluruh fungsi aman, bukan hanya titik pemakaiannya.
-  const userPromptText = typeof userPrompt === 'string' ? userPrompt : '';
+  const userPromptRaw = typeof userPrompt === 'string' ? userPrompt : '';
+  const userPromptText = ekstrakPesanInti(userPromptRaw);
   // Guard yang sama untuk `web`: pemanggil JS bisa mengirim objek/angka (bukan string|null).
   // Tanpa ini, `webText.trim()` di bawah melempar TypeError dan seluruh balasan gagal.
   const webText: string | null = typeof web === 'string' ? web : null;
@@ -2438,7 +2448,7 @@ export function systemPrompt(
   );
   const isPlayfulTopicActive = playfulUserTurn || playfulHistory;
 
-  const iniGrup = /\[Pesan di Grup dari |\[Konteks obrolan grup/i.test(userPromptText);
+  const iniGrup = isGroupChatKey(ctx?.chatId) || /\[Pesan di Grup dari |\[Konteks obrolan grup/i.test(userPromptRaw);
   const blokBatasanGrup = iniGrup
     ? [
         '- KONTEKS GRUP (ATURAN KHUSUS OBROLAN GRUP):',
@@ -3188,12 +3198,31 @@ export function systemPrompt(
       [/\b(?:aku|saya|gue|gw)\s+(?:kerja|bekerja)\s+(?:di|sebagai)\s+([\w\s]{3,30})/i, 'pekerjaan'],
       [/\b(?:aku|saya|gue|gw)\s+(?:suka|senang|hobi)\s+([\w\s]{3,30})/i, 'kesukaan'],
     ];
-    for (const [re, label] of factPatterns) {
-      const m = allUserText.match(re);
-      if (m && m[1]) {
-        const val = m[1].replace(/\s+/g, ' ').trim();
-        if (val.length >= 2 && !personalFacts.some((f) => f.includes(val))) {
-          personalFacts.push(`${label}: ${val}`);
+    if (iniGrup) {
+      for (const h of convHistory) {
+        if (h.role !== 'user' || typeof h.content !== 'string') continue;
+        const cleanTurn = stripDurableMarkers(h.content);
+        const mSpeaker = cleanTurn.match(/^\[([^\]\n]{1,40})\]:\s*([\s\S]+)$/);
+        const speakerTag = mSpeaker ? `${mSpeaker[1].trim()}: ` : '';
+        const body = mSpeaker ? mSpeaker[2] : cleanTurn;
+        for (const [re, label] of factPatterns) {
+          const m = body.match(re);
+          if (m && m[1]) {
+            const val = m[1].replace(/\s+/g, ' ').trim();
+            if (val.length >= 2 && !personalFacts.some((f) => f.includes(val) && (!speakerTag || f.startsWith(speakerTag)))) {
+              personalFacts.push(`${speakerTag}${label}: ${val}`);
+            }
+          }
+        }
+      }
+    } else {
+      for (const [re, label] of factPatterns) {
+        const m = allUserText.match(re);
+        if (m && m[1]) {
+          const val = m[1].replace(/\s+/g, ' ').trim();
+          if (val.length >= 2 && !personalFacts.some((f) => f.includes(val))) {
+            personalFacts.push(`${label}: ${val}`);
+          }
         }
       }
     }
@@ -3547,7 +3576,7 @@ PEDOMAN DATA INTERNET (${nowYear}):
     const lastUserTexts = [
       ...convHistory
         .filter((h) => h.role === 'user' && typeof h.content === 'string')
-        .map((h) => stripDurableMarkers(h.content as string)),
+        .map((h) => ekstrakPesanInti(stripDurableMarkers(h.content as string))),
       userPromptText,
     ].slice(-6);
     const alurNotes: string[] = [];
@@ -3995,6 +4024,7 @@ export async function autoReply(
 }> {
   const clean = userText.trim().slice(0, 32000);
   if (!clean) return { reply: '', escalate: true, via: 'empty' };
+  const coreClean = ekstrakPesanInti(clean);
 
   // ── MODE PROFESIONAL (dihitung SEKALI, dipakai semua jalur sanitasi) ─────────
   // Alasan dihitung di sini: autoReply punya banyak jalur (retry anti-echo, anti-loop,
@@ -4002,7 +4032,7 @@ export async function autoReply(
   // dihitung ulang per jalur, bisa berbeda hasil dan guard profesional bocor.
   // Pola ini SENGAJA sama dengan professionalRe di systemPrompt supaya instruksi dan
   // penegakan di kode tidak pernah bertentangan.
-  const professionalContext = POLA_PROFESIONAL.test(clean);
+  const professionalContext = POLA_PROFESIONAL.test(coreClean);
 
   // ==========================================================================
   // MEMORI BOT: pilih tebak-tebakan / gombalan dari memori (yang tumbuh sendiri).
@@ -4017,8 +4047,8 @@ export async function autoReply(
   // ==========================================================================
   let pickedForTurn: PickedMemory | null = null;
   {
-    const wantsRiddle = isMemoryRelevant('riddle', clean);
-    const wantsGombal = !wantsRiddle && isMemoryRelevant('gombal', clean);
+    const wantsRiddle = isMemoryRelevant('riddle', coreClean);
+    const wantsGombal = !wantsRiddle && isMemoryRelevant('gombal', coreClean);
     const kind = wantsRiddle ? 'riddle' : wantsGombal ? 'gombal' : null;
 
     if (kind) {
@@ -4057,9 +4087,9 @@ export async function autoReply(
     }
   }
 
-  // Otomatis deteksi deklarasi lokasi tempat tinggal / keberadaan pengguna dan simpan ke memori permanen
-  if (ctx?.chatId) {
-    const locMatch = detectUserLocationDeclaration(clean);
+  // Otomatis deteksi deklarasi lokasi tempat tinggal / keberadaan pengguna dan simpan ke memori permanen (khusus chat privat)
+  if (ctx?.chatId && !isGroupChatKey(ctx.chatId)) {
+    const locMatch = detectUserLocationDeclaration(coreClean);
     if (locMatch) {
       const cityName = locMatch.matchedKeyword ? (locMatch.matchedKeyword.charAt(0).toUpperCase() + locMatch.matchedKeyword.slice(1)) : '';
       const locationDesc = cityName ? `${cityName}, ${locMatch.label}` : locMatch.label;
@@ -4097,7 +4127,7 @@ export async function autoReply(
       text = firstRiddle.text;
       let stickerEmoji = firstExtract.sticker;
       let riddleAnswer = firstRiddle.answer;
-    let reply = sanitizeAssistantOutput(text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+    let reply = sanitizeAssistantOutput(text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
     // Cooldown emoji lintas-pesan (perbaikan 06 Okt 2026): bila 2 balasan terakhir
     // sudah memakai emoji, balasan ini dibersihkan dari emoji agar tidak terkesan
     // mesin/berlebihan. Lihat batasiEmojiLintasPesan().
@@ -4108,8 +4138,8 @@ export async function autoReply(
 
     // Guard anti-echo: balasan <4 kata untuk input >=2 kata hampir pasti collapse model kecil — 1x retry instruksi minimal
     const replyWords = reply.split(/\s+/).filter(Boolean).length;
-    const cleanWords = clean.split(/\s+/).filter(Boolean).length;
-    const isShortGreeting = /^(?:halo+|hai+|hey+|hei+|oy+|woy+|p+|tes|test|ping)[!.\s]*$/i.test(clean.trim());
+    const cleanWords = coreClean.split(/\s+/).filter(Boolean).length;
+    const isShortGreeting = /^(?:halo+|hai+|hey+|hei+|oy+|woy+|p+|tes|test|ping)[!.\s]*$/i.test(coreClean.trim());
     if (replyWords < 4 && cleanWords >= 2 && !isShortGreeting) {
       try {
         const retryMsgs: ChatMsg[] = [
@@ -4122,7 +4152,7 @@ export async function autoReply(
         const secondTry = await chatRetry(retryMsgs, false, ctx?.chatId, true);
         const secondSticker = extractStickerTag(secondTry.text);
         const secondExtract = extractRiddleTag(secondSticker.text);
-        const secondReply = sanitizeAssistantOutput(secondExtract.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+        const secondReply = sanitizeAssistantOutput(secondExtract.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
         if (secondReply.split(/\s+/).filter(Boolean).length >= 4) {
           reply = secondReply;
           via = secondTry.via;
@@ -4136,7 +4166,7 @@ export async function autoReply(
     }
 
     // Proteksi program: jika user meminta tebak-tebakan atau gombalan dan model membocorkan punchline langsung di pesan yang sama
-    const isInteractiveSetupReq = /\b(?:tebak(?:an|\s*-?\s*tebakan)?|teka\s*-?\s*teki|tebak\s+tebakan|gombal(?:an|in)?|rayu(?:an)?|ngerayu)\b/i.test(clean);
+    const isInteractiveSetupReq = /\b(?:tebak(?:an|\s*-?\s*tebakan)?|teka\s*-?\s*teki|tebak\s+tebakan|gombal(?:an|in)?|rayu(?:an)?|ngerayu)\b/i.test(coreClean);
 
     // GUARD ANTI-TUMPUKAN TEBAKAN: bila balasan memuat BANYAK setup tebak-tebakan
     // (≥3 tanda tanya yang masing-masing berupa teka-teki), potong hanya yang PERTAMA.
@@ -4288,7 +4318,7 @@ export async function autoReply(
               const fix = await chatRetry(fixMsgs, false, ctx?.chatId, true);
               const fixSticker = extractStickerTag(fix.text);
               const fixExtract = extractRiddleTag(fixSticker.text);
-              const fixReply = sanitizeAssistantOutput(fixExtract.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+              const fixReply = sanitizeAssistantOutput(fixExtract.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
               // Terima hanya bila hasilnya bersih: satu setup, tanpa koreksi diri, tanpa bocor.
               const fixQ = (fixReply.match(/\?/g) || []).length;
               if (
@@ -4371,7 +4401,7 @@ export async function autoReply(
           if (secondTry.text && secondTry.text.trim().toLowerCase() !== normLast) {
             const loopSticker = extractStickerTag(secondTry.text);
             const loopExtract = extractRiddleTag(loopSticker.text);
-            const loopReply = sanitizeAssistantOutput(loopExtract.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+            const loopReply = sanitizeAssistantOutput(loopExtract.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
             // Terima hanya bila hasil retry benar-benar BERBEDA (bukan mengulang lagi).
             const tLoop = tokensOf(loopReply.toLowerCase());
             let inter2 = 0;
@@ -4419,10 +4449,10 @@ export async function autoReply(
             const echoSticker = extractStickerTag(cobaEcho.text);
             const echoExtract = extractRiddleTag(echoSticker.text);
             const echoReply = sanitizeAssistantOutput(
-              echoExtract.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize,
+              echoExtract.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize,
             );
             // Terima hanya bila hasil retry benar-benar BERBEDA dari pesan user.
-            if (echoReply.trim() && !adalahEchoPesanUser(echoReply, clean)) {
+            if (echoReply.trim() && !adalahEchoPesanUser(echoReply, clean) && !adalahEchoPesanUser(echoReply, coreClean)) {
               reply = echoReply;
               if (!stickerEmoji && echoSticker.sticker) stickerEmoji = echoSticker.sticker;
               if (!riddleAnswer && echoExtract.answer) riddleAnswer = echoExtract.answer;
@@ -4449,7 +4479,7 @@ export async function autoReply(
       const replyWords = reply.split(/\s+/).filter(Boolean).length;
       const bocorMaafAmnesia = /kayak\s+baru\s+mulai\s+chat|sempat\s+(?:lupa|mengulang\s+pembuka)|sori.*baru\s+mulai|maaf.*(?:lupa\s+konteks|mengulang\s+obrolan)/i;
       // Hanya aktif bila: percakapan berjalan + pesan user bukan ping/sapaan singkat + balasan memang didominasi frasa amnesia.
-      if (ongoing && bolehPicuGuardAmnesia(clean) && replyWords <= 25 && amnesiaRe.test(reply.trim())) {
+      if (ongoing && bolehPicuGuardAmnesia(coreClean) && replyWords <= 25 && amnesiaRe.test(reply.trim())) {
         console.warn('[skills] Balasan amnesia terdeteksi di tengah percakapan — minta lanjutkan konteks.');
         try {
           const fixMsgs: ChatMsg[] = [
@@ -4461,7 +4491,7 @@ export async function autoReply(
             },
           ];
           const fix = await chatRetry(fixMsgs, false, ctx?.chatId, true);
-          const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+          const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
           const fixWords = fixReply.split(/\s+/).filter(Boolean).length;
           if (fixReply.trim() && fixWords <= 30 && !amnesiaRe.test(fixReply.trim()) && !bocorMaafAmnesia.test(fixReply)) {
             reply = fixReply;
@@ -4488,7 +4518,7 @@ export async function autoReply(
             },
           ];
           const fix = await chatRetry(fixMsgs, false, ctx?.chatId, true);
-          const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+          const fixReply = sanitizeAssistantOutput(fix.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
           if (fixReply.trim() && !surrenderRe.test(fixReply)) {
             reply = fixReply;
           }
@@ -4513,7 +4543,7 @@ export async function autoReply(
       /\b(?:nyata\s*lah|beneran|bisa\s+(?:kok|dong|banget)|boleh\s+(?:kok|dong)|siap\s+(?:gas|mabar)|gas\s+(?:mabar|party|main)|tinggal\s+(?:gas|ajak|coba)|coba\s+aja|ajak\s+aja|mabar\s+(?:sama|bareng|yuk|ayo|sini)|main\s+bareng\s+(?:yuk|ayo|sama)|party\s*(?:yuk|ayo)?|add\s+(?:id|akun)|id\s+(?:game|ml|ku)\s*[:=]|username\s+(?:game|ml))\b/i;
     // Hanya periksa bila konteks pesan user memang soal game/mabar.
     const konteksMabar =
-      /\b(?:mabar|main\s+bareng|party|rank|hero|skin|mlbb|mobile\s+legends?|pubg|free\s*fire|valorant|genshin|roblox|dota|cs\s*2|ff|game)\b/i.test(clean);
+      /\b(?:mabar|main\s+bareng|party|rank|hero|skin|mlbb|mobile\s+legends?|pubg|free\s*fire|valorant|genshin|roblox|dota|cs\s*2|ff|game)\b/i.test(coreClean);
     if (konteksMabar && mabarClaimRe.test(reply)) {
       try {
         const fixMsgs: ChatMsg[] = [
@@ -4525,7 +4555,7 @@ export async function autoReply(
           },
         ];
         const fix = await chatRetry(fixMsgs, false, ctx?.chatId, true);
-        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+        const fixReply = sanitizeAssistantOutput(fix.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
         if (fixReply.trim() && !mabarClaimRe.test(fixReply)) {
           reply = fixReply;
         } else if (fixReply.trim()) {
@@ -4635,7 +4665,7 @@ export async function autoReply(
           },
         ];
         const fix = await chatRetry(fixMsgs, false, ctx?.chatId, true);
-        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+        const fixReply = sanitizeAssistantOutput(fix.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
         if (fixReply.trim() && !selfDevClaimRe.test(fixReply) && !selfDevClaimRe2.test(fixReply)) {
           reply = fixReply;
         }
@@ -4656,9 +4686,9 @@ export async function autoReply(
     // konfabulasi audio (mis. "tes 123" dibalas seolah uji mikrofon). Ralat dinamis dulu;
     // bila membandel, klausa audio dibuang murni (zero teks statis).
     const audioContextOk =
-      isAudioInput(clean) ||
-      /\b(?:lagu|musik|nyanyi(?:an)?|penyanyi|band|konser|podcast|film|video|murottal|murotal|voice\s?note|vn)\b/i.test(clean) ||
-      /\b(?:kamu|lu|elo)\b[^.!?\n]{0,15}?\bdeng(?:er|ar)\b/i.test(clean);
+      isAudioInput(coreClean) ||
+      /\b(?:lagu|musik|nyanyi(?:an)?|penyanyi|band|konser|podcast|film|video|murottal|murotal|voice\s?note|vn)\b/i.test(coreClean) ||
+      /\b(?:kamu|lu|elo)\b[^.!?\n]{0,15}?\bdeng(?:er|ar)\b/i.test(coreClean);
     if (!audioContextOk && hasAudioClaim(reply)) {
       try {
         const fixMsgs: ChatMsg[] = [
@@ -4670,7 +4700,7 @@ export async function autoReply(
           },
         ];
         const fix = await chatRetry(fixMsgs, false, ctx?.chatId, true);
-        const fixReply = sanitizeAssistantOutput(fix.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+        const fixReply = sanitizeAssistantOutput(fix.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
         if (fixReply.trim() && !hasAudioClaim(fixReply)) {
           reply = fixReply;
         }
@@ -4684,8 +4714,8 @@ export async function autoReply(
 
     // Proteksi anti-minta-maaf berulang saat user secara eksplisit melarang minta maaf.
     if (
-      clean &&
-      /\b(?:jangan|gausah|ga\s*usah|gak\s*usah|nggak\s*usah|stop)\s+minta\s+maaf\b/i.test(clean) &&
+      coreClean &&
+      /\b(?:jangan|gausah|ga\s*usah|gak\s*usah|nggak\s*usah|stop)\s+minta\s+maaf\b/i.test(coreClean) &&
       /\b(?:maaf|sorry|sori|sory)\b/i.test(reply)
     ) {
       const tanpaMaaf = reply
@@ -4711,7 +4741,7 @@ export async function autoReply(
         ];
         const regen = await chatRetry(regenMsgs, false, ctx?.chatId, true);
         const regenExtract = extractStickerTag(regen.text);
-        const regenReply = sanitizeAssistantOutput(regenExtract.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+        const regenReply = sanitizeAssistantOutput(regenExtract.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
         if (regenReply.trim()) {
           reply = regenReply;
           if (!stickerEmoji && regenExtract.sticker) stickerEmoji = regenExtract.sticker;
@@ -4845,7 +4875,7 @@ export async function autoReply(
             ];
             const re = await chatRetry(reMsgs, false, ctx?.chatId, true);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
-            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+            const reReply = sanitizeAssistantOutput(reExtract.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
             if (reReply.trim()) reply = reReply;
           } catch {
             // Best-effort: bila regen gagal, balasan asli dibiarkan.
@@ -4865,7 +4895,7 @@ export async function autoReply(
             ];
             const re = await chatRetry(reMsgs, false, ctx?.chatId, true);
             const reExtract = extractRiddleTag(extractStickerTag(re.text).text);
-            const reReply = sanitizeAssistantOutput(reExtract.text, clean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
+            const reReply = sanitizeAssistantOutput(reExtract.text, coreClean, recentOpenings, false, professionalContext, !!web, web, recentHistoryForSanitize);
             if (reReply.trim()) {
               // Buang klaim "benar" yang masih tersisa (pembersihan murni, tanpa teks statis).
               const cleaned2 = reReply
@@ -4896,10 +4926,10 @@ export async function autoReply(
       const riddleRunning =
         /\b(?:belum\s+(?:tepat|benar|bener|nyambung)|masih\s+meleset|meleset|coba\s+lagi\s+atau|(?:menyerah|nyerah)\s*\?)/i.test(lastAssistant2) ||
         (/\?/.test(lastAssistant2) && /(?:coba\s+tebak|tebak\s*(?:dong|deh|apa)|nyerah|jawabannya)/i.test(lastAssistant2));
-      if (activeRiddle && riddleRunning && clean) {
+      if (activeRiddle && riddleRunning && coreClean) {
         const userGivesUp =
           /^\s*(?:nyerah|menyerah|gak\s*tau|ga\s*tau|gatau|gak\s*tahu|ga\s*tahu|udah\s*(?:ah|deh)|gak\s*kuat|gk\s*kuat|apa\s*(?:tuh|sih)\??|kasih\s*(?:tau|tahu)\s*(?:dong|deh)?|buka\s*(?:dong|deh)|jawabannya\s*apa)[!.?\s]*$/i.test(
-            clean.trim(),
+            coreClean.trim(),
           );
         if (userGivesUp) {
           // Buang kalimat yang membujuk/menolak kehendaknya + pertanyaan menu.

@@ -18,7 +18,8 @@ import { db } from './db.js';
 
 // ── Memori (jalur cepat) ──
 const cooldownMem = new Map<string, number>(); // `${kind}:${keyHash}:${model}` -> until(ms)
-let sudahHidrasi = false;
+const COOLDOWN_REFRESH_TTL_MS = 60_000;
+let terakhirHidrasiMs = 0;
 let hidrasiSedang = false;
 
 /** Kunci kanonik. */
@@ -26,8 +27,11 @@ function kunci(kind: string, keyHash: string, model = ''): string {
   return `${kind}:${keyHash}:${model}`;
 }
 
-/** Ambil cooldown dari memori (0 = tidak cooling). */
+/** Ambil cooldown dari memori (0 = tidak cooling). Refresh DB berkala setiap 60 detik lintas instance/VPS. */
 export function cooldownMemori(kind: string, keyHash: string, model = ''): number {
+  if (!hidrasiSedang && Date.now() - terakhirHidrasiMs > COOLDOWN_REFRESH_TTL_MS) {
+    void hidrasiCooldown();
+  }
   return cooldownMem.get(kunci(kind, keyHash, model)) || 0;
 }
 
@@ -56,12 +60,12 @@ export function hapusCooldown(kind: string, keyHash: string, model = ''): void {
   void hapusDiDb(kind, keyHash, model);
 }
 
-/** Muat cooldown dari DB sekali (lazy). Aman bila tabel belum ada. */
+/** Muat cooldown dari DB (refresh berkala tiap 60 detik). Aman bila tabel belum ada. */
 export async function hidrasiCooldown(): Promise<void> {
-  if (sudahHidrasi || hidrasiSedang) return;
+  if (hidrasiSedang || Date.now() - terakhirHidrasiMs <= COOLDOWN_REFRESH_TTL_MS) return;
   hidrasiSedang = true;
   const c = db();
-  if (!c) { hidrasiSedang = false; sudahHidrasi = true; return; }
+  if (!c) { hidrasiSedang = false; terakhirHidrasiMs = Date.now(); return; }
   try {
     const { data, error } = await c.rpc('get_provider_cooldowns');
     if (!error && Array.isArray(data)) {
@@ -72,7 +76,7 @@ export async function hidrasiCooldown(): Promise<void> {
           cooldownMem.set(kunci(row.kind, row.key_hash, row.model || ''), until);
         }
       }
-      sudahHidrasi = true;
+      terakhirHidrasiMs = now;
     }
   } catch {
     // tabel v26 belum ada -> biarkan memori saja

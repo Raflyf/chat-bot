@@ -352,6 +352,18 @@ export function clearFollowUpWindow(groupKey: string, actorId?: string): void {
   followUpMap.delete(followUpKey(groupKey, actorId));
 }
 
+/** Bersihkan seluruh buffer pasif & jendela follow-up grup saat `/reset`. */
+export function clearGroupRuntimeState(groupKey: string): void {
+  if (!groupKey) return;
+  passiveBuffers.delete(groupKey);
+  const prefix = `${groupKey}:`;
+  for (const key of followUpMap.keys()) {
+    if (key.startsWith(prefix)) {
+      followUpMap.delete(key);
+    }
+  }
+}
+
 export function recordPassiveGroupMessage(
   groupKey: string,
   senderName: string,

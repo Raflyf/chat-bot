@@ -23,6 +23,8 @@ export interface PengingatRingkas {
   message: string;
   due_at: string;
   status: string;
+  repeat_kind?: string | null;
+  repeat_value?: string | null;
 }
 
 export type AksiUbah = 'undur' | 'majukan' | 'geser' | 'batal';
@@ -49,7 +51,7 @@ export async function daftarPengingatPending(chatId: string): Promise<PengingatR
   try {
     const remTbl = await resolveTableName('reminders', chatId);
     const { data } = await c.from(remTbl)
-      .select('id, message, due_at, status')
+      .select('id, message, due_at, status, repeat_kind, repeat_value')
       .eq('chat_id', chatId)
       .eq('status', 'pending')
       .order('due_at', { ascending: true })

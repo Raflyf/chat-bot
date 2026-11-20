@@ -714,7 +714,11 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
               let webResults: string | null = null;
               // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
-              const prevContextVn = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+              const prevContextVn = [
+                context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '',
+                context?.summary || '',
+                ...(context?.corrections || []),
+              ].filter(Boolean).join(' ');
 
               const hasilCatatVn = await tanganiPencatatan(transcription, String(from), context, {
                 platform: 'whatsapp',
@@ -1117,7 +1121,11 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         // 3. Periksa kebutuhan pencarian web real-time 2026
         let webResults: string | null = null;
         // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
-        const prevContextTeks = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+        const prevContextTeks = [
+          context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '',
+          context?.summary || '',
+          ...(context?.corrections || []),
+        ].filter(Boolean).join(' ');
         if (needsSearch(text, prevContextTeks)) {
           try {
             const prevContext = prevContextTeks;

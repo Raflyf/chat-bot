@@ -21,6 +21,7 @@ import {
   markGroupBotReply,
   isInFollowUpWindow,
   clearFollowUpWindow,
+  clearGroupRuntimeState,
   recordPassiveGroupMessage,
   consumePassiveGroupContext,
   deteksiPanggilanNatural,
@@ -120,6 +121,7 @@ async function answerPhoto(
   caption?: string,
   msgId?: string,
   msgSentAt?: Date,
+  replyToMsgId?: number,
 ): Promise<boolean> {
   const dl = await downloadTelegramBuffer(bot, fileId);
   if (!dl) return false;
@@ -135,8 +137,8 @@ async function answerPhoto(
     msg_id: msgId || undefined,
   }).catch((err) => console.warn('[telegram] Gagal simpan pesan foto user:', err));
   updateContextCache(chatKey, 'user', kontenGambarUser);
-  await sendTelegramMessageSafe(bot, chatId, reply);
-  if (msgId) void markMessageProcessed('telegram', msgId);
+  await sendTelegramMessageSafe(bot, chatId, reply, replyToMsgId);
+  if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
   await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via, tokens });
   updateContextCache(chatKey, 'assistant', reply);
   noteExchange(chatKey);
@@ -391,19 +393,27 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         if (targetBot !== botUsername) return; // Command spesifik untuk bot lain di grup -> abaikan
         isTargetedCommand = true;
       } else {
-        const knownCommands = ['start', 'reset', 'clear', 'remind', 'salah', 'tanya', 'ai', 'help', 'bantuan', 'nimbrung', 'mention', 'diam', 'statusgrup', 'status', 'stop'];
+        const knownCommands = [
+          'start', 'reset', 'clear', 'remind', 'salah', 'tanya', 'ai',
+          'help', 'bantuan', 'menu', 'fitur', 'panduan',
+          'catat', 'catatan', 'cari', 'tugas', 'list', 'selesai', 'hapus',
+          'uang', 'masuk', 'rekap', 'hapusuang', 'barang', 'ringkasan',
+          'nimbrung', 'mention', 'diam', 'statusgrup', 'status', 'stop',
+        ];
         if (!isGroup || knownCommands.includes(cmdMatch[1].toLowerCase())) {
           isTargetedCommand = true;
         }
       }
     }
 
+    const msgAnimation = (msg as TelegramBot.Message & { animation?: { file_id?: string; mime_type?: string } }).animation;
     const hasPhoto = Boolean(msg.photo?.length);
-    const hasVideo = Boolean(msg.video || msg.video_note);
-    const hasDoc = Boolean(msg.document);
+    const hasVideo = Boolean(msg.video || msg.video_note || msgAnimation?.file_id);
+    const hasDoc = Boolean(msg.document && !msgAnimation?.file_id);
     const hasAudio = Boolean(msg.voice || msg.audio);
     const hasSticker = Boolean(msg.sticker);
-    const hasMedia = hasPhoto || hasVideo || hasDoc || hasAudio || hasSticker;
+    const hasLocation = Boolean(msg.location);
+    const hasMedia = hasPhoto || hasVideo || hasDoc || hasAudio || hasSticker || hasLocation;
 
     // Bersihkan mention & kata panggil sementara untuk evaluasi mode grup
     const cleanForGroupCheck = panggilText.bersih
@@ -600,7 +610,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     // dan bertele-tele. Sekarang memakai `teksBantuan()`: SATU teks pasti, ringkas,
     // dan dijamin muat dalam satu pesan. Balasan obrolan tetap digenerate AI.
     if (PERINTAH_BANTUAN.has(text.replace(/^\//, '').trim().toLowerCase())) {
-      await sendTelegramMessageSafe(bot, chatId, teksBantuan());
+      await sendTelegramMessageSafe(bot, chatId, teksBantuan(), tgReplyRef);
+      tandaiBalasGrupTg();
       if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       return;
     }
@@ -613,7 +624,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       const cmdLama = text.replace(/^\//, '').split(/[\s@]/)[0].trim().toLowerCase();
       const pengganti = PERINTAH_DIGABUNG[cmdLama];
       if (pengganti) {
-        await sendTelegramMessageSafe(bot, chatId, `Perintah \`/${cmdLama}\` sudah digabung. Pakai \`/${pengganti}\` ya.`);
+        await sendTelegramMessageSafe(bot, chatId, `Perintah \`/${cmdLama}\` sudah digabung. Pakai \`/${pengganti}\` ya.`, tgReplyRef);
+        tandaiBalasGrupTg();
         if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
         return;
       }
@@ -687,13 +699,14 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         }
       } else {
         // Tangkap fakta personal hanya bila bukan perintah pencatatan.
-        try { await tangkapFaktaPersonal(identityKey, text); } catch { /* best-effort */ }
+        try { await tangkapFaktaPersonal(identityKey, text, isGroup ? senderName : undefined); } catch { /* best-effort */ }
       }
     }
 
     // 3b. Perintah /reset atau /clear atau reset sesi (konfirmasi 100% dinamis — ZERO teks statis)
     if (text && isResetCommand(text)) {
       await resetSession(chatKey, 'telegram');
+      if (isGroup) clearGroupRuntimeState(tgGroupKey);
       let resetReply = '';
       try {
         const resetCtx = await getContext(chatKey, msgSentAt);
@@ -705,7 +718,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       } catch {
         // diam — ZERO teks statis
       }
-      await sendTelegramMessageSafe(bot, chatId, resetReply);
+      await sendTelegramMessageSafe(bot, chatId, resetReply, tgReplyRef);
+      tandaiBalasGrupTg();
       if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       await saveMessage({
         platform: 'telegram',
@@ -720,29 +734,52 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     // 4. Foto / Gambar
     if (msg.photo?.length) {
       const fileId = msg.photo[msg.photo.length - 1].file_id;
-      const promptCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
+      const baseCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
+      const promptCaption = [tgPassivePrefix, baseCaption].filter(Boolean).join('\n') || undefined;
       let handled = false;
       try {
-        handled = await answerPhoto(bot, chatId, chatKey, fileId, promptCaption, msgId, msgSentAt);
+        handled = await answerPhoto(bot, chatId, chatKey, fileId, promptCaption, msgId, msgSentAt, tgReplyRef);
       } catch (err) {
         console.error(`[telegram] vision photo error: ${String((err as Error).message ?? err)}`);
       }
-      if (handled) return;
+      if (handled) {
+        tandaiBalasGrupTg();
+        return;
+      }
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
-        content: promptCaption ? `[Gambar] ${promptCaption}` : '[Gambar]',
+        content: baseCaption ? `[Gambar] ${baseCaption}` : '[Gambar]',
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan foto user:', err));
+      await sendTelegramMessageSafe(
+        bot,
+        chatId,
+        await dynamicNotice(
+          'Foto dari temanmu gagal diproses atau tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan santai, lalu minta kirim ulang.',
+          await getContext(chatKey, msgSentAt),
+        ),
+        tgReplyRef,
+      );
+      tandaiBalasGrupTg();
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
+      return;
     }
 
-    // 4b. Video (MP4 / WebM) via Google Gemini Multimodal
-    if (msg.video) {
-      const fileId = msg.video.file_id;
-      const mime = msg.video.mime_type || 'video/mp4';
-      const promptCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
-      const videoUserContent = promptCaption ? `[Video] ${promptCaption}` : '[Video]';
+    // 4b. Video atau GIF Animasi (MP4 / WebM) via Google Gemini Multimodal
+    if (msg.video || msgAnimation?.file_id) {
+      const isAnimGif = Boolean(!msg.video && msgAnimation?.file_id);
+      const fileId = msg.video ? msg.video.file_id : msgAnimation!.file_id!;
+      const mime = msg.video ? (msg.video.mime_type || 'video/mp4') : (msgAnimation?.mime_type || 'video/mp4');
+      const mediaTag = isAnimGif ? '[GIF]' : '[Video]';
+      const baseCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
+      const promptCaption = [
+        tgPassivePrefix,
+        isAnimGif && !caption ? 'Pengguna mengirim GIF animasi sebagai reaksi. Balas singkat, santai, dan nyambung.' : '',
+        baseCaption,
+      ].filter(Boolean).join('\n') || undefined;
+      const videoUserContent = baseCaption ? `${mediaTag} ${baseCaption}` : mediaTag;
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
@@ -754,8 +791,9 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
-        const { reply, via, tokens } = await processIncomingVideo(dl.buffer, mime, 'video.mp4', promptCaption, await getContext(chatKey, msgSentAt));
-        await sendTelegramMessageSafe(bot, chatId, reply);
+        const { reply, via, tokens } = await processIncomingVideo(dl.buffer, mime, isAnimGif ? 'gif.mp4' : 'video.mp4', promptCaption, await getContext(chatKey, msgSentAt));
+        await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+        tandaiBalasGrupTg();
         if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
         await saveMessage({
           platform: 'telegram',
@@ -769,14 +807,27 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         noteExchange(chatKey);
         return;
       }
+      await sendTelegramMessageSafe(
+        bot,
+        chatId,
+        await dynamicNotice(
+          'Video atau GIF dari temanmu gagal diunduh dari server Telegram. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang.',
+          await getContext(chatKey, msgSentAt),
+        ),
+        tgReplyRef,
+      );
+      tandaiBalasGrupTg();
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
+      return;
     }
 
     // 5. Dokumen (PDF, Word .docx, Teks, CSV, JSON, Kode, atau Gambar Asli)
-    if (msg.document) {
+    if (hasDoc && msg.document) {
       const fileId = msg.document.file_id;
       const filename = msg.document.file_name || 'dokumen';
       const mime = msg.document.mime_type || 'application/octet-stream';
-      const promptCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
+      const baseCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
+      const promptCaption = [tgPassivePrefix, baseCaption].filter(Boolean).join('\n') || undefined;
 
       // Jika berkas berupa gambar tanpa kompresi
       if (mime.startsWith('image/')) {
@@ -784,14 +835,17 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           platform: 'telegram',
           chat_id: chatKey,
           role: 'user',
-          content: promptCaption ? `[Gambar: ${filename}] ${promptCaption}` : `[Gambar: ${filename}]`,
+          content: baseCaption ? `[Gambar: ${filename}] ${baseCaption}` : `[Gambar: ${filename}]`,
           msg_id: msgId || undefined,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan gambar doc user:', err));
-        if (await answerPhoto(bot, chatId, chatKey, fileId, promptCaption, msgId, msgSentAt)) return;
+        if (await answerPhoto(bot, chatId, chatKey, fileId, promptCaption, msgId, msgSentAt, tgReplyRef)) {
+          tandaiBalasGrupTg();
+          return;
+        }
       }
 
       // Berkas dokumen umum (PDF, DOCX, TXT, CSV, JSON, kode)
-      const docUserContent = `[Dokumen: ${filename}] ${promptCaption || ''}`.trim();
+      const docUserContent = `[Dokumen: ${filename}] ${baseCaption || ''}`.trim();
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
@@ -844,7 +898,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
               'Dokumen dari temanmu gagal diproses atau isinya tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik isinya lewat teks.',
               await getContext(chatKey, msgSentAt),
             ),
+            tgReplyRef,
           );
+          tandaiBalasGrupTg();
+          if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
         }
         return;
       }
@@ -856,7 +913,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           'Dokumen dari temanmu gagal diunduh dari server Telegram. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang.',
           await getContext(chatKey, msgSentAt),
         ),
+        tgReplyRef,
       );
+      tandaiBalasGrupTg();
+      if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       return;
     }
 
@@ -868,8 +928,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
 
       if (dl) {
         try {
-          const transcription = await transcribeAudio(dl.buffer, mime);
-          const ctx = await getContext(chatKey, msgSentAt);
+          let transcription = await transcribeAudio(dl.buffer, mime);
+          let ctx = await getContext(chatKey, msgSentAt);
 
           const savedContent = isGroup ? `[Voice Note dari ${senderName}]: "${transcription}"` : `[Voice Note]: "${transcription}"`;
           await saveMessage({
@@ -881,9 +941,48 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN user:', err));
           updateContextCache(chatKey, 'user', savedContent);
 
+          const hasilCatatVn = await tanganiPencatatan(transcription, identityKey, ctx, {
+            actor: isGroup ? senderName : undefined,
+            platform: 'telegram',
+          });
+          if (hasilCatatVn.ditangani) {
+            await sendTelegramMessageSafe(bot, chatId, hasilCatatVn.reply, tgReplyRef);
+            void saveMessage({
+              platform: 'telegram',
+              chat_id: chatKey,
+              role: 'assistant',
+              content: hasilCatatVn.reply,
+              via: `notes/${hasilCatatVn.jalur}`,
+            }).catch(() => undefined);
+            updateContextCache(chatKey, 'assistant', hasilCatatVn.reply);
+            if (hasilCatatVn.teruskanKeAi) {
+              transcription = hasilCatatVn.teruskanKeAi;
+              ctx = await getContext(chatKey, msgSentAt);
+              updateContextCache(chatKey, 'user', transcription);
+            } else {
+              tandaiBalasGrupTg();
+              if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
+              noteExchange(chatKey);
+              return;
+            }
+          } else {
+            try {
+              const faktaBaruVn = await tangkapFaktaPersonal(identityKey, transcription, isGroup ? senderName : undefined);
+              if (faktaBaruVn) ctx = await getContext(chatKey, msgSentAt);
+            } catch {
+              // best-effort
+            }
+          }
+
           let web: string | null = null;
           // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
-          const prevContextVn = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+          const prevContextVn = [
+            ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '',
+            ctx?.summary || '',
+            ...(ctx?.corrections || []),
+            quotedText || '',
+            tgPassivePrefix || '',
+          ].filter(Boolean).join(' ');
           if (needsSearch(transcription, prevContextVn)) {
             try {
               const prevContext = prevContextVn;
@@ -894,9 +993,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             }
           }
 
-          const prompt = isGroup
+          const vnPromptBase = isGroup
             ? `[Pesan Suara / Voice Note di Grup dari ${senderName}]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih di grup. Tanggapi langsung apa yang dibicarakan ${senderName} secara wajar, hangat, dan bersahabat).`
             : `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
+          const prompt = (tgPassivePrefix ? `${tgPassivePrefix}\n` : '') + vnPromptBase;
           const { reply, via, tokens } = await autoReply(prompt, ctx, web);
           await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
           tandaiBalasGrupTg();
@@ -949,7 +1049,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         `Temanmu ${isGroup ? `(di grup) ${senderName} ` : ''}baru membagikan lokasi: ${tzInfo.label}. Waktu setempat saat ini ${locTime.time} ${locTime.tzName} (${locTime.full}). Konfirmasi singkat dengan gayamu sendiri bahwa lokasinya sudah dicatat dan sebutkan waktu setempat itu; nyatakan kamu akan mengingat lokasinya.`,
         await getContext(chatKey, msgSentAt),
       );
-      await sendTelegramMessageSafe(bot, chatId, reply);
+      await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+      tandaiBalasGrupTg();
       if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply })
         .catch((err) => console.warn('[telegram] Gagal simpan pesan lokasi assistant:', err));
@@ -969,7 +1070,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       if (!msg.sticker.is_animated && !msg.sticker.is_video) {
         const dl = await downloadTelegramBuffer(bot, msg.sticker.file_id);
         if (dl) {
-          const { reply: replyStiker, via, tokens, sticker: stickerBalasan, stickerText } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx, rawCaption);
+          const stickerCaptionIn = [tgPassivePrefix, rawCaption].filter(Boolean).join('\n') || undefined;
+          const { reply: replyStiker, via, tokens, sticker: stickerBalasan, stickerText } = await processIncomingSticker(dl.buffer, 'image/webp', emoji, ctx, stickerCaptionIn || rawCaption || undefined);
           // PERBAIKAN 10 Okt 2026: sanitize + kirim stiker balasan (sama seperti
           // jalur WhatsApp Cloud) agar balasan stiker tidak ngawur & bot bisa
           // membalas stiker dengan stiker.
@@ -985,7 +1087,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker user:', err));
           updateContextCache(chatKey, 'user', kontenStikerUser);
           if (teksStiker) {
-            await sendTelegramMessageSafe(bot, chatId, teksStiker);
+            await sendTelegramMessageSafe(bot, chatId, teksStiker, tgReplyRef);
           }
           let stikerTele = false;
           if (stickerBalasan && hasStickerForEmoji(stickerBalasan) && stickerFitsMood(stickerBalasan, kontenStikerUser)) {
@@ -999,9 +1101,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
               )
             ).trim();
             if (teksStiker) {
-              await sendTelegramMessageSafe(bot, chatId, teksStiker);
+              await sendTelegramMessageSafe(bot, chatId, teksStiker, tgReplyRef);
             }
           }
+          tandaiBalasGrupTg();
           if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
           const kontenAssistant = [teksStiker, stikerTele ? `[Stiker terkirim: ${stickerBalasan}]` : '']
             .filter(Boolean)
@@ -1021,11 +1124,20 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       }
 
       // Fallback untuk stiker animasi / video stiker atau jika download gagal
-      const prompt = isGroup
+      await saveMessage({
+        platform: 'telegram',
+        chat_id: chatKey,
+        role: 'user',
+        content: labelStiker,
+        msg_id: msgId || undefined,
+      }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker fallback user:', err));
+      updateContextCache(chatKey, 'user', labelStiker);
+      const prompt = (tgPassivePrefix ? `${tgPassivePrefix}\n` : '') + (isGroup
         ? `Pengguna ${senderName} di grup mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya sahabat.`
-        : `Pengguna mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya seorang sahabat mengobrol.`;
+        : `Pengguna mengirim stiker Telegram dengan ekspresi emoji "${emoji || 'ekspresi'}". Tanggapi makna atau emosinya secara hangat, santai, dan bersahabat layaknya seorang sahabat mengobrol.`);
       const { reply, via, tokens } = await autoReply(prompt, ctx);
-      await sendTelegramMessageSafe(bot, chatId, reply);
+      await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+      tandaiBalasGrupTg();
       if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
       await saveMessage({
         platform: 'telegram',
@@ -1035,6 +1147,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         via,
         tokens,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker fallback assistant:', err));
+      updateContextCache(chatKey, 'assistant', reply);
       noteExchange(chatKey);
       return;
     }
@@ -1133,7 +1246,13 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
 
     let web: string | null = null;
     // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
-    const prevContextTeks = ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+    const prevContextTeks = [
+      ctx?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '',
+      ctx?.summary || '',
+      ...(ctx?.corrections || []),
+      quotedText || '',
+      tgPassivePrefix || '',
+    ].filter(Boolean).join(' ');
     if (needsSearch(text, prevContextTeks)) {
       try {
         const prevContext = prevContextTeks;
@@ -1183,7 +1302,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         stickerSent = true;
       }
     }
-    if (msgId) void markMessageProcessed('telegram', msgId);
+    if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
 
     // Update cache memori & simpan balasan asisten ke database secara synchronous (terjamin terekam di serverless)
     updateContextCache(
@@ -1244,15 +1363,11 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
 
 /** Eksekusi Telegram Webhook Update (dipanggil oleh /api/webhook) */
 export async function processTelegramUpdate(bot: TelegramBot, update: TelegramBot.Update): Promise<void> {
-  const updId = update.update_id ? `upd_${update.update_id}` : '';
-  if (updId && (await isMessageProcessed('telegram', updId))) return;
-
   if (update.message) {
     await handleIncomingMessage(bot, update.message);
   } else if (update.edited_message) {
     await handleIncomingMessage(bot, update.edited_message);
   }
-  if (updId) void markMessageProcessed('telegram', updId);
 }
 
 /** Memulai bot dalam mode Polling (hanya saat dijalankan lokal di terminal) */

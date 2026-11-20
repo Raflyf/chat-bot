@@ -70,12 +70,14 @@ export function getModelCatalog() {
 }
 
 function detectMessageType(content: string): 'voice' | 'document' | 'image' | 'sticker' | 'video' | 'text' {
+  // Lepas prefix pembicara grup opsional ("[Nama]: ") sebelum mendeteksi jenis media.
+  const s = content.replace(/^\[[^\]\n]{1,60}\]:\s*/, '');
   // Tanpa kurung tutup agar varian grup ("[Voice Note dari X]: ...") ikut terdeteksi
-  if (content.startsWith('[Voice Note')) return 'voice';
-  if (content.startsWith('[Dokumen:')) return 'document';
-  if (content.startsWith('[Gambar')) return 'image';
-  if (content.startsWith('[Stiker')) return 'sticker';
-  if (content.startsWith('[Video')) return 'video';
+  if (s.startsWith('[Voice Note')) return 'voice';
+  if (s.startsWith('[Dokumen:')) return 'document';
+  if (s.startsWith('[Gambar')) return 'image';
+  if (s.startsWith('[Stiker')) return 'sticker';
+  if (s.startsWith('[Video') || s.startsWith('[GIF')) return 'video';
   return 'text';
 }
 

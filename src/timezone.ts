@@ -7,6 +7,7 @@
  * - Deteksi nama kota, provinsi, negara, atau zona waktu spesifik dari pesan pengguna
  * - Matriks kota acuan utama dunia (Tokyo, London, New York, Berlin, Mekkah, Sydney, dll)
  */
+import { isGroupChatKey } from './chat_id.js';
 
 export interface FormattedTime {
   time: string;
@@ -113,12 +114,15 @@ const COUNTRY_CODES: CountryTz[] = [
 
 export function detectUserCountry(chatKey?: string): CountryTz | null {
   if (!chatKey || typeof chatKey !== 'string') return null;
+  if (isGroupChatKey(chatKey)) return null;
   const numMatch = chatKey.match(/(?:wa:|\+)?(\d{7,15})/);
   if (!numMatch) return null;
   const digits = numMatch[1];
   const sorted = [...COUNTRY_CODES].sort((a, b) => b.prefix.length - a.prefix.length);
   for (const c of sorted) {
     if (digits.startsWith(c.prefix)) {
+      // NANP (+1) wajib 11 digit `1NXXNXXXXXX` agar ID numerik Telegram seperti `wa_1073504871` tidak terdeteksi AS/Kanada.
+      if (c.prefix === '1' && !/^1[2-9]\d{2}[2-9]\d{6}$/.test(digits)) continue;
       return c;
     }
   }
@@ -425,7 +429,7 @@ export function buildUniversalTimePrompt(
   // Hanya WhatsApp yang chat key-nya memuat nomor telepon asli (wa_<jid>).
   // ID numerik Telegram BUKAN nomor telepon — ID seperti "1073..." jangan sampai
   // dibaca sebagai kode negara +1 (AS/Kanada) yang membuat zona waktu salah.
-  const detectedUserCountry = /^wa[_:]/i.test(chatKey) ? detectUserCountry(chatKey) : null;
+  const detectedUserCountry = /^wa[_:]/i.test(chatKey) && !isGroupChatKey(chatKey) ? detectUserCountry(chatKey) : null;
 
   // PRIORITAS ZONA: profil tersimpan (paling akurat) > lokasi di pesan > kode negara.
   // CATATAN (05 Okt 2026): sebelumnya default-nya selalu WIB, sehingga user di

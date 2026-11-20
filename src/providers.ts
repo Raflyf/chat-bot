@@ -563,7 +563,9 @@ async function streamSse(
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
       console.warn(`[providers] Upstream error dari ${redactUrl(url)}: status=${res.status}, body=${redactUrl(errBody.slice(0, 300))}`);
-      throw new Error(`PROVIDER_${res.status}:${errBody.slice(0, 300)}`);
+      const err = new Error(`PROVIDER_${res.status}:${errBody.slice(0, 300)}`) as Error & { fullBody?: string };
+      err.fullBody = errBody.slice(0, 2000);
+      throw err;
     }
     if (!res.body) throw new Error('NO_STREAM_BODY');
 
@@ -1274,6 +1276,7 @@ async function opencodeFetch(url: string | URL | Request, init?: RequestInit): P
 
 async function opencodeChat(_key: string, model: string, msgs: ChatMsg[], timeoutMs: number, signal?: AbortSignal): Promise<ProviderResult> {
   const session = opencodeSession();
+  const authToken = _key && _key.trim() ? _key.trim() : 'public';
   const environment = [
     'Here is some useful information about the environment you are running in:', '<env>',
     '  Working directory: ' + process.cwd(), '  Workspace root folder: ' + process.cwd(),
@@ -1311,7 +1314,7 @@ async function opencodeChat(_key: string, model: string, msgs: ChatMsg[], timeou
     },
   };
   const result = await streamSse(OPENCODE_BASE + '/chat/completions', {
-    'Content-Type': 'application/json', Authorization: 'Bearer public',
+    'Content-Type': 'application/json', Authorization: `Bearer ${authToken}`,
     'User-Agent': 'opencode/latest/2.0.26/cli', 'x-opencode-client': 'cli',
     'x-opencode-session': session, 'x-opencode-session-id': session,
     'x-session-affinity': session, 'x-session-id': session,
@@ -1462,6 +1465,12 @@ async function cekKeyBolehDipakai(
   allowCoolingPass: boolean,
 ): Promise<boolean> {
   try {
+    if (!allowCoolingPass && typeof getCooldownPersist === 'function') {
+      const cd = getCooldownPersist(`${step.kind}:${keyHash(key)}`);
+      if (cd > Date.now()) {
+        return false;
+      }
+    }
     const perKeyCaps = config.dailyTokenCapPerKey[step.kind] || [];
     const keyIndex = step.keys.indexOf(key);
     const keyTokenCap =

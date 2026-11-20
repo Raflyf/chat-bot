@@ -96,7 +96,7 @@ test('privasi grup: data grup terisolasi total dari chat pribadi (tidak membocor
   assert.match(TG, /const identityKey = chatKey;/);
   // Data grup memakai identityKey (kunci grup), sehingga ringkasan/catatan/tugas/fakta DM pribadi tidak pernah bocor ke grup.
   assert.match(TG, /tanganiPencatatan\(text, identityKey,/, 'catatan/tugas/keuangan harus terisolasi per grup');
-  assert.match(TG, /tangkapFaktaPersonal\(identityKey, text\)/, 'fakta personal harus terisolasi per grup');
+  assert.match(TG, /tangkapFaktaPersonal\(identityKey, text,/, 'fakta personal harus terisolasi per grup');
   assert.match(TG, /saveCorrection\(identityKey,/, 'koreksi harus terisolasi per grup');
 });
 

@@ -128,6 +128,7 @@ export function isSafePublicUrl(urlString: string): boolean {
       if (b0 === 169 && b1 === 254) return false;
       if (b0 === 172 && b1 >= 16 && b1 <= 31) return false;
       if (b0 === 192 && b1 === 168) return false;
+      if (b0 === 100 && b1 >= 64 && b1 <= 127) return false; // CGNAT 100.64.0.0/10
       if (b0 === 0 || b0 >= 224) return false;
     }
 
@@ -265,7 +266,50 @@ export function extractFitMarkdownContent(rawHtml: string): string {
   return cleanStr(html).slice(0, 4000);
 }
 
-/** Ambil isi URL publik secara langsung atau via Jina AI LLM Reader */
+function isAntiBotChallenge(text: string): boolean {
+  if (!text) return false;
+  return /just a moment|attention required|cf-browser-verification|enable javascript and cookies|checking your browser|access denied|are you a robot|captcha/i.test(
+    text.slice(0, 1500),
+  );
+}
+
+let webStealthSession: Promise<import('wreq-js').Session> | undefined;
+
+async function fetchStealthChromeSsrf(url: string, maxHop = 3): Promise<{ ok: boolean; status: number; text: () => Promise<string> } | null> {
+  try {
+    const { createSession } = await import('wreq-js');
+    if (!webStealthSession) {
+      webStealthSession = createSession({ browser: 'chrome_131', os: 'windows', timeout: 6000 }).catch((err) => {
+        webStealthSession = undefined;
+        throw err;
+      });
+    }
+    const session = await webStealthSession;
+    let target = url;
+    for (let hop = 0; hop <= maxHop; hop++) {
+      if (!isSafePublicUrl(target)) return null;
+      const res = await session.fetch(target, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(6000),
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
+          'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
+      });
+      const isRedirect = res.status >= 300 && res.status < 400;
+      const lokasi = res.headers.get('location');
+      if (!isRedirect || !lokasi) {
+        return res;
+      }
+      target = new URL(lokasi, target).toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ambil isi URL publik secara langsung, Jina AI Reader, atau TLS Chrome impersonation (wreq-js) */
 export async function scrapeWebpage(url: string): Promise<string> {
   if (!url || !isSafePublicUrl(url)) return '';
 
@@ -343,10 +387,7 @@ export async function scrapeWebpage(url: string): Promise<string> {
       // (yang sering berhasil) tetap dijalankan. Tanpa cek ini, bot "berhasil" membaca
       // halaman challenge lalu menyimpulkan isi situs tidak terbaca (temuan produksi:
       // GitHub, docs.anthropic.com, dan SPA Vercel semuanya 0 chars padahal direct OK).
-      const isChallenge =
-        /just a moment|attention required|cf-browser-verification|enable javascript and cookies|checking your browser|access denied|are you a robot|captcha/i.test(
-          text.slice(0, 1500),
-        );
+      const isChallenge = isAntiBotChallenge(text);
       if (!isChallenge && text && text.length > 80) {
         return text.slice(0, 6000).trim();
       }
@@ -365,7 +406,7 @@ export async function scrapeWebpage(url: string): Promise<string> {
       });
       if (jr.ok) {
         const t = await jr.text();
-        if (t && t.length > 80) return t.slice(0, 6000).trim();
+        if (!isAntiBotChallenge(t) && t && t.length > 80) return t.slice(0, 6000).trim();
       }
     } catch {
       // lanjut
@@ -382,7 +423,7 @@ export async function scrapeWebpage(url: string): Promise<string> {
     try {
       const res = await fetchAmanSsrf(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 FreeAIBot/2026',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
           Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
         },
         // 9 dtk: situs berat (GitHub 358 KB, docs.anthropic 393 KB) butuh 4-8 dtk.
@@ -390,19 +431,37 @@ export async function scrapeWebpage(url: string): Promise<string> {
       });
       if (res.ok) {
         const raw = await res.text();
-        const parsed = extractFitMarkdownContent(raw);
-        if (parsed && parsed.length > 80) return parsed;
-        // SPA (React/Vue/Next): HTML awal hanya shell kosong + metadata. Ambil metadata
-        // yang ADA (title, description, og:*) agar bot tetap punya fakta halaman —
-        // lebih baik daripada 0 karakter yang memaksa bot bilang "tidak terbaca".
-        const meta = extractSpaMetadata(raw);
-        if (meta && meta.length > 40) return meta;
+        if (!isAntiBotChallenge(raw)) {
+          const parsed = extractFitMarkdownContent(raw);
+          if (parsed && parsed.length > 80) return parsed;
+          // SPA (React/Vue/Next): HTML awal hanya shell kosong + metadata. Ambil metadata
+          // yang ADA (title, description, og:*) agar bot tetap punya fakta halaman —
+          // lebih baik daripada 0 karakter yang memaksa bot bilang "tidak terbaca".
+          const meta = extractSpaMetadata(raw);
+          if (meta && meta.length > 40) return meta;
+        }
       }
-      // Respons OK tapi isi tidak bisa di-parse: percobaan kedua tidak akan membantu.
+      // Respons OK tapi isi tidak bisa di-parse (atau kena blokir 403/503/challenge) -> lanjut ke stealth TLS fallback.
       break;
     } catch {
       // Timeout/error jaringan -> coba sekali lagi (koneksi biasanya sudah hangat).
     }
+  }
+
+  // 2b. Stealth Chrome TLS impersonation (pure-Node `wreq-js`) untuk situs yang memblokir TLS Node standar (Cloudflare/Akamai ringan).
+  try {
+    const resStealth = await fetchStealthChromeSsrf(url);
+    if (resStealth?.ok) {
+      const raw = await resStealth.text();
+      if (!isAntiBotChallenge(raw)) {
+        const parsed = extractFitMarkdownContent(raw);
+        if (parsed && parsed.length > 80) return parsed;
+        const meta = extractSpaMetadata(raw);
+        if (meta && meta.length > 40) return meta;
+      }
+    }
+  } catch {
+    // tetap fallback kosong jika seluruh lapis gagal
   }
 
   return '';
@@ -1082,7 +1141,8 @@ export async function searchWeb(query: string, previousContext?: string): Promis
   // "coba lihat isi nya apa aja" / "ada model free apa aja" — tanpa ini bot menjawab
   // tanpa data halaman dan cenderung mengarang.
   const hasUrlNow = /https?:\/\//i.test(query);
-  if (!hasUrlNow && previousContext && /https?:\/\//i.test(previousContext)) {
+  const merujukLinkSebelumnya = /\b(?:link|url|web|website|situs|halaman|isi(?:nya)?|konten|itu|tadi|di\s*atas|cek|buka|baca|rangkum|ringkas|jelasin|beneran|benar|hoax|hoaks)\b/i.test(query);
+  if (!hasUrlNow && merujukLinkSebelumnya && previousContext && /https?:\/\//i.test(previousContext)) {
     const prevUrls = previousContext.match(/https?:\/\/[^\s"'<>()`]+/gi) || [];
     if (prevUrls.length > 0) {
       query = `${query} ${prevUrls[prevUrls.length - 1].replace(/[`'"),.;:!?]+$/, '')}`;

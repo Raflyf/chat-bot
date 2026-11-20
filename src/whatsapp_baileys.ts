@@ -36,6 +36,7 @@ import {
   markGroupBotReply,
   isInFollowUpWindow,
   clearFollowUpWindow,
+  clearGroupRuntimeState,
   recordPassiveGroupMessage,
   consumePassiveGroupContext,
   deteksiPanggilanNatural,
@@ -309,6 +310,7 @@ let activeSock: WASocket | null = null;
 let reminderInitTimer: NodeJS.Timeout | null = null;
 let reminderWorkerTimer: NodeJS.Timeout | null = null;
 let checkingReminders = false;
+let lastLazyRemindCheckAt = 0;
 
 function baileysJidDariChatId(chatId: string): string {
   const raw = String(chatId ?? '').trim();
@@ -648,33 +650,6 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
   const isGroup = remoteJid.endsWith('@g.us');
 
-  // ── LAZY-CHECK PENGINGAT (DITAMBAHKAN 04 Okt 2026) ──
-  // KENAPA: Vercel Hobby HANYA mengizinkan cron 1x/hari (bahkan itu presisinya
-  // ±59 menit), sehingga cron per-menit GAGAL DEPLOY. Karena itu pengingat tidak
-  // bisa diandalkan dari cron di plan Hobby.
-  //
-  // Solusi: setiap ada pesan masuk, periksa pengingat yang sudah jatuh tempo dan
-  // kirim sekarang. Ini "lazy check" — pengiriman terjadi saat bot sedang aktif
-  // (dipicu aktivitas), bukan pada detik tepat jatuh tempo.
-  //
-  // Tradeoff yang diterima: pengingat terkirim saat ADA pesan masuk setelah
-  // tenggatnya, bukan tepat waktu. Untuk pengingat presisi detik, dibutuhkan
-  // plan Pro (cron per-menit) atau worker lokal (startReminderWorker).
-  //
-  // Dijalankan tanpa `await` (fire-and-forget) agar TIDAK menambah latensi balasan.
-  void (async () => {
-    try {
-      // HANYA platform 'whatsapp' dan kanal 'baileys_only' — pengingat dikirim langsung
-      // via soket Baileys lokal, bukan dialihkan ke Cloud API (audit 20 Nov 2026).
-      await checkDueReminders(async (chatId, text) => {
-        const jid = baileysJidDariChatId(String(chatId));
-        return await sendWhatsAppMessageSafe(sock, jid, text);
-      }, 'whatsapp', { channelFilter: 'baileys_only', allowWait: false });
-    } catch (err) {
-      console.warn('[remind] Lazy-check Baileys gagal:', String((err as Error)?.message ?? err).slice(0, 120));
-    }
-  })();
-
   const innerMsg = unwrapBaileysMessage(m.message);
   const mediaMsg = innerMsg && innerMsg !== m.message ? ({ ...m, message: innerMsg } as WAMessage) : m;
 
@@ -737,6 +712,8 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   const rawRemoteNum = String(remoteJid || '').split('@')[0].split(':')[0];
   const botIdentities = getBotIdentitiesBaileys(sock);
   const rawParticipantJid = String(m.key.participant || m.participant || '');
+  const rawParticipantDigits = rawParticipantJid.split('@')[0].split(':')[0].replace(/\D/g, '');
+  const altParticipantDigits = String(m.key.participantAlt || '').split('@')[0].split(':')[0].replace(/\D/g, '');
   const actorGrup = isGroup
     ? await resolveParticipantId(sock, rawParticipantJid, m.key.participantAlt)
     : undefined;
@@ -780,7 +757,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       quotedPengirim = 'bot';
     } else if (
       part &&
-      ((actorGrup && part === actorGrup) || (!isGroup && ((rawRemoteNum && part === rawRemoteNum) || (nomorBaileys && part === nomorBaileys))))
+      (
+        (actorGrup && part === actorGrup) ||
+        (rawParticipantDigits && part === rawParticipantDigits) ||
+        (altParticipantDigits && part === altParticipantDigits) ||
+        (!isGroup && ((rawRemoteNum && part === rawRemoteNum) || (nomorBaileys && part === nomorBaileys)))
+      )
     ) {
       quotedPengirim = 'diri';
     } else if (part) {
@@ -849,7 +831,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const { record: groupRec } = await getGroupModeRecord(groupKey);
     const actorFollowKey = actorGrup || String(rawParticipantJid || '').split('@')[0];
     const inFollowUp = isInFollowUpWindow(groupKey, actorFollowKey);
-    const isCmdSlash = /(?:^|\s)\/(?:help|start|reset|clear|salah|remind|catat|catatan|cari|tugas|list|uang|masuk|rekap|hapusuang|barang|ringkasan|tanya|ai|nimbrung|mention|stop|stopnimbrung|diam|mute|statusgrup|status)\b/i.test(
+    const isCmdSlash = /(?:^|\s)\/(?:help|bantuan|menu|start|reset|clear|salah|remind|catat|catatan|cari|tugas|list|selesai|hapus|uang|masuk|rekap|hapusuang|barang|ringkasan|tanya|ai|nimbrung|mention|stop|stopnimbrung|diam|mute|statusgrup|status)\b/i.test(
       targetMention.cleanedText,
     );
 
@@ -920,9 +902,24 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // chat yang sama: konteks saling menimpa & balasan keluar urutan.
   // Fungsi ini memakai `return` (bukan `continue`), jadi aman dibungkus.
   return await withChatLock(chatKey, async () => {
+  // Lazy-check pengingat (dibatasi cooldown 15s & mutex agar pesan grup yang diabaikan tidak membanjiri Supabase).
+  if (!checkingReminders && Date.now() - lastLazyRemindCheckAt >= 15_000) {
+    lastLazyRemindCheckAt = Date.now();
+    void (async () => {
+      try {
+        await checkDueReminders(async (remChatId, remText) => {
+          const jid = baileysJidDariChatId(String(remChatId));
+          return await sendWhatsAppMessageSafe(sock, jid, remText);
+        }, 'whatsapp', { channelFilter: 'baileys_only', allowWait: false });
+      } catch (err) {
+        console.warn('[remind] Lazy-check Baileys gagal:', String((err as Error)?.message ?? err).slice(0, 120));
+      }
+    })();
+  }
   const messageId = m.key.id;
-  // Klaim atomik anti-TOCTOU
-  if (messageId && !(await claimIncomingMessage('whatsapp', messageId, chatKey, text || '[baileys-msg]', { dedupKonten: false }))) return;
+  // Klaim atomik anti-TOCTOU — simpan `[Nama]: text` di grup agar atribusi pembicara bertahan lintas restart.
+  const initialClaimText = isGroup && text ? `[${senderName}]: ${text}` : (text || '[baileys-msg]');
+  if (messageId && !(await claimIncomingMessage('whatsapp', messageId, chatKey, initialClaimText, { dedupKonten: false }))) return;
 
   // Anti-Stale Message Guard: abaikan pesan basi hasil history sync atau saat bot offline (> 180 detik)
   const nowSec = Math.floor(Date.now() / 1000);
@@ -1261,7 +1258,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           } else {
             try {
               const faktaBaruVn = isGroup
-                ? await tangkapFaktaPersonal(chatKey, transcription)
+                ? await tangkapFaktaPersonal(chatKey, transcription, groupActorLabel)
                 : await tangkapFaktaPersonal(nomorBaileys, transcription);
               if (faktaBaruVn) context = await getContext(chatKey, msgSentAt);
             } catch {
@@ -1273,7 +1270,13 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           // Konteks dihitung SEBELUM needsSearch: percakapan lanjutan tentang
           // berita/politik harus ikut ditelusuri walau pesannya pendek
           // (temuan 25 Sep — 6 dari 7 pesan lanjutan tidak ditelusuri).
-          const prevContextVn = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
+          const prevContextVn = [
+            context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '',
+            context?.summary || '',
+            ...(context?.corrections || []),
+            quotedText || '',
+            passiveGroupPrefix || '',
+          ].filter(Boolean).join(' ');
           if (needsSearch(transcription, prevContextVn)) {
             try {
               const prevContext = prevContextVn;
@@ -1491,7 +1494,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           isGroup && passiveGroupPrefix ? passiveGroupPrefix : '',
           isGif && !caption ? 'Pengguna mengirim GIF animasi sebagai reaksi. Balas singkat, santai, dan nyambung.' : caption,
         ].filter(Boolean).join('\n') || undefined;
-        const { reply, via, tokens } = await processIncomingVideo(buffer, mime, mediaFile, captionForVideo, await getContext(chatKey, msgSentAt));
+        const { reply, via, tokens } = await processIncomingVideo(buffer, mime, mediaFile, captionForVideo, context);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
         tandaiBalasGrup();
         if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
@@ -1564,6 +1567,15 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           saveCorrection(chatKey, teksLokasi),
         ]);
       }
+      const locUserContent = isGroup ? `[${senderName}]: [Lokasi] ${tzInfo.label}` : `[Lokasi] ${tzInfo.label}`;
+      await saveMessage({
+        platform: 'whatsapp',
+        chat_id: chatKey,
+        role: 'user',
+        content: locUserContent,
+        msg_id: messageId || undefined,
+      });
+      updateContextCache(chatKey, 'user', locUserContent);
       const locTime = formatInZone(new Date(), tzInfo.zone);
       // Konfirmasi 100% dinamis: model menyusun kalimatnya sendiri dari data waktu (ZERO teks statis)
       const reply = await baileysDynamicNotice(
@@ -1613,6 +1625,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // Cek perintah reset sesi (konfirmasi 100% dinamis — ZERO teks statis)
   if (isResetCommand(text)) {
     await resetSession(chatKey, 'whatsapp');
+    if (isGroup) clearGroupRuntimeState(groupKey);
     let reply = '';
     try {
       const resetCtx = await getContext(chatKey, msgSentAt);
@@ -1624,7 +1637,8 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     } catch {
       // diam — ZERO teks statis
     }
-    await sendWhatsAppMessageSafe(sock, remoteJid, reply);
+    await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
+    tandaiBalasGrup();
     if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
     void saveMessage({
       platform: 'whatsapp',
@@ -1658,7 +1672,16 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
       return;
     }
-    const saved = await saveCorrection(sharedDataKey, isGroup ? `[${senderName}]: ${check.cleaned}` : check.cleaned);
+    let saved = false;
+    if (isGroup) {
+      saved = await saveCorrection(chatKey, `[${senderName}]: ${check.cleaned}`);
+    } else {
+      const [s1, s2] = await Promise.all([
+        saveCorrection(sharedDataKey, check.cleaned),
+        saveCorrection(chatKey, check.cleaned),
+      ]);
+      saved = s1 || s2;
+    }
     const { reply } = await baileysAutoReply(
       `User ${senderName || ''} menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!` +
         (saved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa catatan mungkin tidak tersimpan lama.'),
@@ -1743,7 +1766,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         return;
       }
     } else {
-      try { await tangkapFaktaPersonal(targetChat, isGroup ? `${senderName}: ${text}` : text); } catch { /* best-effort */ }
+      try { await tangkapFaktaPersonal(targetChat, text, groupActorLabel); } catch { /* best-effort */ }
     }
   }
 
@@ -1777,6 +1800,8 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       context?.history?.slice(-3)?.map(h => h.content).join(' ') || '',
       context?.summary || '',
       ...(context?.corrections || []),
+      quotedText || '',
+      passiveGroupPrefix || '',
     ].filter(Boolean).join(' ');
     if (needsSearch(text, prevContextTeks)) {
       try {

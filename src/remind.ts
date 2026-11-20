@@ -144,8 +144,8 @@ export async function simpanReminderCerdas(
         patch.repeat_value = ulang.repeat_value;
       } else {
         // Permintaan BARU tidak berulang -> matikan aturan berulang yang lama
-        // agar pengingat sekali-jalan tidak ikut berulang.
-        patch.repeat_kind = null;
+        // agar pengingat sekali-jalan tidak ikut berulang (kolom NOT NULL DEFAULT 'none').
+        patch.repeat_kind = 'none';
         patch.repeat_value = null;
       }
       const { error } = await c.from(remTbl).update(patch).eq('id', palingMirip.id);
@@ -407,7 +407,7 @@ export async function checkDueReminders(
             if (!filterKanalAktif) return true;
             const chatIdRow = String((r as { chat_id?: string }).chat_id ?? '');
             const msgRow = String((r as { message?: string }).message ?? '');
-            if (options?.channelFilter === 'cloud_only' && (isGroupChatKey(chatIdRow) || adalahPengingatBaileysEksklusif(msgRow))) {
+            if (options?.channelFilter === 'cloud_only' && ((p !== 'telegram' && isGroupChatKey(chatIdRow)) || adalahPengingatBaileysEksklusif(msgRow))) {
               return false;
             }
             if (options?.channelFilter === 'cloud_only' && p !== 'telegram' && cloudMaintenance) {
@@ -734,9 +734,9 @@ export function startReminderWorker(
       // WAJIB mengembalikan status: checkDueReminders menganggap kirim GAGAL
       // hanya bila nilai balik === false (audit 14 Okt 2026).
       if (platform === 'whatsapp') {
-        if (!sendWhatsApp) {
-          console.warn(`[remind] Reminder WhatsApp dilewati (tanpa sender WA): ${chatId}`);
-          return false; // JANGAN tandai terkirim — biar cron yang mengirim
+        if (isGroupChatKey(chatId) || !sendWhatsApp) {
+          console.warn(`[remind] Reminder WhatsApp dilewati (${isGroupChatKey(chatId) ? 'grup hanya Baileys' : 'tanpa sender WA'}): ${chatId}`);
+          return false; // JANGAN tandai terkirim — biar worker Baileys/cron yang mengirim
         }
         // chat_id dari DB bisa berprefix "wa_" -> kirim nomor TELANJANG ke Meta.
         return await sendWhatsApp(nomorWhatsApp(chatId), text);

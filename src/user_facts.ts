@@ -228,12 +228,16 @@ export function deteksiFaktaPersonal(teks: string): FaktaPersonal | null {
 export async function simpanFaktaPersonal(
   chatId: string,
   fakta: FaktaPersonal,
+  actor?: string,
 ): Promise<boolean> {
   chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   if (!chatId || adalahTestChatId(chatId) || !fakta?.fakta) return false;
   const c = db();
   if (!c) return false;
-  const isi = `${PENANDA_FAKTA} ${fakta.kategori}: ${fakta.fakta}`.slice(0, 300);
+  const cleanActor = actor?.trim().slice(0, 40);
+  const isi = cleanActor
+    ? `${PENANDA_FAKTA} ${fakta.kategori} (${cleanActor}): ${fakta.fakta}`.slice(0, 300)
+    : `${PENANDA_FAKTA} ${fakta.kategori}: ${fakta.fakta}`.slice(0, 300);
   try {
     const corTbl = await resolveTableName('corrections', chatId);
     const tbl = corTbl === 'group_corrections' ? c.from('group_corrections') : c.from('corrections');
@@ -263,9 +267,10 @@ export async function simpanFaktaPersonal(
 export async function tangkapFaktaPersonal(
   chatId: string,
   teks: string,
+  actor?: string,
 ): Promise<FaktaPersonal | null> {
   const fakta = deteksiFaktaPersonal(teks);
   if (!fakta) return null;
-  const ok = await simpanFaktaPersonal(chatId, fakta);
+  const ok = await simpanFaktaPersonal(chatId, fakta, actor);
   return ok ? fakta : null;
 }

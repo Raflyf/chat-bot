@@ -2413,6 +2413,7 @@ async function buangPermintaanTertunda(chatId: string): Promise<void> {
 async function simpanKonfirmasi(
   chatId: string, niat: NiatTerdeteksi, opts: { actor?: string; platform: string; channel?: string },
 ): Promise<void> {
+  chatId = normChatId(chatId, opts.platform);
   konfirmasiTertunda.set(chatId, { niat, actor: opts.actor, platform: opts.platform, channel: opts.channel, at: Date.now() });
   const c = db();
   if (!c) return;
@@ -2434,12 +2435,13 @@ async function simpanKonfirmasi(
     return;
   }
   try {
-    await c.rpc('set_pending_confirmation', {
+    const { error: rpcErr } = await c.rpc('set_pending_confirmation', {
       p_chat_id: chatId,
       p_platform: opts.platform,
       p_actor: opts.actor ?? null,
       p_niat: payload,
     });
+    if (rpcErr) throw rpcErr;
     return;
   } catch {
     // Tabel v23 belum ada -> cadangan di tabel `messages`
@@ -2464,21 +2466,25 @@ async function simpanKonfirmasi(
 async function ambilKonfirmasi(
   chatId: string,
 ): Promise<{ niat: NiatTerdeteksi; actor?: string; platform: string; channel?: string } | null> {
+  chatId = normChatId(chatId);
   const c = db();
   if (c) {
     if (isGroupChatKey(chatId) && await hasDedicatedGroupTables()) {
       try {
         const { data: rows } = await c.from('group_messages')
-          .select('content,platform')
+          .select('content,platform,created_at')
           .eq('chat_id', chatId)
           .eq('via', 'system/pending-confirmation')
           .order('created_at', { ascending: false })
           .limit(1);
-        const r0 = (rows ?? [])[0] as { content?: string; platform?: string } | undefined;
+        const r0 = (rows ?? [])[0] as { content?: string; platform?: string; created_at?: string } | undefined;
         if (r0?.content) {
           await c.from('group_messages').delete()
             .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
           konfirmasiTertunda.delete(chatId);
+          if (r0.created_at && Date.now() - new Date(r0.created_at).getTime() > KONFIRMASI_TTL_MS) {
+            return null;
+          }
           const rawNiat = JSON.parse(r0.content) as NiatTerdeteksi & { _channel?: string; _actor?: string | null };
           return {
             niat: rawNiat as NiatTerdeteksi,
@@ -2492,7 +2498,8 @@ async function ambilKonfirmasi(
       }
     } else {
       try {
-        const { data } = await c.rpc('take_pending_confirmation', { p_chat_id: chatId });
+        const { data, error: rpcErr } = await c.rpc('take_pending_confirmation', { p_chat_id: chatId });
+        if (rpcErr) throw rpcErr;
         const row = Array.isArray(data) ? data[0] : data;
         if (row && row.niat) {
           konfirmasiTertunda.delete(chatId);
@@ -2509,16 +2516,19 @@ async function ambilKonfirmasi(
         try {
           const msgTbl = await resolveTableName('messages', chatId);
           const { data: rows } = await c.from(msgTbl)
-            .select('content,platform')
+            .select('content,platform,created_at')
             .eq('chat_id', chatId)
             .eq('via', 'system/pending-confirmation')
             .order('created_at', { ascending: false })
             .limit(1);
-          const r0 = (rows ?? [])[0] as { content?: string; platform?: string } | undefined;
+          const r0 = (rows ?? [])[0] as { content?: string; platform?: string; created_at?: string } | undefined;
           if (r0?.content) {
             await c.from(msgTbl).delete()
               .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
             konfirmasiTertunda.delete(chatId);
+            if (r0.created_at && Date.now() - new Date(r0.created_at).getTime() > KONFIRMASI_TTL_MS) {
+              return null;
+            }
             const rawNiat = JSON.parse(r0.content) as NiatTerdeteksi & { _channel?: string };
             return {
               niat: rawNiat as NiatTerdeteksi,
@@ -2558,7 +2568,8 @@ async function buangKonfirmasi(chatId: string): Promise<void> {
     return;
   }
   try {
-    await c.rpc('clear_pending_confirmation', { p_chat_id: chatId });
+    const { error: rpcErr } = await c.rpc('clear_pending_confirmation', { p_chat_id: chatId });
+    if (rpcErr) throw rpcErr;
   } catch {
     try {
       const msgTbl = await resolveTableName('messages', chatId);
@@ -3390,11 +3401,12 @@ export async function tanganiPencatatan(
         const { db } = await import('./db.js');
         const c = db();
         if (c) {
-          const todoTbl = await resolveTableName('todos', chatId);
-          const { data: sblm } = await c.from(todoTbl).select('id').eq('chat_id', chatId);
+          const normTodoChatId = normChatId(chatId, opts.platform);
+          const todoTbl = await resolveTableName('todos', normTodoChatId);
+          const { data: sblm } = await c.from(todoTbl).select('id').eq('chat_id', normTodoChatId);
           const n = (sblm ?? []).length;
           if (n > 0) {
-            await c.from(todoTbl).delete().eq('chat_id', chatId);
+            await c.from(todoTbl).delete().eq('chat_id', normTodoChatId);
           }
           return {
             ditangani: true,

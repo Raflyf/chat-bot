@@ -251,28 +251,50 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
       resolveTableName('summaries', chatKey),
       resolveTableName('corrections', chatKey),
     ]);
-    const [h, s, k] = await Promise.all([
-      (msgTbl === 'group_messages' ? c.from('group_messages') : c.from('messages')).select('role,content,feedback,via').eq('chat_id', chatKey)
+    const [h, s, k, resetRes] = await Promise.all([
+      (msgTbl === 'group_messages' ? c.from('group_messages') : c.from('messages')).select('role,content,feedback,via,created_at').eq('chat_id', chatKey)
         .or('via.is.null,via.not.like.system/%')
         .order('created_at', { ascending: false }).limit(40),
       (sumTbl === 'group_summaries' ? c.from('group_summaries') : c.from('summaries')).select('summary').eq('chat_id', chatKey).limit(1).maybeSingle(),
       (corTbl === 'group_corrections' ? c.from('group_corrections') : c.from('corrections')).select('correction').eq('chat_id', chatKey).order('created_at', { ascending: false }).limit(15),
+      (msgTbl === 'group_messages' ? c.from('group_messages') : c.from('messages'))
+        .select('created_at')
+        .eq('chat_id', chatKey)
+        .eq('via', 'system/reset')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
     if (h.error) warnOnce('messages', h.error.message);
     if (s.error && s.error.code !== 'PGRST116') warnOnce('summaries', s.error.message);
     if (k.error) warnOnce('corrections', k.error.message);
+
+    const resetRow = resetRes?.data && !Array.isArray(resetRes.data)
+      ? (resetRes.data as { created_at?: string | null })
+      : null;
+    const resetMs = resetRow?.created_at ? Date.parse(resetRow.created_at) : 0;
 
     const rawMessages = (h.data ?? []) as Array<{
       role: string;
       content: string;
       feedback?: string | null;
       via?: string | null;
+      created_at?: string | null;
     }>;
     // Cari index checkpoint reset (karena diurutkan descending, index terkecil adalah reset terbaru)
+    // Sekaligus hormati timestamp row `via = 'system/reset'` karena filter `via.not.like.system/%`
+    // di query utama sengaja menyembunyikan baris sistem.
     const resetIdx = rawMessages.findIndex(
       (m) => m.content === '[SESSION_RESET]' || m.content.startsWith('[SESSION_RESET]'),
     );
-    const validMessages = resetIdx >= 0 ? rawMessages.slice(0, resetIdx) : rawMessages;
+    const slicedMessages = resetIdx >= 0 ? rawMessages.slice(0, resetIdx) : rawMessages;
+    const validMessages = resetMs > 0
+      ? slicedMessages.filter((m) => {
+          if (!m.created_at) return true;
+          const rowMs = Date.parse(m.created_at);
+          return !Number.isFinite(rowMs) || rowMs > resetMs;
+        })
+      : slicedMessages;
     const filteredMessages = saringNoiseRiwayat(validMessages);
 
     // Sinyal stiker durable: kolom `feedback` menyimpan "sticker:<emoji>" pada baris

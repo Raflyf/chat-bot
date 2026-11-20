@@ -15,8 +15,20 @@ import crypto from 'crypto';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../../src/db.js';
 import { config } from '../../src/env.js';
+import { hasDedicatedGroupTables } from '../../src/group_db.js';
 
 const TABEL = ['messages', 'reminders', 'notes', 'todos', 'expenses', 'corrections', 'user_profiles'];
+const TABEL_GRUP = [
+  'group_messages',
+  'group_reminders',
+  'group_notes',
+  'group_todos',
+  'group_expenses',
+  'group_corrections',
+  'group_summaries',
+  'group_documents',
+  'group_settings',
+];
 const BUCKET = 'backups';
 
 function otorisasi(req: VercelRequest): boolean {
@@ -52,8 +64,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const tanggal = new Date().toISOString().slice(0, 10);
   const ringkasan: Record<string, number> = {};
   const gagal: string[] = [];
+  const targetTables = (await hasDedicatedGroupTables()) ? [...TABEL, ...TABEL_GRUP] : TABEL;
 
-  for (const tabel of TABEL) {
+  for (const tabel of targetTables) {
     try {
       // Ambil maksimum 5000 baris per tabel agar tidak melewati batas memori.
       const { data, error } = await c.from(tabel).select('*').limit(5000);

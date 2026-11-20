@@ -9,7 +9,8 @@
  * permainan terasa NYATA: kartu/papan tidak berubah-ubah tiap balasan.
  */
 import { db } from '../db.js';
-import { normChatId } from '../chat_id.js';
+import { normChatId, isGroupChatKey } from '../chat_id.js';
+import { hasDedicatedGroupTables, resolveTableName } from '../group_db.js';
 import { mulaiGame, langkahGame, pembukaGame, type HasilGame } from './engine.js';
 import { cariGame, mintaBerhenti, DAFTAR_GAME } from './cards.js';
 
@@ -31,37 +32,49 @@ export async function ambilGame(chatId: string): Promise<{ kind: string; state: 
   const c = db();
   if (!c) return null;
 
-  // 1. Coba RPC (tabel v24). Periksa { error } eksplisit — PostgREST tidak
-  //    melempar exception saat fungsi/RPC tidak ada.
-  try {
-    const { data, error } = await c.rpc('get_game_state', { p_chat_id: chatId });
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!error && row && row.kind) {
-      // Auto-expire: permainan yang menggantung >2 jam dianggap ditinggalkan.
-      // Tanpa ini, permainan lama terus menelan pesan baru (bug ditemukan uji
-      // regresi 05 Okt 2026: "halo apa kabar" dijawab "Nggak ada kartu itu").
-      const diperbarui = row.updated_at ? new Date(String(row.updated_at)).getTime() : 0;
-      const umurJam = diperbarui ? (Date.now() - diperbarui) / 3_600_000 : 0;
-      if (umurJam > 2) {
-        await akhiriGame(chatId);
-        return null;
+  const isIsolatedGroup = isGroupChatKey(chatId) && await hasDedicatedGroupTables();
+
+  // 1. Coba RPC (tabel v24) untuk chat privat / prapemisahan. Periksa { error } eksplisit —
+  //    PostgREST tidak melempar exception saat fungsi/RPC tidak ada.
+  if (!isIsolatedGroup) {
+    try {
+      const { data, error } = await c.rpc('get_game_state', { p_chat_id: chatId });
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!error && row && row.kind) {
+        // Auto-expire: permainan yang menggantung >2 jam dianggap ditinggalkan.
+        // Tanpa ini, permainan lama terus menelan pesan baru (bug ditemukan uji
+        // regresi 05 Okt 2026: "halo apa kabar" dijawab "Nggak ada kartu itu").
+        const diperbarui = row.updated_at ? new Date(String(row.updated_at)).getTime() : 0;
+        const umurJam = diperbarui ? (Date.now() - diperbarui) / 3_600_000 : 0;
+        if (umurJam > 2) {
+          await akhiriGame(chatId);
+          return null;
+        }
+        return { kind: String(row.kind), state: (row.state ?? {}) as Record<string, unknown> };
       }
-      return { kind: String(row.kind), state: (row.state ?? {}) as Record<string, unknown> };
+    } catch {
+      // lanjut ke fallback
     }
-  } catch {
-    // lanjut ke fallback
   }
 
-  // 2. Fallback: baca dari tabel `messages` (via khusus).
+  // 2. Fallback / penyimpanan grup terisolasi: baca dari tabel `messages` / `group_messages`.
   try {
-    const { data: rows } = await c.from('messages')
-      .select('content')
+    const msgTbl = await resolveTableName('messages', chatId);
+    const { data: rows } = await c.from(msgTbl)
+      .select('content, created_at')
       .eq('chat_id', chatId)
       .eq('via', 'system/game-state')
       .order('created_at', { ascending: false })
       .limit(1);
-    const r0 = (rows ?? [])[0] as { content?: string } | undefined;
+    const r0 = (rows ?? [])[0] as { content?: string; created_at?: string } | undefined;
     if (!r0?.content) return null;
+    if (r0.created_at) {
+      const umurMs = Date.now() - new Date(String(r0.created_at)).getTime();
+      if (Number.isFinite(umurMs) && umurMs > 7_200_000) {
+        await akhiriGame(chatId);
+        return null;
+      }
+    }
     const parsed = JSON.parse(r0.content) as { kind?: string; state?: Record<string, unknown> };
     if (!parsed.kind) return null;
     return { kind: parsed.kind, state: parsed.state ?? {} };
@@ -88,30 +101,32 @@ export async function simpanGame(
     return;
   }
 
-  // 1. Coba RPC (tabel v24). PostgREST TIDAK melempar exception saat RPC tidak
-  //    ada — ia mengembalikan { error }, jadi error harus diperiksa eksplisit.
-  //    (BUG YANG DIPERBAIKI 05 Okt 2026: sebelumnya hanya pakai try/catch,
-  //     sehingga kegagalan RPC tidak terdeteksi dan state TIDAK PERNAH tersimpan
-  //     ketika migrasi v24 belum dijalankan.)
+  const isIsolatedGroup = isGroupChatKey(chatId) && await hasDedicatedGroupTables();
+
+  // 1. Coba RPC (tabel v24) untuk chat privat. PostgREST TIDAK melempar exception
+  //    saat RPC tidak ada — ia mengembalikan { error }.
   let rpcOk = false;
-  try {
-    const { error } = await c.rpc('set_game_state', {
-      p_chat_id: chatId,
-      p_platform: platform,
-      p_kind: kind,
-      p_state: state as unknown as Record<string, unknown>,
-      p_status: 'active',
-    });
-    rpcOk = !error;
-  } catch {
-    rpcOk = false;
+  if (!isIsolatedGroup) {
+    try {
+      const { error } = await c.rpc('set_game_state', {
+        p_chat_id: chatId,
+        p_platform: platform,
+        p_kind: kind,
+        p_state: state as unknown as Record<string, unknown>,
+        p_status: 'active',
+      });
+      rpcOk = !error;
+    } catch {
+      rpcOk = false;
+    }
   }
   if (rpcOk) return;
 
-  // 2. Fallback: simpan di tabel `messages` dengan via khusus.
+  // 2. Fallback / penyimpanan grup terisolasi: simpan di `messages` / `group_messages`.
   try {
-    await c.from('messages').delete().eq('chat_id', chatId).eq('via', 'system/game-state');
-    await c.from('messages').insert({
+    const msgTbl = await resolveTableName('messages', chatId);
+    await c.from(msgTbl).delete().eq('chat_id', chatId).eq('via', 'system/game-state');
+    await c.from(msgTbl).insert({
       platform,
       chat_id: chatId,
       role: 'user',
@@ -128,13 +143,17 @@ export async function akhiriGame(chatId: string): Promise<void> {
   chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
   const c = db();
   if (!c) return;
-  try {
-    await c.rpc('end_game', { p_chat_id: chatId });
-  } catch {
-    // RPC tidak ada -> andalkan pembersihan tabel `messages` di bawah
+  const isIsolatedGroup = isGroupChatKey(chatId) && await hasDedicatedGroupTables();
+  if (!isIsolatedGroup) {
+    try {
+      await c.rpc('end_game', { p_chat_id: chatId });
+    } catch {
+      // RPC tidak ada -> andalkan pembersihan tabel di bawah
+    }
   }
   try {
-    await c.from('messages').delete().eq('chat_id', chatId).eq('via', 'system/game-state');
+    const msgTbl = await resolveTableName('messages', chatId);
+    await c.from(msgTbl).delete().eq('chat_id', chatId).eq('via', 'system/game-state');
   } catch {
     // best-effort
   }

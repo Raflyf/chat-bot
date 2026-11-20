@@ -66,7 +66,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
 
       // Fallback: Routing berbasis struktur chatId jika platform belum tercatat
-      if (chatId.includes('@') || chatId.startsWith('wa_') || (chatId.length >= 10 && /^(62|1|\+)/.test(chatId))) {
+      if (
+        !/^(?:wa_|tg_)?-\d+$/.test(chatId) &&
+        (chatId.includes('@') || chatId.startsWith('wa_') || (chatId.length >= 10 && /^(62|1|\+)/.test(chatId)))
+      ) {
         return await sendWhatsAppCloudMessageSafe(nomorWhatsApp(chatId), text);
       }
       try {
