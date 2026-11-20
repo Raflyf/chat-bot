@@ -2356,31 +2356,23 @@ function renderLiveUpstreamTable(data) {
     function initDashboardScrollReveal() {
       if (typeof window === "undefined" || !("IntersectionObserver" in window)) return;
 
+      // Target section utama saja; kartu (.kpi-card, .provider-card, .model-matrix-card) sudah punya @keyframes card-in
       const targets = document.querySelectorAll(
-        ".console-head, .kpi-card, .smart-gateway-banner, .matrix-section, .provider-card, .live-upstream-card, #dataset-section, .model-matrix-card"
+        ".filter-dashboard-bar, .live-upstream-card, .matrix-section, .activity-card"
       );
       if (!targets.length) return;
 
       if (!window._dashRevealObserver) {
-        window._dashRevealObserver = new IntersectionObserver((entries) => {
+        window._dashRevealObserver = new IntersectionObserver((entries, obs) => {
           entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
             const el = entry.target;
-            if (entry.isIntersecting) {
-              el.classList.add("revealed");
-            } else {
-              el.classList.remove("revealed");
-              if (entry.boundingClientRect.top < 0) {
-                el.classList.remove("reveal-from-bottom");
-                el.classList.add("reveal-from-top");
-              } else {
-                el.classList.remove("reveal-from-top");
-                el.classList.add("reveal-from-bottom");
-              }
-            }
+            el.classList.add("revealed");
+            obs.unobserve(el);
           });
         }, {
-          threshold: 0.05,
-          rootMargin: "-15px 0px -15px 0px"
+          threshold: 0.02,
+          rootMargin: "40px 0px -10px 0px"
         });
       }
 
@@ -2391,6 +2383,7 @@ function renderLiveUpstreamTable(data) {
       });
       if (!pending.length) return;
 
+      const vh = window.innerHeight || document.documentElement.clientHeight || 800;
       const tops = new Array(pending.length);
       for (let i = 0; i < pending.length; i++) {
         tops[i] = pending[i].getBoundingClientRect().top;
@@ -2398,13 +2391,12 @@ function renderLiveUpstreamTable(data) {
       for (let i = 0; i < pending.length; i++) {
         const el = pending[i];
         el.dataset.revealInit = "1";
-        el.classList.add("reveal-init");
-        if (tops[i] < 0) {
-          el.classList.add("reveal-from-top");
+        el.classList.add("reveal-init", "reveal-from-bottom");
+        if (tops[i] < vh * 0.96) {
+          el.classList.add("revealed");
         } else {
-          el.classList.add("reveal-from-bottom");
+          window._dashRevealObserver.observe(el);
         }
-        window._dashRevealObserver.observe(el);
       }
     }
 

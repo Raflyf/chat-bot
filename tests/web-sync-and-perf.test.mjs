@@ -52,6 +52,8 @@ test('performa scroll & animasi: tanpa nested backdrop-filter berlebih & animasi
   const consoleCss = read('public/css/console.css');
   const landingCss = read('public/css/landing.css');
   const smoothJs = read('public/js/smooth-scroll.js');
+  const homeJs = read('public/js/home.js');
+  const dashJs = read('public/js/dashboard.js');
 
   assert.match(consoleCss, /\.model-matrix-card\[data-provider="opencode"\]/, 'opencode harus punya warna card di console.css');
   assert.match(consoleCss, /contain:\s*strict/, 'layer background fixed console harus diisolasi dengan contain: strict');
@@ -60,12 +62,17 @@ test('performa scroll & animasi: tanpa nested backdrop-filter berlebih & animasi
   assert.match(landingCss, /\.reveal-init\.revealed/, 'animasi reveal landing tetap aktif');
   assert.match(landingCss, /@keyframes heroReveal/, 'animasi heroReveal landing tetap aktif');
   assert.match(consoleCss, /@keyframes card-in/, 'animasi card-in dashboard tetap aktif');
-  assert.match(smoothJs, /kickRaf/, 'smooth-scroll.js harus memakai RAF demand-driven');
-  assert.match(smoothJs, /prevent:\s*function/, 'smooth-scroll.js harus mengizinkan native scroll di kontainer bersarang');
+  assert.match(homeJs, /unobserve/, 'home.js harus unobserve setelah reveal agar tidak freeze saat scroll bolak-balik');
+  assert.match(dashJs, /unobserve/, 'dashboard.js harus unobserve setelah reveal agar tidak freeze saat scroll bolak-balik');
+  assert.match(smoothJs, /scrollTo/, 'smooth-scroll.js harus menyediakan wrapper kompatibel native scrollTo');
+  assert.ok(!/smoothWheel:\s*true/.test(smoothJs), 'smooth-scroll.js tidak boleh membajak wheel di main thread');
 
-  // Pastikan key-row dan model-matrix-card tidak memakai backdrop-filter bersarang
-  const keyRowBlock = consoleCss.match(/\.key-row\s*\{[\s\S]*?\}/);
-  assert.ok(keyRowBlock && !/backdrop-filter/.test(keyRowBlock[0]), '.key-row tidak boleh menumpuk backdrop-filter');
-  const matrixCardBlock = consoleCss.match(/\.model-matrix-card\s*\{[\s\S]*?\}/);
-  assert.ok(matrixCardBlock && !/backdrop-filter/.test(matrixCardBlock[0]), '.model-matrix-card tidak boleh menumpuk backdrop-filter');
+  // Pastikan kartu dan section konten yang di-scroll/reveal tidak memicu shader backdrop-filter stall
+  for (const sel of ['.key-row', '.model-matrix-card', '.kpi-card', '.provider-card', '.live-upstream-card, .token-matrix-section, .matrix-section, .activity-card']) {
+    const escaped = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const block = consoleCss.match(new RegExp(escaped + '\\s*\\{[\\s\\S]*?\\}'));
+    assert.ok(block && !/backdrop-filter/.test(block[0]), `${sel} tidak boleh memakai backdrop-filter saat scroll`);
+  }
+  const featBlock = landingCss.match(/\.feature-card\s*\{[\s\S]*?\}/);
+  assert.ok(featBlock && !/backdrop-filter/.test(featBlock[0]), '.feature-card tidak boleh memakai backdrop-filter saat scroll');
 });

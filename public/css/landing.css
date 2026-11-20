@@ -100,30 +100,21 @@ html::before {
   contain: strict;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  background-image:
-    radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
-    linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%),
-    url('/assets/bg-mob.webp');
-  background-size: cover, cover, cover;
-  background-position: 85% 50%, 85% 50%, 85% 50%;
+  background-image: url('/assets/bg-mob.webp');
+  background-size: cover;
+  background-position: 85% 50%;
   opacity: 1;
 }
 
 @media (min-width: 1200px) {
   html::before {
-    background-image:
-      radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
-      linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%),
-      url('/assets/bg-hd.webp');
+    background-image: url('/assets/bg-hd.webp');
   }
 }
 
 @media (max-width: 1199px) {
   html::before {
-    background-image:
-      radial-gradient(80% 70% at 50% 40%, rgba(2, 8, 20, 0.18), rgba(2, 8, 20, 0.06) 65%, rgba(2, 8, 20, 0.02) 100%),
-      linear-gradient(180deg, rgba(2, 8, 20, 0.14) 0%, rgba(2, 8, 20, 0.04) 35%, rgba(2, 8, 20, 0.18) 100%),
-      url('/assets/bg-mob.webp');
+    background-image: url('/assets/bg-mob.webp');
   }
 }
 
@@ -463,10 +454,8 @@ header {
 /* Panel kaca untuk aksi sekunder di dalam bilah navigasi. */
 .btn-dashboard {
   color: var(--accent-cyan);
-  background: var(--glass-fill);
+  background: rgba(8, 18, 34, 0.68);
   border-color: var(--border-glow-soft);
-  -webkit-backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
-  backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
 }
 
 .btn-dashboard:hover {
@@ -571,16 +560,10 @@ header {
      jauh di atas ambang WCAG AA 4,5:1. */
   background: linear-gradient(
     165deg,
-    rgba(6, 14, 28, 0.52) 0%,
-    rgba(4, 10, 22, 0.42) 55%,
-    rgba(6, 16, 32, 0.48) 100%
+    rgba(6, 14, 28, 0.78) 0%,
+    rgba(4, 10, 22, 0.68) 55%,
+    rgba(6, 16, 32, 0.74) 100%
   );
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
-  backdrop-filter: blur(12px) saturate(150%);
-  /* Border dipertegas + highlight atas (perbaikan 24 Sep): pada latar gelap,
-     border tipis 1px nyaris tak terlihat sehingga tepi kaca hilang dan kartu
-     terbaca sebagai bidang gelap tanpa bentuk. Garis highlight 1px di tepi atas
-     adalah ciri khas kaca (cahaya membias di bibir kaca). */
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
@@ -611,10 +594,8 @@ header {
   font-weight: 650;
   letter-spacing: 0.05em;
   color: #b8f0ff;
-  background: var(--glass-fill);
+  background: rgba(6, 16, 32, 0.62);
   border: 1px solid var(--border-glow-soft);
-  -webkit-backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
-  backdrop-filter: blur(calc(var(--blur-amt) * 0.6));
   animation: elementFadeUp 0.6s var(--ease-spring) 0.18s both;
   transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
@@ -716,17 +697,12 @@ header {
   gap: 0.7rem;
   padding: 1.6rem;
   border-radius: var(--radius);
-  /* Latar diperpekat (0,05 -> 0,62) supaya teks jelas di atas wallpaper yang
-     sekarang lebih terlihat. Blur diturunkan 20px -> 14px: cukup untuk kesan
-     kaca, tapi jauh lebih ringan karena ada 6 kartu yang di-blur bersamaan. */
-  background: rgba(5, 12, 24, 0.45);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  background: linear-gradient(165deg, rgba(8, 18, 36, 0.76), rgba(4, 10, 22, 0.68));
   border: 1px solid var(--glass-border);
   overflow: hidden;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.09),
-    0 10px 30px rgba(0, 0, 0, 0.32);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 10px 28px rgba(0, 0, 0, 0.32);
   transition: transform 0.25s var(--ease-spring), border-color 0.25s var(--ease),
     background-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
 }
@@ -840,41 +816,36 @@ header {
    SCROLL REVEAL — Efek Muncul Berjenjang (Stagger) Saat Digulir
    ========================================================================== */
 
-/* Reveal Animasi Dua Arah Fisika Murni (Scroll Atas & Bawah) */
+/* Reveal Animasi Fisika Murni (Zero GPU Layer Teardown) */
 .reveal-init {
   opacity: 0;
-  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0s),
-              transform 0.65s cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0s);
-}
-
-.reveal-init:not(.revealed) {
-  will-change: opacity, transform;
+  transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s),
+              transform 0.45s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s);
 }
 
 .reveal-init.reveal-from-bottom {
-  transform: translate3d(0, 36px, 0);
+  transform: translate3d(0, 24px, 0);
 }
 
 .reveal-init.reveal-from-top {
-  transform: translate3d(0, -36px, 0);
+  transform: translate3d(0, -24px, 0);
 }
 
 .reveal-init.revealed {
   opacity: 1;
-  transform: none;
-  will-change: auto;
+  transform: translate3d(0, 0, 0);
 }
 
 .hero-badge.revealed:hover {
-  transform: translateY(-1px);
+  transform: translate3d(0, -1px, 0);
 }
 
 .feature-card.revealed:hover {
-  transform: translateY(-5px);
+  transform: translate3d(0, -5px, 0);
 }
 
 .dashboard-teaser.revealed:hover {
-  transform: translateY(-2px);
+  transform: translate3d(0, -2px, 0);
 }
 
 /* Stagger delay kartu kemampuan */
@@ -915,9 +886,7 @@ header {
      `--glass-fill` (0,05) yang terlalu transparan sehingga teks deskripsinya
      tenggelam ke wallpaper, plus border cyan (`--border-glow-soft`) yang
      membuat warnanya berbeda dari kartu lain di halaman yang sama. */
-  background: rgba(5, 12, 24, 0.45);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
+  background: linear-gradient(165deg, rgba(8, 18, 36, 0.76), rgba(4, 10, 22, 0.68));
   border: 1px solid var(--glass-border);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.09),
@@ -985,17 +954,13 @@ header {
 
 footer {
   margin-top: auto;
-  /* 1.5rem (24px) — sebelumnya 2rem (32px) membuat footer terasa tinggi dan
-     menggantung untuk satu baris teks. */
   padding-block: 1.5rem;
   text-align: center;
   color: var(--text-dim);
   font-size: 0.83rem;
   border-top: 1px solid var(--glass-border);
-  background: rgba(1, 5, 13, 0.5);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  backdrop-filter: blur(10px) saturate(140%);
-  transition: opacity 0.65s var(--ease-spring), transform 0.65s var(--ease-spring);
+  background: rgba(1, 5, 13, 0.78);
+  transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1), transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 footer.reveal-init {
@@ -1181,11 +1146,9 @@ html.lenis, html.lenis body {
   margin: 0 auto;
   padding: 1.6rem 1.5rem;
   border-radius: var(--radius-lg);
-  background: var(--glass-fill);
+  background: linear-gradient(165deg, rgba(8, 18, 36, 0.76), rgba(4, 10, 22, 0.68));
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(var(--blur-amt));
-  -webkit-backdrop-filter: blur(var(--blur-amt));
-  box-shadow: 0 10px 40px var(--shadow);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 10px 36px var(--shadow);
   display: flex;
   flex-direction: column;
   gap: 1.15rem;
