@@ -59,6 +59,26 @@ export async function withChatLock<T>(chatKey: string, fn: () => Promise<T>): Pr
 }
 const CONTEXT_CACHE_MAX = 500;
 
+/** Uji apakah chatKey berasal dari test/fixture agar tidak mencemari DB produksi. */
+export function adalahTestChatId(chatKey: string): boolean {
+  const id = String(chatKey ?? '').trim();
+  return /^__.*__$/.test(id) || /^(?:test_|tz_)/i.test(id);
+}
+
+/** Hapus cache konteks untuk chatKey dan pasangan Baileys/shared-nya bila ada perubahan profil/fakta/ringkasan. */
+export function invalidateContextCache(chatKey: string): void {
+  const key = normChatId(chatKey);
+  if (!key) return;
+  contextCache.delete(key);
+  if (isBaileysChatKey(key)) {
+    const shared = sharedChatKeyDari(key);
+    if (shared) contextCache.delete(shared);
+  } else if (key.startsWith('wa_')) {
+    const num = key.slice(3);
+    if (num) contextCache.delete(`wa_baileys_${num}`);
+  }
+}
+
 /** Sweep entri kedaluwarsa saat cache membesar (cegah leak di instance long-running). */
 function sweepContextCache(now: number): void {
   if (contextCache.size < CONTEXT_CACHE_MAX) return;
@@ -123,10 +143,11 @@ export function isResetCommand(text: string): boolean {
  * Tidak mengembalikan teks konfirmasi statis — balasan dibuat dinamis oleh pemanggil via autoReply. */
 export async function resetSession(chatKey: string, platform: string = 'whatsapp'): Promise<void> {
   chatKey = normChatId(chatKey);   // konsistensi chat_id (satu sumber)
-  contextCache.delete(chatKey);
+  invalidateContextCache(chatKey);
   counters.delete(chatKey);
+  lastSummaryCheckAt.delete(chatKey);
   // Chat fixture test (mis. __verify_v32__) tidak boleh menulis checkpoint ke DB production.
-  if (/^__.*__$/.test(chatKey) || chatKey.startsWith('test_')) return;
+  if (adalahTestChatId(chatKey)) return;
   const c = db();
   if (!c) return;
 
@@ -333,57 +354,39 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
 }
 
 const counters = new Map<string, number>();
+const lastSummaryCheckAt = new Map<string, number>();
+const SUMMARY_CHECK_THROTTLE_MS = 30_000;
 
 /**
- * Dipanggil tiap pertukaran user. Tiap 6 pesan: distilasi memori & profil personal
- * teman bicara secara adaptif (fire-and-forget).
- *
- * DIPERBESAR (permintaan pemilik produk 06 Okt 2026):
- *   "tambahkan memory bot nya agar mengingat lebih banyak chat dan lebih pintar
- *    tidak ngaco jawabannya"
- * Sebelumnya tiap 8 pesan dari 25 pesan terakhir; sekarang tiap 6 pesan dari
- * 60 pesan terakhir -> memori jangka panjang lebih kaya & lebih cepat diperbarui.
+ * Dipanggil tiap pertukaran user. Distilasi memori & profil personal teman bicara
+ * berbasis jumlah pesan di DB (berjalan stabil di Serverless maupun VPS).
  */
 export function noteExchange(chatKey: string): void {
   chatKey = normChatId(chatKey);   // konsistensi chat_id (satu sumber)
-  // ── COUNTER PERSISTEN (perbaikan 06 Okt 2026) ──
-  // MASALAH: counter lama (`counters` Map di memori) TIDAK PERNAH mencapai 6
-  // di Vercel serverless, karena tiap request bisa jalan di instance berbeda
-  // dan Map-nya di-reset. Akibatnya ringkasan otomatis nyaris tidak pernah dibuat
-  // -> bot terasa pikun pada percakapan panjang.
-  //
-  // SOLUSI: hitung dari JUMLAH PESAN di database (persisten lintas instance),
-  // dan buat ringkasan bila jumlah pesan kelipatan 6. Tetap ada guard in-memory
-  // agar tidak memicu berkali-kali dalam satu instance yang sama.
+  if (!chatKey || adalahTestChatId(chatKey)) return;
+  const now = Date.now();
+  const lastCheck = lastSummaryCheckAt.get(chatKey) ?? 0;
+  if (now - lastCheck < SUMMARY_CHECK_THROTTLE_MS) return;
+  lastSummaryCheckAt.set(chatKey, now);
+  if (lastSummaryCheckAt.size > CONTEXT_CACHE_MAX) {
+    for (const [k, t] of lastSummaryCheckAt.entries()) {
+      if (now - t >= SUMMARY_CHECK_THROTTLE_MS) lastSummaryCheckAt.delete(k);
+    }
+  }
   const n = (counters.get(chatKey) ?? 0) + 1;
   counters.set(chatKey, n);
-  if (n % 6 !== 0) return;
+  // Throttle per-chat 30 detik di atas menggantikan gate in-memory lama `n % 6 !== 0` agar Serverless tetap cek ke DB.
   void (async () => {
     const c = db();
     if (!c) return;
     try {
-      // Cek jumlah pesan nyata: ringkasan dibuat bila sudah cukup banyak
-      // (>= 8 pesan) — tidak perlu menunggu kelipatan tepat.
-      const { count } = await c
-        .from('messages')
-        .select('id', { count: 'exact', head: true })
-        .eq('chat_id', chatKey);
+      const [{ count }, { data: ringkasanLama }] = await Promise.all([
+        c.from('messages').select('id', { count: 'exact', head: true }).eq('chat_id', chatKey),
+        c.from('summaries').select('summary').eq('chat_id', chatKey).maybeSingle(),
+      ]);
+      const lama = String((ringkasanLama as { summary?: string } | null)?.summary ?? '').trim();
       if (!count || count < 8) return;
-      // ── AKUMULATIF (perbaikan 06 Okt 2026) ──
-      // MASALAH NYATA: "bot nya masih terasa pikun, lupa apa yang sudah dia bilang
-      // sebelumnya, tapi emang sudah aga lama percakapannya".
-      //
-      // AKAR: ringkasan lama DITIMPA ringkasan baru yang hanya dibuat dari 60
-      // pesan terakhir. Percakapan yang sudah panjang (>60 pesan) kehilangan
-      // seluruh ingatan awalnya -> bot terasa pikun.
-      //
-      // SOLUSI: gabungkan ringkasan LAMA (ingatan jangka panjang) dengan
-      // ringkasan BARU (perkembangan terkini) -> memori bertumbuh, tidak hilang.
-      const { data: ringkasanLama } = await c
-        .from('summaries')
-        .select('summary')
-        .eq('chat_id', chatKey)
-        .maybeSingle();
+      if (lama && count % 6 !== 0) return;
 
       const h = await c
         .from('messages')
@@ -405,19 +408,18 @@ export function noteExchange(chatKey: string): void {
       const text = filteredMessages
         .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.content.includes('[SESSION_RESET]'))
         .reverse()
-        .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
+        .map((m) => `${m.role === 'user' ? 'USER (teman bicaramu)' : 'BOT (kamu / FreeAIBot)'}: ${m.content.slice(0, 300)}`)
         .join('\n');
 
-      const lama = String((ringkasanLama as { summary?: string } | null)?.summary ?? '').trim();
       const bagianLama = lama
         ? `CATATAN LAMA (ingatan jangka panjang yang HARUS dipertahankan):\n${lama.slice(0, 3000)}\n\n`
         : '';
-      const { text: summary } = await chat([
+      const { text: rawSummary } = await chat([
         {
           role: 'user',
           content:
             `${bagianLama}RIWAYAT TERKINI (perkembangan obrolan terbaru):\n${text.slice(0, 8000)}\n\n` +
-            'TUGAS: perbarui catatan memori personal tentang teman bicaramu dalam 4-8 butir ringkas Bahasa Indonesia.\n' +
+            'TUGAS: perbarui catatan memori personal tentang USER (teman bicaramu) dalam 4-8 butir ringkas Bahasa Indonesia.\n' +
             'ATURAN PENTING:\n' +
             '1. GABUNGKAN catatan lama dengan informasi baru — JANGAN membuang fakta lama yang masih relevan.\n' +
             '2. Bila ada informasi baru yang bertentangan dengan lama, PAKAI yang baru (mis. dia pindah kerja).\n' +
@@ -429,17 +431,31 @@ export function noteExchange(chatKey: string): void {
             '- Gaya komunikasi & preferensi (formal/santai, suka bercanda, dll)\n' +
             '- Topik/cerita/minat yang pernah dibahas (agar kamu ingat & nyambung)\n' +
             '- Hal penting yang perlu kamu ingat\n' +
-            '4. HANYA catat yang BENAR-BENAR dia sebutkan — DILARANG menebak atau menambah fakta yang tidak ada.\n' +
-            '5. Maksimal 1500 karakter total agar hemat konteks.\n' +
+            '4. HANYA catat yang BENAR-BENAR diucapkan USER — DILARANG menebak atau menambah fakta yang tidak ada.\n' +
+            '5. DILARANG KERAS mencatat identitas BOT (FreeAIBot, Asisten AI, atau Rafly Firmansyah sebagai pembuat bot) sebagai nama atau pekerjaan teman bicaramu. Catat HANYA fakta yang diucapkan oleh USER tentang dirinya sendiri.\n' +
+            '6. Maksimal 1500 karakter total agar hemat konteks.\n' +
             'Balas HANYA butir-butir catatan tersebut.',
         },
       ]);
+      const summary = rawSummary
+        .split('\n')
+        .filter((line) => {
+          const l = line.trim();
+          if (!l) return false;
+          if (/nama\/panggilan[^:\n]*:\s*[^\n]*(?:freeaibot|asisten\s*ai)/i.test(l)) return false;
+          if (/pekerjaan\/status\/kegiatan[^:\n]*:\s*[^\n]*asisten\s*ai\b/i.test(l)) return false;
+          return true;
+        })
+        .join('\n')
+        .trim();
+      if (!summary || summary.length < 10) return;
       await c
         .from('summaries')
         .upsert(
           { chat_id: chatKey, summary, updated_at: new Date().toISOString() },
           { onConflict: 'chat_id' },
         );
+      invalidateContextCache(chatKey);
     } catch (e) {
       console.error(`[memory] ringkas: ${String((e as Error).message ?? e)}`);
     }
@@ -509,6 +525,7 @@ export function validateCorrection(raw: string): CorrectionValidationResult {
 /** Simpan koreksi user agar diingat di percakapan berikutnya. */
 export async function saveCorrection(chatKey: string, correction: string): Promise<boolean> {
   chatKey = normChatId(chatKey);   // konsistensi chat_id (satu sumber)
+  if (!chatKey || adalahTestChatId(chatKey)) return false;
   const c = db();
   if (!c) return false;
   try {
@@ -517,6 +534,7 @@ export async function saveCorrection(chatKey: string, correction: string): Promi
       warnOnce('corrections', error.message);
       return false;
     }
+    invalidateContextCache(chatKey);
     return true;
   } catch {
     return false;

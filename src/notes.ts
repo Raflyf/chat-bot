@@ -24,6 +24,7 @@
  * dengan pola. AI hanya dipakai di lapisan atas (skills.ts) bila perlu; di sini
  * semuanya deterministik agar cepat, murah, dan tidak berhalusinasi.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { db } from './db.js';
 import { normChatId } from './chat_id.js';
 import { PERINTAH_BERARGUMEN, petunjukPemakaian } from './commands.js';
@@ -411,7 +412,8 @@ export function parseWaktuAlami(
 ): Date | null {
   const s = angkaKataKeDigit(teks.toLowerCase().trim());
   // Zona waktu untuk perhitungan jam. Prioritas: argumen > zona user aktif > WIB.
-  const zona = zonaZona || (typeof zonaAktif === 'string' && zonaAktif ? zonaAktif : 'Asia/Jakarta');
+  const zAktif = zonaWaktuAktif();
+  const zona = zonaZona || (typeof zAktif === 'string' && zAktif ? zAktif : 'Asia/Jakarta');
   const hasil = new Date(sekarang.getTime());
 
   // ── PRIORITAS TERTINGGI: TANGGAL LENGKAP (temuan fatal 09 Okt 2026) ──
@@ -2251,49 +2253,36 @@ interface KonfirmasiTertunda {
   niat: NiatTerdeteksi;
   actor?: string;
   platform: string;
+  channel?: string;
   at: number;
 }
 const konfirmasiTertunda = new Map<string, KonfirmasiTertunda>();
 
-// ── ZONA WAKTU AKTIF ──
-// Diisi oleh tanganiPencatatan() untuk setiap permintaan, berdasarkan profil
-// user yang tersimpan di database. Default WIB HANYA sebagai jaring terakhir
-// (bila pemanggil lupa mengisi), bukan lagi asumsi utama.
-let zonaAktif = 'Asia/Jakarta';
-// Catatan konfirmasi zona (diisi saat zona masih tebakan dari nomor telepon).
-let catatanKonfirmasiZona = '';
-function zonaWaktuAktif(): string { return zonaAktif; }
+// ── ZONA WAKTU AKTIF (AsyncLocalStorage per-request, aman untuk konkurensi) ──
+const zonaStore = new AsyncLocalStorage<{ zona: string; catatanKonfirmasiZona: string }>();
+function zonaWaktuAktif(): string {
+  return zonaStore.getStore()?.zona ?? 'Asia/Jakarta';
+}
 function setZonaAktif(z: string | undefined | null): void {
-  zonaAktif = z && z.trim() ? z : 'Asia/Jakarta';
+  const st = zonaStore.getStore();
+  if (st) st.zona = z && z.trim() ? z : 'Asia/Jakarta';
+}
+function getCatatanKonfirmasiZona(): string {
+  return zonaStore.getStore()?.catatanKonfirmasiZona ?? '';
+}
+function setCatatanKonfirmasiZona(s: string): void {
+  const st = zonaStore.getStore();
+  if (st) st.catatanKonfirmasiZona = s;
 }
 const KONFIRMASI_TTL_MS = 10 * 60_000; // 10 menit
 
 // ── PERMINTAAN TERTUNDA KARENA ZONA WAKTU (perbaikan 06 Okt 2026) ──
-//
-// BUG YANG DIPERBAIKI: "kenapa setelah nanya jam, remind nya tidak dicatat lagi?
-// seharusnya kan langsung sekalian."
-//
-// SEBAB: saat user baru meminta pengingat tetapi zonanya belum diketahui, bot
-// menanyakan zona lalu `return` LANGSUNG, permintaan pengingat user HILANG.
-// Setelah user menjawab "cianjur", bot hanya menyimpan zona, pengingat TIDAK
-// pernah dibuat. User harus mengulang perintahnya (menyebalkan).
-//
-// SEKARANG: permintaan disimpan sementara; begitu zona diketahui, permintaan
-// itu DILANJUTKAN otomatis tanpa user mengulang.
 interface PermintaanTertunda {
   teks: string;
   platform: string;
+  channel?: string;
   actor?: string;
   at: number;
-  /**
-   * Jenis penantian:
-   *   'zona' -> menunggu lokasi/zona waktu (perilaku lama)
-   *   'jam'  -> menunggu JAM untuk sebuah pengingat (temuan 07 Okt 2026)
-   *
-   * LAPORAN: bot bertanya "kapan waktu yang pas?", user menjawab
-   * "setelah sarapan ya jam 7.30 atau jam 12.30 oke sih" -> TIDAK diproses,
-   * pengingat tidak pernah tersimpan.
-   */
   jenis?: 'zona' | 'jam';
 }
 const permintaanTertunda = new Map<string, PermintaanTertunda>();
@@ -2301,21 +2290,12 @@ const PERMINTAAN_TERTUNDA_TTL_MS = 10 * 60_000; // 10 menit
 
 /**
  * Simpan permintaan yang menunggu zona waktu.
- *
- * ── PENTING (perbaikan 06 Okt 2026) ──
- * DISIMPAN KE DATABASE, bukan hanya memori. Di Vercel (serverless) setiap
- * request bisa berjalan di INSTANCE BERBEDA, sehingga Map di memori HILANG
- * antar-request. Itu sebabnya pengingat user tidak dilanjutkan setelah dia
- * menjawab lokasi (temuan nyata di produksi).
- *
- * Memakai tabel `pending_confirmations` yang sudah ada, dengan penanda
- * `kind: '_tunggu_zona'` agar tidak bentrok dengan konfirmasi niat biasa.
  */
 async function simpanPermintaanTertunda(
-  chatId: string, teks: string, platform: string, actor?: string, jenis: 'zona' | 'jam' = 'zona',
+  chatId: string, teks: string, platform: string, actor?: string, jenis: 'zona' | 'jam' = 'zona', channel?: string,
 ): Promise<void> {
   chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
-  const v: PermintaanTertunda = { teks, platform, actor, at: Date.now(), jenis };
+  const v: PermintaanTertunda = { teks, platform, channel, actor, at: Date.now(), jenis };
   // Lapisan 1: memori (cepat, untuk instance yang sama).
   permintaanTertunda.set(chatId, v);
   // Lapisan 2: database (bertahan lintas instance serverless).
@@ -2326,7 +2306,7 @@ async function simpanPermintaanTertunda(
         chat_id: chatId,
         platform,
         actor: actor ?? null,
-        niat: { kind: '_tunggu_zona', teks, platform, actor: actor ?? null },
+        niat: { kind: '_tunggu_zona', teks, platform, actor: actor ?? null, jenis, channel: channel ?? null },
         expires_at: new Date(Date.now() + PERMINTAAN_TERTUNDA_TTL_MS).toISOString(),
       }, { onConflict: 'chat_id' });
     }
@@ -2354,13 +2334,15 @@ async function ambilPermintaanTertunda(chatId: string): Promise<PermintaanTertun
       .gt('expires_at', new Date().toISOString())
       .maybeSingle();
     if (data && (data.niat as { kind?: string })?.kind === '_tunggu_zona') {
-      const n = data.niat as { teks?: string };
+      const n = data.niat as { teks?: string; jenis?: 'zona' | 'jam'; channel?: string | null };
       if (n?.teks) {
         const hasil: PermintaanTertunda = {
           teks: n.teks,
           platform: String(data.platform || 'whatsapp'),
+          channel: n.channel ?? undefined,
           actor: (data.actor as string) ?? undefined,
           at: new Date(String(data.created_at)).getTime(),
+          jenis: n.jenis,
         };
         permintaanTertunda.set(chatId, hasil); // isi cache memori
         return hasil;
@@ -2390,17 +2372,18 @@ async function buangPermintaanTertunda(chatId: string): Promise<void> {
 
 /** Simpan konfirmasi tertunda (DB dulu; memori sebagai fallback). */
 async function simpanKonfirmasi(
-  chatId: string, niat: NiatTerdeteksi, opts: { actor?: string; platform: string },
+  chatId: string, niat: NiatTerdeteksi, opts: { actor?: string; platform: string; channel?: string },
 ): Promise<void> {
-  konfirmasiTertunda.set(chatId, { niat, actor: opts.actor, platform: opts.platform, at: Date.now() });
+  konfirmasiTertunda.set(chatId, { niat, actor: opts.actor, platform: opts.platform, channel: opts.channel, at: Date.now() });
   const c = db();
   if (!c) return;
+  const payload = opts.channel ? { ...(niat as unknown as Record<string, unknown>), _channel: opts.channel } : (niat as unknown as Record<string, unknown>);
   try {
     await c.rpc('set_pending_confirmation', {
       p_chat_id: chatId,
       p_platform: opts.platform,
       p_actor: opts.actor ?? null,
-      p_niat: niat as unknown as Record<string, unknown>,
+      p_niat: payload,
     });
     return;
   } catch {
@@ -2412,7 +2395,7 @@ async function simpanKonfirmasi(
         platform: opts.platform,
         chat_id: chatId,
         role: 'user',
-        content: JSON.stringify(niat),
+        content: JSON.stringify(payload),
         via: 'system/pending-confirmation',
       });
     } catch {
@@ -2424,7 +2407,7 @@ async function simpanKonfirmasi(
 /** Ambil konfirmasi tertunda (DB dulu; memori sebagai cadangan). */
 async function ambilKonfirmasi(
   chatId: string,
-): Promise<{ niat: NiatTerdeteksi; actor?: string; platform: string } | null> {
+): Promise<{ niat: NiatTerdeteksi; actor?: string; platform: string; channel?: string } | null> {
   const c = db();
   if (c) {
     try {
@@ -2432,10 +2415,12 @@ async function ambilKonfirmasi(
       const row = Array.isArray(data) ? data[0] : data;
       if (row && row.niat) {
         konfirmasiTertunda.delete(chatId);
+        const rawNiat = row.niat as NiatTerdeteksi & { _channel?: string };
         return {
-          niat: row.niat as NiatTerdeteksi,
+          niat: rawNiat as NiatTerdeteksi,
           actor: (row.actor as string | null) ?? undefined,
           platform: (row.platform as string) ?? 'whatsapp',
+          channel: rawNiat._channel,
         };
       }
     } catch {
@@ -2452,10 +2437,12 @@ async function ambilKonfirmasi(
           await c.from('messages').delete()
             .eq('chat_id', chatId).eq('via', 'system/pending-confirmation');
           konfirmasiTertunda.delete(chatId);
+          const rawNiat = JSON.parse(r0.content) as NiatTerdeteksi & { _channel?: string };
           return {
-            niat: JSON.parse(r0.content) as NiatTerdeteksi,
+            niat: rawNiat as NiatTerdeteksi,
             actor: undefined,
             platform: r0.platform ?? 'whatsapp',
+            channel: rawNiat._channel,
           };
         }
       } catch {
@@ -2467,7 +2454,7 @@ async function ambilKonfirmasi(
   if (mem) {
     konfirmasiTertunda.delete(chatId);
     if (Date.now() - mem.at > KONFIRMASI_TTL_MS) return null;
-    return { niat: mem.niat, actor: mem.actor, platform: mem.platform };
+    return { niat: mem.niat, actor: mem.actor, platform: mem.platform, channel: mem.channel };
   }
   return null;
 }
@@ -2756,11 +2743,12 @@ async function simpanDariNiat(
       }
     }
     const labelUlang = teksUlang ? ` (${teksUlang})` : '';
+    const noteZona = getCatatanKonfirmasiZona();
     return {
       ok: true,
       pesan: labelUlang
-        ? `✅ Pengingat disimpan, "${hasil.pesan}"${labelUlang} mulai ${jamTeks}${tambahan}${catatanKonfirmasiZona}`
-        : `✅ Pengingat disimpan, "${hasil.pesan}" pada ${jamTeks}${tambahan}${catatanKonfirmasiZona}`,
+        ? `✅ Pengingat disimpan, "${hasil.pesan}"${labelUlang} mulai ${jamTeks}${tambahan}${noteZona}`
+        : `✅ Pengingat disimpan, "${hasil.pesan}" pada ${jamTeks}${tambahan}${noteZona}`,
     };
   }
   const id = await simpanCatatan(chatId, String(d.content || ''), {
@@ -2902,10 +2890,11 @@ export async function tanganiPencatatan(
   ctx: unknown,
   opts: { actor?: string; platform: string; lanjutkanTertunda?: boolean; channel?: string },
 ): Promise<{ ditangani: boolean; reply: string; jalur: string; teruskanKeAi?: string }> {
+  return await zonaStore.run({ zona: zonaWaktuAktif(), catatanKonfirmasiZona: '' }, async () => {
   const s = teks.trim();
   const asli = teks.trim();
   const low = s.toLowerCase();
-  catatanKonfirmasiZona = '';
+  setCatatanKonfirmasiZona('');
 
   // ── ZONA WAKTU DI-SET DI AWAL (perbaikan 06 Okt 2026) ──
   //
@@ -2942,7 +2931,7 @@ export async function tanganiPencatatan(
         const gabung = `${tertundaJam.teks} ${asli}`;
         const niatGabung = deteksiNiat(gabung);
         if (niatGabung && niatGabung.kind === 'note' && niatGabung.data.pengingat) {
-          const r = await simpanDariNiat(chatId, niatGabung, { actor: opts.actor, platform: opts.platform, channel: opts.channel, teksAsli: asli });
+          const r = await simpanDariNiat(chatId, niatGabung, { actor: opts.actor, platform: opts.platform, channel: tertundaJam.channel ?? opts.channel, teksAsli: asli });
           return { ditangani: true, reply: r.pesan, jalur: 'lanjut-pengingat-jam' };
         }
       }
@@ -2962,6 +2951,7 @@ export async function tanganiPencatatan(
           actor: tertunda.actor ?? opts.actor,
           teksAsli: asli,
           platform: tertunda.platform ?? opts.platform,
+          channel: tertunda.channel ?? opts.channel,
         });
         return { ditangani: true, reply: r.pesan, jalur: 'konfirmasi-ya' };
       }
@@ -2981,7 +2971,7 @@ export async function tanganiPencatatan(
     // LANGSUNG SIMPAN (perbaikan 06 Okt 2026 — konfirmasi ya/tidak dihilangkan).
     const rCatat = await simpanDariNiat(chatId,
       { kind: 'note', yakin: 1, data: { content: isi }, ringkas: `Catatan: "${isi.slice(0, 80)}"` },
-      { actor: opts.actor, platform: opts.platform });
+      { actor: opts.actor, platform: opts.platform, channel: opts.channel });
     return { ditangani: true, reply: rCatat.pesan, jalur: 'perintah-catat' };
   }
 
@@ -2994,7 +2984,7 @@ export async function tanganiPencatatan(
     // LANGSUNG SIMPAN (perbaikan 06 Okt 2026 — konfirmasi ya/tidak dihilangkan).
     const rTodo = await simpanDariNiat(chatId,
       { kind: 'todo', yakin: 1, data: { task: isi, priority: prio, due_at: due?.toISOString() ?? null }, ringkas: `Tugas: "${isi}"` },
-      { actor: opts.actor, platform: opts.platform });
+      { actor: opts.actor, platform: opts.platform, channel: opts.channel });
     return { ditangani: true, reply: rTodo.pesan, jalur: 'perintah-todo' };
   }
 
@@ -3032,7 +3022,7 @@ export async function tanganiPencatatan(
         kind: 'expense', yakin: 1,
         data: { amount: nominal, kind, category: kategori, note: isi },
         ringkas: `${kind === 'in' ? 'Pemasukan' : 'Pengeluaran'} Rp${nominal.toLocaleString('id-ID')} (${kategori})`,
-      }, { actor: opts.actor, platform: opts.platform });
+      }, { actor: opts.actor, platform: opts.platform, channel: opts.channel });
     return { ditangani: true, reply: rUang.pesan, jalur: 'perintah-uang' };
   }
 
@@ -3100,7 +3090,7 @@ export async function tanganiPencatatan(
     }
     const r = await simpanDariNiat(chatId,
       { kind: 'note', yakin: 1, data: { content: isi, tags: ['belanja'] }, ringkas: `Barang: "${isi.slice(0, 80)}"` },
-      { actor: opts.actor, platform: opts.platform });
+      { actor: opts.actor, platform: opts.platform, channel: opts.channel });
     return { ditangani: true, reply: r.pesan, jalur: 'perintah-barang' };
   }
 
@@ -3217,6 +3207,7 @@ export async function tanganiPencatatan(
         const lanjut = await tanganiPencatatan(tertunda.teks, chatId, ctx, {
           platform: tertunda.platform,
           actor: tertunda.actor,
+          channel: tertunda.channel ?? opts.channel,
           lanjutkanTertunda: true,
         });
         const p = keputusan.profil;
@@ -3252,8 +3243,9 @@ export async function tanganiPencatatan(
     // Bila zona masih TEBAKAN dari nomor telepon, sisipkan catatan konfirmasi
     // di akhir balasan (tidak menghalangi, hanya mengingatkan).
     if (keputusan.perluKonfirmasi && keputusan.profil && butuhLokasiAtauWaktu(asli)) {
-      catatanKonfirmasiZona =
-        `\n\n_Catatan: aku pakai zona *${keputusan.profil.label}*. Kalau bukan, bilang saja "aku di <kota>" ya._`;
+      setCatatanKonfirmasiZona(
+        `\n\n_Catatan: aku pakai zona *${keputusan.profil.label}*. Kalau bukan, bilang saja "aku di <kota>" ya._`,
+      );
     }
 
     // Bila user BARU menyebut lokasinya (dan bukan permintaan lain), balas
@@ -3280,7 +3272,7 @@ export async function tanganiPencatatan(
     // butuh lokasi/waktu (cuaca, kiblat, matahari, dll). Permintaan user DISIMPAN
     // agar bisa dilanjutkan otomatis setelah lokasi diketahui.
     if (keputusan.perluTanya && butuhLokasiAtauWaktu(asli) && !opts.lanjutkanTertunda) {
-      await simpanPermintaanTertunda(chatId, asli, opts.platform, opts.actor);
+      await simpanPermintaanTertunda(chatId, asli, opts.platform, opts.actor, 'zona', opts.channel);
       return {
         ditangani: true,
         reply: `${keputusan.pertanyaan}\n\n_Tenang, permintaanmu aku simpan. Setelah kamu sebut kotanya, langsung aku proses ya._`,
@@ -3390,7 +3382,7 @@ export async function tanganiPencatatan(
               ``,
               `*Sebelumnya:* "${cleanNama}", ${formatWaktuUser(new Date(target.due_at))}`,
               `*Sekarang :* "${cleanNama}", ${formatWaktuUser(waktuBaru)}`,
-              catatanKonfirmasiZona,
+              getCatatanKonfirmasiZona(),
             ].join('\n'),
             jalur: 'ubah-undur',
           };
@@ -3627,7 +3619,7 @@ export async function tanganiPencatatan(
       // Sekarang: tanya jam dulu, simpan state 'jam' agar jawaban berikutnya
       // ("jam 7.30 pagi dan 12.30 siang") langsung diproses.
       if (niat.data.perlu_jam) {
-        await simpanPermintaanTertunda(chatId, asli, opts.platform, opts.actor, 'jam');
+        await simpanPermintaanTertunda(chatId, asli, opts.platform, opts.actor, 'jam', opts.channel);
         return {
           ditangani: true,
           reply: 'Oke, aku catat. Mau diingetin jam berapa? (mis. *jam 7.30 pagi* atau *jam 12.30 siang*)',
@@ -3659,7 +3651,7 @@ export async function tanganiPencatatan(
       /\b(?:catat|catet|dicatat|tercatat|simpan|masukin|input|tulis|note|tolong\s+catat|bantu\s+catat)\b/i.test(low);
     if (niat.kind === 'expense' && !adaPerintahCatatEksplisit) {
       // Simpan niat sebagai konfirmasi tertunda, lalu tanya user.
-      await simpanKonfirmasi(chatId, niat, { actor: opts.actor, platform: opts.platform });
+      await simpanKonfirmasi(chatId, niat, { actor: opts.actor, platform: opts.platform, channel: opts.channel });
       return {
         ditangani: true,
         reply: await tanyaKonfirmasiKeuangan(niat, ctx),
@@ -3706,7 +3698,7 @@ export async function tanganiPencatatan(
     const adaPerintahCatatImpl =
       /\b(?:catat|catet|dicatat|tercatat|simpan|masukin|input|tulis|note|tolong\s+catat|bantu\s+catat)\b/i.test(low);
     if (niatImplisit.kind === 'expense' && !adaPerintahCatatImpl) {
-      await simpanKonfirmasi(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform });
+      await simpanKonfirmasi(chatId, niatImplisit, { actor: opts.actor, platform: opts.platform, channel: opts.channel });
       return {
         ditangani: true,
         reply: await tanyaKonfirmasiKeuangan(niatImplisit, ctx),
@@ -3740,6 +3732,7 @@ export async function tanganiPencatatan(
   }
 
   return { ditangani: false, reply: '', jalur: '' };
+  });
 }
 
 /**

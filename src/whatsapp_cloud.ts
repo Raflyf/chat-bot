@@ -640,13 +640,15 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
           if (media) {
             const context = await getContext(chatKey, msgSentAt);
+            const docUserContent = `[Dokumen: ${filename}] ${caption || ''}`.trim();
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
               role: 'user',
-              content: `[Dokumen: ${filename}] ${caption || ''}`.trim(),
+              content: docUserContent,
               msg_id: messageId,
             });
+            updateContextCache(chatKey, 'user', docUserContent);
 
             const { reply, via, tokens } = await processIncomingDocument(
               media.buffer,
@@ -657,13 +659,6 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             );
 
             // ── SIMPAN ISI DOKUMEN (perbaikan 09 Okt 2026) ──
-            // LAPORAN PEMILIK PRODUK: "apalah bot benar menjelaskan isi pdf nya?
-            // coba kamu cek isi pdf nya dan bandingkan dengan bot apakah sudah
-            // sesuai" + "itu pdf yg dikirim user emg ga masuk db?".
-            //
-            // Sebelumnya isi dokumen DIBUANG setelah dirangkum — sehingga ringkasan
-            // bot tidak bisa diverifikasi dan bot tak bisa mengingat isinya.
-            // Sekarang teks ekstraksi + ringkasan disimpan ke tabel `documents`.
             void (async () => {
               try {
                 const teksDok = await ekstrakTeksDokumen(media.buffer, mime, filename);
@@ -691,6 +686,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               via,
               tokens,
             });
+            updateContextCache(chatKey, 'assistant', reply);
             noteExchange(chatKey);
             return;
           }
@@ -705,33 +701,21 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             try {
               const transcription = await transcribeAudio(media.buffer, mime);
               const context = await getContext(chatKey, msgSentAt);
+              const vnUserContent = `[Voice Note]: "${transcription}"`;
 
               await saveMessage({
                 platform: 'whatsapp',
                 chat_id: chatKey,
                 role: 'user',
-                content: `[Voice Note]: "${transcription}"`,
+                content: vnUserContent,
                 msg_id: messageId,
               });
+              updateContextCache(chatKey, 'user', vnUserContent);
 
               let webResults: string | null = null;
               // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
               const prevContextVn = context?.history?.slice(-3)?.map(h => h.content)?.join(' ') || '';
 
-              // ── BUG YANG DIPERBAIKI (05 Okt 2026) ──
-              // MASALAH: Voice Note LANGSUNG dikirim ke autoReply(), MELEWATI
-              // tanganiPencatatan(). Akibatnya permintaan seperti
-              // "ingatkan saya satu menit lagi untuk login" (lewat VN) TIDAK
-              // tersimpan ke database, tetapi AI MENGARANG balasan
-              // "✅ Pengingat disimpan" — pengingat tidak pernah datang.
-              // (Terbukti dari CSV evaluasi: id 2268, 05 Okt 22:05, VN berisi
-              //  "ingatkan saya satu menit lagi untuk login", tapi tabel
-              //  `reminders` tidak punya baris itu.)
-              //
-              // PERBAIKAN: hasil transkripsi VN diperlakukan SAMA seperti pesan
-              // teks — diperiksa dulu oleh tanganiPencatatan() (pengingat,
-              // catatan, tugas, keuangan, pertanyaan). Bila ditangani, balas
-              // hasilnya dan berhenti (jangan diteruskan ke AI).
               const hasilCatatVn = await tanganiPencatatan(transcription, String(from), context, {
                 platform: 'whatsapp',
               });
@@ -745,6 +729,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                   content: hasilCatatVn.reply,
                   via: `notes/${hasilCatatVn.jalur}`,
                 });
+                updateContextCache(chatKey, 'assistant', hasilCatatVn.reply);
                 noteExchange(chatKey);
                 return;
               }
@@ -770,6 +755,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 via,
                 tokens,
               });
+              updateContextCache(chatKey, 'assistant', reply);
               noteExchange(chatKey);
             } catch (err) {
               console.error('[wa-cloud] Gagal transkripsi audio/VN:', err);
@@ -881,14 +867,16 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         if (msgType === 'video' && m.video?.id) {
           const caption = m.video.caption?.trim();
           const context = await getContext(chatKey, msgSentAt);
+          const videoUserContent = `[Video] ${caption || ''}`.trim();
 
           await saveMessage({
             platform: 'whatsapp',
             chat_id: chatKey,
             role: 'user',
-            content: `[Video] ${caption || ''}`.trim(),
+            content: videoUserContent,
             msg_id: messageId,
           });
+          updateContextCache(chatKey, 'user', videoUserContent);
 
           const prompt = caption
             ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, jelas, dan bersahabat.`
@@ -905,6 +893,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             via,
             tokens,
           });
+          updateContextCache(chatKey, 'assistant', reply);
           noteExchange(chatKey);
           return;
         }
@@ -1072,36 +1061,22 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           // DIAM-DIAM: tidak membalas apa pun ke user. Fakta tersimpan ke tabel
           // `corrections` dengan penanda [FAKTA], lalu otomatis terbaca getContext()
           // dan disuntikkan ke prompt sebagai konteks personal.
-          try {
-            const faktaBaru = await tangkapFaktaPersonal(String(from), text);
-            if (faktaBaru) {
-              console.log(`[wa-cloud] Fakta personal tersimpan: ${faktaBaru.kategori} = ${faktaBaru.fakta}`);
-              // Segarkan cache konteks agar fakta baru langsung terbaca di balasan ini.
-              contextBersama = null;
-            }
-          } catch (e) {
-            console.warn('[wa-cloud] Gagal menangkap fakta personal:', e);
-          }
           contextBersama = await getContext(chatKey, msgSentAt);
           const hasil = await tanganiPencatatan(text, String(from), contextBersama, {
             platform: 'whatsapp',
           });
           if (hasil.ditangani) {
-            // LANJUTAN KE AI (06 Okt 2026): bila permintaan user bukan pencatatan
-            // (mis. "cuaca hari ini") tetapi tertunda karena lokasi belum diketahui,
-            // notes.ts mengembalikan `teruskanKeAi` berisi permintaan ASLI.
-            // Kirim pengantar zona, lalu proses permintaan asli lewat AI di bawah.
+            updateContextCache(chatKey, 'user', text);
             if (hasil.teruskanKeAi) {
               await sendWhatsAppCloudMessageSafe(from, hasil.reply);
               void saveMessage({
                 platform: 'whatsapp', chat_id: chatKey, role: 'assistant',
                 content: hasil.reply, via: `notes/${hasil.jalur}`,
               }).catch(() => undefined);
-              // Ganti teks yang akan diproses AI dengan permintaan ASLI user,
-              // supaya jawabannya benar-benar menjawab pertanyaan tadi.
+              updateContextCache(chatKey, 'assistant', hasil.reply);
               text = hasil.teruskanKeAi;
+              contextBersama = null;
               updateContextCache(chatKey, 'user', text);
-              // Lanjut ke alur AI (jangan `continue`).
             } else {
               await sendWhatsAppCloudMessageSafe(from, hasil.reply);
               void markMessageProcessed('whatsapp', messageId);
@@ -1109,7 +1084,19 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 platform: 'whatsapp', chat_id: chatKey, role: 'assistant',
                 content: hasil.reply, via: `notes/${hasil.jalur}`,
               }).catch(() => undefined);
+              updateContextCache(chatKey, 'assistant', hasil.reply);
               return;
+            }
+          } else {
+            // Tangkap fakta personal hanya bila bukan perintah pencatatan (mencegah perintah pengingat dianggap kebiasaan).
+            try {
+              const faktaBaru = await tangkapFaktaPersonal(String(from), text);
+              if (faktaBaru) {
+                console.log(`[wa-cloud] Fakta personal tersimpan: ${faktaBaru.kategori} = ${faktaBaru.fakta}`);
+                contextBersama = null;
+              }
+            } catch (e) {
+              console.warn('[wa-cloud] Gagal menangkap fakta personal:', e);
             }
           }
         }

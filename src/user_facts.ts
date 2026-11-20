@@ -21,6 +21,7 @@
  */
 import { db } from './db.js';
 import { normChatId } from './chat_id.js';
+import { invalidateContextCache, adalahTestChatId } from './memory.js';
 
 /** Penanda agar fakta personal bisa dibedakan dari koreksi /salah biasa. */
 export const PENANDA_FAKTA = '[FAKTA]';
@@ -228,8 +229,9 @@ export async function simpanFaktaPersonal(
   fakta: FaktaPersonal,
 ): Promise<boolean> {
   chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
+  if (!chatId || adalahTestChatId(chatId) || !fakta?.fakta) return false;
   const c = db();
-  if (!c || !chatId || !fakta?.fakta) return false;
+  if (!c) return false;
   const isi = `${PENANDA_FAKTA} ${fakta.kategori}: ${fakta.fakta}`.slice(0, 300);
   try {
     // Cek duplikat: fakta yang sama tidak perlu disimpan dua kali.
@@ -243,6 +245,7 @@ export async function simpanFaktaPersonal(
 
     const { error } = await c.from('corrections').insert({ chat_id: chatId, correction: isi });
     if (error) return false;
+    invalidateContextCache(chatId);
     return true;
   } catch {
     return false;

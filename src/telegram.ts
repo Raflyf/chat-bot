@@ -8,6 +8,7 @@ import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection,
 import { tanganiPencatatan } from './notes.js';
 import { PERINTAH_BANTUAN, PERINTAH_DIGABUNG, teksBantuan, petunjukPemakaian } from './commands.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
+import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
 import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
@@ -455,13 +456,12 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     // Keduanya dikonfirmasi dulu sebelum disimpan.
     if (text) {
       const catatCtx = await getContext(chatKey, msgSentAt);
-      // Tangkap fakta personal (diam-diam) — lihat user_facts.ts.
-      try { await tangkapFaktaPersonal(identityKey, text); } catch { /* best-effort */ }
       const hasilCatat = await tanganiPencatatan(text, identityKey, catatCtx, {
         actor: isGroup ? senderName : undefined,
         platform: 'telegram',
       });
       if (hasilCatat.ditangani) {
+        updateContextCache(chatKey, 'user', text);
         // LANJUTAN KE AI (06 Okt 2026): permintaan non-pencatatan yang tertunda
         // karena lokasi (mis. "cuaca hari ini") -> kirim pengantar, lalu lanjut
         // proses permintaan ASLI lewat AI di bawah (jangan `return`).
@@ -471,6 +471,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             platform: 'telegram', chat_id: chatKey, role: 'assistant',
             content: hasilCatat.reply, via: `notes/${hasilCatat.jalur}`,
           }).catch(() => undefined);
+          updateContextCache(chatKey, 'assistant', hasilCatat.reply);
           text = hasilCatat.teruskanKeAi;
         } else {
           await sendTelegramMessageSafe(bot, chatId, hasilCatat.reply);
@@ -479,8 +480,12 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             platform: 'telegram', chat_id: chatKey, role: 'assistant',
             content: hasilCatat.reply, via: `notes/${hasilCatat.jalur}`,
           }).catch(() => undefined);
+          updateContextCache(chatKey, 'assistant', hasilCatat.reply);
           return;
         }
+      } else {
+        // Tangkap fakta personal hanya bila bukan perintah pencatatan.
+        try { await tangkapFaktaPersonal(identityKey, text); } catch { /* best-effort */ }
       }
     }
 
@@ -535,13 +540,15 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       const fileId = msg.video.file_id;
       const mime = msg.video.mime_type || 'video/mp4';
       const promptCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
+      const videoUserContent = promptCaption ? `[Video] ${promptCaption}` : '[Video]';
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
-        content: promptCaption ? `[Video] ${promptCaption}` : '[Video]',
+        content: videoUserContent,
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan video user:', err));
+      updateContextCache(chatKey, 'user', videoUserContent);
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
@@ -556,6 +563,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           via,
           tokens,
         }).catch((err) => console.warn('[telegram] Gagal simpan pesan video assistant:', err));
+        updateContextCache(chatKey, 'assistant', reply);
         noteExchange(chatKey);
         return;
       }
@@ -581,19 +589,37 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       }
 
       // Berkas dokumen umum (PDF, DOCX, TXT, CSV, JSON, kode)
+      const docUserContent = `[Dokumen: ${filename}] ${promptCaption || ''}`.trim();
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
         role: 'user',
-        content: `[Dokumen: ${filename}] ${promptCaption || ''}`.trim(),
+        content: docUserContent,
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc user:', err));
+      updateContextCache(chatKey, 'user', docUserContent);
 
       const dl = await downloadTelegramBuffer(bot, fileId);
       if (dl) {
         try {
           const ctx = await getContext(chatKey, msgSentAt);
           const { reply, via, tokens } = await processIncomingDocument(dl.buffer, mime, filename, promptCaption, ctx);
+          void (async () => {
+            try {
+              const teksDok = await ekstrakTeksDokumen(dl.buffer, mime, filename);
+              await simpanDokumen({
+                chatId: chatKey,
+                filename,
+                mime,
+                teks: teksDok,
+                ringkasan: reply,
+                via,
+                platform: 'telegram',
+              });
+            } catch {
+              // best-effort: jangan sampai menggagalkan balasan ke user
+            }
+          })();
           await sendTelegramMessageSafe(bot, chatId, reply);
           if (msgId) void markMessageProcessed('telegram', msgId);
           await saveMessage({
@@ -604,6 +630,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             via,
             tokens,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan doc assistant:', err));
+          updateContextCache(chatKey, 'assistant', reply);
           noteExchange(chatKey);
         } catch (err) {
           console.error('[telegram] Gagal proses dokumen:', err);
@@ -649,6 +676,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             content: savedContent,
             msg_id: msgId || undefined,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN user:', err));
+          updateContextCache(chatKey, 'user', savedContent);
 
           let web: string | null = null;
           // Konteks dihitung SEBELUM needsSearch (lihat catatan di needsSearch).
@@ -677,6 +705,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             via,
             tokens,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN assistant:', err));
+          updateContextCache(chatKey, 'assistant', reply);
           noteExchange(chatKey);
         } catch (err) {
           console.error('[telegram] Gagal transkripsi audio/VN:', err);

@@ -90,46 +90,25 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   const kh = `${kind}:${keyHash(key)}`;
   // Pesan error bisa panjang (body upstream). Pencocokan pola dilakukan pada
   // pesan penuh; yang dipotong hanya untuk log agar tidak membanjiri keluaran.
-  const msg = err instanceof Error ? err.message : String(err);
+  const rawMsg = err instanceof Error ? err.message : String(err);
+  const errObj = err as { fullBody?: string; retryAfter?: string | null; rateLimitReset?: string | number | null; code?: string } | null;
+  const fullBody = String(errObj?.fullBody ?? '');
+  const msg = fullBody ? `${rawMsg}\n${fullBody}` : rawMsg;
 
-  // RATE LIMIT PERMANEN (concurrency capacity / akun gratis tidak diutamakan).
-  // Temuan audit v0.79: Dahl membalas 429 "This model is at concurrency capacity.
-  // Paid accounts are admitted first" untuk SEMUA model & SEMUA kunci, termasuk via
-  // proxy — jadi ini bukan rate limit sementara yang pulih dalam 60 detik, melainkan
-  // pembatasan akun gratis yang bisa berhari-hari. Cooldown 60 detik membuat setiap
-  // request yang jatuh ke tier ini membuang 10 kunci x ~250ms = 2,5 detik PERCUMA
-  // sebelum lanjut ke tier berikutnya.
-  // Perbaikan: cooldown 6 jam untuk pola ini supaya tier dilewati, bukan diulang.
-  // KUOTA/BALDO HABIS (benar-benar habis, bukan rate limit sementara) -> cooldown panjang.
-  if (/insufficient_quota|Insufficient wallet balance|insufficient balance|exceeded your current quota/i.test(msg)) {
-    setCooldownPersist(kh, Date.now() + 6 * 60 * 60_000, 'rpd');
+  // RATE LIMIT PERMANEN / KUOTA HARIAN / SALDO HABIS -> cooldown panjang persisten.
+  if (/insufficient_quota|Insufficient wallet balance|insufficient balance|exceeded your current quota|FreeUsageLimitError|free\s+usage\s+limit\s+reached|usage\s+limit\s+reached/i.test(msg)) {
+    const durasi = kind === 'opencode' ? msUntilDailyResetUtc() : 6 * 60 * 60_000;
+    setCooldownPersist(kh, Date.now() + durasi, 'rpd');
     return;
   }
 
   // KAPASITAS PENUH (concurrency) — SEMENTARA, BUKAN kuota harian.
-  //
-  // LAPORAN PEMILIK PRODUK (12 Okt 2026): "knapa gini? padahal dahl juga itu blm
-  // terpakai knaapa beku batas harian? betulkan"
-  //
-  // AKAR: pola "concurrency capacity" / "Paid accounts are admitted first"
-  // digabung dengan pola kuota habis, lalu diberi cooldown 6 JAM berlabel 'rpd'
-  // (= "limit harian" di dashboard). Padahal Dahl 0 pemakaian — ini BUKAN limit
-  // harian, melainkan pembatasan concurrency yang pulih dalam detik/menit.
-  //
-  // PERBAIKAN: cooldown pendek (2 menit) + alasan 'concurrency' agar dashboard
-  // menulis "Beku (kapasitas penuh)" — bukan menyesatkan "Beku (limit harian)".
   if (/concurrency capacity|Paid accounts are admitted first|at capacity|overloaded/i.test(msg)) {
     setCooldownPersist(kh, Date.now() + 2 * 60_000, 'concurrency');
     return;
   }
 
-  // KUOTA NEURON CLOUDFLARE HABIS (temuan 04 Okt, terbukti dari endpoint):
-  //   "AiError: you have used up your daily free allocation of 10,000 neurons,
-  //    please upgrade to Cloudflare's Workers Paid plan"
-  // Ini BUKAN rate limit per menit dan BUKAN 429 — Cloudflare membalas HTTP 400
-  // dengan code 4006. Sebelumnya pola ini tidak dikenali sehingga key langsung
-  // dicoba lagi di request berikutnya dan gagal terus (membuang waktu rantai).
-  // Neuron direset harian -> cooldown sampai reset UTC + margin.
+  // KUOTA NEURON CLOUDFLARE HABIS (HTTP 400 code 4006).
   if (kind === 'cloudflare' && /neurons|daily free allocation|4006|workers paid/i.test(msg)) {
     const cd = Date.now() + msUntilDailyResetUtc();
     // Kuota habis pada satu key tidak mematikan akun Cloudflare lain.
@@ -138,34 +117,11 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   }
 
   // ── RATE LIMIT: BEDAKAN PER-MENIT (TPM) vs PER-HARI (TPD) ──
-  // PERBAIKAN AUDIT 14 Okt 2026. Bug lama punya DUA cacat yang saling menutupi:
-  //
-  //  1. Pesan error hanya memuat 150 char pertama body, sehingga frasa
-  //     "tokens per minute" / "try again in" di EKOR body TIDAK terbaca.
-  //     Akibatnya regex TPM gagal -> jatuh ke cabang `else if` yang memakai
-  //     kata generik `/limit/` -> 429 PER-MENIT dianggap limit SEHARI dan key
-  //     sehat dimatikan sampai 00.00 UTC. (Persis yang dilarang pemilik produk:
-  //     "jangan sampai ketika limit per menit nya ke trigger malah di anggap
-  //     limit per hari".)
-  //  2. Sebaliknya, karena Groq SELALU mengirim header `retry-after` pada 429,
-  //     `|| err.retryAfter` membuat isTempLimit SELALU true -> 429 PER-HARI
-  //     (TPD 200k) hanya di-cooldown 60 detik, lalu dicoba ulang tiap menit
-  //     sepanjang hari (membakar RPD & memperlambat rantai).
-  //
-  // SEKARANG:
-  //   - Klasifikasi memakai body PENUH (`err.fullBody`), bukan 150 char pertama.
-  //   - Frasa per-hari / per-menit dicocokkan SPESIFIK, bukan kata "limit" generik.
-  //   - `retry-after` dipakai untuk MENENTUKAN DURASI cooldown, bukan sebagai
-  //     penanda "ini TPM".
-  //   - Bila tidak ada penanda jelas: cooldown PENDEK (aman) — JANGAN mematikan
-  //     key sehari hanya karena ada kata "limit".
-  const errCode = (err as { code?: string } | null)?.code;
-  const rates = errCode === 'RATE_LIMITED' || msg === 'RATE_LIMITED' || msg.includes('429');
+  const errCode = errObj?.code;
+  const rates = errCode === 'RATE_LIMITED' || rawMsg === 'RATE_LIMITED' || rawMsg.includes('RATE_LIMITED') || rawMsg.includes('429');
   if ((kind === 'groq' || kind === 'cloudflare') && rates) {
-    const errAny = err as { fullBody?: string; retryAfter?: string | null } | null;
-    // Body PENUH bila tersedia; jatuh kembali ke pesan error (perilaku lama).
-    const teks = String(errAny?.fullBody ?? '') || msg;
-    const retryAfterDetik = Number(errAny?.retryAfter);
+    const teks = fullBody || msg;
+    const retryAfterDetik = Number(errObj?.retryAfter);
 
     // Penanda PER-HARI (TPD/RPD) — harus SPESIFIK.
     const penandaHarian =
@@ -180,7 +136,6 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
       return;
     }
     if (penandaPerMenit) {
-      // Durasi mengikuti `retry-after` bila masuk akal; selainnya 60 detik.
       const ms =
         Number.isFinite(retryAfterDetik) && retryAfterDetik > 0
           ? Math.min(retryAfterDetik * 1000 + 2_000, 300_000) // maks 5 menit
@@ -188,8 +143,6 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
       setCooldownPersist(kh, Date.now() + ms, 'tpm');
       return;
     }
-    // Tanpa penanda jelas: bila `retry-after` menunjukkan jeda PENDEK (<5 menit),
-    // hormati itu. Selainnya cooldown pendek standar — JANGAN matikan sehari.
     const msFallback =
       Number.isFinite(retryAfterDetik) && retryAfterDetik > 0 && retryAfterDetik <= 300
         ? retryAfterDetik * 1000 + 2_000
@@ -199,22 +152,9 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   }
 
    // RATE LIMIT DREAMPROMPTING (temuan 04 Okt).
-  //
-  // Kuota dihitung per AKUN, jendela BERGULIR. Pesan 429:
-  // "Daily token quota reached (...). It is summed across every key on your
-  //  account and frees up on a rolling 24 hour window."
-  //
-  // PENTING (koreksi atas asumsi awal): durasi cooldown TIDAK BOLEH di-hardcode
-  // 24 jam. Endpoint menyediakan waktu reset sendiri dan nilainya BERUBAH:
-  //   header  x-ratelimit-reset        -> sisa DETIK sampai jendela rate limit pulih
-  //   JSON    rate_limit.reset_seconds -> idem (detik)
-  // Untuk kuota HARIAN yang habis, endpoint tidak mengirim sisa detiknya; pada
-  // kondisi itu barulah kita pakai jendela bergulir 24 jam sebagai perkiraan —
-  // dan itu dicatat sebagai estimasi, bukan angka pasti.
   if (kind === 'dreamprompting' && rates) {
-    // 1. Coba baca reset dari error (header retry-after / x-ratelimit-reset).
-    const retryAfterRaw = (err as { retryAfter?: string | null })?.retryAfter;
-    const resetHeader = (err as { rateLimitReset?: string | number | null })?.rateLimitReset;
+    const retryAfterRaw = errObj?.retryAfter;
+    const resetHeader = errObj?.rateLimitReset;
     let detikReset: number | null = null;
     const parseDetik = (v: unknown): number | null => {
       if (v === null || v === undefined) return null;
@@ -237,8 +177,6 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
     };
     detikReset = parseDetik(retryAfterRaw) ?? parseDetik(resetHeader);
 
-    // 2. Bila endpoint tidak memberi sisa detik (kuota harian habis), pakai
-    //    jendela bergulir 24 jam sebagai perkiraan + margin 5 menit.
     const kuotaHarian = /daily|quota|token/i.test(msg);
     const durasiMs = detikReset !== null
       ? detikReset * 1000
@@ -252,20 +190,20 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
     return;
   }
 
-  // Jika rate limited (429), cooldown 60s
+  // Jika rate limited (429) provider lain (opencode, openrouter, gemini), persist ke DB juga
   if (rates) {
-    keyCooldownMap.set(kh, Date.now() + 60_000);
+    setCooldownPersist(kh, Date.now() + 60_000, 'tpm');
     return;
   }
 
   // Jika 401/403 atau CreditsError (kunci salah / izin ditolak / kredit akun habis), cooldown 5 menit
-  if (msg.includes('PROVIDER_401') || msg.includes('PROVIDER_403') || msg.includes('CreditsError')) {
+  if (rawMsg.includes('PROVIDER_401') || rawMsg.includes('PROVIDER_403') || rawMsg.includes('CreditsError')) {
     setCooldownPersist(kh, Date.now() + 300_000, 'error');
     return;
   }
 
   // Jika timeout koneksi atau hang, cooldown 2 menit agar request berikutnya langsung ke kunci sehat
-  if (msg === 'CONNECT_TIMEOUT' || msg === 'THINKING_TIMEOUT') {
+  if (rawMsg === 'CONNECT_TIMEOUT' || rawMsg === 'THINKING_TIMEOUT') {
     setCooldownPersist(kh, Date.now() + 120_000, 'error');
     return;
   }
@@ -1120,14 +1058,24 @@ async function geminiChat(key: string, model: string, messages: ChatMsg[], total
     body.systemInstruction = { parts: [{ text: sysText }] };
   }
 
-  // Streaming SSE dua-fase (sama seperti provider lain): token pertama cepat → failover gesit,
+  // Streaming SSE dua-fase (sama seperti provider lain): token pertama cepat -> failover gesit,
   // fase penyusunan jawaban longgar agar model reasoning tidak terputus di tengah.
+  const promptChars = messages.reduce((sum, m) => {
+    if (typeof m.content === 'string') return sum + m.content.length;
+    if (Array.isArray(m.content)) {
+      return sum + m.content.reduce((s, p) => s + (p.type === 'text' ? p.text.length : p.type === 'image_url' ? 13200 : 0), 0);
+    }
+    return sum;
+  }, 0);
+  const promptTokens = Math.ceil(promptChars / 4);
+  const adaptiveFirstTokenMs =
+    config.firstTokenTimeoutMs + (promptTokens > 3000 ? Math.min(6000, Math.floor((promptTokens - 3000) / 4)) : 0);
   const result = await streamSse(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`,
     { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body,
     {
-      firstTokenMs: hasImage ? config.visionFirstTokenMs : Math.min(connectMs, config.firstTokenTimeoutMs),
+      firstTokenMs: hasImage ? config.visionFirstTokenMs : Math.min(connectMs + 6000, adaptiveFirstTokenMs),
       idleMs: config.streamIdleTimeoutMs,
       totalMs: totalTimeoutMs,
     },
@@ -1558,7 +1506,7 @@ async function balapanModelDalamTier(
   const controller = new AbortController();
   const percobaan: Array<Promise<{ text: string; tokens?: ProviderResult['tokens']; model: string }>> = [];
 
-  const jalankanSatu = async (model: string, delayMs: number) => {
+  const jalankanSatu = async (model: string, delayMs: number, modelIdx: number) => {
     if (delayMs > 0) {
       await new Promise((r) => setTimeout(r, delayMs));
     }
@@ -1566,7 +1514,9 @@ async function balapanModelDalamTier(
     if (!allowCoolingPass && isModelCoolingDown(step.kind, model)) {
       throw new Error('MODEL_COOLING');
     }
-    const candidateKeys = getOrderedKeys(step.kind, step.keys);
+    const baseKeys = getOrderedKeys(step.kind, step.keys);
+    const offset = baseKeys.length > 1 ? modelIdx % baseKeys.length : 0;
+    const candidateKeys = offset > 0 ? [...baseKeys.slice(offset), ...baseKeys.slice(0, offset)] : baseKeys;
     let lastErr: Error = new Error('NO_KEY');
     for (const key of candidateKeys) {
       if (controller.signal.aborted) throw new Error('RACE_ABORTED');
@@ -1589,9 +1539,23 @@ async function balapanModelDalamTier(
         if (controller.signal.aborted || lastErr.message === 'RACE_ABORTED') throw new Error('RACE_ABORTED');
         recordKeyFailure(step.kind, key, e);
         const m = lastErr.message;
+        const errFullText = `${m}\n${String((e as { fullBody?: string } | null)?.fullBody ?? '')}`;
+        const isNeuronKeyQuota =
+          step.kind === 'cloudflare' &&
+          m.includes('PROVIDER_400') &&
+          /neurons|daily free allocation|4006|workers paid/i.test(errFullText);
+        const isPerKeyFailure =
+          isNeuronKeyQuota ||
+          m.includes('PROVIDER_401') ||
+          m.includes('PROVIDER_403') ||
+          m.includes('CreditsError') ||
+          /insufficient_quota|free\s+usage\s+limit/i.test(errFullText);
+        if (isPerKeyFailure) {
+          continue;
+        }
         if (
           m.includes('PROVIDER_404') || m.includes('ModelError') || m.includes('PROVIDER_413') ||
-          m.includes('PROVIDER_400') || m.includes('PROVIDER_401') || m.includes('PROVIDER_403') ||
+          m.includes('PROVIDER_400') ||
           m.includes('PROVIDER_422') || m.includes('BAD_IMAGE') || m.includes('NO_IMAGE_DATA_FOR_VISION')
         ) {
           recordModelFailure(step.kind, model, 15 * 60_000);
@@ -1605,15 +1569,17 @@ async function balapanModelDalamTier(
           recordModelFailure(step.kind, model, 60_000);
           throw lastErr;
         }
-        if (m === 'RATE_LIMITED') keyUsed(step.kind, key);
+        if (m.startsWith('RATE_LIMITED') || (e as { code?: string } | null)?.code === 'RATE_LIMITED') {
+          keyUsed(step.kind, key);
+        }
       }
     }
     throw lastErr;
   };
 
   for (let i = 0; i < models.length; i++) {
-    // Model utama tanpa jeda; cadangan menyusul setelah stagger.
-    percobaan.push(jalankanSatu(models[i], i === 0 ? 0 : config.raceStaggerMs * i));
+    // Model utama tanpa jeda; cadangan menyusul setelah stagger pada key berbeda.
+    percobaan.push(jalankanSatu(models[i], i === 0 ? 0 : config.raceStaggerMs * i, i));
   }
 
   try {
@@ -1628,6 +1594,147 @@ async function balapanModelDalamTier(
   }
 }
 
+function estimatePromptTokensWithRatio(msgs: ChatMsg[], charsPerToken: number): number {
+  let chars = 0;
+  for (const m of msgs) {
+    if (typeof m.content === 'string') chars += m.content.length;
+    else if (Array.isArray(m.content)) {
+      for (const part of m.content) {
+        if (part && part.type === 'text' && typeof part.text === 'string') chars += part.text.length;
+        else if (part && part.type === 'image_url') chars += Math.round(4000 * charsPerToken);
+      }
+    }
+  }
+  return Math.ceil(chars / charsPerToken);
+}
+
+/**
+ * Padatkan system prompt untuk provider teks ber-ITPM ketat (Groq 7.000 token)
+ * tanpa mengubah persona, nada, memori, fakta user, maupun aturan inti.
+ */
+export function ringkasUntukGroqTeks(msgs: ChatMsg[], maxBudgetTokens: number = 7000): ChatMsg[] {
+  if (estimatePromptTokensWithRatio(msgs, 3.1) <= maxBudgetTokens) return msgs;
+
+  const lastUser = [...msgs].reverse().find((m) => m.role === 'user');
+  const lastUserText =
+    typeof lastUser?.content === 'string'
+      ? lastUser.content
+      : Array.isArray(lastUser?.content)
+        ? lastUser.content.map((p) => (p.type === 'text' ? p.text : '')).join(' ')
+        : '';
+  const hasMediaSignal = /\[(?:Stiker|Gambar|Foto|Dokumen|Video|Pesan Suara|Voice Note)\b/i.test(lastUserText);
+
+  const compactSystem = (sys: string, level: 1 | 2 | 3): string => {
+    let out = sys;
+    // Tahap 1: buang lampiran kamus TEKS DI STIKER (~4.300 char), pertahankan STIKER BALASAN & daftar emoji.
+    out = out.replace(/TEKS DI STIKER \(emoji="tulisan"[\s\S]*?pakai sesuai emosinya\./g, '');
+    if (level >= 1 && !hasMediaSignal) {
+      out = out.replace(
+        /\n-\s*(?:ATURAN KERAS MEDIA|PENGECUALIAN: jika temanmu MENULIS|VOICE NOTE|RESPON STIKER|RESPON FOTO|RESPON DOKUMEN)[^\n]*/g,
+        '',
+      );
+      out = out.replace(
+        /STIKER BALASAN \(PAKAI SAAT MOMENNYA PAS[\s\S]*?Emoji TERSEDIA:\s*([^\n]+)\.\s*KAPAN JANGAN[^\n]*/g,
+        'STIKER BALASAN: sisipkan [[sticker:<emoji>]] di AKHIR bila suasana santai hangat. Emoji TERSEDIA: $1.',
+      );
+    }
+    if (level >= 2) {
+      // Tahap 2: ringkas contoh ilustrasi kurung & sub-contoh panjang tanpa menyentuh memori/profil/alur/nafas.
+      out = out.replace(/\n\s*\*\s*(?:Contoh|BILA KAMU TIDAK|"lanjut ini aja")[^\n]*/g, '');
+      out = out.replace(/(PEDOMAN GENERASI DINAMIS[\s\S]*?)(?=\n\n)/, 'PEDOMAN GENERASI DINAMIS: Susun setiap balasan secara orisinal & kontekstual tanpa template hafalan atau menyalin contoh instruksi.');
+      out = out.replace(/\((?!WIB|WITA|WIT|REFERENSI|ATURAN|SEMUA|ANTI|KERAS|WAJIB)[^)\n]{20,}\)/g, '');
+      out = out.replace(
+        /(IDENTITAS DEVELOPER[\s\S]*?)(?=\n\n)/,
+        (blk) => blk.replace(/\n-\s*(?:Ajak ngobrol|HANYA singgung|DILARANG KERAS menyangkal)[^\n]*/g, ''),
+      );
+    }
+    if (level >= 3) {
+      // Tahap 3: padatkan penjelasan/contoh repetitif pada PRINSIP 1, PRINSIP 2, PRINSIP 4B, PRINSIP 5, dan kalender.
+      // TETAP menjaga utuh: PANJANG RESPONS, IDENTITAS, IDENTITAS DEVELOPER, Kamu adalah sahabat..., PRINSIP 4C,
+      // [BACA SUASANA], [GAYA], [SUASANA], [KONTINUITAS PERCAKAPAN], [ALUR & SUASANA], [MEMORI], [PROFIL], [DATA INTERNET], [NAFAS PERCAKAPAN].
+      out = out.replace(
+        /(\[KALENDER LENGKAP[\s\S]*?)(?=\[DIREKTIF MUTLAK KOMUNIKASI\])/,
+        '',
+      );
+      out = out.replace(
+        /(\[DIREKTIF MUTLAK KOMUNIKASI\]:[\s\S]*?)(?=\nPEDOMAN|\nIDENTITAS:)/,
+        '[DIREKTIF MUTLAK KOMUNIKASI]: Jangan sebut jam/tanggal kecuali ditanya waktu.\n',
+      );
+      out = out.replace(
+        /(PRINSIP 1:[\s\S]*?)(?=\nPRINSIP 2:)/,
+        (blk) => blk
+          .replace(/\n\s*->[^\n]*/g, '')
+          .replace(/\n\s*\*[^\n]{110,}/g, (line) => line.slice(0, 108)),
+      );
+      out = out.replace(
+        /(PRINSIP 2:[\s\S]*?)(?=\n(?:PRINSIP 3:|PRINSIP 4:))/,
+        (blk) => blk
+          .replace(/\s+Jangan lebih heboh[^\n.]*\./g, '.')
+          .replace(/\n-\s*(?:ANTI-MENGAKHIRI|Tanpa menu bernomor)[^\n]*/g, '')
+          .replace(/STIKER BALASAN:[^\n]*/g, 'STIKER BALASAN: sisipkan [[sticker:<emoji>]] di akhir bila obrolan santai cocok.'),
+      );
+      out = out.replace(
+        /(PRINSIP 4B:[\s\S]*?)(?=\nPRINSIP 4C:)/,
+        'PRINSIP 4B: Jawab HANYA berdasar konteks nyata (jangan mengarang cerita dari 1 kata). Pahami label "[Membalas pesan KAMU/DIA SENDIRI/ORANG LAIN]" apa adanya dan rujuk kata "itu/ini/nya" ke topik terdekat. Jangan mengaku mendengar suara di chat teks biasa.\n',
+      );
+      out = out.replace(
+        /(PRINSIP 5:[\s\S]*?)(?=\n\n|\n\[)/,
+        'PRINSIP 5: Kamu terhubung ke internet real-time & multimodal. Format WhatsApp rapi tanpa #, maks 1 emoji wajar (nol saat serius). BATAS: hanya chat teks; tolak jujur & santai jika diminta putar musik/.play, kirim file sendiri, telepon, atau akses akun luar.',
+      );
+    }
+    return out.replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim();
+  };
+
+  let cur = msgs.map((m) => ({ ...m }));
+  for (const level of [1, 2, 3] as const) {
+    cur = cur.map((m) =>
+      m.role === 'system' && typeof m.content === 'string'
+        ? { ...m, content: compactSystem(m.content, level) }
+        : m,
+    );
+    const trimmed = trimMessagesToTokenBudget(cur, Math.floor(maxBudgetTokens * 0.94));
+    if (estimatePromptTokensWithRatio(trimmed, 3.1) <= maxBudgetTokens) {
+      return trimmed;
+    }
+    cur = trimmed;
+  }
+  return trimMessagesToTokenBudget(cur, Math.floor(maxBudgetTokens * 0.9));
+}
+
+/**
+ * Ringkas pesan sistem khusus Groq di jalur VISION agar di bawah batas 7.000 ITPM
+ * sambil mempertahankan identitas persona inti, gaya, suasana, dan memori aktif.
+ */
+export function ringkasUntukGroqVision(msgs: ChatMsg[]): ChatMsg[] {
+  return msgs.map((m) => {
+    if (m.role !== 'system' || typeof m.content !== 'string') return m;
+    const raw = m.content;
+    const bagian: string[] = [];
+
+    const identitas = raw.match(/^IDENTITAS:[^\n]+/m);
+    if (identitas) bagian.push(identitas[0]);
+
+    const sahabat = raw.match(/^Kamu adalah sahabat karib[^\n]+/m);
+    if (sahabat) bagian.push(sahabat[0]);
+
+    const dev = raw.match(/IDENTITAS DEVELOPER[\s\S]*?(?=\n\n|$)/);
+    if (dev) bagian.push(dev[0].slice(0, 600));
+
+    const blokAktifRe = /\[(?:GAYA|SUASANA|KONTINUITAS PERCAKAPAN|ALUR & SUASANA OBROLAN|MEMORI LATAR BELAKANG|PROFIL & PREFERENSI|SITUASI KHUSUS|NAFAS PERCAKAPAN)[^\]]*\][\s\S]*?(?=\n\n\[|\nPRINSIP|$)/g;
+    let match: RegExpExecArray | null;
+    while ((match = blokAktifRe.exec(raw)) !== null) {
+      bagian.push(match[0].trim());
+    }
+
+    bagian.push(
+      'ATURAN VISUAL: Balas natural sesuai konteks obrolan dan suasana temanmu. Jangan menarasikan isi foto/stiker bila tidak diminta, jangan mengklaim gambar robot/ikon tanpa keterangan sebagai logo/foto dirimu sendiri, jangan mengarang aktivitas fisik (mis. senyum-senyum sendiri), dan jangan memakai em-dash (—) atau en-dash (–).',
+    );
+
+    const gabungan = bagian.filter(Boolean).join('\n\n').slice(0, 7500);
+    return { role: 'system' as const, content: gabungan };
+  });
+}
+
 /**
  * Teks: OpenCode > Cloudflare > Groq > DreamPrompting > OpenRouter > Gemini.
  * Vision: urutan eksplisit config.models.visionChain, tanpa race.
@@ -1635,35 +1742,11 @@ async function balapanModelDalamTier(
  */
 export async function chat(
   rawMessages: ChatMsg[],
-  opts?: { vision?: boolean; cacheScope?: string },
+  opts?: { vision?: boolean; cacheScope?: string; skipCache?: boolean },
 ): Promise<{ text: string; via: string; tokens?: { prompt: number; completion: number; total: number } }> {
   const needVision = opts?.vision === true;
-  // PEMANGKASAN TOKEN: HANYA untuk provider yang endpoint-nya benar-benar ketat
-  // (DreamPrompting & Groq, keduanya ~7.000 token). Provider lain TIDAK dipangkas
-  // di sini — masing-masing menegakkan batasnya sendiri di endpoint (mis. OpenCode
-  // membatasi 8.000 token per respons dari sisi server).
-  //
-  // Sebelumnya pemangkasan dilakukan GLOBAL di sini (config.maxTokensLimit=8000),
-  // sehingga provider tanpa batas pun ikut dipotong — itu keliru. Kini pemangkasan
-  // hanya terjadi di dalam step DreamPrompting & Groq (lihat maxPromptTokens + trim
-  // di steps()). Di sini pesan dibiarkan utuh.
   const messages = rawMessages;
-  // KUNCI CACHE HARUS PER-PERCAKAPAN (temuan produksi v0.79.7).
-  //
-  // Bug lama: cacheKey = JSON.stringify({v, messages}) — TANPA identitas percakapan.
-  // Akibat nyata (dilaporkan user): dua pengguna berbeda yang mengirim pesan sama
-  // ("namaku Andi, aku tinggal di Bandung") mendapat balasan IDENTIK KATA PER KATA
-  // karena yang kedua kena cache milik yang pertama. Ini melanggar prinsip bot
-  // "jangan ada kalimat repetitif" dan terasa seperti template hafalan.
-  //
-  // Deduplikasi pesan kembar dari provider (Meta webhook retry) SUDAH ditangani
-  // terpisah di whatsapp_cloud.ts (processedMessageIds) — jadi cache ini murni untuk
-  // menghemat token pada permintaan BERULANG DALAM SATU percakapan, bukan lintas orang.
-  //
-  // `cacheScope` diisi identitas percakapan (chatId) oleh pemanggil; bila tidak diisi
-  // (mis. ringkasan memori, pemrosesan media sekali-jalan), cache DILEWATI sama sekali
-  // agar tidak pernah menyilangkan konteks antar pengguna.
-  const cacheKey = opts?.cacheScope
+  const cacheKey = opts?.cacheScope && !opts?.skipCache
     ? JSON.stringify({ v: needVision, scope: opts.cacheScope, messages })
     : null;
   if (cacheKey) {
@@ -1674,68 +1757,12 @@ export async function chat(
   let lastError = 'NO_PROVIDER_KEYS';
   const allSteps = steps();
 
-  // Estimasi token prompt (≈4 karakter/token untuk teks campuran Indonesia+Inggris).
-  // Dipakai untuk melewati provider yang batas ITPM-nya pasti terlampaui — tanpa guard
-  // ini, percakapan panjang yang jatuh ke Groq SELALU gagal 429 dan membuang waktu rantai
-  // (temuan user: "penggunaan token ada yg sampai lebih dari 8k, gimna kalo model dari
-  // groq yg menangani? pasti tidak akan ada yg merespon, karna rate limit groq 8k/menit").
-  const estimatePromptTokens = (msgs: ChatMsg[]): number => {
-    let chars = 0;
-    for (const m of msgs) {
-      if (typeof m.content === 'string') chars += m.content.length;
-      else if (Array.isArray(m.content)) {
-        for (const part of m.content) {
-          if (part && part.type === 'text' && typeof part.text === 'string') chars += part.text.length;
-          else if (part && part.type === 'image_url') chars += 4000; // gambar ≈ 4000 token
-        }
-      }
-    }
-    return Math.ceil(chars / 4);
-  };
+  const estimatePromptTokens = (msgs: ChatMsg[]): number => estimatePromptTokensWithRatio(msgs, 4);
   const promptTokensEstimate = estimatePromptTokens(messages);
 
-  // ---------------------------------------------------------------------------
-  // ANGGARAN ITPM GROQ UNTUK JALUR VISION (perbaikan 24 Sep).
-  //
-  // Masalah nyata: Groq adalah model vision TERBAIK yang kita punya (uji gambar
-  // tabel: 49/50 angka benar dalam 5,4 dtk, sementara model lain 10/28 atau
-  // gagal). Tetapi ia hampir SELALU dilewati untuk gambar, karena prompt sistem
-  // bot (~5.700 token) + gambar (~4.000 token) = ~9.700 token, jauh di atas
-  // batas 6.800 yang dipasang untuk teks.
-  //
-  // Akibatnya gambar selalu jatuh ke model cadangan yang jauh lebih lemah —
-  // inilah sebab keluhan "angka di tabel tidak terbaca".
-  //
-  // Solusi: saat memproses GAMBAR, kirim pesan sistem yang RINGKAS ke Groq
-  // (instruksi inti saja, tanpa seluruh persona panjang). Kualitas pembacaan
-  // gambar tidak bergantung pada panjang persona; yang menentukan adalah
-  // gambarnya dan instruksi tugasnya. Anggaran jadi ~4.300 token — aman.
-  //
-  // Hanya berlaku untuk Groq di jalur vision; provider lain tetap menerima
-  // prompt lengkap (kuotanya lapang) dan percakapan teks tidak berubah.
-  // ---------------------------------------------------------------------------
-  const ringkasUntukGroqVision = (msgs: ChatMsg[]): ChatMsg[] => {
-    if (!needVision) return msgs;
-    return msgs.map((m) => {
-      if (m.role !== 'system' || typeof m.content !== 'string') return m;
-      // Ambil instruksi tugas (biasanya di akhir prompt sistem, memuat aturan
-      // spesifik untuk gambar ini) lalu tambahkan persona minimal.
-      const aturanTugas = m.content.match(/\[[^\]]{4,200}\][\s\S]{0,2500}/);
-      return {
-        role: 'system' as const,
-        content: [
-          'Kamu asisten yang membantu dan ramah. Jawab langsung, akurat, tanpa pembuka klise.',
-          aturanTugas ? aturanTugas[0] : m.content.slice(-2500),
-        ].join('\n'),
-      };
-    });
-  };
-
-  // Untuk vision: rantai eksplisit dari config.models.visionChain (urutan mutlak sesuai
-  // keputusan review user, tidak disusun ulang oleh pengurutan latensi).
   const orderedSteps = needVision ? visionSteps(allSteps, messages) : allSteps;
-  const messagesRingkas = ringkasUntukGroqVision(messages);
-  const promptTokensGroqVision = estimatePromptTokens(messagesRingkas);
+  const messagesRingkas = needVision ? ringkasUntukGroqVision(messages) : messages;
+  const promptTokensGroqVision = estimatePromptTokensWithRatio(messagesRingkas, 3.1);
 
   // Anggaran waktu TOTAL seluruh rantai failover: pagar agar satu model yang menggantung
   // tidak menghabiskan jatah serverless. Sisa anggaran diteruskan ke tiap attempt (`t`).
@@ -1748,16 +1775,17 @@ export async function chat(
   for (const allowCoolingPass of [false, true]) {
   for (const step of orderedSteps) {
     if (Date.now() >= deadline - 1500) break;
-    // Guard ITPM: lewati provider yang batas token-per-menitnya pasti terlampaui.
-    // Ini mencegah request yang DIJAMIN 429 (mis. Groq 7.000 ITPM vs prompt 9.000 token)
-    // sehingga rantai tidak membuang waktu dan langsung mencoba provider yang sanggup.
-    //
-    // Untuk jalur VISION, provider Groq dinilai dengan anggaran prompt RINGKAS
-    // (lihat ringkasUntukGroqVision): tanpa ini Groq selalu dilewati karena
-    // prompt persona panjang + gambar melampaui batas, padahal Groq adalah
-    // pembaca gambar terbaik yang tersedia.
-    const estimasiUntukStep =
-      needVision && step.kind === 'groq' ? promptTokensGroqVision : promptTokensEstimate;
+
+    let msgsUntukStep = messages;
+    let estimasiUntukStep = promptTokensEstimate;
+    if (needVision && step.kind === 'groq') {
+      msgsUntukStep = messagesRingkas;
+      estimasiUntukStep = promptTokensGroqVision;
+    } else if (!needVision && step.maxPromptTokens > 0) {
+      msgsUntukStep = ringkasUntukGroqTeks(messages, step.maxPromptTokens);
+      estimasiUntukStep = estimatePromptTokensWithRatio(msgsUntukStep, 3.1);
+    }
+
     if (step.maxPromptTokens > 0 && estimasiUntukStep > step.maxPromptTokens) {
       if (!allowCoolingPass) {
         console.warn(
@@ -1770,16 +1798,13 @@ export async function chat(
     // Rantai vision dibiarkan apa adanya karena tiap step hanya berisi satu model.
     const models = needVision ? step.models : orderModelsByLatency(step.kind, step.models);
 
-    // BALAPAN MODEL (permintaan user 04 Okt): model utama & cadangan dikirim
-    // BERSAMAAN; yang jawabannya tiba paling cepat yang dipakai. Hanya di jalur
-    // TEKS (vision sudah punya rantai eksplisit 1-model-per-step) dan bila ada >1
-    // model. Bila raceModels=0, jalur sekuensial lama di bawah tetap dipakai.
-    if (config.raceModels > 0 && !needVision && models.length > 1) {
+    // BALAPAN MODEL hanya untuk pool dengan >1 API key agar model utama & cadangan tidak menabrak key yang sama.
+    if (config.raceModels > 0 && !needVision && models.length > 1 && step.keys.length > 1) {
       const layak = models.filter((m) => allowCoolingPass || !isModelCoolingDown(step.kind, m));
       if (layak.length > 0) {
         anyModelAttempted = true;
         try {
-          const menang = await balapanModelDalamTier(step, layak, messages, deadline, allowCoolingPass);
+          const menang = await balapanModelDalamTier(step, layak, msgsUntukStep, deadline, allowCoolingPass);
           if (cacheKey) cacheSet(cacheKey, menang.text);
           console.log(
             `[providers] Balapan ${step.kind}: menang "${menang.model}" dari ${layak.length} model.`,
@@ -1813,16 +1838,9 @@ export async function chat(
 
       for (const key of candidateKeys) {
         if (modelUnresponsive) break;
-        // Guard RPD + TPD (token/hari): hentikan pool sebelum menabrak 429 upstream.
-        // Groq Free Tier: 1.000 RPD DAN 200K TPD — TPD biasanya tercapai lebih dulu.
-        // try/catch: kegagalan DB kuota (mis. URL Supabase buruk) tidak boleh membatalkan
-        // seluruh rantai failover — tanpa ini satu error DB melempar keluar dari chat() (audit H2).
-        let keyAllowed = true;
-        // Cek kuota dengan satuan benar (Cloudflare=neuron). Lihat cekKeyBolehDipakai().
-        keyAllowed = await cekKeyBolehDipakai(step, key, allowCoolingPass);
+        const keyAllowed = await cekKeyBolehDipakai(step, key, allowCoolingPass);
         if (!keyAllowed) continue;
 
-        // (Pre-check xKiro DIHAPUS 04 Okt 2026 — providernya sudah tidak ada.)
         const remainingMs = deadline - Date.now();
         if (remainingMs < 1500) {
           lastError = 'CHAIN_DEADLINE';
@@ -1831,19 +1849,10 @@ export async function chat(
         anyKeyAttempted = true;
         const attemptStart = Date.now();
         try {
-          // `t` = sisa anggaran rantai (dibatasi timeout per-request) agar attempt ini tidak melewati deadline
-          //
-          // Groq di jalur vision memakai pesan RINGKAS: prompt persona penuh +
-          // gambar akan melampaui ITPM 7.000 sehingga request dijamin 413/429.
-          // Kualitas pembacaan gambar tidak bergantung pada panjang persona.
-          const msgsUntukStep =
-            needVision && step.kind === 'groq' ? messagesRingkas : messages;
           const result = await step.run(key, model, msgsUntukStep, Math.min(remainingMs, config.timeoutMs));
           recordKeySuccess(step.kind, key, model);
-          // Catat latensi aktual untuk failover berbasis waktu respons pada request berikutnya
           recordModelLatency(step.kind, model, Date.now() - attemptStart);
           keyUsed(step.kind, key);
-          // Catat token harian (TPD) agar limit token upstream terpantau presisi
           if (result.tokens?.total) {
             keyTokensUsed(step.kind, key, result.tokens.total);
           }
@@ -1854,30 +1863,12 @@ export async function chat(
           recordKeyFailure(step.kind, key, e);
           console.warn(`[providers] Kegagalan key pada ${step.kind}/${model} (key: ${redactSecret(key)}): ${redactUrl(lastError)}. Mencoba key berikutnya...`);
 
-          // FASE 1 timeout: model TIDAK merespon sama sekali dalam batas singkat.
-          //
-          // KOREKSI AUDIT v0.79 (temuan uji key xKiro): perilaku LAMA adalah failover
-          // langsung ke model berikutnya TANPA mencoba key lain, lalu meng-cooldown
-          // SELURUH MODEL selama 3 menit. Terbukti SALAH untuk provider dengan antrian
-          // per-key: uji 8 key xKiro menunjukkan 3 key butuh 5,7-10,0 detik token pertama
-          // sementara 5 key lain hanya 1,6-5,0 detik. Jadi NO_FIRST_TOKEN di satu key
-          // BUKAN berarti modelnya rusak — key lain mungkin sehat dan cepat.
-          // Dampak lama: satu key lambat mematikan tier xKiro (Tier 1) selama 3 menit
-          // dan memaksa request turun ke tier bawah yang lebih terbatas.
-          //
-          // Perilaku BARU: cooldown KEY yang lambat (2 menit) dan COBA KEY BERIKUTNYA
-          // untuk model yang sama. Bila SEMUA key untuk model ini lambat, barulah
-          // model dianggap tidak responsif dan failover ke model berikutnya.
           if (lastError === ERR_NO_FIRST_TOKEN) {
             console.warn(
               `[providers] Key lambat pada ${step.kind}/${model} (fase-1 ${config.firstTokenTimeoutMs}ms habis). Cooldown key ini, coba key lain untuk model yang sama.`,
             );
-            // recordKeyFailure sudah dipanggil di atas; pastikan key ini beristirahat
-            // cukup lama (bukan 60 detik) karena antrian provider bisa panjang.
             setCooldownPersist(`${step.kind}:${keyHash(key)}`, Date.now() + 120_000, 'error');
             slowKeyCount++;
-            // Bila SEMUA key untuk model ini sudah dicoba dan tetap lambat, baru
-            // anggap model tidak responsif (failover ke model berikutnya).
             if (slowKeyCount >= keysForModel.length) {
               console.warn(
                 `[providers] Semua ${keysForModel.length} key ${step.kind}/${model} lambat. Failover ke model berikutnya.`,
@@ -1888,8 +1879,6 @@ export async function chat(
             }
             continue;
           }
-          // FASE 2 timeout: model SUDAH merespon tapi berhenti di tengah jawaban.
-          // Juga masalah model → lompat ke model berikutnya (jawaban parsial tidak bisa dikirim).
           if (lastError === ERR_STREAM_IDLE) {
             console.warn(`[providers] Model ${step.kind}/${model} berhenti di tengah jawaban (idle ${config.streamIdleTimeoutMs}ms). Failover ke model berikutnya.`);
             recordModelFailure(step.kind, model, 60_000);
@@ -1897,20 +1886,28 @@ export async function chat(
             break;
           }
 
-          // HANYA break perulangan kunci jika error murni kegagalan model global (bukan error kunci/kuota/jaringan):
-          // - PROVIDER_404: Model tidak terdaftar di endpoint upstream
-          // - ModelError: Upstream menyatakan nama model tidak didukung
-          // - PROVIDER_413: Ukuran payload prompt melampaui kapasitas model
-          // Error deterministik (bentuk request salah / kredensial ditolak / gambar tidak
-          // didukung): mengulang di key lain menghasilkan hasil identik dan membakar deadline.
-          // Langsung ganti model (audit H5).
+          const errFullText = `${lastError}\n${String((e as { fullBody?: string } | null)?.fullBody ?? '')}`;
+          const isNeuronKeyQuota =
+            step.kind === 'cloudflare' &&
+            lastError.includes('PROVIDER_400') &&
+            /neurons|daily free allocation|4006|workers paid/i.test(errFullText);
+          const isPerKeyFailure =
+            isNeuronKeyQuota ||
+            lastError.includes('PROVIDER_401') ||
+            lastError.includes('PROVIDER_403') ||
+            lastError.includes('CreditsError') ||
+            /insufficient_quota|free\s+usage\s+limit/i.test(errFullText);
+
+          if (isPerKeyFailure) {
+            allKeysFailedWithServerError = false;
+            continue;
+          }
+
           if (
             lastError.includes('PROVIDER_404') ||
             lastError.includes('ModelError') ||
             lastError.includes('PROVIDER_413') ||
             lastError.includes('PROVIDER_400') ||
-            lastError.includes('PROVIDER_401') ||
-            lastError.includes('PROVIDER_403') ||
             lastError.includes('PROVIDER_422') ||
             lastError.includes('BAD_IMAGE') ||
             lastError.includes('NO_IMAGE_DATA_FOR_VISION') ||
@@ -1921,8 +1918,7 @@ export async function chat(
             break;
           }
 
-          // Catat pemakaian hanya jika rate limited (agar pool beralih), bukan pada error 500 atau kegagalan jaringan
-          if (lastError === 'RATE_LIMITED' || (e as { code?: string })?.code === 'RATE_LIMITED') {
+          if (lastError.startsWith('RATE_LIMITED') || (e as { code?: string })?.code === 'RATE_LIMITED') {
             keyUsed(step.kind, key);
             allKeysFailedWithServerError = false;
           } else if (

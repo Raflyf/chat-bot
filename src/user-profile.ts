@@ -22,6 +22,7 @@
  */
 import { db } from './db.js';
 import { normChatId } from './chat_id.js';
+import { invalidateContextCache, adalahTestChatId } from './memory.js';
 import {
   detectUserCountry, detectLocation, detectUserLocationDeclaration,
   registerPembacaProfil,
@@ -106,6 +107,7 @@ export async function simpanProfilWaktu(
   profil: ProfilWaktu,
 ): Promise<boolean> {
   chatId = normChatId(chatId);   // konsistensi chat_id (satu sumber)
+  if (!chatId || adalahTestChatId(chatId)) return false;
   const c = db();
   if (!c) return false;
 
@@ -120,7 +122,10 @@ export async function simpanProfilWaktu(
       p_sumber: profil.sumber,
       p_terverifikasi: profil.terverifikasi,
     });
-    if (!error) return true;
+    if (!error) {
+      invalidateContextCache(chatId);
+      return true;
+    }
   } catch {
     // lanjut ke fallback
   }
@@ -131,6 +136,7 @@ export async function simpanProfilWaktu(
       .eq('chat_id', chatId).ilike('correction', `${TANDA_FALLBACK}%`);
     const isi = `${TANDA_FALLBACK} zone=${profil.timezone}; label=${profil.label}; kota=${profil.kota ?? ''}; sumber=${profil.sumber}; verif=${profil.terverifikasi ? '1' : '0'}`;
     const { error } = await c.from('corrections').insert({ chat_id: chatId, correction: isi });
+    if (!error) invalidateContextCache(chatId);
     return !error;
   } catch {
     return false;
