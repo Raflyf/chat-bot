@@ -847,7 +847,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             if (!teksAkhir && !stikerTerkirim) {
               teksAkhir = (
                 await dynamicNotice(
-                  'Temanmu baru mengirim stiker. Beri reaksi singkat 1 kalimat santai yang nyambung dengan obrolan terakhir tanpa menarasikan isi stiker atau bertanya balik.',
+                  'Temanmu baru mengirim stiker sebagai balasan di chat. Balas langsung secara natural 1 kalimat pendek seperti chat biasa yang nyambung dengan obrolan terakhir, tanpa mengomentari atau menyebut isi/tokoh stiker dan tanpa bertanya balik.',
                   context,
                 )
               ).trim();

@@ -1330,9 +1330,9 @@ const MEDIA_NARRATION_RE = new RegExp(
     // FIX 21 Sep 13:24: "Kucingnya lucu banget!" LOLOS guard lama karena daftar ekspresi
     // hanya berisi VERBA (ketawa, nangis, ...). Menyebut subjek media + SIFAT
     // ("kucingnya lucu/imut/gemes") juga narasi isi kiriman -> kata sifat ditambahkan.
-    String.raw`\b(?:kucing|anjing|monyet|bebek|ayam|tikus|hamster|kelinci|burung|panda|beruang|kodok|katak|ikan|kuda|sapi|kambing|gajah|singa|harimau|macan|serigala|rubah|penguin|pinguin|dino|dinosaurus|karakter|tokoh|maskot|boneka|mem|meme)(?:nya)?\s+(?:(?:malah|lagi|sedang|udah|sudah|masih|emang|memang|juga|tuh|itu|ini)\s+)?(?:ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|joget|dansa|berdiri|duduk|terbang|berlari|ngambek|marah|melotot|ngantuk|tidur|lucu|imut|gemes|nggemes|menggemaskan|keren|gokil|aneh|jelek|bagus)\b`,
+    String.raw`\b(?:kucing|anjing|monyet|bebek|ayam|tikus|hamster|kelinci|burung|panda|beruang|kodok|katak|ikan|kuda|sapi|kambing|gajah|singa|harimau|macan|serigala|rubah|penguin|pinguin|dino|dinosaurus|karakter|tokoh|maskot|boneka|mem|meme)(?:nya)?\s+(?:(?:malah|lagi|sedang|udah|sudah|masih|emang|memang|juga|tuh|itu|ini)\s+)?(?:ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|joget|dansa|berdiri|duduk|terbang|berlari|ngambek|marah|melotot|ngantuk|tidur|lucu|imut|gemes|nggemes|menggemaskan|keren|gokil|aneh|jelek|bagus|ngacung(?:in|kan)?|mengacung(?:kan)?|acung(?:in|kan)?|ngasih|pegang|memegang|nunjuk|menunjuk|nyengir|mewek|cemberut|kesel|kesal|kaget)\b`,
     // "si/sang <subjek> + ekspresi" — "Si kucing ketawa"
-    String.raw`\b(?:si|sang)\s+[a-z]+\s+(?:(?:malah|lagi|sedang|udah|sudah|masih)\s+)?(?:ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|joget|dansa|melotot|ngambek)\b`,
+    String.raw`\b(?:si|sang)\s+[a-z]+\s+(?:(?:malah|lagi|sedang|udah|sudah|masih|kelihatan|tampak|terlihat|kliatan)\s+)?(?:ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|joget|dansa|melotot|ngambek|marah|kesel|kesal|kaget|sedih|ngacung(?:in|kan)?|mengacung(?:kan)?|ngasih|kasih|jempol)\b`,
     // "(gambar|foto|stiker|video|mem|meme)nya + kata tampil/berisi" (dokumen DIKECUALIKAN —
     // user mengirim dokumen memang untuk dibaca/diringkas, itu fungsi bukan narasi).
     String.raw`\b(?:gambar|foto|stiker|video|mem|meme|tangkapan\s+layar)(?:nya|mu)?\s*(?:ini|itu|tersebut)?\s*(?:menampilkan|memperlihatkan|menunjukkan|berisi|memuat|menggambarkan)\b`,
@@ -1359,6 +1359,28 @@ export function stripMediaNarration(text: string): string {
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+const STIKER_REAKSI_VISUAL_RE = new RegExp(
+  [
+    // 1) Hewan / karakter / meme + aksi / gesture / ekspresi / sifat (termasuk kata warna/ukuran opsional)
+    String.raw`\b(?:kucing|anjing|monyet|bebek|ayam|tikus|hamster|kelinci|burung|panda|beruang|kodok|katak|ikan|kuda|sapi|kambing|gajah|singa|harimau|macan|serigala|rubah|penguin|pinguin|dino|dinosaurus|karakter|tokoh|maskot|boneka|mem|meme)(?:nya)?(?:\s+(?:oren|putih|hitam|kecil|gede|besar|itu|ini|tuh)){0,2}\s+(?:(?:malah|lagi|sedang|udah|sudah|masih|emang|memang|juga|tuh|itu|ini|kelihatan|tampak|terlihat|kliatan)\s+)?(?:ngacung(?:in|kan)?|mengacung(?:kan)?|acung(?:in|kan)?|ngasih|kasih|angkat|mengangkat|pegang|memegang|nunjuk|menunjuk|jempol|ketawa|tertawa|ngakak|senyum|tersenyum|nyengir|nangis|menangis|mewek|cemberut|joget|dansa|marah|kesel|kesal|sedih|kaget|melotot|ngambek|lucu|imut|gemes|kocak|serem|setuju|mantap)\b`,
+    // 2) "si/sang <subjek> + aksi/ekspresi"
+    String.raw`\b(?:si|sang)\s+[a-z]+\s+(?:(?:malah|lagi|sedang|udah|sudah|masih|kelihatan|tampak|terlihat|kliatan)\s+)?(?:ngacung(?:in|kan)?|mengacung(?:kan)?|acung(?:in|kan)?|ngasih|kasih|jempol|ketawa|tertawa|ngakak|senyum|tersenyum|nangis|menangis|mewek|marah|kesel|kesal|sedih|kaget|melotot|ngambek|lucu|imut|kocak|serem)\b`,
+    // 3) "stiker/gambar/meme(nya/mu) + hewan/tokoh/ekspresi/kata sifat/aksi"
+    String.raw`\b(?:stiker|gambar|meme)(?:nya|mu)?\s+(?:ini|itu|tersebut\s+)?(?:(?:malah|lagi|sedang|udah|sudah|masih|kelihatan|tampak|terlihat|kliatan)\s+)?(?:kucing|anjing|monyet|bebek|ayam|tikus|hamster|kelinci|burung|panda|beruang|kodok|katak|dino|boneka|marah|kesel|kesal|sedih|ketawa|ngakak|senang|senyum|nangis|kaget|ngambek|lucu|imut|gemes|kocak|serem|keren|gokil|ngasih|ngacungin)\b`,
+    // 4) "ekspresi/tatapan/muka/wajah/pose/gaya/gesture/tangan + subjek/stiker"
+    String.raw`\b(?:ekspresi|tatapan|muka|wajah|pose|gaya|gesture|tangan)(?:nya)?\s+(?:kucing|anjing|monyet|bebek|panda|beruang|dino|tokoh|karakter|stiker|meme)(?:nya)?\b`,
+    // 5) Narasi gesture jempol literal ("ngacungin jempol", "ngasih jempol", dll)
+    String.raw`\b(?:ngacung(?:in|kan)?|mengacung(?:kan)?|acung(?:in|kan)?|ngasih|kasih|mengangkat|angkat)\s+jempol\b`,
+  ].join('|'),
+  'i',
+);
+
+/** Deteksi balasan yang masih mengomentari/mereact visual tokoh/hewan/gesture stiker alih-alih membalas maksud obrolannya. */
+export function adalahReaksiVisualStiker(reply: string): boolean {
+  if (!reply || !reply.trim()) return false;
+  return MEDIA_NARRATION_RE.test(reply) || STIKER_REAKSI_VISUAL_RE.test(reply);
 }
 
 /**
@@ -5059,42 +5081,39 @@ export async function describeImage(
 
   let promptText: string;
 
+  // ── SUDUT PANDANG (temuan produksi 16 Okt 2026, Telegram #4517) ──
+  // KASUS NYATA: user mengirim stiker kucing terbang, lalu bot membalas
+  // "Gaya terbangmu itu level dewa ya?" — kalimat itu DITUJUKAN KEPADA bot,
+  // bukan balasan bot. Karena dikirim sebagai pesan bot, user melihat bot
+  // bertanya soal gaya terbangnya sendiri = tidak nyambung.
+  // AKAR: model menulis dari sudut pandang USER (menyapa "kamu"), bukan dari
+  // sudut pandangnya sendiri sebagai pihak yang membalas.
+  //
+  // CATATAN: sengaja TANPA contoh kalimat balasan. Memberi contoh siap pakai
+  // membuat model menyalinnya mentah-mentah (bot jadi template). Prinsipnya
+  // saja — kalimatnya biar model susun sendiri secara dinamis.
   if (isSticker) {
     promptText = [
       '[PENGGUNA MENGIRIM STIKER]',
       caption && caption.trim() ? `Emoji/catatan stiker: ${caption.trim()}` : '',
+      'PRINSIP: Anggap stiker ini PESAN/UCAPAN dari temanmu, BUKAN gambar untuk dikomentari. Balas langsung MAKSUD obrolannya seperti chat biasa.',
       'CARA BACA STIKER (urutan WAJIB):',
-      '(1) TEKS/CAPTION — kalau ADA tulisan, ITU makna utamanya. Baca apa adanya dan pakai sebagai dasar balasan. Jangan bilang tidak terbaca.',
-      '(2) KONSEP/ISI — kalau TIDAK ada tulisan, pahami maksud gambarnya (mis. kucing pegang mawar = ungkapan sayang).',
-      '(3) EKSPRESI — kalau masih ambigu, pakai ekspresi (senang/sedih/kesal) yang cocok dengan suasana obrolan.',
-      'ATURAN KERAS (salah satu dilanggar = jawaban GAGAL):',
-      'a. DILARANG bilang tulisan "kecil / susah dibaca / buram / tidak jelas". Kalau ada tulisan, BACA dan PAKAI.',
-      'b. DILARANG mengarang objek, makhluk, atau kejadian yang TIDAK terlihat di stiker. Amati WAJAH dulu: mata datar = datar/santai, bukan kaget; mata melotot = kaget. Kalau ragu, jangan sebut apa pun yang spesifik.',
-      'c. DILARANG menarasikan isi ("Stikernya menampilkan..."). Tanggapi MAKNANYA, jangan dilaporkan — dia sudah tahu isinya.',
-      'd. DILARANG bertanya balik ("maksudnya apa?", "stiker apa itu?"). Kamu yang melihat stiker itu — langsung bereaksi.',
-      'e. DILARANG balasan bernada asisten ("Tidak ada masalah", "Saya akan membantu Anda", "Ada yang bisa saya bantu").',
-      'f. DILARANG mengarang cerita/dongeng (kompetisi, tren TikTok, profesi, tempat fiktif).',
-      'g. Amati dulu dalam hati: objek apa, ekspresinya bagaimana, maknanya apa. Baru susun reaksi.',
-      // ── SUDUT PANDANG (temuan produksi 16 Okt 2026, Telegram #4517) ──
-      // KASUS NYATA: user mengirim stiker kucing terbang, lalu bot membalas
-      // "Gaya terbangmu itu level dewa ya?" — kalimat itu DITUJUKAN KEPADA bot,
-      // bukan balasan bot. Karena dikirim sebagai pesan bot, user melihat bot
-      // bertanya soal gaya terbangnya sendiri = tidak nyambung.
-      // AKAR: model menulis dari sudut pandang USER (menyapa "kamu"), bukan dari
-      // sudut pandangnya sendiri sebagai pihak yang membalas.
-      //
-      // CATATAN: sengaja TANPA contoh kalimat balasan. Memberi contoh siap pakai
-      // membuat model menyalinnya mentah-mentah (bot jadi template). Prinsipnya
-      // saja — kalimatnya biar model susun sendiri secara dinamis.
-      'h. SUDUT PANDANG: kamu yang MEMBALAS, jadi tulis reaksimu sendiri terhadap stiker itu. DILARANG menulis kalimat yang ditujukan KEPADA kamu, DILARANG bertanya untuk dirimu sendiri, dan DILARANG mengulang kalimat dia.',
+      '(1) TEKS/CAPTION — kalau ADA tulisan, ITU makna utamanya. Baca apa adanya dan balas pesannya.',
+      '(2) KONSEP/ISI — kalau TIDAK ada tulisan, pahami maksudnya (jempol = oke/sip; ketawa = sedang tertawa; marah = sedang kesal; pegang mawar = sayang).',
+      '(3) EKSPRESI — kalau masih ambigu, ikuti suasana obrolan terakhir.',
+      'ATURAN KERAS:',
+      'a. DILARANG bilang tulisan "kecil / susah dibaca / buram / tidak jelas".',
+      'b. DILARANG mengarang objek, makhluk, atau kejadian yang TIDAK terlihat di stiker (mata datar = datar/santai, bukan kaget; mata melotot = kaget).',
+      'c. DILARANG mengomentari/menyebut wujud, hewan, tokoh, atau gesture stikernya ("kucingnya ngacungin jempol", "anjingnya lucu", "stikernya marah"), KECUALI user bertanya isi stikernya di caption.',
+      'd. DILARANG bertanya balik ("maksudnya apa?", "stiker apa itu?"). Langsung balas.',
+      'e. DILARANG nada asisten ("Tidak ada masalah", "Ada yang bisa saya bantu") atau cerita fiktif.',
+      'f. SUDUT PANDANG: kamu yang MEMBALAS maksud stiker itu. DILARANG menulis kalimat yang ditujukan KEPADA kamu atau mengulang kalimat dia.',
       'BENTUK BALASAN:',
-      '1. SATU kalimat pendek santai (5-12 kata). DILARANG dua paragraf.',
-      '2. Nyambung dengan makna stiker + obrolan terakhir.',
-      '3. Stiker sindiran/ejekan -> respons sadar-diri santai (JANGAN tertawa). Stiker lucu -> boleh ikut tertawa. Stiker kesal -> akui dengan tenang.',
-      '4. BOLEH membalas dengan stiker: sisipkan SATU tag [[sticker:<emoji>]] di AKHIR balasan, emoji yang cocok dengan makna stiker.',
-      '5. Maksimal 1 emoji wajar, atau tanpa emoji. DILARANG emoji robot/jejak kaki.',
-      '6. Bila benar-benar tidak yakin: reaksi netral hangat yang singkat — jauh lebih baik daripada salah tebak dengan yakin.',
-      'Tambahkan [[sticker_read:teks yang benar-benar terlihat]] di akhir, terpisah dari reaksimu. Bila tidak ada tulisan yang bisa dipastikan, pakai [[sticker_read:]]. Ini metadata isi kiriman, bukan kalimat balasan.',
+      '1. SATU kalimat pendek santai (2-12 kata) nyambung dengan maksud stiker + obrolan terakhir.',
+      '2. Jempol -> balas setuju santai. Ketawa -> balas obrolan/ikut ketawa. Marah -> tanggapi tenang. Sindiran -> sadar-diri santai.',
+      '3. BOLEH membalas dengan stiker: sisipkan SATU tag [[sticker:<emoji>]] di AKHIR balasan (maks 1 emoji wajar, tanpa emoji robot).',
+      '4. Bila ragu: balasan netral hangat yang singkat.',
+      'Akhiri dengan metadata [[sticker_read:teks terlihat]] (atau [[sticker_read:]] bila tanpa teks).',
     ].filter(Boolean).join('\n');
   } else if (isPdf) {
     promptText = caption && caption.trim()
@@ -5260,27 +5279,49 @@ export async function describeImage(
         undefined,
       );
 
+  const mintaBacaStiker =
+    /\b(?:isi(?:nya)?|tulisan(?:nya)?|teks(?:nya)?|kata(?:-kata)?(?:nya)?|baca|bacain|bacakan|coba\s+lihat|apa\s+tulisannya)\b/i.test(caption || '') ||
+    /\b(?:isi|tulisan|teks|kata|baca)\b[^.!?\n]{0,20}\b(?:stiker|stikernya|gambar|gambarnya|ini)\b/i.test(caption || '');
+  const userTanyaIsiStiker = mintaBacaStiker || userAskedAboutMedia(caption);
+  const reaksiVisualAwal =
+    isSticker && !userTanyaIsiStiker && (adalahReaksiVisualStiker(textLengkap) || adalahReaksiVisualStiker(reply));
+  const perluRegenVisual = isSticker && !userTanyaIsiStiker && adalahReaksiVisualStiker(reply);
+  const retryMessages: ChatMsg[] =
+    reaksiVisualAwal || perluRegenVisual
+      ? [
+          ...messages,
+          ...(textLengkap.trim() ? [{ role: 'assistant' as const, content: textLengkap.trim() }] : []),
+          {
+            role: 'user' as const,
+            content:
+              'Balasanmu barusan mengomentari isi, tokoh, hewan, atau gesture stikernya. Jangan react ke tampilan stikernya. Perlakukan stiker itu sebagai pesan singkat dari temanmu di chat, lalu BALAS langsung maksud percakapannya dalam 1 kalimat pendek santai tanpa menyebut hewan, tokoh, ekspresi wajah, atau kata stiker/jempol.',
+          },
+        ]
+      : messages;
+
   // Regenerasi tetap memakai gambar dan konteks yang sama, bukan tebakan teks.
-  if (!reply.trim()) {
+  if (!reply.trim() || perluRegenVisual) {
+    if (perluRegenVisual) reply = '';
     try {
-      const regen = await chatRetry(messages, true, ctx?.chatId);
+      const regen = await chatRetry(retryMessages, true, ctx?.chatId);
       const regenRead = extractStickerReadTag(regen.text);
       const regenText = sanitizeAssistantOutput(regenRead.text, mediaUserPrompt, recentOpenings, true).trim();
+      const visualAman = (t: string) => !isSticker || userTanyaIsiStiker || !adalahReaksiVisualStiker(t);
       // FIX 21 Sep 13:24: hasil regen TIDAK boleh lewat stripMediaNarration lagi.
-      // Regen sudah diinstruksikan eksplisit sebagai reaksi (bukan narasi); menerapkan
+      // Regen sudah diinstruksikan eksplisit sebagai balasan (bukan narasi); menerapkan
       // guard yang sama dua kali membuat balasan sah ikut terpotong jadi KOSONG
       // (temuan uji: stiker sintetis -> bot tidak membalas apa pun).
-      if (regenText && !MEDIA_NARRATION_RE.test(regenText)) {
+      if (regenText && !MEDIA_NARRATION_RE.test(regenText) && visualAman(regenText)) {
         reply = regenText;
         via = regen.via;
         tokens = regen.tokens;
         stickerDariModel = extractStickerTag(regen.text).sticker;
         stickerText = regenRead.stickerText ?? stickerText;
       } else if (regenText) {
-        // Narasi terdeteksi: buang hanya kalimat naratifnya, sisakan reaksi bila ada.
+        // Narasi/komentar visual terdeteksi: buang hanya kalimat naratifnya, sisakan balasan bila ada.
         const kept = regenText
           .split(/(?<=[.!?\n])\s+/)
-          .filter((s) => s.trim() && !MEDIA_NARRATION_RE.test(s))
+          .filter((s) => s.trim() && !MEDIA_NARRATION_RE.test(s) && visualAman(s))
           .join(' ')
           .trim();
         if (kept) {
@@ -5303,9 +5344,6 @@ export async function describeImage(
   //
   // Bila user MEMINTA membaca isi stiker tetapi bot mengaku tidak bisa, itu GAGAL.
   // Solusi: buang kalimat "tidak bisa membaca", sisakan/minta jawaban yang benar.
-  const mintaBacaStiker =
-    /\b(?:isi(?:nya)?|tulisan(?:nya)?|teks(?:nya)?|kata(?:-kata)?(?:nya)?|baca|bacain|bacakan|coba\s+lihat|apa\s+tulisannya)\b/i.test(caption || '') ||
-    /\b(?:isi|tulisan|teks|kata|baca)\b[^.!?\n]{0,20}\b(?:stiker|stikernya|gambar|gambarnya|ini)\b/i.test(caption || '');
   // HARUS menyebut MEDIA (tulisan/teks/stiker/gambar) DAN kata tak-terbaca.
   // Regex lama hanya butuh kata umum ("kecil", "kurang jelas") → balasan SAH
   // seperti "kucing kecil" / "ekspresinya kurang jelas" ikut TERHAPUS.
@@ -5323,7 +5361,6 @@ export async function describeImage(
     reply = sisaKalimat.length >= 10 ? sisaKalimat : '';
     if (!reply) console.warn('[skills] Bot mengaku tidak bisa membaca teks stiker — diregenerasi.');
   }
-  void mintaBacaStiker;
 
   if (isSticker) {
     // 1. Bersihkan pembuka template klise stiker
@@ -5392,13 +5429,14 @@ export async function describeImage(
     // bila penegak mengosongkan, WAJIB dibangkitkan ulang oleh AI.
     if (isSticker && !reply.trim()) {
       try {
-        const regen2 = await chatRetry(messages, true, ctx?.chatId);
+        const regen2 = await chatRetry(retryMessages, true, ctx?.chatId);
         const regenRead2 = extractStickerReadTag(regen2.text);
         const teks2 = sanitizeAssistantOutput(regenRead2.text, mediaUserPrompt, recentOpenings, true).trim();
-        // Terima hanya bila hasilnya BUKAN narasi media dan BUKAN prompt-echo.
+        // Terima hanya bila hasilnya BUKAN narasi media/komentar visual dan BUKAN prompt-echo.
         if (
           teks2 &&
           !MEDIA_NARRATION_RE.test(teks2) &&
+          (userTanyaIsiStiker || !adalahReaksiVisualStiker(teks2)) &&
           !echoInstruksi.test(teks2) &&
           !tanyaBalikStiker.test(teks2) &&
           !metaMenyerah.test(teks2)
