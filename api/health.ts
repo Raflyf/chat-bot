@@ -10,7 +10,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../src/db.js';
 import { config } from '../src/env.js';
-import { statistikKirimWa } from '../src/wa_monitor.js';
+import { statistikKirimWa, statusAutoMaintenanceWa, periksaHealthStatusMeta } from '../src/wa_monitor.js';
 
 const MULAI = Date.now();
 
@@ -55,14 +55,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     sehat = false;
   }
 
-  // 3. Status WhatsApp (mode pemeliharaan / operasional).
+  // 3. Status WhatsApp (mode pemeliharaan manual/otomatis atau operasional).
   //    PENTING: maintenance TIDAK membuat `sehat=false` — bot tetap melayani
   //    Telegram dengan normal. Ini hanya penanda status agar landing page dan
   //    monitoring tidak mengklaim "Online 24/7" untuk WhatsApp saat terblokir.
-  const waMaintenance = config.whatsappMaintenanceMode;
+  const manualMaint = config.whatsappMaintenanceMode;
+  if (!manualMaint) {
+    await periksaHealthStatusMeta();
+  }
+  const autoMaint = manualMaint
+    ? { aktif: false, alasan: '', sampai: null }
+    : await statusAutoMaintenanceWa();
+  const waMaintenance = manualMaint || autoMaint.aktif;
+  const waMaintSumber: 'manual' | 'otomatis' | null = manualMaint
+    ? 'manual'
+    : autoMaint.aktif
+      ? 'otomatis'
+      : null;
   cek.whatsapp = {
     ok: !waMaintenance,
-    detail: waMaintenance ? 'pemeliharaan (payment method Meta)' : 'operasional',
+    detail: manualMaint
+      ? 'pemeliharaan (manual)'
+      : autoMaint.aktif
+        ? `pemeliharaan otomatis (${autoMaint.alasan || 'Meta gangguan'})`
+        : 'operasional',
   };
 
   // 4. Statistik pengiriman WhatsApp (monitor kegagalan beruntun).
@@ -87,6 +103,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     uptime_detik: Math.round((Date.now() - MULAI) / 1000),
     versi: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || 'lokal',
     whatsapp_maintenance: waMaintenance,
+    whatsapp_maintenance_sumber: waMaintSumber,
+    ...(autoMaint.aktif ? { whatsapp_maintenance_alasan: autoMaint.alasan } : {}),
     whatsapp_kirim: waKirim,
     cek,
   });

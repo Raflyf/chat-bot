@@ -39,7 +39,8 @@
     var pill = el.closest ? el.closest('.status-pill') : null;
     if (pill) {
       pill.classList.add('status-pill--warn');
-      pill.setAttribute('title', 'WhatsApp sedang pemeliharaan (payment method Meta). Telegram aktif normal.');
+      var alasan = window.__waMaintenanceAlasan ? ' (' + window.__waMaintenanceAlasan + ')' : '';
+      pill.setAttribute('title', 'WhatsApp sedang pemeliharaan' + alasan + '. Telegram aktif normal.');
     }
   }
 
@@ -50,6 +51,7 @@
         .then(function (d) {
           if (!d || !d.whatsapp_maintenance) return;
           window.__waMaintenance = true;
+          window.__waMaintenanceAlasan = d.whatsapp_maintenance_alasan || '';
           terapkan();
         })
         .catch(function () { /* status opsional: jangan ganggu halaman */ });

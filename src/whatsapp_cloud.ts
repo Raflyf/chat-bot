@@ -16,8 +16,16 @@ import { saveReminderToDb, checkDueReminders, nomorWhatsApp } from './remind.js'
 import { tanganiPencatatan } from './notes.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
 import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
-// Monitor pengiriman: deteksi kegagalan beruntun -> beri tahu pemilik via Telegram.
-import { catatHasilKirimWa } from './wa_monitor.js';
+// Monitor pengiriman: deteksi kegagalan Meta -> auto-maintenance & notif pemilik via Telegram.
+import {
+  catatHasilKirimWa,
+  catatHasilKirimMeta,
+  catatStatusDeliveryMeta,
+  klasifikasiErrorMeta,
+  periksaHealthStatusMeta,
+  statusAutoMaintenanceWa,
+  type MetaErrorInfo,
+} from './wa_monitor.js';
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
 const PROMPT_VERSION = 'v0.66.0';
@@ -141,6 +149,7 @@ export async function sendWhatsAppCloudMessageSafe(
   // sukses (jadwal dimajukan) -> hilang permanen.
   // SEKARANG: mengembalikan true bila SEMUA chunk terkirim, false bila ada gagal.
   let semuaBerhasil = true;
+  let lastMetaErr: MetaErrorInfo | undefined;
 
   for (const chunk of chunks) {
     try {
@@ -168,6 +177,16 @@ export async function sendWhatsAppCloudMessageSafe(
       if (!res.ok) {
         const errText = await res.text();
         console.error(`[wa-cloud] Gagal kirim pesan: ${res.status} ${errText}`);
+        let metaCode: number | undefined;
+        let metaMsg = errText.slice(0, 200);
+        try {
+          const parsed = JSON.parse(errText) as { error?: { code?: number; message?: string } };
+          if (typeof parsed?.error?.code === 'number') metaCode = parsed.error.code;
+          if (parsed?.error?.message) metaMsg = parsed.error.message;
+        } catch {
+          // bukan JSON
+        }
+        lastMetaErr = { httpStatus: res.status, metaCode, message: metaMsg };
         semuaBerhasil = false;
       } else {
         const data = (await res.json().catch(() => null)) as { messages?: Array<{ id?: string }> } | null;
@@ -177,6 +196,7 @@ export async function sendWhatsAppCloudMessageSafe(
       }
     } catch (err) {
       console.error('[wa-cloud] Network error kirim pesan:', err);
+      lastMetaErr = { networkError: true, message: String((err as Error)?.message ?? err) };
       semuaBerhasil = false;
     }
 
@@ -184,14 +204,17 @@ export async function sendWhatsAppCloudMessageSafe(
       await new Promise((r) => setTimeout(r, 200));
     }
   }
-  // Catat hasil untuk deteksi kegagalan beruntun (fire-and-forget; tidak menambah
-  // latensi balasan dan tidak pernah melempar). Pemilik diberi tahu lewat Telegram
-  // bila gagal berulang — inilah yang membuat blokir Meta (mis. payment method)
-  // TIDAK lagi lewat begitu saja tanpa ada yang sadar.
-  void catatHasilKirimWa(
-    semuaBerhasil,
-    semuaBerhasil ? undefined : 'Meta menolak atau tidak mengembalikan id pesan',
-  );
+  // Catat hasil HANYA dari respons Meta Graph API (bukan error AI/LLM).
+  if (semuaBerhasil) {
+    void catatHasilKirimWa(true);
+    await catatHasilKirimMeta(true);
+  } else {
+    const kategori = klasifikasiErrorMeta(lastMetaErr);
+    if (kategori !== 'abaikan') {
+      void catatHasilKirimWa(false, lastMetaErr?.message || 'Meta menolak atau tidak mengembalikan id pesan');
+    }
+    await catatHasilKirimMeta(false, lastMetaErr);
+  }
   return semuaBerhasil;
 }
 
@@ -330,6 +353,10 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
   const entries = body.entry;
   if (!Array.isArray(entries)) return;
 
+  // Probe ringan health_status Meta (cache 5 menit, fire-and-forget) untuk
+  // menangkap blokir akun (141006) meski POST /messages masih membalas HTTP 200.
+  void periksaHealthStatusMeta();
+
   // ── LAZY-CHECK PENGINGAT (DITAMBAHKAN 04 Okt 2026) ──
   // KENAPA DI SINI (dan bukan di whatsapp_baileys.ts):
   // PRODUKSI memakai WhatsApp CLOUD API (webhook Meta -> api/whatsapp.ts ->
@@ -378,6 +405,10 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           } else {
             console.log(`[wa-cloud] Meta delivery status: ${st.status} (id: ${st.id})`);
           }
+          await catatStatusDeliveryMeta(
+            String(st.status || ''),
+            Array.isArray(st.errors) ? st.errors : undefined,
+          );
         }
       }
 
@@ -549,6 +580,18 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 `dan TIDAK disimpan sebagai balasan. msg_id=${messageId}`,
             );
           }
+          return;
+        }
+
+        // ── AUTO-MAINTENANCE OTOMATIS SAAT META TIDAK MERESPON / ERROR ──
+        // Aktif otomatis hanya dari kegagalan Meta Cloud API (bukan error model AI).
+        // Mencegah pembakaran kuota AI saat Meta sedang menolak / gangguan.
+        const autoMaint = await statusAutoMaintenanceWa();
+        if (autoMaint.aktif) {
+          console.warn(
+            `[wa-cloud] AUTO-MAINTENANCE aktif (${autoMaint.alasan || 'Meta tidak merespon/error'}). ` +
+              `Melewati AI untuk hemat kuota. msg_id=${messageId}`,
+          );
           return;
         }
 
