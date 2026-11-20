@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { sanitizeAssistantOutput } from './skills.js';
 import pino from 'pino';
@@ -284,9 +285,14 @@ export async function startWhatsApp(): Promise<void> {
           void startWhatsApp();
         }, jeda);
       } else {
-        console.warn('[whatsapp] Sesi logout permanen oleh pengguna. Membersihkan sesi Supabase...');
+        console.warn('[whatsapp] Sesi logout permanen oleh pengguna. Membersihkan sesi Supabase dan direktori lokal...');
         await clearSessionInSupabase();
-        console.log('[whatsapp] Sesi telah direset. Silakan restart bot untuk scan QR baru.');
+        try {
+          fs.rmSync(sessionDir, { recursive: true, force: true });
+        } catch (e) {
+          console.error('[whatsapp] Gagal menghapus sessionDir lokal:', e);
+        }
+        console.log('[whatsapp] Sesi telah direset. Silakan restart bot untuk scan QR atau pairing baru.');
       }
     }
   });
