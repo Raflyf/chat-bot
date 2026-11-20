@@ -5041,13 +5041,14 @@ export function emojiStikerDariMakna(teks: string): string | null {
   // Emoji bermood 'kesal'/'sedih' dikecualikan (bisa menyinggung / dramatis).
   // Verifikasi: skrip `scratch` memastikan tiap emoji di bawah ini AMAN.
   const peta: Array<[RegExp, string]> = [
-    [/\b(?:ngakak|ketawa|tertawa|lucu|haha|wkwk|gokil|receh|ngocol)\b/, '😹'],
-    [/\b(?:kaget|terkejut|syok|shock|panik|kaget|melongo)\b/, '😱'],
+    [/(?:\b(?:ngakak|ketawa|tertawa|lucu|haha|wkwk|gokil|receh|ngocol)\b|[😂🤣😆😹])/u, '😹'],
+    [/\b(?:kaget|terkejut|syok|shock|panik|melongo|sangka)\b/, '😱'],
     [/\b(?:malu|grogi|salah tingkah|canggung|geer)\b/, '😳'],
     [/\b(?:sayang|cinta|gemas|mesra|manis|cium)\b/, '😍'],
     [/\b(?:capek|lelah|ngantuk|tidur|rebahan|males|malas|bosen)\b/, '😴'],
     [/\b(?:senyum|senang|bahagia|happy|gembira|ceria|semangat)\b/, '😊'],
-    [/\b(?:santai|tenang|aman|oke|ok|sip|setuju|jempol|bagus|mantap)\b/, '👍'],
+    [/\b(?:dongo|bego|tolol|gaje|brisik|berisik|tua|diem|diam|nuduh|dituduh|debat|mual|jahat|nyindir|sindir)\b/, '🙄'],
+    [/\b(?:santai|tenang|aman|oke|ok|sip|setuju|jempol|bagus|mantap|yaudah|iya|iye|bener|betul)\b/, '👍'],
     [/\b(?:bingung|heran|mikir|berpikir|pusing|hah)\b/, '😐'],
     [/\b(?:kabur|ngacir|pergi|berangkat|jalan|gas)\b/, '😅'],
     [/\b(?:main|game|mabar|mainan)\b/, '😁'],
@@ -5586,7 +5587,7 @@ export async function describeImage(
   // diperbolehkan membalas dengan stiker juga".
   let stickerFinal = stickerDariModel;
   if (isSticker && !stickerFinal) {
-    stickerFinal = emojiStikerDariMakna(`${caption ?? ''} ${reply}`);
+    stickerFinal = emojiStikerDariMakna(`${caption ?? ''} ${stickerText ?? ''} ${reply}`);
   }
   return { reply, via, tokens, sticker: stickerFinal, stickerText, imageDesc };
 }

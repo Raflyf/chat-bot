@@ -13,7 +13,15 @@
  * - Cooldown per chat: maksimal 2 stiker per 10 menit.
  */
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { STICKER_MANIFEST, EDGY_STICKER_EMOJIS } from './sticker-manifest.js';
+
+const LOCAL_STICKERS_DIRS = [
+  path.resolve(process.cwd(), 'public', 'stickers'),
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'stickers'),
+];
 
 const STICKER_COOLDOWN_MS = 10 * 60 * 1000;
 // DINAIKKAN 2 -> 4 (temuan 08 Okt 2026): dengan 2/10 menit + jeda 5 balasan,
@@ -171,7 +179,8 @@ export function stickerFitsMood(emoji: string, userText: string | undefined, isP
   //   3. Mood 'sedih' (menahan nangis) DITOLAK: bisa terasa dramatis berlebihan.
   //   Sisanya (lucu/sindir/hangat/sopan/netral) DIIZINKAN — itu semua wajar
   //   sebagai reaksi stiker.
-  const dariStiker = /^\s*\[Stiker\s*(?:WhatsApp|Telegram)/i.test(t) || /^\s*stiker\s*$/i.test(t);
+  const dariStiker =
+    /^\s*\[Stiker(?:\s+Animasi)?\s*(?:WhatsApp|Telegram)/i.test(t) || /^\s*stiker\s*$/i.test(t);
   if (dariStiker) {
     return mood !== 'kesal' && mood !== 'sedih';
   }
@@ -228,7 +237,7 @@ export function hasStickerForEmoji(emoji: string): boolean {
   return stickerFileForEmoji(emoji) !== null;
 }
 
-/** Basis URL publik aset stiker (Vercel menyediakan env ini otomatis di serverless). */
+/** Basis URL publik aset stiker (Vercel menyediakan env ini otomatis di serverless; VPS fallback ke domain produksi). */
 function assetBaseUrl(): string {
   const explicit = process.env.STICKER_BASE_URL || '';
   if (explicit) return explicit.replace(/\/+$/, '');
@@ -236,7 +245,7 @@ function assetBaseUrl(): string {
   if (prod) return `https://${prod}`;
   const url = process.env.VERCEL_URL || '';
   if (url) return `https://${url}`;
-  return '';
+  return 'https://free-chatbot-ai.vercel.app';
 }
 
 /** URL publik file stiker untuk emoji (null bila tidak ada aset / base URL). */
@@ -248,7 +257,7 @@ export function stickerPublicUrl(emoji: string): string | null {
   return `${base}/stickers/${file}`;
 }
 
-/** Ambil buffer stiker dari URL publik (dengan cache in-memory per instance). */
+/** Ambil buffer stiker dari disk lokal `public/stickers/` (0ms di VPS/lokal) atau fallback URL publik. */
 const stickerBufferCache = new Map<string, Buffer>();
 
 export async function fetchStickerBuffer(emoji: string): Promise<Buffer | null> {
@@ -257,6 +266,23 @@ export async function fetchStickerBuffer(emoji: string): Promise<Buffer | null> 
   const cached = stickerBufferCache.get(file);
   if (cached) return cached;
 
+  // 1. Fast-path lokal (VPS Baileys & dev lokal): baca langsung dari public/stickers/<file>
+  if (!process.env.STICKER_BASE_URL) {
+    for (const dir of LOCAL_STICKERS_DIRS) {
+      try {
+        const localBuf = await fs.readFile(path.join(dir, file));
+        if (localBuf && localBuf.length > 0) {
+          if (stickerBufferCache.size > 60) stickerBufferCache.clear();
+          stickerBufferCache.set(file, localBuf);
+          return localBuf;
+        }
+      } catch {
+        // lanjut cek direktori berikutnya atau fallback HTTP
+      }
+    }
+  }
+
+  // 2. Fallback HTTP (serverless Vercel atau bila STICKER_BASE_URL diset eksplisit)
   const url = stickerPublicUrl(emoji);
   if (!url) return null;
   try {

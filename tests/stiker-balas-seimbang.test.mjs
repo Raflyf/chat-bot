@@ -19,7 +19,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { stickerFitsMood, stickerMood, hasStickerForEmoji } from '../src/stickers.js';
+import { stickerFitsMood, stickerMood, hasStickerForEmoji, fetchStickerBuffer } from '../src/stickers.js';
 import { emojiStikerDariMakna } from '../src/skills.js';
 
 const SKILLS = fs.readFileSync(new URL('../src/skills.ts', import.meta.url), 'utf8');
@@ -62,4 +62,12 @@ test('stiker: fallback emoji HANYA yang lolos filter', () => {
 test('bocor: "aku jawab singkat / tetap nyambung" DIBUANG', () => {
   assert.ok(/singkat/.test(SKILLS), 'penegak harus menangkap "jawab singkat"');
   assert.ok(/nyambung\\s\+teru\?ss\?/.test(SKILLS), 'penegak harus menangkap "nyambung terus"');
+});
+
+test('stiker VPS/Baileys: fetchStickerBuffer membaca file .webp lokal meski tanpa env Vercel, dan stickerFitsMood mengenali stiker animasi grup', async () => {
+  const buf = await fetchStickerBuffer('👍');
+  assert.ok(Buffer.isBuffer(buf) && buf.length > 100, 'fetchStickerBuffer wajib memuat buffer .webp dari public/stickers/');
+  assert.ok(stickerFitsMood('🙄', '[Stiker Animasi WhatsApp dari Rflyyyf]'), 'stiker animasi grup harus dikenali sebagai dariStiker');
+  assert.equal(emojiStikerDariMakna('brisik lu tua'), '🙄');
+  assert.equal(emojiStikerDariMakna('siapa sangka'), '😱');
 });
