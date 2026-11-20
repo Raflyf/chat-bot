@@ -82,3 +82,29 @@ export function nomorWhatsApp(chatId: string): string {
     .replace(/^\+/, '')
     .replace(/\D/g, '');
 }
+
+/** Prefix kunci riwayat obrolan khusus WhatsApp Baileys (terpisah dari Cloud API). */
+export const BAILEYS_CHAT_PREFIX = 'wa_baileys_';
+
+/** Kunci riwayat obrolan khusus Baileys (`wa_baileys_<nomor>`), terpisah dari Cloud API (`wa_<nomor>`). */
+export function baileysChatKey(nomor: string): string {
+  const raw = String(nomor ?? '').trim();
+  if (!raw) return '';
+  if (raw.startsWith(BAILEYS_CHAT_PREFIX)) return raw;
+  const clean = raw.endsWith('@g.us') ? raw.replace(/@.*$/, '') : (nomorWhatsApp(raw) || raw);
+  return clean ? `${BAILEYS_CHAT_PREFIX}${clean}` : '';
+}
+
+export function isBaileysChatKey(chatId?: string | null): boolean {
+  return String(chatId ?? '').startsWith(BAILEYS_CHAT_PREFIX);
+}
+
+/** Petakan kunci Baileys ke kunci data bersama (`wa_<nomor>`) untuk fakta, pengingat, catatan, dan timezone. */
+export function sharedChatKeyDari(chatId: string): string {
+  const raw = String(chatId ?? '').trim();
+  if (isBaileysChatKey(raw)) {
+    const rest = raw.slice(BAILEYS_CHAT_PREFIX.length);
+    return normChatId(rest, 'whatsapp');
+  }
+  return normChatId(raw);
+}

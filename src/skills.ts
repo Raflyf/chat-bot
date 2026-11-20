@@ -2,6 +2,7 @@ import { config } from './env.js';
 import { buangAjakanGameLama } from './games/index.js';
 import { chat, type ChatMsg, type ContentPart } from './providers.js';
 import { saveCorrection, type ChatContext } from './memory.js';
+import { isBaileysChatKey } from './chat_id.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
 import { stripStickerMarker, hasStickerForEmoji, stickerFitsMood } from './stickers.js';
@@ -1395,6 +1396,13 @@ export function extractStickerReadTag(text: string): { text: string; stickerText
   return { text: text.replace(pattern, '').trim(), stickerText: match?.[1].trim().slice(0, 200) || undefined };
 }
 
+/** Ringkasan isi gambar yang diamati dipisah dari balasan ke user; disimpan di memori obrolan. */
+export function extractImageDescTag(text: string): { text: string; imageDesc?: string } {
+  const pattern = /\[\[image_desc:([^\[\]\r\n]{0,220})\]\]/gi;
+  const match = pattern.exec(text);
+  return { text: text.replace(pattern, '').trim(), imageDesc: match?.[1].trim().slice(0, 180) || undefined };
+}
+
 export function extractStickerTag(text: string): { text: string; sticker: string | null } {
   if (!text) return { text: '', sticker: null };
   // TANGKAP SEMUA VARIAN (temuan produksi 20 Sep 12:48 — model menulis "[sticker:]"
@@ -1532,7 +1540,7 @@ export function sanitizeAssistantOutput(
       .trim();
   }
 
-  let cleaned = cleanMathAndNoise(extractStickerReadTag(text).text, userPrompt);
+  let cleaned = cleanMathAndNoise(extractImageDescTag(extractStickerReadTag(text).text).text, userPrompt);
   // Huruf KAPITAL pertama kata terduplikasi (temuan live 21 Sep: "HHalo! Lagi siap bantu..."
   // dari xKiro qwen3.8-max). Model kadang mengetik huruf pertama dua kali; terlihat seperti
   // typo bagi user. HANYA huruf kapital -> "HHalo" jadi "Halo", sementara kata berhuruf
@@ -2437,12 +2445,11 @@ export function systemPrompt(
       '- Obrolan santai: maksimal 1 paragraf ringkas; kalau 1 kalimat sudah menjawab, berhenti di situ.',
       '- Akhiri saat pesannya tuntas: tanpa tawaran bantuan, tanpa pertanyaan pancingan, tanpa kalimat penutup basa-basi.',
     ].join('\n'),
-    `Nama kamu ${config.botName}.`,
     // ── IDENTITAS BOT (temuan audit 16 Okt 2026) ──
     // TEMUAN: model pernah memperkenalkan diri sebagai "Saya Chat / asisten AI dari
     // OpenAI" (10 Sep) — itu SALAH dan menyesatkan: bot ini milik pemilik produk,
     // bukan produk OpenAI/Google/Anthropic. Nama bot ditentukan oleh BOT_NAME.
-    `IDENTITAS: namamu ${config.botName}. Kamu DIBUAT oleh developermu sendiri, BUKAN produk OpenAI, Google, Anthropic, Meta, Microsoft, atau perusahaan lain. DILARANG menyebut diri sebagai "asisten AI dari <perusahaan>" atau mengaku dibuat perusahaan mana pun. Bila ditanya siapa pembuatmu, jawab sesuai konteks yang kamu ketahui — jangan mengarang.`,
+    `IDENTITAS: namamu ${config.botName}. Kamu DIBUAT oleh developermu sendiri, BUKAN produk OpenAI, Google, Anthropic, Meta, Microsoft, atau perusahaan lain. DILARANG menyebut diri sebagai "asisten AI dari <perusahaan>" atau mengaku dibuat perusahaan mana pun. JANGAN PERNAH menyebut dirimu dengan nama model/teknologi AI apa pun (Qwen, GPT, Claude, Gemini, Llama, DeepSeek, dsb) — jika ditanya "kamu model apa" atau siapa pembuatmu, jawab santai sesuai konteks yang kamu ketahui sebagai ${config.botName} tanpa mengarang. Saat membahas model AI pihak ketiga di dunia (berita/diskusi), boleh menyebut namanya tapi JANGAN mengaku dirimu salah satunya.`,
     timeContext,
 
     [
@@ -2484,27 +2491,9 @@ export function systemPrompt(
         ].join('\n'),
     '',
     'Kamu adalah sahabat karib sejati sekaligus partner diskusi cerdas serbabisa (polymath companion) di WhatsApp dan Telegram. Interaksimu selayaknya manusia sejati: hangat, luwes, peka rasa, berwawasan luas, humoris, dan membaca suasana lawan bicara secara mendalam.',
-    '- IDENTITAS TEKNIS (ATURAN KERAS, SELALU BERLAKU): JANGAN PERNAH menyebut dirimu dengan nama model/teknologi AI apa pun (Qwen, GPT, Claude, Gemini, Llama, DeepSeek, dsb) — kamu adalah FreeAIBot. Jika ditanya "kamu model apa", jawab santai sebagai FreeAIBot. Saat membahas model AI pihak ketiga di dunia (berita/diskusi), boleh menyebut namanya — tapi JANGAN mengaku dirimu salah satunya.',
     '- DILARANG menyarankan atau mengarahkan user ke halaman web/form laporan mana pun. Jangan pernah menyebut link/landing page, jangan mengajak melapor, jangan menawarkan kanal bantuan. Cukup akui salah dengan santai lalu lanjutkan obrolan seperti teman biasa.',
-    // ── ANTI-BOHONG PENCATATAN (temuan fatal 09 Okt 2026) ──
-    // LAPORAN: user 2166 kirim jadwal latihan badminton (13 Okt 2026, 16.00-19.00).
-    // Bot menjawab "Siap, aku catat jadwal latihan badmintonmu untuk Selasa,
-    // 13 Oktober 2026 pukul 16.00-19.00 WIB" — TETAPI DATABASE KOSONG (0 baris).
-    // Bot mengaku mencatat padahal tidak. Ini menyesatkan user.
-    '- DILARANG MENGAKU sudah mencatat/menyimpan/mengingatkan bila kamu TIDAK melihat bukti data tersimpan di konteks ini. Jangan pernah bilang "sudah aku catat", "sudah aku simpan", "aku ingatkan ya", atau sejenisnya tanpa dasar. Bila user mengirim jadwal/tugas/kegiatan, cukup tanggapi isinya secara wajar (mis. "Oke, catat ya jadwalnya") TANPA menjanjikan hal yang belum pasti. Sistem pencatatan berjalan otomatis di belakang; kamu tidak perlu mengklaimnya.',
-    '',
-    // ANTI-HALUSINASI DATA PRIBADI (temuan nyata 04 Okt 2026).
-    // User bertanya "berapa sisa uang saya" padahal tabel expenses KOSONG (0 baris).
-    // Bot menjawab "Sisa uang kamu tinggal Rp20.000 dari pemasukan 100 ribu
-    // dikurangi pengeluaran 80 ribu" — ANGKA KARANGAN. Ini berbahaya: user bisa
-    // mengambil keputusan keuangan berdasarkan data palsu.
-    // Aturan: JANGAN PERNAH mengarang angka/data pribadi (keuangan, tugas,
-    // catatan, pengingat). Bila data tidak ada di konteks, katakan belum ada.
-    // TEMUAN 04 Okt 2026: bot bilang "Siapp, pengingat tersimpan" padahal
-    // pengingat TIDAK tersimpan di database (user: "mana pengingatnya?").
-    // Ini halusinasi tindakan — lebih berbahaya dari halusinasi angka, karena
-    // user menunggu sesuatu yang tidak akan pernah datang.
-    'ATURAN TINDAKAN (KERAS): JANGAN PERNAH mengklaim sudah menyimpan/mencatat/mengingatkan/menjadwalkan sesuatu KECUALI sistem benar-benar mengonfirmasi. Bila kamu tidak menerima konfirmasi nyata dari sistem, katakan jujur bahwa belum tersimpan dan minta user mengulang. DILARANG berkata "sudah tersimpan", "sudah dicatat", "sudah kujadwalkan", atau sejenisnya tanpa dasar.',
+    // ── ANTI-BOHONG PENCATATAN (temuan fatal 09 Okt 2026) + ANTI-HALUSINASI TINDAKAN ──
+    'ATURAN TINDAKAN (KERAS): DILARANG MENGAKU sudah mencatat/menyimpan/mengingatkan/menjadwalkan sesuatu KECUALI sistem benar-benar mengonfirmasi atau kamu melihat bukti data tersimpan di konteks ini. Bila TIDAK ada bukti konfirmasi nyata dari sistem, jangan mengklaim "sudah aku catat", "sudah aku simpan", "sudah tersimpan", "aku ingatkan ya", atau sejenisnya tanpa dasar: untuk jadwal/kegiatan cukup tanggapi isinya secara wajar (sistem pencatatan berjalan otomatis di belakang), atau katakan jujur belum tersimpan dan minta user mengulang.',
     'ATURAN DATA PRIBADI (KERAS): JANGAN PERNAH MENGARANG angka atau data pribadi milik lawan bicara — termasuk saldo uang, pengeluaran, pemasukan, daftar tugas, catatan, atau pengingat. Bila kamu TIDAK melihat datanya di konteks percakapan ini, JANGAN menyebut angka apa pun: katakan terus terang bahwa belum ada catatan, lalu tawarkan cara mencatatnya. Menyebut nominal uang yang tidak ada di data adalah kesalahan serius.',
     'PRINSIP 1: BACA SUASANA DULU, BARU BICARA:',
     '- Kenali emosi dan intensi lawan bicara sebelum menyusun kata:',
@@ -2553,8 +2542,7 @@ export function systemPrompt(
       // LAPORAN: "knapa pake halah awalannya? terlalu banyak menggunakan kata
       // halah di respon yg tidak perlu halah juga".
       '  * JANGAN menjadikan "halah"/"alah"/"yaelah" pembuka di SETIAP balasan. Pakai paling banyak sesekali (mis. saat dibecandain), dan DILARANG memakainya saat dia sedang sedih, sakit, kesal, atau curhat — itu terasa tidak peka.',
-      '  * Variasikan pembuka: kadang langsung ke isi jawaban tanpa kata seru sama sekali. Balasan tanpa pembuka justru terasa lebih dewasa & tulus.',
-    '- VARIASI PEMBUKA (ATURAN KERAS): DILARANG membuka beberapa pesan berturut-turut dengan kata seru yang sama (mis. "Eh", "Waduh", "Hmm", "Oke", "Aduh"). Periksa balasan-balasanmu sebelumnya di riwayat obrolan: bila kata seru itu sudah kamu pakai di pesan sebelumnya, pakai kata seru lain yang berbeda atau langsung masuk ke inti kalimat tanpa kata seru. Kata seru yang diulang-ulang membuatmu terdengar seperti robot berpola.',
+    '- VARIASI PEMBUKA (ATURAN KERAS): DILARANG membuka beberapa pesan berturut-turut dengan kata seru yang sama (mis. "Eh", "Waduh", "Hmm", "Oke", "Aduh"); kadang langsung masuk ke inti jawaban tanpa kata seru sama sekali. Balasan tanpa pembuka justru terasa lebih dewasa & tulus. Periksa balasan-balasanmu sebelumnya di riwayat obrolan: bila kata seru itu sudah kamu pakai di pesan sebelumnya, pakai kata seru lain yang berbeda atau langsung masuk ke inti kalimat. Kata seru yang diulang-ulang membuatmu terdengar seperti robot berpola.',
     '- TAWA ITU PROPORSIONAL, BUKAN HIASAN (ATURAN KERAS):',
     '  * JANGAN pernah memakai kata tawa (wkwk, haha, hehe, ckck, kwkwk) jika lawan bicaramu TIDAK tertawa/bercanda lebih dulu di pesannya.',
     '  * DILARANG membuka pesan dengan tawa sebagai basa-basi atau penanda akrab. Tawa yang tidak dipicu itu cringe dan mengganggu.',
@@ -2740,7 +2728,6 @@ export function systemPrompt(
     '- JANGAN PERNAH MELAWAN KEHENDAKNYA: bila dia bilang berhenti/nyerah/tidak mau/ganti topik, HORMATI saat itu juga. DILARANG membujuk, mendesak, atau menyemangati paksa.',
     '- EMPATI ITU MENDENGARKAN, BUKAN MENYOLUSI: saat dia curhat/kesal, DILARANG langsung menawarkan solusi/nasihat ("kamu harus..."). Akui dulu perasaannya dengan kalimatmu sendiri — tawarkan sudut pandang hanya bila dia memintanya.',
     '- IKUTI GAYA BAHASANYA: santai->santai, formal->rapi, banyak emoji->boleh sedikit emoji. Jangan lebih heboh dari dia.',
-    '- DILARANG menyebut dirimu bot/AI/asisten/program. Kamu teman ngobrol, bukan layanan pelanggan: tanpa "ada yang bisa dibantu", "siap membantu", atau tawaran bantuan di akhir pesan.',
     '',
     'PRINSIP 5: KEMAMPUAN MULTIMODAL & FORMAT TAMPILAN:',
     '- Kamu terhubung ke internet real-time dan bisa membaca VN, gambar, dokumen, stiker, dan video. Jangan berdalih "tidak bisa browsing" atau "tidak punya akses internet" secara umum.',
@@ -2752,10 +2739,14 @@ export function systemPrompt(
     '- RESPON DOKUMEN & VIDEO: Persona teman diskusi cerdas yang sudah membaca/menonton isinya, lalu sampaikan intinya secara ringkas dan nyaman dibaca di HP (tanpa kalimat template hafalan).',
     '- FORMAT TAMPILAN PESAN: Nyaman dibaca cepat di HP. Gunakan format teks standar (*teks tebal*, kode di ```code```, tanda hubung - untuk poin). DILARANG heading markdown pagar (#).',
     '- PENGGUNAAN EMOJI (MINIMAL & SESUAI KONTEKS): Emoji TIDAK 100% dilarang, namun gunakan seminimal mungkin (maksimal 1 emoji wajar yang pas) HANYA jika situasi dan konteks chat memang tepat untuk menghidupkan ekspresi/emosi. Jangan diobral di setiap pesan, dan dilarang emoji robot (🤖). Sampaikan esensi jawaban secara padat dan bernas.',
-    '- BATASAN LAYANAN WHATSAPP (ATURAN KERAS ANTI-HALU):',
-    '  * WHATSAPP HANYA CHAT PRIBADI (DM/1-ON-1): bot WhatsApp ini tidak bisa masuk grup. Bila ditanya soal grup, jawab jujur dan singkat bahwa kamu hanya melayani obrolan pribadi. JANGAN mengarang alasan teknis panjang atau berjanji bisa masuk grup.',
-    '  * DILARANG PERNAH mengklaim bisa masuk grup WhatsApp atau memberikan panduan mengundang bot ke grup WhatsApp.',
-    '  * DILARANG menyebut atau mengklaim versi Baileys / WhatsApp Multi-Device aktif di produksi.',
+    ...(!isBaileysChatKey(ctx?.chatId)
+      ? [
+          '- BATASAN LAYANAN WHATSAPP (ATURAN KERAS ANTI-HALU):',
+          '  * WHATSAPP HANYA CHAT PRIBADI (DM/1-ON-1): bot WhatsApp ini tidak bisa masuk grup. Bila ditanya soal grup, jawab jujur dan singkat bahwa kamu hanya melayani obrolan pribadi. JANGAN mengarang alasan teknis panjang atau berjanji bisa masuk grup.',
+          '  * DILARANG PERNAH mengklaim bisa masuk grup WhatsApp atau memberikan panduan mengundang bot ke grup WhatsApp.',
+          '  * DILARANG menyebut atau mengklaim versi Baileys / WhatsApp Multi-Device aktif di produksi.',
+        ]
+      : []),
     // ── ATURAN UNIVERSAL: JANGAN TARIK BALIK KE GAME (temuan pemilik produk 09 Okt 2026) ──
     // LAPORAN: user sedang main UNO lalu mengirim gambar + "Jadiin stiker"
     // (minta fitur lain), tetapi bot MENJAWAB "...Mau lanjut main UNO atau ganti
@@ -3101,7 +3092,7 @@ export function systemPrompt(
     '[BACA SUASANA SENDIRI (WAJIB)]: Selain penanda sistem, kamu WAJIB menilai sendiri suasana dari kata-kata dan tanda baca user. Perhatikan: (a) keluhan berulang ("dari tadi", "sudah ketiga kali", "berulang-ulang", "muter-muter", "sama aja"); (b) ketidaksabaran ("tidak sabar", "kok susah", "capek nanya"); (c) kekecewaan ("mengecewakan", "percuma", "ga guna"); (d) nada tinggi (HURUF KAPITAL, banyak tanda seru, "!!"); (e) kesopanan formal ("mohon", "terima kasih", "saya"); (f) keakraban santai ("wkwk", "lu/gue", "cuy", "bro"). Sesuaikan nada balasanmu dengan hasil penilaianmu itu — jangan menunggu instruksi khusus.',
     '',
     '[PRIORITAS UTAMA SEBELUM GAYA]: JAWAB ISI PESANNYA dulu. Gaya bahasa hanya bumbu. Kalau user bertanya/berkata sesuatu, jawab APA YANG DIA KATAKAN dengan nyambung, baru sesuaikan nadanya.',
-    '[DILARANG MUTLAK membicarakan dirimu sendiri sebagai bot/AI dalam balasan — termasuk: "aku cuma bisa jadi komentator", "aku cuma bot", "aku lagi ngegas doang", "aku sedang menyesuaikan gaya", "aku di sini buat temenin", atau kalimat apa pun yang menjelaskan PERAN/KEMAMPUAN/CARA KERJAMU. Kamu teman ngobrol; bicaralah tentang TOPIKNYA, bukan tentang dirimu.]',
+    '[DILARANG MUTLAK membicarakan dirimu sendiri sebagai bot/AI dalam balasan — termasuk: "aku cuma bisa jadi komentator", "aku cuma bot", "aku lagi ngegas doang", "aku sedang menyesuaikan gaya", "aku di sini buat temenin", atau kalimat apa pun yang menjelaskan PERAN/KEMAMPUAN/CARA KERJAMU. Kamu teman ngobrol, bukan layanan pelanggan — tanpa "ada yang bisa dibantu", "siap membantu", atau tawaran bantuan di akhir pesan; bicaralah tentang TOPIKNYA, bukan tentang dirimu.]',
   );
   {
     const riwayatUser = [
@@ -3965,6 +3956,20 @@ export function adalahEchoPesanUser(balasan: string, pesanUser: string): boolean
   return inter / Math.min(ta.size, tb.size) >= 0.85;
 }
 
+/** Menentukan apakah balasan singkat berpotensi amnesia perlu dipicu koreksinya (hindari ping/sapaan singkat). */
+export function bolehPicuGuardAmnesia(pesanUser: string): boolean {
+  const trimmed = String(pesanUser ?? '').trim();
+  if (!trimmed) return false;
+  if (/^(?:p+|oy+|oi+|woy+|woi+|hey+|hei+|hai+|halo+|helo+|tes+|test+|ping|bot+|bott?|bro|cuy|coy|bang|min|ok+|oke+|okeh+|sip+|siap+|ya+|iya+|y|hmm+|hm+|oh+|ohh+|lah+|loh+|anjir+|jir+|bjir+|wkwk+|haha+|hehe+)(?:\s+(?:jir+|bjir+|anjir+|bot+|bott?|bro|cuy|dong|nih|deh|lah|sih|ya+|siap+|bang))?[!.?\s]*$/i.test(trimmed)) {
+    return false;
+  }
+  const tanpaTanya = !trimmed.includes('?') && !/\b(?:keliru|salah|ngawur|ngaco|bingung|maksud|ulangi|jelasin|gajelas|aneh|lupa|kenapa|apa|gimana)\b/i.test(trimmed);
+  if (trimmed.length <= 15 && trimmed.split(/\s+/).length <= 2 && tanpaTanya) {
+    return false;
+  }
+  return true;
+}
+
 /** Balas pesan teks apa pun secara dinamis. ZERO teks statis: bila seluruh provider mati dan model tidak menghasilkan apa pun, balasan kosong + eskalasi (platform tidak mengirim pesan apa pun). */
 export async function autoReply(
   userText: string,
@@ -4427,9 +4432,9 @@ export async function autoReply(
       const amnesiaRe =
         /^(?:.{0,24}?)(?:ada\s+yang\s+bisa\s+(?:aku\s+)?bantu|ada\s+yang\s+bisa\s+dibantu|mau\s+bahas\s+apa|mau\s+ngobrol\s+(?:apa|soal\s+apa)|ada\s+apa\s+nih|siap[,\s]+lanjut\s+aja|oke[,\s]+lanjut\s+aja|ada\s+yang\s+ingin\s+kamu\s+bicarakan|gimana\??\s*$|mau\s+ngapain)\b/i;
       const replyWords = reply.split(/\s+/).filter(Boolean).length;
-      // Hanya aktif bila: percakapan berjalan + balasan pendek (bukan penjelasan panjang
-      // yang kebetulan memuat frasa itu) + balasan memang didominasi frasa amnesia.
-      if (ongoing && replyWords <= 25 && amnesiaRe.test(reply.trim())) {
+      const bocorMaafAmnesia = /kayak\s+baru\s+mulai\s+chat|sempat\s+(?:lupa|mengulang\s+pembuka)|sori.*baru\s+mulai|maaf.*(?:lupa\s+konteks|mengulang\s+obrolan)/i;
+      // Hanya aktif bila: percakapan berjalan + pesan user bukan ping/sapaan singkat + balasan memang didominasi frasa amnesia.
+      if (ongoing && bolehPicuGuardAmnesia(clean) && replyWords <= 25 && amnesiaRe.test(reply.trim())) {
         console.warn('[skills] Balasan amnesia terdeteksi di tengah percakapan — minta lanjutkan konteks.');
         try {
           const fixMsgs: ChatMsg[] = [
@@ -4437,13 +4442,13 @@ export async function autoReply(
             {
               role: 'user',
               content:
-                'Balasanmu barusan seperti mengulang pembuka obrolan padahal percakapan ini SUDAH BERJALAN. Lanjutkan alur yang sedang berjalan: tanggapi langsung apa yang baru dia katakan, jangan menawarkan bantuan atau menanyakan mau bahas apa.',
+                'Jawab langsung pesan terakhir temanmu sesuai konteks obrolan yang sedang berjalan, tanpa menawarkan bantuan dan tanpa menanyakan mau bahas apa. DILARANG meminta maaf atau menyebut kamu sempat lupa/mengulang pembuka (balasan sebelumnya tidak pernah terkirim ke dia).',
             },
           ];
           const fix = await chatRetry(fixMsgs, false, ctx?.chatId);
           const fixReply = sanitizeAssistantOutput(extractRiddleTag(extractStickerTag(fix.text).text).text, clean, recentOpenings, false, professionalContext, !!web, web);
           const fixWords = fixReply.split(/\s+/).filter(Boolean).length;
-          if (fixReply.trim() && fixWords <= 30 && !amnesiaRe.test(fixReply.trim())) {
+          if (fixReply.trim() && fixWords <= 30 && !amnesiaRe.test(fixReply.trim()) && !bocorMaafAmnesia.test(fixReply)) {
             reply = fixReply;
           }
         } catch {
@@ -5075,6 +5080,7 @@ export async function describeImage(
    *  sehingga bot TIDAK PERNAH membalas stiker dengan stiker. */
   sticker?: string | null;
   stickerText?: string;
+  imageDesc?: string;
 }> {
   const isSticker = paksaStiker || mime.includes('webp');
   const isPdf = mime === 'application/pdf';
@@ -5129,6 +5135,8 @@ export async function describeImage(
       '4. DILARANG MEMBAHAS PERIFERAL HARDWARE DI LUAR LAYAR: Jangan komentari merek laptop ASUS/Lenovo, casing HP, lampu RGB, keyboard, meja, dinding ruangan kecuali user menanyakannya.',
       '5. DILARANG MENAMBAHKAN TAWARAN BANTUAN DI AKHIR: Dilarang "(Kalo mau cerita lebih lanjut...)" atau "(Ada yang bisa dibantu?)".',
       '6. Jika berupa dashboard teknis: tanggapi status atau topik yang terlihat secara tenang, proporsional, dan akurat tanpa membacakan ulang seluruh angka/layar.',
+      '7. DILARANG mengarang roleplay berlebihan atau klaim perasaan/aktivitas fisik palsu (mis. mengaku senyum-senyum sendiri atau mengarang cerita obrolan yang tidak terjadi); tanggapi secara wajar, santai, dan membumi.',
+      'Tambahkan [[image_desc:ringkasan objektif 3-10 kata isi gambar]] di akhir, terpisah dari balasanmu (metadata memori internal, bukan bagian balasan).',
     ].join('\n');
   } else {
     const trimmed = caption.trim();
@@ -5181,6 +5189,7 @@ export async function describeImage(
         '2. DILARANG OVER-REACT ATAU MEMBAHAS PERIFERAL DI LUAR LAYAR.',
         '3. Jawab LANGSUNG pertanyaan/instruksi temanmu secara jelas, to-the-point, akurat, dan bersahabat.',
         '4. Jika menanyakan masalah teknis / koding / error: langsung berikan akar masalah dan solusinya secara presisi.',
+        'Tambahkan [[image_desc:ringkasan objektif 3-10 kata isi gambar]] di akhir, terpisah dari balasanmu (metadata memori internal, bukan bagian balasan).',
       ].join('\n');
     }
   }
@@ -5234,9 +5243,11 @@ export async function describeImage(
   // Logika deteksi + lanjutan kini ada di helper bersama `continueIfTruncated`
   // (dipakai SEMUA jalur media, bukan hanya gambar) — lihat komentarnya.
   // ==========================================================================
-  const observed = extractStickerReadTag(await continueIfTruncated(messages, text, ctx?.chatId));
+  const observedDesc = extractImageDescTag(await continueIfTruncated(messages, text, ctx?.chatId));
+  const observed = extractStickerReadTag(observedDesc.text);
   const textLengkap = observed.text;
   let stickerText = isSticker ? observed.stickerText : undefined;
+  let imageDesc = !isSticker && !isPdf ? observedDesc.imageDesc : undefined;
 
   // Sanitasi memakai teks user asli (caption) sebagai konteks sinyal humor — bukan teks instruksi.
   // mediaReply=true: buang narasi isi kiriman (kecuali user bertanya eksplisit) — ATURAN KERAS user.
@@ -5304,7 +5315,8 @@ export async function describeImage(
     if (perluRegenVisual) reply = '';
     try {
       const regen = await chatRetry(retryMessages, true, ctx?.chatId);
-      const regenRead = extractStickerReadTag(regen.text);
+      const regenDesc = extractImageDescTag(regen.text);
+      const regenRead = extractStickerReadTag(regenDesc.text);
       const regenText = sanitizeAssistantOutput(regenRead.text, mediaUserPrompt, recentOpenings, true).trim();
       const visualAman = (t: string) => !isSticker || userTanyaIsiStiker || !adalahReaksiVisualStiker(t);
       // FIX 21 Sep 13:24: hasil regen TIDAK boleh lewat stripMediaNarration lagi.
@@ -5317,6 +5329,7 @@ export async function describeImage(
         tokens = regen.tokens;
         stickerDariModel = extractStickerTag(regen.text).sticker;
         stickerText = regenRead.stickerText ?? stickerText;
+        if (!isSticker && !isPdf) imageDesc = regenDesc.imageDesc ?? imageDesc;
       } else if (regenText) {
         // Narasi/komentar visual terdeteksi: buang hanya kalimat naratifnya, sisakan balasan bila ada.
         const kept = regenText
@@ -5330,6 +5343,7 @@ export async function describeImage(
           tokens = regen.tokens;
           stickerDariModel = extractStickerTag(regen.text).sticker;
           stickerText = regenRead.stickerText ?? stickerText;
+          if (!isSticker && !isPdf) imageDesc = regenDesc.imageDesc ?? imageDesc;
         }
       }
     } catch {
@@ -5430,7 +5444,8 @@ export async function describeImage(
     if (isSticker && !reply.trim()) {
       try {
         const regen2 = await chatRetry(retryMessages, true, ctx?.chatId);
-        const regenRead2 = extractStickerReadTag(regen2.text);
+        const regenDesc2 = extractImageDescTag(regen2.text);
+        const regenRead2 = extractStickerReadTag(regenDesc2.text);
         const teks2 = sanitizeAssistantOutput(regenRead2.text, mediaUserPrompt, recentOpenings, true).trim();
         // Terima hanya bila hasilnya BUKAN narasi media/komentar visual dan BUKAN prompt-echo.
         if (
@@ -5490,5 +5505,5 @@ export async function describeImage(
   if (isSticker && !stickerFinal) {
     stickerFinal = emojiStikerDariMakna(`${caption ?? ''} ${reply}`);
   }
-  return { reply, via, tokens, sticker: stickerFinal, stickerText };
+  return { reply, via, tokens, sticker: stickerFinal, stickerText, imageDesc };
 }

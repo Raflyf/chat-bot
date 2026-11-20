@@ -2,7 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { sanitizeAssistantOutput } from './skills.js';
 import { config } from './env.js';
 import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
-import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent, processIncomingVideo } from './media.js';
+import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent, imageUserContent, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
@@ -110,10 +110,20 @@ async function answerPhoto(
   if (!dl) return false;
   const mime = dl.filePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
   const ctx = await getContext(chatKey, msgSentAt);
-  const { reply, via, tokens } = await describeImage(dl.buffer.toString('base64'), mime, caption, ctx);
+  const { reply, via, tokens, imageDesc } = await describeImage(dl.buffer.toString('base64'), mime, caption, ctx);
+  const kontenGambarUser = imageUserContent(caption, imageDesc);
+  await saveMessage({
+    platform: 'telegram',
+    chat_id: chatKey,
+    role: 'user',
+    content: kontenGambarUser,
+    msg_id: msgId || undefined,
+  }).catch((err) => console.warn('[telegram] Gagal simpan pesan foto user:', err));
+  updateContextCache(chatKey, 'user', kontenGambarUser);
   await sendTelegramMessageSafe(bot, chatId, reply);
   if (msgId) void markMessageProcessed('telegram', msgId);
   await saveMessage({ platform: 'telegram', chat_id: chatKey, role: 'assistant', content: reply, via, tokens });
+  updateContextCache(chatKey, 'assistant', reply);
   noteExchange(chatKey);
   return true;
 }
@@ -504,6 +514,13 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     if (msg.photo?.length) {
       const fileId = msg.photo[msg.photo.length - 1].file_id;
       const promptCaption = isGroup ? (caption ? `[Dari ${senderName}]: ${caption}` : `[Dari ${senderName}]`) : caption;
+      let handled = false;
+      try {
+        handled = await answerPhoto(bot, chatId, chatKey, fileId, promptCaption, msgId, msgSentAt);
+      } catch (err) {
+        console.error(`[telegram] vision photo error: ${String((err as Error).message ?? err)}`);
+      }
+      if (handled) return;
       await saveMessage({
         platform: 'telegram',
         chat_id: chatKey,
@@ -511,11 +528,6 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         content: promptCaption ? `[Gambar] ${promptCaption}` : '[Gambar]',
         msg_id: msgId || undefined,
       }).catch((err) => console.warn('[telegram] Gagal simpan pesan foto user:', err));
-      try {
-        if (await answerPhoto(bot, chatId, chatKey, fileId, promptCaption, msgId, msgSentAt)) return;
-      } catch (err) {
-        console.error(`[telegram] vision photo error: ${String((err as Error).message ?? err)}`);
-      }
     }
 
     // 4b. Video (MP4 / WebM) via Google Gemini Multimodal

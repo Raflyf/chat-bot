@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { normChatId } from './chat_id.js';
+import { normChatId, isBaileysChatKey, sharedChatKeyDari } from './chat_id.js';
 import { chat, type ChatMsg } from './providers.js';
 
 export interface ChatContext {
@@ -171,6 +171,40 @@ export async function resetSession(chatKey: string, platform: string = 'whatsapp
  * JANGAN menambahkan pembacaan tabel `laporan` di fungsi ini atau di jalur
  * percakapan mana pun (src/). Akses laporan hanya lewat `api/laporan.ts`.
  */
+/**
+ * Saring noise sistem dari riwayat percakapan (input: urutan terbaru-dulu / descending).
+ * Membuang placeholder `[baileys-msg]` serta membatasi ringkasan/pengingat berulang agar
+ * tidak membanjiri jendela konteks model.
+ */
+export function saringNoiseRiwayat<T extends { role: string; content: string; via?: string | null }>(rowsDesc: T[]): T[] {
+  const out: T[] = [];
+  let keptReminder = 0;
+  let keptRingkasan = 0;
+  for (let i = 0; i < rowsDesc.length; i++) {
+    const r = rowsDesc[i];
+    const konten = String(r.content ?? '').trim();
+    const via = String(r.via ?? '');
+    if (!konten || konten === '[baileys-msg]' || konten.includes('[SESSION_RESET]')) continue;
+    if (via === 'reminder') {
+      if (i < 4 && keptReminder < 1) {
+        keptReminder++;
+        out.push(r);
+      }
+      continue;
+    }
+    if (via === 'notes/ringkasan') {
+      if (i < 4 && keptRingkasan < 1) {
+        keptRingkasan++;
+        out.push(r);
+      }
+      continue;
+    }
+    if (r.role === 'user' && /^\/?ringkasan\b/i.test(konten) && i >= 4) continue;
+    out.push(r);
+  }
+  return out;
+}
+
 export async function getContext(chatKey: string, msgSentAt?: Date): Promise<ChatContext> {
   // NORMALISASI chat_id (satu sumber): agar data lama yang tersimpan TANPA prefix
   // (mis. "628991333323") tetap terbaca walau percakapan memakai "wa_628991333323".
@@ -217,17 +251,23 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
     if (s.error && s.error.code !== 'PGRST116') warnOnce('summaries', s.error.message);
     if (k.error) warnOnce('corrections', k.error.message);
 
-    const rawMessages = (h.data ?? []) as Array<{ role: string; content: string; feedback?: string | null }>;
+    const rawMessages = (h.data ?? []) as Array<{
+      role: string;
+      content: string;
+      feedback?: string | null;
+      via?: string | null;
+    }>;
     // Cari index checkpoint reset (karena diurutkan descending, index terkecil adalah reset terbaru)
     const resetIdx = rawMessages.findIndex(
       (m) => m.content === '[SESSION_RESET]' || m.content.startsWith('[SESSION_RESET]'),
     );
     const validMessages = resetIdx >= 0 ? rawMessages.slice(0, resetIdx) : rawMessages;
+    const filteredMessages = saringNoiseRiwayat(validMessages);
 
     // Sinyal stiker durable: kolom `feedback` menyimpan "sticker:<emoji>" pada baris
     // balasan yang disertai stiker. Disintesis jadi penanda riwayat agar cooldown
     // anti-overuse tetap terlihat lintas instance serverless (tanpa polusi tabel).
-    const withStickerMarkers = validMessages.map((m) => {
+    const withStickerMarkers = filteredMessages.map((m) => {
       const fb = typeof m.feedback === 'string' ? m.feedback.trim() : '';
       // Riwayat stiker lama memuat reaksi bot sebagai teks user; hanya abaikan saat membaca.
       let content = m.role === 'user' && /^\[Stiker (?:Telegram|WhatsApp)[^\]]*\] [^\[]/.test(m.content)
@@ -244,13 +284,35 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
       return { role: m.role, content };
     });
 
+    let corrections = ((k.data ?? []) as Array<{ correction: string }>).map((r) => r.correction);
+    if (isBaileysChatKey(chatKey)) {
+      const sharedKey = sharedChatKeyDari(chatKey);
+      if (sharedKey && sharedKey !== chatKey) {
+        try {
+          const { data: sharedCors } = await c
+            .from('corrections')
+            .select('correction')
+            .eq('chat_id', sharedKey)
+            .order('created_at', { ascending: false })
+            .limit(15);
+          const sharedList = ((sharedCors ?? []) as Array<{ correction: string }>)
+            .map((r) => r.correction)
+            .filter((x) => /^(?:\[FAKTA\]|\[ZONA_WAKTU\]|Lokasi)/i.test(x));
+          const merged = new Set([...corrections, ...sharedList]);
+          corrections = [...merged].slice(0, 20);
+        } catch {
+          // best-effort: gagal baca profil bersama tidak memblokir obrolan
+        }
+      }
+    }
+
     const ctx: ChatContext = {
       history: withStickerMarkers
         .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.content.includes('[SESSION_RESET]'))
         .reverse()
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
       summary: (s.data as { summary?: string } | null)?.summary ?? null,
-      corrections: ((k.data ?? []) as Array<{ correction: string }>).map((r) => r.correction),
+      corrections,
       chatId: chatKey,
       msgSentAt,
     };

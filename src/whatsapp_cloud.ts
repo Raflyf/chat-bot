@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { config } from './env.js';
 import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
 import { sanitizeAssistantOutput } from './skills.js';
-import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent } from './media.js';
+import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent, imageUserContent } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed, cariPesanByMsgId, pesanBotTerakhir } from './db.js';
 // withChatLock: serialisasi per-chat (audit 14 Okt 2026 — cegah balasan keluar
 // urutan / konteks saling menimpa saat user kirim pesan beruntun).
@@ -604,15 +604,17 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
           if (media) {
             const context = await getContext(chatKey, msgSentAt);
+            const { reply, via, tokens, imageDesc } = await describeImage(media.base64, media.mime, caption, context);
+            const kontenGambarUser = imageUserContent(caption, imageDesc);
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
               role: 'user',
-              content: caption ? `[Gambar] ${caption}` : '[Gambar]',
+              content: kontenGambarUser,
               msg_id: messageId,
             });
+            updateContextCache(chatKey, 'user', kontenGambarUser);
 
-            const { reply, via, tokens } = await describeImage(media.base64, media.mime, caption, context);
             await sendWhatsAppCloudMessageSafe(from, reply);
             void markMessageProcessed('whatsapp', messageId);
             await saveMessage({
@@ -623,6 +625,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               via,
               tokens,
             });
+            updateContextCache(chatKey, 'assistant', reply);
             noteExchange(chatKey);
             return;
           }

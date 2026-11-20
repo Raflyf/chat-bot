@@ -1357,6 +1357,16 @@ export function stickerUserContent(label: string, caption?: string, stickerText?
     stickerText?.trim() ? '[Tulisan stiker: ' + JSON.stringify(stickerText.trim().slice(0, 200)) + ']' : ''].filter(Boolean).join(' ');
 }
 
+/** Simpan ringkasan isi gambar milik user ke riwayat percakapan (tanpa balasan/roleplay model). */
+export function imageUserContent(caption?: string, imageDesc?: string): string {
+  const desc = imageDesc?.trim().slice(0, 180);
+  const cap = caption?.trim();
+  if (desc && cap) return `[Gambar: ${desc}] ${cap}`;
+  if (desc) return `[Gambar: ${desc}]`;
+  if (cap) return `[Gambar] ${cap}`;
+  return '[Gambar]';
+}
+
 export async function processIncomingSticker(
   buffer: Buffer,
   mime: string = 'image/webp',

@@ -38,5 +38,5 @@ test('telegram: promptText (dengan penanda) dipakai autoReply', () => {
 });
 
 test('baileys: promptFinal (dengan penanda) dipakai autoReply', () => {
-  assert.match(BL, /autoReply\(promptFinal/, 'harus pakai promptFinal');
+  assert.match(BL, /(?:autoReply|baileysAutoReply)\(promptFinal/, 'harus pakai promptFinal');
 });

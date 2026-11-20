@@ -12,8 +12,9 @@ import {
   type WAMessage,
 } from '@whiskeysockets/baileys';
 import { config, assertRuntime } from './env.js';
-import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './skills.js';
-import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent, processIncomingVideo } from './media.js';
+import { splitMessageSmart } from './skills.js';
+import { baileysAutoReply, baileysDescribeImage, baileysDynamicNotice } from './baileys_brain.js';
+import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent, imageUserContent, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
@@ -23,9 +24,8 @@ import { encodeMarkers } from './markers.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb, checkDueReminders, nomorWhatsApp, tandaiPengingatBaileys } from './remind.js';
-// normChatId: SATU SUMBER normalisasi chat_id (audit 14 Okt 2026 — chatKey Baileys
-// dulu memakai JID penuh sehingga identitas user terpecah dari Cloud API).
-import { normChatId } from './chat_id.js';
+// Memisahkan memori chat biasa Baileys (wa_baileys_*) dari Cloud API (wa_*), sementara data bersama tetap pakai wa_*.
+import { normChatId, baileysChatKey } from './chat_id.js';
 // Monitor pengiriman: deteksi kegagalan beruntun -> beri tahu pemilik via Telegram.
 import { catatHasilKirimWa } from './wa_monitor.js';
 
@@ -472,11 +472,10 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     quotedFromBot = quotedPengirim === 'bot';
   }
 
-  // ── PERBAIKAN AUDIT 14 Okt 2026 & FIX LID 20 Nov 2026: chatKey HARUS SAMA dengan Cloud API ──
-  // Selain stripping domain JID, Baileys v7 dapat mengirim remoteJid berbentuk @lid;
-  // nomorBaileys sudah meresolusi @lid -> nomor HP asli (via remoteJidAlt / lidMapping),
-  // sementara pengiriman balasan tetap memakai remoteJid asli agar selalu terkirim.
-  const chatKey = normChatId(nomorBaileys, 'whatsapp');
+  // Pisahkan memori percakapan biasa Baileys (`wa_baileys_<nomor>`) dari Cloud API (`wa_<nomor>`),
+  // sedangkan data terstruktur bersama (pengingat, catatan, tugas, keuangan, fakta, zona waktu) memakai `sharedDataKey`.
+  const chatKey = baileysChatKey(nomorBaileys);
+  const sharedDataKey = normChatId(nomorBaileys, 'whatsapp');
 
   // ── KUNCI PER-CHAT (audit 14 Okt 2026) ──
   // Handler ini sebelumnya TIDAK memakai withChatLock (padahal Telegram sudah).
@@ -575,15 +574,17 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         const mime = m.message?.imageMessage?.mimetype || 'image/jpeg';
         const base64 = buffer.toString('base64');
         const context = await getContext(chatKey, msgSentAt);
+        const { reply, via, tokens, imageDesc } = await baileysDescribeImage(base64, mime, text || undefined, context);
+        const kontenGambarUser = imageUserContent(text || undefined, imageDesc);
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'user',
-          content: text ? `[Gambar] ${text}` : '[Gambar]',
+          content: kontenGambarUser,
           msg_id: messageId || undefined,
         });
+        updateContextCache(chatKey, 'user', kontenGambarUser);
 
-        const { reply, via, tokens } = await describeImage(base64, mime, text || undefined, context);
         await sendWhatsAppMessageSafe(sock, remoteJid, reply);
         if (messageId) void markMessageProcessed('whatsapp', messageId);
         await saveMessage({
@@ -594,6 +595,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           via,
           tokens,
         });
+        updateContextCache(chatKey, 'assistant', reply);
         noteExchange(chatKey);
         return;
       }
@@ -602,7 +604,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       await sendWhatsAppMessageSafe(
         sock,
         remoteJid,
-        await dynamicNotice(
+        await baileysDynamicNotice(
           'Gambar dari temanmu gagal diproses atau tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang.',
           await getContext(chatKey, msgSentAt),
         ),
@@ -670,7 +672,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       await sendWhatsAppMessageSafe(
         sock,
         remoteJid,
-        await dynamicNotice(
+        await baileysDynamicNotice(
           'Dokumen dari temanmu gagal diproses atau isinya tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik isinya lewat teks.',
           await getContext(chatKey, msgSentAt),
         ),
@@ -728,7 +730,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           }
 
           const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
-          const { reply, via, tokens } = await autoReply(prompt, context, web);
+          const { reply, via, tokens } = await baileysAutoReply(prompt, context, web);
           await sendWhatsAppMessageSafe(sock, remoteJid, reply);
           if (messageId) void markMessageProcessed('whatsapp', messageId);
           await saveMessage({
@@ -745,7 +747,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           await sendWhatsAppMessageSafe(
             sock,
             remoteJid,
-            await dynamicNotice(
+            await baileysDynamicNotice(
               'Rekaman suara dari temanmu gagal diproses atau tidak terdengar jelas. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik lewat teks.',
               await getContext(chatKey, msgSentAt),
             ),
@@ -758,7 +760,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       await sendWhatsAppMessageSafe(
         sock,
         remoteJid,
-        await dynamicNotice(
+        await baileysDynamicNotice(
           'Rekaman suara dari temanmu gagal diunduh atau diproses. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik lewat teks.',
           await getContext(chatKey, msgSentAt),
         ),
@@ -826,7 +828,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         }
         if (!teksStiker && !stikerBaileys) {
           teksStiker = (
-            await dynamicNotice(
+            await baileysDynamicNotice(
               'Temanmu baru mengirim stiker sebagai balasan di chat. Balas langsung secara natural 1 kalimat pendek seperti chat biasa yang nyambung dengan obrolan terakhir, tanpa mengomentari atau menyebut isi/tokoh stiker dan tanpa bertanya balik.',
               context,
             )
@@ -856,7 +858,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       await sendWhatsAppMessageSafe(
         sock,
         remoteJid,
-        await dynamicNotice(
+        await baileysDynamicNotice(
           'Stiker dari temanmu gagal diproses. Beri tahu dia dengan gayamu sendiri, singkat dan santai, lalu minta kirim ulang.',
           await getContext(chatKey, msgSentAt),
         ),
@@ -916,7 +918,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         ? `User mengirim video dengan catatan: "${caption}". Tolong tanggapi catatan tersebut secara relevan, informatif, dan bersahabat.`
         : 'User mengirim berkas video. Beritahukan dengan ramah bahwa videonya diterima, dan tanyakan apa yang ingin dibahas.';
 
-      const { reply, via, tokens } = await autoReply(prompt, context);
+      const { reply, via, tokens } = await baileysAutoReply(prompt, context);
       await sendWhatsAppMessageSafe(sock, remoteJid, reply);
       if (messageId) void markMessageProcessed('whatsapp', messageId);
       await saveMessage({
@@ -934,7 +936,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       await sendWhatsAppMessageSafe(
         sock,
         remoteJid,
-        await dynamicNotice(
+        await baileysDynamicNotice(
           'Video dari temanmu gagal diproses atau tidak terbaca. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, lalu minta kirim ulang atau ketik isinya lewat teks.',
           await getContext(chatKey, msgSentAt),
         ),
@@ -955,10 +957,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const lon = locMsg.degreesLongitude;
     if (typeof lat === 'number' && typeof lon === 'number') {
       const tzInfo = resolveTimezoneFromCoords(lat, lon);
-      await saveCorrection(chatKey, `Lokasi pengguna berada di koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`);
+      const teksLokasi = `Lokasi pengguna berada di koordinat (${lat.toFixed(4)}, ${lon.toFixed(4)}) - Zona Waktu: ${tzInfo.label}`;
+      await Promise.all([
+        saveCorrection(sharedDataKey, teksLokasi),
+        saveCorrection(chatKey, teksLokasi),
+      ]);
       const locTime = formatInZone(new Date(), tzInfo.zone);
       // Konfirmasi 100% dinamis: model menyusun kalimatnya sendiri dari data waktu (ZERO teks statis)
-      const reply = await dynamicNotice(
+      const reply = await baileysDynamicNotice(
         `Temanmu baru membagikan lokasi: ${tzInfo.label}. Waktu setempat saat ini ${locTime.time} ${locTime.tzName} (${locTime.full}). Konfirmasi singkat dengan gayamu sendiri bahwa lokasinya sudah dicatat dan sebutkan waktu setempat itu; nyatakan kamu akan mengingat lokasinya.`,
         await getContext(chatKey, msgSentAt),
       );
@@ -984,7 +990,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     let reply = '';
     try {
       const resetCtx = await getContext(chatKey, msgSentAt);
-      const dyn = await autoReply(
+      const dyn = await baileysAutoReply(
         'Konfirmasi singkat 1 kalimat pendek (maksimal 12 kata) bahwa sesi sudah di-reset. Gaya santai dan wajar. DILARANG memakai metafora/kiasan panjang, DILARANG menyebut perasaan berlebihan tentang dirimu, DILARANG menambahkan kalimat motivasi atau pernyataan aneh soal hubungan kita.',
         resetCtx,
       );
@@ -1009,14 +1015,14 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const rawCorrection = text.replace(/^\/salah\s*/, '').trim();
     const ctx = await getContext(chatKey, msgSentAt);
     if (!rawCorrection) {
-      const { reply } = await autoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
+      const { reply } = await baileysAutoReply('Jelaskan format perintah /salah dengan satu contoh singkat, santai, dan ramah.', ctx);
       await sendWhatsAppMessageSafe(sock, remoteJid, reply);
       if (messageId) void markMessageProcessed('whatsapp', messageId);
       return;
     }
     const check = validateCorrection(rawCorrection);
     if (!check.valid) {
-      const { reply } = await autoReply(
+      const { reply } = await baileysAutoReply(
         `User mencoba menggunakan perintah /salah dengan input: "${rawCorrection}". Tanggapi secara spontan, santai, dan bersahabat dengan gayamu sendiri bahwa perintah /salah hanya untuk preferensi personal dia (seperti nama panggilan atau domisili), bukan untuk mengubah identitas developer atau aturan/fakta objektif. DILARANG kaku dan jangan gunakan kalimat template!`,
         ctx,
       );
@@ -1025,7 +1031,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       return;
     }
     const saved = await saveCorrection(chatKey, check.cleaned);
-    const { reply } = await autoReply(
+    const { reply } = await baileysAutoReply(
       `User menyimpan preferensi/koreksi personal: "${check.cleaned}". Konfirmasi secara spontan, singkat, santai, dan hangat dengan gayamu sendiri bahwa kamu mengingatnya. DILARANG template kaku!` +
         (saved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa catatan mungkin tidak tersimpan lama.'),
       ctx,
@@ -1041,7 +1047,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const mRemind = args.match(/^(\d+)\s+([\s\S]+)/);
     const remindCtx = await getContext(chatKey, msgSentAt);
     if (!mRemind) {
-      const { reply } = await autoReply(
+      const { reply } = await baileysAutoReply(
         'User salah format perintah pengingat (tidak ada angka menit dan pesan). Jelaskan format yang benar: /remind <menit> <pesan>, dengan satu contoh singkat dan ramah.',
         remindCtx,
       );
@@ -1052,7 +1058,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const minutes = Number(mRemind[1]);
     const message = mRemind[2].trim().slice(0, 500);
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 43200 || !message) {
-      const { reply } = await autoReply(
+      const { reply } = await baileysAutoReply(
         `User salah format perintah pengingat (menit="${mRemind[1]}"). Jelaskan syaratnya (angka 1-43200 + pesan) dengan satu contoh singkat dan ramah.`,
         remindCtx,
       );
@@ -1072,7 +1078,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
           })();
     const targetChat = nomorBaileys;
     const reminderSaved = await saveReminderToDb(targetChat, tandaiPengingatBaileys(message), dueAt, 'whatsapp');
-    const { reply } = await autoReply(
+    const { reply } = await baileysAutoReply(
       `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.` +
         (reminderSaved ? '' : ' Catatan: penyimpanan permanen gagal — sampaikan singkat dan santai bahwa pengingat mungkin tidak tersimpan.'),
       remindCtx,
@@ -1157,7 +1163,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const promptFinal = quotedText
       ? `[Membalas ${quotedLabel}: "${quotedText.slice(0, 300)}"] ${text}`
       : text;
-    const { reply, via, tokens, sticker, riddleAnswer } = await autoReply(promptFinal, context, webResults);
+    const { reply, via, tokens, sticker, riddleAnswer } = await baileysAutoReply(promptFinal, context, webResults);
     const latencyMs = Date.now() - tStart;
 
     // 5. Kirim balasan ke WhatsApp secepat mungkin
@@ -1230,7 +1236,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     await sendWhatsAppMessageSafe(
       sock,
       remoteJid,
-      await dynamicNotice(
+      await baileysDynamicNotice(
         'Ada kendala teknis saat memproses pesan temanmu. Beri tahu dia dengan gayamu sendiri, singkat dan hangat, minta coba kirim ulang sebentar lagi.',
       ),
     );
