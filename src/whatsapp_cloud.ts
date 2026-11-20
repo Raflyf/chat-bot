@@ -177,6 +177,7 @@ export async function sendWhatsAppCloudMessageSafe(
       if (!res.ok) {
         const errText = await res.text();
         console.error(`[wa-cloud] Gagal kirim pesan: ${res.status} ${errText}`);
+        semuaBerhasil = false;
         let metaCode: number | undefined;
         let metaMsg = errText.slice(0, 200);
         try {
@@ -187,7 +188,6 @@ export async function sendWhatsAppCloudMessageSafe(
           // bukan JSON
         }
         lastMetaErr = { httpStatus: res.status, metaCode, message: metaMsg };
-        semuaBerhasil = false;
       } else {
         const data = (await res.json().catch(() => null)) as { messages?: Array<{ id?: string }> } | null;
         if (data?.messages?.[0]?.id) {
@@ -196,8 +196,8 @@ export async function sendWhatsAppCloudMessageSafe(
       }
     } catch (err) {
       console.error('[wa-cloud] Network error kirim pesan:', err);
-      lastMetaErr = { networkError: true, message: String((err as Error)?.message ?? err) };
       semuaBerhasil = false;
+      lastMetaErr = { networkError: true, message: String((err as Error)?.message ?? err) };
     }
 
     if (chunks.length > 1) {
@@ -829,12 +829,13 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
             //      PERNAH membalas stiker dengan stiker.
             const replyStiker = sanitizeAssistantOutput(replyStikerMentah, kontenStikerUser, undefined, true);
 
-            // Bila balasan mentah ngawur & habis disanitasi, JANGAN kirim teks kosong:
-            // pakai fallback reaksi stiker yang jujur (tetap 1 kalimat pendek).
-            const teksAkhir = replyStiker.trim();
+            // Bila balasan mentah ngawur & habis disanitasi, JANGAN diam tanpa reaksi:
+            // fallback dinamis bila teks maupun stiker balasan sama-sama tidak terkirim.
+            let teksAkhir = replyStiker.trim();
 
-            await sendWhatsAppCloudMessageSafe(from, teksAkhir);
-            void markMessageProcessed('whatsapp', messageId);
+            if (teksAkhir) {
+              await sendWhatsAppCloudMessageSafe(from, teksAkhir);
+            }
 
             // Kirim STIKER balasan bila model memilihnya (user balas stiker -> bot
             // boleh balas stiker juga, sesuai permintaan pemilik produk).
@@ -843,15 +844,31 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
               stikerTerkirim = await sendWhatsAppCloudStickerSafe(from, stickerBalasan);
             }
 
+            if (!teksAkhir && !stikerTerkirim) {
+              teksAkhir = (
+                await dynamicNotice(
+                  'Temanmu baru mengirim stiker. Beri reaksi singkat 1 kalimat santai yang nyambung dengan obrolan terakhir tanpa menarasikan isi stiker atau bertanya balik.',
+                  context,
+                )
+              ).trim();
+              if (teksAkhir) {
+                await sendWhatsAppCloudMessageSafe(from, teksAkhir);
+              }
+            }
+            void markMessageProcessed('whatsapp', messageId);
+
+            const kontenAssistant = [teksAkhir, stikerTerkirim ? `[Stiker terkirim: ${stickerBalasan}]` : '']
+              .filter(Boolean)
+              .join('\n');
             await saveMessage({
               platform: 'whatsapp',
               chat_id: chatKey,
               role: 'assistant',
-              content: stikerTerkirim ? `${teksAkhir}\n[Stiker terkirim: ${stickerBalasan}]` : teksAkhir,
+              content: kontenAssistant,
               via,
               tokens,
             });
-            updateContextCache(chatKey, 'assistant', stikerTerkirim ? `${teksAkhir}\n[Stiker terkirim: ${stickerBalasan}]` : teksAkhir);
+            updateContextCache(chatKey, 'assistant', kontenAssistant);
             noteExchange(chatKey);
             return;
           }

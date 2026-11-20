@@ -49,6 +49,67 @@ const sessionDir = path.resolve(process.cwd(), 'session_wa');
 const PROMPT_VERSION = 'v0.66.0';
 
 /**
+ * Ambil digit nomor telepon asli hanya dari JID PN (`@s.whatsapp.net` / `@c.us` / `@hosted`).
+ * JID `@lid`, `@hosted.lid`, dan `@g.us` ditolak agar angka LID tidak disangka nomor HP.
+ */
+export function extractPnDigits(jid?: string | null): string | null {
+  const s = String(jid ?? '').trim();
+  if (!s) return null;
+  const lower = s.toLowerCase();
+  if (lower.endsWith('@lid') || lower.endsWith('@hosted.lid') || lower.endsWith('@g.us')) return null;
+  if (lower.includes('@') && !/@(?:s\.whatsapp\.net|c\.us|hosted)$/.test(lower)) return null;
+  const digits = s.replace(/@.*$/, '').replace(/:\d+$/, '').replace(/\D/g, '');
+  return /^\d{8,15}$/.test(digits) ? digits : null;
+}
+
+/**
+ * Resolusi pengirim WhatsApp Baileys v7 ke nomor telepon (PN) asli bila protokol
+ * mengirim `@lid`. Grup (`@g.us`) tetap memakai ID grup untuk identitas ruang obrolan.
+ */
+export async function resolveBaileysSenderNumber(
+  sock: Pick<WASocket, 'signalRepository'> | null | undefined,
+  key: Pick<WAMessage['key'], 'remoteJid' | 'remoteJidAlt'>,
+): Promise<string> {
+  const remoteJid = String(key?.remoteJid ?? '');
+  if (!remoteJid) return '';
+  if (remoteJid.endsWith('@g.us')) return remoteJid.split('@')[0].split(':')[0];
+
+  if (remoteJid.endsWith('@lid') || remoteJid.endsWith('@hosted.lid')) {
+    const fromAlt = extractPnDigits(key.remoteJidAlt);
+    if (fromAlt) return fromAlt;
+    try {
+      const pn = await sock?.signalRepository?.lidMapping?.getPNForLID(remoteJid);
+      const fromMap = extractPnDigits(pn);
+      if (fromMap) return fromMap;
+    } catch {
+      // fallback ke angka JID mentah bila mapping belum tersedia
+    }
+  }
+
+  return remoteJid.split('@')[0].split(':')[0];
+}
+
+async function resolveParticipantId(
+  sock: Pick<WASocket, 'signalRepository'> | null | undefined,
+  participant?: string | null,
+  participantAlt?: string | null,
+): Promise<string | undefined> {
+  if (!participant) return undefined;
+  if (participant.endsWith('@lid') || participant.endsWith('@hosted.lid')) {
+    const fromAlt = extractPnDigits(participantAlt);
+    if (fromAlt) return fromAlt;
+    try {
+      const pn = await sock?.signalRepository?.lidMapping?.getPNForLID(participant);
+      const fromMap = extractPnDigits(pn);
+      if (fromMap) return fromMap;
+    } catch {
+      // fallback ke raw id
+    }
+  }
+  return participant.replace(/@.*$/, '');
+}
+
+/**
  * Mengirim pesan teks ke WhatsApp dengan pemecahan cerdas
  * jika panjang pesan melebihi limit 4000 karakter menggunakan splitMessageSmart.
  */
@@ -314,6 +375,9 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         };
       }
     | undefined;
+  const nomorBaileys = await resolveBaileysSenderNumber(sock, m.key);
+  const rawRemoteNum = String(remoteJid || '').split('@')[0].split(':')[0];
+
   let quotedText = '';
   let quotedFromBot = false;
   let quotedPengirim: 'bot' | 'diri' | 'lain' = 'diri';
@@ -331,10 +395,9 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     // Siapa pengirim pesan yang dibalas: 'bot' | 'diri' (user sendiri) | 'lain'.
     const botNum = String(config.whatsappPhoneNumber || '').replace(/\D/g, '');
     const part = String(ctxInfo.participant || '').split('@')[0].split(':')[0];
-    const selfNum = String(remoteJid || '').split('@')[0].split(':')[0];
     if (botNum && part && part.endsWith(botNum)) {
       quotedPengirim = 'bot';
-    } else if (part && selfNum && part === selfNum) {
+    } else if (part && ((rawRemoteNum && part === rawRemoteNum) || (nomorBaileys && part === nomorBaileys))) {
       quotedPengirim = 'diri';
     } else if (part) {
       quotedPengirim = 'lain';
@@ -344,14 +407,10 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     quotedFromBot = quotedPengirim === 'bot';
   }
 
-  // ── PERBAIKAN AUDIT 14 Okt 2026: chatKey HARUS SAMA dengan Cloud API ──
-  // BUG LAMA: `'wa_' + remoteJid` menghasilkan "wa_628991333323@s.whatsapp.net"
-  // (JID lengkap), sedangkan WhatsApp Cloud API menghasilkan "wa_628991333323"
-  // (nomor telanjang). Akibatnya SATU USER punya DUA identitas: riwayat/pengingat/
-  // keuangan yang tersimpan lewat Baileys TIDAK terlihat saat bot berjalan di
-  // Cloud (dan sebaliknya). Cooldown stiker juga memakai kunci berbeda.
-  // Kini memakai SATU SUMBER `normChatId` (src/chat_id.ts) seperti transport lain.
-  const nomorBaileys = String(remoteJid).split('@')[0].split(':')[0];
+  // ── PERBAIKAN AUDIT 14 Okt 2026 & FIX LID 20 Nov 2026: chatKey HARUS SAMA dengan Cloud API ──
+  // Selain stripping domain JID, Baileys v7 dapat mengirim remoteJid berbentuk @lid;
+  // nomorBaileys sudah meresolusi @lid -> nomor HP asli (via remoteJidAlt / lidMapping),
+  // sementara pengiriman balasan tetap memakai remoteJid asli agar selalu terkirim.
   const chatKey = normChatId(nomorBaileys, 'whatsapp');
 
   // ── KUNCI PER-CHAT (audit 14 Okt 2026) ──
@@ -692,22 +751,38 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
         updateContextCache(chatKey, 'user', kontenStikerUser);
         // PERBAIKAN 10 Okt 2026: sanitize + kirim stiker balasan (sama seperti
         // jalur WhatsApp Cloud).
-        const teksStiker = sanitizeAssistantOutput(replyStiker, kontenStikerUser, undefined, true).trim();
-        await sendWhatsAppMessageSafe(sock, remoteJid, teksStiker);
-        if (messageId) void markMessageProcessed('whatsapp', messageId);
+        let teksStiker = sanitizeAssistantOutput(replyStiker, kontenStikerUser, undefined, true).trim();
+        if (teksStiker) {
+          await sendWhatsAppMessageSafe(sock, remoteJid, teksStiker);
+        }
         let stikerBaileys = false;
         if (stickerBalasan && hasStickerForEmoji(stickerBalasan) && stickerFitsMood(stickerBalasan, kontenStikerUser)) {
           stikerBaileys = await sendWhatsAppStickerSafe(sock, remoteJid, stickerBalasan);
         }
+        if (!teksStiker && !stikerBaileys) {
+          teksStiker = (
+            await dynamicNotice(
+              'Temanmu baru mengirim stiker. Beri reaksi singkat 1 kalimat santai yang nyambung dengan obrolan terakhir tanpa menarasikan isi stiker atau bertanya balik.',
+              context,
+            )
+          ).trim();
+          if (teksStiker) {
+            await sendWhatsAppMessageSafe(sock, remoteJid, teksStiker);
+          }
+        }
+        if (messageId) void markMessageProcessed('whatsapp', messageId);
+        const kontenAssistant = [teksStiker, stikerBaileys ? `[Stiker terkirim: ${stickerBalasan}]` : '']
+          .filter(Boolean)
+          .join('\n');
         await saveMessage({
           platform: 'whatsapp',
           chat_id: chatKey,
           role: 'assistant',
-          content: stikerBaileys ? `${teksStiker}\n[Stiker terkirim: ${stickerBalasan}]` : teksStiker,
+          content: kontenAssistant,
           via,
           tokens,
         });
-        updateContextCache(chatKey, 'assistant', stikerBaileys ? `${teksStiker}\n[Stiker terkirim: ${stickerBalasan}]` : teksStiker);
+        updateContextCache(chatKey, 'assistant', kontenAssistant);
         noteExchange(chatKey);
         return;
       }
@@ -930,7 +1005,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             d.setSeconds(0, 0);
             return d;
           })();
-    const targetChat = remoteJid.replace(/@.*$/, '');
+    const targetChat = nomorBaileys;
     const reminderSaved = await saveReminderToDb(targetChat, message, dueAt, 'whatsapp');
     const { reply } = await autoReply(
       `Konfirmasi singkat dan hangat: pengingat "${message}" telah dicatat dan akan dikirim ${minutes} menit lagi.` +
@@ -947,11 +1022,13 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
   // Keduanya DIKONFIRMASI dulu sebelum disimpan (permintaan user: aman dulu).
   {
     const catatCtx = await getContext(chatKey, msgSentAt);
-    const targetChat = remoteJid.replace(/@.*$/, '');
+    const targetChat = nomorBaileys;
     // WhatsApp (Baileys) tidak menyediakan nama tampilan pengirim secara andal.
     // Di grup, pakai nomor pengirim (participant) sebagai pemisah identitas;
     // di chat privat tidak perlu (semua catatan milik satu orang).
-    const actorGrup = isGroup ? (m.key.participant || m.participant || undefined)?.replace(/@.*$/, '') : undefined;
+    const actorGrup = isGroup
+      ? await resolveParticipantId(sock, m.key.participant || m.participant, m.key.participantAlt)
+      : undefined;
     // Tangkap fakta personal (diam-diam) — lihat user_facts.ts.
     try { await tangkapFaktaPersonal(targetChat, text); } catch { /* best-effort */ }
     const hasil = await tanganiPencatatan(text, targetChat, catatCtx, { actor: actorGrup, platform: 'whatsapp' });

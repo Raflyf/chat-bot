@@ -63,15 +63,15 @@ export const config = {
   models: {
     // Tier 1: OpenCode Free. Model ID mengikuti katalog yang sudah diuji.
     opencodePrimary: 'deepseek-v4.1-flash-free',
-    opencodeBackup: ['glm-5.3-flash-free'],
+    opencodeBackup: ['mimo-v2.6-flash-free'],
 
     // Tier 2: Cloudflare Workers AI.
     cfPrimary: '@cf/qwen/qwen3.8-27b',
-    cfBackup: ['@cf/nvidia/nemotron-3-120b-a12b'],
+    cfBackup: ['@cf/google/gemma-4-26b-a4b-it'],
     cfVision: [
       '@cf/qwen/qwen3.8-27b',
-      '@cf/meta/llama-4-scout-17b-16e-instruct',
       '@cf/meta/llama-3.2-11b-vision-instruct',
+      '@cf/meta/llama-4-scout-17b-16e-instruct',
     ],
 
     // Tier 3: Groq. GPT-OSS hanya teks, Qwen juga menangani gambar.
@@ -101,10 +101,10 @@ export const config = {
       { kind: 'gemini', model: 'gemini-2.5-flash' },
       { kind: 'gemini', model: 'gemini-flash-lite-latest' },
       { kind: 'cloudflare', model: '@cf/qwen/qwen3.8-27b' },
-      { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
       { kind: 'cloudflare', model: '@cf/meta/llama-3.2-11b-vision-instruct' },
+      { kind: 'cloudflare', model: '@cf/meta/llama-4-scout-17b-16e-instruct' },
       { kind: 'opencode', model: 'deepseek-v4.1-flash-free' },
-      { kind: 'opencode', model: 'glm-5.3-flash-free' },
+      { kind: 'opencode', model: 'mimo-v2.6-flash-free' },
     ] as Array<{
       kind: 'opencode' | 'cloudflare' | 'groq' | 'dreamprompting' | 'openrouter' | 'gemini';
       model: string;

@@ -730,7 +730,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
           // membalas stiker dengan stiker.
           // Simpan isi pengirim yang diamati, bukan reaksi bot sebagai ucapan user.
           const kontenStikerUser = stickerUserContent(labelStiker, rawCaption, stickerText);
-          const teksStiker = sanitizeAssistantOutput(replyStiker, kontenStikerUser, undefined, true).trim();
+          let teksStiker = sanitizeAssistantOutput(replyStiker, kontenStikerUser, undefined, true).trim();
           await saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
@@ -739,21 +739,37 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             msg_id: msgId || undefined,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker user:', err));
           updateContextCache(chatKey, 'user', kontenStikerUser);
-          await sendTelegramMessageSafe(bot, chatId, teksStiker);
-          if (msgId) void markMessageProcessed('telegram', msgId);
+          if (teksStiker) {
+            await sendTelegramMessageSafe(bot, chatId, teksStiker);
+          }
           let stikerTele = false;
           if (stickerBalasan && hasStickerForEmoji(stickerBalasan) && stickerFitsMood(stickerBalasan, kontenStikerUser)) {
             stikerTele = await sendTelegramStickerSafe(bot, chatId, stickerBalasan);
           }
+          if (!teksStiker && !stikerTele) {
+            teksStiker = (
+              await dynamicNotice(
+                'Temanmu baru mengirim stiker. Beri reaksi singkat 1 kalimat santai yang nyambung dengan obrolan terakhir tanpa menarasikan isi stiker atau bertanya balik.',
+                ctx,
+              )
+            ).trim();
+            if (teksStiker) {
+              await sendTelegramMessageSafe(bot, chatId, teksStiker);
+            }
+          }
+          if (msgId) void markMessageProcessed('telegram', msgId);
+          const kontenAssistant = [teksStiker, stikerTele ? `[Stiker terkirim: ${stickerBalasan}]` : '']
+            .filter(Boolean)
+            .join('\n');
           await saveMessage({
             platform: 'telegram',
             chat_id: chatKey,
             role: 'assistant',
-            content: stikerTele ? `${teksStiker}\n[Stiker terkirim: ${stickerBalasan}]` : teksStiker,
+            content: kontenAssistant,
             via,
             tokens,
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan stiker assistant:', err));
-          updateContextCache(chatKey, 'assistant', stikerTele ? `${teksStiker}\n[Stiker terkirim: ${stickerBalasan}]` : teksStiker);
+          updateContextCache(chatKey, 'assistant', kontenAssistant);
           noteExchange(chatKey);
           return;
         }

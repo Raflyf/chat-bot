@@ -19,7 +19,7 @@ test('runtime tier mengikuti kontrak tanpa Dahl/NIM', () => {
   const steps = load('steps', { config });
   const routes = steps();
   assert.equal(routes.map(s => s.kind).join(','), 'opencode,cloudflare,groq,dreamprompting,openrouter,gemini');
-  assert.equal(routes[0].models.join(','), 'deepseek-v4.1-flash-free,glm-5.3-flash-free');
+  assert.equal(routes[0].models.join(','), 'deepseek-v4.1-flash-free,mimo-v2.6-flash-free');
   assert.equal(routes[3].models.join(','), 'groq/qwen/qwen3.8-27b');
   assert.ok(config.models.visionChain.every(v => routes.some(s => s.kind === v.kind)));
 });
