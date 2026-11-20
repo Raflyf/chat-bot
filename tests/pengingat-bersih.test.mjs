@@ -45,3 +45,25 @@ test('keuangan: TIDAK terpengaruh gerbang pengingat', () => {
     assert.equal(n?.kind, 'expense', `"${t}" harus tetap keuangan`);
   }
 });
+
+test('pengingat interval sub-harian: kata "menit"/"jam" bersih dan repeat_kind = interval_minutes', () => {
+  const r1 = deteksiNiat('ingatkan rutin setiap 29 menit ON');
+  assert.equal(r1?.data?.message, 'ON');
+  assert.equal(r1?.data?.repeat_kind, 'interval_minutes');
+  assert.equal(r1?.data?.repeat_value, '29');
+
+  const r2 = deteksiNiat('ingatkan rutin setiap 30 menit minum air');
+  assert.equal(r2?.data?.message, 'minum air');
+  assert.equal(r2?.data?.repeat_kind, 'interval_minutes');
+  assert.equal(r2?.data?.repeat_value, '30');
+
+  const r3 = deteksiNiat('ingatkan tiap 2 jam istirahat mata');
+  assert.equal(r3?.data?.message, 'istirahat mata');
+  assert.equal(r3?.data?.repeat_kind, 'interval_minutes');
+  assert.equal(r3?.data?.repeat_value, '120');
+
+  // Regresi: "tiap jam 6 pagi" tetap pengingat harian jam 6, bukan interval.
+  const r4 = deteksiNiat('buatkan jadwal rutin tiap jam 6 pagi harus bangun');
+  assert.equal(r4?.data?.message, 'bangun');
+  assert.equal(r4?.data?.repeat_kind, 'daily');
+});

@@ -558,9 +558,18 @@ export async function checkDueReminders(
           // Batas 30 iterasi (~1 bulan untuk harian) agar tidak menggantung.
           let iterasi = 0;
           const sekarang = Date.now();
-          while (next && next.getTime() <= sekarang && iterasi < 30) {
-            next = berikutnya(next, aturan, zona);
-            iterasi++;
+          if (kindUlang === 'interval_minutes' && next && next.getTime() <= sekarang) {
+            const stepMs = Math.max(1, Math.round(Number(it.repeat_value) || 0)) * 60_000;
+            const lompat = Math.floor((sekarang - next.getTime()) / stepMs) + 1;
+            next = new Date(next.getTime() + lompat * stepMs);
+            if (aturan.repeat_until && next.getTime() > new Date(aturan.repeat_until).getTime()) {
+              next = null;
+            }
+          } else {
+            while (next && next.getTime() <= sekarang && iterasi < 30) {
+              next = berikutnya(next, aturan, zona);
+              iterasi++;
+            }
           }
           if (next) {
             await c.from('reminders').update({

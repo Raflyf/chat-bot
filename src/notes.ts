@@ -32,7 +32,7 @@ import { tanganiGame } from './games/index.js';
 import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
 import { ambilProfilWaktu, getCacheProfil, butuhLokasiAtauWaktu, tentukanProfilWaktu, berkaitanDenganWaktu, waktuDiZona } from './user-profile.js';
 import { detectUserLocationDeclaration } from './timezone.js';
-import { deteksiPengulangan, labelUlang } from './reminder-repeat.js';
+import { deteksiPengulangan, labelUlang, type RepeatKind } from './reminder-repeat.js';
 import { susunRingkasan, mintaRingkasan } from './ringkasan.js';
 
 /**
@@ -1160,12 +1160,20 @@ const KATA_PERINTAH_UTAMA =
   // "buatkan jadwal rutin tiap jam 6 pagi harus bangun" tidak dikenali.
   // Kata "jadwal/rutin/bangunkan/atur/pasang" juga menandakan permintaan pengingat.
   const adaPerintahIngat = /\b(?:ingatkan|ingetin|ingat|remind|reminder|pengingat|jadwal|jadwalkan|jadwalin|rutin|rutinin|bangunkan|bangunin|atur|aturin|pasang|pasangkan|setel)\b/i.test(asli);
-  // DIPERLUAS: "tiap jam 6" (tanpa kata hari) juga pengulangan HARIAN.
-  const adaPengulangan = /\b(?:tiap|setiap|saban)\s+(?:hari|minggu|bulan|tahun|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|tanggal|hari\s+kerja|jam|pukul)\b|\b(?:harian|mingguan|bulanan|tahunan|rutin)\b/i.test(asli);
+  // DIPERLUAS: "tiap jam 6" (tanpa kata hari) dan interval sub-harian ("tiap 29 menit").
+  const adaPengulangan = /\b(?:tiap|setiap|tiap-tiap|tiap2|saban)\s+(?:hari|minggu|bulan|tahun|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|tanggal|hari\s+kerja|jam|pukul)\b|\b(?:tiap|setiap|tiap-tiap|tiap2|saban|per)\s+(?:\d{1,4}(?:[.,]\d+)?\s*(?:menit|mnt|jam)|setengah\s+jam|sejam|semenit|menit|mnt)\b|\b(?:harian|mingguan|bulanan|tahunan|rutin)\b/i.test(asli);
   if (adaPerintahIngat && adaPengulangan) {
-    const kapanUlang = parseWaktuAlami(asli);
+    const ulang0 = deteksiPengulangan(asli);
+    let kapanUlang = parseWaktuAlami(asli);
+    if (!kapanUlang && ulang0?.kind === 'interval_minutes' && ulang0.value) {
+      const menit = Number(ulang0.value);
+      if (Number.isFinite(menit) && menit >= 1) {
+        const t = new Date(Date.now() + menit * 60_000);
+        t.setSeconds(0, 0);
+        kapanUlang = t;
+      }
+    }
     if (kapanUlang) {
-      const ulang0 = deteksiPengulangan(asli);
       // BUG YANG DIPERBAIKI (06 Okt 2026): blok ini punya pembersih SENDIRI yang
       // TIDAK membuang kata waktu seperti "pagi/siang/sore/malam", sehingga:
       //   "ingatkan tiap hari jam 6 pagi bangun" -> pesan "pagi bangun" ❌
@@ -1205,6 +1213,9 @@ const KATA_PERINTAH_UTAMA =
         .replace(/\s*\b(?:dan|atau|serta|,)\s*\d{1,2}([:.]\d{2})?\s*(?:pagi|siang|sore|malam|subuh)?/gi, ' ')
         .replace(/\s*\b\d{1,2}([:.]\d{2})\s*(?:pagi|siang|sore|malam|subuh)?\b/gi, ' ')
         .replace(/\s*\b(?:dan|atau|serta|juga)\s*[.!?]*\s*$/gi, ' ')
+        .replace(/\b(?:tiap|setiap|tiap-tiap|tiap2|saban|per)\s+\d{1,4}(?:[.,]\d+)?\s*(?:menit|mnt|jam|hari|minggu|bulan)\b/gi, '')
+        .replace(/\b(?:tiap|setiap|tiap-tiap|tiap2|saban|per)\s+(?:setengah\s+jam|sejam|semenit|menit|mnt|jam(?!\s*\d))\b/gi, '')
+        .replace(/\b\d{1,3}(?:[.,]\d+)?\s*(?:menit|mnt|jam|hari|minggu|bulan)\s*(?:lagi|kemudian|kedepan)?\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+(?:hari\s+kerja|hari|minggu|bulan|tahun|jam|pukul)\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+(?:minggu|senin|selasa|rabu|kamis|jumat|jum'at|sabtu)\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+tanggal\s+\d{1,2}\b/gi, '')
@@ -1234,7 +1245,7 @@ const KATA_PERINTAH_UTAMA =
         .replace(/\b(?:atau|dan|serta)\b/gi, ' ')
         .replace(/\s{2,}/g, ' ')
         .trim();
-      if (pesan0.length < 3) pesan0 = asli;
+      if (pesan0.replace(/[^a-z0-9]/gi, '').length < 2) pesan0 = asli;
       return {
         kind: 'note',
         yakin: 0.92,
@@ -1518,6 +1529,8 @@ const KATA_PERINTAH_UTAMA =
         .replace(/^\s*(?:tolong|please|pls|saya|aku|gue|gw|kami|kita|dong|nih|ya|deh|sih)\s+/i, '')
         // Kata PENGULANGAN dibuang dari pesan (aturan berulang sudah disimpan
         // di kolom terpisah). Temuan uji: "tiap hari minum obat" -> "minum obat".
+        .replace(/\b(?:tiap|setiap|tiap-tiap|tiap2|saban|per)\s+\d{1,4}(?:[.,]\d+)?\s*(?:menit|mnt|jam)\b/gi, '')
+        .replace(/\b(?:tiap|setiap|tiap-tiap|tiap2|saban|per)\s+(?:setengah\s+jam|sejam|semenit|menit|mnt)\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+(?:hari\s+kerja|hari|minggu|bulan|tahun)\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+(?:minggu|senin|selasa|rabu|kamis|jumat|jum'at|sabtu)\b/gi, '')
         .replace(/\b(?:tiap|setiap|saban)\s+tanggal\s+\d{1,2}\b/gi, '')
@@ -1542,7 +1555,7 @@ const KATA_PERINTAH_UTAMA =
         .replace(/\s*\b(?:dan|atau|serta|juga)\s+(?=[.!?]|$)/gi, ' ')
         .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
         // "N menit lagi", N boleh digit ATAU angka kata
-        .replace(new RegExp(`\\b(?:\\d+|${ANGKA_KATA})\\s*(menit|jam|hari|minggu|bulan)\\s*(lagi|kemudian|kedepan)?\\b`, 'gi'), '')
+        .replace(new RegExp(`\\b(?:\\d+|${ANGKA_KATA})\\s*(menit|mnt|jam|hari|minggu|bulan)\\s*(lagi|kemudian|kedepan)?\\b`, 'gi'), '')
         // sisa "lagi" yang menggantung (mis. "buat login lagi")
         .replace(/\blagi\b/gi, '')
         // Sisa "coba di" / "di" menggantung SETELAH kata waktu dibuang
@@ -1556,16 +1569,16 @@ const KATA_PERINTAH_UTAMA =
       // JANGAN pakai teks asli mentah (akan berisi kata waktu: "jam 8 malam").
       // Buang kata perintah + kata waktu; bila tetap kosong, pakai kata generik
       // yang jujur ("pengingat") daripada menampilkan frasa waktu yang aneh.
-      if (pesan.length < 3) {
+      if (pesan.replace(/[^a-z0-9]/gi, '').length < 2) {
         const sisaBersih = asli
           .replace(/^\s*\/?(ingatkan|ingetin|ingat|remind|reminder|pengingat)\b\s*/i, '')
           .replace(/\b(besok|lusa|hari ini|nanti|pagi|siang|sore|malam|subuh)\b/gi, '')
           .replace(/\b(jam|pukul)\s*\d{1,2}([:.]\d{2})?/gi, '')
           .replace(/\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/gi, '')
-          .replace(/\b\d{1,2}\s*(menit|jam|hari|minggu|bulan)\b/gi, '')
+          .replace(/\b\d{1,2}\s*(menit|mnt|jam|hari|minggu|bulan)\b/gi, '')
           .replace(/\s{2,}/g, ' ')
           .trim();
-        pesan = sisaBersih.length >= 3 ? sisaBersih : 'pengingat';
+        pesan = sisaBersih.replace(/[^a-z0-9]/gi, '').length >= 2 ? sisaBersih : 'pengingat';
       }
       // PENGINGAT BERULANG (fitur baru 05 Okt 2026): "tiap hari jam 7", "tiap Senin jam 9".
       const ulang = deteksiPengulangan(s);
@@ -2729,7 +2742,7 @@ async function simpanDariNiat(
       try {
         const { labelUlang } = await import('./reminder-repeat.js');
         teksUlang = labelUlang({
-          repeat_kind: String(d.repeat_kind) as 'daily' | 'weekday' | 'weekly' | 'monthly' | 'yearly',
+          repeat_kind: String(d.repeat_kind) as RepeatKind,
           repeat_value: d.repeat_value ? String(d.repeat_value) : null,
           repeat_until: null,
           repeat_count: 0,

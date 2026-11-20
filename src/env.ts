@@ -249,6 +249,12 @@ export const config = {
   // SUPABASE_SERVICE_KEY. Salt legacy opsional lewat env LEGACY_PIN_SALTS.
   pinSalt: cleanStr('PIN_SALT'),
   adminPin: cleanStr('ADMIN_PIN'),
+  // Monitor lifecycle VPS eksternal (read-only GET /v1/machines/{id}, tanpa ping/exec ke VM).
+  instaboxApiKey: cleanStr('INSTABOX_API_KEY'),
+  instaboxMachineId: cleanStr('INSTABOX_MACHINE_ID'),
+  instaboxApiBase: cleanStr('INSTABOX_API_BASE') || 'https://api.instabox.sh',
+  vpsWarnBeforeMinutes: num('VPS_WARN_BEFORE_MINUTES', 5),
+  vpsMaxRunMinutes: numAllowZero('VPS_MAX_RUN_MINUTES', 120),
 };
 
 export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegram'): void {

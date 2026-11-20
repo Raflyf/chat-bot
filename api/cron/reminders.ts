@@ -4,6 +4,7 @@ import { config } from '../../src/env.js';
 import { getTelegramBot } from '../../src/telegram.js';
 import { checkDueReminders, nomorWhatsApp } from '../../src/remind.js';
 import { sendWhatsAppCloudMessageSafe } from '../../src/whatsapp_cloud.js';
+import { cekLifecycleVps } from '../../src/vps_monitor.js';
 
 function timingSafeMatch(a: string, b: string): boolean {
   const bufA = Buffer.from(a, 'utf8');
@@ -77,7 +78,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
     });
 
-    res.status(200).json({ ok: true, processed, timestamp: new Date().toISOString() });
+    let vpsMonitor: { checked: boolean; state: string | null; events: string[]; skipped?: string } = {
+      checked: false,
+      state: null,
+      events: [],
+    };
+    try {
+      vpsMonitor = await cekLifecycleVps();
+    } catch (err) {
+      console.warn('[cron/reminders] cekLifecycleVps error:', String((err as Error)?.message ?? err).slice(0, 120));
+    }
+
+    res.status(200).json({
+      ok: true,
+      processed,
+      vps_monitor: vpsMonitor,
+      timestamp: new Date().toISOString(),
+    });
   } catch (err) {
     console.error('[cron/reminders] Error running reminder cron:', err);
     res.status(500).json({ error: 'Internal Error' });

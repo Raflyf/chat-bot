@@ -106,7 +106,8 @@ export async function clearSessionInSupabase(): Promise<void> {
       .from('whatsapp_sessions')
       .delete()
       .neq('filename', '')
-      .neq('filename', '__admin_auth_config.json');
+      .neq('filename', '__admin_auth_config.json')
+      .neq('filename', '__vps_monitor_state.json');
     console.log('[wa-session] Sesi WhatsApp di Supabase telah dibersihkan.');
   } catch (err) {
     console.error('[wa-session] Gagal membersihkan sesi di Supabase:', err);

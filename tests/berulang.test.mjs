@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deteksiPengulangan, berikutnya } from '../src/reminder-repeat.js';
+import { deteksiPengulangan, berikutnya, labelUlang } from '../src/reminder-repeat.js';
 
 test('deteksiPengulangan: tiap hari', () => {
   for (const t of ['ingatkan tiap hari jam 7 minum obat', 'setiap hari jam 6 olahraga', 'harian jam 8']) {
@@ -63,4 +63,34 @@ test('berikutnya: lewat batas akhir -> null', () => {
 
 test('berikutnya: none -> null', () => {
   assert.equal(berikutnya(new Date(), { repeat_kind: 'none', repeat_value: null, repeat_until: null, repeat_count: 0 }), null);
+});
+
+test('deteksiPengulangan: interval sub-harian ("setiap 29 menit", "tiap 2 jam", "setiap jam")', () => {
+  const m29 = deteksiPengulangan('ingatkan rutin setiap 29 menit ON');
+  assert.deepEqual(m29, { kind: 'interval_minutes', value: '29', label: 'tiap 29 menit' });
+
+  const j2 = deteksiPengulangan('ingatkan setiap 2 jam minum air');
+  assert.deepEqual(j2, { kind: 'interval_minutes', value: '120', label: 'tiap 2 jam' });
+
+  const j1 = deteksiPengulangan('ingatkan setiap jam peregangan');
+  assert.deepEqual(j1, { kind: 'interval_minutes', value: '60', label: 'tiap 1 jam' });
+
+  // JANGAN sampai salah mengira "tiap jam 6 pagi" sebagai interval per jam.
+  assert.equal(deteksiPengulangan('buatkan jadwal rutin tiap jam 6 pagi harus bangun'), null);
+});
+
+test('berikutnya & labelUlang: interval_minutes', () => {
+  const dasar = new Date('2026-11-20T05:02:00.000Z');
+  const next = berikutnya(dasar, { repeat_kind: 'interval_minutes', repeat_value: '29', repeat_until: null, repeat_count: 0 });
+  assert.ok(next);
+  assert.equal(next.getTime() - dasar.getTime(), 29 * 60_000);
+
+  assert.equal(
+    labelUlang({ repeat_kind: 'interval_minutes', repeat_value: '29', repeat_until: null, repeat_count: 0 }),
+    'tiap 29 menit',
+  );
+  assert.equal(
+    labelUlang({ repeat_kind: 'interval_minutes', repeat_value: '120', repeat_until: null, repeat_count: 0 }),
+    'tiap 2 jam',
+  );
 });

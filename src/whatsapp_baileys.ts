@@ -35,7 +35,9 @@ import { catatHasilKirimWa } from './wa_monitor.js';
 const MAX_RECONNECT = 8;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let reconnectCount = 0;
+let activeSock: WASocket | null = null;
 import { sendWhatsAppCloudMessageSafe } from './whatsapp_cloud.js';
+import { laporShutdownVps, mulaiTimerPeringatanLokalVps } from './vps_monitor.js';
 import {
   restoreSessionFromSupabase,
   syncSessionDirToSupabase,
@@ -236,6 +238,7 @@ export async function startWhatsApp(): Promise<void> {
     if (connection === 'open') {
       // Koneksi berhasil -> reset penghitung reconnect (perbaikan audit 14 Okt 2026).
       reconnectCount = 0;
+      activeSock = sock;
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       console.log('[whatsapp] Berhasil terhubung ke jaringan WhatsApp.');
       console.log('[whatsapp] Bot siap menerima dan membalas pesan 24 jam nonstop.');
@@ -243,6 +246,7 @@ export async function startWhatsApp(): Promise<void> {
     }
 
     if (connection === 'close') {
+      if (activeSock === sock) activeSock = null;
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       console.log(`[whatsapp] Koneksi terputus (status: ${statusCode}). Reconnect: ${shouldReconnect}`);
@@ -1183,10 +1187,26 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 if (process.argv[1] && process.argv[1].includes('whatsapp_baileys')) {
   void startWhatsApp();
 
-  const stop = () => {
-    console.log('\n[whatsapp] Proses dihentikan.');
-    process.exit(0);
+  const stopVpsTimer = mulaiTimerPeringatanLokalVps({
+    kirimWaOwner: async (teks) => {
+      if (!activeSock || !config.ownerWaNumber) return false;
+      let digits = config.ownerWaNumber.replace(/\D/g, '');
+      if (digits.startsWith('0')) digits = '62' + digits.slice(1);
+      if (!/^\d{8,15}$/.test(digits)) return false;
+      return await sendWhatsAppMessageSafe(activeSock, `${digits}@s.whatsapp.net`, teks);
+    },
+  });
+
+  let stopping = false;
+  const stop = (signal: string) => {
+    if (stopping) return;
+    stopping = true;
+    stopVpsTimer();
+    console.log(`\n[whatsapp] Proses dihentikan (${signal}).`);
+    void laporShutdownVps(signal).finally(() => {
+      process.exit(0);
+    });
   };
-  process.on('SIGINT', stop);
-  process.on('SIGTERM', stop);
+  process.on('SIGINT', () => stop('SIGINT'));
+  process.on('SIGTERM', () => stop('SIGTERM'));
 }

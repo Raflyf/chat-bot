@@ -13,7 +13,7 @@
  */
 import { formatInZone } from './timezone.js';
 
-export type RepeatKind = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'weekday';
+export type RepeatKind = 'none' | 'interval_minutes' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'weekday';
 
 export interface AturanUlang {
   repeat_kind: RepeatKind;
@@ -28,6 +28,13 @@ export interface AturanUlang {
 const NAMA_HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const NAMA_HARI_ID = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
 
+function formatLabelIntervalMenit(totalMenit: number): string {
+  if (totalMenit >= 60 && totalMenit % 60 === 0) {
+    return `tiap ${totalMenit / 60} jam`;
+  }
+  return `tiap ${Math.round(totalMenit)} menit`;
+}
+
 /**
  * Deteksi aturan pengulangan dari teks user.
  * Mengembalikan null bila bukan pengingat berulang.
@@ -39,6 +46,29 @@ export function deteksiPengulangan(teks: string): { kind: RepeatKind; value: str
   //    "tiap hari" menangkapnya lebih dulu (BUG ditemukan test otomatis 05 Okt 2026).
   if (/\bhari\s+kerja\b|\bweekday\b|\bkerja\s*hari\b/.test(s)) {
     return { kind: 'weekday', value: null, label: 'tiap hari kerja (Senin-Jumat)' };
+  }
+
+  // 1b. Interval sub-harian: "tiap/setiap/per N menit|mnt|jam", "tiap setengah jam/sejam/semenit",
+  //     atau "tiap/setiap jam|menit" (hanya bila TIDAK diikuti angka agar "tiap jam 6 pagi" tetap harian).
+  const mInterval = s.match(/\b(?:tiap|setiap|tiap-tiap|tiap2|saban|per)\s+(\d{1,4}(?:[.,]\d+)?)\s*(menit|mnt|jam)\b/);
+  if (mInterval) {
+    const n = Number(mInterval[1].replace(',', '.'));
+    const totalMenit = mInterval[2] === 'jam' ? Math.round(n * 60) : Math.round(n);
+    if (Number.isFinite(totalMenit) && totalMenit >= 1 && totalMenit <= 10080) {
+      return { kind: 'interval_minutes', value: String(totalMenit), label: formatLabelIntervalMenit(totalMenit) };
+    }
+  }
+  const mKataInterval = s.match(/\b(?:tiap|setiap|tiap-tiap|tiap2|saban|per)\s+(setengah\s+jam|sejam|semenit)\b/);
+  if (mKataInterval) {
+    const frasa = mKataInterval[1].replace(/\s+/g, ' ');
+    const totalMenit = frasa === 'setengah jam' ? 30 : frasa === 'sejam' ? 60 : 1;
+    return { kind: 'interval_minutes', value: String(totalMenit), label: formatLabelIntervalMenit(totalMenit) };
+  }
+  if (/\b(?:tiap|setiap|tiap-tiap|tiap2|saban|per)\s+jam(?!\s*\d)\b/.test(s)) {
+    return { kind: 'interval_minutes', value: '60', label: 'tiap 1 jam' };
+  }
+  if (/\b(?:tiap|setiap|tiap-tiap|tiap2|saban|per)\s+(?:menit|mnt)(?!\s*\d)\b/.test(s)) {
+    return { kind: 'interval_minutes', value: '1', label: 'tiap 1 menit' };
   }
 
   // 2. "tiap hari" / "setiap hari" / "harian" / "tiap pagi" / "tiap malam"
@@ -104,6 +134,11 @@ export function berikutnya(
   const MAX_ITER = 400; // batas aman (~1 tahun+)
 
   switch (kind) {
+    case 'interval_minutes': {
+      const menit = Number(aturan.repeat_value);
+      if (!Number.isFinite(menit) || menit < 1) return null;
+      return new Date(dasar.getTime() + Math.round(menit) * 60_000);
+    }
     case 'daily': {
       maju.setUTCDate(maju.getUTCDate() + 1);
       return setJamLokal(maju, jam, menit, zona);
@@ -188,6 +223,11 @@ function setJamLokal(d: Date, jam: number, menit: number, zona: string): Date {
 /** Label ramah untuk ditampilkan ke user. */
 export function labelUlang(aturan: AturanUlang, zona = 'Asia/Jakarta'): string {
   switch (aturan.repeat_kind) {
+    case 'interval_minutes': {
+      const m = Number(aturan.repeat_value);
+      if (!Number.isFinite(m) || m < 1) return 'berulang';
+      return formatLabelIntervalMenit(Math.round(m));
+    }
     case 'daily': return 'tiap hari';
     case 'weekday': return 'tiap hari kerja (Senin-Jumat)';
     case 'weekly': {
