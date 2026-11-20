@@ -15,7 +15,7 @@
 
   function initRevealObserver() {
     var targets = document.querySelectorAll(
-      ".hero-badge, .hero-title, .hero-subtitle, .hero-cta-group, .section-title-wrap, .feature-card, .dashboard-teaser, footer"
+      ".section-title-wrap, .feature-card, .dashboard-teaser, .lapor-card, footer"
     );
     if (!targets.length) return;
 

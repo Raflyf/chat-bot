@@ -503,7 +503,9 @@ section { margin-bottom: var(--s5); }
   padding: var(--s3) var(--s4);
   border-radius: var(--r-panel);
   margin-bottom: var(--s5);
-  background: linear-gradient(165deg, rgba(8, 16, 32, 0.78), rgba(4, 10, 22, 0.7));
+  background: rgba(4, 10, 22, 0.48);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 8px 24px rgba(0, 0, 0, 0.28);
   position: relative;
@@ -559,7 +561,9 @@ section { margin-bottom: var(--s5); }
 }
 .kpi-card {
   position: relative;
-  background: linear-gradient(165deg, rgba(8, 18, 36, 0.76), rgba(4, 10, 22, 0.68));
+  background: var(--surface-raised);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
@@ -639,7 +643,9 @@ section { margin-bottom: var(--s5); }
 
 .provider-card {
   position: relative;
-  background: linear-gradient(165deg, rgba(8, 18, 36, 0.76), rgba(4, 10, 22, 0.68));
+  background: var(--surface-raised);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
@@ -705,7 +711,7 @@ section { margin-bottom: var(--s5); }
   border: 1px solid var(--separator);
 }
 [data-theme="dark"] .key-row {
-  background: rgba(3, 8, 18, 0.58);
+  background: rgba(3, 8, 18, 0.38);
   border-color: rgba(255, 255, 255, 0.08);
 }
 .key-row.status-warning { border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
@@ -810,7 +816,7 @@ section { margin-bottom: var(--s5); }
   padding: var(--s4);
   border-radius: var(--r-panel);
   border: 1px solid var(--separator);
-  background: rgba(3, 8, 18, 0.56);
+  background: rgba(3, 8, 18, 0.38);
 }
 [data-theme="light"] .websearch-panel {
   background: var(--surface-sunken);
@@ -959,7 +965,9 @@ section { margin-bottom: var(--s5); }
 /* ---- Tabel: konten, permukaan padat ---- */
 .live-upstream-card, .token-matrix-section, .matrix-section, .activity-card {
   position: relative;
-  background: linear-gradient(165deg, rgba(7, 15, 30, 0.76), rgba(4, 10, 22, 0.68));
+  background: var(--surface-raised);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   border-radius: var(--r-panel);
   padding: var(--s4);
@@ -1000,7 +1008,7 @@ section { margin-bottom: var(--s5); }
   flex-direction: column;
   gap: 3px;
 }
-[data-theme="dark"] .live-stat-box { background: rgba(3, 8, 18, 0.56); }
+[data-theme="dark"] .live-stat-box { background: rgba(3, 8, 18, 0.38); }
 .live-stat-label { font-size: 12px; color: var(--text-secondary); }
 .live-stat-val { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
 .live-stat-sub { font-size: 11px; color: var(--text-secondary); }
@@ -1010,7 +1018,7 @@ section { margin-bottom: var(--s5); }
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.48);
+  background: rgba(3, 8, 18, 0.38);
 }
 [data-theme="light"] .token-table-container,
 [data-theme="light"] .table-container {
@@ -1100,7 +1108,9 @@ td:nth-child(1) { font-variant-numeric: normal; }
   align-items: center;
   padding: var(--s4);
   border-radius: var(--r-panel);
-  background: linear-gradient(165deg, rgba(8, 18, 36, 0.76), rgba(4, 10, 22, 0.68));
+  background: var(--surface-raised);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
   border: 1px solid var(--separator);
   margin-bottom: var(--s4);
   position: relative;
@@ -1160,7 +1170,7 @@ td:nth-child(1) { font-variant-numeric: normal; }
   overflow: hidden;
   padding: 1rem 1.05rem 0.95rem;
   border-radius: var(--r-panel);
-  background: rgba(6, 14, 28, 0.56);
+  background: rgba(6, 14, 28, 0.42);
   border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
@@ -1593,8 +1603,8 @@ header.header-scrolled .nav-inner {
 }
 
 @keyframes card-in {
-  from { opacity: 0; transform: translateY(22px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { transform: translate3d(0, 18px, 0) scale(0.985); }
+  to { transform: translate3d(0, 0, 0) scale(1); }
 }
 
 /* Stagger: kartu masuk berurutan, bukan serentak. */
@@ -2741,7 +2751,7 @@ body {
 .status-panel {
   padding: clamp(1rem, 2.5vw, 1.5rem);
   border-radius: var(--r-panel);
-  background: rgba(4, 10, 22, 0.56);
+  background: rgba(4, 10, 22, 0.38);
   border: 1px solid var(--separator);
 }
 
@@ -2756,7 +2766,7 @@ body {
 .status-item {
   padding: 0.9rem;
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.58);
+  background: rgba(3, 8, 18, 0.42);
   border: 1px solid var(--separator);
 }
 
@@ -2800,7 +2810,7 @@ body {
   position: relative;
   padding: 0.8rem;
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.58);
+  background: rgba(3, 8, 18, 0.38);
   border: 1px solid var(--separator);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   display: flex;
@@ -2836,7 +2846,7 @@ body {
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--separator);
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.48);
+  background: rgba(3, 8, 18, 0.38);
   scrollbar-width: thin;
   scrollbar-color: var(--separator-strong) transparent;
 }
@@ -2904,7 +2914,7 @@ body {
 .media-item {
   padding: 0.85rem;
   border-radius: var(--r-control);
-  background: rgba(3, 8, 18, 0.56);
+  background: rgba(3, 8, 18, 0.38);
   border: 1px solid var(--separator);
   text-align: center;
 }
@@ -2984,7 +2994,9 @@ body {
 .site-footer {
   border-top: 1px solid var(--separator);
   padding-block: 1.5rem;
-  background: rgba(2, 8, 20, 0.78);
+  background: rgba(2, 8, 20, 0.5);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
 }
 
 [data-theme="light"] .site-footer { background: rgba(238, 242, 249, 0.7); }
@@ -3212,24 +3224,30 @@ body {
   }
 }
 
-/* ---------- Animasi Reveal Fisika Murni Konsol (Zero GPU Layer Teardown) ---------- */
+/* ---------- Animasi Reveal Fisika Murni Konsol (BackdropRoot container tetap opacity 1) ---------- */
 .reveal-init {
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.reveal-init > * {
   opacity: 0;
-  transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
-              transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.38s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .reveal-init.reveal-from-bottom {
-  transform: translate3d(0, 24px, 0);
+  transform: translate3d(0, 22px, 0);
 }
 
 .reveal-init.reveal-from-top {
-  transform: translate3d(0, -24px, 0);
+  transform: translate3d(0, -22px, 0);
 }
 
 .reveal-init.revealed {
-  opacity: 1;
   transform: translate3d(0, 0, 0);
+}
+
+.reveal-init.revealed > * {
+  opacity: 1;
 }
 
 .kpi-card.revealed:hover,

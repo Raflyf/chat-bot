@@ -64,15 +64,23 @@ test('performa scroll & animasi: tanpa nested backdrop-filter berlebih & animasi
   assert.match(consoleCss, /@keyframes card-in/, 'animasi card-in dashboard tetap aktif');
   assert.match(homeJs, /unobserve/, 'home.js harus unobserve setelah reveal agar tidak freeze saat scroll bolak-balik');
   assert.match(dashJs, /unobserve/, 'dashboard.js harus unobserve setelah reveal agar tidak freeze saat scroll bolak-balik');
-  assert.match(smoothJs, /scrollTo/, 'smooth-scroll.js harus menyediakan wrapper kompatibel native scrollTo');
-  assert.ok(!/smoothWheel:\s*true/.test(smoothJs), 'smooth-scroll.js tidak boleh membajak wheel di main thread');
+  assert.match(smoothJs, /lerp:\s*0\.14/, 'smooth-scroll.js harus memakai lerp cepat 0.14 agar ringan');
+  assert.match(smoothJs, /lenis\.time\s*=\s*0/, 'smooth-scroll.js harus mereset lenis.time = 0 saat wake');
 
-  // Pastikan kartu dan section konten yang di-scroll/reveal tidak memicu shader backdrop-filter stall
-  for (const sel of ['.key-row', '.model-matrix-card', '.kpi-card', '.provider-card', '.live-upstream-card, .token-matrix-section, .matrix-section, .activity-card']) {
+  // Pastikan kartu dan section utama TETAP punya efek blur kaca, sementara elemen anak bersarang TIDAK menumpuk blur
+  for (const sel of ['.kpi-card', '.provider-card', '.live-upstream-card, .token-matrix-section, .matrix-section, .activity-card']) {
     const escaped = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const block = consoleCss.match(new RegExp(escaped + '\\s*\\{[\\s\\S]*?\\}'));
-    assert.ok(block && !/backdrop-filter/.test(block[0]), `${sel} tidak boleh memakai backdrop-filter saat scroll`);
+    assert.ok(block && /backdrop-filter:\s*blur\(/.test(block[0]), `${sel} harus mempertahankan backdrop-filter blur`);
   }
-  const featBlock = landingCss.match(/\.feature-card\s*\{[\s\S]*?\}/);
-  assert.ok(featBlock && !/backdrop-filter/.test(featBlock[0]), '.feature-card tidak boleh memakai backdrop-filter saat scroll');
+  for (const sel of ['.feature-card', '.lapor-card']) {
+    const escaped = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const block = landingCss.match(new RegExp(escaped + '\\s*\\{[\\s\\S]*?\\}'));
+    assert.ok(block && /backdrop-filter:\s*blur\(/.test(block[0]), `${sel} harus mempertahankan backdrop-filter blur`);
+  }
+  for (const sel of ['.key-row', '.model-matrix-card', '.upstream-stat', '.table-wrap']) {
+    const escaped = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const block = consoleCss.match(new RegExp(escaped + '\\s*\\{[\\s\\S]*?\\}'));
+    assert.ok(block && !/backdrop-filter/.test(block[0]), `${sel} tidak boleh menumpuk nested backdrop-filter`);
+  }
 });
