@@ -387,21 +387,22 @@ export function noteExchange(chatKey: string): void {
 
       const h = await c
         .from('messages')
-        .select('role,content')
+        .select('role,content,via')
         .eq('chat_id', chatKey)
         .order('created_at', { ascending: false })
         .limit(60);
       if (h.error || !h.data?.length) return;
-      const rawMessages = h.data as Array<{ role: string; content: string }>;
+      const rawMessages = h.data as Array<{ role: string; content: string; via?: string | null }>;
       // Hormati checkpoint reset: potong pesan sebelum [SESSION_RESET]
       const resetIdx = rawMessages.findIndex(
         (m) => m.content === '[SESSION_RESET]' || m.content.startsWith('[SESSION_RESET]'),
       );
       const validMessages = resetIdx >= 0 ? rawMessages.slice(0, resetIdx) : rawMessages;
+      const filteredMessages = saringNoiseRiwayat(validMessages);
       // Jangan membuat ringkasan jika data baru pasca-reset masih di bawah 4 pesan
-      if (validMessages.length < 4) return;
+      if (filteredMessages.length < 4) return;
 
-      const text = validMessages
+      const text = filteredMessages
         .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.content.includes('[SESSION_RESET]'))
         .reverse()
         .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)

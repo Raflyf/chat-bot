@@ -15,7 +15,7 @@ import { config, assertRuntime } from './env.js';
 import { splitMessageSmart } from './skills.js';
 import { baileysAutoReply, baileysDescribeImage, baileysDynamicNotice } from './baileys_brain.js';
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent, imageUserContent, processIncomingVideo } from './media.js';
-import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
+import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed, cariPesanByMsgId, pesanBotTerakhir } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
 import { tanganiPencatatan } from './notes.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
@@ -429,6 +429,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     (m.message as { contextInfo?: unknown } | undefined)?.contextInfo) as
     | {
         participant?: string;
+        stanzaId?: string;
         quotedMessage?: {
           conversation?: string;
           extendedTextMessage?: { text?: string };
@@ -442,6 +443,11 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     | undefined;
   const nomorBaileys = await resolveBaileysSenderNumber(sock, m.key);
   const rawRemoteNum = String(remoteJid || '').split('@')[0].split(':')[0];
+
+  // Pisahkan memori percakapan biasa Baileys (`wa_baileys_<nomor>`) dari Cloud API (`wa_<nomor>`),
+  // sedangkan data terstruktur bersama (pengingat, catatan, tugas, keuangan, fakta, zona waktu) memakai `sharedDataKey`.
+  const chatKey = baileysChatKey(nomorBaileys);
+  const sharedDataKey = normChatId(nomorBaileys, 'whatsapp');
 
   let quotedText = '';
   let quotedFromBot = false;
@@ -470,12 +476,30 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       quotedPengirim = 'diri';
     }
     quotedFromBot = quotedPengirim === 'bot';
-  }
 
-  // Pisahkan memori percakapan biasa Baileys (`wa_baileys_<nomor>`) dari Cloud API (`wa_<nomor>`),
-  // sedangkan data terstruktur bersama (pengingat, catatan, tugas, keuangan, fakta, zona waktu) memakai `sharedDataKey`.
-  const chatKey = baileysChatKey(nomorBaileys);
-  const sharedDataKey = normChatId(nomorBaileys, 'whatsapp');
+    // Fallback DB untuk media/stiker/pesan tanpa teks di payload quote Baileys.
+    if (!quotedText || quotedText.startsWith('[')) {
+      const idQuoted = String(ctxInfo.stanzaId || '').trim();
+      if (idQuoted) {
+        const dariDb = await cariPesanByMsgId('whatsapp', idQuoted);
+        if (dariDb?.content && dariDb.content !== '[baileys-msg]') {
+          quotedText = dariDb.content;
+          if (dariDb.role === 'assistant') {
+            quotedPengirim = 'bot';
+            quotedFromBot = true;
+          }
+        }
+      }
+      if ((!quotedText || quotedText.startsWith('[')) && quotedFromBot) {
+        const botTerakhir = await pesanBotTerakhir('whatsapp', chatKey);
+        if (botTerakhir) {
+          quotedText = botTerakhir;
+          quotedPengirim = 'bot';
+          quotedFromBot = true;
+        }
+      }
+    }
+  }
 
   // ── KUNCI PER-CHAT (audit 14 Okt 2026) ──
   // Handler ini sebelumnya TIDAK memakai withChatLock (padahal Telegram sudah).

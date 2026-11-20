@@ -113,3 +113,23 @@ test('wiring otak terpisah Baileys, Cloud API, dan Telegram', () => {
   assert.match(CLOUD, /imageUserContent\(/);
   assert.match(TELE, /imageUserContent\(/);
 });
+
+test('perbaikan kontinuitas & kebersihan DB: reminder sync, quote DB fallback, summary filter, upsert update fallback', () => {
+  const REMIND = baca('src/remind.ts');
+  const BAIL = baca('src/whatsapp_baileys.ts');
+  const MEMORY = baca('src/memory.ts');
+  const DB = baca('src/db.ts');
+
+  assert.match(REMIND, /options\?\.channelFilter === 'baileys_only'[\s\S]{0,120}baileysChatKey\(item\.chat_id\)/);
+  assert.match(REMIND, /updateContextCache\(targetHistoryChatId,\s*'assistant',\s*deliveryText\)/);
+
+  assert.match(BAIL, /cariPesanByMsgId\('whatsapp',\s*idQuoted\)/);
+  assert.match(BAIL, /dariDb\.content !== '\[baileys-msg\]'/);
+  assert.match(BAIL, /pesanBotTerakhir\('whatsapp',\s*chatKey\)/);
+
+  assert.match(MEMORY, /\.select\('role,content,via'\)/);
+  assert.match(MEMORY, /const filteredMessages = saringNoiseRiwayat\(validMessages\)/);
+
+  assert.match(DB, /\.update\(insertPayload\)[\s\S]{0,120}\.eq\('platform',\s*row\.platform\)[\s\S]{0,120}\.eq\('msg_id',\s*row\.msg_id\)/);
+  assert.match(DB, /if \(updateErr \|\| !updatedRows \|\| updatedRows\.length === 0\)/);
+});

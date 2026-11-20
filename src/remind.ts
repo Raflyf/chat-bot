@@ -4,7 +4,7 @@ import { db } from './db.js';
 import { config } from './env.js';
 import { kemiripanPesan, AMBANG_MIRIP, TOLERANSI_WAKTU_MENIT } from './reminder-dedup.js';
 import { berikutnya, type AturanUlang } from './reminder-repeat.js';
-import { normChatId, nomorWhatsApp } from './chat_id.js';
+import { normChatId, nomorWhatsApp, baileysChatKey } from './chat_id.js';
 import { statusAutoMaintenanceWa } from './wa_monitor.js';
 
 // Re-export agar pemakai lama (cron, baileys) tetap bekerja tanpa perubahan.
@@ -544,13 +544,19 @@ export async function checkDueReminders(
         // Sebelumnya TIDAK disimpan -> riwayat user kosong & AI bisa mengulang.
         try {
           const { saveMessage } = await import('./db.js');
+          const targetHistoryChatId =
+            options?.channelFilter === 'baileys_only' && item.platform !== 'telegram'
+              ? baileysChatKey(item.chat_id)
+              : item.chat_id;
           await saveMessage({
             platform: item.platform === 'telegram' ? 'telegram' : 'whatsapp',
-            chat_id: item.chat_id,
+            chat_id: targetHistoryChatId,
             role: 'assistant',
             content: deliveryText,
             via: 'reminder',
           });
+          const { updateContextCache } = await import('./memory.js');
+          updateContextCache(targetHistoryChatId, 'assistant', deliveryText);
         } catch (simpanErr) {
           console.warn('[remind] gagal simpan pesan pengingat ke riwayat:', simpanErr);
         }

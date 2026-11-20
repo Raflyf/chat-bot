@@ -72,9 +72,17 @@ export async function saveMessage(row: {
         .upsert(insertPayload, { onConflict: 'platform,msg_id' });
       if (upsertErr) {
         if (upsertErr.code === '42P10' || /no unique|exclusion constraint/i.test(upsertErr.message || '')) {
-          const { error: insertErr } = await c.from('messages').insert(insertPayload);
-          if (insertErr && insertErr.code !== '23505') {
-            console.warn('[db] saveMessage insert fallback error:', insertErr.message);
+          const { data: updatedRows, error: updateErr } = await c
+            .from('messages')
+            .update(insertPayload)
+            .eq('platform', row.platform)
+            .eq('msg_id', row.msg_id)
+            .select('id');
+          if (updateErr || !updatedRows || updatedRows.length === 0) {
+            const { error: insertErr } = await c.from('messages').insert(insertPayload);
+            if (insertErr && insertErr.code !== '23505') {
+              console.warn('[db] saveMessage insert fallback error:', insertErr.message);
+            }
           }
         } else if (upsertErr.code !== '23505') {
           console.warn('[db] saveMessage upsert error:', upsertErr.message);
