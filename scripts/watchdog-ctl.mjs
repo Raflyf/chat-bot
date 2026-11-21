@@ -79,8 +79,10 @@ async function stopWatchdogIfRunning() {
 function stopLegacyHeavyTsxStandbyProcesses() {
   if (process.platform !== 'win32') return;
   try {
+    const selfPid = process.pid;
+    const parentPid = process.ppid || 0;
     const psScript = [
-      "$procs = Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" | Where-Object { $_.CommandLine -match 'whatsapp_baileys.*--standby|npm-cli\\.js.*whatsapp:standby' };",
+      `$procs = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.ProcessId -ne ${selfPid} -and $_.ProcessId -ne ${parentPid} -and $_.CommandLine -match 'whatsapp_baileys\\.(?:ts|js).*--standby' };`,
       'foreach ($p in $procs) {',
       '  Write-Output ("Stopping legacy heavy standby node PID " + $p.ProcessId);',
       '  Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue;',
@@ -202,13 +204,27 @@ async function startWatchdog() {
     return;
   }
 
-  const child = spawn(BIN_EXE, [], {
-    cwd: ROOT_DIR,
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-  child.unref();
+  if (process.platform === 'win32') {
+    const escapedExe = BIN_EXE.replace(/'/g, "''");
+    const escapedCwd = ROOT_DIR.replace(/'/g, "''");
+    const psLaunch = [
+      `$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 };`,
+      `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"${escapedExe}"'; CurrentDirectory = '${escapedCwd}'; ProcessStartupInformation = $si } | Out-Null`,
+    ].join(' ');
+    execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psLaunch],
+      { stdio: 'ignore', windowsHide: true },
+    );
+  } else {
+    const child = spawn(BIN_EXE, [], {
+      cwd: ROOT_DIR,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.unref();
+  }
 
   for (let i = 0; i < 15; i++) {
     await sleep(300);
