@@ -65,6 +65,7 @@ export interface CekLifecycleDeps {
   fetchImpl?: typeof fetch;
   nowMs?: number;
   sendTelegram?: (pesanHtml: string) => Promise<boolean>;
+  sendWaCloud?: (pesanPolos: string) => Promise<boolean>;
   readState?: () => Promise<VpsMonitorState | null>;
   writeState?: (state: VpsMonitorState) => Promise<void>;
   apiKey?: string;
@@ -364,6 +365,43 @@ export async function kirimNotifTelegramPemilik(pesanHtml: string): Promise<bool
   }
 }
 
+export async function kirimNotifWaCloudPemilik(pesanPolos: string): Promise<boolean> {
+  if (config.whatsappMaintenanceMode) return false;
+  let to = String(config.ownerWaNumber ?? '').trim().replace(/^\+/, '').replace(/\D/g, '');
+  if (to.startsWith('0')) to = `62${to.slice(1)}`;
+  if (!to || !config.whatsappToken || !config.whatsappPhoneNumberId) return false;
+
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${config.whatsappPhoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.whatsappToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'text',
+          text: { preview_url: false, body: pesanPolos.slice(0, 4000) },
+        }),
+        signal: AbortSignal.timeout(8000),
+      },
+    );
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.warn(`[vps-monitor] WA Cloud API membalas HTTP ${res.status}: ${errText.slice(0, 120)}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[vps-monitor] Gagal kirim WA Cloud:', String((err as Error)?.message ?? err).slice(0, 120));
+    return false;
+  }
+}
+
 /**
  * Polling eksternal read-only ke InstaBox API (`GET /v1/machines/{id}`).
  * Tidak pernah memanggil `/exec`, `/activity-leases`, atau endpoint pengubah state.
@@ -378,6 +416,7 @@ export async function cekLifecycleVps(deps: CekLifecycleDeps = {}): Promise<CekL
   const fetchImpl = deps.fetchImpl ?? fetch;
   const nowMs = deps.nowMs ?? Date.now();
   const sendTelegram = deps.sendTelegram ?? kirimNotifTelegramPemilik;
+  const sendWaCloud = deps.sendWaCloud ?? (deps.sendTelegram ? async () => false : kirimNotifWaCloudPemilik);
   const readState = deps.readState ?? bacaStateMonitorVps;
   const writeState = deps.writeState ?? simpanStateMonitorVps;
   const apiBase = (deps.apiBase ?? config.instaboxApiBase).trim().replace(/\/+$/, '');
@@ -410,7 +449,7 @@ export async function cekLifecycleVps(deps: CekLifecycleDeps = {}): Promise<CekL
     const { events, nextState } = evaluasiStatusVps(machine, prevState, nowMs, warnBeforeMinutes);
 
     for (const ev of events) {
-      await sendTelegram(ev.pesanHtml);
+      await Promise.allSettled([sendTelegram(ev.pesanHtml), sendWaCloud(ev.pesanPolos)]);
     }
 
     await writeState(nextState);
@@ -442,7 +481,11 @@ export async function laporShutdownVps(alasan: string): Promise<void> {
           `<b>[VPS MATI]</b>\n` +
           `Mesin: <code>${escapeHtml(mesinId)}</code>\n` +
           `Layanan WA Baileys dihentikan (<code>${escapeHtml(alasan)}</code>) pada ${escapeHtml(waktuWib)}.`;
-        await kirimNotifTelegramPemilik(pesanHtml);
+        const pesanPolos = `[VPS MATI] ${mesinId} — Layanan WA Baileys dihentikan (${alasan}) pada ${waktuWib}.`;
+        await Promise.allSettled([
+          kirimNotifTelegramPemilik(pesanHtml),
+          kirimNotifWaCloudPemilik(pesanPolos),
+        ]);
       }
 
       const next: VpsMonitorState = {
@@ -508,10 +551,11 @@ export function mulaiTimerPeringatanLokalVps(opts?: {
           `Estimasi limit: ${escapeHtml(estimasiWib)}\n` +
           `Sumber: timer lokal proses Baileys.`;
 
-        await kirimNotifTelegramPemilik(pesanHtml);
-        if (opts?.kirimWaOwner) {
-          await opts.kirimWaOwner(pesanPolos).catch(() => false);
-        }
+        await Promise.allSettled([
+          kirimNotifTelegramPemilik(pesanHtml),
+          kirimNotifWaCloudPemilik(pesanPolos),
+          ...(opts?.kirimWaOwner ? [opts.kirimWaOwner(pesanPolos)] : []),
+        ]);
 
         const next: VpsMonitorState = {
           ...(prev ?? defaultState()),

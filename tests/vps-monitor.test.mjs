@@ -296,3 +296,48 @@ test('9. Kepatuhan pasif & wiring: tidak ada /exec, /activity-leases, setInterva
   assert.match(BAILEYS, /laporShutdownVps\(/, 'whatsapp_baileys.ts harus memanggil laporShutdownVps()');
   assert.match(BAILEYS, /mulaiTimerPeringatanLokalVps\(/, 'whatsapp_baileys.ts harus memanggil mulaiTimerPeringatanLokalVps()');
 });
+
+test('10. cekLifecycleVps mengirim notif WA Cloud API paralel dengan Telegram untuk vps_mati dan vps_pulih', async () => {
+  const { kirimNotifWaCloudPemilik } = await import('../src/vps_monitor.js');
+  assert.equal(typeof kirimNotifWaCloudPemilik, 'function');
+
+  const tgMsgs = [];
+  const waMsgs = [];
+  let stored = null;
+
+  const downRes = await cekLifecycleVps({
+    apiKey: 'dummy_key',
+    machineId: 'm_test_wa',
+    apiBase: 'https://api.instabox.sh',
+    nowMs: Date.parse('2026-11-21T13:40:00Z'),
+    readState: async () => stored,
+    writeState: async (st) => { stored = st; },
+    sendTelegram: async (m) => { tgMsgs.push(m); return true; },
+    sendWaCloud: async (m) => { waMsgs.push(m); return true; },
+    fetchImpl: async () => new Response(JSON.stringify({ id: 'm_test_wa', name: 'freeaibot-wa', state: 'paused' }), { status: 200 }),
+  });
+  assert.deepEqual(downRes.events, ['vps_mati']);
+  assert.equal(tgMsgs.length, 1);
+  assert.equal(waMsgs.length, 1);
+  assert.match(waMsgs[0], /\[VPS MATI\]/);
+
+  const upRes = await cekLifecycleVps({
+    apiKey: 'dummy_key',
+    machineId: 'm_test_wa',
+    apiBase: 'https://api.instabox.sh',
+    nowMs: Date.parse('2026-11-21T13:45:00Z'),
+    readState: async () => stored,
+    writeState: async (st) => { stored = st; },
+    sendTelegram: async (m) => { tgMsgs.push(m); return true; },
+    sendWaCloud: async (m) => { waMsgs.push(m); return true; },
+    fetchImpl: async () => new Response(JSON.stringify({ id: 'm_test_wa', name: 'freeaibot-wa', state: 'running', runStartedAt: '2026-11-21T13:44:00Z', maxRunMinutes: 120 }), { status: 200 }),
+  });
+  assert.deepEqual(upRes.events, ['vps_pulih']);
+  assert.equal(tgMsgs.length, 2);
+  assert.equal(waMsgs.length, 2);
+  assert.match(waMsgs[1], /\[VPS PULIH\]/);
+
+  const VPS_MON = baca('src/vps_monitor.ts');
+  assert.match(VPS_MON, /laporShutdownVps[\s\S]*kirimNotifWaCloudPemilik/);
+  assert.match(VPS_MON, /mulaiTimerPeringatanLokalVps[\s\S]*kirimNotifWaCloudPemilik/);
+});
