@@ -1,190 +1,108 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
-use std::collections::HashMap;
+mod icon;
+mod panel;
+
+use std::collections::{HashMap, VecDeque};
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
+use std::mem::size_of;
 use std::net::{TcpListener, TcpStream};
+use std::os::windows::ffi::OsStrExt;
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
+use windows::{
+    Win32::{
+        Foundation::{
+            CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_ITEMS, FreeLibrary, HANDLE, HMODULE,
+            HWND, LPARAM, LRESULT, POINT, WPARAM,
+        },
+        System::{
+            Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize},
+            LibraryLoader::{
+                GetModuleHandleW, GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW,
+            },
+            ProcessStatus::{
+                K32EmptyWorkingSet, K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+                PROCESS_MEMORY_COUNTERS_EX, PROCESS_MEMORY_COUNTERS_EX2,
+            },
+            Registry::{
+                HKEY, HKEY_CURRENT_USER, KEY_ENUMERATE_SUB_KEYS, KEY_READ, KEY_SET_VALUE,
+                REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
+                RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegEnumKeyExW, RegGetValueW,
+                RegOpenKeyExW, RegSetValueExW,
+            },
+            StationsAndDesktops::{
+                DESKTOP_CONTROL_FLAGS, GetUserObjectInformationW, OpenDesktopW, SetThreadDesktop,
+                UOI_NAME,
+            },
+            Threading::{
+                GetCurrentProcess, GetCurrentThreadId, OpenProcess,
+                PROCESS_QUERY_LIMITED_INFORMATION,
+            },
+        },
+        UI::{
+            Shell::{
+                NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIIF_INFO, NIIF_WARNING,
+                NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION, NIN_BALLOONUSERCLICK,
+                NIN_SELECT, NOTIFYICON_VERSION_4, NOTIFYICONDATAW, Shell_NotifyIconW,
+            },
+            WindowsAndMessaging::{
+                AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
+                DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW, ICON_BIG, ICON_SMALL,
+                KillTimer, MF_CHECKED, MF_DISABLED, MF_GRAYED, MF_SEPARATOR, MF_STRING,
+                MF_UNCHECKED, MSG, PostMessageW, PostQuitMessage, RegisterClassExW,
+                RegisterWindowMessageW, SendMessageW, SetForegroundWindow, SetMenuDefaultItem,
+                SetProcessDPIAware, SetTimer, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RETURNCMD,
+                TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_CLOSE, WM_COMMAND,
+                WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL,
+                WM_QUERYENDSESSION, WM_RBUTTONUP, WM_SETICON, WM_TIMER, WNDCLASSEXW,
+                WS_EX_TOOLWINDOW, WS_OVERLAPPED,
+            },
+        },
+    },
+    core::{PCSTR, PCWSTR, s, w},
+};
 
-#[cfg(windows)]
+const NIN_KEYSELECT: u32 = NIN_SELECT | 1;
+
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
 const CONTROL_ADDR: &str = "127.0.0.1:47831";
 const POLL_INTERVAL_SECS: u64 = 30;
 const MAX_LOG_BYTES: u64 = 256 * 1024;
+const MAX_RECENT_EVENTS: usize = 6;
+const TRAY_UID: u32 = 1;
+const TRAY_RETRY_TIMER_ID: usize = 501;
 
-// Win32 Message & Tray Constants
-const WM_DESTROY: u32 = 0x0002;
-const WM_CLOSE: u32 = 0x0010;
-const WM_COMMAND: u32 = 0x0111;
-const WM_LBUTTONUP: u32 = 0x0202;
-const WM_LBUTTONDBLCLK: u32 = 0x0203;
-const WM_RBUTTONUP: u32 = 0x0205;
-const WM_CONTEXTMENU: u32 = 0x007B;
-const WM_NULL: u32 = 0x0000;
-const WM_APP: u32 = 0x8000;
+// Custom Window Messages
 const WM_TRAYICON: u32 = WM_APP + 1;
 const WM_APP_UPDATE_TRAY: u32 = WM_APP + 2;
 const WM_APP_SHOW_BALLOON: u32 = WM_APP + 3;
-const WM_APP_SHOW_DIALOG: u32 = WM_APP + 4;
+const WM_APP_SHOW_PANEL: u32 = WM_APP + 4;
+const WM_APP_TOGGLE_PANEL: u32 = WM_APP + 5;
 
-const NIM_ADD: u32 = 0x0000_0000;
-const NIM_MODIFY: u32 = 0x0000_0001;
-const NIM_DELETE: u32 = 0x0000_0002;
+// Context Menu & Panel Shared Command IDs
+const IDM_SHOW_PANEL: usize = 1001;
+const IDM_CHECK_NOW: usize = panel::CMD_CHECK_NOW;
+const IDM_OPEN_LOG: usize = panel::CMD_OPEN_LOG;
+const IDM_OPEN_BOT_LOG: usize = panel::CMD_OPEN_BOT_LOG;
+const IDM_OPEN_FOLDER: usize = panel::CMD_OPEN_FOLDER;
+const IDM_TOGGLE_AUTOSTART: usize = panel::CMD_TOGGLE_AUTOSTART;
+const IDM_EXIT: usize = panel::CMD_EXIT;
 
-const NIF_MESSAGE: u32 = 0x0000_0001;
-const NIF_ICON: u32 = 0x0000_0002;
-const NIF_TIP: u32 = 0x0000_0004;
-const NIF_INFO: u32 = 0x0000_0010;
-const NIIF_INFO: u32 = 0x0000_0001;
-const NIIF_WARNING: u32 = 0x0000_0002;
-
-const MF_STRING: u32 = 0x0000_0000;
-const MF_GRAYED: u32 = 0x0000_0001;
-const MF_DISABLED: u32 = 0x0000_0002;
-const MF_SEPARATOR: u32 = 0x0000_0800;
-
-const TPM_LEFTALIGN: u32 = 0x0000;
-const TPM_BOTTOMALIGN: u32 = 0x0020;
-const TPM_RIGHTBUTTON: u32 = 0x0002;
-
-const MB_OK: u32 = 0x0000_0000;
-const MB_ICONINFORMATION: u32 = 0x0000_0040;
-const MB_SETFOREGROUND: u32 = 0x0001_0000;
-
-const IDI_APPLICATION_FALLBACK: usize = 32512;
-const TRAY_UID: u32 = 101;
-
-// Context Menu Command IDs
-const IDM_SHOW_STATUS: usize = 1001;
-const IDM_CHECK_NOW: usize = 1002;
-const IDM_OPEN_LOG: usize = 1003;
-const IDM_OPEN_BOT_LOG: usize = 1004;
-const IDM_OPEN_FOLDER: usize = 1005;
-const IDM_EXIT: usize = 1009;
-
-#[cfg(windows)]
-#[repr(C)]
-struct POINT {
-    x: i32,
-    y: i32,
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct MSG {
-    hwnd: isize,
-    message: u32,
-    wparam: usize,
-    lparam: isize,
-    time: u32,
-    pt: POINT,
-    lprivate: u32,
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct WNDCLASSEXW {
-    cb_size: u32,
-    style: u32,
-    lpfn_wnd_proc: unsafe extern "system" fn(isize, u32, usize, isize) -> isize,
-    cb_cls_extra: i32,
-    cb_wnd_extra: i32,
-    h_instance: isize,
-    h_icon: isize,
-    h_cursor: isize,
-    hbr_background: isize,
-    lpsz_menu_name: *const u16,
-    lpsz_class_name: *const u16,
-    h_icon_sm: isize,
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct NOTIFYICONDATAW {
-    cb_size: u32,
-    h_wnd: isize,
-    u_id: u32,
-    u_flags: u32,
-    u_callback_message: u32,
-    h_icon: isize,
-    sz_tip: [u16; 128],
-    dw_state: u32,
-    dw_state_mask: u32,
-    sz_info: [u16; 256],
-    u_timeout_or_version: u32,
-    sz_info_title: [u16; 64],
-    dw_info_flags: u32,
-    guid_item: [u8; 16],
-    h_balloon_icon: isize,
-}
-
-#[cfg(windows)]
-#[link(name = "kernel32")]
-extern "system" {
-    fn GetModuleHandleW(lp_module_name: *const u16) -> isize;
-}
-
-#[cfg(windows)]
-#[link(name = "user32")]
-extern "system" {
-    fn RegisterClassExW(lpwcx: *const WNDCLASSEXW) -> u16;
-    fn CreateWindowExW(
-        dw_ex_style: u32,
-        lp_class_name: *const u16,
-        lp_window_name: *const u16,
-        dw_style: u32,
-        x: i32,
-        y: i32,
-        n_width: i32,
-        n_height: i32,
-        h_wnd_parent: isize,
-        h_menu: isize,
-        h_instance: isize,
-        lp_param: *mut core::ffi::c_void,
-    ) -> isize;
-    fn DefWindowProcW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize;
-    fn GetMessageW(lp_msg: *mut MSG, h_wnd: isize, w_msg_filter_min: u32, w_msg_filter_max: u32) -> i32;
-    fn TranslateMessage(lp_msg: *const MSG) -> i32;
-    fn DispatchMessageW(lp_msg: *const MSG) -> isize;
-    fn PostMessageW(h_wnd: isize, msg: u32, wparam: usize, lparam: isize) -> i32;
-    fn PostQuitMessage(n_exit_code: i32);
-    fn DestroyWindow(h_wnd: isize) -> i32;
-    fn LoadIconW(h_instance: isize, lp_icon_name: *const u16) -> isize;
-    fn CreatePopupMenu() -> isize;
-    fn AppendMenuW(h_menu: isize, u_flags: u32, u_id_new_item: usize, lp_new_item: *const u16) -> i32;
-    fn SetMenuDefaultItem(h_menu: isize, u_item: u32, f_by_pos: u32) -> i32;
-    fn TrackPopupMenu(
-        h_menu: isize,
-        u_flags: u32,
-        x: i32,
-        y: i32,
-        n_reserved: i32,
-        h_wnd: isize,
-        prc_rect: *const core::ffi::c_void,
-    ) -> i32;
-    fn DestroyMenu(h_menu: isize) -> i32;
-    fn GetCursorPos(lp_point: *mut POINT) -> i32;
-    fn SetForegroundWindow(h_wnd: isize) -> i32;
-    fn MessageBoxW(h_wnd: isize, lp_text: *const u16, lp_caption: *const u16, u_type: u32) -> i32;
-    fn RegisterWindowMessageW(lp_string: *const u16) -> u32;
-}
-
-#[cfg(windows)]
-#[link(name = "shell32")]
-extern "system" {
-    fn Shell_NotifyIconW(dw_message: u32, lp_data: *const NOTIFYICONDATAW) -> i32;
-}
+const RUN_SUBKEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
+const RUN_VALUE_NAME: PCWSTR = w!("BaileysBackup");
+const LEGACY_RUN_VALUE_NAME: PCWSTR = w!("FreeAIBotStandbyWatchdog");
+const APP_SETTINGS_SUBKEY: PCWSTR = w!(r"Software\BaileysBackup");
+const PROJECT_ROOT_VALUE: PCWSTR = w!("ProjectRoot");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VpsAvailability {
@@ -209,31 +127,34 @@ struct SharedState {
     vps_availability: VpsAvailability,
     raw_state: String,
     last_check_epoch: u64,
+    last_check_instant: Option<Instant>,
     balloon_title: String,
     balloon_body: String,
     balloon_is_warning: bool,
+    recent_events: VecDeque<String>,
 }
 
 struct AppContext {
     project_root: PathBuf,
     running: Arc<AtomicBool>,
     force_poll: Arc<AtomicBool>,
+    checking_vps: Arc<AtomicBool>,
+    tray_registered: Arc<AtomicBool>,
+    tray_retry_left: AtomicU8,
     child_pid: Arc<AtomicU32>,
+    total_checks: Arc<AtomicU64>,
+    failover_count: Arc<AtomicU64>,
     shared: Arc<Mutex<SharedState>>,
-    hwnd: AtomicIsize,
-    icon_standby: isize,
-    icon_active: isize,
+    hwnd_raw: AtomicIsize,
+    icons: icon::AppIcons,
     taskbar_created_msg: u32,
     started_at: Instant,
-    dialog_open: AtomicBool,
 }
 
 static APP_CTX: OnceLock<Arc<AppContext>> = OnceLock::new();
 
 fn to_wide_nul(s: &str) -> Vec<u16> {
-    let mut v: Vec<u16> = s.encode_utf16().collect();
-    v.push(0);
-    v
+    s.encode_utf16().chain(Some(0)).collect()
 }
 
 fn copy_wide_fixed<const N: usize>(dst: &mut [u16; N], s: &str) {
@@ -248,6 +169,15 @@ fn now_epoch_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+fn record_event(ctx: &AppContext, msg: &str) {
+    if let Ok(mut g) = ctx.shared.lock() {
+        if g.recent_events.len() >= MAX_RECENT_EVENTS {
+            g.recent_events.pop_back();
+        }
+        g.recent_events.push_front(msg.to_string());
+    }
 }
 
 fn append_log(project_root: &Path, message: &str) {
@@ -271,11 +201,118 @@ fn append_log(project_root: &Path, message: &str) {
     }
 }
 
-fn locate_project_root() -> Option<PathBuf> {
+fn is_valid_project_root(dir: &Path) -> bool {
+    dir.join("package.json").is_file() && dir.join(".env").is_file()
+}
+
+fn parse_project_dir_arg(args: &[String]) -> Option<PathBuf> {
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+        if let Some(val) = arg.strip_prefix("--project-dir=") {
+            let trimmed = val.trim().trim_matches('"');
+            if !trimmed.is_empty() {
+                return Some(PathBuf::from(trimmed));
+            }
+        } else if arg == "--project-dir" {
+            if let Some(val) = args.get(i + 1) {
+                let trimmed = val.trim().trim_matches('"');
+                if !trimmed.is_empty() {
+                    return Some(PathBuf::from(trimmed));
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn read_saved_project_root() -> Option<PathBuf> {
+    unsafe {
+        let mut needed: u32 = 0;
+        let st = RegGetValueW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            PROJECT_ROOT_VALUE,
+            RRF_RT_REG_SZ,
+            None,
+            None,
+            Some(&mut needed),
+        );
+        if st.is_err() || needed < 4 || needed > 4096 {
+            return None;
+        }
+        let mut buf = vec![0u16; (needed as usize).div_ceil(2)];
+        let st2 = RegGetValueW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            PROJECT_ROOT_VALUE,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut needed),
+        );
+        if st2.is_err() {
+            return None;
+        }
+        let wchar_len = (needed as usize / 2).min(buf.len());
+        let raw = String::from_utf16_lossy(&buf[..wchar_len]);
+        let trimmed = raw.trim_end_matches('\0').trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        Some(PathBuf::from(trimmed))
+    }
+}
+
+fn save_project_root(root: &Path) -> bool {
+    unsafe {
+        let mut key = HKEY::default();
+        if RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            0,
+            None,
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut key,
+            None,
+        )
+        .is_err()
+        {
+            return false;
+        }
+        let wide: Vec<u16> = root
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        let raw_bytes =
+            std::slice::from_raw_parts(wide.as_ptr().cast::<u8>(), wide.len() * 2);
+        let ok = RegSetValueExW(key, PROJECT_ROOT_VALUE, 0, REG_SZ, Some(raw_bytes)).is_ok();
+        let _ = RegCloseKey(key);
+        ok
+    }
+}
+
+fn locate_project_root(args: &[String]) -> Option<PathBuf> {
+    if let Some(arg_dir) = parse_project_dir_arg(args) {
+        if is_valid_project_root(&arg_dir) {
+            let _ = save_project_root(&arg_dir);
+            return Some(arg_dir);
+        }
+    }
+    if let Some(saved) = read_saved_project_root() {
+        if is_valid_project_root(&saved) {
+            return Some(saved);
+        }
+    }
     if let Ok(exe) = env::current_exe() {
         let mut cur = exe.parent();
         while let Some(dir) = cur {
-            if dir.join("package.json").is_file() && dir.join(".env").is_file() {
+            if is_valid_project_root(dir) {
+                let _ = save_project_root(dir);
                 return Some(dir.to_path_buf());
             }
             cur = dir.parent();
@@ -284,7 +321,8 @@ fn locate_project_root() -> Option<PathBuf> {
     if let Ok(cwd) = env::current_dir() {
         let mut cur: Option<&Path> = Some(&cwd);
         while let Some(dir) = cur {
-            if dir.join("package.json").is_file() && dir.join(".env").is_file() {
+            if is_valid_project_root(dir) {
+                let _ = save_project_root(dir);
                 return Some(dir.to_path_buf());
             }
             cur = dir.parent();
@@ -325,7 +363,6 @@ fn load_env_file(project_root: &Path) -> HashMap<String, String> {
     }
 }
 
-/// Ekstraksi nilai `"state"` atau `"status"` dari JSON mesin InstaBox tanpa ketergantungan crate eksternal.
 fn extract_machine_state_from_json(json: &str) -> Option<String> {
     for key in ["\"state\"", "\"status\""] {
         let mut search_from = 0;
@@ -396,10 +433,8 @@ fn query_vps_state(project_root: &Path) -> (VpsAvailability, String) {
     cmd.args(["-sS", "--max-time", "8", "--config", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW);
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -467,10 +502,8 @@ fn spawn_local_baileys(project_root: &Path) -> Option<Child> {
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::from(out_log))
-        .stderr(Stdio::from(err_log));
-
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+        .stderr(Stdio::from(err_log))
+        .creation_flags(CREATE_NO_WINDOW);
 
     match cmd.spawn() {
         Ok(child) => {
@@ -524,15 +557,321 @@ fn stop_local_baileys(project_root: &Path, child_slot: &mut Option<Child>, reaso
 fn format_tray_tooltip(raw_state: &str, cpid: u32) -> String {
     let vps_upper = raw_state.to_ascii_uppercase();
     if cpid > 0 {
-        format!("Baileys Backup - BACKUP AKTIF\nVPS Utama: {vps_upper}\nBot WA berjalan di Laptop (PID {cpid})")
+        format!(
+            "Baileys Backup - BACKUP AKTIF\nVPS Utama: {vps_upper}\nBot WA berjalan di Laptop (PID {cpid})"
+        )
     } else {
-        format!("Baileys Backup - Standby Pasif\nVPS Utama: {vps_upper}\n0 proses Node.js (Hemat RAM)")
+        format!(
+            "Baileys Backup - Standby Pasif\nVPS Utama: {vps_upper}\n0 proses Node.js (Hemat RAM)"
+        )
     }
 }
 
-#[cfg(windows)]
+/// Pastikan UI thread berada di desktop interaktif `"Default"` (karena tool/service launch
+/// dapat dimulai di virtual desktop lain yang tidak memiliki `Shell_TrayWnd`).
+fn ensure_interactive_default_desktop() -> Result<String, String> {
+    unsafe {
+        let cur_tid = GetCurrentThreadId();
+        let h_cur = windows::Win32::System::StationsAndDesktops::GetThreadDesktop(cur_tid)
+            .map_err(|e| format!("GetThreadDesktop gagal: {e}"))?;
+
+        let mut name_buf = [0u16; 128];
+        let mut needed = 0u32;
+        let _ = GetUserObjectInformationW(
+            HANDLE(h_cur.0),
+            UOI_NAME,
+            Some(name_buf.as_mut_ptr().cast()),
+            (name_buf.len() * 2) as u32,
+            Some(&mut needed),
+        );
+        let cur_len = name_buf.iter().position(|&c| c == 0).unwrap_or(0);
+        let cur_name = String::from_utf16_lossy(&name_buf[..cur_len]);
+        if cur_name.eq_ignore_ascii_case("Default") {
+            return Ok(cur_name);
+        }
+
+        const DESKTOP_GENERIC_ALL: u32 = 0x1000_0000;
+        let h_def = OpenDesktopW(
+            w!("Default"),
+            DESKTOP_CONTROL_FLAGS(0),
+            false,
+            DESKTOP_GENERIC_ALL,
+        )
+        .map_err(|e| format!("OpenDesktopW('Default') dari '{cur_name}' gagal: {e}"))?;
+
+        SetThreadDesktop(h_def).map_err(|e| format!("SetThreadDesktop('Default') gagal: {e}"))?;
+        Ok(format!("{cur_name} -> Default"))
+    }
+}
+
+fn enable_dpi_awareness() {
+    unsafe {
+        if let Ok(user32) = GetModuleHandleW(w!("user32.dll")) {
+            if let Some(proc) = GetProcAddress(user32, s!("SetProcessDpiAwarenessContext")) {
+                let set: unsafe extern "system" fn(isize) -> windows::Win32::Foundation::BOOL =
+                    std::mem::transmute(proc);
+                if set(-4).as_bool() {
+                    return; // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+                }
+            }
+        }
+        let _ = SetProcessDPIAware();
+    }
+}
+
+fn trim_working_set() {
+    unsafe {
+        let _ = K32EmptyWorkingSet(GetCurrentProcess());
+    }
+}
+
+/// Ambil `(private_kb, working_kb)` proses lewat Win32 kernel32 `K32GetProcessMemoryInfo` (tanpa child process).
+fn query_process_memory_kb(pid: u32) -> (u64, u64) {
+    if pid == 0 {
+        return (0, 0);
+    }
+    unsafe {
+        let (handle, should_close) = if pid == std::process::id() {
+            (GetCurrentProcess(), false)
+        } else {
+            match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+                Ok(h) => (h, true),
+                Err(_) => return (0, 0),
+            }
+        };
+
+        let mut ex2 = PROCESS_MEMORY_COUNTERS_EX2 {
+            cb: size_of::<PROCESS_MEMORY_COUNTERS_EX2>() as u32,
+            ..Default::default()
+        };
+        let ok_ex2 = K32GetProcessMemoryInfo(
+            handle,
+            (&mut ex2 as *mut PROCESS_MEMORY_COUNTERS_EX2).cast::<PROCESS_MEMORY_COUNTERS>(),
+            ex2.cb,
+        )
+        .as_bool();
+
+        let result = if ok_ex2 {
+            let priv_bytes = if ex2.PrivateWorkingSetSize > 0 {
+                ex2.PrivateWorkingSetSize
+            } else {
+                ex2.PrivateUsage
+            };
+            (
+                (priv_bytes as u64) / 1024,
+                (ex2.WorkingSetSize as u64) / 1024,
+            )
+        } else {
+            let mut ex1 = PROCESS_MEMORY_COUNTERS_EX {
+                cb: size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+                ..Default::default()
+            };
+            if K32GetProcessMemoryInfo(
+                handle,
+                (&mut ex1 as *mut PROCESS_MEMORY_COUNTERS_EX).cast::<PROCESS_MEMORY_COUNTERS>(),
+                ex1.cb,
+            )
+            .as_bool()
+            {
+                (
+                    (ex1.PrivateUsage as u64) / 1024,
+                    (ex1.WorkingSetSize as u64) / 1024,
+                )
+            } else {
+                (0, 0)
+            }
+        };
+
+        if should_close && !handle.is_invalid() {
+            let _ = CloseHandle(handle);
+        }
+        result
+    }
+}
+
+fn is_autostart_enabled() -> bool {
+    let mut buf = [0u16; 1024];
+    let mut bytes = size_of_val(&buf) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            RUN_SUBKEY,
+            RUN_VALUE_NAME,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut bytes),
+        )
+    };
+    if status == ERROR_FILE_NOT_FOUND || status.is_err() {
+        return false;
+    }
+    bytes > 2 && buf[0] != 0
+}
+
+fn set_autostart_enabled(enabled: bool, project_root: &Path) -> bool {
+    let Ok(exe) = env::current_exe() else {
+        return false;
+    };
+    let _ = save_project_root(project_root);
+    unsafe {
+        let mut key = HKEY::default();
+        if enabled {
+            if RegCreateKeyExW(
+                HKEY_CURRENT_USER,
+                RUN_SUBKEY,
+                0,
+                None,
+                REG_OPTION_NON_VOLATILE,
+                KEY_SET_VALUE,
+                None,
+                &mut key,
+                None,
+            )
+            .is_err()
+            {
+                return false;
+            }
+            let _ = RegDeleteValueW(key, LEGACY_RUN_VALUE_NAME);
+            let cmd_line: Vec<u16> = std::iter::once(b'"' as u16)
+                .chain(exe.as_os_str().encode_wide())
+                .chain(b"\" --silent --project-dir \"".iter().map(|&b| b as u16))
+                .chain(project_root.as_os_str().encode_wide())
+                .chain(b"\"\0".iter().map(|&b| b as u16))
+                .collect();
+            let raw_bytes =
+                std::slice::from_raw_parts(cmd_line.as_ptr().cast::<u8>(), cmd_line.len() * 2);
+            let ok = RegSetValueExW(key, RUN_VALUE_NAME, 0, REG_SZ, Some(raw_bytes)).is_ok();
+            let _ = RegCloseKey(key);
+            ok
+        } else {
+            let open_st = RegOpenKeyExW(HKEY_CURRENT_USER, RUN_SUBKEY, 0, KEY_SET_VALUE, &mut key);
+            if open_st == ERROR_FILE_NOT_FOUND {
+                return true;
+            }
+            if open_st.is_err() {
+                return false;
+            }
+            let _ = RegDeleteValueW(key, LEGACY_RUN_VALUE_NAME);
+            let del = RegDeleteValueW(key, RUN_VALUE_NAME);
+            let _ = RegCloseKey(key);
+            del.is_ok() || del == ERROR_FILE_NOT_FOUND
+        }
+    }
+}
+
+/// Promosikan ikon Baileys Backup agar tampil langsung di taskbar kanan bawah Windows 11
+/// menggunakan Registry Win32 native (0 proses PowerShell).
+fn promote_tray_icon_in_windows11_native() {
+    unsafe {
+        let mut root_key = HKEY::default();
+        if RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            w!(r"Control Panel\NotifyIconSettings"),
+            0,
+            KEY_ENUMERATE_SUB_KEYS | KEY_READ,
+            &mut root_key,
+        )
+        .is_err()
+        {
+            return;
+        }
+
+        let mut idx = 0u32;
+        loop {
+            let mut sub_name = [0u16; 256];
+            let mut sub_len = sub_name.len() as u32;
+            let err = RegEnumKeyExW(
+                root_key,
+                idx,
+                windows::core::PWSTR(sub_name.as_mut_ptr()),
+                &mut sub_len,
+                None,
+                windows::core::PWSTR::null(),
+                None,
+                None,
+            );
+            if err == ERROR_NO_MORE_ITEMS || err.is_err() {
+                break;
+            }
+            idx += 1;
+
+            let mut sub_key = HKEY::default();
+            if RegOpenKeyExW(
+                root_key,
+                PCWSTR(sub_name.as_ptr()),
+                0,
+                KEY_READ | KEY_SET_VALUE,
+                &mut sub_key,
+            )
+            .is_ok()
+            {
+                let mut exe_buf = [0u16; 512];
+                let mut exe_bytes = size_of_val(&exe_buf) as u32;
+                let st = RegGetValueW(
+                    sub_key,
+                    None,
+                    w!("ExecutablePath"),
+                    RRF_RT_REG_SZ,
+                    None,
+                    Some(exe_buf.as_mut_ptr().cast()),
+                    Some(&mut exe_bytes),
+                );
+                if st.is_ok() && exe_bytes >= 2 {
+                    let wchar_len = (exe_bytes as usize / 2).saturating_sub(1);
+                    let exe_path = String::from_utf16_lossy(&exe_buf[..wchar_len]).to_ascii_lowercase();
+                    if exe_path.contains("baileysbackup.exe") {
+                        let promoted: u32 = 1;
+                        let mut cur_promoted = 0u32;
+                        let mut pbytes = size_of::<u32>() as u32;
+                        let already = RegGetValueW(
+                            sub_key,
+                            None,
+                            w!("IsPromoted"),
+                            RRF_RT_REG_DWORD,
+                            None,
+                            Some((&mut cur_promoted as *mut u32).cast()),
+                            Some(&mut pbytes),
+                        )
+                        .is_ok()
+                            && cur_promoted == 1;
+                        if !already {
+                            let val_bytes = promoted.to_le_bytes();
+                            let _ = RegSetValueExW(
+                                sub_key,
+                                w!("IsPromoted"),
+                                0,
+                                REG_DWORD,
+                                Some(&val_bytes),
+                            );
+                        }
+                    }
+                }
+                let _ = RegCloseKey(sub_key);
+            }
+        }
+        let _ = RegCloseKey(root_key);
+    }
+}
+
+fn apply_dark_context_menu_theme() {
+    unsafe {
+        if let Ok(uxtheme) = LoadLibraryExW(w!("uxtheme.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32) {
+            if let Some(set_mode) = GetProcAddress(uxtheme, PCSTR(135usize as *const u8)) {
+                let set_mode: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(set_mode);
+                let _ = set_mode(2); // AllowDark
+            }
+            if let Some(flush) = GetProcAddress(uxtheme, PCSTR(136usize as *const u8)) {
+                let flush: unsafe extern "system" fn() = std::mem::transmute(flush);
+                flush();
+            }
+            let _ = FreeLibrary(uxtheme);
+        }
+    }
+}
+
 fn build_nid(ctx: &AppContext) -> NOTIFYICONDATAW {
-    let hwnd = ctx.hwnd.load(Ordering::SeqCst);
+    let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
     let cpid = ctx.child_pid.load(Ordering::SeqCst);
     let raw_state = ctx
         .shared
@@ -542,42 +881,61 @@ fn build_nid(ctx: &AppContext) -> NOTIFYICONDATAW {
 
     let tip = format_tray_tooltip(&raw_state, cpid);
     let mut nid = NOTIFYICONDATAW {
-        cb_size: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
-        h_wnd: hwnd,
-        u_id: TRAY_UID,
-        u_flags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
-        u_callback_message: WM_TRAYICON,
-        h_icon: if cpid > 0 { ctx.icon_active } else { ctx.icon_standby },
-        sz_tip: [0u16; 128],
-        dw_state: 0,
-        dw_state_mask: 0,
-        sz_info: [0u16; 256],
-        u_timeout_or_version: 3000,
-        sz_info_title: [0u16; 64],
-        dw_info_flags: 0,
-        guid_item: [0u8; 16],
-        h_balloon_icon: 0,
+        cbSize: size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: TRAY_UID,
+        uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP,
+        uCallbackMessage: WM_TRAYICON,
+        hIcon: ctx.icons.tray_icon(cpid > 0),
+        ..Default::default()
     };
-    copy_wide_fixed(&mut nid.sz_tip, &tip);
+    nid.Anonymous.uVersion = NOTIFYICON_VERSION_4;
+    copy_wide_fixed(&mut nid.szTip, &tip);
     nid
 }
 
-#[cfg(windows)]
-fn add_or_update_tray_icon(ctx: &AppContext, is_add: bool) {
-    let nid = build_nid(ctx);
+fn add_or_update_tray_icon(ctx: &AppContext, is_add: bool) -> bool {
+    let mut nid = build_nid(ctx);
     unsafe {
-        if is_add {
-            if Shell_NotifyIconW(NIM_ADD, &nid) == 0 {
-                let _ = Shell_NotifyIconW(NIM_MODIFY, &nid);
+        let registered = if is_add {
+            if Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
+                nid.Anonymous.uVersion = NOTIFYICON_VERSION_4;
+                let _ = Shell_NotifyIconW(NIM_SETVERSION, &nid);
+                true
+            } else {
+                Shell_NotifyIconW(NIM_MODIFY, &nid).as_bool()
             }
-        } else if Shell_NotifyIconW(NIM_MODIFY, &nid) == 0 {
-            let _ = Shell_NotifyIconW(NIM_ADD, &nid);
+        } else if Shell_NotifyIconW(NIM_MODIFY, &nid).as_bool() {
+            true
+        } else if Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
+            nid.Anonymous.uVersion = NOTIFYICON_VERSION_4;
+            let _ = Shell_NotifyIconW(NIM_SETVERSION, &nid);
+            true
+        } else {
+            false
+        };
+
+        ctx.tray_registered.store(registered, Ordering::SeqCst);
+        if is_add {
+            if registered {
+                append_log(&ctx.project_root, "System Tray terdaftar (NIM_ADD OK).");
+                promote_tray_icon_in_windows11_native();
+            } else {
+                let err = std::io::Error::last_os_error();
+                append_log(
+                    &ctx.project_root,
+                    &format!("Shell_NotifyIconW(NIM_ADD) belum diterima Explorer: {err}"),
+                );
+            }
         }
+        registered
     }
 }
 
-#[cfg(windows)]
 fn show_tray_balloon(ctx: &AppContext) {
+    if !ctx.tray_registered.load(Ordering::SeqCst) {
+        return;
+    }
     let mut nid = build_nid(ctx);
     let (title, body, is_warn) = match ctx.shared.lock() {
         Ok(g) => (
@@ -590,172 +948,196 @@ fn show_tray_balloon(ctx: &AppContext) {
     if body.is_empty() {
         return;
     }
-    nid.u_flags |= NIF_INFO;
-    nid.dw_info_flags = if is_warn { NIIF_WARNING } else { NIIF_INFO };
-    copy_wide_fixed(&mut nid.sz_info_title, &title);
-    copy_wide_fixed(&mut nid.sz_info, &body);
+    nid.uFlags |= NIF_INFO;
+    nid.dwInfoFlags = if is_warn { NIIF_WARNING } else { NIIF_INFO };
+    copy_wide_fixed(&mut nid.szInfoTitle, &title);
+    copy_wide_fixed(&mut nid.szInfo, &body);
     unsafe {
         let _ = Shell_NotifyIconW(NIM_MODIFY, &nid);
     }
 }
 
-#[cfg(windows)]
 fn remove_tray_icon(ctx: &AppContext) {
-    let nid = build_nid(ctx);
+    let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+    let nid = NOTIFYICONDATAW {
+        cbSize: size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: TRAY_UID,
+        ..Default::default()
+    };
     unsafe {
         let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
     }
+    ctx.tray_registered.store(false, Ordering::SeqCst);
 }
 
-#[cfg(windows)]
 fn queue_balloon(ctx: &AppContext, title: &str, body: &str, is_warning: bool) {
     if let Ok(mut g) = ctx.shared.lock() {
         g.balloon_title = title.to_string();
         g.balloon_body = body.to_string();
         g.balloon_is_warning = is_warning;
     }
-    let hwnd = ctx.hwnd.load(Ordering::SeqCst);
-    if hwnd != 0 {
+    let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+    if !hwnd.0.is_null() {
         unsafe {
-            let _ = PostMessageW(hwnd, WM_APP_SHOW_BALLOON, 0, 0);
+            let _ = PostMessageW(hwnd, WM_APP_SHOW_BALLOON, WPARAM(0), LPARAM(0));
         }
     }
 }
 
-#[cfg(windows)]
-fn promote_tray_icon_in_windows11() {
-    let ps_cmd = r#"
-$keys = Get-ChildItem 'HKCU:\Control Panel\NotifyIconSettings' -ErrorAction SilentlyContinue
-foreach ($k in $keys) {
-  $p = (Get-ItemProperty -Path $k.PSPath -Name ExecutablePath -ErrorAction SilentlyContinue).ExecutablePath
-  if ($p -and ($p -match 'BaileysBackup\.exe|wa-standby-watchdog\.exe')) {
-    Set-ItemProperty -Path $k.PSPath -Name IsPromoted -Value 1 -Type DWord -ErrorAction SilentlyContinue
-  }
-}
-"#;
-    let mut cmd = Command::new("powershell.exe");
-    cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW);
-    let _ = cmd.spawn();
-}
+fn collect_panel_stats(ctx: &AppContext) -> panel::PanelStats {
+    let cpid = ctx.child_pid.load(Ordering::SeqCst);
+    let (app_priv, app_ws) = query_process_memory_kb(std::process::id());
+    let (node_priv, _) = if cpid > 0 {
+        query_process_memory_kb(cpid)
+    } else {
+        (0, 0)
+    };
 
-#[cfg(windows)]
-fn show_status_dialog_async(ctx: Arc<AppContext>) {
-    if ctx.dialog_open.swap(true, Ordering::SeqCst) {
-        return;
+    let (vps_avail, vps_state, last_age, recent_events) = match ctx.shared.lock() {
+        Ok(g) => (
+            g.vps_availability.as_str(),
+            g.raw_state.clone(),
+            g.last_check_instant.map(|t| t.elapsed().as_secs()),
+            g.recent_events.iter().cloned().collect(),
+        ),
+        Err(_) => ("unknown", "unknown".to_string(), None, Vec::new()),
+    };
+
+    panel::PanelStats {
+        app_pid: std::process::id(),
+        child_node_pid: cpid,
+        vps_state,
+        vps_availability: vps_avail,
+        failover_active: cpid > 0,
+        checking_vps: ctx.checking_vps.load(Ordering::SeqCst),
+        app_private_kb: app_priv,
+        app_working_kb: app_ws,
+        node_private_kb: node_priv,
+        uptime_secs: ctx.started_at.elapsed().as_secs(),
+        last_check_age_secs: last_age,
+        poll_interval_secs: POLL_INTERVAL_SECS,
+        total_checks: ctx.total_checks.load(Ordering::SeqCst),
+        failover_count: ctx.failover_count.load(Ordering::SeqCst),
+        auto_start_enabled: is_autostart_enabled(),
+        tray_registered: ctx.tray_registered.load(Ordering::SeqCst),
+        recent_events,
     }
-    thread::spawn(move || {
-        let (avail, raw_st) = ctx
-            .shared
-            .lock()
-            .map(|g| (g.vps_availability.as_str(), g.raw_state.clone()))
-            .unwrap_or(("unknown", "unknown".to_string()));
-        let cpid = ctx.child_pid.load(Ordering::SeqCst);
-        let uptime_mins = ctx.started_at.elapsed().as_secs() / 60;
-        let uptime_secs = ctx.started_at.elapsed().as_secs() % 60;
+}
 
-        let mode_line = if cpid > 0 {
-            format!("BACKUP LOKAL AKTIF (node.exe PID {cpid})")
-        } else {
-            "STANDBY PASIF (0 Proses Node.js — Hemat RAM ~5 MB)".to_string()
-        };
-
-        let text = format!(
-            "Baileys Backup — Auto-Failover Bot WhatsApp\n\
-            ────────────────────────────────────────\n\
-            • Status Aplikasi   : Berjalan di System Tray (PID {})\n\
-            • Status VPS Utama  : {} ({})\n\
-            • Mode Bot Lokal    : {}\n\
-            • Uptime Watchdog   : {} menit {} detik\n\
-            • Interval Cek VPS  : Setiap {} detik\n\
-            • Lokasi Proyek     : {}\n\n\
-            Klik kanan ikon Baileys Backup di System Tray (dekat jam Windows) untuk mengecek status VPS, membuka log, atau mematikan aplikasi.",
-            std::process::id(),
-            raw_st.to_ascii_uppercase(),
-            avail,
-            mode_line,
-            uptime_mins,
-            uptime_secs,
-            POLL_INTERVAL_SECS,
-            ctx.project_root.display()
-        );
-        let title_w = to_wide_nul("Baileys Backup - Ringkasan Status");
-        let text_w = to_wide_nul(&text);
-        unsafe {
-            let _ = MessageBoxW(
-                0,
-                text_w.as_ptr(),
-                title_w.as_ptr(),
-                MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND,
-            );
-        }
-        ctx.dialog_open.store(false, Ordering::SeqCst);
+fn show_panel_for_ctx(hwnd: HWND, ctx: &Arc<AppContext>, toggle: bool) {
+    let c_stats = Arc::clone(ctx);
+    let stats_fn: Rc<dyn Fn() -> panel::PanelStats> =
+        Rc::new(move || collect_panel_stats(&c_stats));
+    let on_hide_fn: Rc<dyn Fn()> = Rc::new(|| {
+        trim_working_set();
     });
+    if toggle {
+        panel::toggle_panel(
+            hwnd,
+            ctx.icons.standby_lg,
+            ctx.icons.active_lg,
+            stats_fn,
+            on_hide_fn,
+        );
+    } else {
+        panel::show_panel(
+            hwnd,
+            ctx.icons.standby_lg,
+            ctx.icons.active_lg,
+            stats_fn,
+            on_hide_fn,
+        );
+    }
 }
 
-#[cfg(windows)]
-fn show_tray_context_menu(hwnd: isize, ctx: &AppContext) {
+fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
+    apply_dark_context_menu_theme();
     let raw_st = ctx
         .shared
         .lock()
         .map(|g| g.raw_state.clone())
         .unwrap_or_else(|_| "unknown".to_string());
     let cpid = ctx.child_pid.load(Ordering::SeqCst);
+    let autostart = is_autostart_enabled();
 
-    let header_line = to_wide_nul("Baileys Backup v1.0");
-    let vps_line = to_wide_nul(&format!("Status VPS Utama: {}", raw_st.to_ascii_uppercase()));
-    let mode_line = if cpid > 0 {
-        to_wide_nul(&format!("Mode Lokal: BACKUP AKTIF (PID {cpid})"))
+    let hdr = to_wide_nul(&format!(
+        "Baileys Backup  (VPS: {})",
+        raw_st.to_ascii_uppercase()
+    ));
+    let mode = if cpid > 0 {
+        to_wide_nul(&format!("Mode: Backup Lokal Aktif (PID {cpid})"))
     } else {
-        to_wide_nul("Mode Lokal: Standby Pasif (0 Node.js)")
+        to_wide_nul("Mode: Standby Pasif (0 Node.js)")
     };
-
-    let lbl_status = to_wide_nul("Lihat Ringkasan Status...");
+    let lbl_panel = to_wide_nul("Buka Panel Statistik");
     let lbl_check = to_wide_nul("Cek Status VPS Sekarang");
+    let lbl_startup = to_wide_nul("Jalankan saat Login Windows");
     let lbl_log = to_wide_nul("Buka Log Baileys Backup");
     let lbl_bot_log = to_wide_nul("Buka Log Bot WhatsApp Lokal");
     let lbl_folder = to_wide_nul("Buka Folder Proyek");
     let lbl_exit = to_wide_nul("Keluar (Matikan Baileys Backup)");
 
     unsafe {
-        let hmenu = CreatePopupMenu();
-        if hmenu == 0 {
+        let Ok(hmenu) = CreatePopupMenu() else {
             return;
-        }
-        let _ = AppendMenuW(hmenu, MF_STRING, IDM_SHOW_STATUS, header_line.as_ptr());
-        let _ = SetMenuDefaultItem(hmenu, IDM_SHOW_STATUS as u32, 0);
-        let _ = AppendMenuW(hmenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, vps_line.as_ptr());
-        let _ = AppendMenuW(hmenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, mode_line.as_ptr());
-        let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, null());
-        let _ = AppendMenuW(hmenu, MF_STRING, IDM_SHOW_STATUS, lbl_status.as_ptr());
-        let _ = AppendMenuW(hmenu, MF_STRING, IDM_CHECK_NOW, lbl_check.as_ptr());
-        let _ = AppendMenuW(hmenu, MF_STRING, IDM_OPEN_LOG, lbl_log.as_ptr());
-        let _ = AppendMenuW(hmenu, MF_STRING, IDM_OPEN_BOT_LOG, lbl_bot_log.as_ptr());
-        let _ = AppendMenuW(hmenu, MF_STRING, IDM_OPEN_FOLDER, lbl_folder.as_ptr());
-        let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, null());
-        let _ = AppendMenuW(hmenu, MF_STRING, IDM_EXIT, lbl_exit.as_ptr());
+        };
+        let _ = AppendMenuW(hmenu, MF_STRING, IDM_SHOW_PANEL, PCWSTR(hdr.as_ptr()));
+        let _ = SetMenuDefaultItem(hmenu, IDM_SHOW_PANEL as u32, 0);
+        let _ = AppendMenuW(
+            hmenu,
+            MF_STRING | MF_DISABLED | MF_GRAYED,
+            0,
+            PCWSTR(mode.as_ptr()),
+        );
+        let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(hmenu, MF_STRING, IDM_SHOW_PANEL, PCWSTR(lbl_panel.as_ptr()));
+        let _ = AppendMenuW(hmenu, MF_STRING, IDM_CHECK_NOW, PCWSTR(lbl_check.as_ptr()));
+        let _ = AppendMenuW(
+            hmenu,
+            MF_STRING | if autostart { MF_CHECKED } else { MF_UNCHECKED },
+            IDM_TOGGLE_AUTOSTART,
+            PCWSTR(lbl_startup.as_ptr()),
+        );
+        let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(hmenu, MF_STRING, IDM_OPEN_LOG, PCWSTR(lbl_log.as_ptr()));
+        let _ = AppendMenuW(
+            hmenu,
+            MF_STRING,
+            IDM_OPEN_BOT_LOG,
+            PCWSTR(lbl_bot_log.as_ptr()),
+        );
+        let _ = AppendMenuW(
+            hmenu,
+            MF_STRING,
+            IDM_OPEN_FOLDER,
+            PCWSTR(lbl_folder.as_ptr()),
+        );
+        let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(hmenu, MF_STRING, IDM_EXIT, PCWSTR(lbl_exit.as_ptr()));
 
-        let mut pt = POINT { x: 0, y: 0 };
+        let mut pt = POINT::default();
         let _ = GetCursorPos(&mut pt);
         let _ = SetForegroundWindow(hwnd);
-        let _ = TrackPopupMenu(
+        let selected = TrackPopupMenu(
             hmenu,
-            TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON,
+            TPM_RETURNCMD | TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON,
             pt.x,
             pt.y,
             0,
             hwnd,
-            null(),
-        );
-        let _ = PostMessageW(hwnd, WM_NULL, 0, 0);
+            None,
+        )
+        .0 as usize;
+        let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
         let _ = DestroyMenu(hmenu);
+
+        if selected != 0 {
+            handle_command_id(hwnd, ctx, selected);
+        }
     }
 }
 
-#[cfg(windows)]
 fn open_file_in_notepad(path: &Path) {
     if !path.is_file() {
         if let Some(parent) = path.parent() {
@@ -766,93 +1148,156 @@ fn open_file_in_notepad(path: &Path) {
     let _ = Command::new("notepad.exe").arg(path).spawn();
 }
 
-#[cfg(windows)]
+fn handle_command_id(hwnd: HWND, ctx: &Arc<AppContext>, cmd_id: usize) {
+    match cmd_id {
+        IDM_SHOW_PANEL => show_panel_for_ctx(hwnd, ctx, false),
+        IDM_CHECK_NOW => {
+            ctx.checking_vps.store(true, Ordering::SeqCst);
+            ctx.force_poll.store(true, Ordering::SeqCst);
+            panel::refresh_if_visible();
+        }
+        IDM_TOGGLE_AUTOSTART => {
+            let next = !is_autostart_enabled();
+            if set_autostart_enabled(next, &ctx.project_root) {
+                let msg = if next {
+                    "Auto-Start Windows diaktifkan"
+                } else {
+                    "Auto-Start Windows dinonaktifkan"
+                };
+                append_log(&ctx.project_root, msg);
+                record_event(ctx, msg);
+            }
+            panel::refresh_if_visible();
+        }
+        IDM_OPEN_LOG => {
+            let log_file = ctx
+                .project_root
+                .join("logs")
+                .join("wa-standby-watchdog.log");
+            open_file_in_notepad(&log_file);
+        }
+        IDM_OPEN_BOT_LOG => {
+            let bot_log = ctx
+                .project_root
+                .join("logs")
+                .join("wa-baileys-backup.log");
+            open_file_in_notepad(&bot_log);
+        }
+        IDM_OPEN_FOLDER => {
+            let _ = Command::new("explorer.exe").arg(&ctx.project_root).spawn();
+        }
+        IDM_EXIT => {
+            ctx.running.store(false, Ordering::SeqCst);
+            panel::destroy_panel();
+            remove_tray_icon(ctx);
+            unsafe {
+                let _ = DestroyWindow(hwnd);
+            }
+        }
+        _ => {}
+    }
+}
+
 unsafe extern "system" fn tray_wnd_proc(
-    hwnd: isize,
+    hwnd: HWND,
     msg: u32,
-    wparam: usize,
-    lparam: isize,
-) -> isize {
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     if let Some(ctx) = APP_CTX.get() {
         if msg == ctx.taskbar_created_msg && ctx.taskbar_created_msg != 0 {
-            add_or_update_tray_icon(ctx, true);
-            return 0;
+            if !add_or_update_tray_icon(ctx, true) {
+                ctx.tray_retry_left.store(15, Ordering::SeqCst);
+                let _ = unsafe { SetTimer(hwnd, TRAY_RETRY_TIMER_ID, 2000, None) };
+            }
+            return LRESULT(0);
         }
 
         match msg {
-            WM_TRAYICON => {
-                let event = (lparam as u32) & 0xFFFF;
-                if event == WM_RBUTTONUP || event == WM_CONTEXTMENU || event == WM_LBUTTONUP {
-                    show_tray_context_menu(hwnd, ctx);
-                } else if event == WM_LBUTTONDBLCLK {
-                    show_status_dialog_async(Arc::clone(ctx));
+            WM_TIMER if wparam.0 == TRAY_RETRY_TIMER_ID => {
+                let ok = add_or_update_tray_icon(ctx, true);
+                let left = ctx.tray_retry_left.load(Ordering::SeqCst);
+                if ok || left == 0 {
+                    let _ = unsafe { KillTimer(hwnd, TRAY_RETRY_TIMER_ID) };
+                } else {
+                    ctx.tray_retry_left.store(left - 1, Ordering::SeqCst);
                 }
-                return 0;
+                return LRESULT(0);
+            }
+            WM_TRAYICON => {
+                let event = (lparam.0 as u32) & 0xFFFF;
+                if event == WM_RBUTTONUP || event == WM_CONTEXTMENU {
+                    show_tray_context_menu(hwnd, ctx);
+                } else if event == WM_LBUTTONUP
+                    || event == NIN_SELECT
+                    || event == NIN_KEYSELECT
+                {
+                    show_panel_for_ctx(hwnd, ctx, true);
+                } else if event == WM_LBUTTONDBLCLK || event == NIN_BALLOONUSERCLICK {
+                    show_panel_for_ctx(hwnd, ctx, false);
+                }
+                return LRESULT(0);
             }
             WM_APP_UPDATE_TRAY => {
                 add_or_update_tray_icon(ctx, false);
-                return 0;
+                let cpid = ctx.child_pid.load(Ordering::SeqCst);
+                let big = ctx.icons.panel_icon(cpid > 0);
+                let sm = ctx.icons.tray_icon(cpid > 0);
+                unsafe {
+                    let _ = SendMessageW(hwnd, WM_SETICON, WPARAM(ICON_BIG as usize), LPARAM(big.0 as isize));
+                    let _ = SendMessageW(hwnd, WM_SETICON, WPARAM(ICON_SMALL as usize), LPARAM(sm.0 as isize));
+                }
+                panel::refresh_if_visible();
+                return LRESULT(0);
             }
             WM_APP_SHOW_BALLOON => {
                 add_or_update_tray_icon(ctx, false);
                 show_tray_balloon(ctx);
-                return 0;
+                return LRESULT(0);
             }
-            WM_APP_SHOW_DIALOG => {
-                show_status_dialog_async(Arc::clone(ctx));
-                return 0;
+            WM_APP_SHOW_PANEL => {
+                show_panel_for_ctx(hwnd, ctx, false);
+                return LRESULT(0);
+            }
+            WM_APP_TOGGLE_PANEL => {
+                show_panel_for_ctx(hwnd, ctx, true);
+                return LRESULT(0);
             }
             WM_COMMAND => {
-                let cmd_id = wparam & 0xFFFF;
-                match cmd_id {
-                    IDM_SHOW_STATUS => {
-                        show_status_dialog_async(Arc::clone(ctx));
-                    }
-                    IDM_CHECK_NOW => {
-                        ctx.force_poll.store(true, Ordering::SeqCst);
-                    }
-                    IDM_OPEN_LOG => {
-                        let log_file = ctx.project_root.join("logs").join("wa-standby-watchdog.log");
-                        open_file_in_notepad(&log_file);
-                    }
-                    IDM_OPEN_BOT_LOG => {
-                        let bot_log = ctx.project_root.join("logs").join("wa-baileys-backup.log");
-                        open_file_in_notepad(&bot_log);
-                    }
-                    IDM_OPEN_FOLDER => {
-                        let _ = Command::new("explorer.exe").arg(&ctx.project_root).spawn();
-                    }
-                    IDM_EXIT => {
-                        ctx.running.store(false, Ordering::SeqCst);
-                        remove_tray_icon(ctx);
-                        let _ = DestroyWindow(hwnd);
-                    }
-                    _ => {}
-                }
-                return 0;
+                let cmd_id = wparam.0 & 0xFFFF;
+                handle_command_id(hwnd, ctx, cmd_id);
+                return LRESULT(0);
+            }
+            WM_QUERYENDSESSION => return LRESULT(1),
+            WM_ENDSESSION if wparam.0 != 0 => {
+                ctx.running.store(false, Ordering::SeqCst);
+                panel::destroy_panel();
+                remove_tray_icon(ctx);
+                unsafe { PostQuitMessage(0) };
+                return LRESULT(0);
             }
             WM_CLOSE => {
                 ctx.running.store(false, Ordering::SeqCst);
+                panel::destroy_panel();
                 remove_tray_icon(ctx);
-                let _ = DestroyWindow(hwnd);
-                return 0;
+                let _ = unsafe { DestroyWindow(hwnd) };
+                return LRESULT(0);
             }
             WM_DESTROY => {
+                let _ = unsafe { KillTimer(hwnd, TRAY_RETRY_TIMER_ID) };
                 ctx.running.store(false, Ordering::SeqCst);
+                panel::destroy_panel();
                 remove_tray_icon(ctx);
-                PostQuitMessage(0);
-                return 0;
+                unsafe { PostQuitMessage(0) };
+                return LRESULT(0);
             }
             _ => {}
         }
     }
-    DefWindowProcW(hwnd, msg, wparam, lparam)
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
-fn handle_control_client(
-    mut stream: TcpStream,
-    ctx: &Arc<AppContext>,
-) {
+fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
     let mut reader = BufReader::new(match stream.try_clone() {
         Ok(s) => s,
@@ -863,13 +1308,13 @@ fn handle_control_client(
         return;
     }
     let cmd = line.trim().to_ascii_uppercase();
+    let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+
     if cmd == "STOP" {
         ctx.running.store(false, Ordering::SeqCst);
-        let hwnd = ctx.hwnd.load(Ordering::SeqCst);
-        if hwnd != 0 {
-            #[cfg(windows)]
+        if !hwnd.0.is_null() {
             unsafe {
-                let _ = PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
             }
         }
         let _ = stream.write_all(b"{\"ok\":true,\"action\":\"stopping\"}\n");
@@ -878,42 +1323,20 @@ fn handle_control_client(
     }
 
     if cmd == "CHECK_NOW" {
+        ctx.checking_vps.store(true, Ordering::SeqCst);
         ctx.force_poll.store(true, Ordering::SeqCst);
         let _ = stream.write_all(b"{\"ok\":true,\"action\":\"polling\"}\n");
         let _ = stream.flush();
         return;
     }
 
-    if cmd == "POPUP" {
-        let hwnd = ctx.hwnd.load(Ordering::SeqCst);
-        if hwnd != 0 {
-            #[cfg(windows)]
-            {
-                let cpid = ctx.child_pid.load(Ordering::SeqCst);
-                let raw_st = ctx
-                    .shared
-                    .lock()
-                    .map(|g| g.raw_state.clone())
-                    .unwrap_or_else(|_| "unknown".to_string());
-                let body = if cpid > 0 {
-                    format!(
-                        "Baileys Backup aktif di System Tray.\nVPS: {} | Backup Lokal: AKTIF (PID {})",
-                        raw_st.to_ascii_uppercase(),
-                        cpid
-                    )
-                } else {
-                    format!(
-                        "Baileys Backup aktif di System Tray.\nVPS: {} | Mode: Standby Pasif (Hemat RAM)",
-                        raw_st.to_ascii_uppercase()
-                    )
-                };
-                queue_balloon(ctx, "Baileys Backup", &body, false);
-                unsafe {
-                    let _ = PostMessageW(hwnd, WM_APP_SHOW_DIALOG, 0, 0);
-                }
+    if cmd == "SHOW_PANEL" || cmd == "POPUP" {
+        if !hwnd.0.is_null() {
+            unsafe {
+                let _ = PostMessageW(hwnd, WM_APP_SHOW_PANEL, WPARAM(0), LPARAM(0));
             }
         }
-        let _ = stream.write_all(b"{\"ok\":true,\"action\":\"popup_shown\"}\n");
+        let _ = stream.write_all(b"{\"ok\":true,\"action\":\"panel_shown\"}\n");
         let _ = stream.flush();
         return;
     }
@@ -927,26 +1350,38 @@ fn handle_control_client(
         Err(_) => ("unknown", "lock_err".to_string(), 0),
     };
     let cpid = ctx.child_pid.load(Ordering::SeqCst);
+    let (app_priv_kb, app_ws_kb) = query_process_memory_kb(std::process::id());
+    let (node_priv_kb, _) = if cpid > 0 {
+        query_process_memory_kb(cpid)
+    } else {
+        (0, 0)
+    };
+    let tray_active = ctx.tray_registered.load(Ordering::SeqCst);
     let resp = format!(
-        "{{\"ok\":true,\"appName\":\"Baileys Backup\",\"watchdogPid\":{},\"vpsAvailability\":\"{}\",\"vpsState\":\"{}\",\"failoverActive\":{},\"childNodePid\":{},\"lastCheckEpoch\":{},\"uptimeSecs\":{},\"trayActive\":true}}\n",
+        "{{\"ok\":true,\"appName\":\"Baileys Backup\",\"watchdogPid\":{},\"vpsAvailability\":\"{}\",\"vpsState\":\"{}\",\"failoverActive\":{},\"childNodePid\":{},\"lastCheckEpoch\":{},\"uptimeSecs\":{},\"trayActive\":{},\"appPrivateKb\":{},\"appWorkingKb\":{},\"nodePrivateKb\":{},\"totalChecks\":{},\"failoverCount\":{}}}\n",
         std::process::id(),
         avail,
         raw_st,
         if cpid > 0 { "true" } else { "false" },
         cpid,
         last_ts,
-        ctx.started_at.elapsed().as_secs()
+        ctx.started_at.elapsed().as_secs(),
+        if tray_active { "true" } else { "false" },
+        app_priv_kb,
+        app_ws_kb,
+        node_priv_kb,
+        ctx.total_checks.load(Ordering::SeqCst),
+        ctx.failover_count.load(Ordering::SeqCst),
     );
     let _ = stream.write_all(resp.as_bytes());
     let _ = stream.flush();
 }
 
-fn notify_existing_instance_popup() -> bool {
-    if let Ok(mut stream) = TcpStream::connect_timeout(
-        &CONTROL_ADDR.parse().unwrap(),
-        Duration::from_millis(800),
-    ) {
-        let _ = stream.write_all(b"POPUP\n");
+fn notify_existing_instance_show_panel() -> bool {
+    if let Ok(mut stream) =
+        TcpStream::connect_timeout(&CONTROL_ADDR.parse().unwrap(), Duration::from_millis(800))
+    {
+        let _ = stream.write_all(b"SHOW_PANEL\n");
         let _ = stream.flush();
         return true;
     }
@@ -968,19 +1403,15 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
         // Check if child node.exe exited on its own
         if let Some(ref mut ch) = child_node {
             if let Ok(Some(status)) = ch.try_wait() {
-                append_log(
-                    &ctx.project_root,
-                    &format!("Proses Baileys lokal selesai dengan status: {status}."),
-                );
+                let msg = format!("Bot lokal berhenti mandiri ({status})");
+                append_log(&ctx.project_root, &msg);
+                record_event(&ctx, &msg);
                 child_node = None;
                 ctx.child_pid.store(0, Ordering::SeqCst);
-                #[cfg(windows)]
-                {
-                    let hwnd = ctx.hwnd.load(Ordering::SeqCst);
-                    if hwnd != 0 {
-                        unsafe {
-                            let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, 0, 0);
-                        }
+                let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+                if !hwnd.0.is_null() {
+                    unsafe {
+                        let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
                     }
                 }
             }
@@ -989,23 +1420,36 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
         let manual_check = ctx.force_poll.swap(false, Ordering::SeqCst);
         if manual_check || Instant::now() >= next_poll {
             let (avail, raw_st) = query_vps_state(&ctx.project_root);
+            ctx.total_checks.fetch_add(1, Ordering::SeqCst);
+            ctx.checking_vps.store(false, Ordering::SeqCst);
+
             let mut state_changed = false;
             if let Ok(mut g) = ctx.shared.lock() {
                 if g.raw_state != raw_st {
                     state_changed = true;
+                    let msg = format!(
+                        "VPS: {} -> {}",
+                        g.raw_state.to_ascii_uppercase(),
+                        raw_st.to_ascii_uppercase()
+                    );
                     append_log(
                         &ctx.project_root,
-                        &format!(
-                            "Status VPS: {} ({}) -> {}",
-                            g.raw_state,
-                            avail.as_str(),
-                            raw_st
-                        ),
+                        &format!("Status VPS: {} ({}) -> {}", g.raw_state, avail.as_str(), raw_st),
                     );
+                    drop(g);
+                    record_event(&ctx, &msg);
+                    if let Ok(mut g2) = ctx.shared.lock() {
+                        g2.vps_availability = avail;
+                        g2.raw_state = raw_st.clone();
+                        g2.last_check_epoch = now_epoch_secs();
+                        g2.last_check_instant = Some(Instant::now());
+                    }
+                } else {
+                    g.vps_availability = avail;
+                    g.raw_state = raw_st.clone();
+                    g.last_check_epoch = now_epoch_secs();
+                    g.last_check_instant = Some(Instant::now());
                 }
-                g.vps_availability = avail;
-                g.raw_state = raw_st.clone();
-                g.last_check_epoch = now_epoch_secs();
             }
 
             match avail {
@@ -1017,7 +1461,7 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
                             "VPS utama kembali running",
                         );
                         ctx.child_pid.store(0, Ordering::SeqCst);
-                        #[cfg(windows)]
+                        record_event(&ctx, "Standby aktif: VPS RUNNING, Node lokal dimatikan");
                         queue_balloon(
                             &ctx,
                             "Baileys Backup — Standby Pasif",
@@ -1031,8 +1475,9 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
                         child_node = spawn_local_baileys(&ctx.project_root);
                         let pid = child_node.as_ref().map(Child::id).unwrap_or(0);
                         ctx.child_pid.store(pid, Ordering::SeqCst);
-                        #[cfg(windows)]
                         if pid > 0 {
+                            ctx.failover_count.fetch_add(1, Ordering::SeqCst);
+                            record_event(&ctx, &format!("Failover aktif di laptop (PID {pid})"));
                             queue_balloon(
                                 &ctx,
                                 "Baileys Backup — Failover Aktif",
@@ -1049,30 +1494,27 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
                 VpsAvailability::Transient | VpsAvailability::Unknown => {}
             }
 
-            #[cfg(windows)]
-            {
-                let hwnd = ctx.hwnd.load(Ordering::SeqCst);
-                if hwnd != 0 && (state_changed || manual_check) {
-                    unsafe {
-                        let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, 0, 0);
-                    }
+            let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+            if !hwnd.0.is_null() && (state_changed || manual_check) {
+                unsafe {
+                    let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
                 }
-                if manual_check {
-                    let cpid = ctx.child_pid.load(Ordering::SeqCst);
-                    let msg = if cpid > 0 {
-                        format!(
-                            "Status VPS: {} | Backup Lokal: AKTIF (PID {})",
-                            raw_st.to_ascii_uppercase(),
-                            cpid
-                        )
-                    } else {
-                        format!(
-                            "Status VPS: {} | Mode: Standby Pasif (0 Node.js)",
-                            raw_st.to_ascii_uppercase()
-                        )
-                    };
-                    queue_balloon(&ctx, "Baileys Backup — Cek Status VPS", &msg, false);
-                }
+            }
+            if manual_check {
+                let cpid = ctx.child_pid.load(Ordering::SeqCst);
+                let msg = if cpid > 0 {
+                    format!(
+                        "Cek manual: VPS {}, Backup AKTIF (PID {cpid})",
+                        raw_st.to_ascii_uppercase()
+                    )
+                } else {
+                    format!(
+                        "Cek manual: VPS {}, Standby Pasif",
+                        raw_st.to_ascii_uppercase()
+                    )
+                };
+                record_event(&ctx, &msg);
+                queue_balloon(&ctx, "Baileys Backup — Cek Status VPS", &msg, false);
             }
 
             next_poll = Instant::now() + Duration::from_secs(POLL_INTERVAL_SECS);
@@ -1090,7 +1532,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let is_silent_launch = args.iter().any(|a| a == "--silent");
 
-    let project_root = match locate_project_root() {
+    let project_root = match locate_project_root(&args) {
         Some(p) => p,
         None => return,
     };
@@ -1101,134 +1543,142 @@ fn main() {
         Ok(l) => l,
         Err(_) => {
             if !is_silent_launch {
-                let _ = notify_existing_instance_popup();
+                let _ = notify_existing_instance_show_panel();
             }
             return;
         }
     };
     let _ = listener.set_nonblocking(true);
 
-    #[cfg(windows)]
-    let (icon_standby, icon_active, taskbar_created_msg, hinstance) = unsafe {
-        let hinst = GetModuleHandleW(null());
-        // Resource ID 1 = Standby icon, Resource ID 2 = Active failover icon
-        let mut ic1 = LoadIconW(hinst, 1usize as *const u16);
-        if ic1 == 0 {
-            ic1 = LoadIconW(0, IDI_APPLICATION_FALLBACK as *const u16);
+    // 1. Pastikan thread GUI berjalan pada desktop interaktif "Default" tempat taskbar berada
+    let desktop_note = ensure_interactive_default_desktop();
+
+    // 2. PerMonitorV2 DPI & Apartment COM (wajib untuk Shell_NotifyIconW Windows 11)
+    enable_dpi_awareness();
+    let com_hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+
+    let icons = match icon::AppIcons::load() {
+        Ok(ic) => ic,
+        Err(e) => {
+            append_log(&project_root, &format!("Gagal memuat AppIcons: {e}"));
+            if com_hr.is_ok() {
+                unsafe { CoUninitialize() };
+            }
+            return;
         }
-        let mut ic2 = LoadIconW(hinst, 2usize as *const u16);
-        if ic2 == 0 {
-            ic2 = ic1;
-        }
-        let tb_msg = RegisterWindowMessageW(to_wide_nul("TaskbarCreated").as_ptr());
-        (ic1, ic2, tb_msg, hinst)
     };
 
-    #[cfg(not(windows))]
-    let (icon_standby, icon_active, taskbar_created_msg, _hinstance) = (0isize, 0isize, 0u32, 0isize);
+    let taskbar_created_msg = unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) };
 
     let ctx = Arc::new(AppContext {
         project_root: project_root.clone(),
         running: Arc::new(AtomicBool::new(true)),
         force_poll: Arc::new(AtomicBool::new(false)),
+        checking_vps: Arc::new(AtomicBool::new(false)),
+        tray_registered: Arc::new(AtomicBool::new(false)),
+        tray_retry_left: AtomicU8::new(15),
         child_pid: Arc::new(AtomicU32::new(0)),
+        total_checks: Arc::new(AtomicU64::new(0)),
+        failover_count: Arc::new(AtomicU64::new(0)),
         shared: Arc::new(Mutex::new(SharedState {
             vps_availability: VpsAvailability::Unknown,
             raw_state: "mengecek...".to_string(),
             last_check_epoch: 0,
+            last_check_instant: None,
             balloon_title: String::new(),
             balloon_body: String::new(),
             balloon_is_warning: false,
+            recent_events: VecDeque::from(["Baileys Backup dimulai di System Tray".to_string()]),
         })),
-        hwnd: AtomicIsize::new(0),
-        icon_standby,
-        icon_active,
+        hwnd_raw: AtomicIsize::new(0),
+        icons,
         taskbar_created_msg,
         started_at: Instant::now(),
-        dialog_open: AtomicBool::new(false),
     });
     let _ = APP_CTX.set(Arc::clone(&ctx));
 
     append_log(
         &project_root,
         &format!(
-            "Baileys Backup dimulai (PID {}, System Tray aktif, control {}, interval {}s).",
+            "Baileys Backup dimulai (PID {}, desktop: {}, COM: 0x{:08X}, interval {}s).",
             std::process::id(),
-            CONTROL_ADDR,
+            desktop_note.as_deref().unwrap_or("unknown"),
+            com_hr.0 as u32,
             POLL_INTERVAL_SECS
         ),
     );
 
-    #[cfg(windows)]
     unsafe {
-        let class_name = to_wide_nul("BaileysBackupTrayWindowClass");
-        let wnd_title = to_wide_nul("Baileys Backup");
+        let hinstance: HMODULE = GetModuleHandleW(None).unwrap_or_default();
         let wc = WNDCLASSEXW {
-            cb_size: std::mem::size_of::<WNDCLASSEXW>() as u32,
-            style: 0,
-            lpfn_wnd_proc: tray_wnd_proc,
-            cb_cls_extra: 0,
-            cb_wnd_extra: 0,
-            h_instance: hinstance,
-            h_icon: icon_standby,
-            h_cursor: 0,
-            hbr_background: 0,
-            lpsz_menu_name: null(),
-            lpsz_class_name: class_name.as_ptr(),
-            h_icon_sm: icon_standby,
+            cbSize: size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(tray_wnd_proc),
+            hInstance: hinstance.into(),
+            hIcon: ctx.icons.standby_lg,
+            hIconSm: ctx.icons.standby_sm,
+            lpszClassName: w!("BaileysBackupTrayWindowClass"),
+            ..Default::default()
         };
         let _ = RegisterClassExW(&wc);
 
-        let hwnd = CreateWindowExW(
-            0,
-            class_name.as_ptr(),
-            wnd_title.as_ptr(),
-            0,
-            0,
-            0,
+        if let Ok(hwnd) = CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            w!("BaileysBackupTrayWindowClass"),
+            w!("Baileys Backup"),
+            WS_OVERLAPPED,
             0,
             0,
             0,
             0,
+            None,
+            None,
             hinstance,
-            null_mut(),
-        );
-        if hwnd != 0 {
-            ctx.hwnd.store(hwnd, Ordering::SeqCst);
-            add_or_update_tray_icon(&ctx, true);
-
-            // Pin tray icon in Windows 11 taskbar area so user doesn't have to hunt in overflow menu
-            thread::spawn(|| {
-                thread::sleep(Duration::from_millis(900));
-                promote_tray_icon_in_windows11();
-            });
+            None,
+        ) {
+            ctx.hwnd_raw.store(hwnd.0 as isize, Ordering::SeqCst);
+            let _ = SendMessageW(
+                hwnd,
+                WM_SETICON,
+                WPARAM(ICON_BIG as usize),
+                LPARAM(ctx.icons.standby_lg.0 as isize),
+            );
+            let _ = SendMessageW(
+                hwnd,
+                WM_SETICON,
+                WPARAM(ICON_SMALL as usize),
+                LPARAM(ctx.icons.standby_sm.0 as isize),
+            );
+            if !add_or_update_tray_icon(&ctx, true) {
+                let _ = SetTimer(hwnd, TRAY_RETRY_TIMER_ID, 2000, None);
+            }
+        } else {
+            let err = std::io::Error::last_os_error();
+            append_log(&project_root, &format!("CreateWindowExW host gagal: {err}"));
         }
     }
+
+    // Pangkas working set awal agar idle footprint langsung ultra-rendah (~1.5-3 MB)
+    trim_working_set();
 
     let worker_ctx = Arc::clone(&ctx);
     let worker_handle = thread::spawn(move || {
         run_worker_loop(listener, worker_ctx);
     });
 
-    #[cfg(windows)]
     unsafe {
-        let mut msg = MSG {
-            hwnd: 0,
-            message: 0,
-            wparam: 0,
-            lparam: 0,
-            time: 0,
-            pt: POINT { x: 0, y: 0 },
-            lprivate: 0,
-        };
-        while GetMessageW(&mut msg, 0, 0, 0) > 0 {
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
             let _ = TranslateMessage(&msg);
-            let _ = DispatchMessageW(&msg);
+            DispatchMessageW(&msg);
         }
     }
 
     ctx.running.store(false, Ordering::SeqCst);
     let _ = worker_handle.join();
+
+    if com_hr.is_ok() {
+        unsafe { CoUninitialize() };
+    }
 }
 
 #[cfg(test)]
@@ -1284,5 +1734,33 @@ mod tests {
         let act_tip = format_tray_tooltip("paused", 4321);
         assert!(act_tip.contains("Baileys Backup - BACKUP AKTIF"));
         assert!(act_tip.contains("PID 4321"));
+    }
+
+    #[test]
+    fn notifyicondata_size_matches_x64_shell32_contract() {
+        assert_eq!(size_of::<NOTIFYICONDATAW>(), 976);
+    }
+
+    #[test]
+    fn parse_project_dir_arg_extracts_both_forms() {
+        let form_split = vec![
+            "BaileysBackup.exe".to_string(),
+            "--silent".to_string(),
+            "--project-dir".to_string(),
+            "D:\\code\\project\\projek_no_name".to_string(),
+        ];
+        assert_eq!(
+            parse_project_dir_arg(&form_split),
+            Some(PathBuf::from("D:\\code\\project\\projek_no_name"))
+        );
+
+        let form_eq = vec![
+            "BaileysBackup.exe".to_string(),
+            "--project-dir=\"D:\\code\\project\\projek_no_name\"".to_string(),
+        ];
+        assert_eq!(
+            parse_project_dir_arg(&form_eq),
+            Some(PathBuf::from("D:\\code\\project\\projek_no_name"))
+        );
     }
 }

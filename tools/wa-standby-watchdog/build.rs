@@ -144,6 +144,40 @@ fn sample_icon_point(u: f32, v: f32, active_failover: bool) -> (f32, f32, f32, f
     (r.clamp(0.0, 255.0), g.clamp(0.0, 255.0), b.clamp(0.0, 255.0), 255.0)
 }
 
+/// Compute 4x4 MSAA supersampled RGBA pixel at `(x, y)` (top-down coordinates)
+fn sample_pixel_msaa(size: u32, x: u32, y: u32, active_failover: bool) -> (u8, u8, u8, u8) {
+    let mut sum_r = 0.0f32;
+    let mut sum_g = 0.0f32;
+    let mut sum_b = 0.0f32;
+    let mut sum_a = 0.0f32;
+
+    for sy in 0..4 {
+        for sx in 0..4 {
+            let u = (x as f32 + (sx as f32 + 0.5) / 4.0) / (size as f32);
+            let v = (y as f32 + (sy as f32 + 0.5) / 4.0) / (size as f32);
+            let (r, g, b, a) = sample_icon_point(u, v, active_failover);
+            let alpha_norm = a / 255.0;
+            sum_r += r * alpha_norm;
+            sum_g += g * alpha_norm;
+            sum_b += b * alpha_norm;
+            sum_a += a;
+        }
+    }
+
+    let avg_a = (sum_a / 16.0).round().clamp(0.0, 255.0) as u8;
+    let (final_r, final_g, final_b) = if sum_a > 0.0 {
+        let denom = sum_a / 255.0;
+        (
+            (sum_r / denom).round().clamp(0.0, 255.0) as u8,
+            (sum_g / denom).round().clamp(0.0, 255.0) as u8,
+            (sum_b / denom).round().clamp(0.0, 255.0) as u8,
+        )
+    } else {
+        (0, 0, 0)
+    };
+    (final_r, final_g, final_b, avg_a)
+}
+
 /// Render a single icon resolution into a Win32 32-bit BGRA DIB (BITMAPINFOHEADER + XOR + AND mask)
 fn render_icon_dib(size: u32, active_failover: bool) -> Vec<u8> {
     let mut xor_pixels = Vec::with_capacity((size * size * 4) as usize);
@@ -154,44 +188,15 @@ fn render_icon_dib(size: u32, active_failover: bool) -> Vec<u8> {
     for y_inv in 0..size {
         let y = size - 1 - y_inv;
         for x in 0..size {
-            // 4x4 MSAA supersampling for crisp anti-aliased edges
-            let mut sum_r = 0.0f32;
-            let mut sum_g = 0.0f32;
-            let mut sum_b = 0.0f32;
-            let mut sum_a = 0.0f32;
-
-            for sy in 0..4 {
-                for sx in 0..4 {
-                    let u = (x as f32 + (sx as f32 + 0.5) / 4.0) / (size as f32);
-                    let v = (y as f32 + (sy as f32 + 0.5) / 4.0) / (size as f32);
-                    let (r, g, b, a) = sample_icon_point(u, v, active_failover);
-                    let alpha_norm = a / 255.0;
-                    sum_r += r * alpha_norm;
-                    sum_g += g * alpha_norm;
-                    sum_b += b * alpha_norm;
-                    sum_a += a;
-                }
-            }
-
-            let avg_a = (sum_a / 16.0).round().clamp(0.0, 255.0) as u8;
-            let (final_r, final_g, final_b) = if sum_a > 0.0 {
-                let denom = sum_a / 255.0;
-                (
-                    (sum_r / denom).round().clamp(0.0, 255.0) as u8,
-                    (sum_g / denom).round().clamp(0.0, 255.0) as u8,
-                    (sum_b / denom).round().clamp(0.0, 255.0) as u8,
-                )
-            } else {
-                (0, 0, 0)
-            };
+            let (r, g, b, a) = sample_pixel_msaa(size, x, y, active_failover);
 
             // BGRA byte order
-            xor_pixels.push(final_b);
-            xor_pixels.push(final_g);
-            xor_pixels.push(final_r);
-            xor_pixels.push(avg_a);
+            xor_pixels.push(b);
+            xor_pixels.push(g);
+            xor_pixels.push(r);
+            xor_pixels.push(a);
 
-            if avg_a < 16 {
+            if a < 16 {
                 let byte_idx = (y_inv * and_row_bytes + (x / 8)) as usize;
                 let bit_idx = 7 - (x % 8);
                 and_mask[byte_idx] |= 1u8 << bit_idx;
@@ -215,6 +220,85 @@ fn render_icon_dib(size: u32, active_failover: bool) -> Vec<u8> {
     dib.extend_from_slice(&xor_pixels);
     dib.extend_from_slice(&and_mask);
     dib
+}
+
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for &b in bytes {
+        crc ^= u32::from(b);
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (0xEDB8_8320u32 & mask);
+        }
+    }
+    !crc
+}
+
+fn adler32(bytes: &[u8]) -> u32 {
+    const MOD_ADLER: u32 = 65521;
+    let mut a = 1u32;
+    let mut b = 0u32;
+    for &byte in bytes {
+        a = (a + u32::from(byte)) % MOD_ADLER;
+        b = (b + a) % MOD_ADLER;
+    }
+    (b << 16) | a
+}
+
+fn append_png_chunk(out: &mut Vec<u8>, tag: &[u8; 4], payload: &[u8]) {
+    out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    let start = out.len();
+    out.extend_from_slice(tag);
+    out.extend_from_slice(payload);
+    let c = crc32(&out[start..]);
+    out.extend_from_slice(&c.to_be_bytes());
+}
+
+/// Encode an uncompressed RGBA PNG (valid zlib stored-blocks stream) for 256x256 Vista+ ICO entries
+fn render_icon_png(size: u32, active_failover: bool) -> Vec<u8> {
+    let row_len = 1 + (size as usize) * 4;
+    let mut raw = Vec::with_capacity(row_len * (size as usize));
+    for y in 0..size {
+        raw.push(0); // PNG filter type 0 (None)
+        for x in 0..size {
+            let (r, g, b, a) = sample_pixel_msaa(size, x, y, active_failover);
+            raw.extend_from_slice(&[r, g, b, a]);
+        }
+    }
+
+    // Wrap raw scanlines in zlib stored-blocks (max 65535 bytes per block)
+    let mut zlib = Vec::with_capacity(raw.len() + 64);
+    zlib.extend_from_slice(&[0x78, 0x01]); // CMF=0x78 (deflate 32K), FLG=0x01 (no dict, fastest)
+    let mut offset = 0usize;
+    while offset < raw.len() {
+        let remain = raw.len() - offset;
+        let block_len = remain.min(65535);
+        let is_last = offset + block_len >= raw.len();
+        zlib.push(if is_last { 0x01 } else { 0x00 });
+        let len_u16 = block_len as u16;
+        let nlen_u16 = !len_u16;
+        zlib.extend_from_slice(&len_u16.to_le_bytes());
+        zlib.extend_from_slice(&nlen_u16.to_le_bytes());
+        zlib.extend_from_slice(&raw[offset..offset + block_len]);
+        offset += block_len;
+    }
+    zlib.extend_from_slice(&adler32(&raw).to_be_bytes());
+
+    let mut png = Vec::with_capacity(zlib.len() + 128);
+    png.extend_from_slice(b"\x89PNG\r\n\x1a\n");
+
+    let mut ihdr = [0u8; 13];
+    ihdr[0..4].copy_from_slice(&size.to_be_bytes());
+    ihdr[4..8].copy_from_slice(&size.to_be_bytes());
+    ihdr[8] = 8; // bit depth
+    ihdr[9] = 6; // color type RGBA
+    ihdr[10] = 0; // compression
+    ihdr[11] = 0; // filter
+    ihdr[12] = 0; // interlace
+    append_png_chunk(&mut png, b"IHDR", &ihdr);
+    append_png_chunk(&mut png, b"IDAT", &zlib);
+    append_png_chunk(&mut png, b"IEND", &[]);
+    png
 }
 
 /// Build a standalone multi-resolution `.ico` file from rendered DIB slices
@@ -523,17 +607,70 @@ fn build_coff_rsrc_object( mut items: Vec<(u16, u16, u16, Vec<u8>)>) -> Vec<u8> 
     coff
 }
 
+fn build_app_manifest() -> Vec<u8> {
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity
+    version="1.0.0.0"
+    processorArchitecture="amd64"
+    name="FreeAIBot.BaileysBackup"
+    type="win32" />
+  <description>Baileys Backup - Standby &amp; Auto-Failover Bot WhatsApp Lokal</description>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>
+    </windowsSettings>
+  </application>
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="amd64"
+        publicKeyToken="6595b64144ccf1df"
+        language="*" />
+    </dependentAssembly>
+  </dependency>
+</assembly>
+"#
+    .as_bytes()
+    .to_vec()
+}
+
+fn render_icon_set(active_failover: bool) -> Vec<(u32, Vec<u8>)> {
+    let mut images: Vec<(u32, Vec<u8>)> = ICON_SIZES
+        .iter()
+        .map(|&s| (s, render_icon_dib(s, active_failover)))
+        .collect();
+    images.push((256, render_icon_png(256, active_failover)));
+    images
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    let standby_dibs: Vec<(u32, Vec<u8>)> = ICON_SIZES
-        .iter()
-        .map(|&s| (s, render_icon_dib(s, false)))
-        .collect();
-    let active_dibs: Vec<(u32, Vec<u8>)> = ICON_SIZES
-        .iter()
-        .map(|&s| (s, render_icon_dib(s, true)))
-        .collect();
+    let standby_images = render_icon_set(false);
+    let active_images = render_icon_set(true);
+    let standby_ico = build_ico_file(&standby_images);
+    let active_ico = build_ico_file(&active_images);
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+    fs::write(out_dir.join("standby.ico"), &standby_ico).expect("Failed to write standby.ico");
+    fs::write(out_dir.join("active.ico"), &active_ico).expect("Failed to write active.ico");
 
     // 1. Write standalone .ico files to repo bin/ directory
     if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
@@ -543,33 +680,27 @@ fn main() {
             .map(|p| p.join("bin"))
             .unwrap_or_else(|| PathBuf::from(&manifest_dir).join("bin"));
         let _ = fs::create_dir_all(&root_bin);
-        let _ = fs::write(
-            root_bin.join("baileys-backup.ico"),
-            build_ico_file(&standby_dibs),
-        );
-        let _ = fs::write(
-            root_bin.join("baileys-backup-active.ico"),
-            build_ico_file(&active_dibs),
-        );
+        let _ = fs::write(root_bin.join("baileys-backup.ico"), &standby_ico);
+        let _ = fs::write(root_bin.join("baileys-backup-active.ico"), &active_ico);
     }
 
     // 2. Build x86_64 COFF `.o` resource object file (`.rsrc`)
-    // RT_ICON = 3, RT_GROUP_ICON = 14, RT_VERSION = 16
+    // RT_ICON = 3, RT_GROUP_ICON = 14, RT_VERSION = 16, RT_MANIFEST = 24
     let mut items: Vec<(u16, u16, u16, Vec<u8>)> = Vec::new();
-    for (idx, (_, dib)) in standby_dibs.iter().enumerate() {
-        items.push((3, 1 + (idx as u16), 0x0409, dib.clone()));
+    for (idx, (_, img)) in standby_images.iter().enumerate() {
+        items.push((3, 1 + (idx as u16), 0x0409, img.clone()));
     }
-    items.push((14, 1, 0x0409, build_group_icon_resource(&standby_dibs, 1)));
+    items.push((14, 1, 0x0409, build_group_icon_resource(&standby_images, 1)));
 
-    for (idx, (_, dib)) in active_dibs.iter().enumerate() {
-        items.push((3, 21 + (idx as u16), 0x0409, dib.clone()));
+    for (idx, (_, img)) in active_images.iter().enumerate() {
+        items.push((3, 21 + (idx as u16), 0x0409, img.clone()));
     }
-    items.push((14, 2, 0x0409, build_group_icon_resource(&active_dibs, 21)));
+    items.push((14, 2, 0x0409, build_group_icon_resource(&active_images, 21)));
 
     items.push((16, 1, 0x0409, build_version_info_resource()));
+    items.push((24, 1, 0x0409, build_app_manifest()));
 
     let coff_bytes = build_coff_rsrc_object(items);
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
     let obj_path = out_dir.join("baileys_backup_rsrc.o");
     fs::write(&obj_path, &coff_bytes).expect("Failed to write baileys_backup_rsrc.o");
 
