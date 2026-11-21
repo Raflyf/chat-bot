@@ -11,6 +11,7 @@
  */
 import { db } from './db.js';
 import { hasDedicatedGroupTables } from './group_db.js';
+import { detectUserLocationDeclaration } from './timezone.js';
 
 export type GroupMode = 'mention' | 'nimbrung' | 'diam';
 
@@ -39,6 +40,7 @@ export interface GroupEvaluationInput {
   hasSticker?: boolean;
   mentionsOtherOnly?: boolean;
   inFollowUpWindow?: boolean;
+  hasPendingInteraction?: boolean;
   botUsername?: string;
   nowMs?: number;
   lastBotReplyAt?: number;
@@ -543,6 +545,17 @@ export function adalahPesanBasaBasiPenutup(text: string): boolean {
   return false;
 }
 
+const SATU_KATA_FITUR_RE =
+  /^(?:ringkasan|rekap|catatan|tugas|pengingat|peringatan|reminder|jadwal|keuangan|uang|saldo|pengeluaran|pemasukan|list|daftar|menu|help|bantuan|panduan|fitur|tutorial|reset|clear|batal|cancel|selesai|done|nyerah|menyerah|hint|petunjuk|games?|permainan|uno|catur|capsa|remi|gaple|halma|dadu|suit|kuis|monopoli|batu|gunting|kertas|jempol|telunjuk|kelingking|pass|draw|ambil|stopgame|wib|wita|wit)[?!.]*$/i;
+
+export function adalahPerintahFiturSatuKata(text: string): boolean {
+  const clean = String(text ?? '').trim();
+  if (!clean) return false;
+  if (SATU_KATA_FITUR_RE.test(clean)) return true;
+  if (!clean.includes(' ') && detectUserLocationDeclaration(clean) !== null) return true;
+  return false;
+}
+
 export function adalahPesanLayakNimbrung(
   text: string,
   opts: { mentionsOtherOnly?: boolean } = {},
@@ -550,6 +563,7 @@ export function adalahPesanLayakNimbrung(
   if (opts.mentionsOtherOnly) return false;
   const clean = String(text ?? '').trim();
   if (!clean) return false;
+  if (adalahPerintahFiturSatuKata(clean)) return true;
   if (adalahPesanBasaBasiPenutup(clean)) return false;
   if (clean.includes('?')) return true;
   const words = clean.split(/\s+/).filter(Boolean);
@@ -609,6 +623,16 @@ export function evaluasiResponGrup(input: GroupEvaluationInput): GroupEvaluation
     };
   }
 
+  // 2b. Ada permintaan/konfirmasi/game tertunda dari bot -> jawaban pendek (WIB, cianjur, iya, tidak, langkah game) wajib lolos.
+  if (input.hasPendingInteraction && !input.mentionsOtherOnly && raw) {
+    return {
+      action: 'reply',
+      reason: 'pending_interaction',
+      cleanedText: baseCleaned,
+      shouldSetFollowUp: true,
+    };
+  }
+
   // 3. Mode 'mention'
   if (input.mode === 'mention') {
     if (isExplicitDirect) {
@@ -620,7 +644,7 @@ export function evaluasiResponGrup(input: GroupEvaluationInput): GroupEvaluation
       };
     }
     if (input.inFollowUpWindow) {
-      if (input.mentionsOtherOnly || (raw && adalahPesanBasaBasiPenutup(raw))) {
+      if (input.mentionsOtherOnly || (raw && adalahPesanBasaBasiPenutup(raw) && !adalahPerintahFiturSatuKata(raw))) {
         return {
           action: 'passive_ignore',
           reason: 'followup_ended_by_filler_or_other',

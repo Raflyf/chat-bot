@@ -2462,6 +2462,64 @@ async function simpanKonfirmasi(
   }
 }
 
+/** Cek cepat READ-ONLY apakah chat sedang memiliki permintaan zona/jam, konfirmasi catat, atau game aktif. */
+export async function adaInteraksiTertunda(chatId: string): Promise<boolean> {
+  try {
+    const key = normChatId(chatId);
+    if (!key) return false;
+    const now = Date.now();
+
+    const memZona = permintaanTertunda.get(key);
+    if (memZona && now - memZona.at <= PERMINTAAN_TERTUNDA_TTL_MS) return true;
+
+    const memKonf = konfirmasiTertunda.get(key);
+    if (memKonf && now - memKonf.at <= KONFIRMASI_TTL_MS) return true;
+
+    const c = db();
+    if (c) {
+      if (isGroupChatKey(key) && await hasDedicatedGroupTables()) {
+        const { data: rows } = await c
+          .from('group_messages')
+          .select('via, created_at')
+          .eq('chat_id', key)
+          .in('via', ['system/pending-zona', 'system/pending-confirmation'])
+          .order('created_at', { ascending: false })
+          .limit(2);
+        for (const r of (rows ?? []) as Array<{ via?: string; created_at?: string }>) {
+          const ts = r.created_at ? new Date(r.created_at).getTime() : 0;
+          const ttl = r.via === 'system/pending-zona' ? PERMINTAAN_TERTUNDA_TTL_MS : KONFIRMASI_TTL_MS;
+          if (ts > 0 && now - ts <= ttl) return true;
+        }
+      } else {
+        const { data: confRow } = await c
+          .from('pending_confirmations')
+          .select('created_at')
+          .eq('chat_id', key)
+          .gt('expires_at', new Date(now).toISOString())
+          .maybeSingle();
+        if (confRow) return true;
+
+        const msgTbl = await resolveTableName('messages', key);
+        const { data: rows } = await c
+          .from(msgTbl)
+          .select('via, created_at')
+          .eq('chat_id', key)
+          .eq('via', 'system/pending-confirmation')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        const r0 = (rows ?? [])[0] as { created_at?: string } | undefined;
+        if (r0?.created_at && now - new Date(r0.created_at).getTime() <= KONFIRMASI_TTL_MS) return true;
+      }
+    }
+
+    const { ambilGame } = await import('./games/index.js');
+    if (await ambilGame(key)) return true;
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 /** Ambil konfirmasi tertunda (DB dulu; memori sebagai cadangan). */
 async function ambilKonfirmasi(
   chatId: string,

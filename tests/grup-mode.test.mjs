@@ -366,3 +366,66 @@ test('unwrapBaileysMessage membuka pembungkus ephemeral, viewOnceV2, documentWit
   const teks = { conversation: 'editan' };
   assert.deepEqual(unwrapBaileysMessage({ editedMessage: { message: teks } }), teks);
 });
+
+test('perintah fitur 1 kata dan jawaban interaksi tertunda (WIB/cianjur/iya/tidak) tetap dibalas di grup', () => {
+  for (const cmd of ['ringkasan', 'rekap', 'catatan', 'tugas', 'pengingat', 'uang', 'WIB', 'cianjur']) {
+    const res = evaluasiResponGrup({
+      mode: 'nimbrung',
+      text: cmd,
+      actorId: 'u1',
+      isMentioned: false,
+      isReplyToBot: false,
+      isTargetedCommand: false,
+      hasWakeWord: false,
+      wakeCleanedText: cmd,
+    });
+    assert.equal(res.action, 'reply', `nimbrung harus membalas perintah fitur "${cmd}"`);
+  }
+
+  for (const ans of ['WIB', 'cianjur', 'iya', 'tidak']) {
+    for (const mode of ['nimbrung', 'mention']) {
+      const okRes = evaluasiResponGrup({
+        mode,
+        text: ans,
+        actorId: 'u1',
+        isMentioned: false,
+        isReplyToBot: false,
+        isTargetedCommand: false,
+        hasWakeWord: false,
+        wakeCleanedText: ans,
+        hasPendingInteraction: true,
+      });
+      assert.equal(okRes.action, 'reply');
+      assert.equal(okRes.reason, 'pending_interaction');
+
+      const otherRes = evaluasiResponGrup({
+        mode,
+        text: ans,
+        actorId: 'u1',
+        isMentioned: false,
+        isReplyToBot: false,
+        isTargetedCommand: false,
+        hasWakeWord: false,
+        wakeCleanedText: ans,
+        mentionsOtherOnly: true,
+        hasPendingInteraction: true,
+      });
+      assert.notEqual(otherRes.action, 'reply', 'mentionsOtherOnly tetap tidak boleh dibalas meski hasPendingInteraction');
+    }
+  }
+
+  for (const filler of ['wkwkwk', 'ok', 'sip']) {
+    const fRes = evaluasiResponGrup({
+      mode: 'nimbrung',
+      text: filler,
+      actorId: 'u1',
+      isMentioned: false,
+      isReplyToBot: false,
+      isTargetedCommand: false,
+      hasWakeWord: false,
+      wakeCleanedText: filler,
+      hasPendingInteraction: false,
+    });
+    assert.equal(fRes.action, 'passive_ignore', `filler "${filler}" tanpa pending tetap passive_ignore`);
+  }
+});

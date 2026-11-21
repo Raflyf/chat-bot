@@ -17,7 +17,7 @@ import { baileysAutoReply, baileysDescribeImage, baileysDynamicNotice } from './
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent, imageUserContent, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed, cariPesanByMsgId, pesanBotTerakhir } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
-import { tanganiPencatatan } from './notes.js';
+import { tanganiPencatatan, adaInteraksiTertunda } from './notes.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
 import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
@@ -842,6 +842,10 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const isCmdSlash = /(?:^|\s)\/(?:help|bantuan|menu|start|reset|clear|salah|remind|catat|catatan|cari|tugas|list|selesai|hapus|uang|masuk|rekap|hapusuang|barang|ringkasan|tanya|ai|nimbrung|mention|stop|stopnimbrung|diam|mute|statusgrup|status)\b/i.test(
       targetMention.cleanedText,
     );
+    const hasPendingInteraction =
+      groupRec.mode !== 'diam' && !targetMention.mentionsOtherOnly && Boolean(text)
+        ? await adaInteraksiTertunda(chatKey)
+        : false;
 
     const groupEval = evaluasiResponGrup({
       mode: groupRec.mode,
@@ -856,6 +860,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       hasSticker: hasStickerPre,
       mentionsOtherOnly: targetMention.mentionsOtherOnly,
       inFollowUpWindow: inFollowUp,
+      hasPendingInteraction,
       lastBotReplyAt: groupRec.lastBotReplyAt,
     });
 

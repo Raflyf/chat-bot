@@ -5,7 +5,7 @@ import { autoReply, describeImage, dynamicNotice, splitMessageSmart } from './sk
 import { transcribeAudio, processIncomingDocument, processIncomingSticker, stickerUserContent, imageUserContent, processIncomingVideo } from './media.js';
 import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProcessed } from './db.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection, withChatLock } from './memory.js';
-import { tanganiPencatatan } from './notes.js';
+import { tanganiPencatatan, adaInteraksiTertunda } from './notes.js';
 import { PERINTAH_BANTUAN, PERINTAH_DIGABUNG, teksBantuan, petunjukPemakaian } from './commands.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
 import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
@@ -449,6 +449,10 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       const { record: groupRec } = await getGroupModeRecord(tgGroupKey);
       tgGroupRecMode = groupRec.mode;
       const inFollowUp = isInFollowUpWindow(tgGroupKey, tgActorId);
+      const hasPendingInteraction =
+        groupRec.mode !== 'diam' && !mentionsOtherOnlyTg && Boolean(cleanForGroupCheck || cleanCapForGroupCheck)
+          ? await adaInteraksiTertunda(chatKey)
+          : false;
       const groupEval = evaluasiResponGrup({
         mode: groupRec.mode,
         text: cleanForGroupCheck || cleanCapForGroupCheck,
@@ -463,6 +467,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
         hasSticker,
         mentionsOtherOnly: mentionsOtherOnlyTg,
         inFollowUpWindow: inFollowUp,
+        hasPendingInteraction,
         botUsername,
         lastBotReplyAt: groupRec.lastBotReplyAt,
       });
