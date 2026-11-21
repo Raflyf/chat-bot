@@ -309,6 +309,7 @@ let reconnectCount = 0;
 let activeSock: WASocket | null = null;
 let reminderInitTimer: NodeJS.Timeout | null = null;
 let reminderWorkerTimer: NodeJS.Timeout | null = null;
+let sessionSyncTimer: NodeJS.Timeout | null = null;
 let checkingReminders = false;
 let lastLazyRemindCheckAt = 0;
 
@@ -458,11 +459,13 @@ export async function sendWhatsAppMessageSafe(
   let semuaBerhasil = true;
 
   for (const chunk of chunks) {
-    // Quote hanya untuk chunk PERTAMA.
-    const payload: Record<string, unknown> = { text: chunk };
-    if (quotedMsg && chunk === chunks[0]) payload.quoted = quotedMsg;
+    // Quote hanya untuk chunk PERTAMA — Baileys menerima `quoted` di argumen ke-3 (`options`).
+    const sendOptions =
+      quotedMsg && chunk === chunks[0]
+        ? ({ quoted: quotedMsg } as Parameters<typeof sock.sendMessage>[2])
+        : undefined;
     try {
-      await sock.sendMessage(jid, payload as Parameters<typeof sock.sendMessage>[1]);
+      await sock.sendMessage(jid, { text: chunk }, sendOptions);
     } catch (err) {
       console.error('[whatsapp] Gagal kirim pesan:', String((err as Error)?.message ?? err));
       semuaBerhasil = false;
@@ -569,11 +572,16 @@ export async function startWhatsApp(): Promise<void> {
       console.log('[whatsapp] Berhasil terhubung ke jaringan WhatsApp.');
       console.log('[whatsapp] Bot siap menerima dan membalas pesan 24 jam nonstop.');
       await syncSessionDirToSupabase(sessionDir);
+      if (sessionSyncTimer) clearInterval(sessionSyncTimer);
+      sessionSyncTimer = setInterval(() => {
+        void syncSessionDirToSupabase(sessionDir);
+      }, 5 * 60_000);
       startBaileysReminderWorker();
     }
 
     if (connection === 'close') {
       stopBaileysReminderWorker();
+      if (sessionSyncTimer) { clearInterval(sessionSyncTimer); sessionSyncTimer = null; }
       if (activeSock === sock) activeSock = null;
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
@@ -1952,8 +1960,13 @@ if (process.argv[1] && process.argv[1].includes('whatsapp_baileys')) {
     stopping = true;
     stopVpsTimer();
     stopBaileysReminderWorker();
+    if (sessionSyncTimer) { clearInterval(sessionSyncTimer); sessionSyncTimer = null; }
     console.log(`\n[whatsapp] Proses dihentikan (${signal}).`);
-    void laporShutdownVps(signal).finally(() => {
+    const syncSafe = Promise.race([
+      syncSessionDirToSupabase(sessionDir),
+      new Promise<void>((resolve) => setTimeout(resolve, 4000)),
+    ]);
+    void Promise.allSettled([syncSafe, laporShutdownVps(signal)]).finally(() => {
       process.exit(0);
     });
   };
