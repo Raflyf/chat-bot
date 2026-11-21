@@ -1,29 +1,38 @@
 /**
- * Pengelola Watchdog Native Rust (`bin/wa-standby-watchdog.exe`) untuk Windows:
- * - `node scripts/watchdog-ctl.mjs build`     : Kompilasi TypeScript (`dist/`) + binary Rust (`bin/wa-standby-watchdog.exe`)
- * - `node scripts/watchdog-ctl.mjs install`   : Build, hentikan proses tsx berat lama, daftarkan auto-start Windows (HKCU\...\Run), & jalankan watchdog tanpa jendela terminal
- * - `node scripts/watchdog-ctl.mjs start`     : Jalankan watchdog di latar belakang tanpa jendela terminal
- * - `node scripts/watchdog-ctl.mjs status`    : Tampilkan status live watchdog, status VPS, pemakaian RAM (MB), status auto-start, & log terakhir
- * - `node scripts/watchdog-ctl.mjs stop`      : Hentikan watchdog (dan sync sesi bila backup lokal sedang aktif)
- * - `node scripts/watchdog-ctl.mjs uninstall` : Hentikan watchdog & hapus pendaftaran auto-start Windows
+ * Pengelola Aplikasi Native Rust `Baileys Backup` (`bin/BaileysBackup.exe`) untuk Windows:
+ * - `node scripts/watchdog-ctl.mjs build`     : Kompilasi TypeScript (`dist/`) + binary Rust (`bin/BaileysBackup.exe` + `.ico`)
+ * - `node scripts/watchdog-ctl.mjs install`   : Build, daftarkan ke Windows Startup, Windows Search (Start Menu), System Tray, & jalankan
+ * - `node scripts/watchdog-ctl.mjs start`     : Jalankan `Baileys Backup` di System Tray tanpa jendela terminal
+ * - `node scripts/watchdog-ctl.mjs status`    : Tampilkan status live Baileys Backup, status VPS, pemakaian RAM (MB), Tray, Startup, & Search Index
+ * - `node scripts/watchdog-ctl.mjs stop`      : Hentikan Baileys Backup (dan sync sesi bila backup lokal sedang aktif)
+ * - `node scripts/watchdog-ctl.mjs uninstall` : Hentikan Baileys Backup, hapus dari Windows Startup & Start Menu Search
  */
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
 const RUST_DIR = path.join(ROOT_DIR, 'tools', 'wa-standby-watchdog');
-const RUST_TARGET_EXE = path.join(RUST_DIR, 'target', 'release', 'wa-standby-watchdog.exe');
+const RUST_TARGET_EXE = path.join(RUST_DIR, 'target', 'release', 'BaileysBackup.exe');
 const BIN_DIR = path.join(ROOT_DIR, 'bin');
-const BIN_EXE = path.join(BIN_DIR, 'wa-standby-watchdog.exe');
+const BIN_EXE = path.join(BIN_DIR, 'BaileysBackup.exe');
+const LEGACY_BIN_EXE = path.join(BIN_DIR, 'wa-standby-watchdog.exe');
+const ICON_ICO = path.join(BIN_DIR, 'baileys-backup.ico');
 const LOG_FILE = path.join(ROOT_DIR, 'logs', 'wa-standby-watchdog.log');
 const CONTROL_PORT = 47831;
 const CONTROL_HOST = '127.0.0.1';
 const REG_RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
-const REG_VALUE_NAME = 'FreeAIBotStandbyWatchdog';
+const REG_VALUE_NAME = 'BaileysBackup';
+const LEGACY_REG_VALUE_NAME = 'FreeAIBotStandbyWatchdog';
+
+function getStartMenuShortcutPath() {
+  const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+  return path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Baileys Backup.lnk');
+}
 
 function sendControlCommand(cmd, timeoutMs = 4000) {
   return new Promise((resolve) => {
@@ -66,7 +75,7 @@ function sleep(ms) {
 async function stopWatchdogIfRunning() {
   const status = await sendControlCommand('STATUS', 1500);
   if (status) {
-    console.log(`[watchdog-ctl] Menghentikan watchdog aktif (PID ${status.watchdogPid})...`);
+    console.log(`[baileys-backup] Menghentikan instance aktif (PID ${status.watchdogPid})...`);
     await sendControlCommand('STOP', 5000);
     for (let i = 0; i < 20; i++) {
       await sleep(250);
@@ -82,9 +91,9 @@ function stopLegacyHeavyTsxStandbyProcesses() {
     const selfPid = process.pid;
     const parentPid = process.ppid || 0;
     const psScript = [
-      `$procs = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.ProcessId -ne ${selfPid} -and $_.ProcessId -ne ${parentPid} -and $_.CommandLine -match 'whatsapp_baileys\\.(?:ts|js).*--standby' };`,
+      `$procs = Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'wa-standby-watchdog.exe') -or ($_.Name -eq 'node.exe' -and $_.ProcessId -ne ${selfPid} -and $_.ProcessId -ne ${parentPid} -and $_.CommandLine -match 'whatsapp_baileys\\.(?:ts|js).*--standby') };`,
       'foreach ($p in $procs) {',
-      '  Write-Output ("Stopping legacy heavy standby node PID " + $p.ProcessId);',
+      '  Write-Output ("Stopping legacy standby process " + $p.Name + " PID " + $p.ProcessId);',
       '  Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue;',
       '}',
     ].join(' ');
@@ -101,8 +110,9 @@ function stopLegacyHeavyTsxStandbyProcesses() {
 
 async function buildAll() {
   await stopWatchdogIfRunning();
+  stopLegacyHeavyTsxStandbyProcesses();
 
-  console.log('[watchdog-ctl] 1/2 Mengompilasi TypeScript (dist/whatsapp_baileys.js)...');
+  console.log('[baileys-backup] 1/2 Mengompilasi TypeScript (dist/whatsapp_baileys.js)...');
   const tscJs = path.join(ROOT_DIR, 'node_modules', 'typescript', 'bin', 'tsc');
   execFileSync(process.execPath, [tscJs], {
     cwd: ROOT_DIR,
@@ -110,7 +120,7 @@ async function buildAll() {
     windowsHide: true,
   });
 
-  console.log('[watchdog-ctl] 2/2 Mengompilasi native Rust watchdog (release, size-optimized, windowless)...');
+  console.log('[baileys-backup] 2/2 Mengompilasi native Rust BaileysBackup.exe (System Tray + Custom Icon)...');
   execFileSync('cargo', ['build', '--release'], {
     cwd: RUST_DIR,
     stdio: 'inherit',
@@ -120,11 +130,20 @@ async function buildAll() {
   fs.mkdirSync(BIN_DIR, { recursive: true });
   fs.copyFileSync(RUST_TARGET_EXE, BIN_EXE);
   const sizeKb = (fs.statSync(BIN_EXE).size / 1024).toFixed(1);
-  console.log(`[watchdog-ctl] Binary siap: ${BIN_EXE} (${sizeKb} KB)`);
+  console.log(`[baileys-backup] Binary siap: ${BIN_EXE} (${sizeKb} KB)`);
 }
 
 function registerWindowsStartup() {
   if (process.platform !== 'win32') return;
+  // Hapus nama registry lama bila masih ada
+  try {
+    execFileSync(
+      'reg.exe',
+      ['delete', REG_RUN_KEY, '/v', LEGACY_REG_VALUE_NAME, '/f'],
+      { stdio: 'ignore', windowsHide: true },
+    );
+  } catch {}
+
   execFileSync(
     'reg.exe',
     [
@@ -135,26 +154,58 @@ function registerWindowsStartup() {
       '/t',
       'REG_SZ',
       '/d',
-      `"${BIN_EXE}"`,
+      `"${BIN_EXE}" --silent`,
       '/f',
     ],
     { stdio: 'inherit', windowsHide: true },
   );
-  console.log(`[watchdog-ctl] Auto-start terdaftar di ${REG_RUN_KEY}\\${REG_VALUE_NAME} (tanpa jendela terminal).`);
+  console.log(`[baileys-backup] Auto-start terdaftar di ${REG_RUN_KEY}\\${REG_VALUE_NAME} (System Tray, 0 kedipan terminal).`);
 }
 
 function unregisterWindowsStartup() {
   if (process.platform !== 'win32') return;
-  try {
-    execFileSync(
-      'reg.exe',
-      ['delete', REG_RUN_KEY, '/v', REG_VALUE_NAME, '/f'],
-      { stdio: 'pipe', windowsHide: true },
-    );
-    console.log(`[watchdog-ctl] Auto-start dihapus dari ${REG_RUN_KEY}\\${REG_VALUE_NAME}.`);
-  } catch {
-    console.log('[watchdog-ctl] Entry auto-start sudah tidak ada di Registry.');
+  for (const keyName of [REG_VALUE_NAME, LEGACY_REG_VALUE_NAME]) {
+    try {
+      execFileSync(
+        'reg.exe',
+        ['delete', REG_RUN_KEY, '/v', keyName, '/f'],
+        { stdio: 'pipe', windowsHide: true },
+      );
+      console.log(`[baileys-backup] Auto-start dihapus: ${REG_RUN_KEY}\\${keyName}.`);
+    } catch {}
   }
+}
+
+function registerWindowsSearchShortcut() {
+  if (process.platform !== 'win32') return;
+  const lnkPath = getStartMenuShortcutPath();
+  const escapedLnk = lnkPath.replace(/'/g, "''");
+  const escapedExe = BIN_EXE.replace(/'/g, "''");
+  const escapedCwd = ROOT_DIR.replace(/'/g, "''");
+  const escapedIco = (fs.existsSync(ICON_ICO) ? ICON_ICO : BIN_EXE).replace(/'/g, "''");
+
+  const psScript = [
+    `$wsh = New-Object -ComObject WScript.Shell;`,
+    `$sc = $wsh.CreateShortcut('${escapedLnk}');`,
+    `$sc.TargetPath = '${escapedExe}';`,
+    `$sc.WorkingDirectory = '${escapedCwd}';`,
+    `$sc.IconLocation = '${escapedIco},0';`,
+    `$sc.Description = 'Baileys Backup - Standby & Auto-Failover Bot WhatsApp Lokal';`,
+    `$sc.WindowStyle = 1;`,
+    `$sc.Save();`,
+  ].join(' ');
+
+  execFileSync(
+    'powershell.exe',
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
+    { stdio: 'inherit', windowsHide: true },
+  );
+  console.log(`[baileys-backup] Terdaftar di Windows Search & Start Menu: ${lnkPath}`);
+}
+
+function checkWindowsSearchShortcutRegistered() {
+  if (process.platform !== 'win32') return false;
+  return fs.existsSync(getStartMenuShortcutPath());
 }
 
 function checkWindowsStartupRegistered() {
@@ -169,6 +220,26 @@ function checkWindowsStartupRegistered() {
   } catch {
     return false;
   }
+}
+
+function promoteTrayIconVisibility() {
+  if (process.platform !== 'win32') return;
+  try {
+    const psCmd = [
+      `$keys = Get-ChildItem 'HKCU:\\Control Panel\\NotifyIconSettings' -ErrorAction SilentlyContinue;`,
+      'foreach ($k in $keys) {',
+      '  $p = (Get-ItemProperty -Path $k.PSPath -Name ExecutablePath -ErrorAction SilentlyContinue).ExecutablePath;',
+      "  if ($p -and ($p -match 'BaileysBackup\\.exe')) {",
+      '    Set-ItemProperty -Path $k.PSPath -Name IsPromoted -Value 1 -Type DWord -ErrorAction SilentlyContinue;',
+      '  }',
+      '}',
+    ].join(' ');
+    execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCmd],
+      { stdio: 'ignore', windowsHide: true },
+    );
+  } catch {}
 }
 
 function getProcessRamMb(pid) {
@@ -200,7 +271,8 @@ async function startWatchdog() {
 
   const existing = await sendControlCommand('STATUS', 1000);
   if (existing) {
-    console.log(`[watchdog-ctl] Watchdog sudah berjalan (PID ${existing.watchdogPid}).`);
+    console.log(`[baileys-backup] Baileys Backup sudah berjalan di System Tray (PID ${existing.watchdogPid}).`);
+    promoteTrayIconVisibility();
     return;
   }
 
@@ -209,7 +281,7 @@ async function startWatchdog() {
     const escapedCwd = ROOT_DIR.replace(/'/g, "''");
     const psLaunch = [
       `$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 };`,
-      `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"${escapedExe}"'; CurrentDirectory = '${escapedCwd}'; ProcessStartupInformation = $si } | Out-Null`,
+      `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"${escapedExe}" --silent'; CurrentDirectory = '${escapedCwd}'; ProcessStartupInformation = $si } | Out-Null`,
     ].join(' ');
     execFileSync(
       'powershell.exe',
@@ -217,7 +289,7 @@ async function startWatchdog() {
       { stdio: 'ignore', windowsHide: true },
     );
   } else {
-    const child = spawn(BIN_EXE, [], {
+    const child = spawn(BIN_EXE, ['--silent'], {
       cwd: ROOT_DIR,
       detached: true,
       stdio: 'ignore',
@@ -229,21 +301,26 @@ async function startWatchdog() {
   for (let i = 0; i < 15; i++) {
     await sleep(300);
     const st = await sendControlCommand('STATUS', 1000);
-    if (st && st.vpsState !== 'init') break;
+    if (st && st.vpsState !== 'mengecek...') break;
   }
+  promoteTrayIconVisibility();
 }
 
 async function printStatus() {
   const st = await sendControlCommand('STATUS', 2000);
   const autoStart = checkWindowsStartupRegistered();
-  console.log('=== STATUS WATCHDOG BACKUP WHATSAPP (RUST NATIVE) ===');
-  console.log(`Auto-Start Login Windows : ${autoStart ? 'AKTIF (Tanpa Jendela / 0 Kedipan Terminal)' : 'NONAKTIF'}`);
+  const inSearch = checkWindowsSearchShortcutRegistered();
+  console.log('=== STATUS BAILEYS BACKUP (WINDOWS SYSTEM TRAY & AUTO-FAILOVER) ===');
+  console.log(`Nama Aplikasi            : Baileys Backup (bin/BaileysBackup.exe)`);
+  console.log(`Ikon & System Tray       : ${st?.trayActive ? 'AKTIF (Muncul di System Tray dekat jam Windows)' : 'NONAKTIF'}`);
+  console.log(`Terdaftar Windows Search : ${inSearch ? `YA (${getStartMenuShortcutPath()})` : 'BELUM'}`);
+  console.log(`Auto-Start Login Windows : ${autoStart ? 'AKTIF (HKCU\\...\\Run\\BaileysBackup)' : 'NONAKTIF'}`);
   if (!st) {
-    console.log('Status Proses Watchdog   : TIDAK BERJALAN');
+    console.log('Status Proses            : TIDAK BERJALAN');
   } else {
     const wdRam = getProcessRamMb(st.watchdogPid);
     const nodeRam = st.childNodePid ? getProcessRamMb(st.childNodePid) : null;
-    console.log(`Status Proses Watchdog   : BERJALAN (PID ${st.watchdogPid}, RAM: ${wdRam ?? '~2.0'} MB)`);
+    console.log(`Status Proses            : BERJALAN (PID ${st.watchdogPid}, RAM: ${wdRam ?? '~5.0'} MB)`);
     console.log(`Status VPS Utama         : ${st.vpsState} (${st.vpsAvailability})`);
     console.log(
       `Mode Backup Lokal        : ${
@@ -252,7 +329,7 @@ async function printStatus() {
           : 'STANDBY PASIF (0 proses Node.js, hemat RAM)'
       }`,
     );
-    console.log(`Uptime Watchdog          : ${st.uptimeSecs} detik`);
+    console.log(`Uptime                   : ${st.uptimeSecs} detik`);
   }
   if (fs.existsSync(LOG_FILE)) {
     const lines = fs.readFileSync(LOG_FILE, 'utf8').trim().split(/\r?\n/).slice(-8);
@@ -268,6 +345,7 @@ if (action === 'build') {
 } else if (action === 'install') {
   await buildAll();
   registerWindowsStartup();
+  registerWindowsSearchShortcut();
   await startWatchdog();
   await printStatus();
 } else if (action === 'start') {

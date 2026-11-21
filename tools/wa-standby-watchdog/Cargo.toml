@@ -1,8 +1,13 @@
 [package]
-name = "wa-standby-watchdog"
-version = "0.1.0"
+name = "baileys-backup"
+version = "1.0.0"
 edition = "2021"
-description = "Ultra-lightweight windowless Windows standby watchdog for FreeAIBot WhatsApp Baileys failover"
+build = "build.rs"
+description = "Baileys Backup - Lightweight Windows System Tray Standby & Auto-Failover for WhatsApp Baileys"
+
+[[bin]]
+name = "BaileysBackup"
+path = "src/main.rs"
 
 [profile.release]
 opt-level = "z"
