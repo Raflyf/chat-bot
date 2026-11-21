@@ -287,6 +287,23 @@ export function bersihkanTeksPengingat(pesan: string): string {
 export const BAILEYS_FALLBACK_KE_CLOUD_MS = 60_000;
 /** Batas keterlambatan pengingat Cloud API sebelum diambil alih Baileys (failover gangguan senyap). */
 export const CLOUD_FALLBACK_KE_BAILEYS_MS = 180_000;
+/** Batas toleransi keterlambatan pengingat GRUP sebelum dilewati/dilompat ke jadwal berikutnya. */
+export const GROUP_REMINDER_MAX_LATE_MS = 30 * 60 * 1000;
+
+/**
+ * True bila pengingat milik GRUP dan sudah terlewat lebih dari `maxLateMs` (default 30 menit),
+ * sehingga tidak perlu dikirim terlambat saat VPS baru menyala kembali.
+ */
+export function adalahPengingatGrupKadaluarsa(
+  item: { chat_id?: string; due_at?: string },
+  nowMs = Date.now(),
+  maxLateMs = GROUP_REMINDER_MAX_LATE_MS,
+): boolean {
+  if (!isGroupChatKey(item.chat_id)) return false;
+  const dueMs = new Date(String(item.due_at ?? '')).getTime();
+  if (!Number.isFinite(dueMs)) return false;
+  return nowMs - dueMs > maxLateMs;
+}
 
 export interface OpsiFilterKanalPengingat {
   channelFilter?: 'baileys_only' | 'cloud_only' | 'all';
@@ -361,6 +378,45 @@ async function zonaWaktuChat(chatId: string): Promise<string> {
   } catch {
     return 'Asia/Jakarta';
   }
+}
+
+/** Hitung jadwal jatuh tempo berikutnya (lewat dari `sekarangMs`) untuk pengingat berulang. */
+function hitungJadwalUlangBerikutnya(
+  item: {
+    due_at: string;
+    repeat_kind?: string;
+    repeat_value?: string | null;
+    repeat_until?: string | null;
+    repeat_count?: number;
+  },
+  sekarangMs: number,
+  zona: string,
+): Date | null {
+  const kindUlang = item.repeat_kind && item.repeat_kind !== 'none' ? item.repeat_kind : 'none';
+  if (kindUlang === 'none') return null;
+
+  const aturan: AturanUlang = {
+    repeat_kind: kindUlang as AturanUlang['repeat_kind'],
+    repeat_value: item.repeat_value ?? null,
+    repeat_until: item.repeat_until ?? null,
+    repeat_count: item.repeat_count ?? 0,
+  };
+  let next = berikutnya(new Date(item.due_at), aturan, zona);
+  let iterasi = 0;
+  if (kindUlang === 'interval_minutes' && next && next.getTime() <= sekarangMs) {
+    const stepMs = Math.max(1, Math.round(Number(item.repeat_value) || 0)) * 60_000;
+    const lompat = Math.floor((sekarangMs - next.getTime()) / stepMs) + 1;
+    next = new Date(next.getTime() + lompat * stepMs);
+    if (aturan.repeat_until && next.getTime() > new Date(aturan.repeat_until).getTime()) {
+      next = null;
+    }
+  } else {
+    while (next && next.getTime() <= sekarangMs && iterasi < 30) {
+      next = berikutnya(next, aturan, zona);
+      iterasi++;
+    }
+  }
+  return next;
 }
 
 export async function checkDueReminders(
@@ -561,6 +617,34 @@ export async function checkDueReminders(
           continue;
         }
 
+        const kindUlang = item.repeat_kind && item.repeat_kind !== 'none' ? item.repeat_kind : 'none';
+        if ((remTable === 'group_reminders' || isGroupChatKey(item.chat_id)) && adalahPengingatGrupKadaluarsa(item)) {
+          try {
+            if (kindUlang !== 'none') {
+              const zona = await zonaWaktuChat(item.chat_id);
+              const next = hitungJadwalUlangBerikutnya(item, Date.now(), zona);
+              if (next) {
+                await client.from(remTable).update({
+                  due_at: next.toISOString(),
+                  status: 'pending',
+                  lease_until: null,
+                }).eq('id', item.id);
+                console.log(`[remind] pengingat grup berulang #${item.id} terlewat >30 menit — dilewati & dimajukan ke ${next.toISOString()}.`);
+              } else {
+                await client.from(remTable).update({ status: 'failed', lease_until: null }).eq('id', item.id);
+                console.log(`[remind] pengingat grup #${item.id} terlewat >30 menit — dilewati tanpa kirim telat.`);
+              }
+            } else {
+              await client.from(remTable).update({ status: 'failed', lease_until: null }).eq('id', item.id);
+              console.log(`[remind] pengingat grup #${item.id} terlewat >30 menit — dilewati tanpa kirim telat.`);
+            }
+          } catch (skipErr) {
+            console.warn(`[remind] gagal melompati pengingat grup #${item.id}:`, skipErr);
+            await client.from(remTable).update({ status: 'pending', lease_until: null }).eq('id', item.id);
+          }
+          continue;
+        }
+
         try {
           const deliveryText = await susunTeksPengingat({
             message: item.message,
@@ -592,39 +676,15 @@ export async function checkDueReminders(
             console.warn('[remind] gagal simpan pesan pengingat ke riwayat:', simpanErr);
           }
 
-          const it = item;
-          const kindUlang = it.repeat_kind && it.repeat_kind !== 'none' ? it.repeat_kind : 'none';
-
           if (kindUlang !== 'none') {
-            const aturan: AturanUlang = {
-              repeat_kind: kindUlang as AturanUlang['repeat_kind'],
-              repeat_value: it.repeat_value ?? null,
-              repeat_until: it.repeat_until ?? null,
-              repeat_count: it.repeat_count ?? 0,
-            };
             const zona = await zonaWaktuChat(item.chat_id);
-            let next = berikutnya(new Date(item.due_at), aturan, zona);
-            let iterasi = 0;
-            const sekarang = Date.now();
-            if (kindUlang === 'interval_minutes' && next && next.getTime() <= sekarang) {
-              const stepMs = Math.max(1, Math.round(Number(it.repeat_value) || 0)) * 60_000;
-              const lompat = Math.floor((sekarang - next.getTime()) / stepMs) + 1;
-              next = new Date(next.getTime() + lompat * stepMs);
-              if (aturan.repeat_until && next.getTime() > new Date(aturan.repeat_until).getTime()) {
-                next = null;
-              }
-            } else {
-              while (next && next.getTime() <= sekarang && iterasi < 30) {
-                next = berikutnya(next, aturan, zona);
-                iterasi++;
-              }
-            }
+            const next = hitungJadwalUlangBerikutnya(item, Date.now(), zona);
             if (next) {
               await client.from(remTable).update({
                 due_at: next.toISOString(),
                 status: 'pending',
                 lease_until: null,
-                repeat_count: (it.repeat_count ?? 0) + 1,
+                repeat_count: (item.repeat_count ?? 0) + 1,
               }).eq('id', item.id);
             } else {
               await client.from(remTable).update({ status: 'sent', lease_until: null }).eq('id', item.id);

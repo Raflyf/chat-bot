@@ -102,3 +102,41 @@ test('pilihSemuaTargetBatal menghapus seluruh pengingat duplikat bernama sama se
   const targetsAll = pilihSemuaTargetBatal(pAll, daftar);
   assert.deepEqual(targetsAll.map((x) => x.id), [101, 102, 103], '"hapus semua pengingat" harus mengembalikan seluruh daftar');
 });
+
+test('pengingat grup terlewat >30 menit dilewati dan langsung dilompat ke jadwal berikutnya tanpa kirim telat', async () => {
+  const { GROUP_REMINDER_MAX_LATE_MS, adalahPengingatGrupKadaluarsa } = await import('../src/remind.js');
+  const fs = await import('fs');
+  const code = fs.readFileSync('src/remind.ts', 'utf8');
+
+  assert.equal(GROUP_REMINDER_MAX_LATE_MS, 30 * 60 * 1000, 'batas toleransi telat grup harus 30 menit');
+
+  const due0500 = Date.parse('2026-11-21T22:00:00Z'); // 05:00 WIB
+  assert.equal(
+    adalahPengingatGrupKadaluarsa(
+      { chat_id: 'wa_baileys_group_120363415563030836', due_at: new Date(due0500).toISOString() },
+      due0500 + 10 * 60_000,
+    ),
+    false,
+    'pengingat grup telat 10 menit masih boleh dikirim',
+  );
+  assert.equal(
+    adalahPengingatGrupKadaluarsa(
+      { chat_id: 'wa_baileys_group_120363415563030836', due_at: new Date(due0500).toISOString() },
+      due0500 + 31 * 60_000,
+    ),
+    true,
+    'pengingat grup telat 31 menit harus dilewati/dilompat',
+  );
+  assert.equal(
+    adalahPengingatGrupKadaluarsa(
+      { chat_id: 'wa_628991333323', due_at: new Date(due0500).toISOString() },
+      due0500 + 180 * 60_000,
+    ),
+    false,
+    'pengingat chat privat tidak boleh dianggap kadaluarsa grup',
+  );
+
+  const idxCheck = code.indexOf('adalahPengingatGrupKadaluarsa(item)');
+  const idxSend = code.indexOf('await sendFn(item.chat_id');
+  assert.ok(idxCheck > 0 && idxSend > idxCheck, 'cek kadaluarsa grup wajib berjalan sebelum sendFn dipanggil');
+});
