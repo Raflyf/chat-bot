@@ -303,9 +303,16 @@ async function tanganiPerintahModeGrupWa(
 // disconnect persisten, dan socket lama menumpuk (leak). Lihat blok
 // 'connection.update' di bawah.
 const MAX_RECONNECT = 8;
+const STANDBY_POLL_INTERVAL_MS = 30_000;
+const DEBOUNCED_SESSION_SYNC_MS = 12_000;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let reconnectCount = 0;
 let activeSock: WASocket | null = null;
+let currentConnectingSock: WASocket | null = null;
+let standbyYieldInProgress = false;
+let standbyPollTimer: NodeJS.Timeout | null = null;
+let standbyCheckInFlight = false;
+let debouncedSessionSyncTimer: NodeJS.Timeout | null = null;
 let reminderInitTimer: NodeJS.Timeout | null = null;
 let reminderWorkerTimer: NodeJS.Timeout | null = null;
 let sessionSyncTimer: NodeJS.Timeout | null = null;
@@ -363,7 +370,11 @@ export function stopBaileysReminderWorker(): void {
     reminderWorkerTimer = null;
   }
 }
-import { laporShutdownVps, mulaiTimerPeringatanLokalVps } from './vps_monitor.js';
+import {
+  laporShutdownVps,
+  mulaiTimerPeringatanLokalVps,
+  parseInstaboxMachine,
+} from './vps_monitor.js';
 import {
   restoreSessionFromSupabase,
   syncSessionDirToSupabase,
@@ -372,6 +383,237 @@ import {
 
 const logger = pino({ level: 'silent' });
 const sessionDir = path.resolve(process.cwd(), 'session_wa');
+
+function jadwalkanSyncSesiDebounced(): void {
+  if (debouncedSessionSyncTimer || standbyYieldInProgress) return;
+  debouncedSessionSyncTimer = setTimeout(() => {
+    debouncedSessionSyncTimer = null;
+    if (activeSock && !standbyYieldInProgress) {
+      void syncSessionDirToSupabase(sessionDir);
+    }
+  }, DEBOUNCED_SESSION_SYNC_MS);
+  debouncedSessionSyncTimer.unref?.();
+}
+
+function batalkanSyncSesiDebounced(): void {
+  if (debouncedSessionSyncTimer) {
+    clearTimeout(debouncedSessionSyncTimer);
+    debouncedSessionSyncTimer = null;
+  }
+}
+
+/**
+ * Deteksi apakah proses Baileys berjalan sebagai Standby Backup (di laptop/localhost)
+ * atau sebagai Primary (di VPS `/data/home/chat-bot`).
+ */
+export function isStandbyBackupMode(
+  argv: string[] = process.argv,
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (argv.includes('--primary') || String(env.WA_ROLE ?? '').trim().toLowerCase() === 'primary') {
+    return false;
+  }
+  const rawFlag = String(env.WA_STANDBY_BACKUP ?? '').trim().toLowerCase();
+  if (['false', '0', 'no', 'off'].includes(rawFlag)) return false;
+  if (argv.includes('--standby') || ['true', '1', 'yes', 'on'].includes(rawFlag)) return true;
+
+  const hasInstaboxCreds = Boolean(
+    (env.INSTABOX_API_KEY || config.instaboxApiKey).trim() &&
+      (env.INSTABOX_MACHINE_ID || config.instaboxMachineId).trim(),
+  );
+  if (!hasInstaboxCreds) return false;
+
+  const normCwd = cwd.replace(/\\/g, '/');
+  // Di VPS InstaBox (`/data/home/chat-bot`), proses adalah Primary. Di Windows / mesin lokal = Standby Backup.
+  if (normCwd.startsWith('/data/')) return false;
+  return platform === 'win32' || !fs.existsSync('/data/home/chat-bot');
+}
+
+export type VpsPrimaryAvailability = 'running' | 'down' | 'transient' | 'unknown';
+
+export interface StandbyCheckDeps {
+  fetchImpl?: typeof fetch;
+  apiKey?: string;
+  machineId?: string;
+  apiBase?: string;
+  isLocalActive?: () => boolean;
+  startLocal?: () => Promise<void>;
+  stopLocal?: (reason: string) => Promise<void>;
+}
+
+/**
+ * Cek status mesin VPS utama secara pasif & read-only (`GET /v1/machines/{id}`).
+ */
+export async function cekStateVpsUtama(deps: StandbyCheckDeps = {}): Promise<{
+  availability: VpsPrimaryAvailability;
+  rawState: string | null;
+}> {
+  const apiKey = (deps.apiKey ?? config.instaboxApiKey).trim();
+  const machineId = (deps.machineId ?? config.instaboxMachineId).trim();
+  if (!apiKey || !machineId) {
+    return { availability: 'unknown', rawState: null };
+  }
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const apiBase = (deps.apiBase ?? config.instaboxApiBase).trim().replace(/\/+$/, '');
+  try {
+    const res = await fetchImpl(`${apiBase}/v1/machines/${encodeURIComponent(machineId)}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { availability: 'unknown', rawState: null };
+    const payload = await res.json().catch(() => null);
+    const machine = parseInstaboxMachine(payload, machineId);
+    if (!machine?.state) return { availability: 'unknown', rawState: null };
+    const st = machine.state.trim().toLowerCase();
+    if (st === 'running') return { availability: 'running', rawState: st };
+    if (['paused', 'stopped', 'suspended', 'off', 'terminated', 'error', 'failed'].includes(st)) {
+      return { availability: 'down', rawState: st };
+    }
+    if (['starting', 'resuming', 'creating', 'booting', 'provisioning'].includes(st)) {
+      return { availability: 'transient', rawState: st };
+    }
+    return { availability: 'unknown', rawState: st };
+  } catch {
+    return { availability: 'unknown', rawState: null };
+  }
+}
+
+export function isLocalBaileysActive(): boolean {
+  return Boolean(activeSock || currentConnectingSock || reconnectTimer);
+}
+
+/**
+ * Menghentikan koneksi Baileys lokal dengan bersih saat VPS utama kembali running.
+ * Menyinkronkan seluruh file sesi lokal ke Supabase lebih dulu sebelum menutup socket.
+ */
+export async function stopLocalWhatsAppForStandby(reason: string): Promise<void> {
+  standbyYieldInProgress = true;
+  try {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectCount = 0;
+    batalkanSyncSesiDebounced();
+    stopBaileysReminderWorker();
+    if (sessionSyncTimer) {
+      clearInterval(sessionSyncTimer);
+      sessionSyncTimer = null;
+    }
+
+    const sockToClose = activeSock ?? currentConnectingSock;
+    activeSock = null;
+    currentConnectingSock = null;
+
+    if (sockToClose) {
+      console.log(`[wa-standby] Menyinkronkan sesi ke Supabase sebelum melepas koneksi lokal (${reason})...`);
+      await syncSessionDirToSupabase(sessionDir).catch((err) =>
+        console.warn('[wa-standby] Gagal sync sesi sebelum standby:', err),
+      );
+      try {
+        sockToClose.ev.removeAllListeners('connection.update');
+        sockToClose.ev.removeAllListeners('creds.update');
+        sockToClose.ev.removeAllListeners('messages.upsert');
+        sockToClose.end(undefined);
+      } catch {
+        // socket sudah tertutup
+      }
+      console.log(`[wa-standby] Koneksi WhatsApp lokal dilepas (${reason}). Laptop kini dalam mode STANDBY.`);
+    }
+  } finally {
+    standbyYieldInProgress = false;
+  }
+}
+
+/**
+ * Satu siklus evaluasi koordinator Standby Backup di localhost:
+ * - VPS `running` + lokal aktif -> lepas koneksi lokal & kembali standby (`yield_to_vps`)
+ * - VPS `running` + lokal mati  -> tetap standby (`stay_standby`)
+ * - VPS `down`    + lokal mati  -> tarik sesi terbaru & ambil alih koneksi (`takeover_start`)
+ * - VPS `down`    + lokal aktif -> pertahankan koneksi backup (`keep_active`)
+ */
+export async function evaluasiSiklusStandby(deps: StandbyCheckDeps = {}): Promise<{
+  availability: VpsPrimaryAvailability;
+  rawState: string | null;
+  action: 'stay_standby' | 'takeover_start' | 'yield_to_vps' | 'keep_active';
+}> {
+  const isLocalActive = deps.isLocalActive ?? isLocalBaileysActive;
+  const startLocal = deps.startLocal ?? startWhatsApp;
+  const stopLocal = deps.stopLocal ?? stopLocalWhatsAppForStandby;
+
+  const { availability, rawState } = await cekStateVpsUtama(deps);
+  const localActive = isLocalActive();
+
+  if (availability === 'running') {
+    if (localActive) {
+      await stopLocal(`VPS utama kembali running`);
+      return { availability, rawState, action: 'yield_to_vps' };
+    }
+    return { availability, rawState, action: 'stay_standby' };
+  }
+
+  if (availability === 'down') {
+    if (!localActive) {
+      console.log(
+        `[wa-standby] VPS utama berstatus "${rawState ?? 'down'}". Laptop mengambil alih koneksi WhatsApp Baileys sebagai BACKUP AKTIF...`,
+      );
+      await startLocal();
+      return { availability, rawState, action: 'takeover_start' };
+    }
+    return { availability, rawState, action: 'keep_active' };
+  }
+
+  return {
+    availability,
+    rawState,
+    action: localActive ? 'keep_active' : 'stay_standby',
+  };
+}
+
+export async function startStandbyCoordinator(
+  pollIntervalMs = STANDBY_POLL_INTERVAL_MS,
+): Promise<() => void> {
+  console.log(
+    `[wa-standby] Mode AUTO-FAILOVER / STANDBY BACKUP aktif (interval cek VPS: ${Math.round(pollIntervalMs / 1000)} detik).`,
+  );
+
+  const runTick = async (initial = false) => {
+    if (standbyCheckInFlight) return;
+    standbyCheckInFlight = true;
+    try {
+      const res = await evaluasiSiklusStandby();
+      if (initial && res.action === 'stay_standby') {
+        console.log(
+          `[wa-standby] VPS utama sedang RUNNING. Laptop standby memantau di latar belakang (tidak membuka koneksi WA agar tidak bentrok).`,
+        );
+      }
+    } catch (err) {
+      console.warn('[wa-standby] Error siklus pemantauan VPS:', err);
+    } finally {
+      standbyCheckInFlight = false;
+    }
+  };
+
+  await runTick(true);
+
+  if (standbyPollTimer) clearInterval(standbyPollTimer);
+  standbyPollTimer = setInterval(() => {
+    void runTick(false);
+  }, pollIntervalMs);
+
+  return () => {
+    if (standbyPollTimer) {
+      clearInterval(standbyPollTimer);
+      standbyPollTimer = null;
+    }
+  };
+}
 
 // Versi prompt untuk instrumentasi dataset (dipetakan ke kolom messages.prompt_version)
 const PROMPT_VERSION = 'v0.66.0';
@@ -508,7 +750,7 @@ export async function startWhatsApp(): Promise<void> {
   assertRuntime('whatsapp');
 
   console.log('[whatsapp] Memeriksa sesi tersimpan di Supabase...');
-  await restoreSessionFromSupabase(sessionDir);
+  await restoreSessionFromSupabase(sessionDir, { preferNewerRemote: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
@@ -518,6 +760,7 @@ export async function startWhatsApp(): Promise<void> {
     printQRInTerminal: false,
     defaultQueryTimeoutMs: 60000,
   });
+  currentConnectingSock = sock;
 
   // 1. Simpan perubahan kredensial ke disk lokal dan sinkronkan ke Supabase
   sock.ev.on('creds.update', async () => {
@@ -567,6 +810,7 @@ export async function startWhatsApp(): Promise<void> {
       // Koneksi berhasil -> reset penghitung reconnect (perbaikan audit 14 Okt 2026).
       reconnectCount = 0;
       activeSock = sock;
+      if (currentConnectingSock === sock) currentConnectingSock = null;
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       console.log('[whatsapp] Berhasil terhubung ke jaringan WhatsApp.');
       console.log('[whatsapp] Bot siap menerima dan membalas pesan 24 jam nonstop.');
@@ -580,22 +824,37 @@ export async function startWhatsApp(): Promise<void> {
 
     if (connection === 'close') {
       stopBaileysReminderWorker();
+      batalkanSyncSesiDebounced();
       if (sessionSyncTimer) { clearInterval(sessionSyncTimer); sessionSyncTimer = null; }
       if (activeSock === sock) activeSock = null;
+      if (currentConnectingSock === sock) currentConnectingSock = null;
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+      const isReplaced = statusCode === DisconnectReason.connectionReplaced || statusCode === 440;
+      const shouldReconnect = !isLoggedOut && !isReplaced && !standbyYieldInProgress;
       console.log(`[whatsapp] Koneksi terputus (status: ${statusCode}). Reconnect: ${shouldReconnect}`);
 
-      if (shouldReconnect) {
+      if (isReplaced || standbyYieldInProgress) {
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        reconnectCount = 0;
+        try {
+          sock.ev.removeAllListeners('connection.update');
+          sock.ev.removeAllListeners('creds.update');
+          sock.ev.removeAllListeners('messages.upsert');
+          sock.end(undefined);
+        } catch {
+          // socket sudah tertutup
+        }
+        if (isReplaced) {
+          console.log(
+            '[whatsapp] Koneksi diambil alih oleh instance lain (status 440 / connectionReplaced). Menahan reconnect otomatis agar tidak bentrok dengan VPS/instance aktif.',
+          );
+        }
+      } else if (shouldReconnect) {
         // ── PERBAIKAN AUDIT 14 Okt 2026 ──
-        // BUG LAMA: delay TETAP 3 detik tanpa batas percobaan, dan socket lama
-        // tidak pernah ditutup / listener tidak dilepas. Akibatnya:
-        //   (a) disconnect persisten (401/503) -> loop reconnect tiap 3 detik
-        //       SELAMANYA (hot-loop, memicu rate-limit WhatsApp);
-        //   (b) setiap reconnect menumpuk socket + listener baru (leak memori,
-        //       risiko pesan ganda).
-        // SEKARANG: backoff eksponensial (3s, 6s, 12s, ... maks 60s), dibatasi
-        // 8 percobaan, socket lama ditutup & listener dilepas lebih dulu.
         if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectCount += 1;
         if (reconnectCount > MAX_RECONNECT) {
@@ -618,7 +877,7 @@ export async function startWhatsApp(): Promise<void> {
         reconnectTimer = setTimeout(() => {
           void startWhatsApp();
         }, jeda);
-      } else {
+      } else if (isLoggedOut) {
         console.warn('[whatsapp] Sesi logout permanen oleh pengguna. Membersihkan sesi Supabase dan direktori lokal...');
         await clearSessionInSupabase();
         try {
@@ -642,6 +901,7 @@ export async function startWhatsApp(): Promise<void> {
         console.error('[whatsapp] Error saat menangani pesan:', err);
       }
     }
+    jadwalkanSyncSesiDebounced();
   });
 }
 
@@ -1943,23 +2203,34 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
 // Jika dijalankan langsung sebagai entrypoint file
 if (process.argv[1] && process.argv[1].includes('whatsapp_baileys')) {
-  void startWhatsApp();
+  const modeStandby = isStandbyBackupMode();
+  let stopStandbyLoop: (() => void) | null = null;
+  let stopVpsTimer = () => {};
 
-  const stopVpsTimer = mulaiTimerPeringatanLokalVps({
-    kirimWaOwner: async (teks) => {
-      if (!activeSock || !config.ownerWaNumber) return false;
-      let digits = config.ownerWaNumber.replace(/\D/g, '');
-      if (digits.startsWith('0')) digits = '62' + digits.slice(1);
-      if (!/^\d{8,15}$/.test(digits)) return false;
-      return await sendWhatsAppMessageSafe(activeSock, `${digits}@s.whatsapp.net`, teks);
-    },
-  });
+  if (modeStandby) {
+    void startStandbyCoordinator().then((stopFn) => {
+      stopStandbyLoop = stopFn;
+    });
+  } else {
+    void startWhatsApp();
+    stopVpsTimer = mulaiTimerPeringatanLokalVps({
+      kirimWaOwner: async (teks) => {
+        if (!activeSock || !config.ownerWaNumber) return false;
+        let digits = config.ownerWaNumber.replace(/\D/g, '');
+        if (digits.startsWith('0')) digits = '62' + digits.slice(1);
+        if (!/^\d{8,15}$/.test(digits)) return false;
+        return await sendWhatsAppMessageSafe(activeSock, `${digits}@s.whatsapp.net`, teks);
+      },
+    });
+  }
 
   let stopping = false;
   const stop = (signal: string) => {
     if (stopping) return;
     stopping = true;
     stopVpsTimer();
+    stopStandbyLoop?.();
+    batalkanSyncSesiDebounced();
     stopBaileysReminderWorker();
     if (sessionSyncTimer) { clearInterval(sessionSyncTimer); sessionSyncTimer = null; }
     console.log(`\n[whatsapp] Proses dihentikan (${signal}).`);
@@ -1967,7 +2238,12 @@ if (process.argv[1] && process.argv[1].includes('whatsapp_baileys')) {
       syncSessionDirToSupabase(sessionDir),
       new Promise<void>((resolve) => setTimeout(resolve, 4000)),
     ]);
-    void Promise.allSettled([syncSafe, laporShutdownVps(signal)]).finally(() => {
+    const tasks: Array<Promise<unknown>> = [syncSafe];
+    // Hanya laporkan [VPS MATI] bila proses yang berhenti adalah Primary VPS, bukan backup di laptop.
+    if (!modeStandby) {
+      tasks.push(laporShutdownVps(signal));
+    }
+    void Promise.allSettled(tasks).finally(() => {
       process.exit(0);
     });
   };

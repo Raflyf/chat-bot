@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "whatsapp": "tsx src/whatsapp_baileys.ts",
+    "whatsapp:standby": "tsx src/whatsapp_baileys.ts --standby",
     "whatsapp:prod": "node dist/whatsapp_baileys.js",
     "build": "tsc",
     "start": "node dist/index.js",

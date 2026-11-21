@@ -4,15 +4,45 @@ import { db } from './db.js';
 
 let syncInFlight: Promise<void> | null = null;
 
+export interface RestoreSessionOptions {
+  /** Bila true (default), timpa file lokal jika versi di Supabase memiliki updated_at lebih baru. */
+  preferNewerRemote?: boolean;
+  /** Bila true, paksa tulis seluruh file dari Supabase ke lokal. */
+  forceRemote?: boolean;
+}
+
+export function isRemoteFileNewer(
+  filePath: string,
+  remoteUpdatedAt?: string | null,
+  forceRemote = false,
+): boolean {
+  if (forceRemote) return true;
+  if (!remoteUpdatedAt) return false;
+  const remoteMs = Date.parse(String(remoteUpdatedAt));
+  if (!Number.isFinite(remoteMs)) return false;
+  try {
+    const localMs = fs.statSync(filePath).mtimeMs;
+    // Toleransi 1 detik untuk pembulatan timestamp filesystem vs ISO string
+    return remoteMs > localMs + 1000;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Memulihkan file sesi WhatsApp dari tabel Supabase `whatsapp_sessions` ke folder lokal.
- * Menghindari keharusan scan ulang QR saat container cloud (Render/Koyeb) restart.
+ * Menghindari keharusan scan ulang QR saat container cloud (Render/Koyeb) restart
+ * dan menjaga sinkronisasi dua arah saat bergantian antara VPS dan backup localhost.
  *
- * ATURAN PENTING: Bila `creds.json` SUDAH ada di disk lokal VPS, file yang sudah ada
- * TIDAK ditimpa agar Signal ratchet (`session-*.json`), `sender-key-*.json`, dan
- * `sender-key-memory-*.json` tidak diputar mundur oleh snapshot lama dari DB.
+ * ATURAN PENTING: Bila `creds.json` SUDAH ada di disk lokal, file lokal dipertahankan
+ * KECUALI versi di Supabase memiliki `updated_at` yang lebih baru (mis. setelah
+ * failover ke laptop atau sebaliknya), agar Signal ratchet (`session-*.json`) dan
+ * `sender-key-*.json` selalu memakai state paling mutakhir.
  */
-export async function restoreSessionFromSupabase(sessionDir: string): Promise<boolean> {
+export async function restoreSessionFromSupabase(
+  sessionDir: string,
+  options?: RestoreSessionOptions,
+): Promise<boolean> {
   const hasLocalCreds = fs.existsSync(path.join(sessionDir, 'creds.json'));
   const c = db();
   if (!c) {
@@ -23,7 +53,7 @@ export async function restoreSessionFromSupabase(sessionDir: string): Promise<bo
   try {
     const { data, error } = await c
       .from('whatsapp_sessions')
-      .select('filename, content');
+      .select('filename, content, updated_at');
 
     if (error) {
       console.warn('[wa-session] Gagal membaca whatsapp_sessions dari Supabase:', error.message);
@@ -40,9 +70,12 @@ export async function restoreSessionFromSupabase(sessionDir: string): Promise<bo
     }
 
     let restoredCount = 0;
+    let updatedNewerCount = 0;
     let skippedLocalCount = 0;
+    const preferNewer = options?.preferNewerRemote !== false;
+    const forceRemote = Boolean(options?.forceRemote);
     const baseDirResolved = path.resolve(sessionDir);
-    for (const row of data as Array<{ filename: string; content: string }>) {
+    for (const row of data as Array<{ filename: string; content: string; updated_at?: string | null }>) {
       if (!row.filename || typeof row.filename !== 'string') continue;
       // Tolak traversal atau berkas internal config
       const safeFilename = path.basename(row.filename.replace(/\\/g, '/'));
@@ -54,16 +87,32 @@ export async function restoreSessionFromSupabase(sessionDir: string): Promise<bo
         continue;
       }
       if (hasLocalCreds && fs.existsSync(filePath)) {
-        skippedLocalCount++;
-        continue;
+        const shouldUpdateFromRemote =
+          preferNewer && isRemoteFileNewer(filePath, row.updated_at, forceRemote);
+        if (!shouldUpdateFromRemote) {
+          skippedLocalCount++;
+          continue;
+        }
+        updatedNewerCount++;
       }
       fs.writeFileSync(filePath, row.content, 'utf8');
+      if (row.updated_at) {
+        const remoteMs = Date.parse(String(row.updated_at));
+        if (Number.isFinite(remoteMs)) {
+          try {
+            const dt = new Date(remoteMs);
+            fs.utimesSync(filePath, dt, dt);
+          } catch {
+            // best-effort utimes
+          }
+        }
+      }
       restoredCount++;
     }
 
     const hasCreds = fs.existsSync(path.join(sessionDir, 'creds.json'));
     console.log(
-      `[wa-session] Berhasil memulihkan ${restoredCount} file sesi dari Supabase (dipertahankan lokal: ${skippedLocalCount}, creds: ${hasCreds}).`,
+      `[wa-session] Berhasil memulihkan ${restoredCount} file sesi dari Supabase (diperbarui dari remote lebih baru: ${updatedNewerCount}, dipertahankan lokal: ${skippedLocalCount}, creds: ${hasCreds}).`,
     );
     return hasCreds;
   } catch (err) {
@@ -74,6 +123,8 @@ export async function restoreSessionFromSupabase(sessionDir: string): Promise<bo
 
 /**
  * Menyimpan seluruh file sesi yang ada di folder lokal ke Supabase secara berkala.
+ * Menyimpan `updated_at` berdasarkan `mtime` asli berkas agar perbandingan usia
+ * berkas antar-host (VPS <-> localhost backup) akurat per file.
  */
 export async function syncSessionDirToSupabase(sessionDir: string): Promise<void> {
   if (syncInFlight) return syncInFlight;
@@ -86,14 +137,18 @@ export async function syncSessionDirToSupabase(sessionDir: string): Promise<void
       const updates: Array<{ filename: string; content: string; updated_at: string }> = [];
 
       for (const file of files) {
+        if (!file || file.startsWith('__')) continue;
         const filePath = path.join(sessionDir, file);
         const stat = fs.statSync(filePath);
         if (stat.isFile()) {
           const content = fs.readFileSync(filePath, 'utf8');
+          const mtimeIso = Number.isFinite(stat.mtimeMs)
+            ? new Date(stat.mtimeMs).toISOString()
+            : new Date().toISOString();
           updates.push({
             filename: file,
             content,
-            updated_at: new Date().toISOString(),
+            updated_at: mtimeIso,
           });
         }
       }
