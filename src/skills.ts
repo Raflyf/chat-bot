@@ -112,8 +112,21 @@ const SAFE_KNOWN_DOMAINS = new Set([
  * @param text balasan model
  * @param webData data internet yang benar-benar dipakai turn ini (null = tidak ada)
  */
+function withProtectedCodeBlocks(text: string, fn: (s: string) => string): string {
+  if (!text || !text.includes('```')) return fn(text);
+  const codeBlocks: string[] = [];
+  const masked = text.replace(/```[\s\S]*?```/g, (m) => {
+    const token = `__PROTECTED_FENCE_${codeBlocks.length}__`;
+    codeBlocks.push(m);
+    return token;
+  });
+  const transformed = fn(masked);
+  return transformed.replace(/__PROTECTED_FENCE_(\d+)__/g, (_, idx) => codeBlocks[Number(idx)] ?? '');
+}
+
 function stripInventedUrls(text: string, webData: string | null): string {
   if (!text || typeof text !== 'string') return text;
+  if (!/https?:\/\//i.test(text)) return text;
 
   // Tanpa data internet: HANYA domain umum yang boleh lolos (bot tidak punya dasar
   // untuk menyebut URL spesifik apa pun).
@@ -156,16 +169,8 @@ function stripInventedUrls(text: string, webData: string | null): string {
     return false;
   };
 
-  // Proses PER KALIMAT supaya kalimat yang isinya cuma wadah link karangan bisa
-  // dibuang utuh. Jangan sentuh URL di dalam blok kode (```...```).
-  //
-  // Alur:
-  //   1. Split kalimat (setelah tanda . ! ?)
-  //   2. Untuk tiap kalimat: cek apakah ada URL yang TIDAK diizinkan
-  //   3. Kalau ada -> buang URL-nya, rapikan frasa menggantung, lalu:
-  //      - kalau kalimat masih utuh (>= 5 kata, tidak menggantung) -> pertahankan
-  //      - kalau kalimat jadi rusak -> BUANG SELURUH KALIMAT
-  //   4. Kalimat tanpa URL dibiarkan apa adanya
+  // Proses PER BARIS & PER KALIMAT supaya jeda baris/paragraf tetap utuh dan hanya
+  // kalimat/baris yang menjadi wadah link karangan yang dibuang. Jangan sentuh blok kode (```...```).
   const codeParts = text.split(/(```[\s\S]*?```)/g);
   const outParts: string[] = [];
 
@@ -176,65 +181,86 @@ function stripInventedUrls(text: string, webData: string | null): string {
       continue;
     }
 
-    const sentences = codeParts[ci].split(/(?<=[.!?])\s+/);
-    const keptSentences: string[] = [];
+    const rawLines = codeParts[ci].split('\n');
+    const keptLines: string[] = [];
 
-    for (const sentence of sentences) {
-      // Cek apakah kalimat memuat URL yang tidak diizinkan
-      let hasInventedUrl = false;
-      for (const m of sentence.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
-        const trailing = (m[0].match(/[.,;:!?]+$/) || [''])[0];
-        const core = trailing ? m[0].slice(0, -trailing.length) : m[0];
-        if (!isAllowed(core)) {
-          hasInventedUrl = true;
-          break;
-        }
+    for (const rawLine of rawLines) {
+      if (!rawLine.trim()) {
+        keptLines.push('');
+        continue;
       }
-      if (!hasInventedUrl) {
-        keptSentences.push(sentence);
+      if (!/https?:\/\//i.test(rawLine)) {
+        keptLines.push(rawLine);
         continue;
       }
 
-      // Buang URL yang tidak diizinkan; kembalikan tanda baca ekornya.
-      let fixed = sentence.replace(/https?:\/\/[^\s<>"')\]]+/gi, (m) => {
-        const trailing = (m.match(/[.,;:!?]+$/) || [''])[0];
-        const core = trailing ? m.slice(0, -trailing.length) : m;
-        return isAllowed(core) ? m : trailing;
-      });
-      // Rapikan frasa pengantar & kata sambung yang menggantung setelah URL dibuang.
-      //   "Ada di https://x dan ." -> "Ada di https://x."
-      fixed = fixed
-        .replace(/\b(?:di|pada|dari|ke|via|lewat|sumber(?:nya)?(?:\s+dari)?|cek|baca|lihat|kunjungi|akses|buka|simak|telusuri)\s+(?=[.,;!?]|$)/gi, '')
-        .replace(/\s+(?:dan|atau|serta|juga|maupun)\s*(?=[.,;!?]|$)/gi, '')
-        .replace(/\(\s*\)/g, '')
-        .replace(/\s+([.,;!?])/g, '$1')
-        .replace(/\s{2,}/g, ' ')
-        .trim();
+      const sentences = rawLine.split(/(?<=[.!?])[ \t]+/);
+      const keptSentences: string[] = [];
 
-      // Apakah kalimat MASIH memuat URL yang diizinkan? Kalau ya, kalimat tetap
-      // berguna (link nyata dari data) -> jangan buang hanya karena pendek.
-      let hasAllowedUrl = false;
-      for (const m of fixed.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
-        const t = (m[0].match(/[.,;:!?]+$/) || [''])[0];
-        const c = t ? m[0].slice(0, -t.length) : m[0];
-        if (isAllowed(c)) { hasAllowedUrl = true; break; }
+      for (const sentence of sentences) {
+        // Cek apakah kalimat memuat URL yang tidak diizinkan
+        let hasInventedUrl = false;
+        for (const m of sentence.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
+          const trailing = (m[0].match(/[.,;:!?]+$/) || [''])[0];
+          const core = trailing ? m[0].slice(0, -trailing.length) : m[0];
+          if (!isAllowed(core)) {
+            hasInventedUrl = true;
+            break;
+          }
+        }
+        if (!hasInventedUrl) {
+          keptSentences.push(sentence);
+          continue;
+        }
+
+        // Buang URL yang tidak diizinkan; kembalikan tanda baca ekornya.
+        let fixed = sentence.replace(/https?:\/\/[^\s<>"')\]]+/gi, (m) => {
+          const trailing = (m.match(/[.,;:!?]+$/) || [''])[0];
+          const core = trailing ? m.slice(0, -trailing.length) : m;
+          return isAllowed(core) ? m : trailing;
+        });
+        // Rapikan frasa pengantar & kata sambung yang menggantung setelah URL dibuang.
+        //   "Ada di https://x dan ." -> "Ada di https://x."
+        fixed = fixed
+          .replace(/\b(?:di|pada|dari|ke|via|lewat|sumber(?:nya)?(?:\s+dari)?|cek|baca|lihat|kunjungi|akses|buka|simak|telusuri)\s+(?=[.,;!?]|$)/gi, '')
+          .replace(/[ \t]+(?:dan|atau|serta|juga|maupun)[ \t]*(?=[.,;!?]|$)/gi, '')
+          .replace(/\(\s*\)/g, '')
+          .replace(/[ \t]+([.,;!?])/g, '$1')
+          .replace(/[ \t]{2,}/g, ' ')
+          .trim();
+
+        // Apakah kalimat MASIH memuat URL yang diizinkan? Kalau ya, kalimat tetap
+        // berguna (link nyata dari data) -> jangan buang hanya karena pendek.
+        let hasAllowedUrl = false;
+        for (const m of fixed.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
+          const t = (m[0].match(/[.,;:!?]+$/) || [''])[0];
+          const c = t ? m[0].slice(0, -t.length) : m[0];
+          if (isAllowed(c)) { hasAllowedUrl = true; break; }
+        }
+
+        // Kalimat rusak/menggantung setelah URL dibuang -> buang kalimatnya.
+        // Kecuali kalimat itu masih menyimpan URL sah dari data internet.
+        const endsBad = /(?:\b(?:di|pada|dari|ke|via|lewat|sumber|sumbernya|cek|baca|lihat|kunjungi|akses|buka)|[,;:])$/i.test(fixed);
+        const words = fixed.split(/\s+/).filter(Boolean);
+        if ((words.length < 5 && !hasAllowedUrl) || endsBad) continue;
+        keptSentences.push(fixed);
       }
 
-      // Kalimat rusak/menggantung setelah URL dibuang -> buang kalimatnya.
-      // Kecuali kalimat itu masih menyimpan URL sah dari data internet.
-      const endsBad = /(?:\b(?:di|pada|dari|ke|via|lewat|sumber|sumbernya|cek|baca|lihat|kunjungi|akses|buka)|[,;:])$/i.test(fixed);
-      const words = fixed.split(/\s+/).filter(Boolean);
-      if ((words.length < 5 && !hasAllowedUrl) || endsBad) continue;
-      keptSentences.push(fixed);
+      if (keptSentences.length > 0) {
+        keptLines.push(keptSentences.join(' '));
+      }
     }
 
-    outParts.push(keptSentences.join(' '));
+    const cleanedSegment = keptLines
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^[ \t,;:]+/, '');
+    outParts.push(cleanedSegment);
   }
 
   return outParts
     .join('')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/^[\s,;:]+/, '')
+    .replace(/^[ \t,;:]+/, '')
     .trim();
 }
 
@@ -368,11 +394,11 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
     const bocorAnalisis =
       /^\s*(?:\*{0,2})(?:Ngerespons|Nge-?respons|Merespons|Analisis|Menganalisis|Pertimbangan|Mempertimbangkan|Menimbang|Langkah\s*\d|Step\s*\d|Konteks|Context|Pemikiran|Berpikir|Thinking|Reasoning|User\s+(?:asks|said|wants|is)|The\s+user|Permintaan|Tujuan|Goal|Catatan\s+internal)\b[^\n]{0,200}/i;
     if (bocorAnalisis.test(out.trim())) {
-      // Ambil kalimat SETELAH label analisis (jawaban sebenarnya), bila ada.
+      // Ambil baris SETELAH label analisis (jawaban sebenarnya), bila ada.
       const baris = out.split(/\n+/).map((x) => x.trim()).filter(Boolean);
       const sisa = baris.filter((b) => !bocorAnalisis.test(b));
       // Bila seluruh balasan hanya analisis -> kosongkan (autoReply regenerasi).
-      out = sisa.length && sisa.join(' ').length >= 8 ? sisa.join(' ') : '';
+      out = sisa.length && sisa.join(' ').length >= 8 ? sisa.join('\n') : '';
     }
   }
 
@@ -445,12 +471,25 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
     }
   }
 
+  // Peta LaTeX -> Unicode & pembersihan token kontrol + normalisasi heading/list hanya berjalan di luar blok kode!
+  // Tutup unclosed code-fence dan isolasi SEBELUM pembersih internal agar kode tidak pernah rusak.
+  const fenceMatches = out.match(/```/g);
+  if (fenceMatches && fenceMatches.length % 2 !== 0) {
+    out += '\n```';
+  }
+  const codeBlocks: string[] = [];
+  out = out.replace(/```[\s\S]*?```/g, (match) => {
+    const placeholder = `__FENCED_CODE_BLOCK_${codeBlocks.length}__`;
+    codeBlocks.push(match);
+    return placeholder;
+  });
+
   // 2c. Sisa butir "**Analyze User Input:**" tanpa penanda monolog di atasnya,
   //     termasuk bentuk bold satu baris tanpa nomor ("**Analyze User Input:**").
-  //     Bold dinormalkan lebih dulu agar "**Final Answer:**" juga tertangkap.
+  //     PENTING: word boundary `\b` di awal kata mencegah "Check" memotong "*Checklist Pemeriksaan:*".
   out = out.replace(/\*\*(Final Answer|Jawaban Akhir|Analyze|Analysis|Breakdown|Determine|Draft|Response)\s*:?\s*\*\*/gi, '$1:');
   out = out.replace(
-    /^\s*(?:(?:\d+\.|\*|-)?\s*\*{0,2}(?:Analyze|Identify|Extract|Solve|Check|Verify|Think|Approach|Breakdown|Determine|Draft|Final Answer|Response)(?:\s+(?:User\s+Input|the\s+input|Input|Problem|Question|Task))?\s*:?\*{0,2}\s*\n?)+/gim,
+    /^\s*(?:(?:\d+\.|\*|-)?\s*\*{0,2}(?:Analyze|Identify|Extract|Solve|Check|Verify|Think|Approach|Breakdown|Determine|Draft|Final Answer|Response)\b(?:\s+(?:User\s+Input|the\s+input|Input|Problem|Question|Task))?\s*:?\*{0,2}\s*\n?)+/gim,
     '',
   );
   // Butir daftar pendek tepat setelah blok berpikir ("- Given equations", "- Find: x³ + y³")
@@ -470,20 +509,6 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/^\[(?:PERINTAH SISTEM|PEDOMAN|ATURAN|MEMORI|DATA INTERNET)[^\]]*\]\s*[:\n]?/gim, '');
   out = out.replace(/^###?\s*\d+\.\s*(?:IDENTITAS|PRINSIP|ATURAN|PEDOMAN|GAYA BAHASA|KEMAMPUAN)[^\n]*/gim, '');
   out = out.replace(/^(?:IDENTITAS DEVELOPER & PENCIPTA|PRINSIP UTAMA INTERAKSI ALAMI|PEDOMAN WAJIB)[:\n]?/gim, '');
-
-  // D1: Tutup unclosed code-fence sebelum isolasi agar komentar '#' tidak terkena konversi heading (Regresi #4)
-  const fenceMatches = out.match(/```/g);
-  if (fenceMatches && fenceMatches.length % 2 !== 0) {
-    out += '\n```';
-  }
-
-  // Isolasi blok kode fenced (```...```) dan inline code (`...`) agar tidak terkorupsi oleh replace matematika & markdown
-  const codeBlocks: string[] = [];
-  out = out.replace(/```[\s\S]*?```/g, (match) => {
-    const placeholder = `__FENCED_CODE_BLOCK_${codeBlocks.length}__`;
-    codeBlocks.push(match);
-    return placeholder;
-  });
 
   const inlineCodes: string[] = [];
   out = out.replace(/`[^`\n]+`/g, (match) => {
@@ -614,8 +639,8 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
       out = out.split(cjk).join(` ${idWord} `);
     }
     out = out.replace(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g, '');
-    out = out.replace(/[ \t]{2,}/g, ' ');
-    out = out.replace(/\s+([.,!?])/g, '$1');
+    out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ');
+    out = out.replace(/[ \t]+([.,!?])/g, '$1');
   }
 
   // 6. Batasi emoji agar kontekstual, tepat waktu, dan tidak over (maksimal 1 emoji per pesan, buang emoji robot/aneh)
@@ -625,7 +650,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
     emojiSeen++;
     return emojiSeen <= 1 ? match : '';
   });
-  out = out.replace(/[ \t]{2,}/g, ' ');
+  out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ');
 
   // ── 6b. BUANG TAWARAN LANJUTAN PERMAINAN (temuan 06 Okt 2026) ──
   // LAPORAN: bot berulang kali menawari "Mau lanjut tebak-tebakan?" sehingga
@@ -655,12 +680,12 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   ];
   for (const re of tawaranLanjutan) out = out.replace(re, '');
   out = out
-    .replace(/\s{2,}/g, ' ')
+    .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
     // Buang sisa nomor/butir menggantung ("3." / "3.") akibat kalimat yang dibuang.
-    .replace(/^\s*\d+\s*[.)]{1,2}\s*$/gm, '')
-    .replace(/^\s*[-*•]\s*$/gm, '')
+    .replace(/^[ \t]*\d+[ \t]*[.)]{1,2}[ \t]*$/gm, '')
+    .replace(/^[ \t]*[-*•][ \t]*$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
-    .replace(/^[\s,]+/, '')
+    .replace(/^[ \t,]+/, '')
     .trim();
   // Bila hasilnya kosong (seluruh isi hanyalah tawaran) -> kosongkan agar
   // autoReply meregenerasi balasan yang benar-benar menjawab.
@@ -684,7 +709,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
       /(?:^|[.!?\n]\s*)[^.!?\n]{0,160}\b(?:Kecuali\s+pengguna|pengguna\s+MENGIRIM|baru\s+dibalas|momen\s+emosional\s+natural|DILARANG\s+[a-z]|WAJIB\s+[a-z]|aturan(?:nya)?\s+(?:adalah|menyatakan|sistem)|sesuai\s+aturan|sesuai\s+prompt|dalam\s+prompt|instruksi\s+sistem|system\s+prompt|pesan\s+(?:dari\s+)?sistem|pesan\s+sistem|perintah\s+sistem|nyuruh\s+aku|menyuruh\s+aku\s+(?:baca|ngebaca|membaca)|baca\s+riwayat|ngebaca\s+riwayat|amnesia)\b[^.!?\n]{0,160}[.!?]?/gi;
     if (aturanBocor.test(out)) {
       const sebelum = out;
-      out = out.replace(aturanBocor, '').replace(/\s{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      out = out.replace(aturanBocor, '').replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/\n{3,}/g, '\n\n').trim();
       // Bila seluruh balasan hanya aturan bocor -> kosongkan agar diregenerasi.
       if (!out || out.length < 6) out = '';
       if (out !== sebelum) console.warn('[skills] Balasan memuat aturan prompt internal — dibersihkan.');
@@ -692,14 +717,20 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   }
 
   // 7. Konversi Markdown Heading (### / ## / #) menjadi Bold WhatsApp (*Heading*)
-  out = out.replace(/^\s*#{1,6}\s+(.+)$/gm, '*$1*');
+  out = out.replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/gm, (_m, judul: string) => {
+    const bersih = judul.trim().replace(/^\*{1,3}(.+?)\*{1,3}$/, '$1').trim();
+    return bersih ? `*${bersih}*` : '';
+  });
 
-  // 8. Normalisasi Markdown Bold (**teks** / ***teks***) menjadi Bold WhatsApp (*teks*)
-  out = out.replace(/\*\*\*(.*?)\*\*\*/g, '*$1*');
-  out = out.replace(/\*\*(.*?)\*\*/g, '*$1*');
+  // 8. Normalisasi Markdown Bold (**teks** / ***teks***) & strikethrough (~~teks~~), buang garis pemisah ---
+  out = out.replace(/^[ \t]*(?:---+|___+|\*\*\*+)[ \t]*$/gm, '');
+  out = out.replace(/\*\*\*(.+?)\*\*\*/g, '*$1*');
+  out = out.replace(/\*\*(.+?)\*\*/g, (_m, inner: string) => `*${inner.trim()}*`);
+  out = out.replace(/~~([^~\n]+)~~/g, '~$1~');
 
-  // 9. Bersihkan format bullet list yang berantakan (*   *teks* -> - *teks*)
-  out = out.replace(/^\s*[\*\•]\s+/gm, '- ');
+  // 9. Bersihkan format bullet list yang berantakan (*   *teks* -> - *teks*) sambil pertahankan sub-bullet berindentasi
+  out = out.replace(/^[ \t]{2,}[*•-][ \t]+/gm, '  - ');
+  out = out.replace(/^[ \t]?[*•][ \t]+/gm, '- ');
 
   // 10. Perbaiki asteris menggantung/tanpa pasangan pada setiap baris
   out = out
@@ -732,7 +763,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
       /[^.!?\n]{0,120}\b(?:settingan\s+pabrik|setelan\s+pabrik|bawaan\s+(?:pabrik|ginii?|gini)|default\s+pabrik|pabriknya|programnya\s+emang|sistemnya\s+emang|codingannya\s+emang)\b[^.!?\n]{0,120}[.!?]?/gi;
     if (metaMesin.test(out)) {
       const sebelum = out;
-      out = out.replace(metaMesin, '').replace(/\s{2,}/g, ' ').trim();
+      out = out.replace(metaMesin, '').replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/\n{3,}/g, '\n\n').trim();
       // Bila seluruh balasan cuma metafora mesin -> kosongkan agar diregenerasi.
       if (!out || out.length < 6) out = '';
       void sebelum;
@@ -769,16 +800,27 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   {
     const storeKw = /\b(?:produk|stok|pemesanan|pesanan|layanan|toko|jam\s+layanan)\b/gi;
     const offerKw = /\b(?:bisa\s+bantu|mau\s+tanya|mau\s+pesan|terkait|hubungi\s+kami)\b/i;
-    const sentences = out.split(/(?<=[.!?\n])\s+/);
-    const kept = sentences.filter((s) => {
-      const kwCount = (s.match(storeKw) || []).length;
-      return !(kwCount >= 2 && offerKw.test(s));
-    });
-    if (kept.length !== sentences.length) {
-      out = kept.join(' ').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    const rawLines = out.split('\n');
+    let changed = false;
+    const keptLines: string[] = [];
+    for (const line of rawLines) {
+      if (!line.trim()) {
+        keptLines.push('');
+        continue;
+      }
+      const sentences = line.split(/(?<=[.!?])[ \t]+/);
+      const kept = sentences.filter((s) => {
+        const kwCount = (s.match(storeKw) || []).length;
+        return !(kwCount >= 2 && offerKw.test(s));
+      });
+      if (kept.length !== sentences.length) changed = true;
+      if (kept.length > 0) keptLines.push(kept.join(' '));
+    }
+    if (changed) {
+      out = keptLines.join('\n').replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/\n{3,}/g, '\n\n').trim();
     }
   }
-  out = out.replace(/\s*(?:mau\s+tanya\s+atau\s+pesan\s+apa\s*\??)/gi, '').trim();
+  out = out.replace(/[ \t]*(?:mau\s+tanya\s+atau\s+pesan\s+apa\s*\??)/gi, '').trim();
 
   // 11b2. Penegak LARANGAN mengarahkan user ke halaman/form laporan
   // (permintaan pemilik produk, 08 Okt 2026: "tidak usah membuat bot menyarankan
@@ -796,15 +838,25 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
     const kataAksiKirim =
       /(?:tempel|paste|kirim|kirimkan|sertakan|unggah|upload|masukkan|isi\s+form|buka\s+(?:halaman|link|web))/i;
 
-    const kalimat = out.split(/(?<=[.!?\n])\s+/);
-    const disaring = kalimat.filter((k) => {
-      const ajak = kataAjakLapor.test(k);
-      // "tempel/kirim ... screenshot" juga ajakan, walaupun tanpa kata "lapor".
-      const tempelSs = kataTempelSs.test(k) && kataAksiKirim.test(k);
-      return !(ajak || tempelSs);
-    });
-    if (disaring.length !== kalimat.length) {
-      out = disaring.join(' ').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    const rawLines = out.split('\n');
+    let changed = false;
+    const keptLines: string[] = [];
+    for (const line of rawLines) {
+      if (!line.trim()) {
+        keptLines.push('');
+        continue;
+      }
+      const kalimat = line.split(/(?<=[.!?])[ \t]+/);
+      const disaring = kalimat.filter((k) => {
+        const ajak = kataAjakLapor.test(k);
+        const tempelSs = kataTempelSs.test(k) && kataAksiKirim.test(k);
+        return !(ajak || tempelSs);
+      });
+      if (disaring.length !== kalimat.length) changed = true;
+      if (disaring.length > 0) keptLines.push(disaring.join(' '));
+    }
+    if (changed) {
+      out = keptLines.join('\n').replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/\n{3,}/g, '\n\n').trim();
     }
     // Bila sisa hanya basa-basi kosong -> kosongkan agar diregenerasi.
     const sisaLapor = out
@@ -837,7 +889,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
     ];
     for (const p of polaCs) {
       if (p.test(out)) {
-        out = out.replace(p, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        out = out.replace(p, '').replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/\n{3,}/g, '\n\n').trim();
       }
       p.lastIndex = 0;
     }
@@ -951,7 +1003,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
       /(?:^|(?<=[.!?]\s))[^.!?\n]{0,90}?\b(?:aku|saya|kamu)\s+(?:(?:bisa|siap|boleh|mau|bakal|akan|jadi|cuma|hanya|tetap|emang|juga|masih|tuh|nih)\s+){1,4}(?:jadi\s+)?(?:pacar|gebetan|kekasih)\b[^.!?\n]{0,160}[.!?]?/gi,
       '',
     );
-    out = out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/\n{3,}/g, '\n\n').trim();
   }
 
   // 14. Bersihkan trailer menu pilihan peran / template pilihan yang kaku di akhir teks (dengan atau tanpa separator)
@@ -1031,9 +1083,9 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
     if (out.match(laughWordRe)) {
       out = out
         .replace(laughWordRe, '')
-        .replace(/[ \t]{2,}/g, ' ')
-        .replace(/\s+([.,!?])/g, '$1')
-        .replace(/^[\s,!.]+/, '')
+        .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
+        .replace(/[ \t]+([.,!?])/g, '$1')
+        .replace(/^[ \t,!.]+/, '')
         .trim();
       // Rapikan huruf awal bila tawa yang dibuang berada di awal pesan
       out = out.replace(/^([a-z])/, (c) => c.toUpperCase());
@@ -1049,7 +1101,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
         }
         return '';
       });
-      out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1');
+      out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/[ \t]+([.,!?])/g, '$1');
     }
   }
 
@@ -1060,7 +1112,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // 14e. Bersihkan celetukan penutup filler sok asik / sok akrab di akhir pesan
   out = out.replace(/(?:,\s*)?(?:santai\s+aja\s+(?:terus|dulu)?|santuy\s+aja(?:\s+dulu)?)\s*(?:bro|bray|cuy|ya|ngab)?[.!]?\s*$/gi, '.');
   out = out.replace(/(?:,\s*)?(?:tetap\s+)?semangat\s+(?:terus\s+)?(?:ya|bro|bray|cuy|ngab)?[.!]?\s*$/gi, '.');
-  out = out.replace(/\s+([.,!?])/g, '$1');
+  out = out.replace(/[ \t]+([.,!?])/g, '$1');
 
   out = out.replace(/(?:Santai\s+dulu\s+deh,?\s*)?istirahat\s+(?:sejenak|bentar|dulu)(?:\s+biar\s+otak\s+(?:juga\s+)?(?:nggak|gak)\s+(?:lemot|overheat|pusing))?[.!]?\s*/gi, '');
   out = out.replace(/(?:Santai\s+dulu(?:,\s*taruh\s+semua)?|tarik\s+napas(?:\s+panjang)?|rebahan\s+dulu|merem\s+bentar)[.!?]?\s*/gi, '');
@@ -1073,7 +1125,7 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/\s*(?:,\s*)?(?:Halo,\s*(?:aku|saya)\s+di\s+sini!\s*)?(?:Ada\s+yang\s+(?:mau|bisa)\s+[^.!?\n]*?(?:tanyakan|obrolin|bicarakan|dibahas)[^.!?\n]*\??\s*)/gi, '');
   out = out.replace(/^Halo,\s*(?:aku|saya)\s+di\s+sini![.!]?\s*/gi, '');
   out = out.replace(/(?:Gak|Nggak)\s+bisa\s+nih,?\s*aku\s+cuma\s+bot[^.!\n]*[.!\n]?\s*/gi, '');
-  out = out.replace(/\s+([.,!?])/g, '$1');
+  out = out.replace(/[ \t]+([.,!?])/g, '$1');
   out = out.replace(/[,;:]+\s*$/, '').trim();
 
   // 14b. Pastikan ada spasi setelah tanda akhir kalimat bila langsung menempel kata
@@ -1081,23 +1133,14 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // dua kalimat tanpa spasi saat jawabannya dipotong/digabung.
   out = out.replace(/([.!?])([A-ZÀ-Ý])/g, '$1 $2');
 
-  // 15. Sederhanakan spasi ganda dan baris kosong berlebihan
-  out = out.replace(/[ \t]{2,}/g, ' ');
+  // 15. Sederhanakan spasi ganda (pertahankan indentasi sub-poin di awal baris) dan baris kosong berlebihan
+  out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ');
   out = out.replace(/\n{3,}/g, '\n\n').trim();
 
   // 16. Normalisasi newline berlebihan pada percakapan santai.
-  //
-  // BUG YANG DIPERBAIKI (temuan audit v0.79, direproduksi):
-  // versi sebelumnya menyatukan SEMUA baris bila balasan < 400 char & <= 3 baris,
-  // TANPA membedakan "baris terpecah tak sengaja" dari "PARAGRAF YANG SENGAJA dibuat
-  // model". Akibatnya jeda paragraf hilang:
-  //   "Kabar baik buat kamu.\n\nBanyak yang bilang ini susah." -> satu baris.
-  // Ini bertentangan dengan aturan prompt "nyaman dibaca cepat di HP" dan menghapus
-  // penekanan yang disengaja. Perbaikan: HANYA satukan bila pemisahnya baris TUNGGAL
-  // (\n) — pemisah paragraf ganda (\n\n) dipertahankan karena itu memang sengaja.
   if (!out.includes('```') && !out.includes('|') && out.length < 400) {
     const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    const hasListOrHeading = lines.some((l) => /^[-*•\d+>]|\*.*?\*:\s*$/.test(l));
+    const hasListOrHeading = lines.some((l) => /^(?:[-*•>]|\d+[.)]\s)|^\*[^*\n]+\*:?[ \t]*$/.test(l));
     const hasParagraphBreak = /\n\s*\n/.test(out);
     if (
       !hasListOrHeading &&
@@ -1114,7 +1157,9 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/^(?:(?:Pada\s+)?(?:gambar|foto|stiker|video|dokumen|tangkapan\s+layar)\s+(?:ini|tersebut)\s+(?:menampilkan|memperlihatkan|menunjukkan|tampak|terlihat|terdapat)|Di\s+dalam\s+(?:gambar|foto|stiker|video|dokumen)\s+ini|Berdasarkan\s+(?:gambar|foto|stiker|video|dokumen)\s+(?:yang\s+(?:diunggah|diberikan|dikirim)|ini))\s*[:,]?\s*/i, '');
   out = out.replace(/^(?:Stiker\s+ini\s+adalah\s+stiker|Gambar\s+ini\s+adalah\s+(?:sebuah\s+)?(?:gambar|foto|stiker))\s*[:,]?\s*/i, '');
   out = out.replace(/^(?:Wah,\s*)?stiker\s+(?:ini\s+)?(?:seru|lucu|keren|kocak|menarik|banget|apaan)[^.!?\n]*[.!?\n]+\s*/i, '');
-  out = out.replace(/(?:^|\s)#[a-zA-Z][a-zA-Z0-9_-]+/g, ' ');
+  out = out
+    .replace(/(^|[ \t])#[a-zA-Z][a-zA-Z0-9_-]+/g, '$1')
+    .replace(/^#[a-zA-Z][a-zA-Z0-9_-]+[ \t]*/gm, '');
   out = out.replace(/[🐾🤖]/gu, '');
   // 'SiSi' (bukan kata Indonesia) dibiarkan mengalir ke jalur regen/autoReply — TIDAK
   // diganti kalimat hardcoded (aturan keras: zero teks statis dari bot).
@@ -1216,7 +1261,7 @@ function batasiEmojiLintasPesan(text: string, riwayat?: Array<{ role: string; co
       const kataCount = text.split(/\s+/).filter(Boolean).length;
       const jumlahEmoji = (text.match(emojiRe) ?? []).length;
       if (kataCount <= 8 && jumlahEmoji <= 1) return text;
-      return text.replace(emojiRe, '').replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim();
+      return text.replace(emojiRe, '').replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/[ \t]+([.,!?])/g, '$1').trim();
     }
     if (pakaiEmoji === 1) {
       const emojiTerakhir = String(balasanAsisten[0]?.content ?? '').match(emojiRe) ?? [];
@@ -1227,7 +1272,7 @@ function batasiEmojiLintasPesan(text: string, riwayat?: Array<{ role: string; co
         // Maksimal 1 emoji, dan jangan ulangi emoji yang sama dengan balasan lalu.
         if (sudah > 1 || terpakai.has(m)) return '';
         return m;
-      }).replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim();
+      }).replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/[ \t]+([.,!?])/g, '$1').trim();
     }
   } catch {
     // abaikan; kembalikan teks apa adanya
@@ -1305,11 +1350,19 @@ function hasAudioClaim(text: string): boolean {
 
 /** Buang klausa/baris yang mengklaim mendengar audio (pembersihan murni, tanpa kalimat pengganti). */
 function stripAudioClaims(text: string): string {
-  return text
-    .split(/(?<=[.!?])\s+|\n+/)
-    .filter((s) => s.trim() && !AUDIO_CLAIM_RE.test(s))
-    .join(' ')
-    .trim();
+  if (!text || !AUDIO_CLAIM_RE.test(text)) return text;
+  const keptLines: string[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) {
+      keptLines.push('');
+      continue;
+    }
+    const kept = line
+      .split(/(?<=[.!?])[ \t]+/)
+      .filter((s) => s.trim() && !AUDIO_CLAIM_RE.test(s));
+    if (kept.length > 0) keptLines.push(kept.join(' '));
+  }
+  return keptLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** True bila pesan user memang berisi audio sungguhan (VN atau transkrip audio video). */
@@ -1353,11 +1406,21 @@ export function userAskedAboutMedia(caption?: string): boolean {
 /** Buang kalimat yang menarasikan isi kiriman media (pembersihan murni, tanpa pengganti). */
 export function stripMediaNarration(text: string): string {
   if (!text) return '';
-  const sentences = text.split(/(?<=[.!?\n])\s+/);
-  const kept = sentences.filter((s) => s.trim() && !MEDIA_NARRATION_RE.test(s));
-  return kept
-    .join(' ')
-    .replace(/[ \t]{2,}/g, ' ')
+  if (!MEDIA_NARRATION_RE.test(text)) return text;
+  const keptLines: string[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) {
+      keptLines.push('');
+      continue;
+    }
+    const kept = line
+      .split(/(?<=[.!?])[ \t]+/)
+      .filter((s) => s.trim() && !MEDIA_NARRATION_RE.test(s));
+    if (kept.length > 0) keptLines.push(kept.join(' '));
+  }
+  return keptLines
+    .join('\n')
+    .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -1409,7 +1472,8 @@ export function extractStickerTag(text: string): { text: string; sticker: string
   // dengan KURUNG SATU dan TANPA emoji, sehingga lolos ke user):
   //   [[sticker:😂]]  [[sticker: 😂 ]]  [sticker:😂]  [sticker:]  [[sticker]]  [sticker]
   // Terima juga ejaan Indonesia "stiker" (model kadang menulis dalam bahasa Indonesia).
-  const re = /\[\[?\s*(?:sticker|stiker)\s*(?::\s*([^\s\]]{1,8}))?\s*\]\]?/gi;
+  const re = /\[\[?\s*(?:sticker|stiker)\s*(?::\s*([^\s\]]{1,8}))?\s*\]\]?/i;
+  if (!re.test(text)) return { text: text.trim(), sticker: null };
   let sticker: string | null = null;
   let m: RegExpExecArray | null;
   const reGlobal = new RegExp(re.source, 'gi');
@@ -1418,7 +1482,13 @@ export function extractStickerTag(text: string): { text: string; sticker: string
     // Hanya terima bila benar-benar emoji (bukan teks biasa)
     if (!sticker && candidate && /\p{Extended_Pictographic}/u.test(candidate)) sticker = candidate;
   }
-  const cleaned = text.replace(re, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  const cleaned = withProtectedCodeBlocks(text, (safe) =>
+    safe
+      .replace(reGlobal, '')
+      .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+  );
   return { text: cleaned, sticker };
 }
 
@@ -1470,13 +1540,18 @@ export function extractRiddleTag(text: string): { text: string; answer: string |
   // permainan dinilai TANPA kunci, dan tebakan benar user bisa ditolak.
   // Sekarang kedua varian diterima (sama seperti pembersihnya).
   const re = /\[\[?\s*jawab(?:an)?\s*:\s*([^\[\]]{1,120})\s*\]\]?/gi;
-  let answer: string | null = null;
   const m = re.exec(text);
-  if (m) {
-    const a = m[1].trim().replace(/\s+/g, ' ');
-    if (a) answer = a;
-  }
-  const cleaned = text.replace(re, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (!m) return { text: text.trim(), answer: null };
+  const a = m[1].trim().replace(/\s+/g, ' ');
+  const answer = a || null;
+  re.lastIndex = 0;
+  const cleaned = withProtectedCodeBlocks(text, (safe) =>
+    safe
+      .replace(re, '')
+      .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+  );
   return { text: cleaned, answer };
 }
 
@@ -1503,6 +1578,260 @@ export function isTsvExtraction(text: string): boolean {
   const barisBerTabulasi = baris.filter((l) => (l.match(/\t/g) || []).length >= 2);
   // Minimal 3 baris ber-tab DAN minimal 60% baris berbentuk TSV
   return barisBerTabulasi.length >= 3 && barisBerTabulasi.length / baris.length >= 0.6;
+}
+
+/**
+ * Merapikan format tampilan balasan agar nyaman dibaca di WhatsApp & Telegram
+ * (judul bagian bold terpisah, poin list & langkah bernomor per baris, jeda
+ * paragraf bersih, konversi tabel pipa Markdown ke poin rapi), TANPA menyentuh
+ * blok kode, inline code, data TSV, atau obrolan pendek 1 kalimat.
+ */
+export function rapikanFormatPesan(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  if (isTsvExtraction(text)) return text;
+
+  const trimmedInput = text.replace(/\r\n/g, '\n').trim();
+  if (!trimmedInput) return '';
+
+  // Isolasi blok kode fenced & inline code agar indentasi dan simbol di dalamnya tetap persis.
+  const fencedBlocks: string[] = [];
+  let work = trimmedInput.replace(/```[\s\S]*?```/g, (m) => {
+    const token = `__FMT_FENCE_${fencedBlocks.length}__`;
+    fencedBlocks.push(m);
+    return token;
+  });
+  const inlineCodes: string[] = [];
+  work = work.replace(/`[^`\n]+`/g, (m) => {
+    const token = `__FMT_INLINE_${inlineCodes.length}__`;
+    inlineCodes.push(m);
+    return token;
+  });
+
+  // 1. Konversi tabel pipa GFM (| h1 | h2 |\n|---|---|\n| v1 | v2 |) menjadi poin ramah HP.
+  if (/\|/.test(work)) {
+    const tableRe = /^\|[^\n]+\|\n\|[ \t:|-]+\|\n(?:\|[^\n]+\|(?:\n|$))+/gm;
+    work = work.replace(tableRe, (tbl) => {
+      const rows = tbl.trim().split('\n').map((row) =>
+        row
+          .trim()
+          .replace(/^\|/, '')
+          .replace(/\|$/, '')
+          .split('|')
+          .map((cell) => cell.trim()),
+      );
+      if (rows.length < 3) return tbl;
+      const headers = rows[0];
+      const dataRows = rows.slice(2);
+      if (headers.length <= 1) return tbl;
+      if (headers.length === 2) {
+        return dataRows.map((r) => `- *${r[0] || '-'}*: ${r[1] || '-'}`).join('\n') + '\n';
+      }
+      return (
+        dataRows
+          .map((r) => {
+            const title = `*${r[0] || '-'}*`;
+            const details = headers.slice(1).map((h, idx) => `- ${h}: ${r[idx + 1] || '-'}`);
+            return [title, ...details].join('\n');
+          })
+          .join('\n\n') + '\n'
+      );
+    });
+  }
+
+  // 2. Normalisasi sisa heading Markdown, bold/strikethrough, dan garis pemisah.
+  work = work.replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/gm, (_m, judul: string) => {
+    const bersih = judul.trim().replace(/^\*{1,3}(.+?)\*{1,3}$/, '$1').trim();
+    return bersih ? `*${bersih}*` : '';
+  });
+  work = work.replace(/^[ \t]*(?:---+|___+|\*\*\*+)[ \t]*$/gm, '');
+  work = work.replace(/\*\*\*(.+?)\*\*\*/g, '*$1*');
+  work = work.replace(/\*\*(.+?)\*\*/g, (_m, inner: string) => `*${inner.trim()}*`);
+  work = work.replace(/~~([^~\n]+)~~/g, '~$1~');
+
+  // 3. Urai struktur yang tergencet dalam satu baris (safety net bila LLM lupa Enter).
+  const isInlineHeadingCandidate = (rawLine: string): boolean => {
+    const headingCount = (rawLine.match(/\*[^*\n]{2,70}:\*/g) ?? []).length;
+    const hasHeadingFollowedByMarker = /\*[^*\n]{2,70}:\*[ \t]+(?:[-•]|\d+[.)])[ \t]+/.test(rawLine);
+    return headingCount >= 2 || hasHeadingFollowedByMarker;
+  };
+
+  const unpackInlineBullets = (line: string): string[] => {
+    const bulletSep = /(?<=[^\s])[ \t]+[-•][ \t]+(?=[A-ZÀ-Ý0-9*_`__])/g;
+    const matches = [...line.matchAll(bulletSep)];
+    const startsWithBullet = /^[ \t]*[-•][ \t]+\S/.test(line);
+    const hasHeaderBeforeBullet = /[*:\]][ \t]+[-•][ \t]+/.test(line);
+    const looksLikeRange = /\b(?:Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu|Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des|\d{1,4}(?:[.:]\d{2})?)[ \t]+-[ \t]+(?:Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu|Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des|\d{1,4}(?:[.:]\d{2})?)\b/i;
+
+    if (
+      matches.length >= 2 ||
+      (startsWithBullet && matches.length >= 1) ||
+      (hasHeaderBeforeBullet && matches.length >= 1)
+    ) {
+      if (looksLikeRange.test(line) && !startsWithBullet && !hasHeaderBeforeBullet) {
+        return [line];
+      }
+      const out: string[] = [];
+      let cursor = 0;
+      for (const m of matches) {
+        const idx = m.index ?? -1;
+        if (idx < cursor) continue;
+        const segment = line.slice(idx);
+        // Hindari memotong rentang seperti "08.00 - 17.00" atau "10 - 20" di tengah kalimat.
+        const ctxAround = line.slice(Math.max(0, idx - 18), Math.min(line.length, idx + 24));
+        if (looksLikeRange.test(ctxAround) && !startsWithBullet && !hasHeaderBeforeBullet) {
+          continue;
+        }
+        const before = line.slice(cursor, idx).trimEnd();
+        if (before) out.push(before);
+        // Lewati spasi pemisah agar fragmen berikutnya dimulai tepat dengan '- ...'
+        const dashPos = line.slice(idx, idx + m[0].length).search(/[-•]/);
+        cursor = idx + (dashPos >= 0 ? dashPos : 0);
+        void segment;
+      }
+      const tail = line.slice(cursor).trim();
+      if (tail) out.push(tail);
+      if (out.length > 1) return out;
+    }
+    return [line];
+  };
+
+  const unpackInlineNumberedSteps = (line: string): string[] => {
+    if (!/(?:^|[:.!?\s*])1[.)][ \t]+\S[\s\S]*?[ \t]+2[.)][ \t]+\S/.test(line)) {
+      return [line];
+    }
+    const splitPoints: Array<{ pos: number; num: number; rawMarker: string }> = [];
+    let expected = 1;
+    const markerRe = /(?:^|([ \t]+))(\d{1,2})([.)])[ \t]+(?=\S)/g;
+    let m: RegExpExecArray | null;
+    while ((m = markerRe.exec(line)) !== null) {
+      const num = Number(m[2]);
+      if (num !== expected) continue;
+      // Abaikan angka desimal seperti "v2.0" / "1.5" karena ada digit sebelum titik tidak diikuti huruf/spasi yang sesuai.
+      const markerStart = m.index + (m[1]?.length ?? 0);
+      if (markerStart > 0 && /[\d.]/.test(line[markerStart - 1])) continue;
+      splitPoints.push({ pos: markerStart, num, rawMarker: `${m[2]}${m[3]}` });
+      expected++;
+    }
+    if (splitPoints.length < 2) return [line];
+
+    const out: string[] = [];
+    const intro = line.slice(0, splitPoints[0].pos).trimEnd();
+    if (intro) out.push(intro);
+    for (let i = 0; i < splitPoints.length; i++) {
+      const start = splitPoints[i].pos;
+      const end = i + 1 < splitPoints.length ? splitPoints[i + 1].pos : line.length;
+      const piece = line.slice(start, end).trim().replace(/^(\d{1,2})[.)][ \t]+/, '$1. ');
+      if (piece) out.push(piece);
+    }
+    return out;
+  };
+
+  const unpackedLines: string[] = [];
+  for (const rawLine of work.split('\n')) {
+    if (!rawLine.trim()) {
+      unpackedLines.push('');
+      continue;
+    }
+    let stageLines: string[] = [rawLine];
+    if (isInlineHeadingCandidate(rawLine)) {
+      const withHeadings = rawLine
+        .replace(/([^\n])[ \t]+(\*[^*\n]{2,70}:\*)(?=[ \t]*|$)/g, '$1\n\n$2')
+        .replace(/(\*[^*\n]{2,70}:\*)[ \t]+(?=(?:[-•]|\d{1,2}[.)])[ \t]+|\S)/g, '$1\n');
+      stageLines = withHeadings.split('\n');
+    }
+
+    for (const seg of stageLines) {
+      const afterBullets = unpackInlineBullets(seg);
+      for (const bSeg of afterBullets) {
+        const afterNumbers = unpackInlineNumberedSteps(bSeg);
+        for (const finalSeg of afterNumbers) {
+          unpackedLines.push(finalSeg);
+        }
+      }
+    }
+  }
+
+  // 4. Normalisasi marker per baris (bullet, sub-bullet, numbered list, kutipan).
+  const normalizedLines = unpackedLines.map((raw) => {
+    const line = raw.replace(/[ \t]+$/g, '');
+    if (!line.trim()) return '';
+    if (/^[ \t]{2,}[-*•][ \t]+/.test(line)) {
+      return line.replace(/^[ \t]{2,}[-*•][ \t]+/, '  - ');
+    }
+    if (/^[ \t]?[-•][ \t]+/.test(line)) {
+      return line.replace(/^[ \t]?[-•][ \t]+/, '- ');
+    }
+    if (/^[ \t]+\*[ \t]+/.test(line) && (line.match(/\*/g) ?? []).length % 2 === 1) {
+      return line.replace(/^[ \t]+\*[ \t]+/, '  - ');
+    }
+    if (/^[ \t]*\d{1,2}[.)][ \t]+/.test(line)) {
+      return line.replace(/^([ \t]*)(\d{1,2})[.)][ \t]+/, '$1$2. ');
+    }
+    if (/^[ \t]*>[ \t]*/.test(line)) {
+      return line.replace(/^[ \t]*>[ \t]*/, '> ');
+    }
+    return line;
+  });
+
+  // Cepat: bila hanya 1 baris biasa tanpa placeholder fenced code, kembalikan langsung.
+  if (normalizedLines.length === 1 && !/__FMT_FENCE_\d+__/.test(normalizedLines[0])) {
+    const single = normalizedLines[0]
+      .replace(/__FMT_INLINE_(\d+)__/g, (_, idx) => inlineCodes[Number(idx)] ?? '')
+      .trim();
+    return single;
+  }
+
+  // 5. Atur jarak vertikal antar elemen (heading, daftar, paragraf biasa, blok kode).
+  const isHeadingLine = (l: string): boolean => {
+    const t = l.trim();
+    if (!t || /^[-•\d>]/.test(t)) return false;
+    return /^\*[^*\n]{2,80}:?\*$/.test(t) || /^\*[^*\n]{2,80}\*:$/.test(t);
+  };
+  const isListLine = (l: string): boolean => /^(?:[ \t]*-\s+\S|[ \t]*\d{1,2}\.\s+\S)/.test(l);
+  const isQuoteLine = (l: string): boolean => /^>\s?/.test(l.trim());
+  const isFenceLine = (l: string): boolean => /^__FMT_FENCE_\d+__$/.test(l.trim());
+
+  const spaced: string[] = [];
+  for (let i = 0; i < normalizedLines.length; i++) {
+    const cur = normalizedLines[i];
+    if (!cur.trim()) {
+      if (spaced.length > 0 && spaced[spaced.length - 1] !== '') {
+        spaced.push('');
+      }
+      continue;
+    }
+
+    // Temukan baris non-kosong sebelumnya di `spaced`
+    let prevNonEmptyIdx = spaced.length - 1;
+    while (prevNonEmptyIdx >= 0 && spaced[prevNonEmptyIdx] === '') prevNonEmptyIdx--;
+    const prev = prevNonEmptyIdx >= 0 ? spaced[prevNonEmptyIdx] : '';
+    const hasBlankBefore = prevNonEmptyIdx < spaced.length - 1;
+
+    if (prev) {
+      if (isHeadingLine(cur)) {
+        // Heading baru selalu punya 1 baris kosong sebelumnya agar bagian terpisah jelas.
+        if (!hasBlankBefore) spaced.push('');
+      } else if (isHeadingLine(prev) && (isListLine(cur) || /\*[^*\n]{2,80}:\*$/.test(prev.trim()))) {
+        // Heading yang diakhiri ':' atau diikuti daftar nempel rapi (1 newline, tanpa baris kosong).
+        while (spaced.length > 0 && spaced[spaced.length - 1] === '') spaced.pop();
+      } else if (isListLine(cur) && !isListLine(prev) && !isHeadingLine(prev) && !prev.trim().endsWith(':')) {
+        // Awali blok daftar yang didahului paragraf biasa (bukan pengantar "...") dengan baris kosong.
+        if (!hasBlankBefore) spaced.push('');
+      } else if (!isListLine(cur) && !isQuoteLine(cur) && !isFenceLine(cur) && isListLine(prev)) {
+        // Pisahkan penutup paragraf setelah daftar selesai.
+        if (!hasBlankBefore) spaced.push('');
+      } else if (isFenceLine(cur) || isFenceLine(prev)) {
+        if (!hasBlankBefore) spaced.push('');
+      }
+    }
+
+    spaced.push(cur);
+  }
+
+  let out = spaced.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  out = out.replace(/__FMT_INLINE_(\d+)__/g, (_, idx) => inlineCodes[Number(idx)] ?? '');
+  out = out.replace(/__FMT_FENCE_(\d+)__/g, (_, idx) => fencedBlocks[Number(idx)] ?? '');
+  return out.trim();
 }
 
 export function sanitizeAssistantOutput(
@@ -1540,10 +1869,14 @@ export function sanitizeAssistantOutput(
   // typo bagi user. HANYA huruf kapital -> "HHalo" jadi "Halo", sementara kata berhuruf
   // kecil yang memang berawalan dobel (llama, aamiin) TIDAK tersentuh. Singkatan seperti
   // "OK"/"AI"/"PT" juga aman karena tidak ada huruf kecil setelah dobel pertama.
-  cleaned = cleaned.replace(/\b([A-Z])\1(?=[a-z])/g, '$1');
-  // Jaring akhir: buang sisa tag kontrol/penanda internal model (mis. <CPA_DONE>)
-  // yang mungkin lolos dari pembersih mana pun.
-  cleaned = cleaned.replace(/<\/?(?:[A-Z][A-Z0-9_]{2,})>/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+  cleaned = withProtectedCodeBlocks(cleaned, (safe) =>
+    safe
+      .replace(/\b([A-Z])\1(?=[a-z])/g, '$1')
+      .replace(/<\/?(?:[A-Z][A-Z0-9_]{2,})>/g, '')
+      .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+  );
   // Balasan untuk kiriman media (stiker/foto/video/dll): buang narasi isi kiriman
   // KECUALI user menulis pertanyaan/instruksi eksplisit di caption (ATURAN KERAS user).
   if (mediaReply && !userAskedAboutMedia(userPrompt)) {
@@ -1579,9 +1912,9 @@ export function sanitizeAssistantOutput(
     akhir = buangKlaimLirikAsli(akhir);
     akhir = buangBalasanStikerGenerik(akhir, userPrompt);
     akhir = buangKlaimTidakLihatStiker(akhir, userPrompt);
-    return akhir;
+    return akhir ? rapikanFormatPesan(akhir) : '';
   }
-  return hasilBersih;
+  return hasilBersih ? rapikanFormatPesan(hasilBersih) : '';
 }
 
 /**
@@ -1696,13 +2029,15 @@ export function cegahMulaiGameTanpaDiminta(reply: string, userPrompt: string): s
   const mintaMain = /\b(?:main|mabar|game|permainan|tebak(?:\s*-?\s*tebakan)?|kuis|uno|catur|halma|remi|capsa|gaple|tictactoe|hangman|dadu|suit|monopoli|kartu|papan)\b/.test(u);
   if (mintaMain) return reply;
   // Balasan MENGajak main padahal user tidak minta -> buang kalimat ajakannya.
-  const out = reply
+  const cleaned = reply
     .replace(/[^.!?\n]*\b(?:kita|ayo|yuk|mari)\s+(?:main|bermain|mabar)\b[^.!?\n]*[.!?]?/gi, '')
-    .replace(/[^.!?\n]*\b(?:siap|oke|ok|boleh)[,!.]?\s*(?:kita\s+)?(?:main|bermain)\b[^.!?\n]*[.!?]?/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/^[\s,.:;-]+/, '')
+    .replace(/[^.!?\n]*\b(?:siap|oke|ok|boleh)[,!.]?\s*(?:kita\s+)?(?:main|bermain)\b[^.!?\n]*[.!?]?/gi, '');
+  if (cleaned === reply) return reply;
+  return cleaned
+    .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^[ \t,.:;]+/, '')
     .trim();
-  return out;
 }
 
 /**
@@ -1724,24 +2059,22 @@ export function bersihkanFrasaNgawur(reply: string): string {
     /^\s*\bbray\s*[?!.,]+\s*/gi,
   ];
   let out = reply;
-  // PERBAIKAN AUDIT 14 Okt 2026: catat apakah ada frasa yang MEMANG dibuang.
-  // BUG LAMA: baris berikutnya mengosongkan SETIAP balasan <= 2 kata tanpa "?",
-  // sehingga balasan SAH seperti "Halo juga", "Oke deh", "Belum ada.", "Iyaa 😊"
-  // ikut HILANG — bertentangan dengan aturan prompt "pesan 1-5 kata cukup
-  // 1 kalimat pendek" dan aturan ANTI-FLAT.
   let adaYangDibuang = false;
   for (const re of selaluSalah) {
     const sebelum = out;
     out = out.replace(re, '');
     if (out !== sebelum) adaYangDibuang = true;
   }
-  out = out.replace(/\s{2,}/g, ' ').replace(/^[\s,.:;!?-]+/, '').trim();
+  if (!adaYangDibuang) return reply;
+  out = out
+    .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^[ \t,.:;!?]+/, '')
+    .trim();
   // Kosongkan HANYA bila frasa terlarang tadi MEMANG ADA dan sisanya tidak
   // bermakna. Balasan pendek yang sejak awal bersih DIBIARKAN apa adanya.
-  if (adaYangDibuang) {
-    const sisaKata = out.split(/\s+/).filter(Boolean).length;
-    if (!out || (sisaKata <= 2 && !/[?!]/.test(out))) return '';
-  }
+  const sisaKata = out.split(/\s+/).filter(Boolean).length;
+  if (!out || (sisaKata <= 2 && !/[?!]/.test(out))) return '';
   return out;
 }
 
@@ -1811,8 +2144,7 @@ export function buangKonfabulasiKonteks(reply: string, userPrompt: string, recen
  */
 export function buangBocorInstruksi(reply: string): string {
   if (!reply) return reply;
-  // Evaluasi PER KALIMAT agar kalimat yang sah mempertahankan tanda baca aslinya dan
-  // kalimat yang memuat janji gaya / istilah mode-robot / maaf amnesia dibuang utuh.
+  // Evaluasi PER BARIS & PER KALIMAT hanya ketika ada pola bocor (menjaga seluruh newline/struktur).
   const bocorRe = new RegExp(
     [
       String.raw`\b(?:jawab|balas|respon|merespons)\s+(?:santai|singkat|pendek|dengan\s+santai|dengan\s+singkat|begini|seperti\s+ini)\b`,
@@ -1829,26 +2161,44 @@ export function buangBocorInstruksi(reply: string): string {
     'i',
   );
 
-  const kalimatList = reply.split(/(?<=[.!?])\s+|\n+/);
-  const kept: string[] = [];
-  for (const raw of kalimatList) {
-    const kal = raw.trim();
-    if (!kal) continue;
-    if (!bocorRe.test(kal)) {
-      kept.push(kal);
-      continue;
-    }
-    const idxColon = kal.indexOf(':');
-    if (idxColon > 0) {
-      const prefix = kal.slice(0, idxColon).trim();
-      const tail = kal.slice(idxColon + 1).trim();
-      if (bocorRe.test(prefix) && !bocorRe.test(tail) && tail.split(/\s+/).filter(Boolean).length >= 2) {
-        kept.push(tail);
-      }
-    }
-  }
+  if (!bocorRe.test(reply)) return reply;
 
-  const out = kept.join(' ').replace(/\s{2,}/g, ' ').replace(/^[\s,.:;-]+/, '').trim();
+  const out = withProtectedCodeBlocks(reply, (safe) => {
+    const rawLines = safe.split('\n');
+    const keptLines: string[] = [];
+    for (const line of rawLines) {
+      if (!line.trim()) {
+        keptLines.push('');
+        continue;
+      }
+      const kalimatList = line.split(/(?<=[.!?])[ \t]+/);
+      const kept: string[] = [];
+      for (const raw of kalimatList) {
+        const kal = raw.trim();
+        if (!kal) continue;
+        if (!bocorRe.test(kal)) {
+          kept.push(kal);
+          continue;
+        }
+        const idxColon = kal.indexOf(':');
+        if (idxColon > 0) {
+          const prefix = kal.slice(0, idxColon).trim();
+          const tail = kal.slice(idxColon + 1).trim();
+          if (bocorRe.test(prefix) && !bocorRe.test(tail) && tail.split(/\s+/).filter(Boolean).length >= 2) {
+            kept.push(tail);
+          }
+        }
+      }
+      if (kept.length > 0) keptLines.push(kept.join(' '));
+    }
+    return keptLines
+      .join('\n')
+      .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^[ \t,.:;]+/, '')
+      .trim();
+  });
+
   if (!out) return '';
 
   const sisaCheck = out
@@ -1899,15 +2249,15 @@ export function perbaikiSalahInfoKemampuan(reply: string, userPrompt: string): s
  */
 function stripProtocolLeak(text: string): string {
   if (!text) return text;
-  let out = text;
-  out = out.replace(/\b(?:response|answer|reply|output|final|assistant|completion)(?=[A-Z][a-z])/g, '');
-  out = out.replace(/^\s*(?:response|answer|reply|output|completion|assistant)\s*[:=]\s*/i, '');
-  out = out.replace(/([.!?\n]\s*)(?:response|answer|reply|output|completion|assistant)\s*[:=]\s*/gi, '$1');
+  const out = withProtectedCodeBlocks(text, (safe) => {
+    let cur = safe;
+    cur = cur.replace(/\b(?:response|answer|reply|output|final|assistant|completion)(?=[A-Z][a-z])/g, '');
+    cur = cur.replace(/^\s*(?:response|answer|reply|output|completion|assistant)\s*[:=]\s*/i, '');
+    cur = cur.replace(/([.!?\n]\s*)(?:response|answer|reply|output|completion|assistant)\s*[:=]\s*/gi, '$1');
+    return cur.replace(/([^\n \t])[ \t]{2,}/g, '$1 ').trim();
+  });
   // ── PENEGAKAN DI KODE: buang ajakan menarik user kembali ke permainan/topik lama ──
-  // (temuan pemilik produk 09 Okt 2026: "kalo user sudah keluar dari topik game
-  // maka tidak usah di singgung lagi"). Aturan kritis ditegakkan di kode karena
-  // kepatuhan model tidak bisa diandalkan.
-  return buangAjakanGameLama(out.replace(/[ \t]{2,}/g, ' ').trim());
+  return buangAjakanGameLama(out);
 }
 
 /**
@@ -1993,12 +2343,9 @@ function tegakkanAntiMengiyakanKlaim(
 
   if (!mengiyakan) return text;
 
-  // Buang kalimat pengiyakan pertama, sisakan sisanya bila ada isi berguna.
-  const sisa = text
-    .split(/(?<=[.!?\n])\s+/)
-    .slice(1)
-    .join(' ')
-    .trim();
+  // Buang kalimat pengiyakan pertama, sisakan sisanya sambil mempertahankan baris baru.
+  const firstSentenceMatch = text.match(/^\s*[^.!?\n]+[.!?]+([ \t]+|\n+)?/);
+  const sisa = firstSentenceMatch ? text.slice(firstSentenceMatch[0].length).trim() : '';
 
   // ── ZERO TEKS STATIS (aturan keras pemilik produk) ──
   // BUG YANG DIPERBAIKI (06 Okt 2026): versi lama mengembalikan teks HARDCODED
@@ -2013,126 +2360,65 @@ function tegakkanAntiMengiyakanKlaim(
 
 function enforceUniversalRules(text: string, isProfessionalContext = false): string {
   if (!text || typeof text !== 'string') return text;
-  let out = text;
+  return withProtectedCodeBlocks(text, (safe) => {
+    let out = safe;
 
-  // 1. Narasi akting / arahan panggung dalam tanda bintang — DILARANG (PRINSIP 4).
-  //    Terbukti muncul di beberapa model (kebiasaan roleplay).
-  out = out.replace(/\*\s*\[[^\]]{0,120}\]\s*\*/g, '');          // *[tiba-tiba suara jadi serius]*
-  out = out.replace(/\*\s*\([^)]{0,120}\)\s*\*/g, '');            // *(menghela napas)*
-  out = out.replace(/\*\*\s*\([^)]{0,120}\)\s*\*\*/g, '');      // **(tersenyum)**
-  // Kalimat narasi gerakan tunggal: *menyentuh tanganmu* (tanpa [ atau ().
-  //
-  // BUG YANG DIPERBAIKI (temuan audit v0.79, direproduksi nyata):
-  // versi sebelumnya `\*[a-z][^*\n]{0,80}\*` menghapus SEMUA teks di antara asterisk
-  // TANPA memeriksa apakah isinya narasi akting. Akibatnya kata bermakna ikut hilang:
-  //   "*penting* banget"        -> "Banget"     (kata "penting" HILANG)
-  //   "**penting**"             -> ""           (seluruh balasan HILANG)
-  //   "Ini *rahasia* lho"       -> "Ini lho"    (kata "rahasia" HILANG)
-  //   "Coba baca *buku* itu"    -> "Coba baca itu"
-  // Ini merusak makna balasan bot pada percakapan biasa (penekanan dengan asterisk
-  // adalah gaya umum di WhatsApp). Sekarang hanya dibuang bila isinya BENAR-BENAR
-  // narasi akting/gerakan (kata kerja orang pertama + kata tubuh/ekspresi), dan
-  // maksimal 40 karakter (narasi akting pendek; penekanan kata bisa lebih panjang).
-  out = out.replace(
-    /\*(?=[^*\n]{0,40}\*)(?=[^*\n]*(?:senyum|tersenyum|tertawa|tertawa|menatap|memandang|menghela|mengedip|melirik|mengangguk|menggeleng|merangkul|memegang|menyentuh|mengusap|berbisik|menghela|napas|duduk|berdiri|melompat|tersipu|terkejut|kaget|sedih|marah|takut|malu|bingung|goyang|ketawa|nangis|menangis|melambai|menunjuk|tersenyum)[^*\n]*\*)[^*\n]{0,40}\*/gi,
-    '',
-  );
+    // 1. Narasi akting / arahan panggung dalam tanda bintang — DILARANG (PRINSIP 4).
+    out = out.replace(/\*\s*\[[^\]]{0,120}\]\s*\*/g, '');          // *[tiba-tiba suara jadi serius]*
+    out = out.replace(/\*\s*\([^)]{0,120}\)\s*\*/g, '');            // *(menghela napas)*
+    out = out.replace(/\*\*\s*\([^)]{0,120}\)\s*\*\*/g, '');      // **(tersenyum)**
+    out = out.replace(
+      /\*(?=[^*\n]{0,40}\*)(?=[^*\n]*(?:senyum|tersenyum|tertawa|tertawa|menatap|memandang|menghela|mengedip|melirik|mengangguk|menggeleng|merangkul|memegang|menyentuh|mengusap|berbisik|menghela|napas|duduk|berdiri|melompat|tersipu|terkejut|kaget|sedih|marah|takut|malu|bingung|goyang|ketawa|nangis|menangis|melambai|menunjuk|tersenyum)[^*\n]*\*)[^*\n]{0,40}\*/gi,
+      '',
+    );
 
-  // 2. Klaim mendengar audio saat input bukan voice note — DILARANG (PRINSIP 4B).
-  //    Tidak bisa dideteksi dari output saja (butuh konteks input), jadi ditangani
-  //    di jalur pemanggil yang tahu jenis pesan (mediaReply/voice guard).
+    // 3. Tag internal yang lolos — SEMUA varian (jaring kedua setelah cleanMathAndNoise).
+    out = out.replace(/\[\[?\s*(?:jawab(?:an)?|sticker|stiker)\s*(?::[^\]]{0,120})?\s*\]\]?/gi, '');
+    // 3a. PLACEHOLDER LITERAL yang bocor ke user.
+    out = out.replace(/\[(?:misal|contoh|placeholder|isi|kartu|nama|topik|dst|dll)[^\]]{0,160}\]?/gi, '');
+    out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ');
+    // 3b. Sisa tanda baca menggantung setelah tag dibuang (hanya horizontal, jangan sentuh \n).
+    out = out.replace(/[ \t]+([.,!?;:])/g, '$1');
+    out = out.replace(/(^|[.!?][ \t]+)[,;:]\s+/g, '$1');
+    out = out.replace(/^[ \t]*[,;:][ \t]*/, '');
+    out = out.replace(/\s*["'`«»]+\s*(?:saja|aja|doang)?\s*[.!?]*\s*$/gi, '').trim();
+    out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ');
 
-  // 3. Tag internal yang lolos — SEMUA varian (jaring kedua setelah cleanMathAndNoise).
-  //    Temuan produksi: "[sticker:]" (kurung satu, tanpa emoji) lolos ke user.
-  out = out.replace(/\[\[?\s*(?:jawab(?:an)?|sticker|stiker)\s*(?::[^\]]{0,120})?\s*\]\]?/gi, '');
-  // 3a. PLACEHOLDER LITERAL yang bocor ke user (temuan CSV evaluasi 05 Okt 2026).
-  //     Model menulis RENCANA kalimat, bukan kalimatnya:
-  //       "aku taruh [misal: kartu kuning angka 5]. Sekarang giliran kamu!"
-  //     Placeholder semacam ini terlihat ngawur bagi user — harus dibuang.
-  out = out.replace(/\[(?:misal|contoh|placeholder|isi|kartu|nama|topik|dst|dll)[^\]]{0,160}\]?/gi, '');
-  out = out.replace(/\s{2,}/g, ' ');
-  // 3b. Sisa tanda baca menggantung setelah tag dibuang: " ." / " ," / ", Eh" di awal.
-  out = out.replace(/\s+([.,!?;:])/g, '$1');           // spasi sebelum tanda baca
-  // Koma menggantung setelah titik — HANYA bila ada spasi antara keduanya (sampah
-  // ". , sisa"). Versi lama `[.!?]\s*` membuat spasi opsional sehingga menelan koma
-  // yang SAH dalam sitasi akademik: "et al., 2012" -> "et al.2012", "(Breiman, 2001)"
-  // -> rusak. Temuan uji E2E 26 Sep saat bot menjawab 3 jurnal ber-DOI.
-  // Sekarang wajib ada spasi minimal 1: ". ," dibersihkan, "., 2012" dipertahankan.
-  out = out.replace(/(^|[.!?]\s+)[,;:]\s+/g, '$1');     // koma menggantung setelah titik
-  out = out.replace(/^\s*[,;:]\s*/, '');               // koma di awal balasan
-  // Fragmen kutipan/markup menggantung di akhir balasan. Temuan produksi 20 Sep 19:38
-  // (balasan reset): 'Sesi udah di-reset, siap lanjut lagi. " saja.' — sisa potongan
-  // yang tidak bermakna. Buang fragmen pendek berisi kutipan/tanda baca nyasar di akhir.
-  out = out.replace(/\s*["'`«»]+\s*(?:saja|aja|doang)?\s*[.!?]*\s*$/gi, '').trim();
-  // BUG YANG DIPERBAIKI (temuan audit v0.79): `\s{2,}` mencakup NEWLINE, sehingga
-  // semua jeda paragraf (\n\n) diganti spasi dan balasan jadi satu blok. Terbukti:
-  //   "Kabar baik buat kamu.\n\nBanyak yang bilang ini susah." -> satu baris.
-  // Diganti [ \t]{2,} yang hanya merapikan spasi/tab horizontal, bukan baris baru.
-  out = out.replace(/[ \t]{2,}/g, ' ');
+    // 4. Rapikan sisa spasi/newline berlebih akibat pemotongan di atas.
+    out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/\n{3,}/g, '\n\n').trim();
 
-  // 4. Rapikan sisa spasi/newline berlebih akibat pemotongan di atas.
-  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    // 5. Pembuka robotik yang dilarang (berlaku semua model).
+    out = out.replace(
+      /\b(?:Gambar ini menampilkan|Foto ini menampilkan|Stiker ini menampilkan|Di dalam gambar ini (?:ada|terlihat)|Di dalam foto ini (?:ada|terlihat)|Di gambarnya (?:ada|terlihat)|Pada gambar ini (?:ada|terlihat))\s*/gi,
+      '',
+    );
+    out = out.replace(/^([a-z])/, (m) => m.toUpperCase());
 
-  // 5. Pembuka robotik yang dilarang (berlaku semua model).
-  //    Hanya buang FRASA pembukanya — sisa kalimat tetap utuh agar konteks tidak hilang.
-  out = out.replace(
-    /\b(?:Gambar ini menampilkan|Foto ini menampilkan|Stiker ini menampilkan|Di dalam gambar ini (?:ada|terlihat)|Di dalam foto ini (?:ada|terlihat)|Di gambarnya (?:ada|terlihat)|Pada gambar ini (?:ada|terlihat))\s*/gi,
-    '',
-  );
-  // Kapitalkan ulang awal kalimat bila frasa pembuka tadi berada di awal.
-  out = out.replace(/^([a-z])/, (m) => m.toUpperCase());
+    // 6. CATATAN META DALAM KURUNG
+    out = out.replace(
+      /\(\s*(?:Jawaban|Menjawab|Mengakui|Menyapa|Menyindir|Respons|Respon|Balasan|Sedikit|Agak|Terlihat|Nampak|Tampak|Sesuai|Sambil)\b[^)\n]{0,160}\)?/gi,
+      '',
+    );
+    out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/[ \t]+([.,!?;:])/g, '$1').replace(/([^\n \t])[ \t]{2,}/g, '$1 ').trim();
 
-  // 6. CATATAN META DALAM KURUNG (temuan produksi, model Dahl/DeepSeek):
-  //    "(Jawaban santai, sesuai sapaan singkat. )" — model menuliskan alasan/deskripsi
-  //    gaya jawabannya sendiri sebagai catatan. Terlihat "aneh/ngawur" bagi user dan
-  //    bukan bagian percakapan. Dua varian terbukti di produksi:
-  //      tertutup   : "(Menjawab dengan santai dan langsung ke inti. )"
-  //      TIDAK tutup: "(Mengakui kesalahan dengan santai dan sedikit humor."  <- v34
-  //    Karena itu kurung penutup dibuat OPSIONAL. Dibuang hanya bila ISI kurung memang
-  //    meta-komentar tentang cara menjawab (bukan percakapan nyata seperti "(ketawa)").
-  out = out.replace(
-    /\(\s*(?:Jawaban|Menjawab|Mengakui|Menyapa|Menyindir|Respons|Respon|Balasan|Sedikit|Agak|Terlihat|Nampak|Tampak|Sesuai|Sambil)\b[^)\n]{0,160}\)?/gi,
-    '',
-  );
-  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim();
+    // 7. CATATAN META DALAM KURUNG SIKU
+    out = out.replace(/\[\s*(?:note|catatan|keterangan|penjelasan|info|alasan)\s*:[^\]]{0,400}\]?/gi, '');
+    out = out.replace(/([^\n \t])[ \t]{2,}/g, '$1 ').replace(/[ \t]+([.,!?;:])/g, '$1').replace(/([^\n \t])[ \t]{2,}/g, '$1 ').trim();
 
-  // 7. CATATAN META DALAM KURUNG SIKU (temuan uji live 20 Sep, model Dahl/DeepSeek):
-  //    "[note: Ini versi paling singkat dan santai sesuai permintaanmu...]" — model
-  //    menjelaskan alasannya sendiri memakai tag catatan. Sama seperti tag stiker,
-  //    ini BUKAN bagian percakapan. Dihapus SEMUA varian (note/catatan/info/keterangan).
-  out = out.replace(/\[\s*(?:note|catatan|keterangan|penjelasan|info|alasan)\s*:[^\]]{0,400}\]?/gi, '');
-  out = out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim();
+    // 8. MODE PROFESIONAL
+    if (isProfessionalContext) {
+      out = out.replace(/\p{Extended_Pictographic}/gu, '');
+      out = out.replace(/\b(?:wkwk+|kwkwk+|wk+w+k+|haha+|hehe+|hihi+|ngakak+|xixi+)\b/gi, '');
+      out = out.replace(/\b(?:njir|anjir|anjay|bjir|jir|cuy|cuys|gass+|gasss|wlee|wle)\b/gi, '');
+      out = out
+        .replace(/([^\n \t])[ \t]{2,}/g, '$1 ')
+        .replace(/[ \t]+([.,!?;:])/g, '$1')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
 
-  // 8. MODE PROFESIONAL (permintaan pemilik produk 24 Sep 2026).
-  //    Bot ini bukan hanya untuk bercanda — bisa dipakai di lingkungan kerja.
-  //    Guard ini WAJIB ada di kode, bukan hanya prompt: pada rantai failover model
-  //    berganti setiap pesan, jadi aturan prompt saja tidak cukup (terbukti berulang
-  //    pada kasus stiker, riddle, dan search grounding).
-  //
-  //    Yang dibersihkan saat konteks profesional:
-  //      a. stiker (tag [[sticker:...]] sudah dibuang di atas, ini jaring kedua),
-  //      b. emoji (dihapus total — tidak pantas di balasan kerja),
-  //      c. kata tawa (wkwk/haha/hehe/ngakak) dan sapaan gaul (njir/bjir/cuy/gas).
-  //    Yang TIDAK dibersihkan: isi jawaban, angka, istilah teknis, nama orang.
-  //    Pembersihan bersifat DELETIF (tidak pernah menyuntikkan kalimat pengganti)
-  //    supaya aturan "zero hardcode" tetap dipegang.
-  if (isProfessionalContext) {
-    // Emoji: hanya emoji ekspresi yang dibuang; simbol teknis (®/™/°/%/±) tidak.
-    out = out.replace(/\p{Extended_Pictographic}/gu, '');
-    // Kata tawa & sapaan gaul — batas kata agar tidak memotong kata sah
-    // (mis. "hahaha" di dalam kutipan tetap dibuang, tapi "haha" sebagai bagian
-    //  nama produk tidak ada; ini daftar tertutup yang aman).
-    out = out.replace(/\b(?:wkwk+|kwkwk+|wk+w+k+|haha+|hehe+|hihi+|ngakak+|xixi+)\b/gi, '');
-    out = out.replace(/\b(?:njir|anjir|anjay|bjir|jir|cuy|cuys|gass+|gasss|wlee|wle)\b/gi, '');
-    // Tanda baca & spasi menggantung setelah pembersihan.
-    out = out
-      .replace(/[ \t]{2,}/g, ' ')
-      .replace(/\s+([.,!?;:])/g, '$1')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-  }
-
-  return out;
+    return out;
+  });
 }
 
 /**
@@ -2147,20 +2433,17 @@ function enforceUniversalRules(text: string, isProfessionalContext = false): str
  */
 function scrubInventedJargon(text: string, userPrompt?: string): string {
   if (!text) return text;
-  // Sinyal KONTEKS KODE yang kuat di pesan user. Kata "ngetik" TIDAK dimasukkan:
-  // user bisa menulis "ngetik apa sih kamu" (santai, artinya "sedang mengetik apa")
-  // dan itu bukan pembahasan kode — temuan nyata v34.
   const codeContextRe = /\b(?:kode|coding|ngoding|koding|program|aplikasi|error|bug|ngebug|debug|debugging|syntax|database|dikoreksi|typo|develop(?:er)?|script|fungsi|function|variable)\b/i;
   if (userPrompt && codeContextRe.test(userPrompt)) return text;
-  let out = text;
-  // Ganti dengan padanan sehari-hari yang maknanya sama (bukan menghapus kalimat).
-  out = out.replace(/\byang\s+ngoding(?:in)?\s+(?:aku|gue|gw|saya)\b/gi, 'yang bikin aku');
-  out = out.replace(/\bngoding(?:in)?\s+(?:aku|gue|gw|saya)\b/gi, 'bikin aku');
-  out = out.replace(/\byang\s+(?:bikin|buat)\s+kode\s+(?:aku|gue|gw|saya)\b/gi, 'yang bikin aku');
-  // Kolaps pengulangan frasa hasil penggantian: "yang bikin aku, yang bikin aku ada"
-  out = out.replace(/\byang bikin aku\b[,\s]+(?=yang bikin aku\b)/gi, '');
-  let hasilAkhir = buangAjakanGameLama(out.replace(/[ \t]{2,}/g, ' ').trim());
-  return hasilAkhir;
+  const out = withProtectedCodeBlocks(text, (safe) => {
+    let cur = safe;
+    cur = cur.replace(/\byang\s+ngoding(?:in)?\s+(?:aku|gue|gw|saya)\b/gi, 'yang bikin aku');
+    cur = cur.replace(/\bngoding(?:in)?\s+(?:aku|gue|gw|saya)\b/gi, 'bikin aku');
+    cur = cur.replace(/\byang\s+(?:bikin|buat)\s+kode\s+(?:aku|gue|gw|saya)\b/gi, 'yang bikin aku');
+    cur = cur.replace(/\byang bikin aku\b[,\s]+(?=yang bikin aku\b)/gi, '');
+    return cur.replace(/([^\n \t])[ \t]{2,}/g, '$1 ').trim();
+  });
+  return buangAjakanGameLama(out);
 }
 
 /**
@@ -2178,8 +2461,8 @@ function scrubInventedJargon(text: string, userPrompt?: string): string {
 function dedupeSentences(text: string): string {
   if (!text || typeof text !== 'string') return text;
   // Jangan sentuh balasan panjang (penjelasan teknis bisa punya kalimat mirip yang sah)
-  // atau yang memuat blok kode / daftar.
-  if (text.length > 700 || /```|\n\s*[-*\d]/.test(text)) return text;
+  // atau yang memuat blok kode / daftar / heading / kutipan.
+  if (text.length > 700 || /```|\n[ \t]*(?:[-*•>]|\d+[.)]\s)|^\*[^*\n]+\*:?[ \t]*$/m.test(text)) return text;
 
   // LINDUNGI URL/DOMAIN/EMAIL SEBELUM PEMECAHAN KALIMAT (temuan produksi v0.79.7).
   //
@@ -2299,15 +2582,16 @@ function dedupeSentences(text: string): string {
       result = kept[i];
       continue;
     }
-    // Cek pemisah asli antara kalimat ke-i-1 dan ke-i pada teks sumber.
+    // Cek pemisah asli antara kalimat ke-i-1 dan ke-i pada teks sumber (pertahankan \n\n maupun \n).
     const prevEnd = shielded.indexOf(kept[i - 1]);
     const curStart = shielded.indexOf(kept[i], prevEnd + kept[i - 1].length);
     const gap = prevEnd >= 0 && curStart > prevEnd ? shielded.slice(prevEnd + kept[i - 1].length, curStart) : ' ';
-    result += (/\n\s*\n/.test(gap) ? '\n\n' : ' ') + kept[i];
+    const sep = /\n\s*\n/.test(gap) ? '\n\n' : /\n/.test(gap) ? '\n' : ' ';
+    result += sep + kept[i];
   }
   // Kembalikan URL/domain/email yang dilindungi di awal.
   const restored = result.replace(/\u0001(\d+)\u0001/g, (_m, idx) => protectedParts[Number(idx)] ?? '');
-  return restored.replace(/[ \t]{2,}/g, ' ').trim();
+  return restored.replace(/([^\n \t])[ \t]{2,}/g, '$1 ').trim();
 }
 
 /**
@@ -2386,8 +2670,8 @@ const POLA_PROFESIONAL = new RegExp(
     '\\b(?:laporan|proposal|kontrak|invoice|faktur|surat resmi|notulen|rapat|meeting|presentasi|deadline|tenggat|sop|prosedur kerja|kebijakan perusahaan)\\b',
     // ranah pengetahuan formal
     '\\b(?:hukum|legalitas|pajak|perpajakan|akuntansi|audit|investasi|saham|keuangan perusahaan|analisis pasar|strategi bisnis|manajemen|sumber daya manusia|\\bSDM\\b|\\bHRD\\b)\\b',
-    // medis & teknis formal
-    '\\b(?:diagnosis|resep|dosis|pasien|medis|klinis|regulasi|sertifikasi|standar industri|iso \\d+|safety|keselamatan kerja|\\bK3\\b)\\b',
+    // medis & teknis formal ("resep" hanya untuk resep dokter/obat/medis, bukan resep masakan)
+    '\\b(?:diagnosis|resep\\s+(?:dokter|obat|medis)|dosis|pasien|medis|klinis|regulasi|sertifikasi|standar industri|iso \\d+|safety|keselamatan kerja|\\bK3\\b)\\b',
     // permintaan eksplisit bersikap profesional
     '\\b(?:secara profesional|profesional|formal|resmi|serius|seriusan|jangan bercanda|tanpa candaan|untuk pekerjaan|buat kerjaan|dipakai di kantor)\\b',
   ].join('|'),
@@ -2741,7 +3025,7 @@ export function systemPrompt(
     '- RESPON STIKER: HANYA 1 kalimat pendek santai (maksimal 5-12 kata) sesuai emosi/makna stiker di WhatsApp. DILARANG dongeng fiktif, dilarang deskripsi visual ("Stiker ini menampilkan...").',
     '- RESPON FOTO / MEDIA VISUAL: Dilarang pembuka robotik ("Gambar ini menampilkan..."). Langsung to-the-point jika pertanyaan teknis/koding, atau komentar hangat 1-2 kalimat jika foto santai. Dilarang membahas hardware fisik di luar layar kecuali ditanyakan.',
     '- RESPON DOKUMEN & VIDEO: Persona teman diskusi cerdas yang sudah membaca/menonton isinya, lalu sampaikan intinya secara ringkas dan nyaman dibaca di HP (tanpa kalimat template hafalan).',
-    '- FORMAT TAMPILAN PESAN: Nyaman dibaca cepat di HP. Gunakan format teks standar (*teks tebal*, kode di ```code```, tanda hubung - untuk poin). DILARANG heading markdown pagar (#).',
+    '- FORMAT & KERAPIAN TAMPILAN PESAN (WAJIB): Nyaman dibaca cepat di HP. Obrolan pendek tetap santai tanpa daftar, sedangkan daftar, resep, langkah, perbandingan, atau penjelasan panjang WAJIB dirapikan: jangan menumpuk poin/langkah ke dalam satu paragraf. Pakai baris baru dan jeda baris kosong antar bagian; judul bagian tebal (*Judul Bagian:*); satu baris satu butir (- item) atau langkah bernomor (1. langkah); paragraf panjang dipisah tiap 2-3 kalimat. Pakai *tebal*, _miring_, dan ```kode```. DILARANG heading #, garis ---, atau tabel pipa |...| (jadikan poin rapi).',
     '- PENGGUNAAN EMOJI (MINIMAL & SESUAI KONTEKS): Emoji TIDAK 100% dilarang, namun gunakan seminimal mungkin (maksimal 1 emoji wajar yang pas) HANYA jika situasi dan konteks chat memang tepat untuk menghidupkan ekspresi/emosi. Jangan diobral di setiap pesan, dan dilarang emoji robot (🤖). Sampaikan esensi jawaban secara padat dan bernas.',
     ...(!isBaileysChatKey(ctx?.chatId)
       ? [
@@ -4611,7 +4895,8 @@ export async function autoReply(
           .filter((kal) => kal.trim() && !ledekRe.test(kal))
           .join(' ')
           .replace(emojiNyindir, '')
-          .replace(/\s{2,}/g, ' ')
+          .replace(/[ \t]{2,}/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
           .trim();
         if (sisa.length >= 8) {
           reply = sisa;
@@ -4638,7 +4923,8 @@ export async function autoReply(
           .split(/(?<=[.!?])\s+|\n+/)
           .filter((kal) => kal.trim() && !usirRe.test(kal))
           .join(' ')
-          .replace(/\s{2,}/g, ' ')
+          .replace(/[ \t]{2,}/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
           .trim();
         // Bila seluruh balasan cuma kalimat mengusir -> kosongkan agar diregenerasi.
         reply = sisa.length >= 10 ? sisa : '';
