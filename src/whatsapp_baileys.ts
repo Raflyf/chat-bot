@@ -852,6 +852,10 @@ export async function startWhatsApp(): Promise<void> {
           console.log(
             '[whatsapp] Koneksi diambil alih oleh instance lain (status 440 / connectionReplaced). Menahan reconnect otomatis agar tidak bentrok dengan VPS/instance aktif.',
           );
+          if (process.argv.includes('--from-watchdog')) {
+            console.log('[whatsapp] Keluar dari proses backup lokal (--from-watchdog) karena VPS utama sudah mengambil alih.');
+            process.exit(0);
+          }
         }
       } else if (shouldReconnect) {
         // ── PERBAIKAN AUDIT 14 Okt 2026 ──
@@ -2203,7 +2207,8 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
 
 // Jika dijalankan langsung sebagai entrypoint file
 if (process.argv[1] && process.argv[1].includes('whatsapp_baileys')) {
-  const modeStandby = isStandbyBackupMode();
+  const fromWatchdog = process.argv.includes('--from-watchdog');
+  const modeStandby = !fromWatchdog && isStandbyBackupMode();
   let stopStandbyLoop: (() => void) | null = null;
   let stopVpsTimer = () => {};
 
@@ -2213,15 +2218,17 @@ if (process.argv[1] && process.argv[1].includes('whatsapp_baileys')) {
     });
   } else {
     void startWhatsApp();
-    stopVpsTimer = mulaiTimerPeringatanLokalVps({
-      kirimWaOwner: async (teks) => {
-        if (!activeSock || !config.ownerWaNumber) return false;
-        let digits = config.ownerWaNumber.replace(/\D/g, '');
-        if (digits.startsWith('0')) digits = '62' + digits.slice(1);
-        if (!/^\d{8,15}$/.test(digits)) return false;
-        return await sendWhatsAppMessageSafe(activeSock, `${digits}@s.whatsapp.net`, teks);
-      },
-    });
+    if (!fromWatchdog) {
+      stopVpsTimer = mulaiTimerPeringatanLokalVps({
+        kirimWaOwner: async (teks) => {
+          if (!activeSock || !config.ownerWaNumber) return false;
+          let digits = config.ownerWaNumber.replace(/\D/g, '');
+          if (digits.startsWith('0')) digits = '62' + digits.slice(1);
+          if (!/^\d{8,15}$/.test(digits)) return false;
+          return await sendWhatsAppMessageSafe(activeSock, `${digits}@s.whatsapp.net`, teks);
+        },
+      });
+    }
   }
 
   let stopping = false;
@@ -2240,7 +2247,7 @@ if (process.argv[1] && process.argv[1].includes('whatsapp_baileys')) {
     ]);
     const tasks: Array<Promise<unknown>> = [syncSafe];
     // Hanya laporkan [VPS MATI] bila proses yang berhenti adalah Primary VPS, bukan backup di laptop.
-    if (!modeStandby) {
+    if (!modeStandby && !fromWatchdog) {
       tasks.push(laporShutdownVps(signal));
     }
     void Promise.allSettled(tasks).finally(() => {
@@ -2249,4 +2256,17 @@ if (process.argv[1] && process.argv[1].includes('whatsapp_baileys')) {
   };
   process.on('SIGINT', () => stop('SIGINT'));
   process.on('SIGTERM', () => stop('SIGTERM'));
+
+  if (fromWatchdog) {
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk: string) => {
+      if (/\b(?:YIELD|STOP)\b/i.test(String(chunk))) {
+        stop('WATCHDOG_YIELD');
+      }
+    });
+    process.stdin.on('end', () => {
+      stop('WATCHDOG_STDIN_EOF');
+    });
+    process.stdin.resume();
+  }
 }

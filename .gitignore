@@ -33,7 +33,9 @@ __pycache__/
 *.pyc
 
 # Graf graphify: artefak lokal besar, hasilnya diringkas di CODEBASE_MAP.md
- graphify-out/
+graphify-out/
+tools/wa-standby-watchdog/target/
+bin/
 
 # === Pencegahan sampah (ditambahkan 25 Sep) ===
 # Backup files
