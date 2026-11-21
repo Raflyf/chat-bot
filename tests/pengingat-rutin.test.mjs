@@ -74,3 +74,31 @@ test('delivery: format pengingat lugas tanpa basa-basi AI (cukup "⏰ Pengingat:
   assert.ok(!code.includes('TUGAS: Kamu sedang MENGIRIM PENGINGAT'), 'prompt LLM pengingat harus dihapus');
   assert.match(code, /⏰ Pengingat: \$\{p\}/);
 });
+
+test('hapus: sinonim "peringatan" dan kata kerja "matikan" terdeteksi sebagai batal dengan target tepat', () => {
+  for (const t of ['hapus peringatan ON', 'matikan pengingat ON']) {
+    const p = deteksiPermintaanUbah(t);
+    assert.ok(p, `"${t}" harus terdeteksi`);
+    assert.equal(p.aksi, 'batal', `"${t}" harus aksi=batal`);
+    assert.equal(p.kataKunci, 'on', `"${t}" kataKunci harus 'on'`);
+  }
+});
+
+test('pilihSemuaTargetBatal menghapus seluruh pengingat duplikat bernama sama sekaligus dan mendukung "hapus semua pengingat"', async () => {
+  const { pilihSemuaTargetBatal } = await import('../src/reminder-ubah.js');
+  const daftar = [
+    { id: 101, message: 'ON\u200B', due_at: '2026-11-21T03:26:00Z', status: 'pending' },
+    { id: 102, message: 'ON\u200B', due_at: '2026-11-21T03:39:00Z', status: 'pending' },
+    { id: 103, message: 'bangun', due_at: '2026-11-21T23:00:00Z', status: 'pending' },
+  ];
+
+  const pOn = deteksiPermintaanUbah('hapus peringatan ON');
+  assert.ok(pOn);
+  const targetsOn = pilihSemuaTargetBatal(pOn, daftar);
+  assert.deepEqual(targetsOn.map((x) => x.id), [101, 102], 'kedua pengingat ON harus terhapus tanpa menyentuh bangun');
+
+  const pAll = deteksiPermintaanUbah('hapus semua pengingat');
+  assert.ok(pAll);
+  const targetsAll = pilihSemuaTargetBatal(pAll, daftar);
+  assert.deepEqual(targetsAll.map((x) => x.id), [101, 102, 103], '"hapus semua pengingat" harus mengembalikan seluruh daftar');
+});

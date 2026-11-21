@@ -31,7 +31,7 @@ import { resolveTableName, hasDedicatedGroupTables } from './group_db.js';
 import { PERINTAH_BERARGUMEN, petunjukPemakaian } from './commands.js';
 import { formatInZone } from './timezone.js';
 import { tanganiGame } from './games/index.js';
-import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
+import { deteksiPermintaanUbah, daftarPengingatPending, pilihTarget, pilihSemuaTargetBatal, ubahPengingat, batalkanPengingat } from './reminder-ubah.js';
 import { ambilProfilWaktu, getCacheProfil, butuhLokasiAtauWaktu, tentukanProfilWaktu, berkaitanDenganWaktu, waktuDiZona } from './user-profile.js';
 import { detectUserLocationDeclaration } from './timezone.js';
 import { deteksiPengulangan, labelUlang, type RepeatKind } from './reminder-repeat.js';
@@ -3446,16 +3446,38 @@ export async function tanganiPencatatan(
 
       const target = pilihTarget(permintaan, daftar);
 
-      // BATAL -> batalkan pengingat yang dituju.
+      // BATAL -> batalkan seluruh pengingat target (termasuk duplikat bernama sama / hapus semua).
       if (permintaan.aksi === 'batal') {
-        if (target) {
-          const okBatal = await batalkanPengingat(target.id, chatId);
-          const cleanNama = target.message.replace(/[\u200B\u200C]/g, '');
+        const targets = pilihSemuaTargetBatal(permintaan, daftar);
+        if (targets.length > 0) {
+          const results = await Promise.all(targets.map((t) => batalkanPengingat(t.id, chatId)));
+          const deleted = targets.filter((_, idx) => results[idx]);
+          const berhasil = deleted.length;
+          if (berhasil === 0) {
+            return {
+              ditangani: true,
+              reply: '⚠️ Gagal membatalkan pengingat. Coba lagi ya.',
+              jalur: 'ubah-batal',
+            };
+          }
+          if (berhasil === 1) {
+            const cleanNama = deleted[0].message.replace(/[\u200B\u200C]/g, '');
+            return {
+              ditangani: true,
+              reply: `🗑️ Pengingat "${cleanNama}" (${formatWaktuUser(new Date(deleted[0].due_at))}) sudah dibatalkan.`,
+              jalur: 'ubah-batal',
+            };
+          }
+          const namaUnik = new Set(
+            deleted.map((t) => t.message.replace(/[\u200B\u200C]/g, '').trim().toLowerCase()),
+          );
+          const cleanNamaPertama = deleted[0].message.replace(/[\u200B\u200C]/g, '').trim();
           return {
             ditangani: true,
-            reply: okBatal
-              ? `🗑️ Pengingat "${cleanNama}" (${formatWaktuUser(new Date(target.due_at))}) sudah dibatalkan.`
-              : '⚠️ Gagal membatalkan pengingat. Coba lagi ya.',
+            reply:
+              namaUnik.size === 1
+                ? `🗑️ ${berhasil} pengingat "${cleanNamaPertama}" sudah dibatalkan sekaligus.`
+                : `🗑️ Semua pengingat (${berhasil} pengingat) sudah dibatalkan.`,
             jalur: 'ubah-batal',
           };
         }

@@ -116,6 +116,23 @@ export async function simpanReminderCerdas(
       if (skor > skorTerbaik) { skorTerbaik = skor; palingMirip = r; }
     }
 
+    // 2b. Khusus pengingat interval (mis. "setiap 25 menit ON"): due_at baru bisa terpaut > 5 menit
+    //     dari pengingat interval pending yang sudah ada. Cari ulang semua interval_minutes pending
+    //     agar pengingat interval bernama sama memperbarui yang lama, bukan menjadi ganda.
+    if (skorTerbaik < AMBANG_MIRIP && ulang?.repeat_kind === 'interval_minutes') {
+      const { data: intervalRows } = await c.from(remTbl)
+        .select('id, message, due_at')
+        .eq('chat_id', chatId)
+        .eq('status', 'pending')
+        .eq('repeat_kind', 'interval_minutes')
+        .limit(20);
+      for (const r of (intervalRows ?? []) as Array<{ id: number; message: string }>) {
+        const cleanOld = bersihkanTeksPengingat(r.message);
+        const skor = kemiripanPesan(cleanNew, cleanOld);
+        if (skor > skorTerbaik) { skorTerbaik = skor; palingMirip = r; }
+      }
+    }
+
     // 3. Sangat mirip / mirip -> PERBARUI (anti-dobel).
     if (palingMirip && skorTerbaik >= AMBANG_MIRIP) {
       // Pilih pesan yang lebih INFORMATIF (lebih panjang) agar tidak kehilangan detail.

@@ -41,6 +41,8 @@ export interface PermintaanUbah {
   kataKunci: string | null;
   /** Teks asli user (untuk mencocokkan nama pengingat yang disebut utuh, mis. "menit ON"). */
   teksAsli?: string;
+  /** True bila user meminta pembatalan/penghapusan massal ("semua", "seluruh"). */
+  semua?: boolean;
 }
 
 /** Ambil pengingat pending milik chat. */
@@ -90,7 +92,7 @@ export async function batalkanPengingat(id: number, chatId?: string): Promise<bo
   if (!c) return false;
   try {
     const remTbl = await resolveTableName('reminders', chatId);
-    const { error } = await c.from(remTbl).delete().eq('id', id).eq('status', 'pending');
+    const { error } = await c.from(remTbl).delete().eq('id', id).in('status', ['pending', 'processing']);
     return !error;
   } catch {
     return false;
@@ -119,11 +121,13 @@ export function deteksiPermintaanUbah(teks: string): PermintaanUbah | null {
   // (pengingat|reminder|jadwal|rutin|alarm|timer|jadwalnya).
   const adaBatal =
     /\b(?:batal(?:kan|in)?|dibatalkan|cancel)\b/.test(s) ||
-    /\b(?:hapus|buang|hilangkan|delete|remove)\s*(?:semua\s+)?(?:pengingat|reminder|jadwal|rutin|alarm|timer|jadwalnya|pengingatnya)\b/.test(s) ||
+    /\b(?:hapus(?:in|kan)?|buang|hilangkan|delete|remove|mati(?:kan|in)|stop|hentikan|nonaktifkan)\s*(?:semua\s+)?(?:pengingat|reminder|jadwal|rutin|alarm|timer|peringatan|jadwalnya|pengingatnya|peringatannya)\b/.test(s) ||
     // "hapus jadwal rutin" / "hapus pengingat untuk bangun" (objek di TENGAH).
-    /\b(?:hapus|buang|hilangkan|delete)\b[\w\s]{0,20}\b(?:pengingat|reminder|jadwal|rutin|alarm|timer)\b/.test(s);
+    /\b(?:hapus(?:in|kan)?|buang|hilangkan|delete|mati(?:kan|in)|stop|hentikan|nonaktifkan)\b[\w\s]{0,20}\b(?:pengingat|reminder|jadwal|rutin|alarm|timer|peringatan)\b/.test(s);
 
   if (!adaUndur && !adaMajukan && !adaGeser && !adaBatal) return null;
+
+  const semua = /\b(?:semua|seluruh|smua|all)\b/.test(s);
 
   // Ambil kata kunci target (kata bermakna terpanjang, biasanya nama acara).
   const kataKunci = ambilKataKunciTarget(asli);
@@ -144,7 +148,7 @@ export function deteksiPermintaanUbah(teks: string): PermintaanUbah | null {
 
   const aksi: AksiUbah = adaBatal ? 'batal' : adaMajukan ? 'majukan' : adaUndur ? 'undur' : 'geser';
 
-  return { aksi, target: null, waktuBaru, selisihMenit, kataKunci, teksAsli: asli };
+  return { aksi, target: null, waktuBaru, selisihMenit, kataKunci, teksAsli: asli, semua };
 }
 
 /** Ambil kata kunci target dari pesan (kata bermakna, bukan kata perintah). */
@@ -159,7 +163,10 @@ function ambilKataKunciTarget(teks: string): string | null {
     // Kata perintah hapus (BUG 20 Nov 2026: "hapus" jadi kata kunci -> tidak cocok
     // dengan pengingat mana pun -> jatuh ke pengingat paling awal ("bangun") dan terhapus).
     'hapus', 'hapusin', 'hapuskan', 'dihapus', 'buang', 'hilangkan', 'delete', 'remove',
-    'semua', 'pengingatnya', 'jadwalnya', 'rutin', 'alarm', 'timer', 'yg', 'deh', 'sih', 'lah',
+    'semua', 'seluruh', 'smua', 'all',
+    'pengingatnya', 'peringatan', 'peringatannya', 'jadwalnya', 'rutin', 'alarm', 'timer',
+    'matikan', 'matiin', 'stop', 'hentikan', 'nonaktifkan',
+    'yg', 'deh', 'sih', 'lah',
   ]);
   // Panjang minimal 2 agar nama pendek seperti "ON" atau "PR" tetap bisa jadi kata kunci.
   const kata = teks.toLowerCase()
@@ -258,4 +265,27 @@ export function pilihTarget(
   // 2. Tidak yakin: HAPUS tidak boleh menebak; aksi lain tetap pilih yang paling awal.
   if (permintaan.aksi === 'batal') return null;
   return daftar[0];
+}
+
+/**
+ * Pilih SEMUA pengingat target untuk pembatalan/penghapusan:
+ * - Bila user menyebut "semua"/"seluruh" tanpa target spesifik -> semua pengingat aktif.
+ * - Bila ada beberapa pengingat bernama persis sama (mis. pengingat interval ganda "ON")
+ *   -> kembalikan semuanya sekaligus agar sekali hapus bersih.
+ */
+export function pilihSemuaTargetBatal(
+  permintaan: PermintaanUbah,
+  daftar: PengingatRingkas[],
+): PengingatRingkas[] {
+  if (daftar.length === 0) return [];
+  if (permintaan.semua && !permintaan.kataKunci) {
+    return [...daftar];
+  }
+  const target = pilihTarget(permintaan, daftar);
+  if (!target) return [];
+  const targetNama = target.message.replace(/[\u200B\u200C]/g, '').trim().toLowerCase();
+  const samaNama = daftar.filter(
+    (r) => r.message.replace(/[\u200B\u200C]/g, '').trim().toLowerCase() === targetNama,
+  );
+  return samaNama.length > 0 ? samaNama : [target];
 }
