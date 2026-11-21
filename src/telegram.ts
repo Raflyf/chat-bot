@@ -20,7 +20,6 @@ import {
   touchGroupActivity,
   markGroupBotReply,
   isInFollowUpWindow,
-  clearFollowUpWindow,
   clearGroupRuntimeState,
   recordPassiveGroupMessage,
   consumePassiveGroupContext,
@@ -209,12 +208,9 @@ function simpanPasifGrupTg(
   senderName: string,
   textOrCaption: string,
   isNimbrung: boolean,
-  reason?: string,
-  actorId?: string,
+  _reason?: string,
+  _actorId?: string,
 ): void {
-  if (reason === 'followup_ended_by_filler_or_other' && actorId) {
-    clearFollowUpWindow(groupKey, actorId);
-  }
   if (isNimbrung) touchGroupActivity(groupKey);
   if (shouldRecord && textOrCaption.trim()) {
     recordPassiveGroupMessage(groupKey, senderName, textOrCaption);
@@ -259,7 +255,7 @@ async function tanganiPerintahModeGrupTg(
 
   const msgOk =
     command === 'nimbrung'
-      ? 'Siap, mode *NIMBRUNG AKTIF* di grup ini! Aku bakal ikut ngobrol dan otomatis kembali ke mode mention kalau grup sepi 30 menit. Ketik `/mention` atau bilang "berhenti nimbrung" kapan saja untuk berhenti.'
+      ? 'Siap, mode *NIMBRUNG AKTIF* di grup ini! Aku bakal ikut ngobrol untuk semua anggota dan otomatis kembali ke mode mention kalau grup sepi 1 jam. Ketik `/mention` atau bilang "berhenti nimbrung" kapan saja untuk berhenti.'
       : command === 'diam'
         ? 'Oke, mode *DIAM* aktif dan dikunci admin/owner. Aku tidak akan merespons pesan apa pun sampai admin/owner mengaktifkan `/mention` atau `/nimbrung` lagi.'
         : 'Oke, balik ke mode *MENTION*. Aku berhenti nimbrung dan hanya membalas kalau di-`@mention`, reply, `/namabot`, atau dipanggil (mis. "bot ...").';

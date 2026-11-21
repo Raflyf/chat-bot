@@ -195,21 +195,25 @@ test('nimbrung cerdas: skip basa-basi & @orang lain, jeda anti-spam 5 detik, aut
   assert.equal(revertedRec.mode, 'mention');
 });
 
-test('follow-up window 75 detik aktif setelah dipanggil dan berhenti pada penutup atau timeout', () => {
+test('follow-up window 5 menit dan nimbrung 1 jam berlaku untuk semua anggota grup', async () => {
   resetGroupModeUntukTest();
+  assert.equal(FOLLOW_UP_WINDOW_MS, 5 * 60 * 1000, 'follow-up window harus 5 menit');
+  assert.equal(NIMBRUNG_IDLE_TIMEOUT_MS, 60 * 60 * 1000, 'idle timeout nimbrung harus 1 jam');
+
   const gk = 'wa_g:fu01';
   const t0 = 1_700_000_000_000;
   markGroupBotReply(gk, '628111', t0, true);
 
   assert.equal(isInFollowUpWindow(gk, '628111', t0 + 10_000), true);
-  assert.equal(isInFollowUpWindow(gk, '628999', t0 + 10_000), false);
+  assert.equal(isInFollowUpWindow(gk, '628999', t0 + 60_000), true, 'anggota lain dalam grup yang sama harus ikut berada di follow-up window 5 menit');
   assert.equal(isInFollowUpWindow(gk, '628111', t0 + FOLLOW_UP_WINDOW_MS + 1), false);
+  assert.equal(isInFollowUpWindow(gk, '628999', t0 + FOLLOW_UP_WINDOW_MS + 1), false);
 
   markGroupBotReply(gk, '628111', t0, true);
   const cont = evaluasiResponGrup({
     mode: 'mention',
     text: 'terus kalau dibandingin sama kemarin gimana?',
-    actorId: '628111',
+    actorId: '628999',
     isMentioned: false,
     isReplyToBot: false,
     isTargetedCommand: false,
@@ -230,7 +234,14 @@ test('follow-up window 75 detik aktif setelah dipanggil dan berhenti pada penutu
     inFollowUpWindow: true,
   });
   assert.equal(closeByThanks.action, 'passive_ignore');
-  clearFollowUpWindow(gk, '628111');
+
+  // setGroupMode(gk, 'mention') dan clearFollowUpWindow(gk) membersihkan jendela grup
+  await setGroupMode(gk, 'mention', { actorId: '628111', nowMs: t0 });
+  assert.equal(isInFollowUpWindow(gk, '628999', t0 + 5_000), false);
+
+  markGroupBotReply(gk, '628111', t0, true);
+  assert.equal(isInFollowUpWindow(gk, '628999', t0 + 5_000), true);
+  clearFollowUpWindow(gk);
   assert.equal(isInFollowUpWindow(gk, '628111', t0 + 5_000), false);
 });
 

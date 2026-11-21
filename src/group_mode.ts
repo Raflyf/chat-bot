@@ -2,9 +2,9 @@
  * ENGINE MODE GRUP BERSAMA — WhatsApp Baileys & Telegram.
  *
  * Mengelola 3 mode per-grup:
- *   - 'mention' (default): balas saat @mention, reply pesan bot, kata panggil natural, atau follow-up 75 detik.
- *   - 'nimbrung'          : ikut nimbrung obrolan bermakna (skip 1 kata kosong & @orang lain, jeda anti-spam 5s),
- *                           dan otomatis kembali ke 'mention' bila grup sepi 30 menit.
+ *   - 'mention' (default): balas saat @mention, reply pesan bot, kata panggil natural, atau follow-up 5 menit (untuk semua anggota grup).
+ *   - 'nimbrung'          : ikut nimbrung obrolan bermakna (skip 1 kata basa-basi & @orang lain) untuk semua anggota grup,
+ *                           dan otomatis kembali ke 'mention' bila grup sepi 1 jam.
  *   - 'diam'              : senyap total di grup (dikunci oleh admin grup atau owner bot).
  *
  * Juga menyediakan passive listening buffer (15 pesan / TTL 30 menit per grup) agar bot nyambung saat dipanggil.
@@ -55,9 +55,9 @@ export interface GroupEvaluationResult {
 }
 
 export const GROUP_MODE_STATE_FILENAME = '__group_mode_state.json';
-export const NIMBRUNG_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+export const NIMBRUNG_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 export const NIMBRUNG_COOLDOWN_MS = 0;
-export const FOLLOW_UP_WINDOW_MS = 75_000;
+export const FOLLOW_UP_WINDOW_MS = 5 * 60 * 1000;
 export const PASSIVE_BUFFER_MAX = 15;
 export const PASSIVE_BUFFER_TTL_MS = 30 * 60 * 1000;
 
@@ -92,10 +92,6 @@ function defaultRecord(nowMs: number): GroupModeRecord {
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function followUpKey(groupKey: string, actorId: string): string {
-  return `${groupKey}::${actorId}`;
 }
 
 export function resetGroupModeUntukTest(): void {
@@ -294,10 +290,8 @@ export async function setGroupMode(
   };
   modeCache.set(groupKey, updated);
 
-  if (nextMode === 'diam') {
-    for (const k of Array.from(followUpMap.keys())) {
-      if (k.startsWith(`${groupKey}::`)) followUpMap.delete(k);
-    }
+  if (nextMode === 'diam' || nextMode === 'mention') {
+    followUpMap.delete(groupKey);
   }
   await persistModeStateToDb();
   return { ok: true, record: { ...updated } };
@@ -315,7 +309,7 @@ export function touchGroupActivity(groupKey: string, nowMs = Date.now()): void {
 
 export function markGroupBotReply(
   groupKey: string,
-  actorId?: string,
+  _actorId?: string,
   nowMs = Date.now(),
   setFollowUp = true,
 ): void {
@@ -323,8 +317,8 @@ export function markGroupBotReply(
   rec.lastBotReplyAt = nowMs;
   rec.lastGroupActivityAt = nowMs;
   modeCache.set(groupKey, rec);
-  if (setFollowUp && actorId) {
-    followUpMap.set(followUpKey(groupKey, actorId), nowMs + FOLLOW_UP_WINDOW_MS);
+  if (setFollowUp && groupKey) {
+    followUpMap.set(groupKey, nowMs + FOLLOW_UP_WINDOW_MS);
     if (followUpMap.size > 500) {
       for (const [k, exp] of followUpMap.entries()) {
         if (exp <= nowMs) followUpMap.delete(k);
@@ -335,35 +329,29 @@ export function markGroupBotReply(
 
 export function isInFollowUpWindow(
   groupKey: string,
-  actorId?: string,
+  _actorId?: string,
   nowMs = Date.now(),
 ): boolean {
-  if (!actorId) return false;
-  const k = followUpKey(groupKey, actorId);
-  const exp = followUpMap.get(k);
+  if (!groupKey) return false;
+  const exp = followUpMap.get(groupKey);
   if (!exp) return false;
   if (nowMs >= exp) {
-    followUpMap.delete(k);
+    followUpMap.delete(groupKey);
     return false;
   }
   return true;
 }
 
-export function clearFollowUpWindow(groupKey: string, actorId?: string): void {
-  if (!actorId) return;
-  followUpMap.delete(followUpKey(groupKey, actorId));
+export function clearFollowUpWindow(groupKey: string, _actorId?: string): void {
+  if (!groupKey) return;
+  followUpMap.delete(groupKey);
 }
 
 /** Bersihkan seluruh buffer pasif & jendela follow-up grup saat `/reset`. */
 export function clearGroupRuntimeState(groupKey: string): void {
   if (!groupKey) return;
   passiveBuffers.delete(groupKey);
-  const prefix = `${groupKey}:`;
-  for (const key of followUpMap.keys()) {
-    if (key.startsWith(prefix)) {
-      followUpMap.delete(key);
-    }
-  }
+  followUpMap.delete(groupKey);
 }
 
 export function recordPassiveGroupMessage(
@@ -717,10 +705,10 @@ export function evaluasiResponGrup(input: GroupEvaluationInput): GroupEvaluation
 export function formatStatusModeGrup(record: GroupModeRecord, nowMs = Date.now()): string {
   const label =
     record.mode === 'nimbrung'
-      ? '*NIMBRUNG AKTIF* (ikut ngobrol otomatis, auto-reset ke mention bila grup sepi 30 menit)'
+      ? '*NIMBRUNG AKTIF* (ikut ngobrol otomatis untuk semua anggota, auto-reset ke mention bila grup sepi 1 jam)'
       : record.mode === 'diam'
         ? '*DIAM* (senyap total — terkunci admin/owner)'
-        : '*MENTION* (membalas saat di-tag, reply, panggil "bot ...", atau follow-up 75 detik)';
+        : '*MENTION* (membalas saat di-tag, reply, panggil "bot ...", atau follow-up 5 menit untuk semua anggota grup)';
 
   const extra: string[] = [];
   if (record.mode === 'nimbrung' && record.lastGroupActivityAt > 0) {

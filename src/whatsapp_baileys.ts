@@ -35,7 +35,6 @@ import {
   touchGroupActivity,
   markGroupBotReply,
   isInFollowUpWindow,
-  clearFollowUpWindow,
   clearGroupRuntimeState,
   recordPassiveGroupMessage,
   consumePassiveGroupContext,
@@ -292,7 +291,7 @@ async function tanganiPerintahModeGrupWa(
 
   const msgOk =
     command === 'nimbrung'
-      ? 'Siap, mode *NIMBRUNG AKTIF* di grup ini! Aku bakal ikut ngobrol dan otomatis kembali ke mode mention kalau grup sepi 30 menit. Ketik `/mention` atau bilang "berhenti nimbrung" kapan saja untuk berhenti.'
+      ? 'Siap, mode *NIMBRUNG AKTIF* di grup ini! Aku bakal ikut ngobrol untuk semua anggota dan otomatis kembali ke mode mention kalau grup sepi 1 jam. Ketik `/mention` atau bilang "berhenti nimbrung" kapan saja untuk berhenti.'
       : command === 'diam'
         ? 'Oke, mode *DIAM* aktif dan dikunci admin/owner. Aku tidak akan merespons pesan apa pun sampai admin/owner mengaktifkan `/mention` atau `/nimbrung` lagi.'
         : 'Oke, balik ke mode *MENTION*. Aku berhenti nimbrung dan hanya membalas kalau di-`@mention`, di-reply, atau dipanggil (mis. "bot ...").';
@@ -869,9 +868,6 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     }
 
     if (groupEval.action === 'passive_ignore') {
-      if (groupEval.reason === 'followup_ended_by_filler_or_other') {
-        clearFollowUpWindow(groupKey, actorFollowKey);
-      }
       if (groupRec.mode === 'nimbrung') {
         touchGroupActivity(groupKey);
       }
