@@ -13,6 +13,15 @@ import crypto from 'crypto';
 import { db } from './db.js';
 import { config } from './env.js';
 import { parseInstaboxMachine, type InstaboxMachineSnapshot } from './vps_monitor.js';
+import {
+  bacaKeepaliveState,
+  defaultKeepaliveState,
+  getKeepaliveConfig,
+  jalankanKeepaliveVps,
+  setKeepaliveEnabled,
+  type KeepaliveSource,
+  type VpsKeepaliveState,
+} from './vps_keepalive.js';
 
 export const BAILEYS_BACKUP_CLOUD_FILENAME = '__baileys_backup_state.json';
 export const BAILEYS_BACKUP_DESKTOP_FILENAME = '__baileys_backup_desktop.json';
@@ -103,6 +112,34 @@ export interface BaileysBackupDesktopView {
   heartbeatAgeSecs: number | null;
 }
 
+export interface BaileysKeepaliveView {
+  enabled: boolean;
+  enabledUpdatedAt: number | null;
+  enabledUpdatedBy: KeepaliveSource | null;
+  lastPingAt: number | null;
+  lastPingOk: boolean;
+  lastPingLatencyMs: number | null;
+  lastPingSource: KeepaliveSource | null;
+  pingCount: number;
+  failCount: number;
+  consecutiveFailures: number;
+  lastError: string | null;
+  intervalSecs: number;
+  leaseTtlSecs: number;
+  leaseExpiresAt: number | null;
+  leaseRemainingSecs: number | null;
+  /** Detik sejak ping sukses terakhir (null = belum pernah). */
+  idleSecs: number | null;
+  /** Detik sampai pause otomatis bila tidak ada ping lagi (null = tak terlacak). */
+  pauseInSecs: number | null;
+  /** Detik sampai ping berikutnya (null bila nonaktif). */
+  nextPingInSecs: number | null;
+  idleWindowSecs: number;
+  idleWindowSource: 'live' | 'config';
+  /** true bila pause diperkirakan terjadi sebelum ping berikutnya. */
+  atRisk: boolean;
+}
+
 export interface BaileysBackupView {
   instaboxConfigured: boolean;
   liveFetchError: boolean;
@@ -112,12 +149,14 @@ export interface BaileysBackupView {
   machineId: string | null;
   runStartedAt: string | null;
   maxRunMinutes: number | null;
+  autoSuspendAfterSeconds: number | null;
   runtimeRemainingMinutes: number | null;
   autoResumeEnabled: boolean;
   autoResumeUpdatedAt: number;
   autoResumeUpdatedBy: BaileysBackupEventSource;
   cooldownUntilEpoch: number | null;
   cooldownRemainingSecs: number;
+  keepalive: BaileysKeepaliveView;
   desktopOnline: boolean;
   desktop: BaileysBackupDesktopView | null;
   lastCheckedAt: number | null;
@@ -142,6 +181,9 @@ export interface BaileysBackupDeps {
     desktop: BaileysBackupDesktopState | null;
   }>;
   writeCloudState?: (state: BaileysBackupCloudState) => Promise<void>;
+  /** Injeksi untuk unit test; default membaca `__vps_keepalive_state.json`. */
+  readKeepaliveState?: () => Promise<VpsKeepaliveState | null>;
+  writeKeepaliveState?: (state: VpsKeepaliveState) => Promise<void>;
 }
 
 let memCloudState: BaileysBackupCloudState | null = null;
@@ -749,6 +791,93 @@ function mergeEvents(
   return deduped;
 }
 
+/**
+ * Baca state keepalive untuk ditampilkan. Kegagalan baca tidak boleh
+ * menjatuhkan panel VPS — jatuh ke default (nonaktif/menunggu ping).
+ */
+async function readKeepaliveStateForView(
+  deps: BaileysBackupDeps = {},
+): Promise<VpsKeepaliveState> {
+  const readFn = deps.readKeepaliveState ?? bacaKeepaliveState;
+  try {
+    return (await readFn()) ?? defaultKeepaliveState();
+  } catch {
+    return defaultKeepaliveState();
+  }
+}
+
+/**
+ * Susun tampilan keepalive dari state durable + data mesin live.
+ * Angka pause dihitung dari jendela idle yang DILAPORKAN API
+ * (`autoSuspendAfterSeconds`), bukan asumsi lokal.
+ */
+export function buildKeepaliveView(
+  state: VpsKeepaliveState,
+  machine: InstaboxMachineSnapshot | null,
+  nowMs = Date.now(),
+): BaileysKeepaliveView {
+  const nowSecs = Math.floor(nowMs / 1000);
+  const { intervalSecs, leaseTtlSecs } = getKeepaliveConfig();
+  const liveWindow =
+    typeof machine?.autoSuspendAfterSeconds === 'number' &&
+    Number.isFinite(machine.autoSuspendAfterSeconds) &&
+    machine.autoSuspendAfterSeconds > 0
+      ? Math.floor(machine.autoSuspendAfterSeconds)
+      : null;
+  const idleWindowSecs = liveWindow ?? Math.max(60, Math.floor(config.vpsIdlePauseMinutes * 60));
+  const idleWindowSource: 'live' | 'config' = liveWindow ? 'live' : 'config';
+
+  const running = machine ? classifyVpsAvailability(machine.state) === 'running' : false;
+
+  const leaseExpiresAt = state.lease_expires_at;
+  const leaseRemainingSecs =
+    leaseExpiresAt && leaseExpiresAt > 0 ? Math.max(0, leaseExpiresAt - nowSecs) : null;
+
+  const idleSecs = state.last_ping_at ? Math.max(0, nowSecs - state.last_ping_at) : null;
+  const assumedNextPingAt = state.enabled ? (state.next_ping_at ?? nowSecs + intervalSecs) : null;
+  const nextPingInSecs = assumedNextPingAt ? Math.max(0, assumedNextPingAt - nowSecs) : null;
+
+  // Dokumentasi InstaBox: "Expiry starts a full idle period" — selama lease
+  // aktif mesin TIDAK dihitung idle; jendela idle baru mulai setelah lease
+  // kedaluwarsa. Bila tidak ada lease, ping sukses terakhir jadi titik awal.
+  const idleCountFrom =
+    leaseRemainingSecs !== null && leaseRemainingSecs > 0 ? leaseExpiresAt! : state.last_ping_at;
+  const pauseAt = idleCountFrom ? idleCountFrom + idleWindowSecs : null;
+  const pauseInSecs = running && pauseAt !== null ? Math.max(0, pauseAt - nowSecs) : null;
+
+  const atRisk =
+    running && pauseInSecs !== null
+      ? state.enabled
+        ? pauseAt! <= (assumedNextPingAt ?? Number.POSITIVE_INFINITY) ||
+          (leaseRemainingSecs === 0 && nextPingInSecs === 0)
+        : pauseInSecs <= 300
+      : false;
+
+  return {
+    enabled: state.enabled,
+    enabledUpdatedAt: state.enabled_updated_at,
+    enabledUpdatedBy: state.enabled_updated_by,
+    lastPingAt: state.last_ping_at,
+    lastPingOk: state.last_ping_ok,
+    lastPingLatencyMs: state.last_ping_latency_ms,
+    lastPingSource: state.last_ping_source,
+    pingCount: state.ping_count,
+    failCount: state.fail_count,
+    consecutiveFailures: state.consecutive_failures,
+    lastError: state.last_error,
+    intervalSecs,
+    leaseTtlSecs,
+    leaseExpiresAt: leaseExpiresAt && leaseExpiresAt > 0 ? leaseExpiresAt : null,
+    leaseRemainingSecs,
+    idleSecs,
+    pauseInSecs,
+    nextPingInSecs,
+    idleWindowSecs,
+    idleWindowSource,
+    atRisk,
+  };
+}
+
 export function buildBaileysBackupView(
   cloud: BaileysBackupCloudState,
   desktop: BaileysBackupDesktopState | null,
@@ -759,6 +888,7 @@ export function buildBaileysBackupView(
     liveFetchError?: boolean;
     machineId?: string;
     installerReleaseUrl?: string;
+    keepaliveState?: VpsKeepaliveState | null;
   } = {},
 ): BaileysBackupView {
   const nowSecs = Math.floor(nowMs / 1000);
@@ -786,6 +916,8 @@ export function buildBaileysBackupView(
   const rawMachineId = liveMachine?.id ?? opts.machineId ?? config.instaboxMachineId ?? '';
   const runStartedAt = liveMachine?.runStartedAt ?? cloud.lastRunStartedAt ?? null;
   const maxRunMinutes = liveMachine?.maxRunMinutes ?? cloud.lastMaxRunMinutes ?? null;
+  const autoSuspendAfterSeconds = liveMachine?.autoSuspendAfterSeconds ?? null;
+  const keepaliveState = opts.keepaliveState ?? defaultKeepaliveState();
 
   let runtimeRemainingMinutes: number | null = null;
   if (vpsAvailability === 'running' && runStartedAt && maxRunMinutes && maxRunMinutes > 0) {
@@ -848,12 +980,14 @@ export function buildBaileysBackupView(
     machineId: maskMachineId(rawMachineId),
     runStartedAt,
     maxRunMinutes,
+    autoSuspendAfterSeconds,
     runtimeRemainingMinutes,
     autoResumeEnabled: autoRes.enabled,
     autoResumeUpdatedAt: autoRes.updatedAt,
     autoResumeUpdatedBy: autoRes.updatedBy,
     cooldownUntilEpoch,
     cooldownRemainingSecs,
+    keepalive: buildKeepaliveView(keepaliveState, liveMachine, nowMs),
     desktopOnline,
     desktop: desktopView,
     lastCheckedAt,
@@ -923,8 +1057,11 @@ export async function getBaileysBackupSnapshot(deps: BaileysBackupDeps = {}): Pr
   const readFn = deps.readCloudAndDesktop ?? bacaCloudDanDesktopState;
   const writeFn = deps.writeCloudState ?? simpanCloudState;
 
-  const { cloud, desktop } = await readFn();
-  const live = await fetchLiveInstaboxMachine(deps);
+  const [{ cloud, desktop }, live, keepaliveState] = await Promise.all([
+    readFn(),
+    fetchLiveInstaboxMachine(deps),
+    readKeepaliveStateForView(deps),
+  ]);
 
   let workingCloud = cloud;
   if (live.ok && live.machine) {
@@ -938,6 +1075,7 @@ export async function getBaileysBackupSnapshot(deps: BaileysBackupDeps = {}): Pr
     liveFetchError: live.configured && !live.ok,
     machineId: deps.machineId ?? config.instaboxMachineId,
     installerReleaseUrl: deps.installerReleaseUrl,
+    keepaliveState,
   });
 
   return { ok: true, data: view };
@@ -953,8 +1091,11 @@ export async function runManualVpsCheck(deps: BaileysBackupDeps = {}): Promise<{
   const readFn = deps.readCloudAndDesktop ?? bacaCloudDanDesktopState;
   const writeFn = deps.writeCloudState ?? simpanCloudState;
 
-  const { cloud, desktop } = await readFn();
-  const live = await fetchLiveInstaboxMachine(deps);
+  const [{ cloud, desktop }, live, keepaliveState] = await Promise.all([
+    readFn(),
+    fetchLiveInstaboxMachine(deps),
+    readKeepaliveStateForView(deps),
+  ]);
 
   let workingCloud: BaileysBackupCloudState = {
     ...cloud,
@@ -1006,6 +1147,7 @@ export async function runManualVpsCheck(deps: BaileysBackupDeps = {}): Promise<{
     liveFetchError: live.configured && !live.ok,
     machineId: deps.machineId ?? config.instaboxMachineId,
     installerReleaseUrl: deps.installerReleaseUrl,
+    keepaliveState,
   });
 
   return { ok: !live.configured || live.ok, message, data: view };
@@ -1142,8 +1284,11 @@ export async function runManualVpsResume(deps: BaileysBackupDeps = {}): Promise<
   const readFn = deps.readCloudAndDesktop ?? bacaCloudDanDesktopState;
   const writeFn = deps.writeCloudState ?? simpanCloudState;
 
-  const { cloud, desktop } = await readFn();
-  const live = await fetchLiveInstaboxMachine(deps);
+  const [{ cloud, desktop }, live, keepaliveState] = await Promise.all([
+    readFn(),
+    fetchLiveInstaboxMachine(deps),
+    readKeepaliveStateForView(deps),
+  ]);
 
   if (!live.configured) {
     const message = 'INSTABOX_API_KEY atau INSTABOX_MACHINE_ID belum dikonfigurasi di server.';
@@ -1152,6 +1297,7 @@ export async function runManualVpsResume(deps: BaileysBackupDeps = {}): Promise<
       liveFetchError: false,
       machineId: deps.machineId ?? config.instaboxMachineId,
       installerReleaseUrl: deps.installerReleaseUrl,
+      keepaliveState,
     });
     return { ok: false, httpStatus: 502, status: 'error', message, data: view };
   }
@@ -1179,6 +1325,7 @@ export async function runManualVpsResume(deps: BaileysBackupDeps = {}): Promise<
     liveFetchError: !live.ok,
     machineId: deps.machineId ?? config.instaboxMachineId,
     installerReleaseUrl: deps.installerReleaseUrl,
+    keepaliveState,
   });
 
   return {
@@ -1248,11 +1395,13 @@ export async function setAutoResumeMode(
 
   await writeFn(workingCloud);
 
+  const keepaliveState = await readKeepaliveStateForView(deps);
   const view = buildBaileysBackupView(workingCloud, desktop, live.machine, nowMs, {
     instaboxConfigured: live.configured,
     liveFetchError: live.configured && !live.ok,
     machineId: deps.machineId ?? config.instaboxMachineId,
     installerReleaseUrl: deps.installerReleaseUrl,
+    keepaliveState,
   });
 
   return {
@@ -1261,6 +1410,144 @@ export async function setAutoResumeMode(
     message: finalMessage,
     data: view,
   };
+}
+
+/**
+ * Tombol "Ping VPS Sekarang": renew lease sekali, mengabaikan guard interval
+ * & cooldown. Tetap menolak berjalan bila status mesin tidak terbaca atau
+ * mesin tidak RUNNING, agar tidak membangunkan mesin yang di-pause sah.
+ */
+export async function runManualVpsKeepalive(deps: BaileysBackupDeps = {}): Promise<{
+  ok: boolean;
+  httpStatus: number;
+  attempted: boolean;
+  reason?: string;
+  message: string;
+  data: BaileysBackupView;
+}> {
+  const nowMs = deps.nowMs ?? Date.now();
+  const nowSecs = Math.floor(nowMs / 1000);
+  const readFn = deps.readCloudAndDesktop ?? bacaCloudDanDesktopState;
+
+  const { cloud, desktop } = await readFn();
+  const live = await fetchLiveInstaboxMachine(deps);
+  const viewOpts = {
+    instaboxConfigured: live.configured,
+    liveFetchError: live.configured && !live.ok,
+    machineId: deps.machineId ?? config.instaboxMachineId,
+    installerReleaseUrl: deps.installerReleaseUrl,
+  };
+
+  if (!live.configured) {
+    const message = 'INSTABOX_API_KEY atau INSTABOX_MACHINE_ID belum dikonfigurasi di server.';
+    return {
+      ok: false,
+      httpStatus: 502,
+      attempted: false,
+      reason: 'not_configured',
+      message,
+      data: buildBaileysBackupView(cloud, desktop, null, nowMs, {
+        ...viewOpts,
+        instaboxConfigured: false,
+        liveFetchError: false,
+        keepaliveState: await readKeepaliveStateForView(deps),
+      }),
+    };
+  }
+
+  if (!live.ok || !live.machine) {
+    const message =
+      'Status VPS tidak dapat dibaca — ping dibatalkan agar tidak membangunkan mesin yang sengaja di-pause.';
+    return {
+      ok: false,
+      httpStatus: 502,
+      attempted: false,
+      reason: 'status_unknown',
+      message,
+      data: buildBaileysBackupView(cloud, desktop, null, nowMs, {
+        ...viewOpts,
+        keepaliveState: await readKeepaliveStateForView(deps),
+      }),
+    };
+  }
+
+  const workingCloud = applyLiveMachineToCloudState(cloud, live.machine, nowSecs).next;
+  const run = await jalankanKeepaliveVps({
+    trigger: 'web',
+    force: true,
+    ignoreEnabled: true,
+    observedState: live.machine.state,
+    autoSuspendSeconds: live.machine.autoSuspendAfterSeconds,
+    nowMs,
+    apiKey: deps.apiKey,
+    machineId: deps.machineId,
+    apiBase: deps.apiBase,
+    fetchImpl: deps.fetchImpl,
+    readState: deps.readKeepaliveState,
+    writeState: deps.writeKeepaliveState,
+  });
+
+  const view = buildBaileysBackupView(workingCloud, desktop, live.machine, nowMs, {
+    ...viewOpts,
+    keepaliveState: run.state,
+  });
+
+  const httpStatus =
+    run.ok === true
+      ? 200
+      : run.reason === 'not_running' || run.reason === 'disabled'
+        ? 409
+        : 502;
+
+  return {
+    ok: run.ok === true,
+    httpStatus,
+    attempted: run.attempted,
+    ...(run.reason ? { reason: run.reason } : {}),
+    message:
+      run.message ??
+      (run.attempted ? 'Ping VPS selesai.' : 'Ping VPS tidak dijalankan.'),
+    data: view,
+  };
+}
+
+/** Sakelar Auto-Ping dari dashboard (durable di `__vps_keepalive_state.json`). */
+export async function setKeepaliveMode(
+  enabled: boolean,
+  deps: BaileysBackupDeps = {},
+): Promise<{
+  ok: true;
+  enabled: boolean;
+  message: string;
+  data: BaileysBackupView;
+}> {
+  const nowMs = deps.nowMs ?? Date.now();
+  const state = await setKeepaliveEnabled(enabled, 'web', {
+    nowMs,
+    readState: deps.readKeepaliveState,
+    writeState: deps.writeKeepaliveState,
+  });
+
+  const { intervalSecs, leaseTtlSecs } = getKeepaliveConfig();
+  const message = enabled
+    ? `Auto-Ping VPS: AKTIF (setiap ${Math.max(1, Math.round(intervalSecs / 60))} menit, lease ${Math.max(
+        1,
+        Math.round(leaseTtlSecs / 60),
+      )} menit).`
+    : 'Auto-Ping VPS: NONAKTIF — VPS akan idle-pause setelah jendela idle habis.';
+
+  const readFn = deps.readCloudAndDesktop ?? bacaCloudDanDesktopState;
+  const { cloud, desktop } = await readFn();
+  const live = await fetchLiveInstaboxMachine(deps);
+  const view = buildBaileysBackupView(cloud, desktop, live.machine, nowMs, {
+    instaboxConfigured: live.configured,
+    liveFetchError: live.configured && !live.ok,
+    machineId: deps.machineId ?? config.instaboxMachineId,
+    installerReleaseUrl: deps.installerReleaseUrl,
+    keepaliveState: state,
+  });
+
+  return { ok: true, enabled, message, data: view };
 }
 
 export async function cobaAutoResumeDariCron(

@@ -7,8 +7,10 @@ import {
 import {
   getBaileysBackupSnapshot,
   runManualVpsCheck,
+  runManualVpsKeepalive,
   runManualVpsResume,
   setAutoResumeMode,
+  setKeepaliveMode,
   type BaileysBackupDeps,
 } from '../src/baileys_backup_web.js';
 import { cekRateLimit } from '../src/rate_limit.js';
@@ -21,7 +23,9 @@ export interface BaileysBackupHandlerDeps {
   getSnapshot?: () => ReturnType<typeof getBaileysBackupSnapshot>;
   manualCheck?: () => ReturnType<typeof runManualVpsCheck>;
   manualResume?: () => ReturnType<typeof runManualVpsResume>;
+  manualKeepalive?: () => ReturnType<typeof runManualVpsKeepalive>;
   setAutoMode?: (enabled: boolean) => ReturnType<typeof setAutoResumeMode>;
+  setKeepalive?: (enabled: boolean) => ReturnType<typeof setKeepaliveMode>;
   serviceDeps?: BaileysBackupDeps;
 }
 
@@ -55,7 +59,10 @@ export function createBaileysBackupHandler(deps: BaileysBackupHandlerDeps = {}) 
   const getSnapshot = deps.getSnapshot ?? (() => getBaileysBackupSnapshot(svcDeps));
   const manualCheck = deps.manualCheck ?? (() => runManualVpsCheck(svcDeps));
   const manualResume = deps.manualResume ?? (() => runManualVpsResume(svcDeps));
+  const manualKeepalive = deps.manualKeepalive ?? (() => runManualVpsKeepalive(svcDeps));
   const setAutoMode = deps.setAutoMode ?? ((enabled: boolean) => setAutoResumeMode(enabled, svcDeps));
+  const setKeepalive =
+    deps.setKeepalive ?? ((enabled: boolean) => setKeepaliveMode(enabled, svcDeps));
 
   return async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -116,16 +123,58 @@ export function createBaileysBackupHandler(deps: BaileysBackupHandlerDeps = {}) 
       }
 
       const action = typeof body.action === 'string' ? body.action.trim().toLowerCase() : '';
-      if (action !== 'check' && action !== 'resume' && action !== 'set_mode') {
+      if (
+        action !== 'check' &&
+        action !== 'resume' &&
+        action !== 'set_mode' &&
+        action !== 'keepalive' &&
+        action !== 'set_keepalive'
+      ) {
         res.status(400).json({
           ok: false,
-          error: 'Parameter action harus check, resume, atau set_mode.',
+          error: 'Parameter action harus check, resume, set_mode, keepalive, atau set_keepalive.',
         });
         return;
       }
 
       if (action === 'check') {
         const result = await manualCheck();
+        res.status(200).json(result);
+        return;
+      }
+
+      if (action === 'keepalive') {
+        const rlPing = rateLimit(`bb:keepalive:${clientIp}`, 12, 60_000);
+        if (!rlPing.boleh) {
+          res.setHeader('Retry-After', String(rlPing.resetDalamDetik));
+          res.status(429).json({
+            ok: false,
+            error: `Terlalu sering ping VPS. Tunggu ${rlPing.resetDalamDetik} detik.`,
+          });
+          return;
+        }
+
+        const result = await manualKeepalive();
+        res.status(result.httpStatus).json({
+          ok: result.ok,
+          attempted: result.attempted,
+          ...(result.reason ? { reason: result.reason } : {}),
+          message: result.message,
+          data: result.data,
+        });
+        return;
+      }
+
+      if (action === 'set_keepalive') {
+        if (typeof body.keepaliveEnabled !== 'boolean') {
+          res.status(400).json({
+            ok: false,
+            error: 'Parameter keepaliveEnabled harus bernilai boolean.',
+          });
+          return;
+        }
+
+        const result = await setKeepalive(body.keepaliveEnabled);
         res.status(200).json(result);
         return;
       }

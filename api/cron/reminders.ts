@@ -6,6 +6,7 @@ import { checkDueReminders, nomorWhatsApp } from '../../src/remind.js';
 import { sendWhatsAppCloudMessageSafe } from '../../src/whatsapp_cloud.js';
 import { cekLifecycleVps } from '../../src/vps_monitor.js';
 import { cobaAutoResumeDariCron } from '../../src/baileys_backup_web.js';
+import { jalankanKeepaliveVps } from '../../src/vps_keepalive.js';
 
 function timingSafeMatch(a: string, b: string): boolean {
   const bufA = Buffer.from(a, 'utf8');
@@ -87,10 +88,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       state: null,
       events: [],
     };
+    const vpsMachineRef: {
+      value: { state: string; autoSuspendAfterSeconds: number | null } | null;
+    } = { value: null };
     try {
-      vpsMonitor = await cekLifecycleVps();
+      vpsMonitor = await cekLifecycleVps({
+        onMachine: (machine) => {
+          vpsMachineRef.value = {
+            state: machine.state,
+            autoSuspendAfterSeconds: machine.autoSuspendAfterSeconds,
+          };
+        },
+      });
     } catch (err) {
       console.warn('[cron/reminders] cekLifecycleVps error:', String((err as Error)?.message ?? err).slice(0, 120));
+    }
+
+    let vpsKeepalive: {
+      attempted: boolean;
+      ok?: boolean;
+      reason?: string;
+      httpStatus?: number;
+      message?: string;
+    } = { attempted: false, reason: 'status_unknown' };
+    const vpsMachine = vpsMachineRef.value;
+    if (vpsMachine) {
+      try {
+        vpsKeepalive = await jalankanKeepaliveVps({
+          trigger: 'cron',
+          observedState: vpsMachine.state,
+          autoSuspendSeconds: vpsMachine.autoSuspendAfterSeconds,
+        });
+      } catch (err) {
+        console.warn(
+          '[cron/reminders] jalankanKeepaliveVps error:',
+          String((err as Error)?.message ?? err).slice(0, 120),
+        );
+        vpsKeepalive = { attempted: false, reason: 'error' };
+      }
     }
 
     let baileysAutoResume: {
@@ -114,6 +149,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       ok: true,
       processed,
       vps_monitor: vpsMonitor,
+      vps_keepalive: vpsKeepalive,
       baileys_auto_resume: baileysAutoResume,
       timestamp: new Date().toISOString(),
     });

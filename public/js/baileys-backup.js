@@ -11,6 +11,7 @@
   let inFlightCheck = false;
   let inFlightResume = false;
   let inFlightToggle = false;
+  let inFlightKeepalive = false;
   let lastActionFeedback = null;
 
   function translate(key, fallback) {
@@ -179,6 +180,8 @@
         );
       }
     }
+
+    updateKeepaliveLive();
   }
 
   function syncLiveTicker() {
@@ -186,7 +189,10 @@
       cachedSnapshot &&
       !document.hidden &&
       Boolean(getToken()) &&
-      (cachedSnapshot.lastCheckedAt || cachedSnapshot.cooldownUntilEpoch);
+      (cachedSnapshot.lastCheckedAt ||
+        cachedSnapshot.cooldownUntilEpoch ||
+        (cachedSnapshot.keepalive &&
+          (cachedSnapshot.keepalive.enabled || cachedSnapshot.keepalive.lastPingAt)));
 
     if (hasTimerNeed && !tickTimer) {
       tickTimer = setInterval(() => {
@@ -240,12 +246,165 @@
     }
   }
 
+  function updateKeepaliveLive() {
+    if (!cachedSnapshot || !cachedSnapshot.keepalive) return;
+    const ka = cachedSnapshot.keepalive;
+    const nowEpoch = effectiveServerEpoch();
+    const dash = "\u2014";
+
+    const nextEl = byId("bb-keepalive-next");
+    if (nextEl) {
+      if (!ka.enabled) {
+        nextEl.textContent = translate("dash.bb.keepaliveDisabledShort", "nonaktif");
+      } else if (typeof ka.nextPingInSecs === "number") {
+        const deadline = cachedSnapshot.serverTimeEpoch + ka.nextPingInSecs;
+        const rem = deadline - nowEpoch;
+        nextEl.textContent =
+          rem <= 0
+            ? translate("dash.bb.keepaliveDue", "segera")
+            : formatCompactDuration(rem);
+      } else {
+        nextEl.textContent = dash;
+      }
+    }
+
+    const idleEl = byId("bb-keepalive-idle");
+    if (idleEl) {
+      idleEl.textContent = ka.lastPingAt
+        ? formatCompactDuration(Math.max(0, nowEpoch - ka.lastPingAt))
+        : translate("dash.bb.keepaliveNever", "belum pernah");
+    }
+
+    const pauseEl = byId("bb-keepalive-pause");
+    const barFill = byId("bb-keepalive-bar-fill");
+    const bar = byId("bb-keepalive-bar");
+    let pauseRem = null;
+    if (typeof ka.pauseInSecs === "number") {
+      pauseRem = cachedSnapshot.serverTimeEpoch + ka.pauseInSecs - nowEpoch;
+    }
+    if (pauseEl) {
+      if (pauseRem === null) {
+        pauseEl.textContent =
+          cachedSnapshot.vpsAvailability === "running"
+            ? translate("dash.bb.keepaliveUntracked", "belum terlacak")
+            : dash;
+      } else if (pauseRem <= 0) {
+        pauseEl.textContent = translate("dash.bb.keepaliveOverdue", "lewat estimasi");
+      } else {
+        pauseEl.textContent = formatCompactDuration(pauseRem);
+      }
+    }
+    if (barFill && bar) {
+      const windowSecs = Number(ka.idleWindowSecs) || 0;
+      let pct = 0;
+      if (pauseRem !== null && windowSecs > 0) {
+        // Bar mengukur JENDELA IDLE yang terpakai, bukan sisa lease. Selama
+        // lease aktif timer idle belum berjalan, jadi bar wajar kosong.
+        pct = Math.max(0, Math.min(100, 100 * (1 - pauseRem / windowSecs)));
+      }
+      barFill.style.width = `${pct.toFixed(1)}%`;
+      barFill.classList.toggle("is-warn", pct >= 70 || Boolean(ka.atRisk));
+      bar.setAttribute(
+        "aria-label",
+        `${translate("dash.bb.keepalivePause", "Pause bila ping berhenti")}: ${
+          pauseEl ? pauseEl.textContent : dash
+        }`,
+      );
+    }
+  }
+
+  function renderKeepalive(view) {
+    const ka = view.keepalive;
+    const toggle = byId("bb-btn-keepalive");
+    const badge = byId("bb-keepalive-badge");
+    const err = byId("bb-keepalive-err");
+    const pingBtn = byId("bb-btn-ping");
+
+    if (toggle) {
+      const enabled = Boolean(ka && ka.enabled);
+      toggle.setAttribute("aria-checked", enabled ? "true" : "false");
+      toggle.classList.toggle("is-on", enabled);
+      toggle.textContent = enabled
+        ? translate("dash.bb.keepaliveOn", "AKTIF")
+        : translate("dash.bb.keepaliveOff", "NONAKTIF");
+      toggle.disabled = inFlightKeepalive || !view.instaboxConfigured;
+    }
+
+    if (badge) {
+      if (!view.instaboxConfigured) {
+        badge.textContent = translate("dash.bb.notConfigured", "InstaBox API belum dikonfigurasi");
+        badge.className = "bb-keepalive-badge is-muted";
+      } else if (!ka || !ka.enabled) {
+        badge.textContent = translate("dash.bb.keepaliveBadgeOff", "Rentan pause");
+        badge.className = "bb-keepalive-badge is-warn";
+      } else if (ka.consecutiveFailures > 0) {
+        badge.textContent = translate("dash.bb.keepaliveBadgeFail", "Ping gagal");
+        badge.className = "bb-keepalive-badge is-warn";
+      } else if (view.vpsAvailability !== "running") {
+        badge.textContent = translate("dash.bb.keepaliveBadgeIdle", "Menunggu VPS");
+        badge.className = "bb-keepalive-badge is-muted";
+      } else if (ka.atRisk) {
+        badge.textContent = translate("dash.bb.keepaliveBadgeRisk", "Berisiko");
+        badge.className = "bb-keepalive-badge is-warn";
+      } else {
+        badge.textContent = translate("dash.bb.keepaliveBadgeOk", "Terlindungi");
+        badge.className = "bb-keepalive-badge is-ok";
+      }
+    }
+
+    const desc = byId("bb-keepalive-desc");
+    if (desc && ka) {
+      const mins = Math.max(1, Math.round(ka.idleWindowSecs / 60));
+      const intervalMins = Math.max(1, Math.round(ka.intervalSecs / 60));
+      const leaseMins = Math.max(1, Math.round(ka.leaseTtlSecs / 60));
+      const minShort = translate("dash.bb.minShort", "mnt");
+      desc.textContent = `${translate(
+        "dash.bb.keepaliveDesc",
+        "Lease aktivitas diperbarui otomatis agar VPS tidak di-pause setelah jendela idle habis.",
+      )} ${translate("dash.bb.keepaliveWindow", "Jendela idle")}: ${mins} ${minShort} · ${translate(
+        "dash.bb.keepaliveInterval",
+        "interval ping",
+      )}: ${intervalMins} ${minShort} · ${translate(
+        "dash.bb.keepaliveLease",
+        "lease",
+      )}: ${leaseMins} ${minShort}.`;
+    }
+
+    const count = byId("bb-keepalive-count");
+    if (count && ka) {
+      count.textContent =
+        ka.failCount > 0
+          ? `${ka.pingCount} · ${ka.failCount} ${translate("dash.bb.keepaliveFailed", "gagal")}`
+          : String(ka.pingCount);
+    }
+
+    if (err) {
+      if (ka && ka.lastError) {
+        err.hidden = false;
+        err.textContent = `${translate("dash.bb.keepaliveLastErr", "Error terakhir")}: ${ka.lastError}`;
+      } else {
+        err.hidden = true;
+        err.textContent = "";
+      }
+    }
+
+    if (pingBtn) {
+      const vpsReady =
+        view.vpsAvailability === "running" || view.vpsAvailability === "transient";
+      pingBtn.disabled = inFlightKeepalive || !view.instaboxConfigured || !vpsReady;
+      pingBtn.textContent = inFlightKeepalive
+        ? translate("dash.bb.btnPinging", "Mengirim ping...")
+        : translate("dash.bb.btnPing", "Ping VPS Sekarang");
+    }
+
+    updateKeepaliveLive();
+  }
+
   function renderSnapshot(view) {
     cachedSnapshot = view;
 
     const desktop = view.desktop;
     const isBackupActive = Boolean(view.desktopOnline && desktop && desktop.failoverActive);
-
     const modeBadge = byId("bb-mode-badge");
     if (modeBadge) {
       if (isBackupActive) {
@@ -400,6 +559,7 @@
         : translate("dash.bb.btnCheck", "Cek Status VPS Sekarang");
     }
 
+    renderKeepalive(view);
     renderEventsList(view.recentEvents);
     updateDynamicCountdowns();
     syncLiveTicker();
@@ -529,6 +689,71 @@
     }
   }
 
+  async function handleToggleKeepalive() {
+    if (inFlightKeepalive || !cachedSnapshot || !cachedSnapshot.keepalive) return;
+    const next = !cachedSnapshot.keepalive.enabled;
+    inFlightKeepalive = true;
+    renderSnapshot(cachedSnapshot);
+    try {
+      const result = await postAction({
+        action: "set_keepalive",
+        keepaliveEnabled: next,
+      });
+      if (result && result.json && result.json.data) {
+        clientReceivedAtMs = Date.now();
+        if (result.json.message) setFeedback("ok", result.json.message);
+        renderSnapshot(result.json.data);
+      } else {
+        setFeedback(
+          "error",
+          (result && result.json && result.json.error) ||
+            translate("dash.bb.keepaliveToggleErr", "Gagal mengubah Auto-Ping VPS."),
+        );
+      }
+    } catch (_) {
+      setFeedback(
+        "error",
+        translate("dash.bb.keepaliveToggleErr", "Gagal mengubah Auto-Ping VPS."),
+      );
+    } finally {
+      inFlightKeepalive = false;
+      if (cachedSnapshot) renderSnapshot(cachedSnapshot);
+    }
+  }
+
+  async function handlePingKeepalive() {
+    if (inFlightKeepalive || !cachedSnapshot) return;
+    inFlightKeepalive = true;
+    renderSnapshot(cachedSnapshot);
+    try {
+      const result = await postAction({ action: "keepalive" });
+      if (result && result.json && result.json.data) {
+        clientReceivedAtMs = Date.now();
+        const kind = result.json.ok
+          ? "ok"
+          : result.status === 409
+            ? "warn"
+            : "error";
+        if (result.json.message) setFeedback(kind, result.json.message);
+        renderSnapshot(result.json.data);
+      } else {
+        setFeedback(
+          "error",
+          (result && result.json && result.json.error) ||
+            translate("dash.bb.keepalivePingErr", "Gagal mengirim ping VPS."),
+        );
+      }
+    } catch (_) {
+      setFeedback(
+        "error",
+        translate("dash.bb.keepalivePingErr", "Gagal mengirim ping VPS."),
+      );
+    } finally {
+      inFlightKeepalive = false;
+      if (cachedSnapshot) renderSnapshot(cachedSnapshot);
+    }
+  }
+
   function bindEvents() {
     const checkBtn = byId("bb-btn-check");
     if (checkBtn) checkBtn.addEventListener("click", handleCheckNow);
@@ -538,6 +763,12 @@
 
     const toggleBtn = byId("bb-btn-auto-resume");
     if (toggleBtn) toggleBtn.addEventListener("click", handleToggleAutoResume);
+
+    const keepaliveToggle = byId("bb-btn-keepalive");
+    if (keepaliveToggle) keepaliveToggle.addEventListener("click", handleToggleKeepalive);
+
+    const pingBtn = byId("bb-btn-ping");
+    if (pingBtn) pingBtn.addEventListener("click", handlePingKeepalive);
 
     document.addEventListener("visibilitychange", () => {
       syncLiveTicker();

@@ -352,6 +352,19 @@ test('6. api/baileys-backup handler: fail-closed 401, 405, 400 validation, dan e
       message: enabled ? 'AUTO' : 'MANUAL',
       data: buildBaileysBackupView({ ...defaultCloudState(), autoResumeEnabled: enabled }, null, null, 1_732_200_000_000),
     }),
+    manualKeepalive: async () => ({
+      ok: true,
+      httpStatus: 200,
+      attempted: true,
+      message: 'Ping OK',
+      data: buildBaileysBackupView(defaultCloudState(), null, null, 1_732_200_000_000),
+    }),
+    setKeepalive: async (enabled) => ({
+      ok: true,
+      enabled,
+      message: enabled ? 'KEEP ON' : 'KEEP OFF',
+      data: buildBaileysBackupView(defaultCloudState(), null, null, 1_732_200_000_000),
+    }),
   });
 
   const resUnauth = createMockRes();
@@ -397,12 +410,44 @@ test('6. api/baileys-backup handler: fail-closed 401, 405, 400 validation, dan e
   );
   assert.equal(resSetMode.statusCode, 200);
   assert.equal(resSetMode.body?.data?.autoResumeEnabled, true);
+
+  const resPing = createMockRes();
+  await handler(
+    { method: 'POST', headers: { 'x-admin-token': 'valid_tok' }, body: { action: 'keepalive' } },
+    resPing,
+  );
+  assert.equal(resPing.statusCode, 200);
+  assert.equal(resPing.body?.attempted, true);
+
+  const resBadKeepaliveBool = createMockRes();
+  await handler(
+    {
+      method: 'POST',
+      headers: { 'x-admin-token': 'valid_tok' },
+      body: { action: 'set_keepalive', keepaliveEnabled: 'yes' },
+    },
+    resBadKeepaliveBool,
+  );
+  assert.equal(resBadKeepaliveBool.statusCode, 400);
+
+  const resSetKeepalive = createMockRes();
+  await handler(
+    {
+      method: 'POST',
+      headers: { 'x-admin-token': 'valid_tok' },
+      body: { action: 'set_keepalive', keepaliveEnabled: true },
+    },
+    resSetKeepalive,
+  );
+  assert.equal(resSetKeepalive.statusCode, 200);
+  assert.equal(resSetKeepalive.body?.enabled, true);
 });
 
 test('7. Wiring, keamanan, batas fungsi Vercel, sintaks JS, & kepatuhan CSP dashboard', () => {
   const waSess = read('src/whatsapp_session.ts');
   assert.match(waSess, /__baileys_backup_state\.json/, 'clearSessionInSupabase wajib melindungi __baileys_backup_state.json');
   assert.match(waSess, /__baileys_backup_desktop\.json/, 'clearSessionInSupabase wajib melindungi __baileys_backup_desktop.json');
+  assert.match(waSess, /__vps_keepalive_state\.json/, 'clearSessionInSupabase wajib melindungi state keepalive VPS');
 
   const vercelJson = JSON.parse(read('vercel.json'));
   assert.ok(vercelJson.functions['api/baileys-backup.ts'], 'vercel.json harus mendaftarkan api/baileys-backup.ts');
@@ -420,10 +465,13 @@ test('7. Wiring, keamanan, batas fungsi Vercel, sintaks JS, & kepatuhan CSP dash
 
   const reminders = read('api/cron/reminders.ts');
   assert.match(reminders, /cobaAutoResumeDariCron/, 'cron/reminders harus memanggil cobaAutoResumeDariCron');
+  assert.match(reminders, /jalankanKeepaliveVps/, 'cron/reminders harus menjalankan keepalive VPS');
 
   const dashHtml = read('public/dashboard.html');
   assert.match(dashHtml, /id="baileys-backup-section"/);
   assert.match(dashHtml, /src="\/js\/baileys-backup\.js"/);
+  assert.match(dashHtml, /id="bb-btn-keepalive"/);
+  assert.match(dashHtml, /id="bb-btn-ping"/);
   assert.ok(!/onclick=|onchange=/.test(dashHtml), 'dashboard.html tidak boleh memakai inline event handler');
 
   const jsPath = path.resolve(new URL('../public/js/baileys-backup.js', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));

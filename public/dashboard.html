@@ -325,6 +325,27 @@
             <button type="button" class="bb-toggle-btn" id="bb-btn-auto-resume" role="switch" aria-checked="false">MANUAL</button>
           </div>
 
+          <div class="bb-control-row bb-control-row-sep bb-keepalive-row">
+            <div class="bb-control-copy">
+              <div class="bb-control-title bb-keepalive-title">
+                <span data-i18n="dash.bb.keepaliveLabel">Auto-Ping VPS (anti idle-pause)</span>
+                <span class="bb-keepalive-badge is-muted" id="bb-keepalive-badge" data-i18n="dash.bb.statusLoading">Memuat...</span>
+              </div>
+              <div class="bb-control-sub" id="bb-keepalive-desc" data-i18n="dash.bb.keepaliveDesc">Lease aktivitas diperbarui otomatis agar VPS tidak di-pause setelah jendela idle habis.</div>
+              <div class="bb-keepalive-meta">
+                <span class="bb-keepalive-stat"><span data-i18n="dash.bb.keepaliveNext">Ping berikutnya</span>: <strong id="bb-keepalive-next">&ndash;</strong></span>
+                <span class="bb-keepalive-stat"><span data-i18n="dash.bb.keepaliveIdle">Sejak ping</span>: <strong id="bb-keepalive-idle">&ndash;</strong></span>
+                <span class="bb-keepalive-stat"><span data-i18n="dash.bb.keepalivePause">Pause bila ping berhenti</span>: <strong id="bb-keepalive-pause">&ndash;</strong></span>
+                <span class="bb-keepalive-stat"><span data-i18n="dash.bb.keepalivePings">Ping sukses</span>: <strong id="bb-keepalive-count">0</strong></span>
+              </div>
+              <div class="bb-keepalive-bar" role="img" aria-label="Jendela idle terpakai" id="bb-keepalive-bar">
+                <span class="bb-keepalive-bar-fill" id="bb-keepalive-bar-fill"></span>
+              </div>
+              <div class="bb-keepalive-err" id="bb-keepalive-err" hidden></div>
+            </div>
+            <button type="button" class="bb-toggle-btn" id="bb-btn-keepalive" role="switch" aria-checked="false" data-i18n="dash.bb.keepaliveOff">NONAKTIF</button>
+          </div>
+
           <div class="bb-control-row bb-control-row-sep">
             <div class="bb-control-copy">
               <div class="bb-control-title" data-i18n="dash.bb.syncLabel">Aplikasi Desktop &amp; Installer</div>
@@ -334,6 +355,7 @@
           </div>
 
           <div class="bb-actions-row">
+            <button type="button" class="btn bb-btn-ping" id="bb-btn-ping" data-i18n="dash.bb.btnPing">Ping VPS Sekarang</button>
             <button type="button" class="btn bb-btn-resume" id="bb-btn-resume" data-i18n="dash.bb.btnResume">Resume / Aktifkan VPS</button>
             <button type="button" class="btn btn-primary bb-btn-check" id="bb-btn-check" data-i18n="dash.bb.btnCheck">Cek Status VPS Sekarang</button>
           </div>

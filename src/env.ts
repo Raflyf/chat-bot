@@ -28,6 +28,21 @@ function numAllowZero(name: string, fallback: number): number {
   const v = Number(raw);
   return Number.isFinite(v) && v >= 0 ? v : fallback;
 }
+/**
+ * Flag boolean yang AKTIF secara default. Hanya nilai penolakan eksplisit
+ * (0/false/off/mati/...) yang mematikan; nilai tak dikenal jatuh ke default.
+ */
+function enabledByDefault(name: string, fallback: boolean): boolean {
+  const raw = cleanStr(name).toLowerCase();
+  if (!raw) return fallback;
+  if (['0', 'false', 'off', 'no', 'tidak', 'mati', 'nonaktif', 'disabled'].includes(raw)) {
+    return false;
+  }
+  if (['1', 'true', 'on', 'yes', 'ya', 'hidup', 'aktif', 'enabled'].includes(raw)) {
+    return true;
+  }
+  return fallback;
+}
 
 function num(name: string, fallback: number): number {
   const v = Number(cleanStr(name));
@@ -249,12 +264,18 @@ export const config = {
   // SUPABASE_SERVICE_KEY. Salt legacy opsional lewat env LEGACY_PIN_SALTS.
   pinSalt: cleanStr('PIN_SALT'),
   adminPin: cleanStr('ADMIN_PIN'),
-  // Monitor lifecycle VPS eksternal (read-only GET /v1/machines/{id}, tanpa ping/exec ke VM).
+  // Monitor lifecycle VPS eksternal (GET /v1/machines/{id}).
   instaboxApiKey: cleanStr('INSTABOX_API_KEY'),
   instaboxMachineId: cleanStr('INSTABOX_MACHINE_ID'),
   instaboxApiBase: cleanStr('INSTABOX_API_BASE') || 'https://api.instabox.sh',
   vpsWarnBeforeMinutes: num('VPS_WARN_BEFORE_MINUTES', 5),
   vpsMaxRunMinutes: numAllowZero('VPS_MAX_RUN_MINUTES', 120),
+  // Anti auto-pause: lease aktivitas control-plane (PUT /activity-leases).
+  // Bukan terminal I/O palsu; lihat src/vps_keepalive.ts.
+  vpsKeepaliveEnabled: enabledByDefault('VPS_KEEPALIVE_ENABLED', true),
+  vpsKeepaliveIntervalSeconds: num('VPS_KEEPALIVE_INTERVAL_SECONDS', 600),
+  vpsKeepaliveLeaseTtlSeconds: num('VPS_KEEPALIVE_LEASE_TTL_SECONDS', 1200),
+  vpsIdlePauseMinutes: num('VPS_IDLE_PAUSE_MINUTES', 30),
 };
 
 export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegram'): void {

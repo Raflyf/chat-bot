@@ -2,8 +2,10 @@
  * MONITOR LIFECYCLE VPS BAILEYS (PASSIVE & COMPLIANT)
  *
  * Memantau batas runtime maksimum (mis. 120 menit pada InstaBox Free Plan) dan
- * perubahan status VPS (paused/stopped/pulih) tanpa pernah mengirim aktivitas
- * buatan ke dalam VM.
+ * perubahan status VPS (paused/stopped/pulih). Modul ini SENDIRI tidak pernah
+ * mengirim aktivitas ke dalam VM — anti auto-pause ditangani modul terpisah
+ * `src/vps_keepalive.ts` lewat lease aktivitas di control plane (bukan terminal
+ * I/O palsu ke dalam sandbox).
  *
  * Dua jalur kerja:
  *   1. Monitor eksternal pasif (dipanggil cron /api/cron/reminders via GitHub Actions):
@@ -41,6 +43,8 @@ export interface InstaboxMachineSnapshot {
   state: string;
   runStartedAt: string | null;
   maxRunMinutes: number | null;
+  /** Jendela idle sebelum auto-suspend (detik). Free plan: 1800 = 30 menit. */
+  autoSuspendAfterSeconds: number | null;
   cooldownUntil: string | null;
   free?: boolean;
 }
@@ -72,6 +76,8 @@ export interface CekLifecycleDeps {
   machineId?: string;
   apiBase?: string;
   warnBeforeMinutes?: number;
+  /** Callback opsional: snapshot mesin hasil GET, dipakai keepalive cron. */
+  onMachine?: (machine: InstaboxMachineSnapshot) => void;
 }
 
 export interface CekLifecycleResult {
@@ -168,6 +174,9 @@ export function parseInstaboxMachine(
     state,
     runStartedAt: cleanNullableStr(obj.runStartedAt ?? obj.run_started_at),
     maxRunMinutes: cleanNullableNum(obj.maxRunMinutes ?? obj.max_run_minutes),
+    autoSuspendAfterSeconds: cleanNullableNum(
+      obj.autoSuspendAfterSeconds ?? obj.auto_suspend_after_seconds,
+    ),
     cooldownUntil: cleanNullableStr(obj.cooldownUntil ?? obj.cooldown_until),
     ...(typeof obj.free === 'boolean' ? { free: obj.free } : {}),
   };
@@ -443,6 +452,12 @@ export async function cekLifecycleVps(deps: CekLifecycleDeps = {}): Promise<CekL
     if (!machine) {
       console.warn('[vps-monitor] Payload status mesin InstaBox tidak valid.');
       return { checked: false, state: null, events: [], skipped: 'invalid_payload' };
+    }
+
+    try {
+      deps.onMachine?.(machine);
+    } catch {
+      // callback tidak boleh mengganggu monitor lifecycle
     }
 
     const prevState = await readState();

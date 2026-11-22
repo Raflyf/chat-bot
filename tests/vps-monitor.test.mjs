@@ -40,6 +40,7 @@ test('1. parseInstaboxMachine mendukung flat camelCase, wrapper { machine }, sna
     state: 'running',
     runStartedAt: '2026-11-20T02:33:14Z',
     maxRunMinutes: 120,
+    autoSuspendAfterSeconds: 1800,
     cooldownUntil: null,
     free: true,
   });
@@ -49,6 +50,7 @@ test('1. parseInstaboxMachine mendukung flat camelCase, wrapper { machine }, sna
     state: 'running',
     runStartedAt: '2026-11-20T02:33:14Z',
     maxRunMinutes: 120,
+    autoSuspendAfterSeconds: 1800,
     cooldownUntil: null,
     free: true,
   });
@@ -59,6 +61,7 @@ test('1. parseInstaboxMachine mendukung flat camelCase, wrapper { machine }, sna
       state: 'paused',
       run_started_at: '2026-11-20T02:00:00Z',
       max_run_minutes: '120',
+      auto_suspend_after_seconds: '1800',
       cooldown_until: '2026-11-20T04:06:00Z',
     },
   });
@@ -67,6 +70,7 @@ test('1. parseInstaboxMachine mendukung flat camelCase, wrapper { machine }, sna
     state: 'paused',
     runStartedAt: '2026-11-20T02:00:00Z',
     maxRunMinutes: 120,
+    autoSuspendAfterSeconds: 1800,
     cooldownUntil: '2026-11-20T04:06:00Z',
   });
 
@@ -237,6 +241,7 @@ test('8. cekLifecycleVps skip saat env kosong dan hanya memanggil GET /v1/machin
   const calls = [];
   const telegramSent = [];
   let savedState = null;
+  let seenMachine = null;
   const startIso = '2026-11-20T02:00:00.000Z';
 
   const res = await cekLifecycleVps({
@@ -248,6 +253,9 @@ test('8. cekLifecycleVps skip saat env kosong dan hanya memanggil GET /v1/machin
     readState: async () => null,
     writeState: async (st) => {
       savedState = st;
+    },
+    onMachine: (m) => {
+      seenMachine = m;
     },
     sendTelegram: async (msg) => {
       telegramSent.push(msg);
@@ -262,6 +270,7 @@ test('8. cekLifecycleVps skip saat env kosong dan hanya memanggil GET /v1/machin
           state: 'running',
           runStartedAt: startIso,
           maxRunMinutes: 120,
+          autoSuspendAfterSeconds: 1800,
           cooldownUntil: null,
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -272,6 +281,8 @@ test('8. cekLifecycleVps skip saat env kosong dan hanya memanggil GET /v1/machin
   assert.equal(res.checked, true);
   assert.equal(res.state, 'running');
   assert.deepEqual(res.events, ['peringatan_limit']);
+  assert.equal(seenMachine?.state, 'running');
+  assert.equal(seenMachine?.autoSuspendAfterSeconds, 1800);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://api.instabox.sh/v1/machines/m_test_123');
   assert.equal(calls[0].method, 'GET');

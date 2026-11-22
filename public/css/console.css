@@ -3430,9 +3430,81 @@ body {
   border: 1px solid var(--separator-strong);
 }
 
+.bb-keepalive-row {
+  align-items: flex-start;
+}
+.bb-keepalive-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.bb-keepalive-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--separator-strong);
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.bb-keepalive-badge.is-ok {
+  background: var(--ok-soft);
+  border-color: color-mix(in srgb, var(--ok) 42%, transparent);
+  color: var(--ok);
+}
+.bb-keepalive-badge.is-warn {
+  background: var(--warn-soft);
+  border-color: color-mix(in srgb, var(--warn) 42%, transparent);
+  color: var(--warn);
+}
+.bb-keepalive-badge.is-muted {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-secondary);
+}
+.bb-keepalive-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.bb-keepalive-stat strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.bb-keepalive-bar {
+  height: 5px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+}
+.bb-keepalive-bar-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.5s linear, background-color 0.2s ease;
+}
+.bb-keepalive-bar-fill.is-warn {
+  background: var(--warn);
+}
+.bb-keepalive-err {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--warn);
+  overflow-wrap: anywhere;
+}
+
 .bb-actions-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--s3);
   padding-top: var(--s2);
 }
@@ -3440,6 +3512,18 @@ body {
   min-height: 44px;
   width: 100%;
   font-weight: 600;
+}
+.bb-btn-ping {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+}
+.bb-btn-ping:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.bb-btn-ping:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .bb-btn-resume {
   background: rgba(245, 158, 11, 0.16);
