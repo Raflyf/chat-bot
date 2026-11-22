@@ -213,18 +213,14 @@ jobs:
           }
 
           $installer = New-Object -ComObject WindowsInstaller.Installer
-          $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($msiPath, 0))
+          $db = $installer.OpenDatabase($msiPath, 0)
 
           function Query-Single([string]$sql) {
-            $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @($sql))
-            $null = $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
-            $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-            if ($null -eq $rec) {
-              $null = $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
-              return $null
-            }
-            $val = $rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, @(1))
-            $null = $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
+            $view = $db.OpenView($sql)
+            $null = $view.Execute()
+            $rec = $view.Fetch()
+            $val = if ($null -eq $rec) { $null } else { [string]$rec.StringData(1) }
+            $null = $view.Close()
             return $val
           }
 
@@ -243,6 +239,10 @@ jobs:
           }
           $closeTarget = Query-Single "SELECT Target FROM $closeTable WHERE Target='BaileysBackup.exe'"
           Write-Host "MSI CloseApplication table=$closeTable | Target=$closeTarget"
+
+          $null = [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($db)
+          $null = [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+          [GC]::Collect()
           if ($closeTarget -ne 'BaileysBackup.exe') {
             throw "Baris CloseApplication untuk BaileysBackup.exe tidak ditemukan"
           }
