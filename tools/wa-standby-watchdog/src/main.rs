@@ -96,7 +96,10 @@ const IDM_OPEN_LOG: usize = panel::CMD_OPEN_LOG;
 const IDM_OPEN_BOT_LOG: usize = panel::CMD_OPEN_BOT_LOG;
 const IDM_OPEN_FOLDER: usize = panel::CMD_OPEN_FOLDER;
 const IDM_TOGGLE_AUTOSTART: usize = panel::CMD_TOGGLE_AUTOSTART;
+const IDM_RESUME_VPS: usize = panel::CMD_RESUME_VPS;
 const IDM_EXIT: usize = panel::CMD_EXIT;
+
+static IDEMPOTENCY_SEQ: AtomicU64 = AtomicU64::new(1);
 
 const RUN_SUBKEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
 const RUN_VALUE_NAME: PCWSTR = w!("BaileysBackup");
@@ -139,6 +142,8 @@ struct AppContext {
     running: Arc<AtomicBool>,
     force_poll: Arc<AtomicBool>,
     checking_vps: Arc<AtomicBool>,
+    resume_requested: Arc<AtomicBool>,
+    resuming_vps: Arc<AtomicBool>,
     tray_registered: Arc<AtomicBool>,
     tray_retry_left: AtomicU8,
     child_pid: Arc<AtomicU32>,
@@ -399,37 +404,48 @@ fn classify_vps_state(raw_state: &str) -> VpsAvailability {
     }
 }
 
-fn query_vps_state(project_root: &Path) -> (VpsAvailability, String) {
+fn curl_bin_path() -> &'static str {
+    if Path::new(r"C:\Windows\System32\curl.exe").is_file() {
+        r"C:\Windows\System32\curl.exe"
+    } else {
+        "curl"
+    }
+}
+
+fn resolve_instabox_creds(project_root: &Path) -> Option<(String, String, String)> {
     let env_map = load_env_file(project_root);
     let api_key = env_map
         .get("INSTABOX_API_KEY")
         .map(String::as_str)
         .unwrap_or("")
-        .trim();
+        .trim()
+        .to_string();
     let machine_id = env_map
         .get("INSTABOX_MACHINE_ID")
         .map(String::as_str)
         .unwrap_or("")
-        .trim();
+        .trim()
+        .to_string();
     if api_key.is_empty() || machine_id.is_empty() {
-        return (VpsAvailability::Unknown, "missing_env".to_string());
+        return None;
     }
-
     let api_base = env_map
         .get("INSTABOX_API_BASE")
         .map(String::as_str)
         .unwrap_or("https://api.instabox.sh")
         .trim()
-        .trim_end_matches('/');
+        .trim_end_matches('/')
+        .to_string();
+    Some((api_base, api_key, machine_id))
+}
 
-    let url = format!("{api_base}/v1/machines/{machine_id}");
-    let curl_bin = if Path::new(r"C:\Windows\System32\curl.exe").is_file() {
-        r"C:\Windows\System32\curl.exe"
-    } else {
-        "curl"
+fn query_vps_state(project_root: &Path) -> (VpsAvailability, String) {
+    let Some((api_base, api_key, machine_id)) = resolve_instabox_creds(project_root) else {
+        return (VpsAvailability::Unknown, "missing_env".to_string());
     };
 
-    let mut cmd = Command::new(curl_bin);
+    let url = format!("{api_base}/v1/machines/{machine_id}");
+    let mut cmd = Command::new(curl_bin_path());
     cmd.args(["-sS", "--max-time", "8", "--config", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -462,6 +478,214 @@ fn query_vps_state(project_root: &Path) -> (VpsAvailability, String) {
         Some(st) => (classify_vps_state(&st), st),
         None => (VpsAvailability::Unknown, "invalid_json".to_string()),
     }
+}
+
+fn choose_vps_action_endpoint(raw_state: &str) -> &'static str {
+    match raw_state.trim().to_ascii_lowercase().as_str() {
+        "stopped" | "off" => "start",
+        _ => "resume",
+    }
+}
+
+fn split_curl_body_and_status(raw: &str) -> (u16, &str) {
+    let trimmed = raw.trim_end_matches(&['\r', '\n'][..]);
+    if let Some(idx) = trimmed.rfind('\n') {
+        let candidate = trimmed[idx + 1..].trim();
+        if candidate.len() == 3 && candidate.bytes().all(|b| b.is_ascii_digit()) {
+            if let Ok(code) = candidate.parse::<u16>() {
+                let body = trimmed[..idx].trim_end_matches(&['\r', '\n'][..]);
+                return (code, body);
+            }
+        }
+    } else if trimmed.len() == 3 && trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        if let Ok(code) = trimmed.parse::<u16>() {
+            return (code, "");
+        }
+    }
+    (0, trimmed)
+}
+
+fn extract_json_string_field(json: &str, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        let needle = format!("\"{key}\"");
+        let mut search_from = 0;
+        while let Some(pos) = json[search_from..].find(&needle) {
+            let abs_pos = search_from + pos + needle.len();
+            let rest = json[abs_pos..].trim_start();
+            if let Some(after_colon) = rest.strip_prefix(':') {
+                let val_start = after_colon.trim_start();
+                if let Some(inner) = val_start.strip_prefix('"') {
+                    let mut out = String::new();
+                    let mut chars = inner.chars();
+                    while let Some(ch) = chars.next() {
+                        if ch == '\\' {
+                            if let Some(esc) = chars.next() {
+                                out.push(match esc {
+                                    'n' => ' ',
+                                    'r' => ' ',
+                                    't' => ' ',
+                                    other => other,
+                                });
+                            }
+                        } else if ch == '"' {
+                            break;
+                        } else {
+                            out.push(ch);
+                        }
+                        if out.chars().count() >= 120 {
+                            break;
+                        }
+                    }
+                    let clean = out.trim().to_string();
+                    if !clean.is_empty() {
+                        return Some(clean);
+                    }
+                }
+            }
+            search_from = abs_pos;
+        }
+    }
+    None
+}
+
+fn extract_json_u64_field(json: &str, key: &str) -> Option<u64> {
+    let needle = format!("\"{key}\"");
+    let mut search_from = 0;
+    while let Some(pos) = json[search_from..].find(&needle) {
+        let abs_pos = search_from + pos + needle.len();
+        let rest = json[abs_pos..].trim_start();
+        if let Some(after_colon) = rest.strip_prefix(':') {
+            let val_start = after_colon.trim_start();
+            let digits: String = val_start.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if !digits.is_empty() {
+                if let Ok(v) = digits.parse::<u64>() {
+                    return Some(v);
+                }
+            }
+        }
+        search_from = abs_pos;
+    }
+    None
+}
+
+fn is_cooldown_response(body: &str) -> bool {
+    if extract_json_string_field(body, &["code"])
+        .is_some_and(|c| c.eq_ignore_ascii_case("machine_cooldown"))
+    {
+        return true;
+    }
+    body.to_ascii_lowercase().contains("machine_cooldown")
+}
+
+fn should_fallback_resume_to_start(status: u16, body: &str) -> bool {
+    match status {
+        400 | 404 | 405 | 422 => true,
+        409 => !is_cooldown_response(body),
+        _ => false,
+    }
+}
+
+fn format_vps_resume_error(status: u16, body: &str) -> String {
+    if status == 409 && is_cooldown_response(body) {
+        if let Some(secs) = extract_json_u64_field(body, "retryAfterSeconds") {
+            if secs >= 60 {
+                return format!("VPS sedang cooldown (coba lagi dalam ~{}m)", secs.div_ceil(60));
+            }
+            return format!("VPS sedang cooldown (coba lagi dalam ~{secs}d)");
+        }
+        return "VPS sedang cooldown, coba lagi nanti".to_string();
+    }
+    if status == 401 || status == 403 {
+        return format!("API key ditolak / butuh izin machines:write (HTTP {status})");
+    }
+    if status == 429 {
+        return "Terlalu banyak permintaan ke InstaBox (HTTP 429)".to_string();
+    }
+    if status == 0 {
+        return "Gagal menghubungi API InstaBox".to_string();
+    }
+    if let Some(msg) = extract_json_string_field(body, &["message", "error"]) {
+        format!("HTTP {status}: {msg}")
+    } else {
+        format!("HTTP {status}")
+    }
+}
+
+fn post_instabox_machine_action(
+    api_base: &str,
+    api_key: &str,
+    machine_id: &str,
+    action: &str,
+) -> Result<(u16, String), String> {
+    let url = format!("{api_base}/v1/machines/{machine_id}/{action}");
+    let seq = IDEMPOTENCY_SEQ.fetch_add(1, Ordering::Relaxed);
+    let idemp_key = format!(
+        "baileys-backup-{}-{}-{}",
+        now_epoch_secs(),
+        std::process::id(),
+        seq
+    );
+
+    let mut cmd = Command::new(curl_bin_path());
+    cmd.args([
+        "-sS",
+        "--max-time",
+        "15",
+        "-w",
+        "\n%{http_code}",
+        "--config",
+        "-",
+    ])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|_| "Gagal menjalankan curl untuk mengaktifkan VPS".to_string())?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let cfg = format!(
+            "url = \"{url}\"\nrequest = \"POST\"\nheader = \"Authorization: Bearer {api_key}\"\nheader = \"Accept: application/json\"\nheader = \"Content-Type: application/json\"\nheader = \"Idempotency-Key: {idemp_key}\"\ndata = \"{{}}\"\n"
+        );
+        let _ = stdin.write_all(cfg.as_bytes());
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|_| "Koneksi ke API InstaBox terputus".to_string())?;
+
+    let raw_out = String::from_utf8_lossy(&output.stdout);
+    let (status, body) = split_curl_body_and_status(&raw_out);
+    if status == 0 && !output.status.success() {
+        return Err("Gagal menghubungi API InstaBox".to_string());
+    }
+    Ok((status, body.to_string()))
+}
+
+fn trigger_vps_resume(project_root: &Path, current_raw_state: &str) -> Result<(String, u16), String> {
+    let Some((api_base, api_key, machine_id)) = resolve_instabox_creds(project_root) else {
+        return Err("INSTABOX_API_KEY atau INSTABOX_MACHINE_ID belum diisi di .env".to_string());
+    };
+
+    let primary_action = choose_vps_action_endpoint(current_raw_state);
+    let (status, body) =
+        post_instabox_machine_action(&api_base, &api_key, &machine_id, primary_action)?;
+    if (200..=299).contains(&status) {
+        return Ok((primary_action.to_string(), status));
+    }
+
+    if primary_action == "resume" && should_fallback_resume_to_start(status, &body) {
+        let (status2, body2) =
+            post_instabox_machine_action(&api_base, &api_key, &machine_id, "start")?;
+        if (200..=299).contains(&status2) {
+            return Ok(("start".to_string(), status2));
+        }
+        return Err(format_vps_resume_error(status2, &body2));
+    }
+
+    Err(format_vps_resume_error(status, &body))
 }
 
 fn find_node_binary() -> PathBuf {
@@ -1011,6 +1235,7 @@ fn collect_panel_stats(ctx: &AppContext) -> panel::PanelStats {
         vps_availability: vps_avail,
         failover_active: cpid > 0,
         checking_vps: ctx.checking_vps.load(Ordering::SeqCst),
+        resuming_vps: ctx.resuming_vps.load(Ordering::SeqCst),
         app_private_kb: app_priv,
         app_working_kb: app_ws,
         node_private_kb: node_priv,
@@ -1053,13 +1278,15 @@ fn show_panel_for_ctx(hwnd: HWND, ctx: &Arc<AppContext>, toggle: bool) {
 
 fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
     apply_dark_context_menu_theme();
-    let raw_st = ctx
+    let (avail, raw_st) = ctx
         .shared
         .lock()
-        .map(|g| g.raw_state.clone())
-        .unwrap_or_else(|_| "unknown".to_string());
+        .map(|g| (g.vps_availability, g.raw_state.clone()))
+        .unwrap_or((VpsAvailability::Unknown, "unknown".to_string()));
     let cpid = ctx.child_pid.load(Ordering::SeqCst);
     let autostart = is_autostart_enabled();
+    let resume_disabled =
+        avail == VpsAvailability::Running || ctx.resuming_vps.load(Ordering::SeqCst);
 
     let hdr = to_wide_nul(&format!(
         "Baileys Backup  (VPS: {})",
@@ -1072,6 +1299,7 @@ fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
     };
     let lbl_panel = to_wide_nul("Buka Panel Statistik");
     let lbl_check = to_wide_nul("Cek Status VPS Sekarang");
+    let lbl_resume = to_wide_nul("Resume / Aktifkan VPS Utama");
     let lbl_startup = to_wide_nul("Jalankan saat Login Windows");
     let lbl_log = to_wide_nul("Buka Log Baileys Backup");
     let lbl_bot_log = to_wide_nul("Buka Log Bot WhatsApp Lokal");
@@ -1093,6 +1321,17 @@ fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
         let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(hmenu, MF_STRING, IDM_SHOW_PANEL, PCWSTR(lbl_panel.as_ptr()));
         let _ = AppendMenuW(hmenu, MF_STRING, IDM_CHECK_NOW, PCWSTR(lbl_check.as_ptr()));
+        let _ = AppendMenuW(
+            hmenu,
+            MF_STRING
+                | if resume_disabled {
+                    MF_DISABLED | MF_GRAYED
+                } else {
+                    windows::Win32::UI::WindowsAndMessaging::MENU_ITEM_FLAGS(0)
+                },
+            IDM_RESUME_VPS,
+            PCWSTR(lbl_resume.as_ptr()),
+        );
         let _ = AppendMenuW(
             hmenu,
             MF_STRING | if autostart { MF_CHECKED } else { MF_UNCHECKED },
@@ -1148,12 +1387,34 @@ fn open_file_in_notepad(path: &Path) {
     let _ = Command::new("notepad.exe").arg(path).spawn();
 }
 
+fn request_vps_resume(ctx: &Arc<AppContext>) -> &'static str {
+    let avail = ctx
+        .shared
+        .lock()
+        .map(|g| g.vps_availability)
+        .unwrap_or(VpsAvailability::Unknown);
+    if avail == VpsAvailability::Running {
+        record_event(ctx, "VPS utama sudah aktif (RUNNING)");
+        return "already_running";
+    }
+    if ctx.resuming_vps.swap(true, Ordering::SeqCst) {
+        return "in_progress";
+    }
+    ctx.resume_requested.store(true, Ordering::SeqCst);
+    record_event(ctx, "Mengirim perintah aktifkan VPS...");
+    "resuming"
+}
+
 fn handle_command_id(hwnd: HWND, ctx: &Arc<AppContext>, cmd_id: usize) {
     match cmd_id {
         IDM_SHOW_PANEL => show_panel_for_ctx(hwnd, ctx, false),
         IDM_CHECK_NOW => {
             ctx.checking_vps.store(true, Ordering::SeqCst);
             ctx.force_poll.store(true, Ordering::SeqCst);
+            panel::refresh_if_visible();
+        }
+        IDM_RESUME_VPS => {
+            let _ = request_vps_resume(ctx);
             panel::refresh_if_visible();
         }
         IDM_TOGGLE_AUTOSTART => {
@@ -1330,6 +1591,19 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
         return;
     }
 
+    if cmd == "RESUME_VPS" {
+        let action = request_vps_resume(ctx);
+        if !hwnd.0.is_null() {
+            unsafe {
+                let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+            }
+        }
+        let resp = format!("{{\"ok\":true,\"action\":\"{action}\"}}\n");
+        let _ = stream.write_all(resp.as_bytes());
+        let _ = stream.flush();
+        return;
+    }
+
     if cmd == "SHOW_PANEL" || cmd == "POPUP" {
         if !hwnd.0.is_null() {
             unsafe {
@@ -1357,8 +1631,9 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
         (0, 0)
     };
     let tray_active = ctx.tray_registered.load(Ordering::SeqCst);
+    let resuming_vps = ctx.resuming_vps.load(Ordering::SeqCst);
     let resp = format!(
-        "{{\"ok\":true,\"appName\":\"Baileys Backup\",\"watchdogPid\":{},\"vpsAvailability\":\"{}\",\"vpsState\":\"{}\",\"failoverActive\":{},\"childNodePid\":{},\"lastCheckEpoch\":{},\"uptimeSecs\":{},\"trayActive\":{},\"appPrivateKb\":{},\"appWorkingKb\":{},\"nodePrivateKb\":{},\"totalChecks\":{},\"failoverCount\":{}}}\n",
+        "{{\"ok\":true,\"appName\":\"Baileys Backup\",\"watchdogPid\":{},\"vpsAvailability\":\"{}\",\"vpsState\":\"{}\",\"failoverActive\":{},\"childNodePid\":{},\"lastCheckEpoch\":{},\"uptimeSecs\":{},\"trayActive\":{},\"resumingVps\":{},\"appPrivateKb\":{},\"appWorkingKb\":{},\"nodePrivateKb\":{},\"totalChecks\":{},\"failoverCount\":{}}}\n",
         std::process::id(),
         avail,
         raw_st,
@@ -1367,6 +1642,7 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
         last_ts,
         ctx.started_at.elapsed().as_secs(),
         if tray_active { "true" } else { "false" },
+        if resuming_vps { "true" } else { "false" },
         app_priv_kb,
         app_ws_kb,
         node_priv_kb,
@@ -1391,6 +1667,7 @@ fn notify_existing_instance_show_panel() -> bool {
 fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
     let mut child_node: Option<Child> = None;
     let mut next_poll = Instant::now();
+    let mut fast_polls_left: u8 = 0;
 
     while ctx.running.load(Ordering::SeqCst) {
         while let Ok((stream, _)) = listener.accept() {
@@ -1413,6 +1690,49 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
                     unsafe {
                         let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
                     }
+                }
+            }
+        }
+
+        if ctx.resume_requested.swap(false, Ordering::SeqCst) {
+            let current_raw = ctx
+                .shared
+                .lock()
+                .map(|g| g.raw_state.clone())
+                .unwrap_or_default();
+            match trigger_vps_resume(&ctx.project_root, &current_raw) {
+                Ok((action, code)) => {
+                    let msg = format!(
+                        "Permintaan {action} VPS diterima (HTTP {code}). Menunggu aktif..."
+                    );
+                    append_log(&ctx.project_root, &msg);
+                    record_event(&ctx, &msg);
+                    queue_balloon(
+                        &ctx,
+                        "Baileys Backup - Mengaktifkan VPS",
+                        "Permintaan aktifkan VPS diterima. Bot lokal akan berhenti otomatis saat VPS RUNNING.",
+                        false,
+                    );
+                    fast_polls_left = 10;
+                    next_poll = Instant::now() + Duration::from_secs(3);
+                }
+                Err(err_msg) => {
+                    let msg = format!("Gagal aktifkan VPS: {err_msg}");
+                    append_log(&ctx.project_root, &msg);
+                    record_event(&ctx, &msg);
+                    queue_balloon(
+                        &ctx,
+                        "Baileys Backup - Gagal Aktifkan VPS",
+                        &err_msg,
+                        true,
+                    );
+                }
+            }
+            ctx.resuming_vps.store(false, Ordering::SeqCst);
+            let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+            if !hwnd.0.is_null() {
+                unsafe {
+                    let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
                 }
             }
         }
@@ -1517,7 +1837,15 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
                 queue_balloon(&ctx, "Baileys Backup — Cek Status VPS", &msg, false);
             }
 
-            next_poll = Instant::now() + Duration::from_secs(POLL_INTERVAL_SECS);
+            if avail == VpsAvailability::Running {
+                fast_polls_left = 0;
+                next_poll = Instant::now() + Duration::from_secs(POLL_INTERVAL_SECS);
+            } else if fast_polls_left > 0 {
+                fast_polls_left -= 1;
+                next_poll = Instant::now() + Duration::from_secs(3);
+            } else {
+                next_poll = Instant::now() + Duration::from_secs(POLL_INTERVAL_SECS);
+            }
         }
 
         thread::sleep(Duration::from_millis(180));
@@ -1575,6 +1903,8 @@ fn main() {
         running: Arc::new(AtomicBool::new(true)),
         force_poll: Arc::new(AtomicBool::new(false)),
         checking_vps: Arc::new(AtomicBool::new(false)),
+        resume_requested: Arc::new(AtomicBool::new(false)),
+        resuming_vps: Arc::new(AtomicBool::new(false)),
         tray_registered: Arc::new(AtomicBool::new(false)),
         tray_retry_left: AtomicU8::new(15),
         child_pid: Arc::new(AtomicU32::new(0)),
@@ -1761,6 +2091,59 @@ mod tests {
         assert_eq!(
             parse_project_dir_arg(&form_eq),
             Some(PathBuf::from("D:\\code\\project\\projek_no_name"))
+        );
+    }
+
+    #[test]
+    fn choose_vps_action_endpoint_maps_suspended_vs_stopped() {
+        assert_eq!(choose_vps_action_endpoint("suspended"), "resume");
+        assert_eq!(choose_vps_action_endpoint("paused"), "resume");
+        assert_eq!(choose_vps_action_endpoint("stopped"), "start");
+        assert_eq!(choose_vps_action_endpoint("OFF"), "start");
+        assert_eq!(choose_vps_action_endpoint("unknown"), "resume");
+    }
+
+    #[test]
+    fn split_curl_body_and_status_parses_http_code_and_body() {
+        let (code, body) = split_curl_body_and_status("{\"id\":\"op_1\",\"status\":\"pending\"}\n202\n");
+        assert_eq!(code, 202);
+        assert_eq!(body, "{\"id\":\"op_1\",\"status\":\"pending\"}");
+
+        let (code_empty, body_empty) = split_curl_body_and_status("\n204");
+        assert_eq!(code_empty, 204);
+        assert_eq!(body_empty, "");
+
+        let (code_bad, body_bad) = split_curl_body_and_status("curl connection timeout");
+        assert_eq!(code_bad, 0);
+        assert_eq!(body_bad, "curl connection timeout");
+    }
+
+    #[test]
+    fn should_fallback_resume_to_start_handles_cooldown_and_state_errors() {
+        let cooldown_json = r#"{"error":{"code":"machine_cooldown","message":"The machine is resting"}}"#;
+        assert!(!should_fallback_resume_to_start(409, cooldown_json));
+        assert!(should_fallback_resume_to_start(
+            409,
+            r#"{"error":{"code":"invalid_state","message":"machine is stopped"}}"#
+        ));
+        assert!(should_fallback_resume_to_start(404, "{}"));
+        assert!(!should_fallback_resume_to_start(403, "{}"));
+    }
+
+    #[test]
+    fn format_vps_resume_error_produces_clear_indonesian_messages() {
+        let cooldown = r#"{"error":{"code":"machine_cooldown","retryAfterSeconds":420}}"#;
+        assert_eq!(
+            format_vps_resume_error(409, cooldown),
+            "VPS sedang cooldown (coba lagi dalam ~7m)"
+        );
+        assert_eq!(
+            format_vps_resume_error(403, "{}"),
+            "API key ditolak / butuh izin machines:write (HTTP 403)"
+        );
+        assert_eq!(
+            format_vps_resume_error(500, r#"{"error":{"message":"backend busy"}}"#),
+            "HTTP 500: backend busy"
         );
     }
 }

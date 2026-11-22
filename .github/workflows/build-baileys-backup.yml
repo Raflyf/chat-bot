@@ -1,0 +1,243 @@
+name: Build Baileys Backup (Windows)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/wa-standby-watchdog/**'
+      - '.github/workflows/build-baileys-backup.yml'
+    tags:
+      - 'baileys-backup-v*'
+      - 'v*'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/wa-standby-watchdog/**'
+      - '.github/workflows/build-baileys-backup.yml'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag GitHub Release opsional (kosong = baileys-backup-latest)'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: build-baileys-backup-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build, Test & Release (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain (x86_64-pc-windows-msvc)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo dependencies & target artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/wa-standby-watchdog
+
+      - name: Run Rust unit tests
+        shell: pwsh
+        run: cargo test --locked --manifest-path tools/wa-standby-watchdog/Cargo.toml
+
+      - name: Build release BaileysBackup.exe
+        shell: pwsh
+        run: cargo build --release --locked --manifest-path tools/wa-standby-watchdog/Cargo.toml
+
+      - name: Verify embedded VersionInfo, manifest, and multi-res icons
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $PWD 'tools\wa-standby-watchdog\target\release\BaileysBackup.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "Release binary tidak ditemukan: $exe"
+          }
+
+          $vi = (Get-Item -LiteralPath $exe).VersionInfo
+          $sizeKb = [Math]::Round((Get-Item -LiteralPath $exe).Length / 1024.0, 1)
+          Write-Host "Binary: $exe ($sizeKb KB)"
+          Write-Host "FileDescription=$($vi.FileDescription) | ProductName=$($vi.ProductName) | FileVersion=$($vi.FileVersion)"
+          if ($vi.FileDescription -ne 'Baileys Backup') { throw "FileDescription tidak sesuai: '$($vi.FileDescription)'" }
+          if ($vi.ProductName -ne 'Baileys Backup') { throw "ProductName tidak sesuai: '$($vi.ProductName)'" }
+
+          Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+          using System;
+          using System.Drawing;
+          using System.Runtime.InteropServices;
+
+          public static class ExeResourceVerifier {
+              [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+              static extern uint PrivateExtractIconsW(string path, int idx, int cx, int cy, IntPtr[] phicon, uint[] piconid, uint nIcons, uint flags);
+              [DllImport("user32.dll", SetLastError = true)]
+              static extern bool DestroyIcon(IntPtr hIcon);
+              [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+              static extern IntPtr LoadLibraryExW(string path, IntPtr hFile, uint flags);
+              [DllImport("kernel32.dll", SetLastError = true)]
+              static extern IntPtr FindResourceW(IntPtr hMod, IntPtr lpName, IntPtr lpType);
+              [DllImport("kernel32.dll", SetLastError = true)]
+              static extern uint SizeofResource(IntPtr hMod, IntPtr hResInfo);
+              [DllImport("kernel32.dll", SetLastError = true)]
+              static extern bool FreeLibrary(IntPtr hMod);
+
+              public static void Verify(string exePath) {
+                  IntPtr hMod = LoadLibraryExW(exePath, IntPtr.Zero, 0x00000002); // LOAD_LIBRARY_AS_DATAFILE
+                  if (hMod == IntPtr.Zero) throw new Exception("LoadLibraryExW gagal: " + Marshal.GetLastWin32Error());
+                  try {
+                      IntPtr hManifest = FindResourceW(hMod, new IntPtr(1), new IntPtr(24)); // RT_MANIFEST = 24
+                      if (hManifest == IntPtr.Zero) throw new Exception("RT_MANIFEST (24, ID=1) tidak ditemukan");
+                      uint manifestBytes = SizeofResource(hMod, hManifest);
+                      if (manifestBytes == 0) throw new Exception("RT_MANIFEST berukuran 0 byte");
+                      Console.WriteLine("RT_MANIFEST bytes=" + manifestBytes);
+                  } finally {
+                      FreeLibrary(hMod);
+                  }
+
+                  foreach (int size in new[] { 16, 20, 24, 32, 48, 256 }) {
+                      IntPtr[] icons = new IntPtr[1];
+                      uint[] ids = new uint[1];
+                      uint count = PrivateExtractIconsW(exePath, 0, size, size, icons, ids, 1, 0);
+                      if (count < 1 || icons[0] == IntPtr.Zero) {
+                          throw new Exception("Gagal mengekstrak ikon ukuran " + size + "px");
+                      }
+                      int nonZeroAlpha = 0;
+                      using (Icon ic = Icon.FromHandle(icons[0]))
+                      using (Bitmap bmp = ic.ToBitmap()) {
+                          for (int y = 0; y < bmp.Height; y++) {
+                              for (int x = 0; x < bmp.Width; x++) {
+                                  if (bmp.GetPixel(x, y).A > 0) nonZeroAlpha++;
+                              }
+                          }
+                      }
+                      DestroyIcon(icons[0]);
+                      Console.WriteLine(string.Format("Icon {0}x{0}: extracted={1}, nonZeroAlphaPixels={2}", size, count, nonZeroAlpha));
+                      if (nonZeroAlpha == 0) {
+                          throw new Exception("Ikon ukuran " + size + "px kosong (alpha 0)");
+                      }
+                  }
+              }
+          }
+          '@
+
+          [ExeResourceVerifier]::Verify($exe)
+
+      - name: Package release assets and SHA256SUMS
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $PWD 'tools\wa-standby-watchdog\target\release\BaileysBackup.exe'
+          $outDir = Join-Path $PWD 'release-out'
+          $stageDir = Join-Path $outDir 'stage'
+          New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $outDir 'BaileysBackup.exe') -Force
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $stageDir 'BaileysBackup.exe') -Force
+          Copy-Item -LiteralPath (Join-Path $PWD 'tools\wa-standby-watchdog\Install-BaileysBackup.ps1') -Destination $stageDir -Force
+          Copy-Item -LiteralPath (Join-Path $PWD 'tools\wa-standby-watchdog\Install-BaileysBackup.cmd') -Destination $stageDir -Force
+
+          foreach ($icoName in @('baileys-backup.ico', 'baileys-backup-active.ico')) {
+            $icoPath = Join-Path $PWD "bin\$icoName"
+            if (Test-Path -LiteralPath $icoPath -PathType Leaf) {
+              Copy-Item -LiteralPath $icoPath -Destination $stageDir -Force
+            }
+          }
+
+          $zipPath = Join-Path $outDir 'BaileysBackup-windows-x64.zip'
+          Compress-Archive -Path "$stageDir\*" -DestinationPath $zipPath -CompressionLevel Optimal -Force
+
+          $exeHash = (Get-FileHash -LiteralPath (Join-Path $outDir 'BaileysBackup.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+          $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            "$exeHash  BaileysBackup.exe",
+            "$zipHash  BaileysBackup-windows-x64.zip"
+          ) | Set-Content -Path (Join-Path $outDir 'SHA256SUMS.txt') -Encoding Ascii
+
+          $sizeKb = [Math]::Round((Get-Item -LiteralPath (Join-Path $outDir 'BaileysBackup.exe')).Length / 1024.0, 1)
+          "size_kb=$sizeKb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "exe_sha256=$exeHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "zip_sha256=$zipHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload GitHub Actions build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaileysBackup-windows-x64
+          path: |
+            release-out/BaileysBackup.exe
+            release-out/BaileysBackup-windows-x64.zip
+            release-out/SHA256SUMS.txt
+          retention-days: 30
+
+      - name: Publish or update GitHub Release
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = if ('${{ github.ref_type }}' -eq 'tag') {
+            '${{ github.ref_name }}'
+          } elseif (-not [string]::IsNullOrWhiteSpace($env:INPUT_RELEASE_TAG)) {
+            $env:INPUT_RELEASE_TAG.Trim()
+          } else {
+            'baileys-backup-latest'
+          }
+
+          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+          $notes = @(
+            "Build otomatis GitHub Actions untuk **Baileys Backup (Windows x64)** dari commit ``$shortSha``.",
+            "",
+            "### Paket Unduhan",
+            "- ``BaileysBackup-windows-x64.zip`` (direkomendasikan): berisi ``BaileysBackup.exe``, ikon ``.ico``, dan installer sekali klik ``Install-BaileysBackup.cmd``.",
+            "- ``BaileysBackup.exe`` (${{ steps.package.outputs.size_kb }} KB): binary standalone tanpa installer.",
+            "- ``SHA256SUMS.txt``: checksum SHA-256 untuk verifikasi integritas berkas.",
+            "",
+            "### Cara Pasang di Windows",
+            "1. Ekstrak ``BaileysBackup-windows-x64.zip`` lalu klik dua kali ``Install-BaileysBackup.cmd``, **atau**",
+            "2. Jalankan dari folder proyek: ``node scripts/watchdog-ctl.mjs install --exe <path-ke-BaileysBackup.exe>``."
+          ) -join "`n"
+
+          $notesFile = Join-Path $env:RUNNER_TEMP 'baileys-release-notes.md'
+          Set-Content -Path $notesFile -Value $notes -Encoding utf8
+
+          if ($tag -eq 'baileys-backup-latest') {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -f $tag $env:GITHUB_SHA
+            git push origin "refs/tags/$tag" --force
+          }
+
+          $exists = $false
+          & gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            $exists = $true
+          }
+
+          $assets = @(
+            'release-out/BaileysBackup.exe',
+            'release-out/BaileysBackup-windows-x64.zip',
+            'release-out/SHA256SUMS.txt'
+          )
+
+          if ($exists) {
+            & gh release edit $tag --target $env:GITHUB_SHA --title "Baileys Backup (Windows x64)" --notes-file $notesFile
+            if ($LASTEXITCODE -ne 0) { throw "gh release edit gagal" }
+            & gh release upload $tag @assets --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload gagal" }
+          } else {
+            & gh release create $tag @assets --target $env:GITHUB_SHA --title "Baileys Backup (Windows x64)" --notes-file $notesFile
+            if ($LASTEXITCODE -ne 0) { throw "gh release create gagal" }
+          }

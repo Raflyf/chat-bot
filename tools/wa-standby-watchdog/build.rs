@@ -701,8 +701,8 @@ fn main() {
     items.push((24, 1, 0x0409, build_app_manifest()));
 
     let coff_bytes = build_coff_rsrc_object(items);
-    let obj_path = out_dir.join("baileys_backup_rsrc.o");
-    fs::write(&obj_path, &coff_bytes).expect("Failed to write baileys_backup_rsrc.o");
+    let obj_path = out_dir.join("baileys_backup_rsrc.obj");
+    fs::write(&obj_path, &coff_bytes).expect("Failed to write baileys_backup_rsrc.obj");
 
     println!("cargo:rustc-link-arg-bins={}", obj_path.display());
 }

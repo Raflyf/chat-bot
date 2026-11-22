@@ -50,13 +50,14 @@ const PANEL_CLASS: PCWSTR = w!("BaileysBackupStatsPanel");
 const PANEL_REFRESH_TIMER_ID: usize = 701;
 const WM_MOUSELEAVE_MSG: u32 = 0x02A3;
 const LOGICAL_WIDTH: i32 = 396;
-const LOGICAL_HEIGHT: i32 = 508;
+const LOGICAL_HEIGHT: i32 = 552;
 
 pub const CMD_CHECK_NOW: usize = 1002;
 pub const CMD_OPEN_LOG: usize = 1003;
 pub const CMD_OPEN_BOT_LOG: usize = 1004;
 pub const CMD_OPEN_FOLDER: usize = 1005;
 pub const CMD_TOGGLE_AUTOSTART: usize = 1006;
+pub const CMD_RESUME_VPS: usize = 1007;
 pub const CMD_EXIT: usize = 1009;
 
 #[derive(Clone, Debug)]
@@ -67,6 +68,7 @@ pub struct PanelStats {
     pub vps_availability: &'static str,
     pub failover_active: bool,
     pub checking_vps: bool,
+    pub resuming_vps: bool,
     pub app_private_kb: u64,
     pub app_working_kb: u64,
     pub node_private_kb: u64,
@@ -84,6 +86,7 @@ pub struct PanelStats {
 pub enum HitTarget {
     Close,
     ToggleAutoStart,
+    ResumeVps,
     CheckNow,
     OpenWatchdogLog,
     OpenBotLog,
@@ -104,6 +107,7 @@ struct Layout {
     row_config: RECT,
     toggle_pill: RECT,
     card_logs: RECT,
+    btn_resume: RECT,
     btn_check: RECT,
     btn_log_app: RECT,
     btn_log_wa: RECT,
@@ -175,7 +179,10 @@ fn compute_layout(dpi: i32) -> Layout {
     // Action buttons
     let btn1_top = logs_top + logs_h + sc(12, dpi);
     let btn1_h = sc(34, dpi);
-    let btn_check = mk_rect(pad, btn1_top, w - pad, btn1_top + btn1_h);
+    let col2_gap = sc(8, dpi);
+    let col2_w = (inner_w - col2_gap) / 2;
+    let btn_resume = mk_rect(pad, btn1_top, pad + col2_w, btn1_top + btn1_h);
+    let btn_check = mk_rect(pad + col2_w + col2_gap, btn1_top, w - pad, btn1_top + btn1_h);
 
     let btn2_top = btn1_top + btn1_h + sc(8, dpi);
     let btn2_h = sc(30, dpi);
@@ -206,6 +213,7 @@ fn compute_layout(dpi: i32) -> Layout {
         row_config,
         toggle_pill,
         card_logs,
+        btn_resume,
         btn_check,
         btn_log_app,
         btn_log_wa,
@@ -219,6 +227,8 @@ fn hit_test_layout(layout: &Layout, x: i32, y: i32) -> Option<HitTarget> {
         Some(HitTarget::Close)
     } else if pt_in_rect(layout.toggle_pill, x, y) {
         Some(HitTarget::ToggleAutoStart)
+    } else if pt_in_rect(layout.btn_resume, x, y) {
+        Some(HitTarget::ResumeVps)
     } else if pt_in_rect(layout.btn_check, x, y) {
         Some(HitTarget::CheckNow)
     } else if pt_in_rect(layout.btn_log_app, x, y) {
@@ -588,17 +598,23 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
     };
 
     // Card 1: VPS UTAMA
-    let vps_color = match stats.vps_availability {
-        "running" => c_emerald,
-        "down" => c_amber,
-        _ => c_muted,
+    let vps_color = if stats.resuming_vps {
+        c_amber
+    } else {
+        match stats.vps_availability {
+            "running" => c_emerald,
+            "down" | "transient" => c_amber,
+            _ => c_muted,
+        }
     };
     let last_check_str = match stats.last_check_age_secs {
         Some(s) if s < 60 => format!("Cek terakhir: {s}d lalu"),
         Some(s) => format!("Cek terakhir: {}m lalu", s / 60),
         None => "Belum pernah dicek".to_string(),
     };
-    let vps_val = if stats.checking_vps {
+    let vps_val = if stats.resuming_vps {
+        "MENGAKTIFKAN...".to_string()
+    } else if stats.checking_vps {
         "MENGECEK...".to_string()
     } else {
         stats.vps_state.to_ascii_uppercase()
@@ -656,7 +672,7 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
             DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
         );
         let tray_desc = format!(
-            "System Tray: {} · Interval pantau {}s (pasif read-only)",
+            "System Tray: {} · Pantau tiap {}s (resume manual)",
             if stats.tray_registered { "Aktif" } else { "Menunggu" },
             stats.poll_interval_secs
         );
@@ -746,21 +762,74 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
     // 6. Action Buttons
     let btn_r = sc(8, dpi);
     unsafe {
-        let chk_bg = if st.hover == Some(HitTarget::CheckNow) {
-            c_emerald_hover
+        let vps_is_running = stats.vps_availability == "running";
+        let vps_is_transient = stats.vps_availability == "transient";
+        let can_resume = !vps_is_running && !vps_is_transient && !stats.resuming_vps;
+
+        let resume_label = if stats.resuming_vps {
+            "Mengaktifkan..."
+        } else if vps_is_running {
+            "VPS Sudah Aktif"
+        } else if vps_is_transient {
+            "VPS Booting..."
+        } else if matches!(stats.vps_state.to_ascii_lowercase().as_str(), "stopped" | "off") {
+            "Aktifkan VPS"
         } else {
-            c_emerald
+            "Resume VPS"
         };
-        draw_rounded_box(mem_dc, layout.btn_check, btn_r, chk_bg, chk_bg);
+
+        let (res_bg, res_brd, res_fg) = if can_resume {
+            let bg = if st.hover == Some(HitTarget::ResumeVps) {
+                rgb(251, 191, 36)
+            } else {
+                c_amber
+            };
+            (bg, bg, rgb(20, 14, 4))
+        } else if stats.resuming_vps || vps_is_transient {
+            (c_amber_bg, c_amber, c_amber)
+        } else {
+            (c_emerald_bg, rgb(30, 88, 70), c_emerald)
+        };
+        draw_rounded_box(mem_dc, layout.btn_resume, btn_r, res_bg, res_brd);
+        draw_text_rect(
+            mem_dc,
+            resume_label,
+            layout.btn_resume,
+            res_fg,
+            f_btn,
+            DT_CENTER.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
+        );
+
+        let (chk_bg, chk_brd, chk_fg) = if can_resume {
+            let bg = if st.hover == Some(HitTarget::CheckNow) {
+                c_btn_hover
+            } else {
+                c_btn_bg
+            };
+            let brd = if st.hover == Some(HitTarget::CheckNow) {
+                rgb(90, 102, 120)
+            } else {
+                c_card_border
+            };
+            (bg, brd, c_text)
+        } else {
+            let bg = if st.hover == Some(HitTarget::CheckNow) {
+                c_emerald_hover
+            } else {
+                c_emerald
+            };
+            (bg, bg, rgb(10, 20, 16))
+        };
+        draw_rounded_box(mem_dc, layout.btn_check, btn_r, chk_bg, chk_brd);
         draw_text_rect(
             mem_dc,
             if stats.checking_vps {
-                "Mengecek Status VPS..."
+                "Mengecek..."
             } else {
-                "Cek Status VPS Sekarang"
+                "Cek Status VPS"
             },
             layout.btn_check,
-            rgb(10, 20, 16),
+            chk_fg,
             f_btn,
             DT_CENTER.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
         );
@@ -919,6 +988,9 @@ unsafe extern "system" fn panel_wnd_proc(
                         HitTarget::Close => hide_panel_internal(hwnd),
                         HitTarget::ToggleAutoStart => unsafe {
                             let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_TOGGLE_AUTOSTART), LPARAM(0));
+                        },
+                        HitTarget::ResumeVps => unsafe {
+                            let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_RESUME_VPS), LPARAM(0));
                         },
                         HitTarget::CheckNow => unsafe {
                             let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_CHECK_NOW), LPARAM(0));
@@ -1147,11 +1219,22 @@ mod tests {
     #[test]
     fn layout_buttons_do_not_overlap_and_hit_test_accurately() {
         let layout = compute_layout(96);
+        assert!(layout.btn_resume.right < layout.btn_check.left);
+        assert!(layout.btn_resume.bottom < layout.btn_log_app.top);
         assert!(layout.btn_check.bottom < layout.btn_log_app.top);
         assert!(layout.btn_log_app.right < layout.btn_log_wa.left);
         assert!(layout.btn_log_wa.right < layout.btn_folder.left);
         assert!(layout.btn_log_app.bottom < layout.btn_exit.top);
+        assert!(layout.btn_exit.bottom <= layout.height - layout.pad);
 
+        assert_eq!(
+            hit_test_layout(
+                &layout,
+                (layout.btn_resume.left + layout.btn_resume.right) / 2,
+                (layout.btn_resume.top + layout.btn_resume.bottom) / 2
+            ),
+            Some(HitTarget::ResumeVps)
+        );
         assert_eq!(
             hit_test_layout(
                 &layout,

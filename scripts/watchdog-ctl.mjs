@@ -1,7 +1,9 @@
 /**
  * Pengelola Aplikasi Native Rust `Baileys Backup` (`bin/BaileysBackup.exe`) untuk Windows:
  * - `node scripts/watchdog-ctl.mjs build`     : Kompilasi TypeScript (`dist/`) + binary Rust (`bin/BaileysBackup.exe` + `.ico`)
- * - `node scripts/watchdog-ctl.mjs install`   : Build, daftarkan ke Windows Startup, Windows Search (Start Menu), System Tray, & jalankan
+ * - `node scripts/watchdog-ctl.mjs install`   : Build/pasang ke LocalAppData, daftarkan ke Windows Startup, Windows Search, System Tray, & jalankan
+ *   - `--exe <path>` / `--from <path>`        : Pasang binary `.exe` prebuilt (mis. unduhan GitHub Release) tanpa compile Rust lokal
+ *   - `--skip-rust`                           : Pakai `bin/BaileysBackup.exe` yang sudah ada tanpa memanggil `cargo build`
  * - `node scripts/watchdog-ctl.mjs start`     : Jalankan `Baileys Backup` di System Tray tanpa jendela terminal
  * - `node scripts/watchdog-ctl.mjs status`    : Tampilkan status live Baileys Backup, status VPS, pemakaian RAM (MB), Tray, Startup, & Search Index
  * - `node scripts/watchdog-ctl.mjs stop`      : Hentikan Baileys Backup (dan sync sesi bila backup lokal sedang aktif)
@@ -167,17 +169,71 @@ function deployToLocalAppData() {
   console.log(`[baileys-backup] Terpasang di LocalAppData (Medium Integrity): ${INSTALLED_EXE}`);
 }
 
-async function buildAll() {
-  await stopWatchdogIfRunning();
-  stopLegacyHeavyTsxStandbyProcesses();
+function parseCliArgs(argv) {
+  let action = 'status';
+  let prebuiltExe = '';
+  let skipRust = false;
+  let actionSet = false;
 
-  console.log('[baileys-backup] 1/2 Mengompilasi TypeScript (dist/whatsapp_baileys.js)...');
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--skip-rust') {
+      skipRust = true;
+    } else if (arg.startsWith('--exe=')) {
+      prebuiltExe = arg.slice('--exe='.length).trim();
+    } else if (arg.startsWith('--from=')) {
+      prebuiltExe = arg.slice('--from='.length).trim();
+    } else if ((arg === '--exe' || arg === '--from') && i + 1 < argv.length) {
+      prebuiltExe = argv[++i].trim();
+    } else if (!arg.startsWith('--') && !actionSet) {
+      action = arg.trim().toLowerCase();
+      actionSet = true;
+    }
+  }
+
+  return { action, prebuiltExe, skipRust };
+}
+
+function buildTypeScriptDist() {
+  console.log('[baileys-backup] Mengompilasi TypeScript (dist/whatsapp_baileys.js)...');
   const tscJs = path.join(ROOT_DIR, 'node_modules', 'typescript', 'bin', 'tsc');
   execFileSync(process.execPath, [tscJs], {
     cwd: ROOT_DIR,
     stdio: 'inherit',
     windowsHide: true,
   });
+}
+
+async function installPrebuiltBinary(sourceExe, skipRust) {
+  await stopWatchdogIfRunning();
+  stopLegacyHeavyTsxStandbyProcesses();
+
+  if (!fs.existsSync(path.join(ROOT_DIR, 'dist', 'whatsapp_baileys.js'))) {
+    buildTypeScriptDist();
+  }
+
+  fs.mkdirSync(BIN_DIR, { recursive: true });
+  if (sourceExe) {
+    const resolved = path.resolve(sourceExe);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`File binary prebuilt tidak ditemukan: ${resolved}`);
+    }
+    fs.writeFileSync(BIN_EXE, fs.readFileSync(resolved));
+    console.log(`[baileys-backup] Binary prebuilt disalin dari: ${resolved}`);
+  } else if (!skipRust || !fs.existsSync(BIN_EXE)) {
+    throw new Error('Binary prebuilt belum tersedia; kirim --exe <path> atau jalankan build.');
+  }
+
+  deployToLocalAppData();
+  const sizeKb = (fs.statSync(BIN_EXE).size / 1024).toFixed(1);
+  console.log(`[baileys-backup] Binary siap: ${BIN_EXE} (${sizeKb} KB)`);
+}
+
+async function buildAll() {
+  await stopWatchdogIfRunning();
+  stopLegacyHeavyTsxStandbyProcesses();
+
+  buildTypeScriptDist();
 
   console.log('[baileys-backup] 2/2 Mengompilasi native Rust BaileysBackup.exe (System Tray + Custom Icon + Stats Panel)...');
   execFileSync('cargo', ['build', '--release'], {
@@ -414,12 +470,16 @@ async function printStatus() {
   }
 }
 
-const action = (process.argv[2] || 'status').trim().toLowerCase();
+const { action, prebuiltExe, skipRust } = parseCliArgs(process.argv.slice(2));
 
 if (action === 'build') {
   await buildAll();
 } else if (action === 'install') {
-  await buildAll();
+  if (prebuiltExe || (skipRust && fs.existsSync(BIN_EXE))) {
+    await installPrebuiltBinary(prebuiltExe, skipRust);
+  } else {
+    await buildAll();
+  }
   registerWindowsStartup();
   registerWindowsSearchShortcut();
   await startWatchdog();
