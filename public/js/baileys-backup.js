@@ -778,14 +778,6 @@
       if (result && result.json && result.json.data) {
         clientReceivedAtMs = Date.now();
         renderSnapshot(result.json.data);
-        if (
-          !result.json.ok &&
-          result.json.message &&
-          result.json.reason !== "interval" &&
-          result.json.reason !== "cooldown"
-        ) {
-          setFeedback("warn", result.json.message);
-        }
       }
     } catch (_) {
       // Senyap: cron dan tombol manual tetap jadi jalur utama.
