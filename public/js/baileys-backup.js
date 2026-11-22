@@ -258,6 +258,8 @@
     if (nextEl) {
       if (!ka.enabled) {
         nextEl.textContent = translate("dash.bb.keepaliveDisabledShort", "nonaktif");
+      } else if (cachedSnapshot.vpsAvailability !== "running") {
+        nextEl.textContent = translate("dash.bb.keepaliveWaitingVps", "menunggu VPS");
       } else if (typeof ka.nextPingInSecs === "number") {
         const deadline = cachedSnapshot.serverTimeEpoch + ka.nextPingInSecs;
         const rem = deadline - nowEpoch;
@@ -267,6 +269,19 @@
             : formatCompactDuration(rem);
       } else {
         nextEl.textContent = dash;
+      }
+    }
+
+    const leaseEl = byId("bb-keepalive-lease");
+    if (leaseEl) {
+      if (
+        cachedSnapshot.vpsAvailability === "running" &&
+        typeof ka.leaseExpiresAt === "number" &&
+        ka.leaseExpiresAt > nowEpoch
+      ) {
+        leaseEl.textContent = formatCompactDuration(ka.leaseExpiresAt - nowEpoch);
+      } else {
+        leaseEl.textContent = translate("dash.bb.keepaliveLeaseNone", "tidak aktif");
       }
     }
 
@@ -329,7 +344,7 @@
       toggle.textContent = enabled
         ? translate("dash.bb.keepaliveOn", "AKTIF")
         : translate("dash.bb.keepaliveOff", "NONAKTIF");
-      toggle.disabled = inFlightKeepalive || !view.instaboxConfigured;
+      toggle.disabled = inFlightKeepalive || keepaliveAutoRunning || !view.instaboxConfigured;
     }
 
     if (badge) {
@@ -391,12 +406,13 @@
     }
 
     if (pingBtn) {
-      const vpsReady =
-        view.vpsAvailability === "running" || view.vpsAvailability === "transient";
-      pingBtn.disabled = inFlightKeepalive || !view.instaboxConfigured || !vpsReady;
-      pingBtn.textContent = inFlightKeepalive
-        ? translate("dash.bb.btnPinging", "Mengirim ping...")
-        : translate("dash.bb.btnPing", "Ping VPS Sekarang");
+      const vpsReady = view.vpsAvailability === "running";
+      pingBtn.disabled =
+        inFlightKeepalive || keepaliveAutoRunning || !view.instaboxConfigured || !vpsReady;
+      pingBtn.textContent =
+        inFlightKeepalive || keepaliveAutoRunning
+          ? translate("dash.bb.btnPinging", "Mengirim ping...")
+          : translate("dash.bb.btnPing", "Ping VPS Sekarang");
     }
 
     updateKeepaliveLive();
@@ -758,8 +774,10 @@
   }
 
   function isKeepaliveDue() {
-    const ka = cachedSnapshot && cachedSnapshot.keepalive;
-    if (!ka || !ka.enabled || !getToken()) return false;
+    if (document.hidden || !cachedSnapshot || !getToken()) return false;
+    if (cachedSnapshot.vpsAvailability !== "running") return false;
+    const ka = cachedSnapshot.keepalive;
+    if (!ka || !ka.enabled) return false;
     if (inFlightKeepalive || keepaliveAutoRunning) return false;
     const nowEpoch = effectiveServerEpoch();
     if (typeof ka.nextPingInSecs === "number") {
@@ -773,6 +791,7 @@
   async function autoPingKeepalive() {
     if (!isKeepaliveDue()) return;
     keepaliveAutoRunning = true;
+    if (cachedSnapshot) renderKeepalive(cachedSnapshot);
     try {
       const result = await postAction({ action: "keepalive", auto: true });
       if (result && result.json && result.json.data) {
@@ -783,12 +802,19 @@
       // Senyap: cron dan tombol manual tetap jadi jalur utama.
     } finally {
       keepaliveAutoRunning = false;
+      if (cachedSnapshot) renderKeepalive(cachedSnapshot);
     }
   }
 
   function syncKeepaliveAutoTimer() {
     const ka = cachedSnapshot && cachedSnapshot.keepalive;
-    const need = Boolean(ka && ka.enabled && getToken());
+    const need = Boolean(
+      ka &&
+        ka.enabled &&
+        getToken() &&
+        !document.hidden &&
+        cachedSnapshot.vpsAvailability === "running",
+    );
     if (need && !keepaliveAutoTimer) {
       keepaliveAutoTimer = setInterval(() => {
         void autoPingKeepalive();

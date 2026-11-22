@@ -18,6 +18,7 @@ import {
   defaultKeepaliveState,
   getKeepaliveConfig,
   jalankanKeepaliveVps,
+  releaseVpsActivityLease,
   setKeepaliveEnabled,
   type KeepaliveSource,
   type VpsKeepaliveState,
@@ -815,6 +816,10 @@ export function buildKeepaliveView(
   state: VpsKeepaliveState,
   machine: InstaboxMachineSnapshot | null,
   nowMs = Date.now(),
+  fallbackOpts: {
+    fallbackRunning?: boolean;
+    fallbackRunStartedAt?: string | null;
+  } = {},
 ): BaileysKeepaliveView {
   const nowSecs = Math.floor(nowMs / 1000);
   const { intervalSecs, leaseTtlSecs } = getKeepaliveConfig();
@@ -824,32 +829,70 @@ export function buildKeepaliveView(
     machine.autoSuspendAfterSeconds > 0
       ? Math.floor(machine.autoSuspendAfterSeconds)
       : null;
-  const idleWindowSecs = liveWindow ?? Math.max(60, Math.floor(config.vpsIdlePauseMinutes * 60));
-  const idleWindowSource: 'live' | 'config' = liveWindow ? 'live' : 'config';
+  const cachedWindow =
+    typeof state.idle_window_secs === 'number' &&
+    Number.isFinite(state.idle_window_secs) &&
+    state.idle_window_secs > 0
+      ? Math.floor(state.idle_window_secs)
+      : null;
+  const idleWindowSecs =
+    liveWindow ?? cachedWindow ?? Math.max(60, Math.floor(config.vpsIdlePauseMinutes * 60));
+  const idleWindowSource: 'live' | 'config' =
+    liveWindow !== null
+      ? 'live'
+      : cachedWindow !== null && state.idle_window_source === 'live'
+        ? 'live'
+        : 'config';
 
-  const running = machine ? classifyVpsAvailability(machine.state) === 'running' : false;
+  const running = machine
+    ? classifyVpsAvailability(machine.state) === 'running'
+    : Boolean(fallbackOpts.fallbackRunning);
 
-  const leaseExpiresAt = state.lease_expires_at;
+  const runStartedIso = machine?.runStartedAt ?? fallbackOpts.fallbackRunStartedAt ?? null;
+  const runStartedMs = runStartedIso ? Date.parse(runStartedIso) : Number.NaN;
+  const runStartedEpoch =
+    Number.isFinite(runStartedMs) && runStartedMs > 0 ? Math.floor(runStartedMs / 1000) : null;
+
+  const pingFromCurrentRun = Boolean(
+    state.last_ping_at && (!runStartedEpoch || state.last_ping_at >= runStartedEpoch),
+  );
+  const effectiveLeaseExpiresAt =
+    pingFromCurrentRun && state.lease_expires_at && state.lease_expires_at > 0
+      ? state.lease_expires_at
+      : null;
   const leaseRemainingSecs =
-    leaseExpiresAt && leaseExpiresAt > 0 ? Math.max(0, leaseExpiresAt - nowSecs) : null;
+    effectiveLeaseExpiresAt !== null ? Math.max(0, effectiveLeaseExpiresAt - nowSecs) : null;
 
-  const idleSecs = state.last_ping_at ? Math.max(0, nowSecs - state.last_ping_at) : null;
-  const assumedNextPingAt = state.enabled ? (state.next_ping_at ?? nowSecs + intervalSecs) : null;
-  const nextPingInSecs = assumedNextPingAt ? Math.max(0, assumedNextPingAt - nowSecs) : null;
+  const idleSecs =
+    pingFromCurrentRun && state.last_ping_at ? Math.max(0, nowSecs - state.last_ping_at) : null;
 
-  // Dokumentasi InstaBox: "Expiry starts a full idle period" — selama lease
-  // aktif mesin TIDAK dihitung idle; jendela idle baru mulai setelah lease
-  // kedaluwarsa. Bila tidak ada lease, ping sukses terakhir jadi titik awal.
+  const assumedNextPingAt = !state.enabled
+    ? null
+    : running && !pingFromCurrentRun && (!state.cooldown_until || state.cooldown_until <= nowSecs)
+      ? nowSecs
+      : (state.next_ping_at ?? nowSecs + intervalSecs);
+  const nextPingInSecs =
+    assumedNextPingAt !== null ? Math.max(0, assumedNextPingAt - nowSecs) : null;
+
+  // Dokumentasi InstaBox: "Expiry starts a full idle period" — tetap hitung
+  // dari `effectiveLeaseExpiresAt` walau lease baru saja kedaluwarsa agar tidak
+  // melompat mundur ke `last_ping_at`. Bila belum pernah lease di sesi ini,
+  // jatuh ke `last_ping_at` sesi aktif atau `runStartedEpoch`.
   const idleCountFrom =
-    leaseRemainingSecs !== null && leaseRemainingSecs > 0 ? leaseExpiresAt! : state.last_ping_at;
+    effectiveLeaseExpiresAt !== null
+      ? effectiveLeaseExpiresAt
+      : pingFromCurrentRun && state.last_ping_at
+        ? state.last_ping_at
+        : running && runStartedEpoch
+          ? runStartedEpoch
+          : null;
   const pauseAt = idleCountFrom ? idleCountFrom + idleWindowSecs : null;
   const pauseInSecs = running && pauseAt !== null ? Math.max(0, pauseAt - nowSecs) : null;
 
   const atRisk =
     running && pauseInSecs !== null
       ? state.enabled
-        ? pauseAt! <= (assumedNextPingAt ?? Number.POSITIVE_INFINITY) ||
-          (leaseRemainingSecs === 0 && nextPingInSecs === 0)
+        ? pauseInSecs <= 300 || (assumedNextPingAt !== null && pauseAt! <= assumedNextPingAt)
         : pauseInSecs <= 300
       : false;
 
@@ -867,7 +910,7 @@ export function buildKeepaliveView(
     lastError: state.last_error,
     intervalSecs,
     leaseTtlSecs,
-    leaseExpiresAt: leaseExpiresAt && leaseExpiresAt > 0 ? leaseExpiresAt : null,
+    leaseExpiresAt: effectiveLeaseExpiresAt,
     leaseRemainingSecs,
     idleSecs,
     pauseInSecs,
@@ -987,7 +1030,10 @@ export function buildBaileysBackupView(
     autoResumeUpdatedBy: autoRes.updatedBy,
     cooldownUntilEpoch,
     cooldownRemainingSecs,
-    keepalive: buildKeepaliveView(keepaliveState, liveMachine, nowMs),
+    keepalive: buildKeepaliveView(keepaliveState, liveMachine, nowMs, {
+      fallbackRunning: vpsAvailability === 'running',
+      fallbackRunStartedAt: runStartedAt,
+    }),
     desktopOnline,
     desktop: desktopView,
     lastCheckedAt,
@@ -1431,6 +1477,7 @@ export async function runManualVpsKeepalive(
   const nowMs = deps.nowMs ?? Date.now();
   const nowSecs = Math.floor(nowMs / 1000);
   const readFn = deps.readCloudAndDesktop ?? bacaCloudDanDesktopState;
+  const writeCloudFn = deps.writeCloudState ?? simpanCloudState;
 
   const { cloud, desktop } = await readFn();
   const live = await fetchLiveInstaboxMachine(deps);
@@ -1474,13 +1521,17 @@ export async function runManualVpsKeepalive(
     };
   }
 
-  const workingCloud = applyLiveMachineToCloudState(cloud, live.machine, nowSecs).next;
+  const applied = applyLiveMachineToCloudState(cloud, live.machine, nowSecs);
+  let workingCloud = applied.next;
   const run = await jalankanKeepaliveVps({
     trigger: 'web',
     force,
-    ignoreEnabled: true,
+    // Hanya tombol manual (`force=true`) yang boleh mem-ping saat Auto-Ping OFF;
+    // auto-ping pasif dari tab dashboard tetap tunduk pada sakelar server.
+    ignoreEnabled: force,
     observedState: live.machine.state,
     autoSuspendSeconds: live.machine.autoSuspendAfterSeconds,
+    runStartedAt: live.machine.runStartedAt,
     nowMs,
     apiKey: deps.apiKey,
     machineId: deps.machineId,
@@ -1490,6 +1541,32 @@ export async function runManualVpsKeepalive(
     writeState: deps.writeKeepaliveState,
   });
 
+  if (force && run.message) {
+    workingCloud = {
+      ...workingCloud,
+      recentEvents: appendCloudEvent(
+        workingCloud.recentEvents,
+        'web',
+        `Ping VPS manual: ${run.message}`,
+        nowSecs,
+      ),
+    };
+    await writeCloudFn(workingCloud);
+  } else if (applied.changed || (run.attempted && run.ok)) {
+    if (run.attempted && run.ok) {
+      workingCloud = {
+        ...workingCloud,
+        recentEvents: appendCloudEvent(
+          workingCloud.recentEvents,
+          'web',
+          `Auto-Ping VPS (Web): ${run.message ?? 'lease diperbarui.'}`,
+          nowSecs,
+        ),
+      };
+    }
+    await writeCloudFn(workingCloud);
+  }
+
   const view = buildBaileysBackupView(workingCloud, desktop, live.machine, nowMs, {
     ...viewOpts,
     keepaliveState: run.state,
@@ -1498,20 +1575,22 @@ export async function runManualVpsKeepalive(
   const httpStatus =
     run.ok === true
       ? 200
-      : run.reason === 'not_running' || run.reason === 'disabled'
+      : run.reason === 'not_running'
         ? 409
-        : run.reason === 'interval' || run.reason === 'cooldown'
+        : run.reason === 'disabled' || run.reason === 'interval' || run.reason === 'cooldown'
           ? 200
           : 502;
 
   const skipMessage =
-    run.reason === 'interval'
-      ? 'Ping belum jatuh tempo — lease masih aktif.'
-      : run.reason === 'cooldown'
-        ? 'Ping ditunda karena cooldown kegagalan sebelumnya.'
-        : run.attempted
-          ? 'Ping VPS selesai.'
-          : 'Ping VPS tidak dijalankan.';
+    run.reason === 'disabled'
+      ? 'Auto-Ping VPS sedang nonaktif.'
+      : run.reason === 'interval'
+        ? 'Ping belum jatuh tempo — lease masih aktif.'
+        : run.reason === 'cooldown'
+          ? 'Ping ditunda karena cooldown kegagalan sebelumnya.'
+          : run.attempted
+            ? 'Ping VPS selesai.'
+            : 'Ping VPS tidak dijalankan.';
 
   return {
     ok: run.ok === true,
@@ -1534,29 +1613,85 @@ export async function setKeepaliveMode(
   data: BaileysBackupView;
 }> {
   const nowMs = deps.nowMs ?? Date.now();
-  const state = await setKeepaliveEnabled(enabled, 'web', {
-    nowMs,
-    readState: deps.readKeepaliveState,
-    writeState: deps.writeKeepaliveState,
-  });
+  const nowSecs = Math.floor(nowMs / 1000);
+  const readFn = deps.readCloudAndDesktop ?? bacaCloudDanDesktopState;
+  const writeCloudFn = deps.writeCloudState ?? simpanCloudState;
+
+  const [{ cloud, desktop }, live, updatedState] = await Promise.all([
+    readFn(),
+    fetchLiveInstaboxMachine(deps),
+    setKeepaliveEnabled(enabled, 'web', {
+      nowMs,
+      readState: deps.readKeepaliveState,
+      writeState: deps.writeKeepaliveState,
+    }),
+  ]);
+
+  let finalState = updatedState;
+  let workingCloud =
+    live.ok && live.machine ? applyLiveMachineToCloudState(cloud, live.machine, nowSecs).next : cloud;
+
+  const modeLabel = enabled ? 'Auto-Ping VPS (Web): AKTIF' : 'Auto-Ping VPS (Web): NONAKTIF';
+  workingCloud = {
+    ...workingCloud,
+    recentEvents: appendCloudEvent(workingCloud.recentEvents, 'web', modeLabel, nowSecs),
+  };
 
   const { intervalSecs, leaseTtlSecs } = getKeepaliveConfig();
-  const message = enabled
+  let message = enabled
     ? `Auto-Ping VPS: AKTIF (setiap ${Math.max(1, Math.round(intervalSecs / 60))} menit, lease ${Math.max(
         1,
         Math.round(leaseTtlSecs / 60),
       )} menit).`
     : 'Auto-Ping VPS: NONAKTIF — VPS akan idle-pause setelah jendela idle habis.';
 
-  const readFn = deps.readCloudAndDesktop ?? bacaCloudDanDesktopState;
-  const { cloud, desktop } = await readFn();
-  const live = await fetchLiveInstaboxMachine(deps);
-  const view = buildBaileysBackupView(cloud, desktop, live.machine, nowMs, {
+  const machineRunning =
+    live.configured &&
+    live.ok &&
+    live.machine &&
+    classifyVpsAvailability(live.machine.state) === 'running';
+
+  if (!enabled && machineRunning) {
+    await releaseVpsActivityLease(deps);
+  } else if (enabled && machineRunning && live.machine) {
+    const immediate = await jalankanKeepaliveVps({
+      trigger: 'web',
+      force: false,
+      ignoreEnabled: false,
+      observedState: live.machine.state,
+      autoSuspendSeconds: live.machine.autoSuspendAfterSeconds,
+      runStartedAt: live.machine.runStartedAt,
+      nowMs,
+      apiKey: deps.apiKey,
+      machineId: deps.machineId,
+      apiBase: deps.apiBase,
+      fetchImpl: deps.fetchImpl,
+      readState: async () => finalState,
+      writeState: deps.writeKeepaliveState,
+    });
+    finalState = immediate.state;
+    if (immediate.attempted && immediate.ok) {
+      message = `${message} Lease langsung diperbarui.`;
+      workingCloud = {
+        ...workingCloud,
+        recentEvents: appendCloudEvent(
+          workingCloud.recentEvents,
+          'web',
+          `Auto-Ping VPS (Web): ${immediate.message ?? 'lease diperbarui.'}`,
+          nowSecs,
+        ),
+      };
+    }
+  }
+
+  await writeCloudFn(workingCloud);
+
+  const view = buildBaileysBackupView(workingCloud, desktop, live.machine, nowMs, {
     instaboxConfigured: live.configured,
     liveFetchError: live.configured && !live.ok,
     machineId: deps.machineId ?? config.instaboxMachineId,
     installerReleaseUrl: deps.installerReleaseUrl,
-    keepaliveState: state,
+    keepaliveState: finalState,
   });
 
   return { ok: true, enabled, message, data: view };

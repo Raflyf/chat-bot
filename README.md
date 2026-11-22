@@ -29,7 +29,7 @@ Asisten AI multimodal untuk Telegram dan WhatsApp (Cloud API serta Baileys) yang
 - **Dukungan Grup Terisolasi**: Berjalan di grup Telegram dan WhatsApp Baileys dengan tiga mode (`/mention`, `/nimbrung`, `/diam`) serta pemisahan tabel database grup dari chat pribadi.
 - **Memori, Zona Waktu & Permainan**: Menyimpan riwayat percakapan, preferensi pengguna, dan zona waktu per pengguna (WIB, WITA, WIT, serta internasional) di Supabase PostgreSQL, ditambah mesin permainan interaktif berbasis state database.
 - **Failover AI Multi-Tier**: Merutekan permintaan teks dan vision secara otomatis melalui enam tier provider (OpenCode, Cloudflare Workers AI, Groq, DreamPrompting, OpenRouter, Gemini) dengan pelacakan kuota harian, cooldown persisten, dan rotasi kunci. Konfigurasi model aktif dikelola terpusat di [`src/env.ts`](src/env.ts).
-- **Baileys Backup (Web & Failover Lokal Windows)**: Kontrol status VPS InstaBox, tombol **Resume / Aktifkan VPS**, dan mode **Auto-Resume (`OTOMATIS`/`MANUAL`)** terintegrasi langsung di `/dashboard` serta tersinkron dua arah dengan aplikasi desktop native Rust (`BaileysBackup.exe`) dan cron cloud.
+- **Baileys Backup (Web & Failover Lokal Windows)**: Kontrol status VPS InstaBox, tombol **Resume / Aktifkan VPS**, mode **Auto-Resume (`OTOMATIS`/`MANUAL`)**, serta **Auto-Ping VPS** berbasis *activity lease* (`PUT /v1/machines/{id}/activity-leases`) untuk mencegah auto-pause idle 30 menit, terintegrasi langsung di `/dashboard` dan tersinkron dua arah dengan `BaileysBackup.exe` serta cron cloud.
 
 ---
 
@@ -159,7 +159,8 @@ Hubungkan repositori ke Vercel, masukkan seluruh variabel lingkungan dari `.env.
 ### Pemantauan & Tugas Terjadwal
 
 - `GET /api/health`: Endpoint pemeriksaan kesehatan aplikasi, database, status pemeliharaan WhatsApp, serta statistik pengiriman.
-- `POST /api/cron/reminders`: Eksekusi pengiriman pengingat terjadwal (didukung jadwal cadangan melalui `.github/workflows/reminders.yml`).
+- `GET/POST /api/baileys-backup`: Endpoint admin (`/dashboard`) untuk status VPS InstaBox, **Ping VPS** (`activity-leases`), kontrol **Auto-Ping**, **Resume VPS**, **Auto-Resume**, dan telemetri failover desktop.
+- `POST /api/cron/reminders`: Eksekusi pengiriman pengingat terjadwal, monitor lifecycle VPS, perpanjangan *activity lease* keepalive (`VPS_KEEPALIVE_*`), dan **Auto-Resume** cloud (didukung jadwal `.github/workflows/reminders.yml`). Catatan paket gratis InstaBox: *activity lease* hanya mencegah auto-pause idle (`autoSuspendAfterSeconds`) dan tidak memperpanjang batas runtime maksimum (`maxRunMinutes`).
 - `POST /api/cron/backup` dan `POST /api/cron/arsip`: Backup tabel utama ke Supabase Storage dan pengarsipan pesan harian.
 
 ### Mode Pemeliharaan WhatsApp

@@ -31,14 +31,7 @@ export const MAX_KEEPALIVE_LEASE_TTL_SECS = 3600;
 const LEASE_TTL_MIN_SECS = 30;
 const ERROR_MAX_LEN = 160;
 
-const RUNNABLE_STATES = new Set([
-  'running',
-  'starting',
-  'resuming',
-  'creating',
-  'booting',
-  'provisioning',
-]);
+const RUNNABLE_STATES = new Set(['running']);
 
 export type KeepaliveSource = 'web' | 'cron' | 'vps';
 
@@ -87,6 +80,8 @@ export interface KeepaliveRunOptions extends KeepaliveDeps {
   observedState?: string | null;
   /** Nilai `autoSuspendAfterSeconds` dari GET mesin, bila sudah diketahui. */
   autoSuspendSeconds?: number | null;
+  /** Timestamp `runStartedAt` sesi mesin aktif agar sesi baru bypass interval lama. */
+  runStartedAt?: string | null;
 }
 
 export interface KeepaliveRunResult {
@@ -120,6 +115,18 @@ function toEpochOrNull(val: unknown): number | null {
 function toCount(val: unknown): number {
   const n = Number(val);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function toNonNegIntOrNull(val: unknown): number | null {
+  if (val === null || val === undefined || val === '') return null;
+  const n = Number(val);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+}
+
+function parseIsoFloorSecs(iso?: string | null): number | null {
+  if (typeof iso !== 'string' || !iso.trim()) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : null;
 }
 
 function clampInt(val: number, min: number, max: number): number {
@@ -174,7 +181,7 @@ export function normalizeKeepaliveState(raw: unknown): VpsKeepaliveState {
   const def = defaultKeepaliveState();
   const obj = asRecord(raw);
   if (!obj) return def;
-  const sourceRaw = String(obj.enabled_updated_by ?? obj.last_ping_source ?? '');
+  const sourceRaw = String(obj.enabled_updated_by ?? '');
   const source: KeepaliveSource | null =
     sourceRaw === 'web' || sourceRaw === 'cron' || sourceRaw === 'vps' ? sourceRaw : null;
   const pingSourceRaw = String(obj.last_ping_source ?? '');
@@ -200,7 +207,7 @@ export function normalizeKeepaliveState(raw: unknown): VpsKeepaliveState {
     last_ping_at: toEpochOrNull(obj.last_ping_at),
     last_attempt_at: toEpochOrNull(obj.last_attempt_at),
     last_ping_ok: Boolean(obj.last_ping_ok),
-    last_ping_latency_ms: toCount(obj.last_ping_latency_ms),
+    last_ping_latency_ms: toNonNegIntOrNull(obj.last_ping_latency_ms),
     last_ping_source: pingSource,
     ping_count: toCount(obj.ping_count),
     fail_count: toCount(obj.fail_count),
@@ -270,10 +277,12 @@ export async function setKeepaliveEnabled(
     enabled,
     enabled_updated_at: nowSecs,
     enabled_updated_by: source,
-    // Saat dimatikan, jangan biarkan cooldown/next_ping basi menahan ping manual
-    // pertama ketika nanti diaktifkan lagi.
+    // Saat dimatikan, bersihkan cooldown/lease/error lama agar re-aktivasi bersih.
     cooldown_until: enabled ? current.cooldown_until : null,
     next_ping_at: enabled ? current.next_ping_at : null,
+    lease_expires_at: enabled ? current.lease_expires_at : null,
+    consecutive_failures: enabled ? current.consecutive_failures : 0,
+    last_error: enabled ? current.last_error : null,
     updated_at: nowSecs,
   };
   await writeFn(next);
@@ -316,11 +325,38 @@ function parseLeaseExpiresAt(body: string): number | null {
   }
 }
 
+function parseRetryAfterSecs(res: Response, body: string, nowMs = Date.now()): number | null {
+  const headerVal = res.headers?.get?.('retry-after')?.trim();
+  if (headerVal) {
+    if (/^\d+$/.test(headerVal)) {
+      return Number(headerVal);
+    }
+    const parsedDate = Date.parse(headerVal);
+    if (Number.isFinite(parsedDate)) {
+      return Math.max(0, Math.ceil((parsedDate - nowMs) / 1000));
+    }
+  }
+  try {
+    const parsed = asRecord(JSON.parse(body));
+    const errObj = asRecord(parsed?.error);
+    const rawVal =
+      errObj?.retryAfterSeconds ??
+      errObj?.retry_after_seconds ??
+      parsed?.retryAfterSeconds ??
+      parsed?.retry_after_seconds;
+    const n = Number(rawVal);
+    if (Number.isFinite(n) && n >= 0) return Math.round(n);
+  } catch {
+    // bukan JSON
+  }
+  return null;
+}
+
 export async function renewVpsActivityLease(
   deps: KeepaliveDeps = {},
 ): Promise<
   | { ok: true; status: number; latencyMs: number; leaseExpiresAt: number | null }
-  | { ok: false; status: number; latencyMs: number; message: string }
+  | { ok: false; status: number; latencyMs: number; message: string; retryAfterSecs: number | null }
 > {
   const { apiKey, machineId, apiBase } = resolveCreds(deps);
   if (!apiKey || !machineId) {
@@ -329,6 +365,7 @@ export async function renewVpsActivityLease(
       status: 0,
       latencyMs: 0,
       message: 'INSTABOX_API_KEY atau INSTABOX_MACHINE_ID belum dikonfigurasi di server',
+      retryAfterSecs: null,
     };
   }
   const fetchImpl = deps.fetchImpl ?? fetch;
@@ -363,17 +400,59 @@ export async function renewVpsActivityLease(
       status: res.status,
       latencyMs,
       message: sanitizeError(body, res.status),
+      retryAfterSecs: parseRetryAfterSecs(res, body, deps.nowMs ?? Date.now()),
     };
   } catch (err) {
     const latencyMs = Date.now() - startedAt;
     const detail = String((err as Error)?.message ?? err).slice(0, 120);
-    return { ok: false, status: 0, latencyMs, message: sanitizeError(detail, 0) };
+    return {
+      ok: false,
+      status: 0,
+      latencyMs,
+      message: sanitizeError(detail, 0),
+      retryAfterSecs: null,
+    };
   }
 }
 
-function backoffSecsForFailure(status: number, consecutiveFailures: number): number {
+export async function releaseVpsActivityLease(
+  deps: KeepaliveDeps = {},
+): Promise<{ ok: boolean; status: number }> {
+  const { apiKey, machineId, apiBase } = resolveCreds(deps);
+  if (!apiKey || !machineId) {
+    return { ok: false, status: 0 };
+  }
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const url = `${apiBase}/v1/machines/${encodeURIComponent(machineId)}/activity-leases/${encodeURIComponent(
+    KEEPALIVE_LEASE_ID,
+  )}`;
+  try {
+    const res = await fetchImpl(url, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    return { ok: res.ok || res.status === 404, status: res.status };
+  } catch {
+    return { ok: false, status: 0 };
+  }
+}
+
+function backoffSecsForFailure(
+  status: number,
+  consecutiveFailures: number,
+  retryAfterSecs?: number | null,
+): number {
   if (status === 401 || status === 403) return 1800;
-  if (status === 429) return 900;
+  if (status === 429) {
+    if (typeof retryAfterSecs === 'number' && Number.isFinite(retryAfterSecs) && retryAfterSecs >= 0) {
+      return clampInt(retryAfterSecs, 60, 1800) + 10;
+    }
+    return 900;
+  }
   const steps = [300, 600, 1200, 1800];
   const idx = Math.max(0, Math.min(steps.length - 1, consecutiveFailures));
   return steps[idx];
@@ -402,12 +481,20 @@ export async function jalankanKeepaliveVps(
       }
     : base;
 
-  if (!withWindow.enabled && !opts.ignoreEnabled) {
-    return { attempted: false, reason: 'disabled', state: withWindow };
+  const runStartedEpoch = parseIsoFloorSecs(opts.runStartedAt);
+  const isNewRun = Boolean(
+    runStartedEpoch && (!withWindow.last_ping_at || runStartedEpoch > withWindow.last_ping_at),
+  );
+  const workingState: VpsKeepaliveState = isNewRun
+    ? { ...withWindow, lease_expires_at: null }
+    : withWindow;
+
+  if (!workingState.enabled && !opts.ignoreEnabled) {
+    return { attempted: false, reason: 'disabled', state: workingState };
   }
   const { apiKey, machineId } = resolveCreds(opts);
   if (!apiKey || !machineId) {
-    return { attempted: false, reason: 'not_configured', state: withWindow };
+    return { attempted: false, reason: 'not_configured', state: workingState };
   }
   const observed = String(opts.observedState ?? '').trim().toLowerCase();
   if (observed && !RUNNABLE_STATES.has(observed)) {
@@ -415,28 +502,28 @@ export async function jalankanKeepaliveVps(
       attempted: false,
       reason: 'not_running',
       message: `VPS berstatus ${observed.toUpperCase()} — ping dilewati agar tidak melawan pause yang sah.`,
-      state: withWindow,
+      state: workingState,
     };
   }
   if (!opts.force) {
-    if (withWindow.cooldown_until && withWindow.cooldown_until > nowSecs) {
-      return { attempted: false, reason: 'cooldown', state: withWindow };
+    if (workingState.cooldown_until && workingState.cooldown_until > nowSecs) {
+      return { attempted: false, reason: 'cooldown', state: workingState };
     }
-    if (withWindow.last_ping_at && nowSecs - withWindow.last_ping_at < intervalSecs) {
-      return { attempted: false, reason: 'interval', state: withWindow };
+    if (!isNewRun && workingState.last_ping_at && nowSecs - workingState.last_ping_at < intervalSecs) {
+      return { attempted: false, reason: 'interval', state: workingState };
     }
   }
 
   const result = await renewVpsActivityLease(opts);
   if (result.ok) {
     const next: VpsKeepaliveState = {
-      ...withWindow,
+      ...workingState,
       last_ping_at: nowSecs,
       last_attempt_at: nowSecs,
       last_ping_ok: true,
       last_ping_latency_ms: result.latencyMs,
       last_ping_source: opts.trigger,
-      ping_count: withWindow.ping_count + 1,
+      ping_count: workingState.ping_count + 1,
       consecutive_failures: 0,
       last_error: null,
       next_ping_at: nowSecs + intervalSecs,
@@ -454,15 +541,30 @@ export async function jalankanKeepaliveVps(
     };
   }
 
-  const failures = withWindow.consecutive_failures + 1;
-  const backoff = backoffSecsForFailure(result.status, withWindow.consecutive_failures);
+  if (result.status === 409) {
+    return {
+      attempted: true,
+      ok: false,
+      reason: 'not_running',
+      httpStatus: 409,
+      message: 'VPS tidak sedang berjalan (HTTP 409) — ping dilewati.',
+      state: workingState,
+    };
+  }
+
+  const failures = workingState.consecutive_failures + 1;
+  const backoff = backoffSecsForFailure(
+    result.status,
+    workingState.consecutive_failures,
+    result.retryAfterSecs,
+  );
   const next: VpsKeepaliveState = {
-    ...withWindow,
+    ...workingState,
     last_attempt_at: nowSecs,
     last_ping_ok: false,
     last_ping_latency_ms: result.latencyMs,
     last_ping_source: opts.trigger,
-    fail_count: withWindow.fail_count + 1,
+    fail_count: workingState.fail_count + 1,
     consecutive_failures: failures,
     last_error: result.message,
     next_ping_at: nowSecs + backoff,

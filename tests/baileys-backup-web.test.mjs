@@ -30,7 +30,9 @@ const {
   triggerInstaboxResume,
   buildBaileysBackupView,
   runManualVpsResume,
+  runManualVpsKeepalive,
   setAutoResumeMode,
+  setKeepaliveMode,
   cobaAutoResumeDariCron,
   resetBaileysBackupWebUntukTest,
   DESKTOP_HEARTBEAT_TTL_SECS,
@@ -495,4 +497,70 @@ test('7. Wiring, keamanan, batas fungsi Vercel, sintaks JS, & kepatuhan CSP dash
   assert.doesNotThrow(() => {
     execFileSync(process.execPath, ['--check', jsPath], { stdio: 'pipe' });
   }, 'public/js/baileys-backup.js harus lolos node --check');
+});
+
+test('8. Keepalive web: auto=true hormati enabled:false, setKeepaliveMode(false) DELETE lease & catat aktivitas', async () => {
+  const { defaultKeepaliveState } = await import('../src/vps_keepalive.js');
+  const nowMs = 1_732_200_500_000;
+  let storedCloud = defaultCloudState();
+  let storedKeepalive = { ...defaultKeepaliveState(), enabled: false };
+  const requests = [];
+
+  const deps = {
+    apiKey: 'ibx_key',
+    machineId: 'm_ka',
+    apiBase: 'https://api.instabox.sh',
+    nowMs,
+    readCloudAndDesktop: async () => ({ cloud: storedCloud, desktop: null }),
+    writeCloudState: async (st) => {
+      storedCloud = st;
+    },
+    readKeepaliveState: async () => storedKeepalive,
+    writeKeepaliveState: async (st) => {
+      storedKeepalive = st;
+    },
+    fetchImpl: async (url, init) => {
+      const method = init?.method || 'GET';
+      requests.push({ url: String(url), method });
+      if (method === 'GET') {
+        return new Response(
+          JSON.stringify({ id: 'm_ka', state: 'running', autoSuspendAfterSeconds: 1800 }),
+          { status: 200 },
+        );
+      }
+      if (method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(
+        JSON.stringify({ expiresAt: new Date(nowMs + 3600_000).toISOString() }),
+        { status: 200 },
+      );
+    },
+  };
+
+  // 1. Dashboard auto-ping (force=false) saat enabled=false harus ditolak tanpa memanggil PUT lease
+  const autoBlocked = await runManualVpsKeepalive(deps, false);
+  assert.equal(autoBlocked.attempted, false);
+  assert.equal(autoBlocked.reason, 'disabled');
+  assert.equal(requests.filter((r) => r.method === 'PUT').length, 0);
+
+  // 2. Toggle Auto-Ping ON langsung memperbarui lease & mencatat aktivitas
+  const enabledRes = await setKeepaliveMode(true, deps);
+  assert.equal(enabledRes.enabled, true);
+  assert.equal(requests.filter((r) => r.method === 'PUT').length, 1);
+  assert.ok(storedCloud.recentEvents.some((e) => e.message.includes('Auto-Ping VPS (Web): AKTIF')));
+
+  // 3. Toggle Auto-Ping OFF melepaskan lease aktif via DELETE & mencatat aktivitas
+  const disabledRes = await setKeepaliveMode(false, deps);
+  assert.equal(disabledRes.enabled, false);
+  assert.equal(requests.filter((r) => r.method === 'DELETE').length, 1);
+  assert.ok(
+    storedCloud.recentEvents.some((e) => e.message.includes('Auto-Ping VPS (Web): NONAKTIF')),
+  );
+
+  // 4. Pastikan client JS menjaga auto-ping saat tab tersembunyi atau VPS tidak RUNNING
+  const jsSrc = read('public/js/baileys-backup.js');
+  assert.match(jsSrc, /function isKeepaliveDue\(\)[\s\S]{0,220}document\.hidden/);
+  assert.match(jsSrc, /function isKeepaliveDue\(\)[\s\S]{0,260}vpsAvailability\s*!==\s*"running"/);
+  assert.match(jsSrc, /function syncKeepaliveAutoTimer\(\)[\s\S]{0,260}vpsAvailability\s*===\s*"running"/);
 });

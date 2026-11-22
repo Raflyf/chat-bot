@@ -14,6 +14,7 @@ import {
   getKeepaliveConfig,
   jalankanKeepaliveVps,
   normalizeKeepaliveState,
+  releaseVpsActivityLease,
   renewVpsActivityLease,
   setKeepaliveEnabled,
 } from '../src/vps_keepalive.js';
@@ -322,4 +323,192 @@ test('10. ping manual tetap bekerja saat auto-ping OFF (ignoreEnabled)', async (
   assert.equal(run.ok, true);
   assert.equal(run.state.ping_count, 1);
   assert.equal(run.state.enabled, false);
+});
+
+test('11. normalizeKeepaliveState menjaga enabled_updated_by & last_ping_latency_ms tetap null bila kosong', () => {
+  const clean = normalizeKeepaliveState({
+    last_ping_source: 'cron',
+    last_ping_latency_ms: null,
+  });
+  assert.equal(clean.enabled_updated_by, null);
+  assert.equal(clean.last_ping_latency_ms, null);
+
+  const zeroMs = normalizeKeepaliveState({
+    last_ping_latency_ms: 0,
+  });
+  assert.equal(zeroMs.last_ping_latency_ms, 0);
+});
+
+test('12. starting/resuming dilewati & HTTP 409 PUT lease tidak menaikkan fail_count/cooldown', async () => {
+  let calls = 0;
+  let writeCount = 0;
+  const storeStarting = memStore({ ...defaultKeepaliveState(), enabled: true });
+  const trackedWrite = async (next) => {
+    writeCount += 1;
+    await storeStarting.write(next);
+  };
+  const skipStarting = await jalankanKeepaliveVps({
+    trigger: 'cron',
+    nowMs: NOW_MS,
+    apiKey: 'k',
+    machineId: 'm',
+    observedState: 'starting',
+    readState: storeStarting.read,
+    writeState: trackedWrite,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse(200, {});
+    },
+  });
+  assert.equal(skipStarting.attempted, false);
+  assert.equal(skipStarting.reason, 'not_running');
+  assert.equal(calls, 0);
+
+  const race409 = await jalankanKeepaliveVps({
+    trigger: 'cron',
+    nowMs: NOW_MS,
+    apiKey: 'k',
+    machineId: 'm',
+    observedState: 'running',
+    force: true,
+    readState: storeStarting.read,
+    writeState: trackedWrite,
+    fetchImpl: async () => jsonResponse(409, { error: { code: 'invalid_state' } }),
+  });
+  assert.equal(race409.attempted, true);
+  assert.equal(race409.ok, false);
+  assert.equal(race409.reason, 'not_running');
+  assert.equal(race409.httpStatus, 409);
+  assert.equal(writeCount, 0, '409 transisi mesin tidak boleh menulis fail_count/cooldown');
+  assert.equal(storeStarting.get().fail_count, 0);
+  assert.equal(storeStarting.get().cooldown_until, null);
+});
+
+test('13. HTTP 429 menghormati Retry-After, releaseVpsActivityLease memanggil DELETE, & sesi baru bypass interval', async () => {
+  const storeRate = memStore({ ...defaultKeepaliveState(), enabled: true });
+  const rateRun = await jalankanKeepaliveVps({
+    trigger: 'cron',
+    nowMs: NOW_MS,
+    apiKey: 'k',
+    machineId: 'm',
+    observedState: 'running',
+    force: true,
+    readState: storeRate.read,
+    writeState: storeRate.write,
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ error: { message: 'too many requests' } }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': '120' },
+      }),
+  });
+  assert.equal(rateRun.ok, false);
+  assert.equal(rateRun.state.cooldown_until, NOW_SECS + 130);
+
+  const deleteCalls = [];
+  const rel = await releaseVpsActivityLease({
+    apiKey: 'k',
+    machineId: 'm_del',
+    apiBase: 'https://api.instabox.sh',
+    fetchImpl: async (url, init) => {
+      deleteCalls.push({ url: String(url), method: init?.method });
+      return new Response(null, { status: 204 });
+    },
+  });
+  assert.equal(rel.ok, true);
+  assert.equal(deleteCalls.length, 1);
+  assert.equal(deleteCalls[0].method, 'DELETE');
+  assert.equal(
+    deleteCalls[0].url,
+    `https://api.instabox.sh/v1/machines/m_del/activity-leases/${KEEPALIVE_LEASE_ID}`,
+  );
+
+  // Sesi baru (runStartedAt lebih baru dari last_ping_at) tidak boleh ditahan guard interval lama
+  const prevRunTs = NOW_SECS - 120;
+  const newStartIso = new Date((NOW_SECS - 30) * 1000).toISOString();
+  const storeNewRun = memStore({
+    ...defaultKeepaliveState(),
+    enabled: true,
+    last_ping_at: prevRunTs,
+    lease_expires_at: prevRunTs + 3600,
+  });
+  const resumedRun = await jalankanKeepaliveVps({
+    trigger: 'cron',
+    nowMs: NOW_MS,
+    apiKey: 'k',
+    machineId: 'm',
+    observedState: 'running',
+    runStartedAt: newStartIso,
+    readState: storeNewRun.read,
+    writeState: storeNewRun.write,
+    fetchImpl: async () =>
+      jsonResponse(200, { expiresAt: new Date((NOW_SECS + 3600) * 1000).toISOString() }),
+  });
+  assert.equal(resumedRun.attempted, true);
+  assert.equal(resumedRun.ok, true);
+});
+
+test('14. buildKeepaliveView: kontinuitas pauseInSecs setelah lease habis, reset saat runStartedAt baru, & fallback cache', () => {
+  // 1 detik setelah lease habis -> sisa jendela idle harus 1799s (bukan lompat mundur ke 0!)
+  const afterLeaseView = buildKeepaliveView(
+    {
+      ...defaultKeepaliveState(),
+      enabled: true,
+      last_ping_at: NOW_SECS - 3601,
+      lease_expires_at: NOW_SECS - 1,
+      next_ping_at: NOW_SECS + 60,
+    },
+    {
+      id: 'm',
+      state: 'running',
+      runStartedAt: new Date((NOW_SECS - 5000) * 1000).toISOString(),
+      maxRunMinutes: 120,
+      autoSuspendAfterSeconds: 1800,
+      cooldownUntil: null,
+    },
+    NOW_MS,
+  );
+  assert.equal(afterLeaseView.leaseRemainingSecs, 0);
+  assert.equal(afterLeaseView.pauseInSecs, 1799);
+  assert.equal(afterLeaseView.atRisk, false);
+
+  // Jika runStartedAt lebih baru daripada last_ping_at sesi lama, lease lama harus diabaikan
+  const freshRunView = buildKeepaliveView(
+    {
+      ...defaultKeepaliveState(),
+      enabled: true,
+      last_ping_at: NOW_SECS - 400,
+      lease_expires_at: NOW_SECS + 3200,
+      next_ping_at: NOW_SECS + 200,
+    },
+    {
+      id: 'm',
+      state: 'running',
+      runStartedAt: new Date((NOW_SECS - 60) * 1000).toISOString(),
+      maxRunMinutes: 120,
+      autoSuspendAfterSeconds: 1800,
+      cooldownUntil: null,
+    },
+    NOW_MS,
+  );
+  assert.equal(freshRunView.leaseExpiresAt, null);
+  assert.equal(freshRunView.leaseRemainingSecs, null);
+  assert.equal(freshRunView.nextPingInSecs, 0);
+  assert.equal(freshRunView.pauseInSecs, 1740);
+
+  // Fallback saat GET live gagal (liveMachine null) tetap menghormati cache live idle_window_secs
+  const fallbackView = buildKeepaliveView(
+    {
+      ...defaultKeepaliveState(),
+      enabled: false,
+      last_ping_at: NOW_SECS - 300,
+      idle_window_secs: 2400,
+      idle_window_source: 'live',
+    },
+    null,
+    NOW_MS,
+    { fallbackRunning: true, fallbackRunStartedAt: null },
+  );
+  assert.equal(fallbackView.idleWindowSecs, 2400);
+  assert.equal(fallbackView.idleWindowSource, 'live');
+  assert.equal(fallbackView.pauseInSecs, 2100);
 });

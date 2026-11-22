@@ -89,7 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       events: [],
     };
     const vpsMachineRef: {
-      value: { state: string; autoSuspendAfterSeconds: number | null } | null;
+      value: { state: string; autoSuspendAfterSeconds: number | null; runStartedAt: string | null } | null;
     } = { value: null };
     try {
       vpsMonitor = await cekLifecycleVps({
@@ -97,6 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           vpsMachineRef.value = {
             state: machine.state,
             autoSuspendAfterSeconds: machine.autoSuspendAfterSeconds,
+            runStartedAt: machine.runStartedAt,
           };
         },
       });
@@ -118,6 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           trigger: 'cron',
           observedState: vpsMachine.state,
           autoSuspendSeconds: vpsMachine.autoSuspendAfterSeconds,
+          runStartedAt: vpsMachine.runStartedAt,
         });
       } catch (err) {
         console.warn(
