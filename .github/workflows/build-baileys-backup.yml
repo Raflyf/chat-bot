@@ -282,7 +282,7 @@ jobs:
             "Build otomatis GitHub Actions untuk **Baileys Backup (Windows x64)** dari commit ``$shortSha``.",
             "",
             "### Unduhan Installer",
-            "- ``$msiName`` ($($env:MSI_SIZE_KB) KB, direkomendasikan): installer Windows `.msi` yang otomatis menghentikan ``BaileysBackup.exe`` yang sedang berjalan, memasang versi baru ke ``%LOCALAPPDATA%\Programs\BaileysBackup\``, mendaftarkan Auto-Start & Start Menu, lalu menyalakan aplikasi saat Finish.",
+            "- ``$msiName`` ($($env:MSI_SIZE_KB) KB, direkomendasikan): installer Windows ``.msi`` yang otomatis menghentikan ``BaileysBackup.exe`` yang sedang berjalan, memasang versi baru ke ``%LOCALAPPDATA%\Programs\BaileysBackup\``, mendaftarkan Auto-Start & Start Menu, lalu menyalakan aplikasi saat Finish.",
             "- ``BaileysBackup.exe`` ($($env:EXE_SIZE_KB) KB): binary standalone.",
             "- ``SHA256SUMS.txt``: checksum SHA-256 untuk verifikasi integritas berkas."
           ) -join "`n"

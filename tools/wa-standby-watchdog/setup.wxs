@@ -95,8 +95,7 @@
                        Value="&quot;[INSTALLFOLDER]BaileysBackup.exe&quot; --silent" />
         <RemoveRegistryValue Root="HKCU"
                              Key="Software\Microsoft\Windows\CurrentVersion\Run"
-                             Name="FreeAIBotStandbyWatchdog"
-                             Action="removeOnInstall" />
+                             Name="FreeAIBotStandbyWatchdog" />
       </Component>
 
       <Component Id="StartMenuShortcutComponent" Directory="INSTALLFOLDER" Guid="*">
