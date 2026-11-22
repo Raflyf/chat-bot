@@ -28,7 +28,8 @@ test('telegram: kirim pesan dukung reply_parameters', () => {
 
 test('baileys: kirim pesan dukung quoted', () => {
   assert.match(BL, /quotedMsg\?:\s*unknown/, 'harus ada parameter quotedMsg');
-  assert.match(BL, /payload\.quoted\s*=\s*quotedMsg/, 'harus set payload.quoted');
+  // Baileys menerima quote di argumen ke-3 (options), bukan di payload pesan.
+  assert.match(BL, /quoted:\s*quotedMsg/, 'harus meneruskan quoted ke sendMessage options');
 });
 
 test('semua platform: quote dipakai saat user membalas pesan lama', () => {

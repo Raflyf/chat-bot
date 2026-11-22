@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  hasDedicatedGroupTables,
   isTableMissingError,
   resolveTableName,
   resetGroupDbCacheUntukTest,
@@ -50,11 +51,15 @@ test('isTableMissingError dan resolveTableName aman untuk DB belum termigrasi', 
   assert.equal(isTableMissingError(null), false);
 
   resetGroupDbCacheUntukTest();
-  // Saat Supabase tidak aktif (env test), resolveTableName fallback aman ke tabel dasar.
+  // Chat privat selalu memakai tabel dasar.
   const privTbl = await resolveTableName('messages', 'wa_baileys_628123456');
   assert.equal(privTbl, 'messages');
+  // Chat grup mengikuti ketersediaan tabel grup: bila belum termigrasi -> tabel
+  // dasar, bila sudah ada -> group_*. Hasil uji tidak boleh bergantung pada env
+  // lokal yang mungkin terhubung ke Supabase produksi.
+  const groupTablesLive = await hasDedicatedGroupTables(true);
   const remTbl = await resolveTableName('reminders', 'wa_baileys_group_120363000000');
-  assert.equal(remTbl, 'reminders');
+  assert.equal(remTbl, groupTablesLive ? 'group_reminders' : 'reminders');
 });
 
 test('bolehProsesKanalPengingat memaksa pengingat grup WA lewat baileys_only dan menolak cloud_only', () => {
