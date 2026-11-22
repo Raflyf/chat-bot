@@ -18,19 +18,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const BACA = (p) => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8');
 
 test('i18n.js: sintaks valid (koma lengkap)', () => {
   // Error sintaks membuat SELURUH i18n mati — ini akar "EN tidak berfungsi".
   assert.doesNotThrow(() => {
-    execFileSync(process.execPath, ['--check', new URL('../public/js/i18n.js', import.meta.url).pathname.replace(/^\//, '')], { stdio: 'pipe' });
+    execFileSync(process.execPath, ['--check', fileURLToPath(new URL('../public/js/i18n.js', import.meta.url))], { stdio: 'pipe' });
   }, 'i18n.js harus lolos node --check');
 });
 
 test('i18n.js: dashboard.js juga sintaks valid', () => {
   assert.doesNotThrow(() => {
-    execFileSync(process.execPath, ['--check', new URL('../public/js/dashboard.js', import.meta.url).pathname.replace(/^\//, '')], { stdio: 'pipe' });
+    execFileSync(process.execPath, ['--check', fileURLToPath(new URL('../public/js/dashboard.js', import.meta.url))], { stdio: 'pipe' });
   }, 'dashboard.js harus lolos node --check');
 });
 
