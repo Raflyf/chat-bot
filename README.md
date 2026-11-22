@@ -136,7 +136,7 @@ Selain perintah garis miring, bot memahami permintaan dalam bahasa alami tanpa a
 
 ### Baileys Backup (Windows)
 
-Untuk menjalankan pemantau failover lokal sebagai aplikasi System Tray Windows tanpa jendela terminal, unduh installer **`BaileysBackup-setup-v1.0.0.msi`** dari [GitHub Releases (`baileys-backup-latest`)](https://github.com/Raflyf/chat-bot/releases/tag/baileys-backup-latest) atau workflow [Build Baileys Backup (Windows)](.github/workflows/build-baileys-backup.yml) tanpa perlu mengompilasi Rust di perangkat lokal. Installer `.msi` akan otomatis menghentikan instance `BaileysBackup.exe` yang sedang berjalan, memasang versi terbaru ke `%LOCALAPPDATA%\Programs\BaileysBackup\`, lalu menyalakannya kembali di System Tray:
+Untuk menjalankan pemantau failover lokal sebagai aplikasi System Tray Windows tanpa jendela terminal, unduh installer **`BaileysBackup-setup-v1.1.0.msi`** dari [GitHub Releases (`baileys-backup-latest`)](https://github.com/Raflyf/chat-bot/releases/tag/baileys-backup-latest) atau workflow [Build Baileys Backup (Windows)](.github/workflows/build-baileys-backup.yml) tanpa perlu mengompilasi Rust di perangkat lokal. Installer `.msi` akan otomatis menghentikan instance `BaileysBackup.exe` yang sedang berjalan, memasang versi terbaru ke `%LOCALAPPDATA%\Programs\BaileysBackup\`, lalu menyalakannya kembali di System Tray:
 
 ```bash
 npm run watchdog:install    # Build TS + Rust, pasang ke LocalAppData, daftar Startup & Start Menu

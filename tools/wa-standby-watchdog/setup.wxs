@@ -3,7 +3,7 @@
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="Baileys Backup"
            Manufacturer="Rafly Firmansyah"
-           Version="$(var.Version).0"
+           Version="$(var.FullVersion)"
            UpgradeCode="A7F2E419-8B3C-4D62-9E15-64B8C2A1F903"
            Scope="perUser"
            InstallerVersion="500"
@@ -12,7 +12,7 @@
             Message="Baileys Backup requires 64-bit Windows 10 or Windows 11." />
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
                   AllowSameVersionUpgrades="yes"
-                  Schedule="afterInstallExecute" />
+                  Schedule="afterInstallInitialize" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="none" />
 
     <Icon Id="BaileysBackup.ico" SourceFile="$(var.AppIco)" />
@@ -21,6 +21,7 @@
     <Property Id="ARPHELPLINK" Value="https://github.com/Raflyf/chat-bot/issues" />
     <Property Id="ARPURLUPDATEINFO" Value="https://github.com/Raflyf/chat-bot/releases" />
     <Property Id="ARPNOREPAIR" Value="yes" />
+    <Property Id="REINSTALLMODE" Value="amus" />
     <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
     <Property Id="MSIFASTINSTALL" Value="7" />
     <Property Id="REBOOT" Value="ReallySuppress" />

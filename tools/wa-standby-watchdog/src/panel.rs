@@ -508,7 +508,7 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
         );
         draw_text_rect(
             mem_dc,
-            &format!("v1.0 · PID {}", stats.app_pid),
+            &format!("v{} · PID {}", env!("CARGO_PKG_VERSION"), stats.app_pid),
             mk_rect(title_left, sc(34, dpi), title_left + sc(115, dpi), sc(50, dpi)),
             c_muted,
             f_label,

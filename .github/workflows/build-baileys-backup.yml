@@ -68,12 +68,18 @@ jobs:
             throw "Release binary tidak ditemukan: $exe"
           }
 
+          $cargoToml = Join-Path $PWD 'tools\wa-standby-watchdog\Cargo.toml'
+          $cargoVer = (Select-String -LiteralPath $cargoToml -Pattern '^version\s*=\s*"([^"]+)"$' | Select-Object -First 1).Matches.Groups[1].Value
+          $runNum = [Math]::Min([int]$env:GITHUB_RUN_NUMBER, 65535)
+          $expectedVer = "$cargoVer.$runNum"
+
           $vi = (Get-Item -LiteralPath $exe).VersionInfo
           $sizeKb = [Math]::Round((Get-Item -LiteralPath $exe).Length / 1024.0, 1)
           Write-Host "Binary: $exe ($sizeKb KB)"
           Write-Host "FileDescription=$($vi.FileDescription) | ProductName=$($vi.ProductName) | FileVersion=$($vi.FileVersion)"
           if ($vi.FileDescription -ne 'Baileys Backup') { throw "FileDescription tidak sesuai: '$($vi.FileDescription)'" }
           if ($vi.ProductName -ne 'Baileys Backup') { throw "ProductName tidak sesuai: '$($vi.ProductName)'" }
+          if ($vi.FileVersion -ne $expectedVer) { throw "FileVersion tidak sesuai: '$($vi.FileVersion)' != '$expectedVer'" }
 
           Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
           using System;
@@ -159,6 +165,8 @@ jobs:
           $cargoToml = Join-Path $PWD 'tools\wa-standby-watchdog\Cargo.toml'
           $version = (Select-String -LiteralPath $cargoToml -Pattern '^version\s*=\s*"([^"]+)"$' | Select-Object -First 1).Matches.Groups[1].Value
           if ([string]::IsNullOrWhiteSpace($version)) { throw "Versi tidak ditemukan di Cargo.toml" }
+          $runNum = [Math]::Min([int]$env:GITHUB_RUN_NUMBER, 65535)
+          $fullVersion = "$version.$runNum"
 
           $outDir = Join-Path $PWD 'release-out'
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
@@ -175,7 +183,7 @@ jobs:
             -arch x64 `
             -ext WixToolset.UI.wixext `
             -ext WixToolset.Util.wixext `
-            -d "Version=$version" `
+            -d "FullVersion=$fullVersion" `
             -d "AppExe=$exe" `
             -d "AppIco=$appIco" `
             -d "ActiveIco=$activeIco" `
@@ -196,6 +204,7 @@ jobs:
           $msiSizeKb = [Math]::Round((Get-Item -LiteralPath $msiOut).Length / 1024.0, 1)
           $exeSizeKb = [Math]::Round((Get-Item -LiteralPath (Join-Path $outDir 'BaileysBackup.exe')).Length / 1024.0, 1)
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "msi_name=$msiName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "msi_size_kb=$msiSizeKb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "exe_size_kb=$exeSizeKb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -205,6 +214,7 @@ jobs:
         env:
           MSI_NAME: ${{ steps.package.outputs.msi_name }}
           APP_VERSION: ${{ steps.package.outputs.version }}
+          FULL_VERSION: ${{ steps.package.outputs.full_version }}
         run: |
           $ErrorActionPreference = 'Stop'
           $msiPath = Join-Path $PWD ("release-out\" + $env:MSI_NAME)
@@ -228,7 +238,7 @@ jobs:
           $prodVer = Query-Single "SELECT Value FROM Property WHERE Property='ProductVersion'"
           Write-Host "MSI ProductName=$prodName | ProductVersion=$prodVer"
           if ($prodName -ne 'Baileys Backup') { throw "MSI ProductName tidak sesuai: '$prodName'" }
-          if ($prodVer -ne "$($env:APP_VERSION).0") { throw "MSI ProductVersion tidak sesuai: '$prodVer'" }
+          if ($prodVer -ne $env:FULL_VERSION) { throw "MSI ProductVersion tidak sesuai: '$prodVer' != '$($env:FULL_VERSION)'" }
 
           $closeTable = Query-Single "SELECT Name FROM _Tables WHERE Name='Wix4CloseApplication'"
           if (-not $closeTable) {
@@ -315,6 +325,12 @@ jobs:
             & gh release upload $tag @assets --clobber
             if ($LASTEXITCODE -ne 0) { throw "gh release upload gagal" }
             & gh release delete-asset $tag 'BaileysBackup-windows-x64.zip' --yes *> $null
+            $relJson = & gh release view $tag --json assets | ConvertFrom-Json
+            foreach ($a in $relJson.assets) {
+              if ($a.name -like 'BaileysBackup-setup-v*.msi' -and $a.name -ne $msiName) {
+                & gh release delete-asset $tag $a.name --yes *> $null
+              }
+            }
           } else {
             & gh release create $tag @assets --target $env:GITHUB_SHA --title "Baileys Backup (Windows x64)" --notes-file $notesFile
             if ($LASTEXITCODE -ne 0) { throw "gh release create gagal" }

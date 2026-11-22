@@ -402,15 +402,46 @@ fn build_string_pair(key: &str, val: &str) -> Vec<u8> {
     build_version_node(key, 1, &val_bytes, word_count, &[])
 }
 
-fn build_version_info_resource() -> Vec<u8> {
+fn resolve_windows_version() -> (u16, u16, u16, u16, String) {
+    let major = env::var("CARGO_PKG_VERSION_MAJOR")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(1);
+    let minor = env::var("CARGO_PKG_VERSION_MINOR")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(0);
+    let patch = env::var("CARGO_PKG_VERSION_PATCH")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(0);
+    let build = env::var("GITHUB_RUN_NUMBER")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .map(|n| n.min(u16::MAX as u32) as u16)
+        .unwrap_or(0);
+    let ver_str = format!("{major}.{minor}.{patch}.{build}");
+    (major, minor, patch, build, ver_str)
+}
+
+fn build_version_info_resource(
+    major: u16,
+    minor: u16,
+    patch: u16,
+    build: u16,
+    ver_str: &str,
+) -> Vec<u8> {
+    let ver_ms = ((major as u32) << 16) | (minor as u32);
+    let ver_ls = ((patch as u32) << 16) | (build as u32);
+
     // VS_FIXEDFILEINFO (52 bytes)
     let mut fixed = Vec::with_capacity(52);
     fixed.extend_from_slice(&0xFEEF04BDu32.to_le_bytes()); // dwSignature
     fixed.extend_from_slice(&0x00010000u32.to_le_bytes()); // dwStrucVersion
-    fixed.extend_from_slice(&0x00010000u32.to_le_bytes()); // dwFileVersionMS (1.0)
-    fixed.extend_from_slice(&0x00000000u32.to_le_bytes()); // dwFileVersionLS (0.0)
-    fixed.extend_from_slice(&0x00010000u32.to_le_bytes()); // dwProductVersionMS (1.0)
-    fixed.extend_from_slice(&0x00000000u32.to_le_bytes()); // dwProductVersionLS (0.0)
+    fixed.extend_from_slice(&ver_ms.to_le_bytes()); // dwFileVersionMS
+    fixed.extend_from_slice(&ver_ls.to_le_bytes()); // dwFileVersionLS
+    fixed.extend_from_slice(&ver_ms.to_le_bytes()); // dwProductVersionMS
+    fixed.extend_from_slice(&ver_ls.to_le_bytes()); // dwProductVersionLS
     fixed.extend_from_slice(&0x0000003Fu32.to_le_bytes()); // dwFileFlagsMask
     fixed.extend_from_slice(&0x00000000u32.to_le_bytes()); // dwFileFlags
     fixed.extend_from_slice(&0x00040004u32.to_le_bytes()); // dwFileOS (VOS_NT_WINDOWS32)
@@ -422,11 +453,11 @@ fn build_version_info_resource() -> Vec<u8> {
     let strings = vec![
         build_string_pair("CompanyName", "FreeAIBot"),
         build_string_pair("FileDescription", "Baileys Backup"),
-        build_string_pair("FileVersion", "1.0.0.0"),
+        build_string_pair("FileVersion", ver_str),
         build_string_pair("InternalName", "BaileysBackup"),
         build_string_pair("OriginalFilename", "BaileysBackup.exe"),
         build_string_pair("ProductName", "Baileys Backup"),
-        build_string_pair("ProductVersion", "1.0.0.0"),
+        build_string_pair("ProductVersion", ver_str),
     ];
     let string_table = build_version_node("040904B0", 1, &[], 0, &strings);
     let string_file_info = build_version_node("StringFileInfo", 1, &[], 0, &[string_table]);
@@ -607,11 +638,12 @@ fn build_coff_rsrc_object( mut items: Vec<(u16, u16, u16, Vec<u8>)>) -> Vec<u8> 
     coff
 }
 
-fn build_app_manifest() -> Vec<u8> {
-    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+fn build_app_manifest(ver_str: &str) -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
-    version="1.0.0.0"
+    version="{ver_str}"
     processorArchitecture="amd64"
     name="FreeAIBot.BaileysBackup"
     type="win32" />
@@ -625,7 +657,7 @@ fn build_app_manifest() -> Vec<u8> {
   </trustInfo>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
-      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+      <supportedOS Id="{{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}}" />
     </application>
   </compatibility>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
@@ -647,8 +679,8 @@ fn build_app_manifest() -> Vec<u8> {
   </dependency>
 </assembly>
 "#
-    .as_bytes()
-    .to_vec()
+    )
+    .into_bytes()
 }
 
 fn render_icon_set(active_failover: bool) -> Vec<(u32, Vec<u8>)> {
@@ -662,6 +694,10 @@ fn render_icon_set(active_failover: bool) -> Vec<(u32, Vec<u8>)> {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-env-changed=GITHUB_RUN_NUMBER");
+
+    let (maj, min, pat, bld, ver_str) = resolve_windows_version();
 
     let standby_images = render_icon_set(false);
     let active_images = render_icon_set(true);
@@ -697,8 +733,13 @@ fn main() {
     }
     items.push((14, 2, 0x0409, build_group_icon_resource(&active_images, 21)));
 
-    items.push((16, 1, 0x0409, build_version_info_resource()));
-    items.push((24, 1, 0x0409, build_app_manifest()));
+    items.push((
+        16,
+        1,
+        0x0409,
+        build_version_info_resource(maj, min, pat, bld, &ver_str),
+    ));
+    items.push((24, 1, 0x0409, build_app_manifest(&ver_str)));
 
     let coff_bytes = build_coff_rsrc_object(items);
     let obj_path = out_dir.join("baileys_backup_rsrc.obj");
