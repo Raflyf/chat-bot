@@ -1417,7 +1417,10 @@ export async function setAutoResumeMode(
  * & cooldown. Tetap menolak berjalan bila status mesin tidak terbaca atau
  * mesin tidak RUNNING, agar tidak membangunkan mesin yang di-pause sah.
  */
-export async function runManualVpsKeepalive(deps: BaileysBackupDeps = {}): Promise<{
+export async function runManualVpsKeepalive(
+  deps: BaileysBackupDeps = {},
+  force = true,
+): Promise<{
   ok: boolean;
   httpStatus: number;
   attempted: boolean;
@@ -1474,7 +1477,7 @@ export async function runManualVpsKeepalive(deps: BaileysBackupDeps = {}): Promi
   const workingCloud = applyLiveMachineToCloudState(cloud, live.machine, nowSecs).next;
   const run = await jalankanKeepaliveVps({
     trigger: 'web',
-    force: true,
+    force,
     ignoreEnabled: true,
     observedState: live.machine.state,
     autoSuspendSeconds: live.machine.autoSuspendAfterSeconds,
@@ -1497,16 +1500,25 @@ export async function runManualVpsKeepalive(deps: BaileysBackupDeps = {}): Promi
       ? 200
       : run.reason === 'not_running' || run.reason === 'disabled'
         ? 409
-        : 502;
+        : run.reason === 'interval' || run.reason === 'cooldown'
+          ? 200
+          : 502;
+
+  const skipMessage =
+    run.reason === 'interval'
+      ? 'Ping belum jatuh tempo — lease masih aktif.'
+      : run.reason === 'cooldown'
+        ? 'Ping ditunda karena cooldown kegagalan sebelumnya.'
+        : run.attempted
+          ? 'Ping VPS selesai.'
+          : 'Ping VPS tidak dijalankan.';
 
   return {
     ok: run.ok === true,
     httpStatus,
     attempted: run.attempted,
     ...(run.reason ? { reason: run.reason } : {}),
-    message:
-      run.message ??
-      (run.attempted ? 'Ping VPS selesai.' : 'Ping VPS tidak dijalankan.'),
+    message: run.message ?? skipMessage,
     data: view,
   };
 }

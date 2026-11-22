@@ -759,7 +759,7 @@
 
   function isKeepaliveDue() {
     const ka = cachedSnapshot && cachedSnapshot.keepalive;
-    if (!ka || !ka.enabled || !getToken() || document.hidden) return false;
+    if (!ka || !ka.enabled || !getToken()) return false;
     if (inFlightKeepalive || keepaliveAutoRunning) return false;
     const nowEpoch = effectiveServerEpoch();
     if (typeof ka.nextPingInSecs === "number") {
@@ -774,11 +774,16 @@
     if (!isKeepaliveDue()) return;
     keepaliveAutoRunning = true;
     try {
-      const result = await postAction({ action: "keepalive" });
+      const result = await postAction({ action: "keepalive", auto: true });
       if (result && result.json && result.json.data) {
         clientReceivedAtMs = Date.now();
         renderSnapshot(result.json.data);
-        if (!result.json.ok && result.json.message) {
+        if (
+          !result.json.ok &&
+          result.json.message &&
+          result.json.reason !== "interval" &&
+          result.json.reason !== "cooldown"
+        ) {
           setFeedback("warn", result.json.message);
         }
       }
@@ -791,7 +796,7 @@
 
   function syncKeepaliveAutoTimer() {
     const ka = cachedSnapshot && cachedSnapshot.keepalive;
-    const need = Boolean(ka && ka.enabled && getToken() && !document.hidden);
+    const need = Boolean(ka && ka.enabled && getToken());
     if (need && !keepaliveAutoTimer) {
       keepaliveAutoTimer = setInterval(() => {
         void autoPingKeepalive();

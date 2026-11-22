@@ -329,6 +329,7 @@ test('5. cobaAutoResumeDariCron menghormati mode MANUAL, state RUNNING, cooldown
 });
 
 test('6. api/baileys-backup handler: fail-closed 401, 405, 400 validation, dan eksekusi 200 saat terautentikasi', async () => {
+  let lastKeepaliveForce = null;
   const handler = createBaileysBackupHandler({
     extractToken: (req) => (req.headers['x-admin-token'] ? String(req.headers['x-admin-token']) : null),
     verifyToken: async (tok) => tok === 'valid_tok',
@@ -352,13 +353,16 @@ test('6. api/baileys-backup handler: fail-closed 401, 405, 400 validation, dan e
       message: enabled ? 'AUTO' : 'MANUAL',
       data: buildBaileysBackupView({ ...defaultCloudState(), autoResumeEnabled: enabled }, null, null, 1_732_200_000_000),
     }),
-    manualKeepalive: async () => ({
-      ok: true,
-      httpStatus: 200,
-      attempted: true,
-      message: 'Ping OK',
-      data: buildBaileysBackupView(defaultCloudState(), null, null, 1_732_200_000_000),
-    }),
+    manualKeepalive: async (force) => {
+      lastKeepaliveForce = force;
+      return {
+        ok: true,
+        httpStatus: 200,
+        attempted: true,
+        message: 'Ping OK',
+        data: buildBaileysBackupView(defaultCloudState(), null, null, 1_732_200_000_000),
+      };
+    },
     setKeepalive: async (enabled) => ({
       ok: true,
       enabled,
@@ -418,6 +422,19 @@ test('6. api/baileys-backup handler: fail-closed 401, 405, 400 validation, dan e
   );
   assert.equal(resPing.statusCode, 200);
   assert.equal(resPing.body?.attempted, true);
+  assert.equal(lastKeepaliveForce, true);
+
+  const resPingAuto = createMockRes();
+  await handler(
+    {
+      method: 'POST',
+      headers: { 'x-admin-token': 'valid_tok' },
+      body: { action: 'keepalive', auto: true },
+    },
+    resPingAuto,
+  );
+  assert.equal(resPingAuto.statusCode, 200);
+  assert.equal(lastKeepaliveForce, false);
 
   const resBadKeepaliveBool = createMockRes();
   await handler(

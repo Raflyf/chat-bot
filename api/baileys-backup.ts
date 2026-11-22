@@ -23,7 +23,7 @@ export interface BaileysBackupHandlerDeps {
   getSnapshot?: () => ReturnType<typeof getBaileysBackupSnapshot>;
   manualCheck?: () => ReturnType<typeof runManualVpsCheck>;
   manualResume?: () => ReturnType<typeof runManualVpsResume>;
-  manualKeepalive?: () => ReturnType<typeof runManualVpsKeepalive>;
+  manualKeepalive?: (force?: boolean) => ReturnType<typeof runManualVpsKeepalive>;
   setAutoMode?: (enabled: boolean) => ReturnType<typeof setAutoResumeMode>;
   setKeepalive?: (enabled: boolean) => ReturnType<typeof setKeepaliveMode>;
   serviceDeps?: BaileysBackupDeps;
@@ -59,7 +59,8 @@ export function createBaileysBackupHandler(deps: BaileysBackupHandlerDeps = {}) 
   const getSnapshot = deps.getSnapshot ?? (() => getBaileysBackupSnapshot(svcDeps));
   const manualCheck = deps.manualCheck ?? (() => runManualVpsCheck(svcDeps));
   const manualResume = deps.manualResume ?? (() => runManualVpsResume(svcDeps));
-  const manualKeepalive = deps.manualKeepalive ?? (() => runManualVpsKeepalive(svcDeps));
+  const manualKeepalive =
+    deps.manualKeepalive ?? ((force?: boolean) => runManualVpsKeepalive(svcDeps, force));
   const setAutoMode = deps.setAutoMode ?? ((enabled: boolean) => setAutoResumeMode(enabled, svcDeps));
   const setKeepalive =
     deps.setKeepalive ?? ((enabled: boolean) => setKeepaliveMode(enabled, svcDeps));
@@ -154,7 +155,7 @@ export function createBaileysBackupHandler(deps: BaileysBackupHandlerDeps = {}) 
           return;
         }
 
-        const result = await manualKeepalive();
+        const result = await manualKeepalive(body.auto !== true);
         res.status(result.httpStatus).json({
           ok: result.ok,
           attempted: result.attempted,
