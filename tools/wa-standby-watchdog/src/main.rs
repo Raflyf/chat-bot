@@ -97,6 +97,7 @@ const IDM_OPEN_BOT_LOG: usize = panel::CMD_OPEN_BOT_LOG;
 const IDM_OPEN_FOLDER: usize = panel::CMD_OPEN_FOLDER;
 const IDM_TOGGLE_AUTOSTART: usize = panel::CMD_TOGGLE_AUTOSTART;
 const IDM_RESUME_VPS: usize = panel::CMD_RESUME_VPS;
+const IDM_TOGGLE_AUTO_RESUME: usize = panel::CMD_TOGGLE_AUTO_RESUME;
 const IDM_EXIT: usize = panel::CMD_EXIT;
 
 static IDEMPOTENCY_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -106,6 +107,7 @@ const RUN_VALUE_NAME: PCWSTR = w!("BaileysBackup");
 const LEGACY_RUN_VALUE_NAME: PCWSTR = w!("FreeAIBotStandbyWatchdog");
 const APP_SETTINGS_SUBKEY: PCWSTR = w!(r"Software\BaileysBackup");
 const PROJECT_ROOT_VALUE: PCWSTR = w!("ProjectRoot");
+const AUTO_RESUME_VALUE: PCWSTR = w!("AutoResumeVps");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VpsAvailability {
@@ -131,6 +133,7 @@ struct SharedState {
     raw_state: String,
     last_check_epoch: u64,
     last_check_instant: Option<Instant>,
+    auto_resume_cooldown_until: Option<Instant>,
     balloon_title: String,
     balloon_body: String,
     balloon_is_warning: bool,
@@ -144,6 +147,7 @@ struct AppContext {
     checking_vps: Arc<AtomicBool>,
     resume_requested: Arc<AtomicBool>,
     resuming_vps: Arc<AtomicBool>,
+    auto_resume_enabled: Arc<AtomicBool>,
     tray_registered: Arc<AtomicBool>,
     tray_retry_left: AtomicU8,
     child_pid: Arc<AtomicU32>,
@@ -611,12 +615,42 @@ fn format_vps_resume_error(status: u16, body: &str) -> String {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VpsResumeError {
+    status: u16,
+    is_cooldown: bool,
+    retry_after_secs: Option<u64>,
+    message: String,
+}
+
+fn make_vps_resume_error(status: u16, body: &str) -> VpsResumeError {
+    VpsResumeError {
+        status,
+        is_cooldown: status == 409 && is_cooldown_response(body),
+        retry_after_secs: extract_json_u64_field(body, "retryAfterSeconds"),
+        message: format_vps_resume_error(status, body),
+    }
+}
+
+fn compute_auto_resume_backoff_secs(err: &VpsResumeError, consecutive_failures: u32) -> u64 {
+    if err.is_cooldown {
+        err.retry_after_secs.unwrap_or(300).clamp(60, 3600) + 10
+    } else if err.status == 401 || err.status == 403 {
+        1800
+    } else if err.status == 429 {
+        err.retry_after_secs.unwrap_or(180).clamp(60, 1800) + 10
+    } else {
+        const BACKOFF_STEPS: [u64; 3] = [120, 300, 600];
+        BACKOFF_STEPS[consecutive_failures.min(2) as usize]
+    }
+}
+
 fn post_instabox_machine_action(
     api_base: &str,
     api_key: &str,
     machine_id: &str,
     action: &str,
-) -> Result<(u16, String), String> {
+) -> Result<(u16, String), VpsResumeError> {
     let url = format!("{api_base}/v1/machines/{machine_id}/{action}");
     let seq = IDEMPOTENCY_SEQ.fetch_add(1, Ordering::Relaxed);
     let idemp_key = format!(
@@ -638,12 +672,15 @@ fn post_instabox_machine_action(
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
+    .stderr(Stdio::pipe())
     .creation_flags(CREATE_NO_WINDOW);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|_| "Gagal menjalankan curl untuk mengaktifkan VPS".to_string())?;
+    let mut child = cmd.spawn().map_err(|_| VpsResumeError {
+        status: 0,
+        is_cooldown: false,
+        retry_after_secs: None,
+        message: "Gagal menjalankan curl untuk mengaktifkan VPS".to_string(),
+    })?;
 
     if let Some(mut stdin) = child.stdin.take() {
         let cfg = format!(
@@ -652,21 +689,32 @@ fn post_instabox_machine_action(
         let _ = stdin.write_all(cfg.as_bytes());
     }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|_| "Koneksi ke API InstaBox terputus".to_string())?;
+    let output = child.wait_with_output().map_err(|_| VpsResumeError {
+        status: 0,
+        is_cooldown: false,
+        retry_after_secs: None,
+        message: "Koneksi ke API InstaBox terputus".to_string(),
+    })?;
 
     let raw_out = String::from_utf8_lossy(&output.stdout);
     let (status, body) = split_curl_body_and_status(&raw_out);
     if status == 0 && !output.status.success() {
-        return Err("Gagal menghubungi API InstaBox".to_string());
+        return Err(make_vps_resume_error(0, ""));
     }
     Ok((status, body.to_string()))
 }
 
-fn trigger_vps_resume(project_root: &Path, current_raw_state: &str) -> Result<(String, u16), String> {
+fn trigger_vps_resume(
+    project_root: &Path,
+    current_raw_state: &str,
+) -> Result<(String, u16), VpsResumeError> {
     let Some((api_base, api_key, machine_id)) = resolve_instabox_creds(project_root) else {
-        return Err("INSTABOX_API_KEY atau INSTABOX_MACHINE_ID belum diisi di .env".to_string());
+        return Err(VpsResumeError {
+            status: 0,
+            is_cooldown: false,
+            retry_after_secs: None,
+            message: "INSTABOX_API_KEY atau INSTABOX_MACHINE_ID belum diisi di .env".to_string(),
+        });
     };
 
     let primary_action = choose_vps_action_endpoint(current_raw_state);
@@ -682,10 +730,10 @@ fn trigger_vps_resume(project_root: &Path, current_raw_state: &str) -> Result<(S
         if (200..=299).contains(&status2) {
             return Ok(("start".to_string(), status2));
         }
-        return Err(format_vps_resume_error(status2, &body2));
+        return Err(make_vps_resume_error(status2, &body2));
     }
 
-    Err(format_vps_resume_error(status, &body))
+    Err(make_vps_resume_error(status, &body))
 }
 
 fn find_node_binary() -> PathBuf {
@@ -846,6 +894,49 @@ fn enable_dpi_awareness() {
 fn trim_working_set() {
     unsafe {
         let _ = K32EmptyWorkingSet(GetCurrentProcess());
+    }
+}
+
+fn is_auto_resume_enabled() -> bool {
+    let mut val: u32 = 0;
+    let mut bytes = size_of::<u32>() as u32;
+    let st = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            AUTO_RESUME_VALUE,
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&mut val as *mut u32).cast()),
+            Some(&mut bytes),
+        )
+    };
+    st.is_ok() && val != 0
+}
+
+fn set_auto_resume_enabled(enabled: bool) -> bool {
+    unsafe {
+        let mut key = HKEY::default();
+        if RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            0,
+            None,
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut key,
+            None,
+        )
+        .is_err()
+        {
+            return false;
+        }
+        let val: u32 = if enabled { 1 } else { 0 };
+        let ok = RegSetValueExW(key, AUTO_RESUME_VALUE, 0, REG_DWORD, Some(&val.to_le_bytes()))
+            .is_ok();
+        let _ = RegCloseKey(key);
+        ok
     }
 }
 
@@ -1218,14 +1309,18 @@ fn collect_panel_stats(ctx: &AppContext) -> panel::PanelStats {
         (0, 0)
     };
 
-    let (vps_avail, vps_state, last_age, recent_events) = match ctx.shared.lock() {
+    let (vps_avail, vps_state, last_age, cooldown_secs, recent_events) = match ctx.shared.lock() {
         Ok(g) => (
             g.vps_availability.as_str(),
             g.raw_state.clone(),
             g.last_check_instant.map(|t| t.elapsed().as_secs()),
+            g.auto_resume_cooldown_until
+                .and_then(|u| u.checked_duration_since(Instant::now()))
+                .map(|d| d.as_secs())
+                .filter(|&s| s > 0),
             g.recent_events.iter().cloned().collect(),
         ),
-        Err(_) => ("unknown", "unknown".to_string(), None, Vec::new()),
+        Err(_) => ("unknown", "unknown".to_string(), None, None, Vec::new()),
     };
 
     panel::PanelStats {
@@ -1245,6 +1340,8 @@ fn collect_panel_stats(ctx: &AppContext) -> panel::PanelStats {
         total_checks: ctx.total_checks.load(Ordering::SeqCst),
         failover_count: ctx.failover_count.load(Ordering::SeqCst),
         auto_start_enabled: is_autostart_enabled(),
+        auto_resume_enabled: ctx.auto_resume_enabled.load(Ordering::SeqCst),
+        auto_resume_cooldown_secs: cooldown_secs,
         tray_registered: ctx.tray_registered.load(Ordering::SeqCst),
         recent_events,
     }
@@ -1300,11 +1397,13 @@ fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
     let lbl_panel = to_wide_nul("Buka Panel Statistik");
     let lbl_check = to_wide_nul("Cek Status VPS Sekarang");
     let lbl_resume = to_wide_nul("Resume / Aktifkan VPS Utama");
+    let lbl_auto_resume = to_wide_nul("Auto-Resume VPS Otomatis");
     let lbl_startup = to_wide_nul("Jalankan saat Login Windows");
     let lbl_log = to_wide_nul("Buka Log Baileys Backup");
     let lbl_bot_log = to_wide_nul("Buka Log Bot WhatsApp Lokal");
     let lbl_folder = to_wide_nul("Buka Folder Proyek");
     let lbl_exit = to_wide_nul("Keluar (Matikan Baileys Backup)");
+    let auto_resume = ctx.auto_resume_enabled.load(Ordering::SeqCst);
 
     unsafe {
         let Ok(hmenu) = CreatePopupMenu() else {
@@ -1331,6 +1430,12 @@ fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
                 },
             IDM_RESUME_VPS,
             PCWSTR(lbl_resume.as_ptr()),
+        );
+        let _ = AppendMenuW(
+            hmenu,
+            MF_STRING | if auto_resume { MF_CHECKED } else { MF_UNCHECKED },
+            IDM_TOGGLE_AUTO_RESUME,
+            PCWSTR(lbl_auto_resume.as_ptr()),
         );
         let _ = AppendMenuW(
             hmenu,
@@ -1405,6 +1510,41 @@ fn request_vps_resume(ctx: &Arc<AppContext>) -> &'static str {
     "resuming"
 }
 
+fn apply_auto_resume_mode(ctx: &Arc<AppContext>, next: bool) -> bool {
+    let persisted = set_auto_resume_enabled(next);
+    ctx.auto_resume_enabled.store(next, Ordering::SeqCst);
+    if !next {
+        if let Ok(mut g) = ctx.shared.lock() {
+            g.auto_resume_cooldown_until = None;
+        }
+    }
+    let msg = if next {
+        "Mode Resume VPS: OTOMATIS"
+    } else {
+        "Mode Resume VPS: MANUAL"
+    };
+    append_log(&ctx.project_root, msg);
+    record_event(ctx, msg);
+
+    if next {
+        let (avail, cooldown_active) = ctx
+            .shared
+            .lock()
+            .map(|g| {
+                (
+                    g.vps_availability,
+                    g.auto_resume_cooldown_until
+                        .is_some_and(|u| Instant::now() < u),
+                )
+            })
+            .unwrap_or((VpsAvailability::Unknown, false));
+        if avail == VpsAvailability::Down && !cooldown_active {
+            ctx.force_poll.store(true, Ordering::SeqCst);
+        }
+    }
+    persisted
+}
+
 fn handle_command_id(hwnd: HWND, ctx: &Arc<AppContext>, cmd_id: usize) {
     match cmd_id {
         IDM_SHOW_PANEL => show_panel_for_ctx(hwnd, ctx, false),
@@ -1415,6 +1555,11 @@ fn handle_command_id(hwnd: HWND, ctx: &Arc<AppContext>, cmd_id: usize) {
         }
         IDM_RESUME_VPS => {
             let _ = request_vps_resume(ctx);
+            panel::refresh_if_visible();
+        }
+        IDM_TOGGLE_AUTO_RESUME => {
+            let next = !ctx.auto_resume_enabled.load(Ordering::SeqCst);
+            let _ = apply_auto_resume_mode(ctx, next);
             panel::refresh_if_visible();
         }
         IDM_TOGGLE_AUTOSTART => {
@@ -1604,6 +1749,27 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
         return;
     }
 
+    if cmd == "TOGGLE_AUTO_RESUME" || cmd == "SET_AUTO_RESUME_ON" || cmd == "SET_AUTO_RESUME_OFF" {
+        let next = match cmd.as_str() {
+            "SET_AUTO_RESUME_ON" => true,
+            "SET_AUTO_RESUME_OFF" => false,
+            _ => !ctx.auto_resume_enabled.load(Ordering::SeqCst),
+        };
+        let _ = apply_auto_resume_mode(ctx, next);
+        if !hwnd.0.is_null() {
+            unsafe {
+                let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+            }
+        }
+        let resp = format!(
+            "{{\"ok\":true,\"autoResumeEnabled\":{}}}\n",
+            if next { "true" } else { "false" }
+        );
+        let _ = stream.write_all(resp.as_bytes());
+        let _ = stream.flush();
+        return;
+    }
+
     if cmd == "SHOW_PANEL" || cmd == "POPUP" {
         if !hwnd.0.is_null() {
             unsafe {
@@ -1615,13 +1781,17 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
         return;
     }
 
-    let (avail, raw_st, last_ts) = match ctx.shared.lock() {
+    let (avail, raw_st, last_ts, cooldown_secs) = match ctx.shared.lock() {
         Ok(g) => (
             g.vps_availability.as_str(),
             g.raw_state.clone(),
             g.last_check_epoch,
+            g.auto_resume_cooldown_until
+                .and_then(|u| u.checked_duration_since(Instant::now()))
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         ),
-        Err(_) => ("unknown", "lock_err".to_string(), 0),
+        Err(_) => ("unknown", "lock_err".to_string(), 0, 0),
     };
     let cpid = ctx.child_pid.load(Ordering::SeqCst);
     let (app_priv_kb, app_ws_kb) = query_process_memory_kb(std::process::id());
@@ -1632,8 +1802,9 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
     };
     let tray_active = ctx.tray_registered.load(Ordering::SeqCst);
     let resuming_vps = ctx.resuming_vps.load(Ordering::SeqCst);
+    let auto_resume_enabled = ctx.auto_resume_enabled.load(Ordering::SeqCst);
     let resp = format!(
-        "{{\"ok\":true,\"appName\":\"Baileys Backup\",\"watchdogPid\":{},\"vpsAvailability\":\"{}\",\"vpsState\":\"{}\",\"failoverActive\":{},\"childNodePid\":{},\"lastCheckEpoch\":{},\"uptimeSecs\":{},\"trayActive\":{},\"resumingVps\":{},\"appPrivateKb\":{},\"appWorkingKb\":{},\"nodePrivateKb\":{},\"totalChecks\":{},\"failoverCount\":{}}}\n",
+        "{{\"ok\":true,\"appName\":\"Baileys Backup\",\"watchdogPid\":{},\"vpsAvailability\":\"{}\",\"vpsState\":\"{}\",\"failoverActive\":{},\"childNodePid\":{},\"lastCheckEpoch\":{},\"uptimeSecs\":{},\"trayActive\":{},\"resumingVps\":{},\"autoResumeEnabled\":{},\"autoResumeCooldownSecs\":{},\"appPrivateKb\":{},\"appWorkingKb\":{},\"nodePrivateKb\":{},\"totalChecks\":{},\"failoverCount\":{}}}\n",
         std::process::id(),
         avail,
         raw_st,
@@ -1643,6 +1814,8 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
         ctx.started_at.elapsed().as_secs(),
         if tray_active { "true" } else { "false" },
         if resuming_vps { "true" } else { "false" },
+        if auto_resume_enabled { "true" } else { "false" },
+        cooldown_secs,
         app_priv_kb,
         app_ws_kb,
         node_priv_kb,
@@ -1664,10 +1837,94 @@ fn notify_existing_instance_show_panel() -> bool {
     false
 }
 
+fn execute_vps_resume_attempt(
+    ctx: &Arc<AppContext>,
+    is_auto: bool,
+    auto_resume_failures: &mut u32,
+    auto_resume_not_before: &mut Option<Instant>,
+    fast_polls_left: &mut u8,
+    next_poll: &mut Instant,
+) {
+    let current_raw = ctx
+        .shared
+        .lock()
+        .map(|g| g.raw_state.clone())
+        .unwrap_or_default();
+    match trigger_vps_resume(&ctx.project_root, &current_raw) {
+        Ok((action, code)) => {
+            *auto_resume_failures = 0;
+            *auto_resume_not_before = Some(Instant::now() + Duration::from_secs(60));
+            if let Ok(mut g) = ctx.shared.lock() {
+                g.auto_resume_cooldown_until = None;
+            }
+            let msg = if is_auto {
+                format!("Auto-Resume VPS diterima ({action}, HTTP {code}). Menunggu aktif...")
+            } else {
+                format!("Permintaan {action} VPS diterima (HTTP {code}). Menunggu aktif...")
+            };
+            append_log(&ctx.project_root, &msg);
+            record_event(ctx, &msg);
+            queue_balloon(
+                ctx,
+                if is_auto {
+                    "Baileys Backup - Auto-Resume VPS"
+                } else {
+                    "Baileys Backup - Mengaktifkan VPS"
+                },
+                "Permintaan aktifkan VPS diterima. Bot lokal akan berhenti otomatis saat VPS RUNNING.",
+                false,
+            );
+            *fast_polls_left = 10;
+            *next_poll = Instant::now() + Duration::from_secs(3);
+        }
+        Err(err) => {
+            let show_warn = !is_auto || *auto_resume_failures == 0;
+            if err.is_cooldown || is_auto {
+                let backoff = compute_auto_resume_backoff_secs(&err, *auto_resume_failures);
+                *auto_resume_failures = auto_resume_failures.saturating_add(1);
+                let until = Instant::now() + Duration::from_secs(backoff);
+                *auto_resume_not_before = Some(until);
+                if let Ok(mut g) = ctx.shared.lock() {
+                    g.auto_resume_cooldown_until = Some(until);
+                }
+            }
+            let prefix = if is_auto {
+                "Auto-Resume VPS gagal"
+            } else {
+                "Gagal aktifkan VPS"
+            };
+            let msg = format!("{prefix}: {}", err.message);
+            append_log(&ctx.project_root, &msg);
+            record_event(ctx, &msg);
+            if show_warn {
+                queue_balloon(
+                    ctx,
+                    if is_auto {
+                        "Baileys Backup - Auto-Resume Ditunda"
+                    } else {
+                        "Baileys Backup - Gagal Aktifkan VPS"
+                    },
+                    &err.message,
+                    true,
+                );
+            }
+        }
+    }
+    ctx.resuming_vps.store(false, Ordering::SeqCst);
+    let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+    if !hwnd.0.is_null() {
+        unsafe {
+            let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
 fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
     let mut child_node: Option<Child> = None;
     let mut next_poll = Instant::now();
     let mut fast_polls_left: u8 = 0;
+    let mut auto_resume_not_before: Option<Instant> = None;
+    let mut auto_resume_failures: u32 = 0;
 
     while ctx.running.load(Ordering::SeqCst) {
         while let Ok((stream, _)) = listener.accept() {
@@ -1675,6 +1932,11 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
         }
         if !ctx.running.load(Ordering::SeqCst) {
             break;
+        }
+
+        if !ctx.auto_resume_enabled.load(Ordering::SeqCst) {
+            auto_resume_not_before = None;
+            auto_resume_failures = 0;
         }
 
         // Check if child node.exe exited on its own
@@ -1695,46 +1957,14 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
         }
 
         if ctx.resume_requested.swap(false, Ordering::SeqCst) {
-            let current_raw = ctx
-                .shared
-                .lock()
-                .map(|g| g.raw_state.clone())
-                .unwrap_or_default();
-            match trigger_vps_resume(&ctx.project_root, &current_raw) {
-                Ok((action, code)) => {
-                    let msg = format!(
-                        "Permintaan {action} VPS diterima (HTTP {code}). Menunggu aktif..."
-                    );
-                    append_log(&ctx.project_root, &msg);
-                    record_event(&ctx, &msg);
-                    queue_balloon(
-                        &ctx,
-                        "Baileys Backup - Mengaktifkan VPS",
-                        "Permintaan aktifkan VPS diterima. Bot lokal akan berhenti otomatis saat VPS RUNNING.",
-                        false,
-                    );
-                    fast_polls_left = 10;
-                    next_poll = Instant::now() + Duration::from_secs(3);
-                }
-                Err(err_msg) => {
-                    let msg = format!("Gagal aktifkan VPS: {err_msg}");
-                    append_log(&ctx.project_root, &msg);
-                    record_event(&ctx, &msg);
-                    queue_balloon(
-                        &ctx,
-                        "Baileys Backup - Gagal Aktifkan VPS",
-                        &err_msg,
-                        true,
-                    );
-                }
-            }
-            ctx.resuming_vps.store(false, Ordering::SeqCst);
-            let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
-            if !hwnd.0.is_null() {
-                unsafe {
-                    let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
-                }
-            }
+            execute_vps_resume_attempt(
+                &ctx,
+                false,
+                &mut auto_resume_failures,
+                &mut auto_resume_not_before,
+                &mut fast_polls_left,
+                &mut next_poll,
+            );
         }
 
         let manual_check = ctx.force_poll.swap(false, Ordering::SeqCst);
@@ -1774,6 +2004,11 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
 
             match avail {
                 VpsAvailability::Running => {
+                    auto_resume_failures = 0;
+                    auto_resume_not_before = None;
+                    if let Ok(mut g) = ctx.shared.lock() {
+                        g.auto_resume_cooldown_until = None;
+                    }
                     if child_node.is_some() {
                         stop_local_baileys(
                             &ctx.project_root,
@@ -1807,6 +2042,32 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
                                     pid
                                 ),
                                 true,
+                            );
+                        }
+                    }
+
+                    if ctx.auto_resume_enabled.load(Ordering::SeqCst)
+                        && !ctx.resuming_vps.load(Ordering::SeqCst)
+                    {
+                        let ready = auto_resume_not_before
+                            .map(|t| Instant::now() >= t)
+                            .unwrap_or(true);
+                        if ready && !ctx.resuming_vps.swap(true, Ordering::SeqCst) {
+                            let hwnd =
+                                HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+                            if !hwnd.0.is_null() {
+                                unsafe {
+                                    let _ =
+                                        PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+                                }
+                            }
+                            execute_vps_resume_attempt(
+                                &ctx,
+                                true,
+                                &mut auto_resume_failures,
+                                &mut auto_resume_not_before,
+                                &mut fast_polls_left,
+                                &mut next_poll,
                             );
                         }
                     }
@@ -1905,6 +2166,7 @@ fn main() {
         checking_vps: Arc::new(AtomicBool::new(false)),
         resume_requested: Arc::new(AtomicBool::new(false)),
         resuming_vps: Arc::new(AtomicBool::new(false)),
+        auto_resume_enabled: Arc::new(AtomicBool::new(is_auto_resume_enabled())),
         tray_registered: Arc::new(AtomicBool::new(false)),
         tray_retry_left: AtomicU8::new(15),
         child_pid: Arc::new(AtomicU32::new(0)),
@@ -1915,6 +2177,7 @@ fn main() {
             raw_state: "mengecek...".to_string(),
             last_check_epoch: 0,
             last_check_instant: None,
+            auto_resume_cooldown_until: None,
             balloon_title: String::new(),
             balloon_body: String::new(),
             balloon_is_warning: false,
@@ -2145,5 +2408,51 @@ mod tests {
             format_vps_resume_error(500, r#"{"error":{"message":"backend busy"}}"#),
             "HTTP 500: backend busy"
         );
+    }
+
+    #[test]
+    fn compute_auto_resume_backoff_secs_respects_cooldown_and_failures() {
+        let cooldown_with_retry = VpsResumeError {
+            status: 409,
+            is_cooldown: true,
+            retry_after_secs: Some(420),
+            message: "cooldown".to_string(),
+        };
+        assert_eq!(compute_auto_resume_backoff_secs(&cooldown_with_retry, 0), 430);
+
+        let cooldown_no_retry = VpsResumeError {
+            status: 409,
+            is_cooldown: true,
+            retry_after_secs: None,
+            message: "cooldown".to_string(),
+        };
+        assert_eq!(compute_auto_resume_backoff_secs(&cooldown_no_retry, 0), 310);
+
+        let auth_err = VpsResumeError {
+            status: 403,
+            is_cooldown: false,
+            retry_after_secs: None,
+            message: "forbidden".to_string(),
+        };
+        assert_eq!(compute_auto_resume_backoff_secs(&auth_err, 0), 1800);
+
+        let rate_err = VpsResumeError {
+            status: 429,
+            is_cooldown: false,
+            retry_after_secs: Some(90),
+            message: "rate limited".to_string(),
+        };
+        assert_eq!(compute_auto_resume_backoff_secs(&rate_err, 0), 100);
+
+        let transient_err = VpsResumeError {
+            status: 500,
+            is_cooldown: false,
+            retry_after_secs: None,
+            message: "server error".to_string(),
+        };
+        assert_eq!(compute_auto_resume_backoff_secs(&transient_err, 0), 120);
+        assert_eq!(compute_auto_resume_backoff_secs(&transient_err, 1), 300);
+        assert_eq!(compute_auto_resume_backoff_secs(&transient_err, 2), 600);
+        assert_eq!(compute_auto_resume_backoff_secs(&transient_err, 5), 600);
     }
 }

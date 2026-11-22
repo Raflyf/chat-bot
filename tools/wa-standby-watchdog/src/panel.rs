@@ -50,7 +50,7 @@ const PANEL_CLASS: PCWSTR = w!("BaileysBackupStatsPanel");
 const PANEL_REFRESH_TIMER_ID: usize = 701;
 const WM_MOUSELEAVE_MSG: u32 = 0x02A3;
 const LOGICAL_WIDTH: i32 = 396;
-const LOGICAL_HEIGHT: i32 = 552;
+const LOGICAL_HEIGHT: i32 = 588;
 
 pub const CMD_CHECK_NOW: usize = 1002;
 pub const CMD_OPEN_LOG: usize = 1003;
@@ -58,6 +58,7 @@ pub const CMD_OPEN_BOT_LOG: usize = 1004;
 pub const CMD_OPEN_FOLDER: usize = 1005;
 pub const CMD_TOGGLE_AUTOSTART: usize = 1006;
 pub const CMD_RESUME_VPS: usize = 1007;
+pub const CMD_TOGGLE_AUTO_RESUME: usize = 1008;
 pub const CMD_EXIT: usize = 1009;
 
 #[derive(Clone, Debug)]
@@ -78,6 +79,8 @@ pub struct PanelStats {
     pub total_checks: u64,
     pub failover_count: u64,
     pub auto_start_enabled: bool,
+    pub auto_resume_enabled: bool,
+    pub auto_resume_cooldown_secs: Option<u64>,
     pub tray_registered: bool,
     pub recent_events: Vec<String>,
 }
@@ -86,6 +89,7 @@ pub struct PanelStats {
 pub enum HitTarget {
     Close,
     ToggleAutoStart,
+    ToggleAutoResume,
     ResumeVps,
     CheckNow,
     OpenWatchdogLog,
@@ -106,6 +110,7 @@ struct Layout {
     card_stats: RECT,
     row_config: RECT,
     toggle_pill: RECT,
+    toggle_auto_resume_pill: RECT,
     card_logs: RECT,
     btn_resume: RECT,
     btn_check: RECT,
@@ -158,17 +163,24 @@ fn compute_layout(dpi: i32) -> Layout {
     let card_ram = mk_rect(pad, row2_top, pad + card_w, row2_top + card_h);
     let card_stats = mk_rect(pad + card_w + gap, row2_top, w - pad, row2_top + card_h);
 
-    // Config + AutoStart row
+    // Config + AutoStart & AutoResume 2-row card
     let cfg_top = row2_top + card_h + gap;
-    let cfg_h = sc(62, dpi);
+    let cfg_h = sc(98, dpi);
     let row_config = mk_rect(pad, cfg_top, w - pad, cfg_top + cfg_h);
-    let pill_w = sc(84, dpi);
+    let pill_w = sc(92, dpi);
     let pill_h = sc(24, dpi);
+    let pill_right = w - pad - sc(12, dpi);
     let toggle_pill = mk_rect(
-        w - pad - sc(12, dpi) - pill_w,
-        cfg_top + sc(10, dpi),
-        w - pad - sc(12, dpi),
-        cfg_top + sc(10, dpi) + pill_h,
+        pill_right - pill_w,
+        cfg_top + sc(9, dpi),
+        pill_right,
+        cfg_top + sc(9, dpi) + pill_h,
+    );
+    let toggle_auto_resume_pill = mk_rect(
+        pill_right - pill_w,
+        cfg_top + sc(55, dpi),
+        pill_right,
+        cfg_top + sc(55, dpi) + pill_h,
     );
 
     // Recent events log card
@@ -212,6 +224,7 @@ fn compute_layout(dpi: i32) -> Layout {
         card_stats,
         row_config,
         toggle_pill,
+        toggle_auto_resume_pill,
         card_logs,
         btn_resume,
         btn_check,
@@ -227,6 +240,8 @@ fn hit_test_layout(layout: &Layout, x: i32, y: i32) -> Option<HitTarget> {
         Some(HitTarget::Close)
     } else if pt_in_rect(layout.toggle_pill, x, y) {
         Some(HitTarget::ToggleAutoStart)
+    } else if pt_in_rect(layout.toggle_auto_resume_pill, x, y) {
+        Some(HitTarget::ToggleAutoResume)
     } else if pt_in_rect(layout.btn_resume, x, y) {
         Some(HitTarget::ResumeVps)
     } else if pt_in_rect(layout.btn_check, x, y) {
@@ -654,25 +669,28 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
     );
     draw_kpi(layout.card_stats, "UPTIME & RIWAYAT", &up_str, c_text, &stat_sub);
 
-    // 4. Auto-Start & Tray Status Card
+    // 4. Auto-Start & Auto-Resume Settings Card
     unsafe {
         draw_rounded_box(mem_dc, layout.row_config, radius, c_card, c_card_border);
         let p = sc(12, dpi);
+        let text_right = layout.toggle_pill.left - sc(8, dpi);
+
+        // Row A: Auto-Start Windows
         draw_text_rect(
             mem_dc,
             "Auto-Start saat Login Windows",
             mk_rect(
                 layout.row_config.left + p,
-                layout.row_config.top + sc(9, dpi),
-                layout.toggle_pill.left - sc(8, dpi),
-                layout.row_config.top + sc(31, dpi),
+                layout.row_config.top + sc(7, dpi),
+                text_right,
+                layout.row_config.top + sc(26, dpi),
             ),
             c_text,
             f_btn,
-            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
         );
         let tray_desc = format!(
-            "System Tray: {} · Pantau tiap {}s (resume manual)",
+            "System Tray: {} · Pantau tiap {}s",
             if stats.tray_registered { "Aktif" } else { "Menunggu" },
             stats.poll_interval_secs
         );
@@ -681,9 +699,9 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
             &tray_desc,
             mk_rect(
                 layout.row_config.left + p,
-                layout.row_config.top + sc(34, dpi),
-                layout.row_config.right - p,
-                layout.row_config.bottom - sc(8, dpi),
+                layout.row_config.top + sc(24, dpi),
+                text_right,
+                layout.row_config.top + sc(42, dpi),
             ),
             c_muted,
             f_body,
@@ -706,6 +724,89 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
             tg_lbl,
             layout.toggle_pill,
             tg_fg,
+            f_badge,
+            DT_CENTER.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
+        );
+
+        // Row divider
+        let div_brush = CreateSolidBrush(c_card_border);
+        let row_div = mk_rect(
+            layout.row_config.left + p,
+            layout.row_config.top + sc(46, dpi),
+            layout.row_config.right - p,
+            layout.row_config.top + sc(47, dpi),
+        );
+        FillRect(mem_dc, &row_div, div_brush);
+        let _ = DeleteObject(div_brush);
+
+        // Row B: Mode Resume VPS (Otomatis / Manual)
+        draw_text_rect(
+            mem_dc,
+            "Mode Resume VPS Utama",
+            mk_rect(
+                layout.row_config.left + p,
+                layout.row_config.top + sc(50, dpi),
+                text_right,
+                layout.row_config.top + sc(70, dpi),
+            ),
+            c_text,
+            f_btn,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+        );
+        let auto_desc = if stats.auto_resume_enabled {
+            match stats.auto_resume_cooldown_secs {
+                Some(secs) if secs >= 60 => {
+                    format!("Otomatis · Cooldown ~{}m lagi", secs.div_ceil(60))
+                }
+                Some(secs) if secs > 0 => format!("Otomatis · Cooldown ~{secs}d lagi"),
+                _ => "Otomatis aktifkan VPS saat paused/suspended".to_string(),
+            }
+        } else {
+            "Manual · Klik tombol Resume VPS saat perlu".to_string()
+        };
+        let auto_desc_color = if stats.auto_resume_enabled
+            && stats.auto_resume_cooldown_secs.is_some_and(|s| s > 0)
+        {
+            c_amber
+        } else {
+            c_muted
+        };
+        draw_text_rect(
+            mem_dc,
+            &auto_desc,
+            mk_rect(
+                layout.row_config.left + p,
+                layout.row_config.top + sc(70, dpi),
+                text_right,
+                layout.row_config.bottom - sc(6, dpi),
+            ),
+            auto_desc_color,
+            f_body,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+        );
+
+        let (ar_lbl, ar_fg, ar_bg) = if stats.auto_resume_enabled {
+            ("OTOMATIS", c_emerald, c_emerald_bg)
+        } else {
+            ("MANUAL", c_muted, c_btn_bg)
+        };
+        let ar_border = if st.hover == Some(HitTarget::ToggleAutoResume) {
+            c_text
+        } else {
+            ar_fg
+        };
+        draw_rounded_box(
+            mem_dc,
+            layout.toggle_auto_resume_pill,
+            sc(10, dpi),
+            ar_bg,
+            ar_border,
+        );
+        draw_text_rect(
+            mem_dc,
+            ar_lbl,
+            layout.toggle_auto_resume_pill,
+            ar_fg,
             f_badge,
             DT_CENTER.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
         );
@@ -989,6 +1090,9 @@ unsafe extern "system" fn panel_wnd_proc(
                         HitTarget::ToggleAutoStart => unsafe {
                             let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_TOGGLE_AUTOSTART), LPARAM(0));
                         },
+                        HitTarget::ToggleAutoResume => unsafe {
+                            let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_TOGGLE_AUTO_RESUME), LPARAM(0));
+                        },
                         HitTarget::ResumeVps => unsafe {
                             let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_RESUME_VPS), LPARAM(0));
                         },
@@ -1219,6 +1323,8 @@ mod tests {
     #[test]
     fn layout_buttons_do_not_overlap_and_hit_test_accurately() {
         let layout = compute_layout(96);
+        assert!(layout.toggle_pill.bottom < layout.toggle_auto_resume_pill.top);
+        assert!(layout.row_config.bottom < layout.card_logs.top);
         assert!(layout.btn_resume.right < layout.btn_check.left);
         assert!(layout.btn_resume.bottom < layout.btn_log_app.top);
         assert!(layout.btn_check.bottom < layout.btn_log_app.top);
@@ -1227,6 +1333,14 @@ mod tests {
         assert!(layout.btn_log_app.bottom < layout.btn_exit.top);
         assert!(layout.btn_exit.bottom <= layout.height - layout.pad);
 
+        assert_eq!(
+            hit_test_layout(
+                &layout,
+                (layout.toggle_auto_resume_pill.left + layout.toggle_auto_resume_pill.right) / 2,
+                (layout.toggle_auto_resume_pill.top + layout.toggle_auto_resume_pill.bottom) / 2
+            ),
+            Some(HitTarget::ToggleAutoResume)
+        );
         assert_eq!(
             hit_test_layout(
                 &layout,
