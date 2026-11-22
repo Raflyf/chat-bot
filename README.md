@@ -1,250 +1,179 @@
 # FreeAIBot
 
-Asisten AI multimodal untuk Telegram dan WhatsApp. Dibangun dengan TypeScript, Vercel Serverless, dan Supabase PostgreSQL.
+Asisten AI multimodal untuk Telegram dan WhatsApp (Cloud API serta Baileys) yang dibangun dengan TypeScript, Vercel Serverless, dan Supabase PostgreSQL. Repositori ini juga mencakup utilitas desktop Rust bernama **Baileys Backup** untuk menjaga bot WhatsApp tetap siaga lewat failover lokal di Windows.
 
-> **Status layanan:** Telegram aktif normal. WhatsApp Cloud API dapat berada dalam
-> **mode pemeliharaan** sementara (mis. saat penautan payment method Meta belum
-> selesai) — lihat [Mode Pemeliharaan WhatsApp](#-mode-pemeliharaan-whatsapp).
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22.x-339933.svg?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Rust](https://img.shields.io/badge/Rust-Baileys%20Backup-DEA584.svg?style=flat-square&logo=rust&logoColor=black)](tools/wa-standby-watchdog)
+[![Vercel](https://img.shields.io/badge/Deployment-Vercel%20Serverless-000000.svg?style=flat-square&logo=vercel&logoColor=white)](https://free-chatbot-ai.vercel.app)
+[![Supabase](https://img.shields.io/badge/Database-Supabase%20PostgreSQL-3ECF8E.svg?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com)
+[![Telegram](https://img.shields.io/badge/Telegram-%40chatkita__bot-2CA5E0.svg?style=flat-square&logo=telegram&logoColor=white)](https://t.me/chatkita_bot)
+[![WhatsApp](https://img.shields.io/badge/WhatsApp-Cloud%20API%20%26%20Baileys-25D366.svg?style=flat-square&logo=whatsapp&logoColor=white)](https://wa.me/6283874640066)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-20.x%20%7C%2022.x-green.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Platform](https://img.shields.io/badge/Deployment-Vercel%20Serverless-black.svg?logo=vercel&logoColor=white)](https://free-chatbot-ai.vercel.app)
-[![Database](https://img.shields.io/badge/Database-Supabase%20PostgreSQL-3ECF8E.svg?logo=supabase&logoColor=white)](https://supabase.com)
-[![Telegram](https://img.shields.io/badge/Telegram-%40chatkita__bot-2CA5E0.svg?logo=telegram&logoColor=white)](https://t.me/chatkita_bot)
-[![WhatsApp](https://img.shields.io/badge/WhatsApp-Cloud%20API-25D366.svg?logo=whatsapp&logoColor=white)](https://wa.me/6283874640066)
-
----
-
-## Akses Cepat
+### Akses Layanan
 
 | Layanan | Tautan / Kontak | Keterangan |
 | :--- | :--- | :--- |
-| **Telegram Bot** | [@chatkita_bot](https://t.me/chatkita_bot) | Siap digunakan 24/7 |
-| **WhatsApp Bot** | [+62 838-7464-0066](https://wa.me/6283874640066) | WhatsApp Cloud API (obrolan pribadi). Dapat berstatus **pemeliharaan** — lihat [Mode Pemeliharaan WhatsApp](#-mode-pemeliharaan-whatsapp) |
-| **Landing Page** | [free-chatbot-ai.vercel.app](https://free-chatbot-ai.vercel.app) | Beranda informasi produk & panduan |
+| **Telegram Bot** | [@chatkita_bot](https://t.me/chatkita_bot) | Webhook Vercel Serverless, mendukung obrolan pribadi dan grup |
+| **WhatsApp Bot** | [+62 838-7464-0066](https://wa.me/6283874640066) | WhatsApp Cloud API dan Baileys (lihat [Mode Pemeliharaan WhatsApp](#mode-pemeliharaan-whatsapp)) |
+| **Web & Dashboard** | [free-chatbot-ai.vercel.app](https://free-chatbot-ai.vercel.app) | Beranda informasi, status layanan, dan konsol monitoring |
 
 ---
 
 ## Fitur Utama
 
-- **Multimodal Lengkap**: Memproses pesan suara (*Voice Note*), dokumen kerja (PDF, Word `.doc`/`.docx`, Excel `.xls`/`.xlsx`, PowerPoint `.pptx`, TXT, CSV), gambar/foto (*Vision*), serta stiker dan video pendek.
-- **Pencarian Web Real-Time**: Dilengkapi mesin pencari internet untuk menyajikan data dan berita terkini secara faktual — tanpa kuota berbayar.
-- **Persona Dinamis & Baca Suasana**: Respon menyesuaikan suasana chat (canda, serius, sedih, lemas), mengikuti trajektori emosi lintas giliran, intensitas pesan, dan register bahasa lawan bicara. Tanpa kalimat template hafalan.
-- **Memori & Konteks Percakapan**: Menjaga kesinambungan alur obrolan secara alami dengan penyimpanan aman di Supabase PostgreSQL.
-- **Pencatatan Pribadi**: Catatan/jurnal, daftar tugas (dengan prioritas & tenggat), catatan keuangan (pengeluaran/pemasukan + rekap per kategori), dan pelacak kebiasaan (*streak*). Bisa lewat perintah `/` atau **bahasa alami**.
-- **Pengingat Akurat**: Dijadwalkan 1 menit s/d **30 hari** ke depan, mendukung bahasa alami (*"ingatkan besok jam 8"*, *"ingatkan minggu depan"*). Pengiriman berlapis: GitHub Actions tiap 5 menit + pemeriksaan saat ada pesan masuk.
-- **Failover Enam Tier**: Rotasi kunci, circuit breaker, dan balapan khusus teks (`RACE_MODELS=1`): primer mulai dahulu, satu cadangan menyusul setelah 400 ms. Vision mengikuti rantai eksplisit tanpa balapan.
-- **Zona Waktu Dinamis**: Mengenali waktu lokal secara akurat (WIB, WITA, WIT, dan waktu internasional) berdasarkan deteksi nomor atau lokasi GPS.
+- **Pemrosesan Multimodal**: Membaca gambar, foto, stiker, pesan suara (transkripsi Whisper), serta dokumen kerja (PDF, `.doc`/`.docx`, `.xls`/`.xlsx`, `.pptx`, TXT, CSV).
+- **Pencarian Web**: Mengambil referensi berita dan artikel terkini dari beberapa sumber publik tanpa kunci API berbayar.
+- **Produktivitas & Pengingat**: Catatan pribadi, daftar tugas, pencatatan pemasukan dan pengeluaran, daftar belanja, ringkasan berkala, serta pengingat satu kali, berulang, maupun multi-hari melalui perintah `/` atau bahasa alami.
+- **Dukungan Grup Terisolasi**: Berjalan di grup Telegram dan WhatsApp Baileys dengan tiga mode (`/mention`, `/nimbrung`, `/diam`) serta pemisahan tabel database grup dari chat pribadi.
+- **Memori, Zona Waktu & Permainan**: Menyimpan riwayat percakapan, preferensi pengguna, dan zona waktu per pengguna (WIB, WITA, WIT, serta internasional) di Supabase PostgreSQL, ditambah mesin permainan interaktif berbasis state database.
+- **Failover AI Multi-Tier**: Merutekan permintaan teks dan vision secara otomatis melalui enam tier provider (OpenCode, Cloudflare Workers AI, Groq, DreamPrompting, OpenRouter, Gemini) dengan pelacakan kuota harian, cooldown persisten, dan rotasi kunci. Konfigurasi model aktif dikelola terpusat di [`src/env.ts`](src/env.ts).
+- **Baileys Backup (Failover Lokal Windows)**: Aplikasi desktop native Rust (`BaileysBackup.exe`) di Windows System Tray tanpa jendela terminal yang memantau VPS Baileys secara berkala, menyalakan bot lokal otomatis saat VPS berhenti atau tertidur, menyediakan panel statistik native, dan menyinkronkan sesi ke Supabase.
 
 ---
 
-## Perintah Obrolan
+## Arsitektur & Teknologi
 
-| Perintah / Aksi | Fungsi & Penjelasan |
-| :--- | :--- |
-| `/reset` | Membersihkan **riwayat percakapan + preferensi** dan memulai sesi baru dari awal. |
-| `/salah <catatan>` | Menyimpan koreksi atau preferensi khusus Anda ke basis data permanen. |
-| `/remind <menit> <pesan>` | Menjadwalkan pengingat otomatis (1 menit s/d 30 hari). |
-| `/catat <isi>` | Menyimpan catatan bebas atau jurnal. |
-| `/todo <tugas>` | Menambah tugas ke daftar (prioritas & tenggat opsional). |
-| `/uang <nominal> <ket>` | Mencatat pengeluaran. Contoh: `/uang 50000 makan siang`. |
-| `/masuk <nominal> <ket>` | Mencatat pemasukan. Contoh: `/masuk 5000000 gaji`. |
-| `/rekap [hari]` | Rekap keuangan: total masuk, keluar, selisih, dan per kategori. |
-| `/list` | Menampilkan daftar tugas yang belum selesai. |
-| `/catatan` | Menampilkan catatan terakhir. |
-| `/selesai <id>` · `/hapus <id>` | Menandai tugas selesai atau menghapus entri. |
-| *Kirim Dokumen (PDF/DOCX/XLSX/PPTX/DOC/XLS)* | Membaca isi berkas, merangkum dokumen, atau menganalisis data dan kode pemrograman. |
-| *Kirim Gambar / Foto* | Menjelaskan isi gambar, membaca teks dokumen fisik (OCR), atau menganalisis objek. |
-| *Kirim Pesan Suara (VN)* | Mentranskripsi rekaman suara ke teks dan langsung menjawab intinya. |
-| *Kirim Pin Lokasi GPS* | Menyesuaikan zona waktu lokal dan konteks kota domisili Anda secara otomatis. |
-
-### Bahasa Alami (tanpa `/`)
-
-Bot juga memahami permintaan tanpa format perintah:
-
-| Yang Anda ketik | Yang terjadi |
-| :--- | :--- |
-| *"catat pengeluaran 50rb buat makan"* | Langsung dicatat |
-| *"tambah tugas penting bayar listrik"* | Langsung ditambahkan sebagai tugas prioritas tinggi |
-| *"ingatkan saya besok jam 8 rapat"* | Langsung dijadwalkan |
-| *"berapa sisa uang saya"* | Bot jawab dari data nyata (tidak mengarang) |
-| *"tugas saya apa aja"* | Bot tampilkan daftar tugas |
-| *"reset semua percakapan kita"* | Sesi direset |
-
-**Catatan konfirmasi:**
-- **Pengingat** → langsung disimpan tanpa balasan *iya/tidak*. Alasannya: pengingat berpacu waktu — bila user minta *"ingatkan 1 menit lagi"*, waktu 1 menit itu habis terpakai tanya-jawab sehingga pengingatnya jadi telat.
-- **Catatan / tugas / keuangan** → **dikonfirmasi dulu** (*"Balas iya untuk simpan, tidak untuk batal"*). Aman, tidak terikat waktu.
-
-Deteksi niat tetap konservatif (berlapis), sehingga obrolan biasa (mis. *"aku tadi makan enak banget"*) **tidak** ikut tercatat.
-
----
-
-## Sistem Failover Otomatis
-
-Sistem merutekan setiap percakapan melalui rantai failover bertingkat secara mandiri. Bila pemrosesan pada satu jalur mengalami kegagalan, timeout, atau menyentuh batas kapasitas, sistem secara otomatis mengalihkan permintaan ke jalur berikutnya tanpa intervensi manual.
-
-Konfigurasi model bersumber dari [env.ts](<src/env.ts>); urutan eksekusi dari [providers.ts](<src/providers.ts>). Kontrak 10 November 2026:
-
-| Tier | Provider | Primer teks | Cadangan teks |
-| --- | --- | --- | --- |
-| 1 | OpenCode | `deepseek-v4.1-flash-free` | `glm-5.3-flash-free` |
-| 2 | Cloudflare | `@cf/qwen/qwen3.8-27b` | `@cf/nvidia/nemotron-3-120b-a12b` |
-| 3 | Groq | `qwen/qwen3.8-27b` | `openai/gpt-oss-120b` |
-| 4 | DreamPrompting | `groq/qwen/qwen3.8-27b` | Tidak ada |
-| 5 | OpenRouter | `nvidia/nemotron-3.5-super-vl:free` | `nvidia/nemotron-3-ultra-550b-a55b:free` |
-| 6 | Gemini | `gemini-2.5-flash` | `gemini-flash-lite-latest` |
-
-Foto/stiker memakai `visionChain` terpisah. PDF/audio/video native memakai `geminiVision`: Gemini 2.5 Flash, lalu Flash Lite Latest. Transkripsi memakai `groqWhisperPrimary`, `groqWhisperBackup`, dan `cfWhisper` dari konfigurasi.
-
-Dahl dan NVIDIA NIM tidak masuk pool aktif; riwayat pemakaian lama tetap disimpan. Semua kunci Cloudflare tetap dipertahankan: batas harian memicu cooldown sementara, bukan penghapusan kunci.
-
-Untuk agen dan kontributor: mulai dari [CODEBASE_MAP.md](CODEBASE_MAP.md) sebelum menjelajah kode. Peta itu berisi titik masuk, topik ke berkas, dampak perubahan, route API, objek SQL, dan daftar tes; detail simbol ada di `docs/codebase-index.json` dan bisa dibuat ulang dengan `npm run map:codebase`.
-
-Dashboard mengambil katalog dari API. Metrik panggilan tercatat, balasan tersimpan, token, dan neuron memakai sumber terpisah dengan rentang UTC yang sama; kuota upstream yang belum diketahui tidak ditampilkan sebagai nol. Snapshot diperbarui tiap 5 detik saat tab terlihat, tanpa probe inferensi tambahan. Cooldown upstream ditampilkan terpisah; persentase pemakaian bot tidak dipaksa menjadi 100%.
-
-Riwayat percakapan tetap memuat pesan pengguna dengan `via` kosong. Pembacaan suasana memakai caption asli, bukan instruksi media; teks stiker yang diamati dipisahkan dari reaksi bot. Regenerasi stiker tetap membawa gambar, dan gaya bercanda dapat kembali mengikuti pesan terbaru setelah suasana serius selesai.
-
----
-
-## Menjalankan Secara Lokal
-
-### 1. Klon Repositori & Pasang Dependensi
-```bash
-git clone https://github.com/Raflyf/chat-bot.git
-cd chat-bot
-npm install
+```mermaid
+flowchart LR
+  TG["Telegram"] --> BE["Vercel Serverless / Node.js"]
+  WAC["WhatsApp Cloud API"] --> BE
+  WAB["WhatsApp Baileys"] --> BE
+  WD["Baileys Backup (Rust Tray)"] -.->|"Failover lokal"| WAB
+  BE --> AI["Router AI 6-Tier"]
+  BE --> DB["Supabase PostgreSQL & Storage"]
 ```
 
-### 2. Konfigurasi Variabel Lingkungan
-Salin template konfigurasi `.env.example` ke `.env`:
-```bash
-cp .env.example .env
+| Komponen | Teknologi |
+| :--- | :--- |
+| **Runtime** | TypeScript 5.6, Node.js 22.x (ESM) |
+| **Deployment** | Vercel Serverless Functions |
+| **Transport Pesan** | `node-telegram-bot-api`, Meta WhatsApp Cloud API, `@whiskeysockets/baileys` |
+| **Basis Data & Storage** | Supabase PostgreSQL dengan Row Level Security (RLS) dan Supabase Storage |
+| **Standby Watchdog** | Rust dan Win32 API di [`tools/wa-standby-watchdog`](tools/wa-standby-watchdog) |
+
+---
+
+## Perintah Bot
+
+Daftar perintah resmi yang aktif di aplikasi:
+
+| Perintah | Fungsi |
+| :--- | :--- |
+| `/start` | Memulai percakapan dan menyapa bot |
+| `/help` | Menampilkan daftar lengkap fitur dan perintah |
+| `/tanya <pertanyaan>` | Mengajukan pertanyaan langsung ke AI |
+| `/reset` | Memulai sesi baru dan menghapus riwayat percakapan |
+| `/salah <koreksi>` | Menyimpan koreksi atau preferensi personal pengguna |
+| `/catat <isi>` | Menyimpan catatan bebas atau jurnal |
+| `/catatan` | Menampilkan catatan terakhir |
+| `/cari <kata>` | Mencari catatan tersimpan berdasarkan kata kunci |
+| `/tugas <isi>` | Menambahkan tugas baru ke daftar |
+| `/list` | Menampilkan daftar tugas yang ada |
+| `/barang` | Mencatat atau melihat daftar barang dan belanja |
+| `/uang <nominal> <keterangan>` | Mencatat pengeluaran harian |
+| `/masuk <nominal> <keterangan>` | Mencatat pemasukan |
+| `/rekap [hari]` | Menampilkan rekap keuangan berdasarkan rentang hari |
+| `/hapusuang <nomor>` | Menghapus entri catatan keuangan berdasarkan nomor urut |
+| `/ringkasan` | Menampilkan ringkasan keuangan, tugas, pengingat, dan catatan |
+| `/remind <menit> <pesan>` | Menjadwalkan pengingat otomatis |
+| `/mention` | Mengatur mode grup agar bot hanya membalas saat ditag atau dibalas |
+| `/nimbrung` | Mengaktifkan bot agar ikut merespons obrolan grup secara kontekstual |
+| `/diam` | Mengunci bot agar diam total di grup (khusus admin/owner) |
+| `/statusgrup` | Mengecek mode aktif bot pada grup saat ini |
+
+Selain perintah garis miring, bot memahami permintaan dalam bahasa alami tanpa awalan `/`. Anda juga dapat mengirim foto, pesan suara, dokumen kerja, dan pin lokasi GPS secara langsung untuk diproses sesuai konteks percakapan.
+
+---
+
+## Struktur Proyek
+
+```text
+.
+├── api/                         # Endpoint Vercel Serverless (webhook, health, stats, cron)
+├── public/                      # Landing page, dashboard web, aset statis, dan stiker
+├── scripts/                     # Skrip utilitas CLI dan pengelola watchdog Windows
+├── sql/                         # Skema utama dan migrasi database PostgreSQL (Supabase)
+├── src/                         # Logika inti bot, router AI, media, memori, game, & catatan
+├── tests/                       # Suite pengujian otomatis menggunakan node:test + tsx
+└── tools/wa-standby-watchdog/   # Aplikasi native Rust Windows Tray (Baileys Backup)
 ```
-Lengkapi token bot perpesanan, kredensial basis data Supabase, dan API key yang digunakan. Seluruh konfigurasi model dan pembatasan kuota dikelola secara fleksibel melalui variabel lingkungan tanpa perlu mengubah logika inti aplikasi.
-
-### 3. Jalankan Aplikasi
-- **Bot Telegram (Polling Lokal):**
-  ```bash
-  npm run dev
-  ```
-- **Validasi Kode TypeScript:**
-  ```bash
-  npm run typecheck
-  ```
-- **Kompilasi Bundle:**
-  ```bash
-  npm run build
-  ```
 
 ---
 
-## Penerapan Produksi (Deployment)
+## Instalasi & Menjalankan Secara Lokal
 
-- **Telegram**: Hubungkan repositori ke **Vercel**, masukkan Environment Variables, dan daftarkan webhook Telegram ke endpoint `/api/webhook`.
-- **WhatsApp Cloud API**: Terintegrasi langsung di **Vercel Serverless** pada endpoint `/api/whatsapp`, siap menerima webhook pesan masuk Meta Cloud API untuk obrolan pribadi tanpa membutuhkan server VPS.
-  - **PENTING — payment method wajib:** WhatsApp Cloud API memerlukan metode pembayaran yang valid pada akun bisnis Meta. Bila belum tertaut, Meta **MEMBLOKIR pengiriman** (error `141006` "There is an error with the payment method") walau API tetap membalas HTTP 200 — pesan masuk **tidak akan sampai** ke pengguna. Langkah perbaikan: `sql/CARA_MAINTENANCE_WHATSAPP.md`.
-- **Basis Data**: Jalankan skrip SQL pada folder `sql/` di SQL Editor Supabase secara berurutan (mulai dari versi terendah). Seluruh skrip migrasi bersifat aditif dan aman dijalankan berulang.
-- **Pengingat Tepat Waktu**: tiga lapisan pemicu yang saling melengkapi:
-  1. **cron-job.org** (UTAMA, gratis) — memanggil `/api/cron/reminders` **tiap 1 menit**. Setup: `sql/CARA_SETUP_CRONJOB_ORG.md`. Hasil terukur: pengingat terkirim dalam ~40 detik.
-  2. **GitHub Actions** — workflow `.github/workflows/reminders.yml`, 3 jadwal bergeser (cadangan).
-  3. **Lazy-check** — diperiksa setiap ada pesan masuk (cadangan).
+### Prasyarat
 
-  Semua memanggil endpoint yang sama dengan autentikasi yang sama. Aman berjalan bersamaan — pengingat tidak terkirim dobel.
+- Node.js `22.x`
+- Proyek Supabase aktif beserta URL dan Service Role Key
+- Token bot Telegram dan/atau kredensial WhatsApp (Cloud API atau Baileys)
+- Rust toolchain (opsional, hanya diperlukan jika ingin mengompilasi ulang `BaileysBackup.exe` di Windows)
 
-Dokumentasi arsitektur mendalam dan riwayat teknis versi dikelola secara internal dan tidak dipublikasikan di repositori ini.
+### Langkah Setup
+
+1. Klon repositori dan pasang dependensi:
+   ```bash
+   git clone https://github.com/Raflyf/chat-bot.git
+   cd chat-bot
+   npm install
+   ```
+2. Salin template konfigurasi lalu lengkapi kredensial di `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+3. Jalankan skema SQL utama (`sql/schema.sql`) dan skrip migrasi berurutan di folder `sql/` pada SQL Editor Supabase.
+4. Jalankan perintah pengembangan atau pengujian sesuai kebutuhan:
+
+   ```bash
+   npm run dev        # Menjalankan bot Telegram dalam mode polling lokal
+   npm run whatsapp   # Menjalankan bot WhatsApp Baileys lokal
+   npm run typecheck  # Memvalidasi tipe TypeScript tanpa emit
+   npm test           # Menjalankan seluruh suite pengujian otomatis
+   npm run build      # Mengompilasi TypeScript ke folder dist/
+   ```
+
+### Baileys Backup (Windows)
+
+Untuk menjalankan pemantau failover lokal sebagai aplikasi System Tray Windows tanpa jendela terminal:
+
+```bash
+npm run watchdog:install    # Build TS + Rust, pasang ke LocalAppData, daftar Startup & Start Menu
+npm run watchdog:status     # Mengecek status proses, pemakaian RAM, tray, dan mode failover
+npm run watchdog:stop       # Menghentikan proses watchdog dan instance lokal aktif
+npm run watchdog:uninstall  # Menghentikan proses dan menghapus pendaftaran auto-start
+```
 
 ---
 
-## 🚧 Mode Pemeliharaan WhatsApp
+## Deployment & Operasional
 
-Bila pengiriman WhatsApp terblokir Meta (mis. payment method belum tertaut →
-error `141006`), aktifkan **mode pemeliharaan** agar bot tidak membuang kuota AI
-untuk pesan yang tidak akan sampai, dan pengguna diarahkan ke Telegram:
+### Vercel Serverless
+
+Hubungkan repositori ke Vercel, masukkan seluruh variabel lingkungan dari `.env.example` di dashboard project Vercel, lalu daftarkan webhook produksi ke endpoint berikut:
+
+- Telegram: `https://<domain-anda>/api/webhook`
+- WhatsApp Cloud API: `https://<domain-anda>/api/whatsapp`
+
+### Pemantauan & Tugas Terjadwal
+
+- `GET /api/health`: Endpoint pemeriksaan kesehatan aplikasi, database, status pemeliharaan WhatsApp, serta statistik pengiriman.
+- `POST /api/cron/reminders`: Eksekusi pengiriman pengingat terjadwal (didukung jadwal cadangan melalui `.github/workflows/reminders.yml`).
+- `POST /api/cron/backup` dan `POST /api/cron/arsip`: Backup tabel utama ke Supabase Storage dan pengarsipan pesan harian.
+
+### Mode Pemeliharaan WhatsApp
+
+Jika pengiriman pesan WhatsApp Cloud API diblokir oleh Meta karena *payment method* akun bisnis belum tertaut (ditandai error `141006`), aktifkan mode pemeliharaan pada variabel lingkungan:
 
 ```bash
 WHATSAPP_MAINTENANCE_MODE=true
 ```
 
-Perilaku saat aktif:
-
-- Pesan WhatsApp **tidak** diproses AI (hemat kuota provider).
-- Pengguna menerima pemberitahuan pemeliharaan yang mengarahkan ke Telegram.
-- Bila pemberitahuan itu **sendiri gagal terkirim**, kegagalan dicatat di log dan
-  pesan **tidak** ditandai selesai serta **tidak** disimpan sebagai balasan —
-  supaya dataset tidak seolah menunjukkan bot sudah menjawab.
-- `GET /api/health` melaporkan `whatsapp_maintenance: true`, dan landing page
-  menampilkan penanda **"Telegram Online · WhatsApp Maintenance"** alih-alih
-  "Online 24/7".
-
-Mematikan kembali (setelah payment method beres):
-
-```bash
-WHATSAPP_MAINTENANCE_MODE=false   # atau hapus variabelnya
-```
-
-Default **nonaktif** (operasional normal) — mode ini harus dinyalakan eksplisit
-supaya statusnya jelas dan tidak menyala tanpa sengaja.
-
-**Notifikasi otomatis:** bila pengiriman gagal 3× berturut-turut, sistem mengirim
-peringatan ke Telegram pemilik (maksimal sekali per 6 jam) berisi dugaan penyebab
-dan langkah pengecekan — jadi blokir Meta tidak lewat tanpa ada yang sadar.
-
-Panduan lengkap memperbaiki payment method: **`sql/CARA_MAINTENANCE_WHATSAPP.md`**.
+Nilai default adalah `false` (nonaktif). Saat aktif, pesan WhatsApp tidak diteruskan ke AI untuk menghemat kuota provider dan pengguna akan diarahkan ke Telegram. Setelah masalah *payment method* pada akun bisnis Meta selesai, ubah kembali ke `WHATSAPP_MAINTENANCE_MODE=false` atau hapus variabel tersebut.
 
 ---
 
 ## Lisensi
 
-Didistribusikan di bawah lisensi resmi [MIT License](LICENSE).  
-Hak Cipta (c) 2026 **Rafly Firmansyah**.
-
-## 🧪 Test Otomatis
-
-```bash
-npm test
-```
-
-**331 test** menutup fungsi inti: parsing waktu & uang, pengingat berulang,
-zona waktu, keamanan, dan 16 mesin game. Test ini sudah beberapa kali
-menemukan bug nyata sebelum sampai ke user.
-
-## ⏰ Pengingat Berulang
-
-Bot mendukung pengingat yang terulang otomatis:
-
-| Ucapan | Arti |
-|---|---|
-| *"ingatkan tiap hari jam 7 minum obat"* | setiap hari 07.00 |
-| *"ingatkan tiap Senin jam 9 rapat"* | setiap Senin 09.00 |
-| *"ingatkan tiap tanggal 1 bayar listrik"* | setiap tanggal 1 |
-| *"ingatkan tiap hari kerja jam 8 absen"* | Senin–Jumat 08.00 |
-
-Pengingat berulang **tidak menumpuk baris** — satu aturan, dijadwalkan ulang otomatis.
-
-## 🌍 Zona Waktu per-User
-
-Sistem **tidak** mengasumsikan WIB. Untuk user baru yang belum dikenal:
-
-> *"Sebelum aku jawab soal waktu, aku perlu tahu kamu ada di zona mana dulu ya —
-> soalnya jam di Indonesia beda-beda (WIB, WITA, WIT)."*
-
-Setelah user menyebut lokasinya (*"aku di Makassar"*), zona disimpan permanen dan
-**tidak ditanya lagi**. Untuk nomor luar Indonesia, zona ditebak dari kode negara
-lalu dikonfirmasi.
-
-## 🩺 Monitoring & Backup
-
-| Endpoint | Fungsi |
-|---|---|
-| `GET /api/health` | Status sistem (200 sehat / 503 bermasalah) + `whatsapp_maintenance` — untuk UptimeRobot |
-| `POST /api/cron/backup` | Backup tabel utama ke Supabase Storage (harian) |
-| `POST /api/cron/arsip` | Arsipkan pesan lama (harian) |
-
-Panduan pemasangan: `sql/CARA_SETUP_CRON_HARIAN.md` (cron-job.org / GitHub Actions).
-Bucket penyimpanan backup sudah dibuat dan berjalan harian.
-
-## 📦 Migrasi Database
-
-Lihat `sql/CARA_MIGRASI_v25-v29.md` untuk migrasi terbaru (semua opsional —
-sistem tetap bekerja tanpa itu, tapi fitur barunya belum aktif penuh).
+Didistribusikan di bawah [MIT License](LICENSE). Hak Cipta (c) 2026 Rafly Firmansyah.
