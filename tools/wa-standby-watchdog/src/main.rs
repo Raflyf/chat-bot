@@ -672,7 +672,7 @@ fn post_instabox_machine_action(
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::pipe())
+    .stderr(Stdio::piped())
     .creation_flags(CREATE_NO_WINDOW);
 
     let mut child = cmd.spawn().map_err(|_| VpsResumeError {
