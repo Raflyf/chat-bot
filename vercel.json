@@ -19,6 +19,9 @@
       "maxDuration": 45,
       "includeFiles": "node_modules/@wreq-js/binding-linux-x64-gnu/**"
     },
+    "api/baileys-backup.ts": {
+      "maxDuration": 30
+    },
     "api/dataset.ts": {
       "maxDuration": 20
     },

@@ -108,6 +108,10 @@ const LEGACY_RUN_VALUE_NAME: PCWSTR = w!("FreeAIBotStandbyWatchdog");
 const APP_SETTINGS_SUBKEY: PCWSTR = w!(r"Software\BaileysBackup");
 const PROJECT_ROOT_VALUE: PCWSTR = w!("ProjectRoot");
 const AUTO_RESUME_VALUE: PCWSTR = w!("AutoResumeVps");
+const AUTO_RESUME_UPDATED_AT_VALUE: PCWSTR = w!("AutoResumeUpdatedAtMs");
+const SUPABASE_CLOUD_STATE_FILE: &str = "__baileys_backup_state.json";
+const SUPABASE_DESKTOP_STATE_FILE: &str = "__baileys_backup_desktop.json";
+const CLOUD_SYNC_INTERVAL_SECS: u64 = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VpsAvailability {
@@ -148,6 +152,8 @@ struct AppContext {
     resume_requested: Arc<AtomicBool>,
     resuming_vps: Arc<AtomicBool>,
     auto_resume_enabled: Arc<AtomicBool>,
+    auto_resume_updated_at_ms: Arc<AtomicU64>,
+    cloud_sync_dirty: Arc<AtomicBool>,
     tray_registered: Arc<AtomicBool>,
     tray_retry_left: AtomicU8,
     child_pid: Arc<AtomicU32>,
@@ -177,6 +183,13 @@ fn now_epoch_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn now_epoch_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }
 
@@ -940,6 +953,62 @@ fn set_auto_resume_enabled(enabled: bool) -> bool {
     }
 }
 
+fn read_auto_resume_updated_at_ms() -> u64 {
+    unsafe {
+        let mut buf = [0u16; 48];
+        let mut bytes = size_of::<[u16; 48]>() as u32;
+        let st = RegGetValueW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            AUTO_RESUME_UPDATED_AT_VALUE,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut bytes),
+        );
+        if st.is_err() || bytes < 2 {
+            return 0;
+        }
+        let wchar_len = ((bytes as usize) / 2).min(buf.len());
+        let raw = String::from_utf16_lossy(&buf[..wchar_len]);
+        raw.trim_end_matches('\0').trim().parse::<u64>().unwrap_or(0)
+    }
+}
+
+fn save_auto_resume_updated_at_ms(ts_ms: u64) -> bool {
+    unsafe {
+        let mut key = HKEY::default();
+        if RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            0,
+            None,
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut key,
+            None,
+        )
+        .is_err()
+        {
+            return false;
+        }
+        let text = ts_ms.to_string();
+        let wide: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+        let raw_bytes = std::slice::from_raw_parts(wide.as_ptr().cast::<u8>(), wide.len() * 2);
+        let ok = RegSetValueExW(
+            key,
+            AUTO_RESUME_UPDATED_AT_VALUE,
+            0,
+            REG_SZ,
+            Some(raw_bytes),
+        )
+        .is_ok();
+        let _ = RegCloseKey(key);
+        ok
+    }
+}
+
 /// Ambil `(private_kb, working_kb)` proses lewat Win32 kernel32 `K32GetProcessMemoryInfo` (tanpa child process).
 fn query_process_memory_kb(pid: u32) -> (u64, u64) {
     if pid == 0 {
@@ -1512,7 +1581,11 @@ fn request_vps_resume(ctx: &Arc<AppContext>) -> &'static str {
 
 fn apply_auto_resume_mode(ctx: &Arc<AppContext>, next: bool) -> bool {
     let persisted = set_auto_resume_enabled(next);
+    let ts_ms = now_epoch_ms();
+    let _ = save_auto_resume_updated_at_ms(ts_ms);
     ctx.auto_resume_enabled.store(next, Ordering::SeqCst);
+    ctx.auto_resume_updated_at_ms.store(ts_ms, Ordering::SeqCst);
+    ctx.cloud_sync_dirty.store(true, Ordering::SeqCst);
     if !next {
         if let Ok(mut g) = ctx.shared.lock() {
             g.auto_resume_cooldown_until = None;
@@ -1911,6 +1984,7 @@ fn execute_vps_resume_attempt(
         }
     }
     ctx.resuming_vps.store(false, Ordering::SeqCst);
+    ctx.cloud_sync_dirty.store(true, Ordering::SeqCst);
     let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
     if !hwnd.0.is_null() {
         unsafe {
@@ -1919,12 +1993,395 @@ fn execute_vps_resume_attempt(
     }
 }
 
+fn resolve_supabase_creds(project_root: &Path) -> Option<(String, String)> {
+    let env_map = load_env_file(project_root);
+    let url = ["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"]
+        .iter()
+        .filter_map(|k| env_map.get(*k))
+        .map(|s| s.trim())
+        .find(|s| !s.is_empty() && !s.starts_with("postgres://") && !s.starts_with("postgresql://"))?
+        .trim_end_matches('/')
+        .to_string();
+
+    let key = [
+        "SUPABASE_SERVICE_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_SECRET_KEY",
+    ]
+    .iter()
+    .filter_map(|k| env_map.get(*k))
+    .map(|s| s.trim())
+    .find(|s| !s.is_empty())?
+    .to_string();
+
+    Some((url, key))
+}
+
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7F => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn curl_config_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn extract_json_bool_field(json: &str, key: &str) -> Option<bool> {
+    let needle = format!("\"{key}\"");
+    let mut search_from = 0;
+    while let Some(pos) = json[search_from..].find(&needle) {
+        let abs_pos = search_from + pos + needle.len();
+        let rest = json[abs_pos..].trim_start();
+        if let Some(after_colon) = rest.strip_prefix(':') {
+            let val_start = after_colon.trim_start();
+            if val_start.starts_with("true") {
+                return Some(true);
+            }
+            if val_start.starts_with("false") {
+                return Some(false);
+            }
+        }
+        search_from = abs_pos;
+    }
+    None
+}
+
+fn extract_postgrest_content_json(raw: &str) -> Option<String> {
+    let needle = "\"content\"";
+    let pos = raw.find(needle)?;
+    let after_key = raw[pos + needle.len()..].trim_start();
+    let after_colon = after_key.strip_prefix(':')?.trim_start();
+    let inner = after_colon.strip_prefix('"')?;
+    let mut out = String::new();
+    let mut chars = inner.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next()? {
+                '"' => out.push('"'),
+                '\\' => out.push('\\'),
+                '/' => out.push('/'),
+                'n' => out.push('\n'),
+                'r' => out.push('\r'),
+                't' => out.push('\t'),
+                other => out.push(other),
+            }
+        } else if ch == '"' {
+            return Some(out);
+        } else {
+            out.push(ch);
+        }
+    }
+    None
+}
+
+struct DesktopHeartbeatPayload<'a> {
+    app_version: &'a str,
+    app_pid: u32,
+    child_node_pid: u32,
+    failover_active: bool,
+    vps_state: &'a str,
+    vps_availability: &'a str,
+    app_private_kb: u64,
+    app_working_kb: u64,
+    node_private_kb: u64,
+    uptime_secs: u64,
+    total_checks: u64,
+    failover_count: u64,
+    auto_start_enabled: bool,
+    tray_registered: bool,
+    last_check_epoch: u64,
+    heartbeat_at: u64,
+    stopped: bool,
+    auto_resume_enabled: bool,
+    auto_resume_updated_at: u64,
+    cooldown_until_epoch: Option<u64>,
+    recent_events: &'a [String],
+}
+
+fn format_desktop_heartbeat_json(p: &DesktopHeartbeatPayload<'_>) -> String {
+    let cooldown_json = match p.cooldown_until_epoch {
+        Some(ts) if ts > 0 => ts.to_string(),
+        _ => "null".to_string(),
+    };
+    let events_json: Vec<String> = p
+        .recent_events
+        .iter()
+        .take(MAX_RECENT_EVENTS)
+        .map(|ev| format!("\"{}\"", json_escape(ev)))
+        .collect();
+    format!(
+        "{{\"appVersion\":\"{}\",\"appPid\":{},\"childNodePid\":{},\"failoverActive\":{},\"vpsState\":\"{}\",\"vpsAvailability\":\"{}\",\"appPrivateKb\":{},\"appWorkingKb\":{},\"nodePrivateKb\":{},\"uptimeSecs\":{},\"totalChecks\":{},\"failoverCount\":{},\"autoStartEnabled\":{},\"trayRegistered\":{},\"lastCheckEpoch\":{},\"heartbeatAt\":{},\"stopped\":{},\"autoResumeEnabled\":{},\"autoResumeUpdatedAt\":{},\"cooldownUntilEpoch\":{},\"recentEvents\":[{}]}}",
+        json_escape(p.app_version),
+        p.app_pid,
+        p.child_node_pid,
+        if p.failover_active { "true" } else { "false" },
+        json_escape(p.vps_state),
+        json_escape(p.vps_availability),
+        p.app_private_kb,
+        p.app_working_kb,
+        p.node_private_kb,
+        p.uptime_secs,
+        p.total_checks,
+        p.failover_count,
+        if p.auto_start_enabled { "true" } else { "false" },
+        if p.tray_registered { "true" } else { "false" },
+        p.last_check_epoch,
+        p.heartbeat_at,
+        if p.stopped { "true" } else { "false" },
+        if p.auto_resume_enabled { "true" } else { "false" },
+        p.auto_resume_updated_at,
+        cooldown_json,
+        events_json.join(","),
+    )
+}
+
+fn pull_cloud_control_state(
+    supabase_url: &str,
+    supabase_key: &str,
+) -> Option<(bool, u64, Option<u64>)> {
+    let url = format!(
+        "{supabase_url}/rest/v1/whatsapp_sessions?filename=eq.{SUPABASE_CLOUD_STATE_FILE}&select=content&limit=1"
+    );
+    let mut cmd = Command::new(curl_bin_path());
+    cmd.args(["-sS", "--max-time", "5", "--config", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd.spawn().ok()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let cfg = format!(
+            "url = {}\nheader = {}\nheader = {}\nheader = \"Accept: application/json\"\n",
+            curl_config_quote(&url),
+            curl_config_quote(&format!("apikey: {supabase_key}")),
+            curl_config_quote(&format!("Authorization: Bearer {supabase_key}")),
+        );
+        let _ = stdin.write_all(cfg.as_bytes());
+    }
+
+    let output = child.wait_with_output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let body = String::from_utf8_lossy(&output.stdout);
+    let content = extract_postgrest_content_json(&body)?;
+    let auto_enabled = extract_json_bool_field(&content, "autoResumeEnabled")?;
+    let updated_at = extract_json_u64_field(&content, "autoResumeUpdatedAt").unwrap_or(0);
+    let cooldown_until = extract_json_u64_field(&content, "cooldownUntilEpoch").filter(|&v| v > 0);
+    Some((auto_enabled, updated_at, cooldown_until))
+}
+
+fn push_desktop_heartbeat(
+    supabase_url: &str,
+    supabase_key: &str,
+    content_json: &str,
+    timeout_secs: &str,
+) -> bool {
+    let url = format!("{supabase_url}/rest/v1/whatsapp_sessions?on_conflict=filename");
+    let row_json = format!(
+        "{{\"filename\":\"{}\",\"content\":\"{}\"}}",
+        SUPABASE_DESKTOP_STATE_FILE,
+        json_escape(content_json),
+    );
+    let mut cmd = Command::new(curl_bin_path());
+    cmd.args(["-sS", "--max-time", timeout_secs, "--config", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let cfg = format!(
+            "url = {}\nrequest = \"POST\"\nheader = {}\nheader = {}\nheader = \"Content-Type: application/json\"\nheader = \"Prefer: resolution=merge-duplicates,return=minimal\"\ndata = {}\n",
+            curl_config_quote(&url),
+            curl_config_quote(&format!("apikey: {supabase_key}")),
+            curl_config_quote(&format!("Authorization: Bearer {supabase_key}")),
+            curl_config_quote(&row_json),
+        );
+        let _ = stdin.write_all(cfg.as_bytes());
+    }
+
+    child.wait_with_output().is_ok_and(|o| o.status.success())
+}
+
+fn sync_with_cloud(
+    ctx: &Arc<AppContext>,
+    auto_resume_not_before: &mut Option<Instant>,
+    stopping: bool,
+) {
+    let Some((supabase_url, supabase_key)) = resolve_supabase_creds(&ctx.project_root) else {
+        return;
+    };
+
+    if !stopping {
+        if let Some((remote_enabled, remote_updated_at, remote_cooldown)) =
+            pull_cloud_control_state(&supabase_url, &supabase_key)
+        {
+            let local_updated_at = ctx.auto_resume_updated_at_ms.load(Ordering::SeqCst);
+            let local_enabled = ctx.auto_resume_enabled.load(Ordering::SeqCst);
+            if remote_updated_at > local_updated_at && remote_enabled != local_enabled {
+                let _ = set_auto_resume_enabled(remote_enabled);
+                let _ = save_auto_resume_updated_at_ms(remote_updated_at);
+                ctx.auto_resume_enabled.store(remote_enabled, Ordering::SeqCst);
+                ctx.auto_resume_updated_at_ms
+                    .store(remote_updated_at, Ordering::SeqCst);
+                if !remote_enabled {
+                    *auto_resume_not_before = None;
+                    if let Ok(mut g) = ctx.shared.lock() {
+                        g.auto_resume_cooldown_until = None;
+                    }
+                } else {
+                    ctx.force_poll.store(true, Ordering::SeqCst);
+                }
+                let msg = if remote_enabled {
+                    "Mode Resume VPS (Sinkron Web): OTOMATIS"
+                } else {
+                    "Mode Resume VPS (Sinkron Web): MANUAL"
+                };
+                append_log(&ctx.project_root, msg);
+                record_event(ctx, msg);
+                let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+                if !hwnd.0.is_null() {
+                    unsafe {
+                        let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+                    }
+                }
+            } else if remote_updated_at > local_updated_at {
+                let _ = save_auto_resume_updated_at_ms(remote_updated_at);
+                ctx.auto_resume_updated_at_ms
+                    .store(remote_updated_at, Ordering::SeqCst);
+            }
+
+            let now_secs = now_epoch_secs();
+            if let Some(rc_epoch) = remote_cooldown {
+                if rc_epoch > now_secs {
+                    let avail = ctx
+                        .shared
+                        .lock()
+                        .map(|g| g.vps_availability)
+                        .unwrap_or(VpsAvailability::Unknown);
+                    if avail != VpsAvailability::Running {
+                        let rem = rc_epoch - now_secs;
+                        let until = Instant::now() + Duration::from_secs(rem);
+                        let should_adopt = auto_resume_not_before
+                            .map(|cur| until > cur)
+                            .unwrap_or(true);
+                        if should_adopt {
+                            *auto_resume_not_before = Some(until);
+                        }
+                        if let Ok(mut g) = ctx.shared.lock() {
+                            let cur_better =
+                                g.auto_resume_cooldown_until.is_some_and(|c| c >= until);
+                            if !cur_better {
+                                g.auto_resume_cooldown_until = Some(until);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let cpid = if stopping {
+        0
+    } else {
+        ctx.child_pid.load(Ordering::SeqCst)
+    };
+    let (app_priv, app_ws) = if stopping {
+        (0, 0)
+    } else {
+        query_process_memory_kb(std::process::id())
+    };
+    let (node_priv, _) = if cpid > 0 {
+        query_process_memory_kb(cpid)
+    } else {
+        (0, 0)
+    };
+    let now_secs = now_epoch_secs();
+    let (vps_avail, raw_st, last_epoch, cooldown_epoch, events) = match ctx.shared.lock() {
+        Ok(g) => {
+            let cd = g
+                .auto_resume_cooldown_until
+                .and_then(|u| u.checked_duration_since(Instant::now()))
+                .map(|d| now_secs.saturating_add(d.as_secs()))
+                .filter(|&v| v > now_secs);
+            (
+                g.vps_availability.as_str(),
+                g.raw_state.clone(),
+                g.last_check_epoch,
+                cd,
+                g.recent_events.iter().cloned().collect::<Vec<String>>(),
+            )
+        }
+        Err(_) => ("unknown", "unknown".to_string(), 0, None, Vec::new()),
+    };
+
+    let payload = DesktopHeartbeatPayload {
+        app_version: env!("CARGO_PKG_VERSION"),
+        app_pid: std::process::id(),
+        child_node_pid: cpid,
+        failover_active: !stopping && cpid > 0,
+        vps_state: &raw_st,
+        vps_availability: vps_avail,
+        app_private_kb: app_priv,
+        app_working_kb: app_ws,
+        node_private_kb: node_priv,
+        uptime_secs: ctx.started_at.elapsed().as_secs(),
+        total_checks: ctx.total_checks.load(Ordering::SeqCst),
+        failover_count: ctx.failover_count.load(Ordering::SeqCst),
+        auto_start_enabled: is_autostart_enabled(),
+        tray_registered: ctx.tray_registered.load(Ordering::SeqCst),
+        last_check_epoch: last_epoch,
+        heartbeat_at: now_secs,
+        stopped: stopping,
+        auto_resume_enabled: ctx.auto_resume_enabled.load(Ordering::SeqCst),
+        auto_resume_updated_at: ctx.auto_resume_updated_at_ms.load(Ordering::SeqCst),
+        cooldown_until_epoch: cooldown_epoch,
+        recent_events: &events,
+    };
+
+    let json = format_desktop_heartbeat_json(&payload);
+    let timeout = if stopping { "3" } else { "5" };
+    let _ = push_desktop_heartbeat(&supabase_url, &supabase_key, &json, timeout);
+}
+
 fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
     let mut child_node: Option<Child> = None;
     let mut next_poll = Instant::now();
     let mut fast_polls_left: u8 = 0;
     let mut auto_resume_not_before: Option<Instant> = None;
     let mut auto_resume_failures: u32 = 0;
+    let mut last_cloud_sync = Instant::now() - Duration::from_secs(CLOUD_SYNC_INTERVAL_SECS + 5);
 
     while ctx.running.load(Ordering::SeqCst) {
         while let Ok((stream, _)) = listener.accept() {
@@ -2107,6 +2564,17 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
             } else {
                 next_poll = Instant::now() + Duration::from_secs(POLL_INTERVAL_SECS);
             }
+
+            if state_changed || manual_check {
+                ctx.cloud_sync_dirty.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let sync_dirty = ctx.cloud_sync_dirty.swap(false, Ordering::SeqCst);
+        if sync_dirty || last_cloud_sync.elapsed() >= Duration::from_secs(CLOUD_SYNC_INTERVAL_SECS)
+        {
+            sync_with_cloud(&ctx, &mut auto_resume_not_before, false);
+            last_cloud_sync = Instant::now();
         }
 
         thread::sleep(Duration::from_millis(180));
@@ -2114,6 +2582,7 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
 
     stop_local_baileys(&ctx.project_root, &mut child_node, "Baileys Backup berhenti");
     ctx.child_pid.store(0, Ordering::SeqCst);
+    sync_with_cloud(&ctx, &mut auto_resume_not_before, true);
     append_log(&ctx.project_root, "Baileys Backup dihentikan dengan bersih.");
 }
 
@@ -2167,6 +2636,8 @@ fn main() {
         resume_requested: Arc::new(AtomicBool::new(false)),
         resuming_vps: Arc::new(AtomicBool::new(false)),
         auto_resume_enabled: Arc::new(AtomicBool::new(is_auto_resume_enabled())),
+        auto_resume_updated_at_ms: Arc::new(AtomicU64::new(read_auto_resume_updated_at_ms())),
+        cloud_sync_dirty: Arc::new(AtomicBool::new(true)),
         tray_registered: Arc::new(AtomicBool::new(false)),
         tray_retry_left: AtomicU8::new(15),
         child_pid: Arc::new(AtomicU32::new(0)),
@@ -2454,5 +2925,60 @@ mod tests {
         assert_eq!(compute_auto_resume_backoff_secs(&transient_err, 1), 300);
         assert_eq!(compute_auto_resume_backoff_secs(&transient_err, 2), 600);
         assert_eq!(compute_auto_resume_backoff_secs(&transient_err, 5), 600);
+    }
+
+    #[test]
+    fn json_and_postgrest_extractors_handle_escaped_payloads() {
+        assert_eq!(json_escape("a\"b\\c\n"), "a\\\"b\\\\c\\n");
+        assert_eq!(curl_config_quote("k\"v\\1"), "\"k\\\"v\\\\1\"");
+
+        let postgrest_row = r#"[{"content":"{\"autoResumeEnabled\":true,\"autoResumeUpdatedAt\":1732200000123,\"cooldownUntilEpoch\":1732200600}"}]"#;
+        let inner = extract_postgrest_content_json(postgrest_row).expect("content extracted");
+        assert_eq!(extract_json_bool_field(&inner, "autoResumeEnabled"), Some(true));
+        assert_eq!(
+            extract_json_u64_field(&inner, "autoResumeUpdatedAt"),
+            Some(1732200000123)
+        );
+        assert_eq!(
+            extract_json_u64_field(&inner, "cooldownUntilEpoch"),
+            Some(1732200600)
+        );
+    }
+
+    #[test]
+    fn format_desktop_heartbeat_json_serializes_telemetry_and_events() {
+        let events = vec![
+            "Failover \"aktif\"".to_string(),
+            "VPS: RUNNING -> SUSPENDED".to_string(),
+        ];
+        let payload = DesktopHeartbeatPayload {
+            app_version: "1.3.0",
+            app_pid: 8100,
+            child_node_pid: 4440,
+            failover_active: true,
+            vps_state: "suspended",
+            vps_availability: "down",
+            app_private_kb: 1120,
+            app_working_kb: 5200,
+            node_private_kb: 70200,
+            uptime_secs: 14000,
+            total_checks: 454,
+            failover_count: 1,
+            auto_start_enabled: true,
+            tray_registered: true,
+            last_check_epoch: 1732200100,
+            heartbeat_at: 1732200105,
+            stopped: false,
+            auto_resume_enabled: true,
+            auto_resume_updated_at: 1732200099000,
+            cooldown_until_epoch: Some(1732200400),
+            recent_events: &events,
+        };
+        let out = format_desktop_heartbeat_json(&payload);
+        assert!(out.contains("\"appVersion\":\"1.3.0\""));
+        assert!(out.contains("\"failoverActive\":true"));
+        assert!(out.contains("\"childNodePid\":4440"));
+        assert!(out.contains("\"cooldownUntilEpoch\":1732200400"));
+        assert!(out.contains("Failover \\\"aktif\\\""));
     }
 }

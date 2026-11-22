@@ -1,0 +1,176 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import {
+  extractSessionToken,
+  getClientIp,
+  verifySessionToken,
+} from '../src/admin_auth.js';
+import {
+  getBaileysBackupSnapshot,
+  runManualVpsCheck,
+  runManualVpsResume,
+  setAutoResumeMode,
+  type BaileysBackupDeps,
+} from '../src/baileys_backup_web.js';
+import { cekRateLimit } from '../src/rate_limit.js';
+
+export interface BaileysBackupHandlerDeps {
+  verifyToken?: (token: string) => Promise<boolean>;
+  extractToken?: (req: VercelRequest) => string | null;
+  getIp?: (req: VercelRequest) => string;
+  rateLimit?: typeof cekRateLimit;
+  getSnapshot?: () => ReturnType<typeof getBaileysBackupSnapshot>;
+  manualCheck?: () => ReturnType<typeof runManualVpsCheck>;
+  manualResume?: () => ReturnType<typeof runManualVpsResume>;
+  setAutoMode?: (enabled: boolean) => ReturnType<typeof setAutoResumeMode>;
+  serviceDeps?: BaileysBackupDeps;
+}
+
+function parsePlainObjectBody(rawBody: unknown): Record<string, unknown> | null {
+  if (rawBody === undefined || rawBody === null) return null;
+  if (typeof rawBody === 'string') {
+    const trimmed = rawBody.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof rawBody === 'object' && !Array.isArray(rawBody)) {
+    return rawBody as Record<string, unknown>;
+  }
+  return null;
+}
+
+export function createBaileysBackupHandler(deps: BaileysBackupHandlerDeps = {}) {
+  const verifyToken = deps.verifyToken ?? verifySessionToken;
+  const extractToken = deps.extractToken ?? extractSessionToken;
+  const getIp = deps.getIp ?? getClientIp;
+  const rateLimit = deps.rateLimit ?? cekRateLimit;
+  const svcDeps = deps.serviceDeps ?? {};
+  const getSnapshot = deps.getSnapshot ?? (() => getBaileysBackupSnapshot(svcDeps));
+  const manualCheck = deps.manualCheck ?? (() => runManualVpsCheck(svcDeps));
+  const manualResume = deps.manualResume ?? (() => runManualVpsResume(svcDeps));
+  const setAutoMode = deps.setAutoMode ?? ((enabled: boolean) => setAutoResumeMode(enabled, svcDeps));
+
+  return async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      res.status(405).json({ ok: false, error: 'Method Not Allowed' });
+      return;
+    }
+
+    const token = extractToken(req);
+    const isAuthed = token ? await verifyToken(token) : false;
+    if (!isAuthed) {
+      res.status(401).json({
+        ok: false,
+        error: 'Unauthorized. Akses dashboard memerlukan Master PIN admin yang valid.',
+        authRequired: true,
+      });
+      return;
+    }
+
+    const clientIp = getIp(req);
+
+    try {
+      if (req.method === 'GET') {
+        const rl = rateLimit(`bb:get:${clientIp}`, 60, 60_000);
+        if (!rl.boleh) {
+          res.setHeader('Retry-After', String(rl.resetDalamDetik));
+          res.status(429).json({
+            ok: false,
+            error: `Terlalu banyak permintaan. Coba lagi dalam ${rl.resetDalamDetik} detik.`,
+          });
+          return;
+        }
+
+        const result = await getSnapshot();
+        res.status(200).json(result);
+        return;
+      }
+
+      const rlPost = rateLimit(`bb:post:${clientIp}`, 20, 60_000);
+      if (!rlPost.boleh) {
+        res.setHeader('Retry-After', String(rlPost.resetDalamDetik));
+        res.status(429).json({
+          ok: false,
+          error: `Terlalu banyak permintaan. Coba lagi dalam ${rlPost.resetDalamDetik} detik.`,
+        });
+        return;
+      }
+
+      const body = parsePlainObjectBody(req.body);
+      if (!body) {
+        res.status(400).json({ ok: false, error: 'Payload JSON tidak valid.' });
+        return;
+      }
+
+      const action = typeof body.action === 'string' ? body.action.trim().toLowerCase() : '';
+      if (action !== 'check' && action !== 'resume' && action !== 'set_mode') {
+        res.status(400).json({
+          ok: false,
+          error: 'Parameter action harus check, resume, atau set_mode.',
+        });
+        return;
+      }
+
+      if (action === 'check') {
+        const result = await manualCheck();
+        res.status(200).json(result);
+        return;
+      }
+
+      if (action === 'resume') {
+        const rlResume = rateLimit(`bb:resume:${clientIp}`, 6, 60_000);
+        if (!rlResume.boleh) {
+          res.setHeader('Retry-After', String(rlResume.resetDalamDetik));
+          res.status(429).json({
+            ok: false,
+            error: `Terlalu sering mengirim perintah resume. Tunggu ${rlResume.resetDalamDetik} detik.`,
+          });
+          return;
+        }
+
+        const result = await manualResume();
+        res.status(result.httpStatus).json({
+          ok: result.ok,
+          status: result.status,
+          message: result.message,
+          ...(result.retryAfterSecs !== undefined && result.retryAfterSecs !== null
+            ? { retryAfterSecs: result.retryAfterSecs }
+            : {}),
+          data: result.data,
+        });
+        return;
+      }
+
+      if (typeof body.autoResumeEnabled !== 'boolean') {
+        res.status(400).json({
+          ok: false,
+          error: 'Parameter autoResumeEnabled harus bernilai boolean.',
+        });
+        return;
+      }
+
+      const result = await setAutoMode(body.autoResumeEnabled);
+      res.status(200).json(result);
+    } catch {
+      res.status(500).json({
+        ok: false,
+        error: 'Gagal memproses permintaan Baileys Backup.',
+      });
+    }
+  };
+}
+
+export default createBaileysBackupHandler();

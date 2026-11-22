@@ -76,6 +76,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
 
     function triggerSessionExpired(reason = "expired") {
       clearStoredToken();
+      if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.reset === "function") {
+        window.BaileysBackupPanel.reset();
+      }
       if (refreshTimer) {
         clearInterval(refreshTimer);
         refreshTimer = null;
@@ -192,6 +195,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           pinField.value = "";
           fetchData();
           fetchDataset();
+          if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.fetchStatus === "function") {
+            window.BaileysBackupPanel.fetchStatus(true);
+          }
           pasangAutoRefresh();
         } else {
           // Gagal
@@ -2232,6 +2238,11 @@ function renderLiveUpstreamTable(data) {
         if (!window._datasetTick) window._datasetTick = 0;
         window._datasetTick++;
         if (window._datasetTick % 3 === 0) fetchDataset(true);
+        if (!window._bbTick) window._bbTick = 0;
+        window._bbTick++;
+        if (window._bbTick % 2 === 0 && window.BaileysBackupPanel && typeof window.BaileysBackupPanel.fetchStatus === "function") {
+          window.BaileysBackupPanel.fetchStatus(false);
+        }
       }, 15000);
     }
 
@@ -2277,6 +2288,9 @@ function renderLiveUpstreamTable(data) {
       on("btn-manual-refresh", "click", () => {
         fetchData(true);
         fetchDataset(true);
+        if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.fetchStatus === "function") {
+          window.BaileysBackupPanel.fetchStatus(true);
+        }
       });
       on("btn-logout", "click", handleLogout);
 
@@ -2483,6 +2497,9 @@ function renderLiveUpstreamTable(data) {
     window.refreshDashboardI18n = function () {
       if (cachedDashboardData) renderDashboard(cachedDashboardData);
       if (cachedDatasetPairs && cachedDatasetPairs.length) renderDatasetTable();
+      if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.renderCached === "function") {
+        window.BaileysBackupPanel.renderCached();
+      }
     };
 
     // =========================================================================
@@ -2498,6 +2515,9 @@ function renderLiveUpstreamTable(data) {
       if (isAuthed) {
         fetchData();
         fetchDataset(true);
+        if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.fetchStatus === "function") {
+          window.BaileysBackupPanel.fetchStatus(true);
+        }
         pasangAutoRefresh();
       }
     })();

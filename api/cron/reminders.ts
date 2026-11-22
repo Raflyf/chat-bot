@@ -5,6 +5,7 @@ import { getTelegramBot } from '../../src/telegram.js';
 import { checkDueReminders, nomorWhatsApp } from '../../src/remind.js';
 import { sendWhatsAppCloudMessageSafe } from '../../src/whatsapp_cloud.js';
 import { cekLifecycleVps } from '../../src/vps_monitor.js';
+import { cobaAutoResumeDariCron } from '../../src/baileys_backup_web.js';
 
 function timingSafeMatch(a: string, b: string): boolean {
   const bufA = Buffer.from(a, 'utf8');
@@ -92,10 +93,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       console.warn('[cron/reminders] cekLifecycleVps error:', String((err as Error)?.message ?? err).slice(0, 120));
     }
 
+    let baileysAutoResume: {
+      attempted: boolean;
+      ok?: boolean;
+      reason?: string;
+      actionUsed?: string;
+      retryAfterSecs?: number;
+      message?: string;
+    } = { attempted: false };
+    try {
+      baileysAutoResume = await cobaAutoResumeDariCron(vpsMonitor.state);
+    } catch (err) {
+      console.warn(
+        '[cron/reminders] cobaAutoResumeDariCron error:',
+        String((err as Error)?.message ?? err).slice(0, 120),
+      );
+    }
+
     res.status(200).json({
       ok: true,
       processed,
       vps_monitor: vpsMonitor,
+      baileys_auto_resume: baileysAutoResume,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

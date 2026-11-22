@@ -276,6 +276,80 @@
       </div>
     </section>
 
+    <!-- Baileys Backup & Kontrol VPS Utama -->
+    <section class="activity-card bb-section" id="baileys-backup-section" aria-labelledby="bb-section-title">
+      <div class="console-head">
+        <div>
+          <h2 class="card-title" id="bb-section-title" data-i18n="dash.bb.title">Baileys Backup &amp; VPS Utama</h2>
+          <p class="card-sub" id="bb-subtitle" data-i18n="dash.bb.subtitle">Pemantau failover, sinkronisasi telemetri laptop, dan aktivasi VPS InstaBox jarak jauh.</p>
+        </div>
+        <div class="console-head-actions bb-badges-wrap">
+          <span class="badge bb-badge-neutral" id="bb-mode-badge" data-i18n="dash.bb.statusLoading">Memuat status...</span>
+          <span class="badge bb-badge-muted" id="bb-laptop-badge" data-i18n="dash.bb.laptopChecking">Mengecek sinkron...</span>
+        </div>
+      </div>
+
+      <div class="bb-metrics-grid">
+        <div class="bb-metric-card">
+          <span class="bb-metric-label" data-i18n="dash.bb.cardVps">VPS UTAMA</span>
+          <span class="bb-metric-value bb-tone-muted" id="bb-vps-state">&ndash;</span>
+          <span class="bb-metric-sub" id="bb-vps-sub" data-i18n="dash.bb.waitingData">Menunggu data</span>
+        </div>
+
+        <div class="bb-metric-card">
+          <span class="bb-metric-label" data-i18n="dash.bb.cardBot">BOT WA LOKAL</span>
+          <span class="bb-metric-value bb-tone-muted" id="bb-bot-state">&ndash;</span>
+          <span class="bb-metric-sub" id="bb-bot-sub" data-i18n="dash.bb.waitingData">Menunggu data</span>
+        </div>
+
+        <div class="bb-metric-card">
+          <span class="bb-metric-label" data-i18n="dash.bb.cardMem">MEMORI PRIVAT</span>
+          <span class="bb-metric-value" id="bb-ram-value">&ndash;</span>
+          <span class="bb-metric-sub" id="bb-ram-sub" data-i18n="dash.bb.waitingData">Menunggu data</span>
+        </div>
+
+        <div class="bb-metric-card">
+          <span class="bb-metric-label" data-i18n="dash.bb.cardUptime">UPTIME &amp; RIWAYAT</span>
+          <span class="bb-metric-value" id="bb-uptime-value">&ndash;</span>
+          <span class="bb-metric-sub" id="bb-uptime-sub" data-i18n="dash.bb.waitingData">Menunggu data</span>
+        </div>
+      </div>
+
+      <div class="bb-lower-grid">
+        <div class="bb-panel-box bb-controls-box">
+          <div class="bb-control-row">
+            <div class="bb-control-copy">
+              <div class="bb-control-title" data-i18n="dash.bb.autoResumeLabel">Mode Resume VPS Utama</div>
+              <div class="bb-control-sub" id="bb-auto-resume-desc" data-i18n="dash.bb.autoResumeDesc">Bila OTOMATIS, VPS di-resume otomatis saat paused atau suspended.</div>
+            </div>
+            <button type="button" class="bb-toggle-btn" id="bb-btn-auto-resume" role="switch" aria-checked="false">MANUAL</button>
+          </div>
+
+          <div class="bb-control-row bb-control-row-sep">
+            <div class="bb-control-copy">
+              <div class="bb-control-title" data-i18n="dash.bb.syncLabel">Aplikasi Desktop &amp; Installer</div>
+              <div class="bb-control-sub" id="bb-autostart-note" data-i18n="dash.bb.autostartFallback">Laptop offline. Kontrol web dan cloud cron tetap aktif.</div>
+            </div>
+            <a class="btn btn-sm bb-download-link" id="bb-download-msi" href="https://github.com/Raflyf/chat-bot/releases/tag/baileys-backup-latest" target="_blank" rel="noopener noreferrer" data-i18n="dash.bb.downloadMsi">Setup Windows (.msi)</a>
+          </div>
+
+          <div class="bb-actions-row">
+            <button type="button" class="btn bb-btn-resume" id="bb-btn-resume" data-i18n="dash.bb.btnResume">Resume / Aktifkan VPS</button>
+            <button type="button" class="btn btn-primary bb-btn-check" id="bb-btn-check" data-i18n="dash.bb.btnCheck">Cek Status VPS Sekarang</button>
+          </div>
+
+          <div class="bb-feedback" id="bb-feedback" role="status" aria-live="polite" hidden></div>
+        </div>
+
+        <div class="bb-panel-box bb-events-box">
+          <div class="bb-events-heading" data-i18n="dash.bb.activityTitle">AKTIVITAS TERAKHIR</div>
+          <ul class="bb-events-list" id="bb-events-list">
+            <li class="bb-event-empty" data-i18n="dash.bb.eventsLoading">Memuat riwayat aktivitas Baileys Backup...</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
     <!-- Pool API key -->
     <section aria-labelledby="pool-section-title">
       <div class="console-head">
@@ -619,6 +693,7 @@
 <script src="/js/glass-dropdown.js"></script>
 <script src="/js/i18n.js"></script>
 <script src="/js/console-theme.js"></script>
+<script src="/js/baileys-backup.js"></script>
 <script src="/js/dashboard.js"></script>
 </body>
 </html>

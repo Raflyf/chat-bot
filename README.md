@@ -29,7 +29,7 @@ Asisten AI multimodal untuk Telegram dan WhatsApp (Cloud API serta Baileys) yang
 - **Dukungan Grup Terisolasi**: Berjalan di grup Telegram dan WhatsApp Baileys dengan tiga mode (`/mention`, `/nimbrung`, `/diam`) serta pemisahan tabel database grup dari chat pribadi.
 - **Memori, Zona Waktu & Permainan**: Menyimpan riwayat percakapan, preferensi pengguna, dan zona waktu per pengguna (WIB, WITA, WIT, serta internasional) di Supabase PostgreSQL, ditambah mesin permainan interaktif berbasis state database.
 - **Failover AI Multi-Tier**: Merutekan permintaan teks dan vision secara otomatis melalui enam tier provider (OpenCode, Cloudflare Workers AI, Groq, DreamPrompting, OpenRouter, Gemini) dengan pelacakan kuota harian, cooldown persisten, dan rotasi kunci. Konfigurasi model aktif dikelola terpusat di [`src/env.ts`](src/env.ts).
-- **Baileys Backup (Failover Lokal Windows)**: Aplikasi desktop native Rust (`BaileysBackup.exe`) di Windows System Tray tanpa jendela terminal yang memantau VPS Baileys secara berkala, menyalakan bot lokal otomatis saat VPS berhenti atau tertidur, menyediakan panel statistik native, dan menyinkronkan sesi ke Supabase.
+- **Baileys Backup (Web & Failover Lokal Windows)**: Kontrol status VPS InstaBox, tombol **Resume / Aktifkan VPS**, dan mode **Auto-Resume (`OTOMATIS`/`MANUAL`)** terintegrasi langsung di `/dashboard` serta tersinkron dua arah dengan aplikasi desktop native Rust (`BaileysBackup.exe`) dan cron cloud.
 
 ---
 
@@ -136,7 +136,7 @@ Selain perintah garis miring, bot memahami permintaan dalam bahasa alami tanpa a
 
 ### Baileys Backup (Windows)
 
-Untuk menjalankan pemantau failover lokal sebagai aplikasi System Tray Windows tanpa jendela terminal, unduh installer **`BaileysBackup-setup-v1.2.0.msi`** dari [GitHub Releases (`baileys-backup-latest`)](https://github.com/Raflyf/chat-bot/releases/tag/baileys-backup-latest) atau workflow [Build Baileys Backup (Windows)](.github/workflows/build-baileys-backup.yml) tanpa perlu mengompilasi Rust di perangkat lokal. Installer `.msi` akan otomatis menghentikan instance `BaileysBackup.exe` yang sedang berjalan, memasang versi terbaru ke `%LOCALAPPDATA%\Programs\BaileysBackup\`, lalu menyalakannya kembali di System Tray:
+Untuk menjalankan pemantau failover lokal sebagai aplikasi System Tray Windows tanpa jendela terminal, unduh installer **`BaileysBackup-setup-v1.3.0.msi`** dari [GitHub Releases (`baileys-backup-latest`)](https://github.com/Raflyf/chat-bot/releases/tag/baileys-backup-latest) atau workflow [Build Baileys Backup (Windows)](.github/workflows/build-baileys-backup.yml) tanpa perlu mengompilasi Rust di perangkat lokal. Installer `.msi` akan otomatis menghentikan instance `BaileysBackup.exe` yang sedang berjalan, memasang versi terbaru ke `%LOCALAPPDATA%\Programs\BaileysBackup\`, lalu menyalakannya kembali di System Tray:
 
 ```bash
 npm run watchdog:install    # Build TS + Rust, pasang ke LocalAppData, daftar Startup & Start Menu
