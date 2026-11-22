@@ -17,6 +17,22 @@
   "tests": []
  },
  {
+  "path": "api/baileys-backup.ts",
+  "lines": 227,
+  "kind": "api",
+  "exports": [
+   "iface BaileysBackupHandlerDeps",
+   "fn createBaileysBackupHandler"
+  ],
+  "imports": [
+   "@vercel/node",
+   "../src/admin_auth.js",
+   "../src/baileys_backup_web.js",
+   "../src/rate_limit.js"
+  ],
+  "tests": []
+ },
+ {
   "path": "api/cron/arsip.ts",
   "lines": 67,
   "kind": "api",
@@ -49,7 +65,7 @@
  },
  {
   "path": "api/cron/reminders.ts",
-  "lines": 106,
+  "lines": 161,
   "kind": "api",
   "exports": [
    "fn handler"
@@ -61,7 +77,9 @@
    "../../src/telegram.js",
    "../../src/remind.js",
    "../../src/whatsapp_cloud.js",
-   "../../src/vps_monitor.js"
+   "../../src/vps_monitor.js",
+   "../../src/baileys_backup_web.js",
+   "../../src/vps_keepalive.js"
   ],
   "tests": []
  },
@@ -174,7 +192,7 @@
  },
  {
   "path": "public/css/console.css",
-  "lines": 3260,
+  "lines": 3650,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -190,7 +208,7 @@
  },
  {
   "path": "public/dashboard.html",
-  "lines": 625,
+  "lines": 722,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -199,6 +217,14 @@
  {
   "path": "public/index.html",
   "lines": 196,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/baileys-backup.js",
+  "lines": 855,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -222,7 +248,7 @@
  },
  {
   "path": "public/js/dashboard.js",
-  "lines": 2504,
+  "lines": 2524,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -254,7 +280,7 @@
  },
  {
   "path": "public/js/i18n.js",
-  "lines": 399,
+  "lines": 482,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -451,6 +477,21 @@
   "kind": "scripts",
   "exports": [],
   "imports": [],
+  "tests": []
+ },
+ {
+  "path": "scripts/watchdog-ctl.mjs",
+  "lines": 502,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [
+   "node:child_process",
+   "node:fs",
+   "node:net",
+   "node:os",
+   "node:path",
+   "node:url"
+  ],
   "tests": []
  },
  {
@@ -863,6 +904,58 @@
   "tests": []
  },
  {
+  "path": "src/baileys_backup_web.ts",
+  "lines": 1655,
+  "kind": "src",
+  "exports": [
+   "const BAILEYS_BACKUP_CLOUD_FILENAME",
+   "const BAILEYS_BACKUP_DESKTOP_FILENAME",
+   "const DESKTOP_HEARTBEAT_TTL_SECS",
+   "const BAILEYS_BACKUP_RELEASE_URL",
+   "type VpsAvailability",
+   "type BaileysBackupEventSource",
+   "iface BaileysBackupEvent",
+   "iface BaileysBackupCloudState",
+   "iface BaileysBackupDesktopState",
+   "iface InstaboxResumeError",
+   "iface BaileysBackupDesktopView",
+   "iface BaileysKeepaliveView",
+   "iface BaileysBackupView",
+   "iface BaileysBackupDeps",
+   "fn resetBaileysBackupWebUntukTest",
+   "fn classifyVpsAvailability",
+   "fn chooseVpsActionEndpoint",
+   "fn isCooldownPayload",
+   "fn extractRetryAfterSeconds",
+   "fn shouldFallbackResumeToStart",
+   "fn parseInstaboxResumeError",
+   "fn computeAutoResumeBackoffSecs",
+   "fn defaultCloudState",
+   "fn appendCloudEvent",
+   "fn bacaCloudDanDesktopState",
+   "fn simpanCloudState",
+   "fn fetchLiveInstaboxMachine",
+   "fn triggerInstaboxResume",
+   "fn buildKeepaliveView",
+   "fn buildBaileysBackupView",
+   "fn getBaileysBackupSnapshot",
+   "fn runManualVpsCheck",
+   "fn runManualVpsResume",
+   "fn setAutoResumeMode",
+   "fn runManualVpsKeepalive",
+   "fn setKeepaliveMode",
+   "fn cobaAutoResumeDariCron"
+  ],
+  "imports": [
+   "crypto",
+   "./db.js",
+   "./env.js",
+   "./vps_monitor.js",
+   "./vps_keepalive.js"
+  ],
+  "tests": []
+ },
+ {
   "path": "src/baileys_brain.ts",
   "lines": 43,
   "kind": "src",
@@ -1014,7 +1107,7 @@
  },
  {
   "path": "src/env.ts",
-  "lines": 295,
+  "lines": 316,
   "kind": "src",
   "exports": [
    "const config",
@@ -1158,7 +1251,7 @@
  },
  {
   "path": "src/group_mode.ts",
-  "lines": 716,
+  "lines": 728,
   "kind": "src",
   "exports": [
    "type GroupMode",
@@ -1186,13 +1279,15 @@
    "fn deteksiPanggilanNatural",
    "fn deteksiPerintahModeGrup",
    "fn adalahPesanBasaBasiPenutup",
+   "fn adalahPerintahFiturSatuKata",
    "fn adalahPesanLayakNimbrung",
    "fn evaluasiResponGrup",
    "fn formatStatusModeGrup"
   ],
   "imports": [
    "./db.js",
-   "./group_db.js"
+   "./group_db.js",
+   "./timezone.js"
   ],
   "tests": []
  },
@@ -1360,7 +1455,7 @@
  },
  {
   "path": "src/notes.ts",
-  "lines": 4313,
+  "lines": 4393,
   "kind": "src",
   "exports": [
    "type NoteKind",
@@ -1401,6 +1496,7 @@
    "fn formatDaftarCatatan",
    "fn formatDaftarTugas",
    "fn formatRekapUang",
+   "fn adaInteraksiTertunda",
    "fn adalahPertanyaanKonfirmasiPengingat",
    "fn tanganiPencatatan",
    "fn deteksiNiatImplisit",
@@ -1489,7 +1585,7 @@
  },
  {
   "path": "src/remind.ts",
-  "lines": 757,
+  "lines": 834,
   "kind": "src",
   "exports": [
    "iface ReminderItem",
@@ -1505,6 +1601,8 @@
    "fn bersihkanTeksPengingat",
    "const BAILEYS_FALLBACK_KE_CLOUD_MS",
    "const CLOUD_FALLBACK_KE_BAILEYS_MS",
+   "const GROUP_REMINDER_MAX_LATE_MS",
+   "fn adalahPengingatGrupKadaluarsa",
    "iface OpsiFilterKanalPengingat",
    "fn bolehProsesKanalPengingat",
    "fn checkDueReminders",
@@ -1569,7 +1667,7 @@
  },
  {
   "path": "src/reminder-ubah.ts",
-  "lines": 262,
+  "lines": 292,
   "kind": "src",
   "exports": [
    "iface PengingatRingkas",
@@ -1579,7 +1677,8 @@
    "fn ubahPengingat",
    "fn batalkanPengingat",
    "fn deteksiPermintaanUbah",
-   "fn pilihTarget"
+   "fn pilihTarget",
+   "fn pilihSemuaTargetBatal"
   ],
   "imports": [
    "./db.js",
@@ -1622,7 +1721,7 @@
  },
  {
   "path": "src/skills.ts",
-  "lines": 5594,
+  "lines": 5880,
   "kind": "src",
   "exports": [
    "fn cleanMathAndNoise",
@@ -1634,6 +1733,7 @@
    "fn extractStickerTag",
    "fn extractRiddleTag",
    "fn isTsvExtraction",
+   "fn rapikanFormatPesan",
    "fn sanitizeAssistantOutput",
    "fn ekstrakPesanInti",
    "fn buangKlaimTidakLihatStiker",
@@ -1719,7 +1819,7 @@
  },
  {
   "path": "src/telegram.ts",
-  "lines": 1388,
+  "lines": 1389,
   "kind": "src",
   "exports": [
    "fn getTelegramBot",
@@ -1828,8 +1928,38 @@
   "tests": []
  },
  {
+  "path": "src/vps_keepalive.ts",
+  "lines": 482,
+  "kind": "src",
+  "exports": [
+   "const KEEPALIVE_STATE_FILENAME",
+   "const KEEPALIVE_LEASE_ID",
+   "const MIN_KEEPALIVE_INTERVAL_SECS",
+   "const MAX_KEEPALIVE_LEASE_TTL_SECS",
+   "type KeepaliveSource",
+   "iface VpsKeepaliveState",
+   "iface KeepaliveDeps",
+   "iface KeepaliveRunOptions",
+   "iface KeepaliveRunResult",
+   "fn resetVpsKeepaliveUntukTest",
+   "fn getKeepaliveConfig",
+   "fn defaultKeepaliveState",
+   "fn normalizeKeepaliveState",
+   "fn bacaKeepaliveState",
+   "fn simpanKeepaliveState",
+   "fn setKeepaliveEnabled",
+   "fn renewVpsActivityLease",
+   "fn jalankanKeepaliveVps"
+  ],
+  "imports": [
+   "./db.js",
+   "./env.js"
+  ],
+  "tests": []
+ },
+ {
   "path": "src/vps_monitor.ts",
-  "lines": 531,
+  "lines": 590,
   "kind": "src",
   "exports": [
    "const STATE_FILENAME",
@@ -1846,6 +1976,7 @@
    "fn bacaStateMonitorVps",
    "fn simpanStateMonitorVps",
    "fn kirimNotifTelegramPemilik",
+   "fn kirimNotifWaCloudPemilik",
    "fn cekLifecycleVps",
    "fn laporShutdownVps",
    "fn mulaiTimerPeringatanLokalVps"
@@ -1906,7 +2037,7 @@
  },
  {
   "path": "src/whatsapp_baileys.ts",
-  "lines": 1963,
+  "lines": 2273,
   "kind": "src",
   "exports": [
    "iface BaileysGroupTargetInfo",
@@ -1914,6 +2045,14 @@
    "fn deteksiTargetBotBaileys",
    "fn startBaileysReminderWorker",
    "fn stopBaileysReminderWorker",
+   "fn isStandbyBackupMode",
+   "type VpsPrimaryAvailability",
+   "iface StandbyCheckDeps",
+   "fn cekStateVpsUtama",
+   "fn isLocalBaileysActive",
+   "fn stopLocalWhatsAppForStandby",
+   "fn evaluasiSiklusStandby",
+   "fn startStandbyCoordinator",
    "fn extractPnDigits",
    "fn resolveBaileysSenderNumber",
    "fn sendWhatsAppMessageSafe",
@@ -1982,9 +2121,11 @@
  },
  {
   "path": "src/whatsapp_session.ts",
-  "lines": 116,
+  "lines": 195,
   "kind": "src",
   "exports": [
+   "iface RestoreSessionOptions",
+   "fn isRemoteFileNewer",
    "fn restoreSessionFromSupabase",
    "fn syncSessionDirToSupabase",
    "fn clearSessionInSupabase"
@@ -2246,6 +2387,28 @@
   ]
  },
  {
+  "path": "tests/baileys-backup-web.test.mjs",
+  "lines": 499,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:path",
+   "node:child_process"
+  ],
+  "tests": [
+   "1. Klasifikasi state, pilihan endpoint, fallback /start, & parser error InstaBox",
+   "2. triggerInstaboxResume: sukses 202, fallback /resume -> /start pada 404, dan TIDAK fallback saat machine_cooldown",
+   "3. buildBaileysBackupView: LWW autoResumeEnabled, TTL Laptop Online/Offline, clear cooldown saat running",
+   "4. setAutoResumeMode(true) memicu resume langsung bila VPS sedang down & di luar cooldown",
+   "5. cobaAutoResumeDariCron menghormati mode MANUAL, state RUNNING, cooldown, & berjalan saat OTOMATIS+DOWN",
+   "6. api/baileys-backup handler: fail-closed 401, 405, 400 validation, dan eksekusi 200 saat terautentikasi",
+   "7. Wiring, keamanan, batas fungsi Vercel, sintaks JS, & kepatuhan CSP dashboard"
+  ]
+ },
+ {
   "path": "tests/baileys-lid-dan-stiker.test.mjs",
   "lines": 114,
   "kind": "tests",
@@ -2495,6 +2658,29 @@
   ]
  },
  {
+  "path": "tests/format-respon-rapi.test.mjs",
+  "lines": 243,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "format: reproduksi resep nasgor tergencet -> terurai rapi dengan judul, poin, dan langkah terpisah",
+   "format: balasan sudah rapi multi-bagian & multi-paragraf TIDAK diratakan oleh sanitizeAssistantOutput",
+   "format: mode profesional tetap menjaga baris baru dan penomoran",
+   "format: blok kode berindentasi & inline code tetap utuh 100%",
+   "format: URL valid dipertahankan barisnya, URL fiktif dibersihkan tanpa meratakan paragraf",
+   "format: tabel GFM 2 kolom & 3 kolom dikonversi ke poin ramah HP, TSV Excel tidak tersentuh",
+   "format: heading markdown, strikethrough, garis pemisah ---, dan buangBocorInstruksi aman",
+   "format: kasus negatif — obrolan pendek, kata ulang, rentang angka/hari, desimal tetap utuh",
+   "format: systemPrompt memuat aturan format terstruktur untuk berbagai jenis respon",
+   "format: extractStickerTag & extractRiddleTag menjaga indentasi blok kode dan sub-bullet"
+  ]
+ },
+ {
   "path": "tests/game.test.mjs",
   "lines": 95,
   "kind": "tests",
@@ -2536,7 +2722,7 @@
  },
  {
   "path": "tests/grup-database-terpisah.test.mjs",
-  "lines": 98,
+  "lines": 103,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -2556,7 +2742,7 @@
  },
  {
   "path": "tests/grup-mode.test.mjs",
-  "lines": 369,
+  "lines": 443,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -2572,13 +2758,14 @@
    "deteksiPerintahModeGrup menangkap slash command & bahasa natural dengan guard negasi",
    "izin mode: anggota biasa boleh toggle mention<->nimbrung, /diam dikunci admin/owner",
    "nimbrung cerdas: skip basa-basi & @orang lain, jeda anti-spam 5 detik, auto-revert 30 menit sepi",
-   "follow-up window 75 detik aktif setelah dipanggil dan berhenti pada penutup atau timeout",
+   "follow-up window 5 menit dan nimbrung 1 jam berlaku untuk semua anggota grup",
    "passive listening buffer menyimpan maks 15 pesan, dikonsumsi sekali, dan diam mengabaikan total",
    "deteksiTargetBotBaileys mengenali mention via nomor PN maupun @lid Baileys v7",
    "wiring whatsapp_baileys.ts, telegram.ts, dan commands.ts terhubung ke group_mode",
    "deteksiPerintahModeGrup mengenali /nimbrung setelah sapaan dan alias /status",
    "stiker & media tanpa caption tetap dibalas saat nimbrung dan di jendela follow-up 75 detik",
-   "unwrapBaileysMessage membuka pembungkus ephemeral, viewOnceV2, documentWithCaption, lottieSticker, dan edited"
+   "unwrapBaileysMessage membuka pembungkus ephemeral, viewOnceV2, documentWithCaption, lottieSticker, dan edited",
+   "perintah fitur 1 kata dan jawaban interaksi tertunda (WIB/cianjur/iya/tidak) tetap dibalas di grup"
   ]
  },
  {
@@ -2602,14 +2789,15 @@
  },
  {
   "path": "tests/i18n-lengkap.test.mjs",
-  "lines": 90,
+  "lines": 91,
   "kind": "tests",
   "exports": [],
   "imports": [
    "node:test",
    "node:assert/strict",
    "node:fs",
-   "node:child_process"
+   "node:child_process",
+   "node:url"
   ],
   "tests": [
    "i18n.js: sintaks valid (koma lengkap)",
@@ -3247,7 +3435,7 @@
  },
  {
   "path": "tests/pengingat-rutin.test.mjs",
-  "lines": 77,
+  "lines": 143,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -3264,7 +3452,10 @@
    "konfirmasi: pengingat SEKALI tidak menyebut berulang",
    "hapus: perubahan tidak menyentuh jalur \"batalin rapat\"",
    "pilihTarget batal: target spesifik (\"menit ON\") tepat sasaran dan tidak salah hapus \"bangun\"",
-   "delivery: format pengingat lugas tanpa basa-basi AI (cukup \"⏰ Pengingat: <pesan>\")"
+   "delivery: format pengingat lugas tanpa basa-basi AI (cukup \"⏰ Pengingat: <pesan>\")",
+   "hapus: sinonim \"peringatan\" dan kata kerja \"matikan\" terdeteksi sebagai batal dengan target tepat",
+   "pilihSemuaTargetBatal menghapus seluruh pengingat duplikat bernama sama sekaligus dan mendukung \"hapus semua pengingat\"",
+   "pengingat grup terlewat >30 menit dilewati dan langsung dilompat ke jadwal berikutnya tanpa kirim telat"
   ]
  },
  {
@@ -3513,7 +3704,7 @@
  },
  {
   "path": "tests/reply-quote.test.mjs",
-  "lines": 44,
+  "lines": 45,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -3860,8 +4051,32 @@
   ]
  },
  {
+  "path": "tests/vps-keepalive.test.mjs",
+  "lines": 326,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/vps_keepalive.js",
+   "../src/baileys_backup_web.js"
+  ],
+  "tests": [
+   "1. normalizeKeepaliveState mengisi default & membersihkan error",
+   "2. renewVpsActivityLease memanggil endpoint lease yang benar + parse expiresAt",
+   "3. sukses: ping_count naik, next_ping & lease_expires tersimpan",
+   "4. guard interval mencegah ping berulang; force menembus guard",
+   "5. disabled & mesin tidak RUNNING tidak pernah menembak endpoint",
+   "6. gagal: consecutive_failures naik, cooldown dipasang, guard cooldown bekerja",
+   "7. setKeepaliveEnabled durable + mematikan cooldown saat OFF",
+   "8. buildKeepaliveView memakai jendela idle LIVE dan menghitung pause dari lease",
+   "9. buildKeepaliveView fallback config saat API tidak melaporkan jendela idle",
+   "10. ping manual tetap bekerja saat auto-ping OFF (ignoreEnabled)"
+  ]
+ },
+ {
   "path": "tests/vps-monitor.test.mjs",
-  "lines": 299,
+  "lines": 355,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -3878,7 +4093,8 @@
    "6. evaluasiStatusVps mengirim vps_mati SEKALI saat paused/stopped dan vps_pulih SEKALI saat kembali running",
    "7. evaluasiStatusVps tidak menduplikasi vps_mati jika down_notified_at sudah dicatat hook SIGTERM",
    "8. cekLifecycleVps skip saat env kosong dan hanya memanggil GET /v1/machines/{id} dengan Bearer auth",
-   "9. Kepatuhan pasif & wiring: tidak ada /exec, /activity-leases, setInterval, dan cron/baileys terhubung benar"
+   "9. Kepatuhan pasif & wiring: tidak ada /exec, /activity-leases, setInterval, dan cron/baileys terhubung benar",
+   "10. cekLifecycleVps mengirim notif WA Cloud API paralel dengan Telegram untuk vps_mati dan vps_pulih"
   ]
  },
  {
@@ -3965,6 +4181,27 @@
    "3. Landing page tidak mengklaim \"Online 24/7\" untuk WhatsApp saat pemeliharaan",
    "4. Monitor kegagalan beruntun -> notifikasi pemilik",
    "5. Dokumentasi: langkah payment method + cara mematikan mode"
+  ]
+ },
+ {
+  "path": "tests/whatsapp-session-sync.test.mjs",
+  "lines": 153,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:url",
+   "../src/whatsapp_baileys.js",
+   "../src/whatsapp_session.js"
+  ],
+  "tests": [
+   "sendWhatsAppMessageSafe meneruskan quoted sebagai argumen ke-3 (options), bukan di dalam payload konten",
+   "restoreSessionFromSupabase menjaga file lokal VPS dan sync dijalankan saat shutdown",
+   "isRemoteFileNewer membandingkan updated_at remote vs mtime lokal untuk sinkronisasi dua arah VPS <-> Laptop",
+   "isStandbyBackupMode mendeteksi laptop standby vs primary VPS dengan tepat",
+   "evaluasiSiklusStandby: standby saat VPS running, takeover saat VPS suspended/paused, dan yield saat VPS running kembali"
   ]
  },
  {
