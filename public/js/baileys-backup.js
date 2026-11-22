@@ -12,6 +12,8 @@
   let inFlightResume = false;
   let inFlightToggle = false;
   let inFlightKeepalive = false;
+  let keepaliveAutoTimer = null;
+  let keepaliveAutoRunning = false;
   let lastActionFeedback = null;
 
   function translate(key, fallback) {
@@ -563,6 +565,7 @@
     renderEventsList(view.recentEvents);
     updateDynamicCountdowns();
     syncLiveTicker();
+    syncKeepaliveAutoTimer();
   }
 
   async function fetchStatus(showFeedbackOnError) {
@@ -690,7 +693,7 @@
   }
 
   async function handleToggleKeepalive() {
-    if (inFlightKeepalive || !cachedSnapshot || !cachedSnapshot.keepalive) return;
+    if (inFlightKeepalive || keepaliveAutoRunning || !cachedSnapshot || !cachedSnapshot.keepalive) return;
     const next = !cachedSnapshot.keepalive.enabled;
     inFlightKeepalive = true;
     renderSnapshot(cachedSnapshot);
@@ -722,7 +725,7 @@
   }
 
   async function handlePingKeepalive() {
-    if (inFlightKeepalive || !cachedSnapshot) return;
+    if (inFlightKeepalive || keepaliveAutoRunning || !cachedSnapshot) return;
     inFlightKeepalive = true;
     renderSnapshot(cachedSnapshot);
     try {
@@ -754,6 +757,51 @@
     }
   }
 
+  function isKeepaliveDue() {
+    const ka = cachedSnapshot && cachedSnapshot.keepalive;
+    if (!ka || !ka.enabled || !getToken() || document.hidden) return false;
+    if (inFlightKeepalive || keepaliveAutoRunning) return false;
+    const nowEpoch = effectiveServerEpoch();
+    if (typeof ka.nextPingInSecs === "number") {
+      const deadline = cachedSnapshot.serverTimeEpoch + ka.nextPingInSecs;
+      return nowEpoch >= deadline;
+    }
+    const base = ka.lastPingAt || 0;
+    return !base || nowEpoch - base >= (ka.intervalSecs || 600);
+  }
+
+  async function autoPingKeepalive() {
+    if (!isKeepaliveDue()) return;
+    keepaliveAutoRunning = true;
+    try {
+      const result = await postAction({ action: "keepalive" });
+      if (result && result.json && result.json.data) {
+        clientReceivedAtMs = Date.now();
+        renderSnapshot(result.json.data);
+        if (!result.json.ok && result.json.message) {
+          setFeedback("warn", result.json.message);
+        }
+      }
+    } catch (_) {
+      // Senyap: cron dan tombol manual tetap jadi jalur utama.
+    } finally {
+      keepaliveAutoRunning = false;
+    }
+  }
+
+  function syncKeepaliveAutoTimer() {
+    const ka = cachedSnapshot && cachedSnapshot.keepalive;
+    const need = Boolean(ka && ka.enabled && getToken() && !document.hidden);
+    if (need && !keepaliveAutoTimer) {
+      keepaliveAutoTimer = setInterval(() => {
+        void autoPingKeepalive();
+      }, 30_000);
+    } else if (!need && keepaliveAutoTimer) {
+      clearInterval(keepaliveAutoTimer);
+      keepaliveAutoTimer = null;
+    }
+  }
+
   function bindEvents() {
     const checkBtn = byId("bb-btn-check");
     if (checkBtn) checkBtn.addEventListener("click", handleCheckNow);
@@ -772,8 +820,10 @@
 
     document.addEventListener("visibilitychange", () => {
       syncLiveTicker();
+      syncKeepaliveAutoTimer();
       if (!document.hidden && getToken() && cachedSnapshot) {
         updateDynamicCountdowns();
+        void autoPingKeepalive();
       }
     });
   }
@@ -795,6 +845,10 @@
       if (tickTimer) {
         clearInterval(tickTimer);
         tickTimer = null;
+      }
+      if (keepaliveAutoTimer) {
+        clearInterval(keepaliveAutoTimer);
+        keepaliveAutoTimer = null;
       }
       cachedSnapshot = null;
       setFeedback(null, "");

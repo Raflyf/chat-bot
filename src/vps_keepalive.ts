@@ -5,7 +5,7 @@
  * (free plan: 1800 detik = 30 menit). Endpoint resmi untuk menandai bahwa masih
  * ada agen yang bekerja adalah:
  *
- *   PUT /v1/machines/{id}/activity-leases/{leaseID}  { "ttlSeconds": 1200 }
+ *   PUT /v1/machines/{id}/activity-leases/{leaseID}  { "ttlSeconds": 3600 }
  *
  * Selama lease aktif mesin TIDAK dihitung idle ("Expiry starts a full idle
  * period"). Lease diperbarui sebelum kedaluwarsa, lalu pause otomatis tidak

@@ -274,7 +274,7 @@ export const config = {
   // Bukan terminal I/O palsu; lihat src/vps_keepalive.ts.
   vpsKeepaliveEnabled: enabledByDefault('VPS_KEEPALIVE_ENABLED', true),
   vpsKeepaliveIntervalSeconds: num('VPS_KEEPALIVE_INTERVAL_SECONDS', 600),
-  vpsKeepaliveLeaseTtlSeconds: num('VPS_KEEPALIVE_LEASE_TTL_SECONDS', 1200),
+  vpsKeepaliveLeaseTtlSeconds: num('VPS_KEEPALIVE_LEASE_TTL_SECONDS', 3600),
   vpsIdlePauseMinutes: num('VPS_IDLE_PAUSE_MINUTES', 30),
 };
 
