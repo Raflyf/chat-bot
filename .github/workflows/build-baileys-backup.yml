@@ -31,9 +31,11 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build, Test & Release (Windows x64)
+    name: Build, Test & MSI Setup (Windows x64)
     runs-on: windows-latest
     timeout-minutes: 20
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
 
     steps:
       - name: Checkout repository
@@ -93,10 +95,10 @@ jobs:
               static extern bool FreeLibrary(IntPtr hMod);
 
               public static void Verify(string exePath) {
-                  IntPtr hMod = LoadLibraryExW(exePath, IntPtr.Zero, 0x00000002); // LOAD_LIBRARY_AS_DATAFILE
+                  IntPtr hMod = LoadLibraryExW(exePath, IntPtr.Zero, 0x00000002);
                   if (hMod == IntPtr.Zero) throw new Exception("LoadLibraryExW gagal: " + Marshal.GetLastWin32Error());
                   try {
-                      IntPtr hManifest = FindResourceW(hMod, new IntPtr(1), new IntPtr(24)); // RT_MANIFEST = 24
+                      IntPtr hManifest = FindResourceW(hMod, new IntPtr(1), new IntPtr(24));
                       if (hManifest == IntPtr.Zero) throw new Exception("RT_MANIFEST (24, ID=1) tidak ditemukan");
                       uint manifestBytes = SizeofResource(hMod, hManifest);
                       if (manifestBytes == 0) throw new Exception("RT_MANIFEST berukuran 0 byte");
@@ -133,50 +135,125 @@ jobs:
 
           [ExeResourceVerifier]::Verify($exe)
 
-      - name: Package release assets and SHA256SUMS
+      - name: Setup .NET SDK for WiX
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Build Windows MSI Setup (WiX v5)
         id: package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = Join-Path $PWD 'tools\wa-standby-watchdog\target\release\BaileysBackup.exe'
+          dotnet tool update --global wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
+          $env:PATH = "$tools;$env:PATH"
+
+          wix extension add --global WixToolset.UI.wixext/5.0.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          wix extension add --global WixToolset.Util.wixext/5.0.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $cargoToml = Join-Path $PWD 'tools\wa-standby-watchdog\Cargo.toml'
+          $version = (Select-String -LiteralPath $cargoToml -Pattern '^version\s*=\s*"([^"]+)"$' | Select-Object -First 1).Matches.Groups[1].Value
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "Versi tidak ditemukan di Cargo.toml" }
+
           $outDir = Join-Path $PWD 'release-out'
-          $stageDir = Join-Path $outDir 'stage'
-          New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+
+          $exe = Join-Path $PWD 'tools\wa-standby-watchdog\target\release\BaileysBackup.exe'
+          $appIco = Join-Path $PWD 'bin\baileys-backup.ico'
+          $activeIco = Join-Path $PWD 'bin\baileys-backup-active.ico'
+          $licenseRtf = Join-Path $PWD 'tools\wa-standby-watchdog\assets\license.rtf'
+          $licenseTxt = Join-Path $PWD 'LICENSE'
+          $msiName = "BaileysBackup-setup-v$version.msi"
+          $msiOut = Join-Path $outDir $msiName
+
+          & wix build 'tools\wa-standby-watchdog\setup.wxs' `
+            -arch x64 `
+            -ext WixToolset.UI.wixext `
+            -ext WixToolset.Util.wixext `
+            -d "Version=$version" `
+            -d "AppExe=$exe" `
+            -d "AppIco=$appIco" `
+            -d "ActiveIco=$activeIco" `
+            -d "LicenseRtf=$licenseRtf" `
+            -d "LicenseTxt=$licenseTxt" `
+            -out "$msiOut"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           Copy-Item -LiteralPath $exe -Destination (Join-Path $outDir 'BaileysBackup.exe') -Force
-          Copy-Item -LiteralPath $exe -Destination (Join-Path $stageDir 'BaileysBackup.exe') -Force
-          Copy-Item -LiteralPath (Join-Path $PWD 'tools\wa-standby-watchdog\Install-BaileysBackup.ps1') -Destination $stageDir -Force
-          Copy-Item -LiteralPath (Join-Path $PWD 'tools\wa-standby-watchdog\Install-BaileysBackup.cmd') -Destination $stageDir -Force
 
-          foreach ($icoName in @('baileys-backup.ico', 'baileys-backup-active.ico')) {
-            $icoPath = Join-Path $PWD "bin\$icoName"
-            if (Test-Path -LiteralPath $icoPath -PathType Leaf) {
-              Copy-Item -LiteralPath $icoPath -Destination $stageDir -Force
-            }
-          }
-
-          $zipPath = Join-Path $outDir 'BaileysBackup-windows-x64.zip'
-          Compress-Archive -Path "$stageDir\*" -DestinationPath $zipPath -CompressionLevel Optimal -Force
-
+          $msiHash = (Get-FileHash -LiteralPath $msiOut -Algorithm SHA256).Hash.ToLowerInvariant()
           $exeHash = (Get-FileHash -LiteralPath (Join-Path $outDir 'BaileysBackup.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
-          $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
-            "$exeHash  BaileysBackup.exe",
-            "$zipHash  BaileysBackup-windows-x64.zip"
+            "$msiHash  $msiName",
+            "$exeHash  BaileysBackup.exe"
           ) | Set-Content -Path (Join-Path $outDir 'SHA256SUMS.txt') -Encoding Ascii
 
-          $sizeKb = [Math]::Round((Get-Item -LiteralPath (Join-Path $outDir 'BaileysBackup.exe')).Length / 1024.0, 1)
-          "size_kb=$sizeKb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "exe_sha256=$exeHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "zip_sha256=$zipHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $msiSizeKb = [Math]::Round((Get-Item -LiteralPath $msiOut).Length / 1024.0, 1)
+          $exeSizeKb = [Math]::Round((Get-Item -LiteralPath (Join-Path $outDir 'BaileysBackup.exe')).Length / 1024.0, 1)
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "msi_name=$msiName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "msi_size_kb=$msiSizeKb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "exe_size_kb=$exeSizeKb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Verify MSI metadata and auto-close action
+        shell: powershell
+        env:
+          MSI_NAME: ${{ steps.package.outputs.msi_name }}
+          APP_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msiPath = Join-Path $PWD ("release-out\" + $env:MSI_NAME)
+          if (-not (Test-Path -LiteralPath $msiPath -PathType Leaf)) {
+            throw "File MSI tidak ditemukan: $msiPath"
+          }
+
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($msiPath, 0))
+
+          function Query-Single([string]$sql) {
+            $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @($sql))
+            $null = $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+            $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+            if ($null -eq $rec) {
+              $null = $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
+              return $null
+            }
+            $val = $rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, @(1))
+            $null = $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
+            return $val
+          }
+
+          $prodName = Query-Single "SELECT Value FROM Property WHERE Property='ProductName'"
+          $prodVer = Query-Single "SELECT Value FROM Property WHERE Property='ProductVersion'"
+          Write-Host "MSI ProductName=$prodName | ProductVersion=$prodVer"
+          if ($prodName -ne 'Baileys Backup') { throw "MSI ProductName tidak sesuai: '$prodName'" }
+          if ($prodVer -ne "$($env:APP_VERSION).0") { throw "MSI ProductVersion tidak sesuai: '$prodVer'" }
+
+          $closeTable = Query-Single "SELECT Name FROM _Tables WHERE Name='Wix4CloseApplication'"
+          if (-not $closeTable) {
+            $closeTable = Query-Single "SELECT Name FROM _Tables WHERE Name='WixCloseApplication'"
+          }
+          if (-not $closeTable) {
+            throw "Tabel CloseApplication (Wix4CloseApplication/WixCloseApplication) tidak ditemukan di MSI"
+          }
+          $closeTarget = Query-Single "SELECT Target FROM $closeTable WHERE Target='BaileysBackup.exe'"
+          Write-Host "MSI CloseApplication table=$closeTable | Target=$closeTarget"
+          if ($closeTarget -ne 'BaileysBackup.exe') {
+            throw "Baris CloseApplication untuk BaileysBackup.exe tidak ditemukan"
+          }
 
       - name: Upload GitHub Actions build artifact
         uses: actions/upload-artifact@v4
         with:
           name: BaileysBackup-windows-x64
           path: |
+            release-out/BaileysBackup-setup-v*.msi
             release-out/BaileysBackup.exe
-            release-out/BaileysBackup-windows-x64.zip
             release-out/SHA256SUMS.txt
           retention-days: 30
 
@@ -186,6 +263,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          MSI_NAME: ${{ steps.package.outputs.msi_name }}
+          MSI_SIZE_KB: ${{ steps.package.outputs.msi_size_kb }}
+          EXE_SIZE_KB: ${{ steps.package.outputs.exe_size_kb }}
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = if ('${{ github.ref_type }}' -eq 'tag') {
@@ -197,17 +277,14 @@ jobs:
           }
 
           $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+          $msiName = $env:MSI_NAME
           $notes = @(
             "Build otomatis GitHub Actions untuk **Baileys Backup (Windows x64)** dari commit ``$shortSha``.",
             "",
-            "### Paket Unduhan",
-            "- ``BaileysBackup-windows-x64.zip`` (direkomendasikan): berisi ``BaileysBackup.exe``, ikon ``.ico``, dan installer sekali klik ``Install-BaileysBackup.cmd``.",
-            "- ``BaileysBackup.exe`` (${{ steps.package.outputs.size_kb }} KB): binary standalone tanpa installer.",
-            "- ``SHA256SUMS.txt``: checksum SHA-256 untuk verifikasi integritas berkas.",
-            "",
-            "### Cara Pasang di Windows",
-            "1. Ekstrak ``BaileysBackup-windows-x64.zip`` lalu klik dua kali ``Install-BaileysBackup.cmd``, **atau**",
-            "2. Jalankan dari folder proyek: ``node scripts/watchdog-ctl.mjs install --exe <path-ke-BaileysBackup.exe>``."
+            "### Unduhan Installer",
+            "- ``$msiName`` ($($env:MSI_SIZE_KB) KB, direkomendasikan): installer Windows `.msi` yang otomatis menghentikan ``BaileysBackup.exe`` yang sedang berjalan, memasang versi baru ke ``%LOCALAPPDATA%\Programs\BaileysBackup\``, mendaftarkan Auto-Start & Start Menu, lalu menyalakan aplikasi saat Finish.",
+            "- ``BaileysBackup.exe`` ($($env:EXE_SIZE_KB) KB): binary standalone.",
+            "- ``SHA256SUMS.txt``: checksum SHA-256 untuk verifikasi integritas berkas."
           ) -join "`n"
 
           $notesFile = Join-Path $env:RUNNER_TEMP 'baileys-release-notes.md'
@@ -227,8 +304,8 @@ jobs:
           }
 
           $assets = @(
+            "release-out/$msiName",
             'release-out/BaileysBackup.exe',
-            'release-out/BaileysBackup-windows-x64.zip',
             'release-out/SHA256SUMS.txt'
           )
 
@@ -237,6 +314,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "gh release edit gagal" }
             & gh release upload $tag @assets --clobber
             if ($LASTEXITCODE -ne 0) { throw "gh release upload gagal" }
+            & gh release delete-asset $tag 'BaileysBackup-windows-x64.zip' --yes *> $null
           } else {
             & gh release create $tag @assets --target $env:GITHUB_SHA --title "Baileys Backup (Windows x64)" --notes-file $notesFile
             if ($LASTEXITCODE -ne 0) { throw "gh release create gagal" }

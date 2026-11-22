@@ -1,0 +1,117 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Baileys Backup"
+           Manufacturer="Rafly Firmansyah"
+           Version="$(var.Version).0"
+           UpgradeCode="A7F2E419-8B3C-4D62-9E15-64B8C2A1F903"
+           Scope="perUser"
+           InstallerVersion="500"
+           Compressed="yes">
+    <Launch Condition="Installed OR (VersionNT64 &gt;= 603)"
+            Message="Baileys Backup requires 64-bit Windows 10 or Windows 11." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  AllowSameVersionUpgrades="yes"
+                  Schedule="afterInstallExecute" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="none" />
+
+    <Icon Id="BaileysBackup.ico" SourceFile="$(var.AppIco)" />
+    <Property Id="ARPPRODUCTICON" Value="BaileysBackup.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Raflyf/chat-bot" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/Raflyf/chat-bot/issues" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/Raflyf/chat-bot/releases" />
+    <Property Id="ARPNOREPAIR" Value="yes" />
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
+    <Property Id="MSIFASTINSTALL" Value="7" />
+    <Property Id="REBOOT" Value="ReallySuppress" />
+
+    <util:CloseApplication Id="CloseBaileysBackup"
+                           Target="BaileysBackup.exe"
+                           CloseMessage="yes"
+                           EndSessionMessage="yes"
+                           Timeout="8"
+                           RebootPrompt="no" />
+    <util:CloseApplication Id="CloseLegacyWatchdog"
+                           Target="wa-standby-watchdog.exe"
+                           CloseMessage="yes"
+                           Timeout="3"
+                           RebootPrompt="no" />
+
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Baileys Backup" />
+    <Property Id="WixShellExecTarget" Value="[#BaileysBackupExe]" />
+    <CustomAction Id="LaunchApplication"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixShellExec"
+                  Impersonate="yes" />
+
+    <UIRef Id="WixUI_ErrorProgressText" />
+    <UI>
+      <ui:WixUI Id="WixUI_Minimal" />
+      <Publish Dialog="ExitDialog"
+               Control="Finish"
+               Event="DoAction"
+               Value="LaunchApplication"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+    </UI>
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LocalProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="BaileysBackup" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="MainFeature"
+             Title="Baileys Backup"
+             Description="Baileys Backup application, tray icons, auto-start registration, and Start Menu shortcut."
+             Level="1"
+             AllowAbsent="no">
+      <ComponentRef Id="AppExeComponent" />
+      <ComponentRef Id="StartupRegistryComponent" />
+      <ComponentRef Id="StartMenuShortcutComponent" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ApplicationComponents">
+      <Component Id="AppExeComponent" Directory="INSTALLFOLDER" Guid="7C2B1E48-5F93-4A61-8D24-1E39A0B6C821">
+        <RegistryValue Root="HKCU" Key="Software\BaileysBackup\Installer" Name="AppExe" Type="string" Value="1" KeyPath="yes" />
+        <File Id="BaileysBackupExe" Source="$(var.AppExe)" />
+        <File Id="BaileysBackupIconFile" Source="$(var.AppIco)" />
+        <File Id="BaileysBackupActiveIconFile" Source="$(var.ActiveIco)" />
+        <File Id="LicenseFile" Source="$(var.LicenseTxt)" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        <RemoveFolder Id="RemoveLocalProgramsFolder" Directory="LocalProgramsFolder" On="uninstall" />
+      </Component>
+
+      <Component Id="StartupRegistryComponent" Directory="INSTALLFOLDER" Guid="D1E6F492-3A74-4C8B-B529-9F14C7A2E610">
+        <RegistryValue Root="HKCU" Key="Software\BaileysBackup\Installer" Name="Startup" Type="string" Value="1" KeyPath="yes" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                       Name="BaileysBackup"
+                       Type="string"
+                       Value="&quot;[INSTALLFOLDER]BaileysBackup.exe&quot; --silent" />
+        <RemoveRegistryValue Root="HKCU"
+                             Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                             Name="FreeAIBotStandbyWatchdog"
+                             Action="removeOnInstall" />
+      </Component>
+
+      <Component Id="StartMenuShortcutComponent" Directory="INSTALLFOLDER" Guid="*">
+        <RegistryValue Root="HKCU" Key="Software\BaileysBackup\Installer" Name="StartMenuShortcut" Type="string" Value="1" KeyPath="yes" />
+        <Shortcut Id="StartMenuShortcut"
+                  Directory="ProgramMenuFolder"
+                  Name="Baileys Backup"
+                  Description="Baileys Backup - Standby &amp; Auto-Failover Bot WhatsApp Lokal"
+                  Target="[#BaileysBackupExe]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="BaileysBackup.ico"
+                  Advertise="no">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="Raflyf.BaileysBackup" />
+        </Shortcut>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>
