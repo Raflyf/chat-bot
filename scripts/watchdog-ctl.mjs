@@ -454,6 +454,10 @@ async function printStatus() {
       : null;
     console.log(`Status Proses            : BERJALAN (PID ${st.watchdogPid}, Private RAM: ${appPrivMb} MB, WS: ${appWsMb} MB)`);
     console.log(`Status VPS Utama         : ${st.vpsState} (${st.vpsAvailability})`);
+    console.log(`Mode Resume VPS          : ${st.autoResumeEnabled ? 'OTOMATIS' : 'MANUAL'}`);
+    console.log(
+      `Auto-Ping VPS            : ${st.keepaliveEnabled ? 'AKTIF' : 'NONAKTIF'} (sukses ${st.keepalivePingCount ?? 0}x, gagal ${st.keepaliveFailCount ?? 0}x)`,
+    );
     console.log(
       `Mode Backup Lokal        : ${
         st.failoverActive

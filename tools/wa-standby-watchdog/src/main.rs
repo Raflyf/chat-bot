@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
 mod icon;
+mod keepalive;
 mod panel;
 
 use std::collections::{HashMap, VecDeque};
@@ -99,6 +100,8 @@ const IDM_TOGGLE_AUTOSTART: usize = panel::CMD_TOGGLE_AUTOSTART;
 const IDM_RESUME_VPS: usize = panel::CMD_RESUME_VPS;
 const IDM_TOGGLE_AUTO_RESUME: usize = panel::CMD_TOGGLE_AUTO_RESUME;
 const IDM_EXIT: usize = panel::CMD_EXIT;
+const IDM_PING_VPS: usize = panel::CMD_PING_VPS;
+const IDM_TOGGLE_KEEPALIVE: usize = panel::CMD_TOGGLE_KEEPALIVE;
 
 static IDEMPOTENCY_SEQ: AtomicU64 = AtomicU64::new(1);
 
@@ -109,6 +112,8 @@ const APP_SETTINGS_SUBKEY: PCWSTR = w!(r"Software\BaileysBackup");
 const PROJECT_ROOT_VALUE: PCWSTR = w!("ProjectRoot");
 const AUTO_RESUME_VALUE: PCWSTR = w!("AutoResumeVps");
 const AUTO_RESUME_UPDATED_AT_VALUE: PCWSTR = w!("AutoResumeUpdatedAtMs");
+const KEEPALIVE_ENABLED_VALUE: PCWSTR = w!("KeepaliveEnabled");
+const KEEPALIVE_UPDATED_AT_VALUE: PCWSTR = w!("KeepaliveUpdatedAtSecs");
 const SUPABASE_CLOUD_STATE_FILE: &str = "__baileys_backup_state.json";
 const SUPABASE_DESKTOP_STATE_FILE: &str = "__baileys_backup_desktop.json";
 const CLOUD_SYNC_INTERVAL_SECS: u64 = 25;
@@ -138,6 +143,10 @@ struct SharedState {
     last_check_epoch: u64,
     last_check_instant: Option<Instant>,
     auto_resume_cooldown_until: Option<Instant>,
+    auto_suspend_secs: Option<u64>,
+    run_started_at_epoch: Option<u64>,
+    max_run_minutes: Option<u64>,
+    keepalive_state: keepalive::KeepaliveState,
     balloon_title: String,
     balloon_body: String,
     balloon_is_warning: bool,
@@ -147,12 +156,20 @@ struct SharedState {
 struct AppContext {
     project_root: PathBuf,
     running: Arc<AtomicBool>,
+    instabox_configured: Arc<AtomicBool>,
     force_poll: Arc<AtomicBool>,
     checking_vps: Arc<AtomicBool>,
     resume_requested: Arc<AtomicBool>,
     resuming_vps: Arc<AtomicBool>,
     auto_resume_enabled: Arc<AtomicBool>,
     auto_resume_updated_at_ms: Arc<AtomicU64>,
+    keepalive_cfg: keepalive::KeepaliveConfig,
+    keepalive_enabled: Arc<AtomicBool>,
+    ping_requested: Arc<AtomicBool>,
+    pinging_vps: Arc<AtomicBool>,
+    keepalive_release_requested: Arc<AtomicBool>,
+    keepalive_auto_ping_requested: Arc<AtomicBool>,
+    keepalive_sync_dirty: Arc<AtomicBool>,
     cloud_sync_dirty: Arc<AtomicBool>,
     tray_registered: Arc<AtomicBool>,
     tray_retry_left: AtomicU8,
@@ -385,27 +402,9 @@ fn load_env_file(project_root: &Path) -> HashMap<String, String> {
     }
 }
 
+#[cfg(test)]
 fn extract_machine_state_from_json(json: &str) -> Option<String> {
-    for key in ["\"state\"", "\"status\""] {
-        let mut search_from = 0;
-        while let Some(pos) = json[search_from..].find(key) {
-            let abs_pos = search_from + pos + key.len();
-            let rest = json[abs_pos..].trim_start();
-            if let Some(after_colon) = rest.strip_prefix(':') {
-                let val_start = after_colon.trim_start();
-                if let Some(inner) = val_start.strip_prefix('"') {
-                    if let Some(end_quote) = inner.find('"') {
-                        let candidate = inner[..end_quote].trim().to_ascii_lowercase();
-                        if !candidate.is_empty() {
-                            return Some(candidate);
-                        }
-                    }
-                }
-            }
-            search_from = abs_pos;
-        }
-    }
-    None
+    keepalive::parse_vps_snapshot_json(json).map(|s| s.raw_state)
 }
 
 fn classify_vps_state(raw_state: &str) -> VpsAvailability {
@@ -456,9 +455,19 @@ fn resolve_instabox_creds(project_root: &Path) -> Option<(String, String, String
     Some((api_base, api_key, machine_id))
 }
 
-fn query_vps_state(project_root: &Path) -> (VpsAvailability, String) {
+fn empty_snapshot(raw_state: &str) -> keepalive::VpsSnapshot {
+    keepalive::VpsSnapshot {
+        raw_state: raw_state.to_string(),
+        auto_suspend_secs: None,
+        run_started_at_epoch: None,
+        max_run_minutes: None,
+        cooldown_until_epoch: None,
+    }
+}
+
+fn query_vps_snapshot(project_root: &Path) -> (VpsAvailability, keepalive::VpsSnapshot) {
     let Some((api_base, api_key, machine_id)) = resolve_instabox_creds(project_root) else {
-        return (VpsAvailability::Unknown, "missing_env".to_string());
+        return (VpsAvailability::Unknown, empty_snapshot("missing_env"));
     };
 
     let url = format!("{api_base}/v1/machines/{machine_id}");
@@ -471,29 +480,31 @@ fn query_vps_state(project_root: &Path) -> (VpsAvailability, String) {
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(_) => return (VpsAvailability::Unknown, "curl_spawn_failed".to_string()),
+        Err(_) => return (VpsAvailability::Unknown, empty_snapshot("curl_spawn_failed")),
     };
 
     if let Some(mut stdin) = child.stdin.take() {
         let cfg = format!(
-            "url = \"{url}\"\nheader = \"Authorization: Bearer {api_key}\"\nheader = \"Accept: application/json\"\n"
+            "url = {}\nheader = {}\nheader = \"Accept: application/json\"\n",
+            curl_config_quote(&url),
+            curl_config_quote(&format!("Authorization: Bearer {api_key}")),
         );
         let _ = stdin.write_all(cfg.as_bytes());
     }
 
     let output = match child.wait_with_output() {
         Ok(o) => o,
-        Err(_) => return (VpsAvailability::Unknown, "curl_wait_failed".to_string()),
+        Err(_) => return (VpsAvailability::Unknown, empty_snapshot("curl_wait_failed")),
     };
 
     if !output.status.success() {
-        return (VpsAvailability::Unknown, "http_error".to_string());
+        return (VpsAvailability::Unknown, empty_snapshot("http_error"));
     }
 
     let body = String::from_utf8_lossy(&output.stdout);
-    match extract_machine_state_from_json(&body) {
-        Some(st) => (classify_vps_state(&st), st),
-        None => (VpsAvailability::Unknown, "invalid_json".to_string()),
+    match keepalive::parse_vps_snapshot_json(&body) {
+        Some(snap) => (classify_vps_state(&snap.raw_state), snap),
+        None => (VpsAvailability::Unknown, empty_snapshot("invalid_json")),
     }
 }
 
@@ -1009,6 +1020,115 @@ fn save_auto_resume_updated_at_ms(ts_ms: u64) -> bool {
     }
 }
 
+fn read_keepalive_enabled_reg() -> Option<bool> {
+    let mut val: u32 = 0;
+    let mut bytes = size_of::<u32>() as u32;
+    let st = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            KEEPALIVE_ENABLED_VALUE,
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&mut val as *mut u32).cast()),
+            Some(&mut bytes),
+        )
+    };
+    if st.is_ok() {
+        Some(val != 0)
+    } else {
+        None
+    }
+}
+
+fn set_keepalive_enabled_reg(enabled: bool) -> bool {
+    unsafe {
+        let mut key = HKEY::default();
+        if RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            0,
+            None,
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut key,
+            None,
+        )
+        .is_err()
+        {
+            return false;
+        }
+        let val: u32 = if enabled { 1 } else { 0 };
+        let ok = RegSetValueExW(
+            key,
+            KEEPALIVE_ENABLED_VALUE,
+            0,
+            REG_DWORD,
+            Some(&val.to_le_bytes()),
+        )
+        .is_ok();
+        let _ = RegCloseKey(key);
+        ok
+    }
+}
+
+fn read_keepalive_updated_at_secs() -> u64 {
+    unsafe {
+        let mut buf = [0u16; 48];
+        let mut bytes = size_of::<[u16; 48]>() as u32;
+        let st = RegGetValueW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            KEEPALIVE_UPDATED_AT_VALUE,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut bytes),
+        );
+        if st.is_err() || bytes < 2 {
+            return 0;
+        }
+        let wchar_len = ((bytes as usize) / 2).min(buf.len());
+        let raw = String::from_utf16_lossy(&buf[..wchar_len]);
+        raw.trim_end_matches('\0').trim().parse::<u64>().unwrap_or(0)
+    }
+}
+
+fn save_keepalive_updated_at_secs(ts_secs: u64) -> bool {
+    unsafe {
+        let mut key = HKEY::default();
+        if RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            APP_SETTINGS_SUBKEY,
+            0,
+            None,
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut key,
+            None,
+        )
+        .is_err()
+        {
+            return false;
+        }
+        let text = ts_secs.to_string();
+        let wide: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+        let raw_bytes = std::slice::from_raw_parts(wide.as_ptr().cast::<u8>(), wide.len() * 2);
+        let ok = RegSetValueExW(
+            key,
+            KEEPALIVE_UPDATED_AT_VALUE,
+            0,
+            REG_SZ,
+            Some(raw_bytes),
+        )
+        .is_ok();
+        let _ = RegCloseKey(key);
+        ok
+    }
+}
+
 /// Ambil `(private_kb, working_kb)` proses lewat Win32 kernel32 `K32GetProcessMemoryInfo` (tanpa child process).
 fn query_process_memory_kb(pid: u32) -> (u64, u64) {
     if pid == 0 {
@@ -1377,8 +1497,19 @@ fn collect_panel_stats(ctx: &AppContext) -> panel::PanelStats {
     } else {
         (0, 0)
     };
+    let now_secs = now_epoch_secs();
 
-    let (vps_avail, vps_state, last_age, cooldown_secs, recent_events) = match ctx.shared.lock() {
+    let (
+        vps_avail,
+        vps_state,
+        last_age,
+        cooldown_secs,
+        recent_events,
+        auto_suspend_secs,
+        run_started_at_epoch,
+        max_run_minutes,
+        ka_state,
+    ) = match ctx.shared.lock() {
         Ok(g) => (
             g.vps_availability.as_str(),
             g.raw_state.clone(),
@@ -1388,18 +1519,59 @@ fn collect_panel_stats(ctx: &AppContext) -> panel::PanelStats {
                 .map(|d| d.as_secs())
                 .filter(|&s| s > 0),
             g.recent_events.iter().cloned().collect(),
+            g.auto_suspend_secs,
+            g.run_started_at_epoch,
+            g.max_run_minutes,
+            g.keepalive_state.clone(),
         ),
-        Err(_) => ("unknown", "unknown".to_string(), None, None, Vec::new()),
+        Err(_) => (
+            "unknown",
+            "unknown".to_string(),
+            None,
+            None,
+            Vec::new(),
+            None,
+            None,
+            None,
+            keepalive::KeepaliveState::default_with_enabled(
+                ctx.keepalive_enabled.load(Ordering::SeqCst),
+            ),
+        ),
+    };
+
+    let is_running = vps_avail == "running";
+    let kv = keepalive::compute_keepalive_view(
+        &ka_state,
+        &ctx.keepalive_cfg,
+        is_running,
+        auto_suspend_secs,
+        run_started_at_epoch,
+        now_secs,
+    );
+    let runtime_remaining_mins = if is_running {
+        match (run_started_at_epoch, max_run_minutes) {
+            (Some(rs), Some(max_m)) if max_m > 0 => {
+                let end_secs = rs.saturating_add(max_m.saturating_mul(60));
+                let rem_secs = end_secs.saturating_sub(now_secs);
+                Some((rem_secs + 59) / 60)
+            }
+            _ => None,
+        }
+    } else {
+        None
     };
 
     panel::PanelStats {
         app_pid: std::process::id(),
         child_node_pid: cpid,
+        instabox_configured: ctx.instabox_configured.load(Ordering::SeqCst),
         vps_state,
         vps_availability: vps_avail,
+        runtime_remaining_mins,
         failover_active: cpid > 0,
         checking_vps: ctx.checking_vps.load(Ordering::SeqCst),
         resuming_vps: ctx.resuming_vps.load(Ordering::SeqCst),
+        pinging_vps: ctx.pinging_vps.load(Ordering::SeqCst),
         app_private_kb: app_priv,
         app_working_kb: app_ws,
         node_private_kb: node_priv,
@@ -1411,6 +1583,22 @@ fn collect_panel_stats(ctx: &AppContext) -> panel::PanelStats {
         auto_start_enabled: is_autostart_enabled(),
         auto_resume_enabled: ctx.auto_resume_enabled.load(Ordering::SeqCst),
         auto_resume_cooldown_secs: cooldown_secs,
+        keepalive_enabled: kv.enabled,
+        keepalive_ping_count: ka_state.ping_count,
+        keepalive_fail_count: ka_state.fail_count,
+        keepalive_consecutive_failures: ka_state.consecutive_failures,
+        keepalive_last_error: ka_state.last_error,
+        keepalive_last_ping_latency_ms: ka_state.last_ping_latency_ms,
+        keepalive_last_ping_source: ka_state.last_ping_source,
+        keepalive_interval_secs: ctx.keepalive_cfg.interval_secs,
+        keepalive_lease_ttl_secs: ctx.keepalive_cfg.lease_ttl_secs,
+        keepalive_idle_window_secs: kv.idle_window_secs,
+        keepalive_lease_remaining_secs: kv.lease_remaining_secs,
+        keepalive_idle_secs: kv.idle_secs,
+        keepalive_pause_in_secs: kv.pause_in_secs,
+        keepalive_next_ping_in_secs: kv.next_ping_in_secs,
+        keepalive_idle_bar_pct: kv.idle_bar_pct,
+        keepalive_at_risk: kv.at_risk,
         tray_registered: ctx.tray_registered.load(Ordering::SeqCst),
         recent_events,
     }
@@ -1453,6 +1641,9 @@ fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
     let autostart = is_autostart_enabled();
     let resume_disabled =
         avail == VpsAvailability::Running || ctx.resuming_vps.load(Ordering::SeqCst);
+    let ping_disabled = avail != VpsAvailability::Running
+        || !ctx.instabox_configured.load(Ordering::SeqCst)
+        || ctx.pinging_vps.load(Ordering::SeqCst);
 
     let hdr = to_wide_nul(&format!(
         "Baileys Backup  (VPS: {})",
@@ -1465,14 +1656,17 @@ fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
     };
     let lbl_panel = to_wide_nul("Buka Panel Statistik");
     let lbl_check = to_wide_nul("Cek Status VPS Sekarang");
+    let lbl_ping = to_wide_nul("Ping VPS Sekarang (Keepalive)");
     let lbl_resume = to_wide_nul("Resume / Aktifkan VPS Utama");
     let lbl_auto_resume = to_wide_nul("Auto-Resume VPS Otomatis");
+    let lbl_keepalive = to_wide_nul("Auto-Ping VPS (Anti Idle-Pause)");
     let lbl_startup = to_wide_nul("Jalankan saat Login Windows");
     let lbl_log = to_wide_nul("Buka Log Baileys Backup");
     let lbl_bot_log = to_wide_nul("Buka Log Bot WhatsApp Lokal");
     let lbl_folder = to_wide_nul("Buka Folder Proyek");
     let lbl_exit = to_wide_nul("Keluar (Matikan Baileys Backup)");
     let auto_resume = ctx.auto_resume_enabled.load(Ordering::SeqCst);
+    let keepalive_on = ctx.keepalive_enabled.load(Ordering::SeqCst);
 
     unsafe {
         let Ok(hmenu) = CreatePopupMenu() else {
@@ -1492,6 +1686,17 @@ fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
         let _ = AppendMenuW(
             hmenu,
             MF_STRING
+                | if ping_disabled {
+                    MF_DISABLED | MF_GRAYED
+                } else {
+                    windows::Win32::UI::WindowsAndMessaging::MENU_ITEM_FLAGS(0)
+                },
+            IDM_PING_VPS,
+            PCWSTR(lbl_ping.as_ptr()),
+        );
+        let _ = AppendMenuW(
+            hmenu,
+            MF_STRING
                 | if resume_disabled {
                     MF_DISABLED | MF_GRAYED
                 } else {
@@ -1505,6 +1710,12 @@ fn show_tray_context_menu(hwnd: HWND, ctx: &Arc<AppContext>) {
             MF_STRING | if auto_resume { MF_CHECKED } else { MF_UNCHECKED },
             IDM_TOGGLE_AUTO_RESUME,
             PCWSTR(lbl_auto_resume.as_ptr()),
+        );
+        let _ = AppendMenuW(
+            hmenu,
+            MF_STRING | if keepalive_on { MF_CHECKED } else { MF_UNCHECKED },
+            IDM_TOGGLE_KEEPALIVE,
+            PCWSTR(lbl_keepalive.as_ptr()),
         );
         let _ = AppendMenuW(
             hmenu,
@@ -1618,12 +1829,89 @@ fn apply_auto_resume_mode(ctx: &Arc<AppContext>, next: bool) -> bool {
     persisted
 }
 
+fn request_vps_ping(ctx: &Arc<AppContext>) -> &'static str {
+    if !ctx.instabox_configured.load(Ordering::SeqCst)
+        && resolve_instabox_creds(&ctx.project_root).is_none()
+    {
+        record_event(ctx, "Ping VPS gagal: INSTABOX env belum lengkap");
+        return "not_configured";
+    }
+    let avail = ctx
+        .shared
+        .lock()
+        .map(|g| g.vps_availability)
+        .unwrap_or(VpsAvailability::Unknown);
+    if avail != VpsAvailability::Running {
+        record_event(ctx, "Ping dilewati: VPS tidak sedang RUNNING");
+        return "not_running";
+    }
+    if ctx.pinging_vps.swap(true, Ordering::SeqCst) {
+        return "in_progress";
+    }
+    ctx.ping_requested.store(true, Ordering::SeqCst);
+    record_event(ctx, "Mengirim Ping VPS manual...");
+    "pinging"
+}
+
+fn apply_keepalive_mode(ctx: &Arc<AppContext>, next: bool) -> bool {
+    let persisted = set_keepalive_enabled_reg(next);
+    let now_secs = now_epoch_secs();
+    let _ = save_keepalive_updated_at_secs(now_secs);
+    ctx.keepalive_enabled.store(next, Ordering::SeqCst);
+
+    let avail = match ctx.shared.lock() {
+        Ok(mut g) => {
+            let av = g.vps_availability;
+            let live_win = g.auto_suspend_secs;
+            if next {
+                g.keepalive_state.enabled = true;
+                g.keepalive_state.enabled_updated_at = Some(now_secs);
+                g.keepalive_state.enabled_updated_by = Some("desktop".to_string());
+                g.keepalive_state.updated_at = Some(now_secs);
+                if let Some(w) = live_win.filter(|&w| w > 0) {
+                    g.keepalive_state.idle_window_secs = Some(w);
+                    g.keepalive_state.idle_window_source = "live".to_string();
+                }
+            } else {
+                g.keepalive_state.clear_on_disable(now_secs, "desktop");
+            }
+            av
+        }
+        Err(_) => VpsAvailability::Unknown,
+    };
+
+    if next {
+        if avail == VpsAvailability::Running {
+            ctx.keepalive_auto_ping_requested.store(true, Ordering::SeqCst);
+        }
+    } else {
+        ctx.keepalive_auto_ping_requested.store(false, Ordering::SeqCst);
+        if avail == VpsAvailability::Running {
+            ctx.keepalive_release_requested.store(true, Ordering::SeqCst);
+        }
+    }
+    ctx.keepalive_sync_dirty.store(true, Ordering::SeqCst);
+
+    let msg = if next {
+        "Auto-Ping VPS: AKTIF"
+    } else {
+        "Auto-Ping VPS: NONAKTIF"
+    };
+    append_log(&ctx.project_root, msg);
+    record_event(ctx, msg);
+    persisted
+}
+
 fn handle_command_id(hwnd: HWND, ctx: &Arc<AppContext>, cmd_id: usize) {
     match cmd_id {
         IDM_SHOW_PANEL => show_panel_for_ctx(hwnd, ctx, false),
         IDM_CHECK_NOW => {
             ctx.checking_vps.store(true, Ordering::SeqCst);
             ctx.force_poll.store(true, Ordering::SeqCst);
+            panel::refresh_if_visible();
+        }
+        IDM_PING_VPS => {
+            let _ = request_vps_ping(ctx);
             panel::refresh_if_visible();
         }
         IDM_RESUME_VPS => {
@@ -1633,6 +1921,11 @@ fn handle_command_id(hwnd: HWND, ctx: &Arc<AppContext>, cmd_id: usize) {
         IDM_TOGGLE_AUTO_RESUME => {
             let next = !ctx.auto_resume_enabled.load(Ordering::SeqCst);
             let _ = apply_auto_resume_mode(ctx, next);
+            panel::refresh_if_visible();
+        }
+        IDM_TOGGLE_KEEPALIVE => {
+            let next = !ctx.keepalive_enabled.load(Ordering::SeqCst);
+            let _ = apply_keepalive_mode(ctx, next);
             panel::refresh_if_visible();
         }
         IDM_TOGGLE_AUTOSTART => {
@@ -1822,6 +2115,40 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
         return;
     }
 
+    if cmd == "PING_VPS" {
+        let action = request_vps_ping(ctx);
+        if !hwnd.0.is_null() {
+            unsafe {
+                let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+            }
+        }
+        let resp = format!("{{\"ok\":true,\"action\":\"{action}\"}}\n");
+        let _ = stream.write_all(resp.as_bytes());
+        let _ = stream.flush();
+        return;
+    }
+
+    if cmd == "TOGGLE_KEEPALIVE" || cmd == "SET_KEEPALIVE_ON" || cmd == "SET_KEEPALIVE_OFF" {
+        let next = match cmd.as_str() {
+            "SET_KEEPALIVE_ON" => true,
+            "SET_KEEPALIVE_OFF" => false,
+            _ => !ctx.keepalive_enabled.load(Ordering::SeqCst),
+        };
+        let _ = apply_keepalive_mode(ctx, next);
+        if !hwnd.0.is_null() {
+            unsafe {
+                let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+            }
+        }
+        let resp = format!(
+            "{{\"ok\":true,\"keepaliveEnabled\":{}}}\n",
+            if next { "true" } else { "false" }
+        );
+        let _ = stream.write_all(resp.as_bytes());
+        let _ = stream.flush();
+        return;
+    }
+
     if cmd == "TOGGLE_AUTO_RESUME" || cmd == "SET_AUTO_RESUME_ON" || cmd == "SET_AUTO_RESUME_OFF" {
         let next = match cmd.as_str() {
             "SET_AUTO_RESUME_ON" => true,
@@ -1854,18 +2181,40 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
         return;
     }
 
-    let (avail, raw_st, last_ts, cooldown_secs) = match ctx.shared.lock() {
-        Ok(g) => (
-            g.vps_availability.as_str(),
-            g.raw_state.clone(),
-            g.last_check_epoch,
-            g.auto_resume_cooldown_until
-                .and_then(|u| u.checked_duration_since(Instant::now()))
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
-        ),
-        Err(_) => ("unknown", "lock_err".to_string(), 0, 0),
-    };
+    let (avail, raw_st, last_ts, cooldown_secs, ka_snap, auto_suspend_secs, run_started_at_epoch) =
+        match ctx.shared.lock() {
+            Ok(g) => (
+                g.vps_availability.as_str(),
+                g.raw_state.clone(),
+                g.last_check_epoch,
+                g.auto_resume_cooldown_until
+                    .and_then(|u| u.checked_duration_since(Instant::now()))
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+                g.keepalive_state.clone(),
+                g.auto_suspend_secs,
+                g.run_started_at_epoch,
+            ),
+            Err(_) => (
+                "unknown",
+                "lock_err".to_string(),
+                0,
+                0,
+                keepalive::KeepaliveState::default_with_enabled(
+                    ctx.keepalive_enabled.load(Ordering::SeqCst),
+                ),
+                None,
+                None,
+            ),
+        };
+    let kv = keepalive::compute_keepalive_view(
+        &ka_snap,
+        &ctx.keepalive_cfg,
+        avail == "running",
+        auto_suspend_secs,
+        run_started_at_epoch,
+        now_epoch_secs(),
+    );
     let cpid = ctx.child_pid.load(Ordering::SeqCst);
     let (app_priv_kb, app_ws_kb) = query_process_memory_kb(std::process::id());
     let (node_priv_kb, _) = if cpid > 0 {
@@ -1875,9 +2224,19 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
     };
     let tray_active = ctx.tray_registered.load(Ordering::SeqCst);
     let resuming_vps = ctx.resuming_vps.load(Ordering::SeqCst);
+    let pinging_vps = ctx.pinging_vps.load(Ordering::SeqCst);
     let auto_resume_enabled = ctx.auto_resume_enabled.load(Ordering::SeqCst);
+    let pause_json = match kv.pause_in_secs {
+        Some(v) => v.to_string(),
+        None => "null".to_string(),
+    };
+    let lease_json = match kv.lease_remaining_secs {
+        Some(v) => v.to_string(),
+        None => "null".to_string(),
+    };
     let resp = format!(
-        "{{\"ok\":true,\"appName\":\"Baileys Backup\",\"watchdogPid\":{},\"vpsAvailability\":\"{}\",\"vpsState\":\"{}\",\"failoverActive\":{},\"childNodePid\":{},\"lastCheckEpoch\":{},\"uptimeSecs\":{},\"trayActive\":{},\"resumingVps\":{},\"autoResumeEnabled\":{},\"autoResumeCooldownSecs\":{},\"appPrivateKb\":{},\"appWorkingKb\":{},\"nodePrivateKb\":{},\"totalChecks\":{},\"failoverCount\":{}}}\n",
+        "{{\"ok\":true,\"appName\":\"Baileys Backup\",\"appVersion\":\"{}\",\"watchdogPid\":{},\"vpsAvailability\":\"{}\",\"vpsState\":\"{}\",\"failoverActive\":{},\"childNodePid\":{},\"lastCheckEpoch\":{},\"uptimeSecs\":{},\"trayActive\":{},\"resumingVps\":{},\"pingingVps\":{},\"autoResumeEnabled\":{},\"autoResumeCooldownSecs\":{},\"keepaliveEnabled\":{},\"keepalivePingCount\":{},\"keepaliveFailCount\":{},\"keepalivePauseInSecs\":{},\"keepaliveLeaseRemainingSecs\":{},\"appPrivateKb\":{},\"appWorkingKb\":{},\"nodePrivateKb\":{},\"totalChecks\":{},\"failoverCount\":{}}}\n",
+        env!("CARGO_PKG_VERSION"),
         std::process::id(),
         avail,
         raw_st,
@@ -1887,8 +2246,14 @@ fn handle_control_client(mut stream: TcpStream, ctx: &Arc<AppContext>) {
         ctx.started_at.elapsed().as_secs(),
         if tray_active { "true" } else { "false" },
         if resuming_vps { "true" } else { "false" },
+        if pinging_vps { "true" } else { "false" },
         if auto_resume_enabled { "true" } else { "false" },
         cooldown_secs,
+        if kv.enabled { "true" } else { "false" },
+        ka_snap.ping_count,
+        ka_snap.fail_count,
+        pause_json,
+        lease_json,
         app_priv_kb,
         app_ws_kb,
         node_priv_kb,
@@ -1984,6 +2349,201 @@ fn execute_vps_resume_attempt(
         }
     }
     ctx.resuming_vps.store(false, Ordering::SeqCst);
+    ctx.cloud_sync_dirty.store(true, Ordering::SeqCst);
+    let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+    if !hwnd.0.is_null() {
+        unsafe {
+            let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
+fn execute_keepalive_release(ctx: &Arc<AppContext>) {
+    if let Some((api_base, api_key, machine_id)) = resolve_instabox_creds(&ctx.project_root) {
+        let (ok, status) =
+            keepalive::release_vps_activity_lease(curl_bin_path(), &api_base, &api_key, &machine_id);
+        let msg = if ok {
+            format!("Lease aktivitas VPS dilepas (DELETE HTTP {status})")
+        } else {
+            format!("Gagal melepas lease aktivitas VPS (HTTP {status})")
+        };
+        append_log(&ctx.project_root, &msg);
+        record_event(ctx, &msg);
+    }
+
+    if let Some((supabase_url, supabase_key)) = resolve_supabase_creds(&ctx.project_root) {
+        if let Ok(g) = ctx.shared.lock() {
+            let st_copy = g.keepalive_state.clone();
+            drop(g);
+            let _ = keepalive::push_keepalive_state(
+                curl_bin_path(),
+                &supabase_url,
+                &supabase_key,
+                &st_copy,
+                "5",
+            );
+            ctx.keepalive_sync_dirty.store(false, Ordering::SeqCst);
+        }
+    }
+}
+
+fn execute_keepalive_ping(ctx: &Arc<AppContext>, force: bool, ignore_enabled: bool) {
+    let creds = resolve_instabox_creds(&ctx.project_root);
+    ctx.instabox_configured
+        .store(creds.is_some(), Ordering::SeqCst);
+
+    let (avail, run_started_epoch, live_win, ka_snapshot) = match ctx.shared.lock() {
+        Ok(g) => (
+            g.vps_availability,
+            g.run_started_at_epoch,
+            g.auto_suspend_secs,
+            g.keepalive_state.clone(),
+        ),
+        Err(_) => (
+            VpsAvailability::Unknown,
+            None,
+            None,
+            keepalive::KeepaliveState::default_with_enabled(ctx.keepalive_cfg.default_enabled),
+        ),
+    };
+
+    let now_secs = now_epoch_secs();
+    let should_run = avail == VpsAvailability::Running
+        && creds.is_some()
+        && (ka_snapshot.enabled || ignore_enabled)
+        && (force
+            || keepalive::is_keepalive_due(
+                &ka_snapshot,
+                true,
+                run_started_epoch,
+                ctx.keepalive_cfg.interval_secs,
+                now_secs,
+            ));
+
+    if should_run {
+        if let Some((api_base, api_key, machine_id)) = creds {
+            let outcome = keepalive::renew_vps_activity_lease(
+                curl_bin_path(),
+                &api_base,
+                &api_key,
+                &machine_id,
+                ctx.keepalive_cfg.lease_ttl_secs,
+            );
+            let end_secs = now_epoch_secs();
+            let mut push_state: Option<keepalive::KeepaliveState> = None;
+
+            match outcome {
+                keepalive::LeaseRenewOutcome::Ok {
+                    status,
+                    latency_ms,
+                    lease_expires_at,
+                } => {
+                    if let Ok(mut g) = ctx.shared.lock() {
+                        if let Some(w) = live_win.filter(|&w| w > 0) {
+                            g.keepalive_state.idle_window_secs = Some(w);
+                            g.keepalive_state.idle_window_source = "live".to_string();
+                        }
+                        g.keepalive_state.last_ping_at = Some(end_secs);
+                        g.keepalive_state.last_attempt_at = Some(end_secs);
+                        g.keepalive_state.last_ping_ok = true;
+                        g.keepalive_state.last_ping_latency_ms = Some(latency_ms);
+                        g.keepalive_state.last_ping_source = Some("desktop".to_string());
+                        g.keepalive_state.ping_count =
+                            g.keepalive_state.ping_count.saturating_add(1);
+                        g.keepalive_state.consecutive_failures = 0;
+                        g.keepalive_state.last_error = None;
+                        g.keepalive_state.cooldown_until = None;
+                        g.keepalive_state.next_ping_at =
+                            Some(end_secs.saturating_add(ctx.keepalive_cfg.interval_secs));
+                        g.keepalive_state.lease_expires_at = Some(
+                            lease_expires_at.unwrap_or_else(|| {
+                                end_secs.saturating_add(ctx.keepalive_cfg.lease_ttl_secs)
+                            }),
+                        );
+                        g.keepalive_state.updated_at = Some(end_secs);
+                        push_state = Some(g.keepalive_state.clone());
+                    }
+                    let ev_msg = if force {
+                        format!("Ping VPS manual terkirim (HTTP {status}, {latency_ms} ms)")
+                    } else {
+                        format!("Auto-Ping VPS terkirim (HTTP {status}, {latency_ms} ms)")
+                    };
+                    append_log(&ctx.project_root, &ev_msg);
+                    record_event(ctx, &ev_msg);
+                    if force {
+                        queue_balloon(
+                            ctx,
+                            "Baileys Backup - Ping VPS Berhasil",
+                            &ev_msg,
+                            false,
+                        );
+                    }
+                }
+                keepalive::LeaseRenewOutcome::NotRunning { status } => {
+                    let ev_msg = format!(
+                        "Ping VPS dilewati: mesin tidak sedang running (HTTP {status})"
+                    );
+                    append_log(&ctx.project_root, &ev_msg);
+                    record_event(ctx, &ev_msg);
+                    ctx.force_poll.store(true, Ordering::SeqCst);
+                }
+                keepalive::LeaseRenewOutcome::Err {
+                    status,
+                    latency_ms,
+                    message,
+                    retry_after_secs,
+                } => {
+                    if let Ok(mut g) = ctx.shared.lock() {
+                        if let Some(w) = live_win.filter(|&w| w > 0) {
+                            g.keepalive_state.idle_window_secs = Some(w);
+                            g.keepalive_state.idle_window_source = "live".to_string();
+                        }
+                        let backoff = keepalive::backoff_secs_for_failure(
+                            status,
+                            g.keepalive_state.consecutive_failures,
+                            retry_after_secs,
+                        );
+                        g.keepalive_state.last_attempt_at = Some(end_secs);
+                        g.keepalive_state.last_ping_ok = false;
+                        g.keepalive_state.last_ping_latency_ms = Some(latency_ms);
+                        g.keepalive_state.last_ping_source = Some("desktop".to_string());
+                        g.keepalive_state.fail_count =
+                            g.keepalive_state.fail_count.saturating_add(1);
+                        g.keepalive_state.consecutive_failures =
+                            g.keepalive_state.consecutive_failures.saturating_add(1);
+                        g.keepalive_state.last_error = Some(message.clone());
+                        g.keepalive_state.cooldown_until = Some(end_secs.saturating_add(backoff));
+                        g.keepalive_state.next_ping_at = Some(end_secs.saturating_add(backoff));
+                        g.keepalive_state.updated_at = Some(end_secs);
+                        push_state = Some(g.keepalive_state.clone());
+                    }
+                    let ev_msg = format!("Ping VPS gagal: {message}");
+                    append_log(&ctx.project_root, &ev_msg);
+                    record_event(ctx, &ev_msg);
+                    if force {
+                        queue_balloon(ctx, "Baileys Backup - Ping VPS Gagal", &message, true);
+                    }
+                }
+            }
+
+            if let Some(st_to_push) = push_state {
+                ctx.keepalive_sync_dirty.store(true, Ordering::SeqCst);
+                if let Some((supabase_url, supabase_key)) = resolve_supabase_creds(&ctx.project_root) {
+                    if keepalive::push_keepalive_state(
+                        curl_bin_path(),
+                        &supabase_url,
+                        &supabase_key,
+                        &st_to_push,
+                        "5",
+                    ) {
+                        ctx.keepalive_sync_dirty.store(false, Ordering::SeqCst);
+                    }
+                }
+            }
+        }
+    }
+
+    ctx.pinging_vps.store(false, Ordering::SeqCst);
     ctx.cloud_sync_dirty.store(true, Ordering::SeqCst);
     let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
     if !hwnd.0.is_null() {
@@ -2310,6 +2870,87 @@ fn sync_with_cloud(
                 }
             }
         }
+
+        // Pull & merge Auto-Ping keepalive state (__vps_keepalive_state.json)
+        let ka_dirty = ctx.keepalive_sync_dirty.swap(false, Ordering::SeqCst);
+        let live_win = ctx
+            .shared
+            .lock()
+            .ok()
+            .and_then(|g| g.auto_suspend_secs);
+        if let Some(remote_ka) = keepalive::pull_keepalive_state(
+            curl_bin_path(),
+            &supabase_url,
+            &supabase_key,
+            ctx.keepalive_cfg.default_enabled,
+        ) {
+            let (merged_ka, remote_toggled, local_needs_push, prev_enabled) =
+                match ctx.shared.lock() {
+                    Ok(mut g) => {
+                        let prev_en = g.keepalive_state.enabled;
+                        let (m, rt, lp) = keepalive::merge_keepalive_state(
+                            &g.keepalive_state,
+                            &remote_ka,
+                            live_win,
+                        );
+                        g.keepalive_state = m.clone();
+                        (m, rt, lp, prev_en)
+                    }
+                    Err(_) => (remote_ka.clone(), false, false, remote_ka.enabled),
+                };
+
+            if remote_toggled || merged_ka.enabled != ctx.keepalive_enabled.load(Ordering::SeqCst) {
+                let _ = set_keepalive_enabled_reg(merged_ka.enabled);
+                let _ = save_keepalive_updated_at_secs(
+                    merged_ka.enabled_updated_at.unwrap_or_else(now_epoch_secs),
+                );
+                ctx.keepalive_enabled.store(merged_ka.enabled, Ordering::SeqCst);
+                if !merged_ka.enabled {
+                    ctx.keepalive_auto_ping_requested.store(false, Ordering::SeqCst);
+                }
+                if remote_toggled || merged_ka.enabled != prev_enabled {
+                    let msg = if merged_ka.enabled {
+                        "Auto-Ping VPS (Sinkron Web): AKTIF"
+                    } else {
+                        "Auto-Ping VPS (Sinkron Web): NONAKTIF"
+                    };
+                    append_log(&ctx.project_root, msg);
+                    record_event(ctx, msg);
+                }
+                let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+                if !hwnd.0.is_null() {
+                    unsafe {
+                        let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+                    }
+                }
+            }
+
+            if ka_dirty || local_needs_push {
+                if !keepalive::push_keepalive_state(
+                    curl_bin_path(),
+                    &supabase_url,
+                    &supabase_key,
+                    &merged_ka,
+                    "5",
+                ) {
+                    ctx.keepalive_sync_dirty.store(true, Ordering::SeqCst);
+                }
+            }
+        } else if ka_dirty {
+            if let Ok(g) = ctx.shared.lock() {
+                let st_copy = g.keepalive_state.clone();
+                drop(g);
+                if !keepalive::push_keepalive_state(
+                    curl_bin_path(),
+                    &supabase_url,
+                    &supabase_key,
+                    &st_copy,
+                    "5",
+                ) {
+                    ctx.keepalive_sync_dirty.store(true, Ordering::SeqCst);
+                }
+            }
+        }
     }
 
     let cpid = if stopping {
@@ -2413,6 +3054,26 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
             }
         }
 
+        if ctx.keepalive_release_requested.swap(false, Ordering::SeqCst) {
+            execute_keepalive_release(&ctx);
+        }
+
+        if ctx.ping_requested.swap(false, Ordering::SeqCst) {
+            execute_keepalive_ping(&ctx, true, true);
+        }
+
+        if ctx.keepalive_auto_ping_requested.swap(false, Ordering::SeqCst)
+            && !ctx.pinging_vps.swap(true, Ordering::SeqCst)
+        {
+            let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+            if !hwnd.0.is_null() {
+                unsafe {
+                    let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+                }
+            }
+            execute_keepalive_ping(&ctx, false, false);
+        }
+
         if ctx.resume_requested.swap(false, Ordering::SeqCst) {
             execute_vps_resume_attempt(
                 &ctx,
@@ -2426,7 +3087,10 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
 
         let manual_check = ctx.force_poll.swap(false, Ordering::SeqCst);
         if manual_check || Instant::now() >= next_poll {
-            let (avail, raw_st) = query_vps_state(&ctx.project_root);
+            let has_creds = resolve_instabox_creds(&ctx.project_root).is_some();
+            ctx.instabox_configured.store(has_creds, Ordering::SeqCst);
+            let (avail, snap) = query_vps_snapshot(&ctx.project_root);
+            let raw_st = snap.raw_state.clone();
             ctx.total_checks.fetch_add(1, Ordering::SeqCst);
             ctx.checking_vps.store(false, Ordering::SeqCst);
 
@@ -2443,19 +3107,65 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
                         &ctx.project_root,
                         &format!("Status VPS: {} ({}) -> {}", g.raw_state, avail.as_str(), raw_st),
                     );
+                    g.vps_availability = avail;
+                    g.raw_state = raw_st.clone();
+                    g.last_check_epoch = now_epoch_secs();
+                    g.last_check_instant = Some(Instant::now());
+                    if snap.auto_suspend_secs.is_some() {
+                        g.auto_suspend_secs = snap.auto_suspend_secs;
+                    }
+                    if snap.run_started_at_epoch.is_some() {
+                        g.run_started_at_epoch = snap.run_started_at_epoch;
+                    }
+                    if snap.max_run_minutes.is_some() {
+                        g.max_run_minutes = snap.max_run_minutes;
+                    }
+                    if let Some(w) = snap.auto_suspend_secs {
+                        g.keepalive_state.idle_window_secs = Some(w);
+                        g.keepalive_state.idle_window_source = "live".to_string();
+                    }
+                    if avail != VpsAvailability::Running {
+                        if let Some(cd) = snap.cooldown_until_epoch {
+                            let now_s = now_epoch_secs();
+                            if cd > now_s {
+                                let until = Instant::now() + Duration::from_secs(cd - now_s);
+                                if g.auto_resume_cooldown_until.map_or(true, |c| until > c) {
+                                    g.auto_resume_cooldown_until = Some(until);
+                                }
+                            }
+                        }
+                    }
                     drop(g);
                     record_event(&ctx, &msg);
-                    if let Ok(mut g2) = ctx.shared.lock() {
-                        g2.vps_availability = avail;
-                        g2.raw_state = raw_st.clone();
-                        g2.last_check_epoch = now_epoch_secs();
-                        g2.last_check_instant = Some(Instant::now());
-                    }
                 } else {
                     g.vps_availability = avail;
                     g.raw_state = raw_st.clone();
                     g.last_check_epoch = now_epoch_secs();
                     g.last_check_instant = Some(Instant::now());
+                    if snap.auto_suspend_secs.is_some() {
+                        g.auto_suspend_secs = snap.auto_suspend_secs;
+                    }
+                    if snap.run_started_at_epoch.is_some() {
+                        g.run_started_at_epoch = snap.run_started_at_epoch;
+                    }
+                    if snap.max_run_minutes.is_some() {
+                        g.max_run_minutes = snap.max_run_minutes;
+                    }
+                    if let Some(w) = snap.auto_suspend_secs {
+                        g.keepalive_state.idle_window_secs = Some(w);
+                        g.keepalive_state.idle_window_source = "live".to_string();
+                    }
+                    if avail != VpsAvailability::Running {
+                        if let Some(cd) = snap.cooldown_until_epoch {
+                            let now_s = now_epoch_secs();
+                            if cd > now_s {
+                                let until = Instant::now() + Duration::from_secs(cd - now_s);
+                                if g.auto_resume_cooldown_until.map_or(true, |c| until > c) {
+                                    g.auto_resume_cooldown_until = Some(until);
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -2571,10 +3281,43 @@ fn run_worker_loop(listener: TcpListener, ctx: Arc<AppContext>) {
         }
 
         let sync_dirty = ctx.cloud_sync_dirty.swap(false, Ordering::SeqCst);
-        if sync_dirty || last_cloud_sync.elapsed() >= Duration::from_secs(CLOUD_SYNC_INTERVAL_SECS)
+        let ka_sync_dirty = ctx.keepalive_sync_dirty.load(Ordering::SeqCst);
+        if sync_dirty
+            || ka_sync_dirty
+            || last_cloud_sync.elapsed() >= Duration::from_secs(CLOUD_SYNC_INTERVAL_SECS)
         {
             sync_with_cloud(&ctx, &mut auto_resume_not_before, false);
             last_cloud_sync = Instant::now();
+        }
+
+        // Run automatic keepalive ping AFTER cloud hydration so Cron/Web recent pings aren't duplicated
+        if ctx.keepalive_enabled.load(Ordering::SeqCst)
+            && ctx.instabox_configured.load(Ordering::SeqCst)
+            && !ctx.pinging_vps.load(Ordering::SeqCst)
+        {
+            let due_now = ctx
+                .shared
+                .lock()
+                .map(|g| {
+                    g.vps_availability == VpsAvailability::Running
+                        && keepalive::is_keepalive_due(
+                            &g.keepalive_state,
+                            true,
+                            g.run_started_at_epoch,
+                            ctx.keepalive_cfg.interval_secs,
+                            now_epoch_secs(),
+                        )
+                })
+                .unwrap_or(false);
+            if due_now && !ctx.pinging_vps.swap(true, Ordering::SeqCst) {
+                let hwnd = HWND(ctx.hwnd_raw.load(Ordering::SeqCst) as *mut core::ffi::c_void);
+                if !hwnd.0.is_null() {
+                    unsafe {
+                        let _ = PostMessageW(hwnd, WM_APP_UPDATE_TRAY, WPARAM(0), LPARAM(0));
+                    }
+                }
+                execute_keepalive_ping(&ctx, false, false);
+            }
         }
 
         thread::sleep(Duration::from_millis(180));
@@ -2627,16 +3370,34 @@ fn main() {
     };
 
     let taskbar_created_msg = unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) };
+    let env_map = load_env_file(&project_root);
+    let keepalive_cfg = keepalive::KeepaliveConfig::from_env_map(&env_map);
+    let has_instabox_creds = resolve_instabox_creds(&project_root).is_some();
+    let initial_ka_enabled = read_keepalive_enabled_reg().unwrap_or(keepalive_cfg.default_enabled);
+    let initial_ka_updated_secs = read_keepalive_updated_at_secs();
+    let mut initial_ka_state = keepalive::KeepaliveState::default_with_enabled(initial_ka_enabled);
+    if initial_ka_updated_secs > 0 {
+        initial_ka_state.enabled_updated_at = Some(initial_ka_updated_secs);
+        initial_ka_state.enabled_updated_by = Some("desktop".to_string());
+    }
 
     let ctx = Arc::new(AppContext {
         project_root: project_root.clone(),
         running: Arc::new(AtomicBool::new(true)),
+        instabox_configured: Arc::new(AtomicBool::new(has_instabox_creds)),
         force_poll: Arc::new(AtomicBool::new(false)),
         checking_vps: Arc::new(AtomicBool::new(false)),
         resume_requested: Arc::new(AtomicBool::new(false)),
         resuming_vps: Arc::new(AtomicBool::new(false)),
         auto_resume_enabled: Arc::new(AtomicBool::new(is_auto_resume_enabled())),
         auto_resume_updated_at_ms: Arc::new(AtomicU64::new(read_auto_resume_updated_at_ms())),
+        keepalive_cfg,
+        keepalive_enabled: Arc::new(AtomicBool::new(initial_ka_enabled)),
+        ping_requested: Arc::new(AtomicBool::new(false)),
+        pinging_vps: Arc::new(AtomicBool::new(false)),
+        keepalive_release_requested: Arc::new(AtomicBool::new(false)),
+        keepalive_auto_ping_requested: Arc::new(AtomicBool::new(false)),
+        keepalive_sync_dirty: Arc::new(AtomicBool::new(false)),
         cloud_sync_dirty: Arc::new(AtomicBool::new(true)),
         tray_registered: Arc::new(AtomicBool::new(false)),
         tray_retry_left: AtomicU8::new(15),
@@ -2649,6 +3410,10 @@ fn main() {
             last_check_epoch: 0,
             last_check_instant: None,
             auto_resume_cooldown_until: None,
+            auto_suspend_secs: None,
+            run_started_at_epoch: None,
+            max_run_minutes: None,
+            keepalive_state: initial_ka_state,
             balloon_title: String::new(),
             balloon_body: String::new(),
             balloon_is_warning: false,
@@ -2952,7 +3717,7 @@ mod tests {
             "VPS: RUNNING -> SUSPENDED".to_string(),
         ];
         let payload = DesktopHeartbeatPayload {
-            app_version: "1.3.0",
+            app_version: "1.4.0",
             app_pid: 8100,
             child_node_pid: 4440,
             failover_active: true,
@@ -2975,7 +3740,7 @@ mod tests {
             recent_events: &events,
         };
         let out = format_desktop_heartbeat_json(&payload);
-        assert!(out.contains("\"appVersion\":\"1.3.0\""));
+        assert!(out.contains("\"appVersion\":\"1.4.0\""));
         assert!(out.contains("\"failoverActive\":true"));
         assert!(out.contains("\"childNodePid\":4440"));
         assert!(out.contains("\"cooldownUntilEpoch\":1732200400"));

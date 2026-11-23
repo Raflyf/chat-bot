@@ -337,6 +337,13 @@ test('11. normalizeKeepaliveState menjaga enabled_updated_by & last_ping_latency
     last_ping_latency_ms: 0,
   });
   assert.equal(zeroMs.last_ping_latency_ms, 0);
+
+  const desktopSrc = normalizeKeepaliveState({
+    enabled_updated_by: 'desktop',
+    last_ping_source: 'desktop',
+  });
+  assert.equal(desktopSrc.enabled_updated_by, 'desktop');
+  assert.equal(desktopSrc.last_ping_source, 'desktop');
 });
 
 test('12. starting/resuming dilewati & HTTP 409 PUT lease tidak menaikkan fail_count/cooldown', async () => {

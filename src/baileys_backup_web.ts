@@ -474,7 +474,7 @@ function normalizeDesktopState(raw: unknown): BaileysBackupDesktopState | null {
   const vpsState = typeof obj.vpsState === 'string' && obj.vpsState.trim() ? obj.vpsState.trim() : 'unknown';
 
   return {
-    appVersion: typeof obj.appVersion === 'string' && obj.appVersion.trim() ? obj.appVersion.trim() : '1.3.0',
+    appVersion: typeof obj.appVersion === 'string' && obj.appVersion.trim() ? obj.appVersion.trim() : '1.4.0',
     appPid: nonNegInt(obj.appPid),
     childNodePid: nonNegInt(obj.childNodePid),
     failoverActive: Boolean(obj.failoverActive) || nonNegInt(obj.childNodePid) > 0,
@@ -994,7 +994,7 @@ export function buildBaileysBackupView(
 
   const desktopView: BaileysBackupDesktopView | null = desktop
     ? {
-        appVersion: desktop.appVersion || '1.3.0',
+        appVersion: desktop.appVersion || '1.4.0',
         appPid: desktop.appPid || 0,
         childNodePid: desktopOnline ? (desktop.childNodePid || 0) : 0,
         failoverActive: desktopOnline ? Boolean(desktop.failoverActive) : false,

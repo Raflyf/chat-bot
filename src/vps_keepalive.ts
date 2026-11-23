@@ -33,7 +33,7 @@ const ERROR_MAX_LEN = 160;
 
 const RUNNABLE_STATES = new Set(['running']);
 
-export type KeepaliveSource = 'web' | 'cron' | 'vps';
+export type KeepaliveSource = 'web' | 'cron' | 'vps' | 'desktop';
 
 export interface VpsKeepaliveState {
   enabled: boolean;
@@ -183,10 +183,15 @@ export function normalizeKeepaliveState(raw: unknown): VpsKeepaliveState {
   if (!obj) return def;
   const sourceRaw = String(obj.enabled_updated_by ?? '');
   const source: KeepaliveSource | null =
-    sourceRaw === 'web' || sourceRaw === 'cron' || sourceRaw === 'vps' ? sourceRaw : null;
+    sourceRaw === 'web' || sourceRaw === 'cron' || sourceRaw === 'vps' || sourceRaw === 'desktop'
+      ? sourceRaw
+      : null;
   const pingSourceRaw = String(obj.last_ping_source ?? '');
   const pingSource: KeepaliveSource | null =
-    pingSourceRaw === 'web' || pingSourceRaw === 'cron' || pingSourceRaw === 'vps'
+    pingSourceRaw === 'web' ||
+    pingSourceRaw === 'cron' ||
+    pingSourceRaw === 'vps' ||
+    pingSourceRaw === 'desktop'
       ? pingSourceRaw
       : null;
   const windowSrcRaw = String(obj.idle_window_source ?? '');

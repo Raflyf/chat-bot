@@ -49,8 +49,8 @@ use windows::{
 const PANEL_CLASS: PCWSTR = w!("BaileysBackupStatsPanel");
 const PANEL_REFRESH_TIMER_ID: usize = 701;
 const WM_MOUSELEAVE_MSG: u32 = 0x02A3;
-const LOGICAL_WIDTH: i32 = 396;
-const LOGICAL_HEIGHT: i32 = 588;
+const LOGICAL_WIDTH: i32 = 424;
+const LOGICAL_HEIGHT: i32 = 668;
 
 pub const CMD_CHECK_NOW: usize = 1002;
 pub const CMD_OPEN_LOG: usize = 1003;
@@ -60,16 +60,21 @@ pub const CMD_TOGGLE_AUTOSTART: usize = 1006;
 pub const CMD_RESUME_VPS: usize = 1007;
 pub const CMD_TOGGLE_AUTO_RESUME: usize = 1008;
 pub const CMD_EXIT: usize = 1009;
+pub const CMD_PING_VPS: usize = 1010;
+pub const CMD_TOGGLE_KEEPALIVE: usize = 1011;
 
 #[derive(Clone, Debug)]
 pub struct PanelStats {
     pub app_pid: u32,
     pub child_node_pid: u32,
+    pub instabox_configured: bool,
     pub vps_state: String,
     pub vps_availability: &'static str,
+    pub runtime_remaining_mins: Option<u64>,
     pub failover_active: bool,
     pub checking_vps: bool,
     pub resuming_vps: bool,
+    pub pinging_vps: bool,
     pub app_private_kb: u64,
     pub app_working_kb: u64,
     pub node_private_kb: u64,
@@ -81,6 +86,22 @@ pub struct PanelStats {
     pub auto_start_enabled: bool,
     pub auto_resume_enabled: bool,
     pub auto_resume_cooldown_secs: Option<u64>,
+    pub keepalive_enabled: bool,
+    pub keepalive_ping_count: u64,
+    pub keepalive_fail_count: u64,
+    pub keepalive_consecutive_failures: u64,
+    pub keepalive_last_error: Option<String>,
+    pub keepalive_last_ping_latency_ms: Option<u64>,
+    pub keepalive_last_ping_source: Option<String>,
+    pub keepalive_interval_secs: u64,
+    pub keepalive_lease_ttl_secs: u64,
+    pub keepalive_idle_window_secs: u64,
+    pub keepalive_lease_remaining_secs: Option<u64>,
+    pub keepalive_idle_secs: Option<u64>,
+    pub keepalive_pause_in_secs: Option<u64>,
+    pub keepalive_next_ping_in_secs: Option<u64>,
+    pub keepalive_idle_bar_pct: u8,
+    pub keepalive_at_risk: bool,
     pub tray_registered: bool,
     pub recent_events: Vec<String>,
 }
@@ -90,6 +111,8 @@ pub enum HitTarget {
     Close,
     ToggleAutoStart,
     ToggleAutoResume,
+    ToggleKeepalive,
+    PingVps,
     ResumeVps,
     CheckNow,
     OpenWatchdogLog,
@@ -111,7 +134,9 @@ struct Layout {
     row_config: RECT,
     toggle_pill: RECT,
     toggle_auto_resume_pill: RECT,
+    toggle_keepalive_pill: RECT,
     card_logs: RECT,
+    btn_ping: RECT,
     btn_resume: RECT,
     btn_check: RECT,
     btn_log_app: RECT,
@@ -145,17 +170,17 @@ fn pt_in_rect(rc: RECT, x: i32, y: i32) -> bool {
 fn compute_layout(dpi: i32) -> Layout {
     let w = sc(LOGICAL_WIDTH, dpi);
     let h = sc(LOGICAL_HEIGHT, dpi);
-    let pad = sc(16, dpi);
-    let gap = sc(10, dpi);
+    let pad = sc(14, dpi);
+    let gap = sc(8, dpi);
     let inner_w = w - pad * 2;
 
     let close_sz = sc(28, dpi);
     let close_btn = mk_rect(w - pad - close_sz, sc(14, dpi), w - pad, sc(14, dpi) + close_sz);
 
     // 2x2 KPI grid
-    let grid_top = sc(68, dpi);
+    let grid_top = sc(63, dpi);
     let card_w = (inner_w - gap) / 2;
-    let card_h = sc(82, dpi);
+    let card_h = sc(74, dpi);
     let row2_top = grid_top + card_h + gap;
 
     let card_vps = mk_rect(pad, grid_top, pad + card_w, grid_top + card_h);
@@ -163,43 +188,54 @@ fn compute_layout(dpi: i32) -> Layout {
     let card_ram = mk_rect(pad, row2_top, pad + card_w, row2_top + card_h);
     let card_stats = mk_rect(pad + card_w + gap, row2_top, w - pad, row2_top + card_h);
 
-    // Config + AutoStart & AutoResume 2-row card
+    // Config card: Row A (Auto-Start) + Row B (Auto-Resume) + Row C (Auto-Ping Keepalive)
     let cfg_top = row2_top + card_h + gap;
-    let cfg_h = sc(98, dpi);
+    let cfg_h = sc(216, dpi);
     let row_config = mk_rect(pad, cfg_top, w - pad, cfg_top + cfg_h);
-    let pill_w = sc(92, dpi);
+    let pill_w = sc(86, dpi);
     let pill_h = sc(24, dpi);
     let pill_right = w - pad - sc(12, dpi);
     let toggle_pill = mk_rect(
         pill_right - pill_w,
-        cfg_top + sc(9, dpi),
+        cfg_top + sc(10, dpi),
         pill_right,
-        cfg_top + sc(9, dpi) + pill_h,
+        cfg_top + sc(10, dpi) + pill_h,
     );
     let toggle_auto_resume_pill = mk_rect(
         pill_right - pill_w,
-        cfg_top + sc(55, dpi),
+        cfg_top + sc(57, dpi),
         pill_right,
-        cfg_top + sc(55, dpi) + pill_h,
+        cfg_top + sc(57, dpi) + pill_h,
+    );
+    let toggle_keepalive_pill = mk_rect(
+        pill_right - pill_w,
+        cfg_top + sc(99, dpi),
+        pill_right,
+        cfg_top + sc(99, dpi) + pill_h,
     );
 
     // Recent events log card
     let logs_top = cfg_top + cfg_h + gap;
-    let logs_h = sc(92, dpi);
+    let logs_h = sc(84, dpi);
     let card_logs = mk_rect(pad, logs_top, w - pad, logs_top + logs_h);
 
-    // Action buttons
-    let btn1_top = logs_top + logs_h + sc(12, dpi);
+    // Action buttons (Row 1: 3 columns — Ping VPS / Resume VPS / Cek Status)
+    let btn1_top = logs_top + logs_h + sc(10, dpi);
     let btn1_h = sc(34, dpi);
-    let col2_gap = sc(8, dpi);
-    let col2_w = (inner_w - col2_gap) / 2;
-    let btn_resume = mk_rect(pad, btn1_top, pad + col2_w, btn1_top + btn1_h);
-    let btn_check = mk_rect(pad + col2_w + col2_gap, btn1_top, w - pad, btn1_top + btn1_h);
-
-    let btn2_top = btn1_top + btn1_h + sc(8, dpi);
-    let btn2_h = sc(30, dpi);
     let col3_gap = sc(8, dpi);
     let col3_w = (inner_w - col3_gap * 2) / 3;
+    let btn_ping = mk_rect(pad, btn1_top, pad + col3_w, btn1_top + btn1_h);
+    let btn_resume = mk_rect(
+        pad + col3_w + col3_gap,
+        btn1_top,
+        pad + col3_w * 2 + col3_gap,
+        btn1_top + btn1_h,
+    );
+    let btn_check = mk_rect(pad + (col3_w + col3_gap) * 2, btn1_top, w - pad, btn1_top + btn1_h);
+
+    // Row 2: Log App / Log Bot WA / Folder Proyek
+    let btn2_top = btn1_top + btn1_h + sc(8, dpi);
+    let btn2_h = sc(30, dpi);
     let btn_log_app = mk_rect(pad, btn2_top, pad + col3_w, btn2_top + btn2_h);
     let btn_log_wa = mk_rect(
         pad + col3_w + col3_gap,
@@ -225,7 +261,9 @@ fn compute_layout(dpi: i32) -> Layout {
         row_config,
         toggle_pill,
         toggle_auto_resume_pill,
+        toggle_keepalive_pill,
         card_logs,
+        btn_ping,
         btn_resume,
         btn_check,
         btn_log_app,
@@ -242,6 +280,10 @@ fn hit_test_layout(layout: &Layout, x: i32, y: i32) -> Option<HitTarget> {
         Some(HitTarget::ToggleAutoStart)
     } else if pt_in_rect(layout.toggle_auto_resume_pill, x, y) {
         Some(HitTarget::ToggleAutoResume)
+    } else if pt_in_rect(layout.toggle_keepalive_pill, x, y) {
+        Some(HitTarget::ToggleKeepalive)
+    } else if pt_in_rect(layout.btn_ping, x, y) {
+        Some(HitTarget::PingVps)
     } else if pt_in_rect(layout.btn_resume, x, y) {
         Some(HitTarget::ResumeVps)
     } else if pt_in_rect(layout.btn_check, x, y) {
@@ -576,7 +618,7 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
     // Divider hairline
     unsafe {
         let div_brush = CreateSolidBrush(c_card_border);
-        let div_rc = mk_rect(pad, sc(59, dpi), w - pad, sc(60, dpi));
+        let div_rc = mk_rect(pad, sc(56, dpi), w - pad, sc(57, dpi));
         FillRect(mem_dc, &div_rc, div_brush);
         let _ = DeleteObject(div_brush);
     }
@@ -589,7 +631,7 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
         draw_text_rect(
             mem_dc,
             title,
-            mk_rect(rc.left + p, rc.top + sc(9, dpi), rc.right - p, rc.top + sc(24, dpi)),
+            mk_rect(rc.left + p, rc.top + sc(8, dpi), rc.right - p, rc.top + sc(22, dpi)),
             c_muted,
             f_label,
             DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
@@ -597,7 +639,7 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
         draw_text_rect(
             mem_dc,
             value,
-            mk_rect(rc.left + p, rc.top + sc(27, dpi), rc.right - p, rc.top + sc(52, dpi)),
+            mk_rect(rc.left + p, rc.top + sc(24, dpi), rc.right - p, rc.top + sc(48, dpi)),
             val_color,
             f_val,
             DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
@@ -605,7 +647,7 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
         draw_text_rect(
             mem_dc,
             sub,
-            mk_rect(rc.left + p, rc.top + sc(54, dpi), rc.right - p, rc.bottom - sc(8, dpi)),
+            mk_rect(rc.left + p, rc.top + sc(50, dpi), rc.right - p, rc.bottom - sc(7, dpi)),
             c_sub,
             f_body,
             DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
@@ -622,10 +664,19 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
             _ => c_muted,
         }
     };
-    let last_check_str = match stats.last_check_age_secs {
-        Some(s) if s < 60 => format!("Cek terakhir: {s}d lalu"),
-        Some(s) => format!("Cek terakhir: {}m lalu", s / 60),
+    let age_str = match stats.last_check_age_secs {
+        Some(s) if s < 60 => format!("Cek {s}d lalu"),
+        Some(s) => format!("Cek {}m lalu", s / 60),
         None => "Belum pernah dicek".to_string(),
+    };
+    let last_check_str = if stats.vps_availability == "running" {
+        if let Some(mins) = stats.runtime_remaining_mins {
+            format!("{age_str} · Sisa ~{mins}m")
+        } else {
+            age_str
+        }
+    } else {
+        age_str
     };
     let vps_val = if stats.resuming_vps {
         "MENGAKTIFKAN...".to_string()
@@ -745,9 +796,9 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
             "Mode Resume VPS Utama",
             mk_rect(
                 layout.row_config.left + p,
-                layout.row_config.top + sc(50, dpi),
+                layout.row_config.top + sc(51, dpi),
                 text_right,
-                layout.row_config.top + sc(70, dpi),
+                layout.row_config.top + sc(69, dpi),
             ),
             c_text,
             f_btn,
@@ -776,9 +827,9 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
             &auto_desc,
             mk_rect(
                 layout.row_config.left + p,
-                layout.row_config.top + sc(70, dpi),
+                layout.row_config.top + sc(69, dpi),
                 text_right,
-                layout.row_config.bottom - sc(6, dpi),
+                layout.row_config.top + sc(88, dpi),
             ),
             auto_desc_color,
             f_body,
@@ -810,6 +861,253 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
             f_badge,
             DT_CENTER.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
         );
+
+        // Second divider before Row C (Auto-Ping Keepalive)
+        let div_brush2 = CreateSolidBrush(c_card_border);
+        let row_div2 = mk_rect(
+            layout.row_config.left + p,
+            layout.row_config.top + sc(93, dpi),
+            layout.row_config.right - p,
+            layout.row_config.top + sc(94, dpi),
+        );
+        FillRect(mem_dc, &row_div2, div_brush2);
+        let _ = DeleteObject(div_brush2);
+
+        // Row C: Auto-Ping VPS (anti idle-pause)
+        let c_left = layout.row_config.left + p;
+        let c_right = layout.row_config.right - p;
+        let ka_title_right = (c_left + sc(98, dpi)).min(layout.toggle_keepalive_pill.left - sc(6, dpi));
+        draw_text_rect(
+            mem_dc,
+            "Auto-Ping VPS",
+            mk_rect(
+                c_left,
+                layout.row_config.top + sc(99, dpi),
+                ka_title_right,
+                layout.row_config.top + sc(123, dpi),
+            ),
+            c_text,
+            f_btn,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+        );
+
+        let (badge_lbl, badge_fg, badge_bg) = if !stats.instabox_configured {
+            ("API belum siap", c_muted, c_btn_bg)
+        } else if !stats.keepalive_enabled {
+            ("Rentan pause", c_amber, c_amber_bg)
+        } else if stats.keepalive_consecutive_failures > 0 {
+            ("Ping gagal", c_danger_text, c_danger_bg)
+        } else if stats.vps_availability != "running" {
+            ("Menunggu VPS", c_muted, c_btn_bg)
+        } else if stats.keepalive_at_risk {
+            ("Berisiko", c_amber, c_amber_bg)
+        } else {
+            ("Terlindungi", c_emerald, c_emerald_bg)
+        };
+        let badge_left = ka_title_right + sc(4, dpi);
+        let badge_right = (badge_left + sc(100, dpi)).min(layout.toggle_keepalive_pill.left - sc(8, dpi));
+        if badge_right > badge_left + sc(40, dpi) {
+            let ka_badge_rc = mk_rect(
+                badge_left,
+                layout.row_config.top + sc(101, dpi),
+                badge_right,
+                layout.row_config.top + sc(121, dpi),
+            );
+            draw_rounded_box(mem_dc, ka_badge_rc, sc(9, dpi), badge_bg, badge_fg);
+            draw_text_rect(
+                mem_dc,
+                badge_lbl,
+                ka_badge_rc,
+                badge_fg,
+                f_badge,
+                DT_CENTER.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+            );
+        }
+
+        let (ka_lbl, ka_fg, ka_bg) = if stats.keepalive_enabled {
+            ("AKTIF", c_emerald, c_emerald_bg)
+        } else {
+            ("NONAKTIF", c_muted, c_btn_bg)
+        };
+        let ka_border = if st.hover == Some(HitTarget::ToggleKeepalive) {
+            c_text
+        } else {
+            ka_fg
+        };
+        draw_rounded_box(
+            mem_dc,
+            layout.toggle_keepalive_pill,
+            sc(10, dpi),
+            ka_bg,
+            ka_border,
+        );
+        draw_text_rect(
+            mem_dc,
+            ka_lbl,
+            layout.toggle_keepalive_pill,
+            ka_fg,
+            f_badge,
+            DT_CENTER.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
+        );
+
+        let win_mins = ((stats.keepalive_idle_window_secs + 30) / 60).max(1);
+        let iv_mins = ((stats.keepalive_interval_secs + 30) / 60).max(1);
+        let ttl_mins = ((stats.keepalive_lease_ttl_secs + 30) / 60).max(1);
+        let cfg_summary = format!(
+            "Jendela idle {win_mins}m · interval {iv_mins}m · lease {ttl_mins}m"
+        );
+        draw_text_rect(
+            mem_dc,
+            &cfg_summary,
+            mk_rect(
+                c_left,
+                layout.row_config.top + sc(124, dpi),
+                c_right,
+                layout.row_config.top + sc(140, dpi),
+            ),
+            c_sub,
+            f_body,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+        );
+
+        let vps_is_running_ka = stats.vps_availability == "running";
+        let next_ping_str = if !stats.keepalive_enabled {
+            "nonaktif".to_string()
+        } else if !vps_is_running_ka {
+            "menunggu VPS".to_string()
+        } else if stats.pinging_vps {
+            "mengirim...".to_string()
+        } else {
+            match stats.keepalive_next_ping_in_secs {
+                Some(0) => "sekarang".to_string(),
+                Some(s) => crate::keepalive::format_duration_compact(s),
+                None => "—".to_string(),
+            }
+        };
+        let lease_str = match stats.keepalive_lease_remaining_secs {
+            Some(s) if s > 0 => crate::keepalive::format_duration_compact(s),
+            Some(_) => "habis".to_string(),
+            None => "tidak ada".to_string(),
+        };
+        let idle_str = match stats.keepalive_idle_secs {
+            Some(s) => crate::keepalive::format_duration_compact(s),
+            None => "—".to_string(),
+        };
+        let pause_str = match stats.keepalive_pause_in_secs {
+            Some(0) => "segera!".to_string(),
+            Some(s) => crate::keepalive::format_duration_compact(s),
+            None => "—".to_string(),
+        };
+        let pause_color = if stats.keepalive_at_risk { c_amber } else { c_muted };
+
+        let meta_w = (c_right - c_left - sc(8, dpi)) / 2;
+        let col1_r = c_left + meta_w;
+        let col2_l = col1_r + sc(8, dpi);
+
+        draw_text_rect(
+            mem_dc,
+            &format!("Ping berikut: {next_ping_str}"),
+            mk_rect(
+                c_left,
+                layout.row_config.top + sc(142, dpi),
+                col1_r,
+                layout.row_config.top + sc(158, dpi),
+            ),
+            c_muted,
+            f_body,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+        );
+        draw_text_rect(
+            mem_dc,
+            &format!("Lease aktif: {lease_str}"),
+            mk_rect(
+                col2_l,
+                layout.row_config.top + sc(142, dpi),
+                c_right,
+                layout.row_config.top + sc(158, dpi),
+            ),
+            c_muted,
+            f_body,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+        );
+        draw_text_rect(
+            mem_dc,
+            &format!("Sejak ping: {idle_str}"),
+            mk_rect(
+                c_left,
+                layout.row_config.top + sc(159, dpi),
+                col1_r,
+                layout.row_config.top + sc(175, dpi),
+            ),
+            c_muted,
+            f_body,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+        );
+        draw_text_rect(
+            mem_dc,
+            &format!("Pause idle: {pause_str}"),
+            mk_rect(
+                col2_l,
+                layout.row_config.top + sc(159, dpi),
+                c_right,
+                layout.row_config.top + sc(175, dpi),
+            ),
+            pause_color,
+            f_body,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+        );
+
+        // Idle progress bar
+        let bar_rc = mk_rect(
+            c_left,
+            layout.row_config.top + sc(180, dpi),
+            c_right,
+            layout.row_config.top + sc(186, dpi),
+        );
+        draw_rounded_box(mem_dc, bar_rc, sc(3, dpi), c_bg, c_card_border);
+        if stats.keepalive_idle_bar_pct > 0 {
+            let total_w = (c_right - c_left).max(1);
+            let fill_w = ((total_w * stats.keepalive_idle_bar_pct as i32) / 100)
+                .max(sc(6, dpi))
+                .min(total_w);
+            let fill_col = if stats.keepalive_idle_bar_pct >= 70 || stats.keepalive_at_risk {
+                c_amber
+            } else {
+                c_emerald
+            };
+            let fill_rc = mk_rect(bar_rc.left, bar_rc.top, bar_rc.left + fill_w, bar_rc.bottom);
+            draw_rounded_box(mem_dc, fill_rc, sc(3, dpi), fill_col, fill_col);
+        }
+
+        // Footer: Ping stats OR last error
+        let (footer_txt, footer_col) = if let Some(ref err_msg) = stats.keepalive_last_error {
+            (format!("Error: {err_msg}"), c_danger_text)
+        } else {
+            let mut s = format!("Ping sukses: {}x", stats.keepalive_ping_count);
+            if stats.keepalive_fail_count > 0 {
+                s.push_str(&format!(" · {} gagal", stats.keepalive_fail_count));
+            }
+            if let Some(ms) = stats.keepalive_last_ping_latency_ms {
+                s.push_str(&format!(" · {ms} ms"));
+            }
+            if let Some(ref src) = stats.keepalive_last_ping_source {
+                s.push_str(&format!(" ({src})"));
+            }
+            (s, c_sub)
+        };
+        draw_text_rect(
+            mem_dc,
+            &footer_txt,
+            mk_rect(
+                c_left,
+                layout.row_config.top + sc(191, dpi),
+                c_right,
+                layout.row_config.bottom - sc(5, dpi),
+            ),
+            footer_col,
+            f_body,
+            DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_END_ELLIPSIS.0,
+        );
     }
 
     // 5. Recent Events Log Card
@@ -821,16 +1119,16 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
             "AKTIVITAS TERAKHIR",
             mk_rect(
                 layout.card_logs.left + p,
-                layout.card_logs.top + sc(8, dpi),
+                layout.card_logs.top + sc(7, dpi),
                 layout.card_logs.right - p,
-                layout.card_logs.top + sc(23, dpi),
+                layout.card_logs.top + sc(22, dpi),
             ),
             c_muted,
             f_label,
             DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
         );
-        let line_h = sc(20, dpi);
-        let start_y = layout.card_logs.top + sc(25, dpi);
+        let line_h = sc(19, dpi);
+        let start_y = layout.card_logs.top + sc(23, dpi);
         if stats.recent_events.is_empty() {
             draw_text_rect(
                 mem_dc,
@@ -866,13 +1164,41 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
         let vps_is_running = stats.vps_availability == "running";
         let vps_is_transient = stats.vps_availability == "transient";
         let can_resume = !vps_is_running && !vps_is_transient && !stats.resuming_vps;
+        let can_ping = vps_is_running && stats.instabox_configured && !stats.pinging_vps;
+
+        let ping_label = if stats.pinging_vps {
+            "Mengirim..."
+        } else {
+            "Ping VPS"
+        };
+        let (ping_bg, ping_brd, ping_fg) = if stats.pinging_vps {
+            (c_amber_bg, c_amber, c_amber)
+        } else if can_ping {
+            let bg = if st.hover == Some(HitTarget::PingVps) {
+                c_btn_hover
+            } else {
+                c_emerald_bg
+            };
+            (bg, rgb(30, 88, 70), c_emerald)
+        } else {
+            (rgb(28, 32, 39), c_card_border, c_sub)
+        };
+        draw_rounded_box(mem_dc, layout.btn_ping, btn_r, ping_bg, ping_brd);
+        draw_text_rect(
+            mem_dc,
+            ping_label,
+            layout.btn_ping,
+            ping_fg,
+            f_btn,
+            DT_CENTER.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
+        );
 
         let resume_label = if stats.resuming_vps {
             "Mengaktifkan..."
         } else if vps_is_running {
-            "VPS Sudah Aktif"
+            "VPS Aktif"
         } else if vps_is_transient {
-            "VPS Booting..."
+            "Booting..."
         } else if matches!(stats.vps_state.to_ascii_lowercase().as_str(), "stopped" | "off") {
             "Aktifkan VPS"
         } else {
@@ -927,7 +1253,7 @@ unsafe fn paint_panel(hwnd: HWND, st: &PanelState) {
             if stats.checking_vps {
                 "Mengecek..."
             } else {
-                "Cek Status VPS"
+                "Cek Status"
             },
             layout.btn_check,
             chk_fg,
@@ -1092,6 +1418,12 @@ unsafe extern "system" fn panel_wnd_proc(
                         },
                         HitTarget::ToggleAutoResume => unsafe {
                             let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_TOGGLE_AUTO_RESUME), LPARAM(0));
+                        },
+                        HitTarget::ToggleKeepalive => unsafe {
+                            let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_TOGGLE_KEEPALIVE), LPARAM(0));
+                        },
+                        HitTarget::PingVps => unsafe {
+                            let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_PING_VPS), LPARAM(0));
                         },
                         HitTarget::ResumeVps => unsafe {
                             let _ = PostMessageW(st.host_hwnd, WM_COMMAND, WPARAM(CMD_RESUME_VPS), LPARAM(0));
@@ -1322,58 +1654,81 @@ mod tests {
 
     #[test]
     fn layout_buttons_do_not_overlap_and_hit_test_accurately() {
-        let layout = compute_layout(96);
-        assert!(layout.toggle_pill.bottom < layout.toggle_auto_resume_pill.top);
-        assert!(layout.row_config.bottom < layout.card_logs.top);
-        assert!(layout.btn_resume.right < layout.btn_check.left);
-        assert!(layout.btn_resume.bottom < layout.btn_log_app.top);
-        assert!(layout.btn_check.bottom < layout.btn_log_app.top);
-        assert!(layout.btn_log_app.right < layout.btn_log_wa.left);
-        assert!(layout.btn_log_wa.right < layout.btn_folder.left);
-        assert!(layout.btn_log_app.bottom < layout.btn_exit.top);
-        assert!(layout.btn_exit.bottom <= layout.height - layout.pad);
+        for dpi in [96, 144] {
+            let layout = compute_layout(dpi);
+            assert!(layout.toggle_pill.bottom < layout.toggle_auto_resume_pill.top);
+            assert!(layout.toggle_auto_resume_pill.bottom < layout.toggle_keepalive_pill.top);
+            assert!(layout.toggle_keepalive_pill.bottom < layout.row_config.bottom);
+            assert!(layout.row_config.bottom < layout.card_logs.top);
+            assert!(layout.card_logs.bottom < layout.btn_ping.top);
+            assert!(layout.btn_ping.right < layout.btn_resume.left);
+            assert!(layout.btn_resume.right < layout.btn_check.left);
+            assert!(layout.btn_ping.bottom < layout.btn_log_app.top);
+            assert!(layout.btn_resume.bottom < layout.btn_log_app.top);
+            assert!(layout.btn_check.bottom < layout.btn_log_app.top);
+            assert!(layout.btn_log_app.right < layout.btn_log_wa.left);
+            assert!(layout.btn_log_wa.right < layout.btn_folder.left);
+            assert!(layout.btn_log_app.bottom < layout.btn_exit.top);
+            assert!(layout.btn_exit.bottom <= layout.height - layout.pad);
 
-        assert_eq!(
-            hit_test_layout(
-                &layout,
-                (layout.toggle_auto_resume_pill.left + layout.toggle_auto_resume_pill.right) / 2,
-                (layout.toggle_auto_resume_pill.top + layout.toggle_auto_resume_pill.bottom) / 2
-            ),
-            Some(HitTarget::ToggleAutoResume)
-        );
-        assert_eq!(
-            hit_test_layout(
-                &layout,
-                (layout.btn_resume.left + layout.btn_resume.right) / 2,
-                (layout.btn_resume.top + layout.btn_resume.bottom) / 2
-            ),
-            Some(HitTarget::ResumeVps)
-        );
-        assert_eq!(
-            hit_test_layout(
-                &layout,
-                (layout.btn_check.left + layout.btn_check.right) / 2,
-                (layout.btn_check.top + layout.btn_check.bottom) / 2
-            ),
-            Some(HitTarget::CheckNow)
-        );
-        assert_eq!(
-            hit_test_layout(
-                &layout,
-                (layout.toggle_pill.left + layout.toggle_pill.right) / 2,
-                (layout.toggle_pill.top + layout.toggle_pill.bottom) / 2
-            ),
-            Some(HitTarget::ToggleAutoStart)
-        );
-        assert_eq!(
-            hit_test_layout(
-                &layout,
-                (layout.close_btn.left + layout.close_btn.right) / 2,
-                (layout.close_btn.top + layout.close_btn.bottom) / 2
-            ),
-            Some(HitTarget::Close)
-        );
-        assert_eq!(hit_test_layout(&layout, 5, 5), None);
+            assert_eq!(
+                hit_test_layout(
+                    &layout,
+                    (layout.toggle_keepalive_pill.left + layout.toggle_keepalive_pill.right) / 2,
+                    (layout.toggle_keepalive_pill.top + layout.toggle_keepalive_pill.bottom) / 2
+                ),
+                Some(HitTarget::ToggleKeepalive)
+            );
+            assert_eq!(
+                hit_test_layout(
+                    &layout,
+                    (layout.btn_ping.left + layout.btn_ping.right) / 2,
+                    (layout.btn_ping.top + layout.btn_ping.bottom) / 2
+                ),
+                Some(HitTarget::PingVps)
+            );
+            assert_eq!(
+                hit_test_layout(
+                    &layout,
+                    (layout.toggle_auto_resume_pill.left + layout.toggle_auto_resume_pill.right) / 2,
+                    (layout.toggle_auto_resume_pill.top + layout.toggle_auto_resume_pill.bottom) / 2
+                ),
+                Some(HitTarget::ToggleAutoResume)
+            );
+            assert_eq!(
+                hit_test_layout(
+                    &layout,
+                    (layout.btn_resume.left + layout.btn_resume.right) / 2,
+                    (layout.btn_resume.top + layout.btn_resume.bottom) / 2
+                ),
+                Some(HitTarget::ResumeVps)
+            );
+            assert_eq!(
+                hit_test_layout(
+                    &layout,
+                    (layout.btn_check.left + layout.btn_check.right) / 2,
+                    (layout.btn_check.top + layout.btn_check.bottom) / 2
+                ),
+                Some(HitTarget::CheckNow)
+            );
+            assert_eq!(
+                hit_test_layout(
+                    &layout,
+                    (layout.toggle_pill.left + layout.toggle_pill.right) / 2,
+                    (layout.toggle_pill.top + layout.toggle_pill.bottom) / 2
+                ),
+                Some(HitTarget::ToggleAutoStart)
+            );
+            assert_eq!(
+                hit_test_layout(
+                    &layout,
+                    (layout.close_btn.left + layout.close_btn.right) / 2,
+                    (layout.close_btn.top + layout.close_btn.bottom) / 2
+                ),
+                Some(HitTarget::Close)
+            );
+            assert_eq!(hit_test_layout(&layout, 5, 5), None);
+        }
     }
 
     #[test]
