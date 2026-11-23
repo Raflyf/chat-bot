@@ -281,6 +281,46 @@ function isOwnerChatKey(chatId: string | undefined): boolean {
 }
 
 /**
+ * Bersihkan klausa pembuka/penghubung menggantung di akhir balasan akibat
+ * penghapusan kalimat penawaran di tengah kalimat (mis. "Sipp, kalau.").
+ */
+export function bersihkanKlausaMenggantung(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  return withProtectedCodeBlocks(text, (safe) => {
+    let out = safe.trim();
+    if (!out) return '';
+
+    const endsWithEllipsis = /(?:\.{2,}|…)[ \t]*$/.test(out);
+    if (!endsWithEllipsis) {
+      const danglingCommaCond =
+        /[ \t]*[,;][ \t]*(?:(?:nanti|kapan-?kapan|tapi|tetapi|namun|atau|dan|terus|trus|soal(?:nya)?|karena|karna|supaya|agar|biar)\s+)?(?:kalau|kalo|klo|klu|jika|bila|apabila|seandainya|asalkan|walaupun|meskipun|meski|walau)(?:\s+(?:nanti|kapan-?kapan|kamu|lu|lo|anda|kalian|aku|gue|gw|saya|ada|mau|butuh|perlu|masih|lagi|pengen|ingin|emang|memang)){0,4}(?:[ \t]*[.!](?!\.))?[ \t]*$/i;
+      const danglingCommaConj =
+        /[ \t]*[,;][ \t]*(?:tapi|tetapi|namun|atau|dan|serta|karena|karna|sebab|supaya|agar|sehingga|meskipun|walaupun|padahal|sedangkan|melainkan|kecuali)(?:[ \t]*[.!](?!\.))?[ \t]*$/i;
+      const danglingSentenceCond =
+        /(?:^|(?<=[.!?\n])[ \t]*)(?:(?:nanti|kapan-?kapan|tapi|tetapi|namun|atau|dan)\s+)?(?:kalau|kalo|klo|klu|jika|bila|apabila|seandainya|asalkan)(?:\s+(?:nanti|kapan-?kapan|kamu|lu|lo|anda|kalian|aku|gue|gw|saya|ada|mau|butuh|perlu|masih|lagi|pengen|ingin)){0,4}(?:[ \t]*[.!](?!\.))?[ \t]*$/i;
+
+      for (let pass = 0; pass < 2; pass++) {
+        const next = out
+          .replace(danglingCommaCond, '')
+          .replace(danglingCommaConj, '')
+          .replace(danglingSentenceCond, '')
+          .trim();
+        if (next === out) break;
+        out = next;
+      }
+    }
+
+    out = out.replace(/([!?])\.(?!\.)/g, '$1');
+    out = out.replace(/([,;:])[ \t]*([.!?])/g, '$2');
+    out = out.replace(/[ \t]+([.,!?])/g, '$1');
+    out = out.replace(/[,;:]+\s*$/, '').trim();
+
+    if (!out || /^[.,!?:;\s]+$/.test(out)) return '';
+    return out;
+  });
+}
+
+/**
  * Pembersih Kebisingan & Formatter Ramah Telegram:
  * 1. Menyingkirkan seluruh residu CoT (<think>, <thought>, unclosed think, Here's a thinking process).
  * 2. Mengonversi ekspresi LaTeX mentah (\[...\], \(...\), $$, $) menjadi notasi aljabar bersih dan simbol Unicode.
@@ -656,24 +696,46 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // LAPORAN: bot berulang kali menawari "Mau lanjut tebak-tebakan?" sehingga
   // terdengar seperti mesin dan mengganggu. Prompt sudah melarang, tetapi model
   // tidak selalu patuh -> ditegakkan di kode.
-  // Pola dibatasi ke AKHIR kalimat/baris agar kalimat wajar sebelumnya tidak ikut
-  // terbuang (mis. "Hai, ada yang bisa dibantu?" TIDAK boleh terpotong).
+  // Klausa pengantar kondisional (", kalau ...") ikut dikonsumsi sampai akhir
+  // kalimat agar tidak meninggalkan fragmen menggantung seperti "Sipp, kalau.".
+  const CLAUSE_INTRO =
+    '(?:(?:^|(?<=[.!?\\n])[ \\t]*|[ \\t]*[,;][ \\t]*|[ \\t]+)(?:(?:nanti|kapan-?kapan|tapi|atau|dan|terus|trus)\\s+)?(?:kalau|kalo|klo|klu|jika|bila|apabila)(?:\\s+(?:nanti|kapan-?kapan|kamu|lu|lo|anda|kalian|ada|masih|lagi|butuh|perlu)){0,3}\\s+|[ \\t]*[,;][ \\t]*|(?:^|(?<=[.!?\\n])[ \\t]*))';
+  const SUBJ_OPT = '(?:(?:kamu|lu|lo|kalian|kita)\\s+)?';
+
   const tawaranLanjutan = [
-    /\s*\b(?:mau|lanjut|lanjutkan|gimana|mending)\b[^.!?\n]{0,40}\b(?:tebak(?:\s*-?\s*tebakan)?|tebakan|gombal(?:an)?|pantun|main\s+lagi|kuis|hitung-hitungan)\b[^.!?\n]*\??/gi,
+    new RegExp(
+      `${CLAUSE_INTRO}${SUBJ_OPT}\\b(?:mau|lanjut|lanjutkan|gimana|mending)\\b[^.!?\\n]{0,40}\\b(?:tebak(?:\\s*-?\\s*tebakan)?|tebakan|gombal(?:an)?|pantun|main\\s+lagi|kuis|hitung-hitungan)\\b[^.!?\\n]*[.!?]?`,
+      'gi',
+    ),
     // ── DIPERLUAS (temuan pemilik produk 09 Okt 2026) ──
-    // LAPORAN: user keluar topik saat main UNO, tetapi bot menulis
-    // "...Mau lanjut main UNO atau ganti topik?". Dulu pola ini HANYA mencakup
-    // tebak-tebakan/gombalan/pantun/kuis — permainan PAPAN & KARTU (uno, catur,
-    // halma, remi, capsa, gaple, dll) lolos.
-    // ATURAN: "kalo user sudah keluar dari topik game maka tidak usah di singgung lagi".
-    /\s*\b(?:mau|lanjut|lanjutkan|gimana|mending|balik|kembali|ayo|yuk)\b[^.!?\n]{0,40}\b(?:main|permainan|game|uno|catur|halma|remi|capsa|cangkulan|gaple|qiuqiu|tictactoe|hangman|monopoli|dadu|tebak\s*angka|suit|batu\s*gunting)\b[^.!?\n]*\??/gi,
-    // "Mau ganti topik atau main lagi?" / "atau ganti topik?"
-    /\s*\b(?:mau\s+)?ganti\s+topik(?:\s+atau\s+[^.!?\n]{0,30})?\s*\??/gi,
-    /\s*\b(?:mau\s+)?main\s+lagi\s*\??/gi,
-    /\s*\b(?:kamu|lu|kalian)\s+pilih\b[^.!?\n]*\??/gi,
-    /\s*\bmau\s+ke\s+mana\b[^.!?\n]*\??/gi,
-    /\s*\bmau\s+ngobrol(?:in)?\s+(?:apa|soal\s+apa)\b[^.!?\n]*\??/gi,
-    /\s*\bmau\s+bahas\s+apa\b[^.!?\n]*\??/gi,
+    new RegExp(
+      `${CLAUSE_INTRO}${SUBJ_OPT}\\b(?:mau|lanjut|lanjutkan|gimana|mending|balik|kembali|ayo|yuk)\\b[^.!?\\n]{0,40}\\b(?:main|permainan|game|uno|catur|halma|remi|capsa|cangkulan|gaple|qiuqiu|tictactoe|hangman|monopoli|dadu|tebak\\s*angka|suit|batu\\s*gunting)\\b[^.!?\\n]*[.!?]?`,
+      'gi',
+    ),
+    new RegExp(
+      `${CLAUSE_INTRO}${SUBJ_OPT}\\b(?:mau\\s+)?ganti\\s+topik(?:\\s+atau\\s+[^.!?\\n]{0,30})?\\s*[.!?]?`,
+      'gi',
+    ),
+    new RegExp(
+      `${CLAUSE_INTRO}${SUBJ_OPT}(?:mau\\s+)?main\\s+lagi[^.!?\\n]*[.!?]?`,
+      'gi',
+    ),
+    new RegExp(
+      `${CLAUSE_INTRO}\\b(?:kamu|lu|kalian)\\s+pilih\\b[^.!?\\n]*[.!?]?`,
+      'gi',
+    ),
+    new RegExp(
+      `${CLAUSE_INTRO}${SUBJ_OPT}\\bmau\\s+ke\\s+mana\\b[^.!?\\n]*[.!?]?`,
+      'gi',
+    ),
+    new RegExp(
+      `${CLAUSE_INTRO}${SUBJ_OPT}\\bmau\\s+ngobrol(?:in)?\\s+(?:apa(?:-?apa)?|soal\\s+apa)\\b[^.!?\\n]*[.!?]?`,
+      'gi',
+    ),
+    new RegExp(
+      `${CLAUSE_INTRO}${SUBJ_OPT}\\bmau\\s+bahas\\s+apa(?:-?apa)?\\b[^.!?\\n]*[.!?]?`,
+      'gi',
+    ),
     /\s*\b(?:atau\s+)?langsung\s+ke\s+[^.!?\n]{0,30}\?/gi,
     // "Lanjut?" / "Lanjut ya?" berdiri sendiri di akhir (tawaran lanjutan).
     /[\s,]*\b(?:lanjut|lanjutkan|continue)\s*(?:ya|dong|deh|gak|ga|nggak)?\s*\?\s*$/gi,
@@ -752,7 +814,10 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // (lebih baik daripada mengirim "Hai," yang menggantung).
   {
     const sebelum = out;
-    out = out.replace(/(?:ada\s+yang\s+bisa\s+(?:saya\s+)?dibantu\s*\??)/gi, '');
+    out = out.replace(
+      new RegExp(`${CLAUSE_INTRO}ada\\s+yang\\s+bisa\\s+(?:saya\\s+|aku\\s+)?dibantu[^.!?\\n]*[.!?]?`, 'gi'),
+      '',
+    );
   // ── BOT NGOMONG SOAL DIRINYA SEBAGAI MESIN (perbaikan 06 Okt 2026) ──
   // LAPORAN NYATA: bot menjawab "settingan pabriknya emang gini" dan
   // "pasrah aja sama bawaan ginii" saat user bilang "Dongek = bodo".
@@ -877,15 +942,18 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // ATURAN: buang KALIMAT harapan/doa generik & tawaran layanan. Bila seluruh
   // balasan hanya berisi itu -> kosongkan agar diregenerasi dengan gaya teman.
   {
+    const csOfferCore =
+      '(?:senang\\s+bisa\\s+membantu|siap\\s+membantu(?:\\s+kapan\\s+saja)?|ada\\s+yang\\s+bisa\\s+(?:saya|aku)\\s+bantu|jangan\\s+ragu\\s+untuk\\s+(?:bertanya|menghubungi)|terima\\s+kasih\\s+telah\\s+(?:menghubungi|menggunakan))';
+    const semogaCore =
+      'semoga\\s+(?:(?:hari|harimu|harinya|kamu|kita|anda)\\b[^.!?\\n]*\\b(?:sehat|bahagia|senang|menyenangkan|indah|cerah|baik|sukses|lancar|berkah|dilancarkan|diberkati|produktif|semangat)|(?:harimu|hari\\s+kamu|hari\\s+anda)\\s+(?:menyenangkan|indah|cerah|baik|hebat|luar\\s+biasa)|sehat\\s+selalu)\\b';
     const polaCs = [
-      // "Semoga hari kamu makin sehat dan bahagia", "Semoga harimu menyenangkan",
-      // "Semoga sehat selalu", "Semoga harimu indah", dst.
-      /[^.!?\n]{0,40}\bsemoga\s+(?:hari|harimu|harinya|kamu|kita|andа|anda)?[^.!?\n]{0,80}(?:sehat|bahagia|senang|menyenangkan|indah|cerah|baik|sukses|lancar|berkah|dilancarkan|diberkati|produktif|semangat)[^.!?\n]{0,40}[.!?]?/gi,
-      /[^.!?\n]{0,30}\bsemoga\s+(?:harimu|hari\s+kamu|hari\s+anda)\s+(?:menyenangkan|indah|cerah|baik|hebat|luar\s+biasa)[^.!?\n]{0,30}[.!?]?/gi,
-      // "Sama-sama! Semoga ..." -> sisa "Sama-sama!" saja masih oke, tapi kalau
-      // satu-satunya isi adalah harapan generik, buang seluruhnya.
-      // Ucapan CS lain:
-      /[^.!?\n]{0,30}\b(?:senang\s+bisa\s+membantu|siap\s+membantu(?:\s+kapan\s+saja)?|ada\s+yang\s+bisa\s+(?:saya|aku)\s+bantu|jangan\s+ragu\s+untuk\s+(?:bertanya|menghubungi)|terima\s+kasih\s+telah\s+(?:menghubungi|menggunakan))[^.!?\n]{0,60}[.!?]?/gi,
+      new RegExp(`[ \\t]*,[ \\t]*${semogaCore}[^.!?\\n]*[.!?]?`, 'gi'),
+      new RegExp(`(?:^|(?<=[.!?\\n]))[ \\t]*[^.!?\\n]*\\b${semogaCore}[^.!?\\n]*[.!?]?`, 'gi'),
+      new RegExp(
+        `[ \\t]*,[ \\t]*(?:(?:nanti|kapan-?kapan|tapi|atau)\\s+)?(?:(?:kalau|kalo|klo|klu|jika|bila|apabila)(?:\\s+(?:nanti|kamu|lu|lo|anda|ada|masih|lagi)){0,3}\\s+)?(?:(?:aku|saya|gue|gw)\\s+)?\\b${csOfferCore}[^.!?\\n]*[.!?]?`,
+        'gi',
+      ),
+      new RegExp(`(?:^|(?<=[.!?\\n]))[ \\t]*[^.!?\\n]*\\b${csOfferCore}[^.!?\\n]*[.!?]?`, 'gi'),
     ];
     for (const p of polaCs) {
       if (p.test(out)) {
@@ -1017,8 +1085,11 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   // blok daftar yang tadinya "terhalang" intro menggantung ikut terbersihkan.
   out = cleanupChoiceMenus(out);
   out = out.replace(/\n*\s*\(+\s*(?:kalo|kalau|jika|butuh|aku\s+siap|tanyakan|mau\s+bantuan|ada\s+yang)[^)]*?\)+\s*$/gi, '');
-  out = out.replace(/(?:Kalau|Kalo|Jika)\s+mau\s+cerita\s+lebih\s+lanjut[^.\n]*[.\n]?/gi, '');
-  out = out.replace(/(?:siap\s+dengerin\s+deh!?\s*[\p{Extended_Pictographic}]*)/giu, '');
+  out = out.replace(/[ \t]*,?[ \t]*(?:Kalau|Kalo|Jika)\s+mau\s+cerita\s+lebih\s+lanjut[^.!?\n]*[.!?]?/gi, '');
+  out = out.replace(
+    new RegExp(`${CLAUSE_INTRO}(?:(?:aku|gue|gw|saya)\\s+)?siap\\s+dengerin\\s+deh[.!?]*\\s*[\\p{Extended_Pictographic}]*`, 'giu'),
+    '',
+  );
 
   // 14b. Bersihkan kebiasaan buruk bot yang suka interogasi / bertanya klise di akhir pesan
   out = out.replace(/\s*(?:,\s*)?(?:mau\s+(?:coba\s+)?(?:yang\s+lain|tebakan\s+lain|soal\s+lain|lagi)\s*(?:gak\s+nih|lagi|dong)?\??\s*[\p{Extended_Pictographic}]*)$/giu, '');
@@ -1045,12 +1116,24 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/Mau\s+ngobrol\s+apa\s+lagi\?\s*Atau\s+mau\s+coba\s+joke\s+yang\s+lain\??/gi, '');
   // Bersihkan penawaran konten / joke lanjutan dan pertanyaan basa-basi penutup ala customer service
   out = out.replace(/(?:Jadi\s+)?(?:kamu\s+)?mau\s+(?:yang\s+|joke\s+|lelucon\s+|cerita\s+|tebak-tebakan\s+)?lagi(?:\s*g[ak]+)?\?[^.?!\n]*/gi, '');
-  out = out.replace(/(?:Aku\s+)?siap\s+kasih\s+(?:joke|lelucon|cerita|bantuan)[^.?!\n]*[.?!\n]?/gi, '');
-  out = out.replace(/(?:atau\s+)?mau\s+cerita\s+apa\s+nih\??[^.?!\n]*/gi, '');
-  out = out.replace(/(?:Ada\s+yang\s+mau\s+diceritain\s+lagi|Mau\s+lanjut\s+ngobrol\s+apa|Mau\s+ngobrolin\s+apa\s+lagi)[^.?!\n]*\??/gi, '');
+  out = out.replace(
+    new RegExp(`${CLAUSE_INTRO}(?:(?:aku|gue|gw|saya)\\s+)?siap\\s+kasih\\s+(?:joke|lelucon|cerita|bantuan)[^.?!\\n]*[.?!]?`, 'gi'),
+    '',
+  );
+  out = out.replace(
+    new RegExp(`${CLAUSE_INTRO}(?:atau\\s+)?${SUBJ_OPT}mau\\s+cerita\\s+apa\\s+nih[^.?!\\n]*[.?!]?`, 'gi'),
+    '',
+  );
+  out = out.replace(
+    new RegExp(
+      `${CLAUSE_INTRO}(?:Ada\\s+yang\\s+mau\\s+diceritain\\s+lagi|${SUBJ_OPT}Mau\\s+lanjut\\s+ngobrol\\s+apa|${SUBJ_OPT}Mau\\s+ngobrolin\\s+apa\\s+lagi)[^.?!\\n]*[.?!]?`,
+      'gi',
+    ),
+    '',
+  );
   // Bersihkan pertanyaan evaluasi klise gombalan & tawaran ganti topik kaku
   out = out.replace(/\s*(?:Gimana,?\s*(?:pede\s+nggak|masih\s+cringe|udah\s+mulai\s+ngefek|udah\s+baper)[^.?!\n]*\??)/gi, '');
-  out = out.replace(/\s*(?:mau\s+yang\s+model\s+apa\s+lagi\s+nih|Atau\s+mending\s+kita\s+ganti\s+topik[^.?!\n]*\??)/gi, '');
+  out = out.replace(/\s*(?:mau\s+yang\s+model\s+apa\s+lagi\s+nih[.!?]?|Atau\s+mending\s+kita\s+ganti\s+topik[^.?!\n]*[.!?]?)/gi, '');
   out = out.replace(/:\s*["']([^"'\n]+)["']/g, ': $1');
   out = out.replace(/^["']([^"'\n]{10,200})["']\s*$/g, '$1');
   // Bersihkan pembuka tawa histeris di awal sapaan singkat
@@ -1110,23 +1193,50 @@ export function cleanMathAndNoise(text: string, userPrompt?: string): string {
   out = out.replace(/(?:Tapi\s+)?(?:kalau|kalo)\s+bagian\s+[^.!\n]*dianggep\s+gak\s+ada[^.!\n]*[.!\n]?/gi, '');
 
   // 14e. Bersihkan celetukan penutup filler sok asik / sok akrab di akhir pesan
-  out = out.replace(/(?:,\s*)?(?:santai\s+aja\s+(?:terus|dulu)?|santuy\s+aja(?:\s+dulu)?)\s*(?:bro|bray|cuy|ya|ngab)?[.!]?\s*$/gi, '.');
-  out = out.replace(/(?:,\s*)?(?:tetap\s+)?semangat\s+(?:terus\s+)?(?:ya|bro|bray|cuy|ngab)?[.!]?\s*$/gi, '.');
+  const stripTrailingFiller = (textIn: string, re: RegExp): string =>
+    textIn.replace(re, (...args) => {
+      const offset = args[args.length - 2] as number;
+      const before = textIn.slice(0, offset).trimEnd();
+      if (!before || /[.!?]$/.test(before)) return '';
+      return '.';
+    });
+  out = stripTrailingFiller(
+    out,
+    /(?:^|,\s*|(?<=[.!?])[ \t]+)(?:santai\s+aja\s+(?:terus|dulu)?|santuy\s+aja(?:\s+dulu)?)\s*(?:bro|bray|cuy|ya|ngab)?[.!]?\s*$/gi,
+  );
+  out = stripTrailingFiller(
+    out,
+    /(?:^|,\s*|(?<=[.!?])[ \t]+)(?:tetap\s+semangat(?:\s+(?:terus|ya|bro|bray|cuy|ngab))?|semangat\s+(?:terus|ya|bro|bray|cuy|ngab))[.!]?\s*$/gi,
+  );
   out = out.replace(/[ \t]+([.,!?])/g, '$1');
 
-  out = out.replace(/(?:Santai\s+dulu\s+deh,?\s*)?istirahat\s+(?:sejenak|bentar|dulu)(?:\s+biar\s+otak\s+(?:juga\s+)?(?:nggak|gak)\s+(?:lemot|overheat|pusing))?[.!]?\s*/gi, '');
-  out = out.replace(/(?:Santai\s+dulu(?:,\s*taruh\s+semua)?|tarik\s+napas(?:\s+panjang)?|rebahan\s+dulu|merem\s+bentar)[.!?]?\s*/gi, '');
+  out = out.replace(
+    /(?:^|,\s*|(?<=[.!?])[ \t]+)(?:Santai\s+dulu\s+deh,?\s*istirahat\s+(?:sejenak|bentar|dulu)|istirahat\s+(?:sejenak|bentar|dulu)\s+biar\s+otak\s+(?:juga\s+)?(?:nggak|gak)\s+(?:lemot|overheat|pusing))[.!]?\s*/gi,
+    '',
+  );
+  out = out.replace(
+    /(?:^|,\s*|(?<=[.!?])[ \t]+)(?:Santai\s+dulu(?:,\s*taruh\s+semua)?|tarik\s+napas(?:\s+panjang)?|rebahan\s+dulu|merem\s+bentar)[.!?]?\s*/gi,
+    '',
+  );
   out = out.replace(/Santai\s+dulu\s+deh(?:,\s*)?[.!]?\s*/gi, '');
   out = out.replace(/(?:Kamu\s+)?udah\s+makan\s+belum\s*(?:nih|ya)?\??(?:\s*Jangan\s+sampai\s+[^.!?\n]*keroncongan[.!?]?)?\s*/gi, '');
   out = out.replace(/(?:Fokus\s+dulu\s+ke\s+satu\s+masalah[^.!?\n]*beresin\s+satu-satu[^.!?\n]*[.!?]?)\s*/gi, '');
   out = out.replace(/(?:Semoga\s+hasilnya\s+udah\s+mulai\s+ngepas[^.!?\n]*[.!?]?)\s*/gi, '');
-  out = out.replace(/(?:Kalau|Kalo)\s+(?:mau\s+cerita\s+atau\s+)?(?:butuh\s+)?(?:second\s+opinion|cek\s+log|bantuan)[^.!?\n]*(?:lempar|tanya)\s+aja\s+(?:di|ke)\s+sini[.!?]?\s*/gi, '');
-  out = out.replace(/Aku\s+siap\s+bantu\s+(?:selesaiin|beresin)[^.!?\n]*[.!?]?\s*/gi, '');
-  out = out.replace(/\s*(?:,\s*)?(?:Halo,\s*(?:aku|saya)\s+di\s+sini!\s*)?(?:Ada\s+yang\s+(?:mau|bisa)\s+[^.!?\n]*?(?:tanyakan|obrolin|bicarakan|dibahas)[^.!?\n]*\??\s*)/gi, '');
+  out = out.replace(/[ \t]*,?[ \t]*(?:Kalau|Kalo)\s+(?:mau\s+cerita\s+atau\s+)?(?:butuh\s+)?(?:second\s+opinion|cek\s+log|bantuan)[^.!?\n]*(?:lempar|tanya)\s+aja\s+(?:di|ke)\s+sini[.!?]?\s*/gi, '');
+  out = out.replace(
+    new RegExp(`${CLAUSE_INTRO}(?:aku|gue|gw|saya)\\s+siap\\s+bantu\\s+(?:selesaiin|beresin)[^.!?\\n]*[.!?]?\\s*`, 'gi'),
+    '',
+  );
+  out = out.replace(
+    new RegExp(
+      `${CLAUSE_INTRO}(?:Halo,\\s*(?:aku|saya)\\s+di\\s+sini!\\s*)?Ada\\s+yang\\s+(?:mau|bisa)\\s+[^.!?\\n]*?(?:tanyakan|tanyain|obrolin|diobrolin|bicarakan|dibicarakan|bahas|dibahas|bantu|dibantu)[^.!?\\n]*[.!?]?\\s*`,
+      'gi',
+    ),
+    '',
+  );
   out = out.replace(/^Halo,\s*(?:aku|saya)\s+di\s+sini![.!]?\s*/gi, '');
   out = out.replace(/(?:Gak|Nggak)\s+bisa\s+nih,?\s*aku\s+cuma\s+bot[^.!\n]*[.!\n]?\s*/gi, '');
-  out = out.replace(/[ \t]+([.,!?])/g, '$1');
-  out = out.replace(/[,;:]+\s*$/, '').trim();
+  out = bersihkanKlausaMenggantung(out);
 
   // 14b. Pastikan ada spasi setelah tanda akhir kalimat bila langsung menempel kata
   // (mis. "lagi?Meleset jauh" -> "lagi? Meleset jauh"). Model kecil kadang menggabung

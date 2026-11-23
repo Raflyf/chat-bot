@@ -41,7 +41,7 @@ jobs:
         # karena memerlukan kredensial Supabase yang tidak ada di CI (test itu
         # sudah otomatis SKIP bila DB tidak tersedia, tetapi kita kecualikan
         # agar durasi CI stabil).
-        run: npx tsx --test tests/waktu.test.mjs tests/pengingat.test.mjs tests/game.test.mjs tests/berulang.test.mjs tests/rate-limit.test.mjs tests/neuron.test.mjs tests/usage-groq.test.mjs tests/format-angka.test.mjs tests/keamanan.test.mjs tests/lokasi-tertunda.test.mjs tests/presisi-waktu.test.mjs tests/zona-parse.test.mjs tests/nomor-tugas.test.mjs tests/selesai-nama.test.mjs tests/sesi-upgrade.test.mjs tests/baileys-backup-web.test.mjs tests/vps-keepalive.test.mjs tests/i18n-kunci-lengkap.test.mjs tests/i18n-lengkap.test.mjs tests/web-sync-and-perf.test.mjs tests/vps-monitor.test.mjs
+        run: npx tsx --test tests/waktu.test.mjs tests/pengingat.test.mjs tests/game.test.mjs tests/berulang.test.mjs tests/rate-limit.test.mjs tests/neuron.test.mjs tests/usage-groq.test.mjs tests/format-angka.test.mjs tests/keamanan.test.mjs tests/lokasi-tertunda.test.mjs tests/presisi-waktu.test.mjs tests/zona-parse.test.mjs tests/nomor-tugas.test.mjs tests/selesai-nama.test.mjs tests/sesi-upgrade.test.mjs tests/baileys-backup-web.test.mjs tests/vps-keepalive.test.mjs tests/sanitasi-klausa-utuh.test.mjs tests/i18n-kunci-lengkap.test.mjs tests/i18n-lengkap.test.mjs tests/web-sync-and-perf.test.mjs tests/vps-monitor.test.mjs
         env:
           NODE_ENV: 'test'
           # Test murni tidak butuh DB; nilai dummy agar modul yang membaca env
