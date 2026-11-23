@@ -373,6 +373,103 @@
       </div>
     </section>
 
+    <!-- Local AI Model VPS (VPS 2) -->
+    <section class="activity-card bb-section" id="local-ai-vps-section" aria-labelledby="ai2-section-title">
+      <div class="console-head">
+        <div>
+          <h2 class="card-title" id="ai2-section-title" data-i18n="dash.ai2.title">Local AI VPS (VPS 2) &amp; Routing Model</h2>
+          <p class="card-sub" id="ai2-subtitle" data-i18n="dash.ai2.subtitle">Kontrol VPS InstaBox kedua untuk model lokal (Ternary-Bonsai-2), Auto-Ping, Auto-Resume, dan prioritas model utama vs backup.</p>
+        </div>
+        <div class="console-head-actions bb-badges-wrap">
+          <span class="badge bb-badge-neutral" id="ai2-role-badge" data-i18n="dash.bb.statusLoading">Memuat status...</span>
+          <span class="badge bb-badge-muted" id="ai2-health-badge" data-i18n="dash.bb.laptopChecking">Mengecek sinkron...</span>
+        </div>
+      </div>
+
+      <div class="bb-metrics-grid">
+        <div class="bb-metric-card">
+          <span class="bb-metric-label" data-i18n="dash.ai2.cardVps">VPS AI (VPS 2)</span>
+          <span class="bb-metric-value bb-tone-muted" id="ai2-vps-state">&ndash;</span>
+          <span class="bb-metric-sub" id="ai2-vps-sub" data-i18n="dash.bb.waitingData">Menunggu data</span>
+        </div>
+
+        <div class="bb-metric-card">
+          <span class="bb-metric-label" data-i18n="dash.ai2.cardServer">SERVER AI (LLAMA)</span>
+          <span class="bb-metric-value bb-tone-muted" id="ai2-server-state">&ndash;</span>
+          <span class="bb-metric-sub" id="ai2-server-sub" data-i18n="dash.bb.waitingData">Menunggu data</span>
+        </div>
+
+        <div class="bb-metric-card">
+          <span class="bb-metric-label" data-i18n="dash.ai2.cardRouting">PRIORITAS MODEL LOKAL</span>
+          <span class="bb-metric-value bb-tone-muted" id="ai2-routing-value">&ndash;</span>
+          <span class="bb-metric-sub" id="ai2-routing-sub" data-i18n="dash.bb.waitingData">Menunggu data</span>
+        </div>
+
+        <div class="bb-metric-card">
+          <span class="bb-metric-label" data-i18n="dash.ai2.cardCtx">KONTEKS &amp; RIWAYAT</span>
+          <span class="bb-metric-value" id="ai2-ctx-value">&ndash;</span>
+          <span class="bb-metric-sub" id="ai2-ctx-sub" data-i18n="dash.bb.waitingData">Menunggu data</span>
+        </div>
+      </div>
+
+      <div class="bb-lower-grid">
+        <div class="bb-panel-box bb-controls-box">
+          <div class="bb-control-row">
+            <div class="bb-control-copy">
+              <div class="bb-control-title" data-i18n="dash.ai2.primaryLabel">Model Lokal sebagai Model Utama</div>
+              <div class="bb-control-sub" id="ai2-primary-desc" data-i18n="dash.ai2.primaryOffDesc">OFF: Model cloud dipakai lebih dulu; model lokal VPS 2 menjadi backup terakhir unlimited.</div>
+            </div>
+            <button type="button" class="bb-toggle-btn" id="ai2-btn-primary" role="switch" aria-checked="false" data-i18n="dash.ai2.primaryOff">OFF · BACKUP</button>
+          </div>
+
+          <div class="bb-control-row bb-control-row-sep">
+            <div class="bb-control-copy">
+              <div class="bb-control-title" data-i18n="dash.ai2.autoResumeLabel">Mode Resume VPS 2</div>
+              <div class="bb-control-sub" id="ai2-auto-resume-desc" data-i18n="dash.ai2.autoResumeOffDesc">Manual: aktifkan VPS 2 lewat tombol di dashboard.</div>
+            </div>
+            <button type="button" class="bb-toggle-btn" id="ai2-btn-auto-resume" role="switch" aria-checked="false">MANUAL</button>
+          </div>
+
+          <div class="bb-control-row bb-control-row-sep bb-keepalive-row">
+            <div class="bb-control-copy">
+              <div class="bb-control-title bb-keepalive-title">
+                <span data-i18n="dash.ai2.keepaliveLabel">Auto-Ping VPS 2 (anti idle-pause)</span>
+                <span class="bb-keepalive-badge is-muted" id="ai2-keepalive-badge" data-i18n="dash.bb.statusLoading">Memuat...</span>
+              </div>
+              <div class="bb-control-sub" id="ai2-keepalive-desc" data-i18n="dash.bb.keepaliveDesc">Lease aktivitas diperbarui otomatis agar VPS tidak di-pause setelah jendela idle habis.</div>
+              <div class="bb-keepalive-meta">
+                <span class="bb-keepalive-stat"><span data-i18n="dash.bb.keepaliveNext">Ping berikutnya</span>: <strong id="ai2-keepalive-next">&ndash;</strong></span>
+                <span class="bb-keepalive-stat"><span data-i18n="dash.bb.keepaliveLeaseActive">Lease aktif</span>: <strong id="ai2-keepalive-lease">&ndash;</strong></span>
+                <span class="bb-keepalive-stat"><span data-i18n="dash.bb.keepaliveIdle">Sejak ping</span>: <strong id="ai2-keepalive-idle">&ndash;</strong></span>
+                <span class="bb-keepalive-stat"><span data-i18n="dash.bb.keepalivePause">Pause bila ping berhenti</span>: <strong id="ai2-keepalive-pause">&ndash;</strong></span>
+                <span class="bb-keepalive-stat"><span data-i18n="dash.bb.keepalivePings">Ping sukses</span>: <strong id="ai2-keepalive-count">0</strong></span>
+              </div>
+              <div class="bb-keepalive-bar" role="img" aria-label="Jendela idle VPS 2 terpakai" id="ai2-keepalive-bar">
+                <span class="bb-keepalive-bar-fill" id="ai2-keepalive-bar-fill"></span>
+              </div>
+              <div class="bb-keepalive-err" id="ai2-keepalive-err" hidden></div>
+            </div>
+            <button type="button" class="bb-toggle-btn" id="ai2-btn-keepalive" role="switch" aria-checked="false" data-i18n="dash.bb.keepaliveOff">NONAKTIF</button>
+          </div>
+
+          <div class="bb-actions-row">
+            <button type="button" class="btn bb-btn-ping" id="ai2-btn-ping" data-i18n="dash.ai2.btnPing">Ping VPS 2 Sekarang</button>
+            <button type="button" class="btn bb-btn-resume" id="ai2-btn-resume" data-i18n="dash.ai2.btnResume">Resume / Aktifkan VPS 2</button>
+            <button type="button" class="btn btn-primary bb-btn-check" id="ai2-btn-check" data-i18n="dash.ai2.btnCheck">Cek Status VPS 2 Sekarang</button>
+          </div>
+
+          <div class="bb-feedback" id="ai2-feedback" role="status" aria-live="polite" hidden></div>
+        </div>
+
+        <div class="bb-panel-box bb-events-box">
+          <div class="bb-events-heading" data-i18n="dash.bb.activityTitle">AKTIVITAS TERAKHIR</div>
+          <ul class="bb-events-list" id="ai2-events-list">
+            <li class="bb-event-empty" data-i18n="dash.ai2.eventsLoading">Memuat riwayat aktivitas VPS 2 (Local AI)...</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
     <!-- Pool API key -->
     <section aria-labelledby="pool-section-title">
       <div class="console-head">
@@ -717,6 +814,7 @@
 <script src="/js/i18n.js"></script>
 <script src="/js/console-theme.js"></script>
 <script src="/js/baileys-backup.js"></script>
+<script src="/js/local-ai-vps.js"></script>
 <script src="/js/dashboard.js"></script>
 </body>
 </html>

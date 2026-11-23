@@ -65,6 +65,8 @@ export interface KeepaliveDeps {
   apiKey?: string;
   machineId?: string;
   apiBase?: string;
+  /** ID lease kustom (default `baileys-bot-keepalive`); dipakai VPS 2 agar terpisah. */
+  leaseId?: string;
   intervalSecs?: number;
   leaseTtlSecs?: number;
   readState?: () => Promise<VpsKeepaliveState | null>;
@@ -375,8 +377,9 @@ export async function renewVpsActivityLease(
   }
   const fetchImpl = deps.fetchImpl ?? fetch;
   const { leaseTtlSecs } = getKeepaliveConfig(deps);
+  const leaseId = (deps.leaseId ?? KEEPALIVE_LEASE_ID).trim() || KEEPALIVE_LEASE_ID;
   const url = `${apiBase}/v1/machines/${encodeURIComponent(machineId)}/activity-leases/${encodeURIComponent(
-    KEEPALIVE_LEASE_ID,
+    leaseId,
   )}`;
   const startedAt = Date.now();
   try {
@@ -428,8 +431,9 @@ export async function releaseVpsActivityLease(
     return { ok: false, status: 0 };
   }
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const leaseId = (deps.leaseId ?? KEEPALIVE_LEASE_ID).trim() || KEEPALIVE_LEASE_ID;
   const url = `${apiBase}/v1/machines/${encodeURIComponent(machineId)}/activity-leases/${encodeURIComponent(
-    KEEPALIVE_LEASE_ID,
+    leaseId,
   )}`;
   try {
     const res = await fetchImpl(url, {

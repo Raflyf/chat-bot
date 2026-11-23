@@ -13,6 +13,16 @@ import {
   setKeepaliveMode,
   type BaileysBackupDeps,
 } from '../src/baileys_backup_web.js';
+import {
+  getLocalAiVpsSnapshot,
+  runManualLocalAiVpsCheck,
+  runManualLocalAiVpsKeepalive,
+  runManualLocalAiVpsResume,
+  setLocalAiAutoResumeMode,
+  setLocalAiKeepaliveMode,
+  setLocalAiPrimaryMode,
+  type LocalAiVpsDeps,
+} from '../src/local_ai_vps.js';
 import { cekRateLimit } from '../src/rate_limit.js';
 
 export interface BaileysBackupHandlerDeps {
@@ -27,6 +37,7 @@ export interface BaileysBackupHandlerDeps {
   setAutoMode?: (enabled: boolean) => ReturnType<typeof setAutoResumeMode>;
   setKeepalive?: (enabled: boolean) => ReturnType<typeof setKeepaliveMode>;
   serviceDeps?: BaileysBackupDeps;
+  aiServiceDeps?: LocalAiVpsDeps;
 }
 
 function parsePlainObjectBody(rawBody: unknown): Record<string, unknown> | null {
@@ -56,6 +67,7 @@ export function createBaileysBackupHandler(deps: BaileysBackupHandlerDeps = {}) 
   const getIp = deps.getIp ?? getClientIp;
   const rateLimit = deps.rateLimit ?? cekRateLimit;
   const svcDeps = deps.serviceDeps ?? {};
+  const aiDeps = deps.aiServiceDeps ?? {};
   const getSnapshot = deps.getSnapshot ?? (() => getBaileysBackupSnapshot(svcDeps));
   const manualCheck = deps.manualCheck ?? (() => runManualVpsCheck(svcDeps));
   const manualResume = deps.manualResume ?? (() => runManualVpsResume(svcDeps));
@@ -64,6 +76,12 @@ export function createBaileysBackupHandler(deps: BaileysBackupHandlerDeps = {}) 
   const setAutoMode = deps.setAutoMode ?? ((enabled: boolean) => setAutoResumeMode(enabled, svcDeps));
   const setKeepalive =
     deps.setKeepalive ?? ((enabled: boolean) => setKeepaliveMode(enabled, svcDeps));
+
+  const isAiTarget = (req: VercelRequest, body?: Record<string, unknown> | null): boolean => {
+    const qTarget = typeof req.query?.target === 'string' ? req.query.target.trim().toLowerCase() : '';
+    const bTarget = body && typeof body.target === 'string' ? body.target.trim().toLowerCase() : '';
+    return qTarget === 'ai' || bTarget === 'ai';
+  };
 
   return async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -102,6 +120,11 @@ export function createBaileysBackupHandler(deps: BaileysBackupHandlerDeps = {}) 
           return;
         }
 
+        if (isAiTarget(req)) {
+          const aiSnap = await getLocalAiVpsSnapshot(aiDeps);
+          res.status(200).json(aiSnap);
+          return;
+        }
         const result = await getSnapshot();
         res.status(200).json(result);
         return;
@@ -124,6 +147,89 @@ export function createBaileysBackupHandler(deps: BaileysBackupHandlerDeps = {}) 
       }
 
       const action = typeof body.action === 'string' ? body.action.trim().toLowerCase() : '';
+
+      // ── JALUR KHUSUS VPS 2 (LOCAL AI VPS: target=ai) ──
+      if (isAiTarget(req, body)) {
+        if (action === 'check') {
+          const result = await runManualLocalAiVpsCheck(aiDeps);
+          res.status(200).json(result);
+          return;
+        }
+        if (action === 'keepalive') {
+          const rlPing = rateLimit(`bb:ai:keepalive:${clientIp}`, 12, 60_000);
+          if (!rlPing.boleh) {
+            res.setHeader('Retry-After', String(rlPing.resetDalamDetik));
+            res.status(429).json({
+              ok: false,
+              error: `Terlalu sering ping VPS 2. Tunggu ${rlPing.resetDalamDetik} detik.`,
+            });
+            return;
+          }
+          const result = await runManualLocalAiVpsKeepalive(aiDeps, body.auto !== true);
+          res.status(result.httpStatus).json({
+            ok: result.ok,
+            attempted: result.attempted,
+            ...(result.reason ? { reason: result.reason } : {}),
+            message: result.message,
+            data: result.data,
+          });
+          return;
+        }
+        if (action === 'set_keepalive') {
+          if (typeof body.keepaliveEnabled !== 'boolean') {
+            res.status(400).json({ ok: false, error: 'Parameter keepaliveEnabled harus bernilai boolean.' });
+            return;
+          }
+          const result = await setLocalAiKeepaliveMode(body.keepaliveEnabled, aiDeps);
+          res.status(200).json(result);
+          return;
+        }
+        if (action === 'resume') {
+          const rlResume = rateLimit(`bb:ai:resume:${clientIp}`, 6, 60_000);
+          if (!rlResume.boleh) {
+            res.setHeader('Retry-After', String(rlResume.resetDalamDetik));
+            res.status(429).json({
+              ok: false,
+              error: `Terlalu sering mengirim perintah resume VPS 2. Tunggu ${rlResume.resetDalamDetik} detik.`,
+            });
+            return;
+          }
+          const result = await runManualLocalAiVpsResume(aiDeps);
+          res.status(result.httpStatus).json({
+            ok: result.ok,
+            status: result.status,
+            message: result.message,
+            ...(result.retryAfterSecs !== undefined && result.retryAfterSecs !== null
+              ? { retryAfterSecs: result.retryAfterSecs }
+              : {}),
+            data: result.data,
+          });
+          return;
+        }
+        if (action === 'set_mode') {
+          if (typeof body.autoResumeEnabled !== 'boolean') {
+            res.status(400).json({ ok: false, error: 'Parameter autoResumeEnabled harus bernilai boolean.' });
+            return;
+          }
+          const result = await setLocalAiAutoResumeMode(body.autoResumeEnabled, aiDeps);
+          res.status(200).json(result);
+          return;
+        }
+        if (action === 'set_primary') {
+          if (typeof body.useAsPrimary !== 'boolean') {
+            res.status(400).json({ ok: false, error: 'Parameter useAsPrimary harus bernilai boolean.' });
+            return;
+          }
+          const result = await setLocalAiPrimaryMode(body.useAsPrimary, aiDeps);
+          res.status(200).json(result);
+          return;
+        }
+        res.status(400).json({
+          ok: false,
+          error: 'Parameter action untuk VPS 2 harus check, resume, set_mode, keepalive, set_keepalive, atau set_primary.',
+        });
+        return;
+      }
       if (
         action !== 'check' &&
         action !== 'resume' &&

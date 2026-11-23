@@ -79,6 +79,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
       if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.reset === "function") {
         window.BaileysBackupPanel.reset();
       }
+      if (window.LocalAiVpsPanel && typeof window.LocalAiVpsPanel.reset === "function") {
+        window.LocalAiVpsPanel.reset();
+      }
       if (refreshTimer) {
         clearInterval(refreshTimer);
         refreshTimer = null;
@@ -197,6 +200,9 @@ const SESSION_TOKEN_KEY = "freeaibot_admin_session_token";
           fetchDataset();
           if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.fetchStatus === "function") {
             window.BaileysBackupPanel.fetchStatus(true);
+          }
+          if (window.LocalAiVpsPanel && typeof window.LocalAiVpsPanel.fetchStatus === "function") {
+            window.LocalAiVpsPanel.fetchStatus(true);
           }
           pasangAutoRefresh();
         } else {
@@ -2243,6 +2249,9 @@ function renderLiveUpstreamTable(data) {
         if (window._bbTick % 2 === 0 && window.BaileysBackupPanel && typeof window.BaileysBackupPanel.fetchStatus === "function") {
           window.BaileysBackupPanel.fetchStatus(false);
         }
+        if (window._bbTick % 2 === 0 && window.LocalAiVpsPanel && typeof window.LocalAiVpsPanel.fetchStatus === "function") {
+          window.LocalAiVpsPanel.fetchStatus(false);
+        }
       }, 15000);
     }
 
@@ -2290,6 +2299,9 @@ function renderLiveUpstreamTable(data) {
         fetchDataset(true);
         if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.fetchStatus === "function") {
           window.BaileysBackupPanel.fetchStatus(true);
+        }
+        if (window.LocalAiVpsPanel && typeof window.LocalAiVpsPanel.fetchStatus === "function") {
+          window.LocalAiVpsPanel.fetchStatus(true);
         }
       });
       on("btn-logout", "click", handleLogout);
@@ -2500,6 +2512,9 @@ function renderLiveUpstreamTable(data) {
       if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.renderCached === "function") {
         window.BaileysBackupPanel.renderCached();
       }
+      if (window.LocalAiVpsPanel && typeof window.LocalAiVpsPanel.renderCached === "function") {
+        window.LocalAiVpsPanel.renderCached();
+      }
     };
 
     // =========================================================================
@@ -2517,6 +2532,9 @@ function renderLiveUpstreamTable(data) {
         fetchDataset(true);
         if (window.BaileysBackupPanel && typeof window.BaileysBackupPanel.fetchStatus === "function") {
           window.BaileysBackupPanel.fetchStatus(true);
+        }
+        if (window.LocalAiVpsPanel && typeof window.LocalAiVpsPanel.fetchStatus === "function") {
+          window.LocalAiVpsPanel.fetchStatus(true);
         }
         pasangAutoRefresh();
       }

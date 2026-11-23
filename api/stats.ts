@@ -33,6 +33,7 @@ import {
   dreampromptingDocumentedLimits,
   type LiveLimit,
 } from '../src/limits.js';
+import { getEffectiveLocalAiPriority, refreshLocalAiPriorityIfStale } from '../src/local_ai_vps.js';
 
 // Katalog untuk UI berasal dari konfigurasi runtime; tidak memuat kredensial.
 export function getModelCatalog() {
@@ -45,9 +46,16 @@ export function getModelCatalog() {
     { provider: 'openrouter', primary: m.orPrimary, backup: m.orBackup },
     { provider: 'gemini', primary: m.geminiPrimary, backup: m.geminiBackup },
   ];
+  if (config.localAiUrl && config.pools.localai.length > 0) {
+    const localEntry = { provider: 'localai', primary: config.localAiModel, backup: [] as string[] };
+    if (getEffectiveLocalAiPriority() === 'primary') tiers.unshift(localEntry);
+    else tiers.push(localEntry);
+  }
   return tiers.flatMap((p, index) => {
     const textModels = [p.primary, ...p.backup];
-    const visionModels = m.visionChain.filter((v) => v.kind === p.provider).map((v) => v.model);
+    const visionModels = p.provider === 'localai'
+      ? (config.localAiVision ? [config.localAiModel] : [])
+      : m.visionChain.filter((v) => v.kind === p.provider).map((v) => v.model);
     const nativeModels = p.provider === 'gemini' ? m.geminiVision : [];
     const audioModels = p.provider === 'groq' ? [m.groqWhisperPrimary, m.groqWhisperBackup]
       : p.provider === 'cloudflare' ? [m.cfWhisper] : [];
@@ -524,6 +532,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       cloudflare: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       opencode: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
       openrouter: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
+      localai: { realTokens: 0, promptTokens: 0, completionTokens: 0, callsWithRealTokens: 0, totalCalls: 0 },
     };
 
     let grandTotalRealTokens = 0;
@@ -532,7 +541,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Atribusi provider dari string via. Format bisa berlapis (mis. "local-parser/groq/qwen/...",
     // "dynamic-pdf-error/gemini/..."), jadi cari segmen path yang cocok dengan provider resmi —
     // bukan hanya segmen pertama — agar token tetap terhitung ke pool yang benar.
-    const KNOWN_PROVIDER_KINDS = ['dreamprompting', 'cloudflare', 'nvidia', 'openrouter', 'groq', 'gemini', 'dahl', 'opencode'];
+    const KNOWN_PROVIDER_KINDS = ['localai', 'dreamprompting', 'cloudflare', 'nvidia', 'openrouter', 'groq', 'gemini', 'dahl', 'opencode'];
     const extractProviderKind = (via: string): string => {
       const segments = via.toLowerCase().split('/');
       return segments.find((s) => KNOWN_PROVIDER_KINDS.includes(s)) || '';
@@ -598,6 +607,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       : 2500;
     const totalComputedTokensPeriod = grandTotalRealTokens + (Math.max(0, totalModelCalls - grandTotalCallsWithRealTokens) * overallAvgTokens);
 
+    if (config.localAiUrl && config.pools.localai.length > 0) {
+      await refreshLocalAiPriorityIfStale().catch(() => config.localAiPriority);
+    }
     const modelCatalog = getModelCatalog();
     const activeSystemModels = new Set(modelCatalog.map((m) => m.id.toLowerCase()));
     const isModelActive = (modelStr: string): boolean => {
@@ -641,9 +653,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }))
       .sort((a, b) => b.count - a.count);
 
-    // 4. Bangun status Pool per Provider & tiap API Key (6 Tier Runtime)
+    // 4. Bangun status Pool per Provider & tiap API Key (6 Tier Cloud + Local AI Opsional)
     const providerDefs: Array<{
-      kind: 'opencode' | 'cloudflare' | 'groq' | 'dreamprompting' | 'openrouter' | 'gemini';
+      kind: 'localai' | 'opencode' | 'cloudflare' | 'groq' | 'dreamprompting' | 'openrouter' | 'gemini';
       displayName: string;
       keys: string[];
       cap: number;
@@ -762,6 +774,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         allModels: modelCatalog.filter((m) => m.provider === 'gemini').map((m) => m.model),
       },
     ];
+
+    if (config.localAiUrl && config.pools.localai.length > 0) {
+      const localDef = {
+        kind: 'localai' as const,
+        displayName: 'Local AI VPS (Self-Hosted)',
+        keys: config.pools.localai,
+        cap: config.dailyCap.localai,
+        tokenCapPerKey: config.dailyTokenCap.localai,
+        tokenCapPerKeyList: config.dailyTokenCapPerKey.localai,
+        tokenLimitType: 'daily_cap' as const,
+        tokenLimitLabel: 'Self-hosted unlimited token (terbatas runtime VPS)',
+        resetCycle: 'Tanpa reset kuota',
+        contextWindow: `${config.localAiMaxContextTokens.toLocaleString('id-ID')} token`,
+        primaryModel: config.localAiModel,
+        backupModel: '',
+        allModels: modelCatalog.filter((m) => m.provider === 'localai').map((m) => m.model),
+      };
+      if (getEffectiveLocalAiPriority() === 'primary') providerDefs.unshift(localDef);
+      else providerDefs.push(localDef);
+    }
 
     let totalPoolKeys = 0;
     let totalCallsPeriod = 0;

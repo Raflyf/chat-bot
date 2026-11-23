@@ -67,6 +67,7 @@ export const config = {
   ownerChatId: cleanStr('OWNER_CHAT_ID'),
   ownerWaNumber: cleanStr('OWNER_WA_NUMBER'),
   pools: {
+    localai: csv('LOCAL_AI_API_KEY'),
     opencode: csv('OPENCODE_KEYS'),
     cloudflare: csv('CLOUDFLARE_KEYS'),
     groq: csv('GROQ_KEYS'),
@@ -74,6 +75,17 @@ export const config = {
     openrouter: csv('OPENROUTER_KEYS'),
     gemini: csv('GEMINI_KEYS'),
   },
+  // Self-hosted OpenAI-compatible AI server (opsional, mis. llama-server di VPS kedua).
+  // Aktif HANYA bila LOCAL_AI_URL dan LOCAL_AI_API_KEY keduanya terisi (fail-closed).
+  localAiUrl: cleanStr('LOCAL_AI_URL').replace(/\/+$/, ''),
+  localAiModel: cleanStr('LOCAL_AI_MODEL') || 'ternary-bonsai-2-9b',
+  localAiPriority: (cleanStr('LOCAL_AI_PRIORITY').toLowerCase() === 'primary' ? 'primary' : 'fallback') as 'primary' | 'fallback',
+  localAiVision: enabledByDefault('LOCAL_AI_VISION', true),
+  localAiFirstTokenMs: num('LOCAL_AI_FIRST_TOKEN_MS', 25000),
+  localAiMaxContextTokens: num('LOCAL_AI_MAX_CONTEXT_TOKENS', 14500),
+  // Kontrol lifecycle InstaBox khusus VPS 2 (AI Model VPS), terpisah dari VPS 1 (Baileys).
+  localAiInstaboxApiKey: cleanStr('LOCAL_AI_INSTABOX_API_KEY'),
+  localAiInstaboxMachineId: cleanStr('LOCAL_AI_INSTABOX_MACHINE_ID'),
   cloudflareAccountId: cleanStr('CLOUDFLARE_ACCOUNT_ID'),
   models: {
     // Tier 1: OpenCode Free. Model ID mengikuti katalog yang sudah diuji.
@@ -199,6 +211,7 @@ export const config = {
   cacheTtlMs: num('CACHE_TTL_MS', 3600000),
   isServerless: process.env.VERCEL === '1' || !!process.env.AWS_LAMBDA_FUNCTION_NAME,
   dailyCap: {
+    localai: num('DAILY_CAP_LOCAL_AI', 1_000_000),
     dreamprompting: num('DAILY_CAP_DREAMPROMPTING', 1000),
     cloudflare: num('DAILY_CAP_CLOUDFLARE', 120),
     openrouter: num('DAILY_CAP_OPENROUTER', 50),
@@ -210,6 +223,7 @@ export const config = {
   // Groq Free Tier resmi: 200K TPD untuk qwen3.8-27b & qwen3.6-27b
   // (tercapai jauh lebih cepat daripada RPD 1.000 pada ~2.5K token/call).
   dailyTokenCap: {
+    localai: numAllowZero('DAILY_TOKEN_CAP_LOCAL_AI', 0),
     opencode: numAllowZero('DAILY_TOKEN_CAP_OPENCODE', 0),
     dreamprompting: numAllowZero('DAILY_TOKEN_CAP_DREAMPROMPTING', 0),
     cloudflare: numAllowZero('DAILY_TOKEN_CAP_CLOUDFLARE', 0),
@@ -222,6 +236,7 @@ export const config = {
   // sementara key #2/#3 hanya 500.000. Format env: "1000000,500000,500000".
   // Bila kosong, semua key memakai dailyTokenCap[kind].
   dailyTokenCapPerKey: {
+    localai: numList('DAILY_TOKEN_CAP_PER_KEY_LOCAL_AI'),
     opencode: numList('DAILY_TOKEN_CAP_PER_KEY_OPENCODE'),
     dreamprompting: numList('DAILY_TOKEN_CAP_PER_KEY_DREAMPROMPTING'),
     cloudflare: numList('DAILY_TOKEN_CAP_PER_KEY_CLOUDFLARE'),
@@ -304,6 +319,7 @@ export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegra
     throw new Error('SUPABASE_URL terisi tetapi SUPABASE_KEY / SUPABASE_SERVICE_ROLE_KEY kosong.');
   }
   const totalKeys =
+    (config.localAiUrl ? config.pools.localai.length : 0) +
     config.pools.dreamprompting.length +
     config.pools.cloudflare.length +
     config.pools.openrouter.length +

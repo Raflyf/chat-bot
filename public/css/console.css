@@ -96,6 +96,7 @@
   --p-dahl: #2dd4bf;
   --p-xkiro: #4da3ff;
   --p-opencode: #E87040;
+  --p-localai: #10B981;
 
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -144,6 +145,7 @@
   --p-dahl: #0f766e;
   --p-xkiro: #0a6fd8;
   --p-opencode: #c9542a;
+  --p-localai: #059669;
 }
 
 
@@ -1172,6 +1174,7 @@ td:nth-child(1) { font-variant-numeric: normal; }
 .model-matrix-card[data-provider="dahl"]           { --card-provider-color: var(--p-dahl); }
 .model-matrix-card[data-provider="xkiro"]          { --card-provider-color: var(--p-xkiro); }
 .model-matrix-card[data-provider="opencode"]       { --card-provider-color: var(--p-opencode); }
+.model-matrix-card[data-provider="localai"]        { --card-provider-color: var(--p-localai); }
 
 .model-matrix-card {
   position: relative;
@@ -1569,6 +1572,7 @@ header.header-scrolled .nav-inner {
 .provider-card[data-provider="dahl"]           { --provider-color: var(--p-dahl); }
 .provider-card[data-provider="xkiro"]          { --provider-color: var(--p-xkiro); }
 .provider-card[data-provider="opencode"]        { --provider-color: var(--p-opencode); }
+.provider-card[data-provider="localai"]         { --provider-color: var(--p-localai); }
 
 /* Garis aksen tipis di tepi atas kartu, memakai warna penyedia. */
 .provider-card { position: relative; overflow: hidden; }

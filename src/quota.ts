@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import { db } from './db.js';
 
 export type ProviderKind =
+  | 'localai'
   | 'dreamprompting'
   | 'cloudflare'
   | 'openrouter'

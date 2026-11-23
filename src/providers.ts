@@ -5,6 +5,7 @@ import { config } from './env.js';
 import { cooldownMemori, setCooldown, hapusCooldown, mulaiHidrasiLatar } from './cooldown.js';
 import { hitungNeuron } from './neuron.js';
 import { isKeyAllowed, keyUsed, keyTokensUsed, keyTokensUsedToday, keyRequestsUsedToday, keyTokenAbsolute, ensureKeyQuotaHydrated, ProviderKind } from './quota.js';
+import { getEffectiveLocalAiPriority, refreshLocalAiPriorityIfStale } from './local_ai_vps.js';
 // redactUrl: WAJIB dipakai setiap mencetak URL upstream — Gemini menaruh API key
 // di query string, jadi URL mentah membocorkan kredensial ke log (audit 14 Okt 2026).
 import { redactUrl, redactSecret } from './logger.js';
@@ -205,6 +206,13 @@ function recordKeyFailure(kind: ProviderKind, key: string, err: unknown): void {
   // Jika timeout koneksi atau hang, cooldown 2 menit agar request berikutnya langsung ke kunci sehat
   if (rawMsg === 'CONNECT_TIMEOUT' || rawMsg === 'THINKING_TIMEOUT') {
     setCooldownPersist(kh, Date.now() + 120_000, 'error');
+    return;
+  }
+
+  // Self-hosted local AI (mis. VPS sedang paused / restart -> 502/503/504/network error):
+  // cooldown singkat 60 detik agar pesan berikutnya langsung jatuh ke cloud tanpa menunggu timeout.
+  if (kind === 'localai' && (/PROVIDER_50[234]|fetch failed|ECONNREFUSED|ECONNRESET/i.test(rawMsg))) {
+    setCooldownPersist(kh, Date.now() + 60_000, 'error');
     return;
   }
 }
@@ -1332,8 +1340,157 @@ async function opencodeChat(_key: string, model: string, msgs: ChatMsg[], timeou
   return { text: result.text, tokens: result.tokens };
 }
 
+/**
+ * Khusus adapter Self-Hosted Local AI (`llama-server` Hybrid DeltaNet / Ternary-Bonsai-2):
+ * TIDAK mengubah `src/skills.ts` maupun prompt provider cloud universal.
+ *
+ * Memisahkan blok aturan persona STATIS (100% identik lintas user & giliran di `messages[0]`)
+ * dari blok DINAMIS per giliran (`[WAKTU]`, status developer, status stiker, `[GAYA/SUASANA/MEMORI]`)
+ * yang ditempel pada pesan user terakhir. Dengan cara ini `llama-server` memulihkan checkpoint
+ * KV+recurrent (~7.5K token) dalam <50 ms sehingga hanya ~250-400 token dinamis yang di-prefill.
+ */
+export function siapkanPromptUntukLocalAi(
+  msgs: ChatMsg[],
+  maxContextTokens: number = config.localAiMaxContextTokens,
+): ChatMsg[] {
+  if (!msgs.length || msgs[0].role !== 'system' || typeof msgs[0].content !== 'string') {
+    return trimMessagesToTokenBudget(msgs, maxContextTokens);
+  }
+
+  const dyn: string[] = [];
+  let stat = msgs[0].content;
+
+  // 1. Blok waktu & kalender (berubah tiap menit -> wajib keluar dari prefix statis)
+  stat = stat.replace(
+    /\n*\[WAKTU & KALENDER[\s\S]*?(?=\n\[DIREKTIF MUTLAK KOMUNIKASI\]:|\nPEDOMAN GENERASI|\nIDENTITAS DEVELOPER)/,
+    (m) => {
+      dyn.push(m.trim());
+      return '\n\n';
+    },
+  );
+
+  // 2. Blok IDENTITAS DEVELOPER: pertahankan aturan dual-peran secara statis,
+  //    kirim status lawan bicara 1 baris di blok dinamis agar prefix identik untuk owner & non-owner.
+  const isOwner = /STATUS:\s*TERVERIFIKASI RAFLY/.test(stat);
+  if (/\n*IDENTITAS DEVELOPER/.test(stat)) {
+    stat = stat.replace(
+      /\n*IDENTITAS DEVELOPER[\s\S]*?(?=\n\nKamu adalah sahabat karib)/,
+      '\n\nIDENTITAS DEVELOPER (IKUTI STATUS DI KONTEKS AKTIF):\n' +
+        '- Pencipta/developermu adalah Rafly Firmansyah (Rafly / Rflyyyf). Kamu adalah bot yang DIBUAT oleh Rafly, bukan developer.\n' +
+        '- Bila [STATUS LAWAN BICARA] menyatakan TERVERIFIKASI RAFLY: dia penciptamu sendiri, akunnya terverifikasi resmi, jangan pernah menyangkal kenal atau minta kenalan ulang, jangan mengarang nomor HP/data yang tak ada, dan singgung status developer hanya bila dia bertanya eksplisit.\n' +
+        '- Bila [STATUS LAWAN BICARA] menyatakan TEMAN BIASA: panggil Rafly sebagai "developerku/penciptaku" (bukan "developermu"), tanggapi candaan/troll santai tanpa defensif.',
+    );
+    dyn.push(
+      isOwner
+        ? '[STATUS LAWAN BICARA: TERVERIFIKASI RAFLY — developer & penciptamu sendiri.]'
+        : '[STATUS LAWAN BICARA: TEMAN BIASA — bukan Rafly.]',
+    );
+  }
+
+  // 3. STIKER BALASAN: normalisasi ke 1 baris aturan statis yang byte-identical antara aktif & cooldown,
+  //    dan pindahkan daftar emoji / status cooldown ke blok dinamis.
+  const STIKER_STATIC_LINE =
+    'STIKER BALASAN (IKUTI STATUS [STIKER_BALASAN] DI KONTEKS AKTIF): bila AKTIF, sisipkan SATU tag [[sticker:<emoji>]] dari [EMOJI_STIKER_TERSEDIA] di AKHIR balasan santai hangat; bila NONAKTIF, jangan kirim tag stiker.';
+  if (/\nSTIKER BALASAN \(PAKAI SAAT MOMENNYA PAS[^\n]*/.test(stat)) {
+    stat = stat.replace(/\nSTIKER BALASAN \(PAKAI SAAT MOMENNYA PAS[^\n]*/, (m) => {
+      const emojiMatch = m.match(/Emoji TERSEDIA:\s*([^\n.]+)\./);
+      dyn.push('[STIKER_BALASAN: AKTIF bila suasana santai hangat.]');
+      if (emojiMatch) dyn.push(`[EMOJI_STIKER_TERSEDIA: ${emojiMatch[1].trim()}]`);
+      return '\n' + STIKER_STATIC_LINE;
+    });
+  } else if (stat.includes('\n- ANTI-FLAT:')) {
+    stat = stat.replace('\n- ANTI-FLAT:', `\n${STIKER_STATIC_LINE}\n- ANTI-FLAT:`);
+    dyn.push('[STIKER_BALASAN: NONAKTIF pada giliran ini — jangan kirim tag [[sticker:...]].]');
+  }
+
+  // 4. Blok kondisional PRINSIP 3 (tebak-tebakan/gombalan) & KONTEKS GRUP
+  stat = stat.replace(/\n*PRINSIP 3:[\s\S]*?(?=\nPRINSIP 4:)/, (m) => {
+    dyn.push(m.trim());
+    return '\n\n';
+  });
+  stat = stat.replace(/\n*- KONTEKS GRUP \(ATURAN KHUSUS OBROLAN GRUP\):(?:\n  \* [^\n]+)+/, (m) => {
+    dyn.push(m.trim());
+    return '';
+  });
+
+  // 5. Blok dinamis di ekor (biarkan [BACA SUASANA SENDIRI], [PRIORITAS UTAMA],
+  //    [DILARANG MUTLAK membicarakan...], [NAFAS PERCAKAPAN] tetap STATIS!)
+  const dynamicLineRe =
+    /\n*\[(?:ENERGI |GAYA:|SUASANA|KONTINUITAS|ALUR & SUASANA|MEMORI LATAR|PROFIL & PREFERENSI|SITUASI KHUSUS|DATA INTERNET|KONTEKS TERKINI)[^\]]*\][^\n]*(?:\n(?!\[)[^\n]*)*/g;
+  stat = stat.replace(dynamicLineRe, (m) => {
+    dyn.push(m.trim());
+    return '\n\n';
+  });
+
+  // Normalisasi baris kosong konsisten agar tidak ada selisih 1 newline (\n vs \n\n) yang membatalkan checkpoint KV.
+  const staticSystem = stat
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n+\[/g, '\n\n[')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const dynamicTail = dyn.filter(Boolean).join('\n').trim();
+
+  const out: ChatMsg[] = [{ role: 'system', content: staticSystem }, ...msgs.slice(1)];
+  if (dynamicTail && out.length > 1) {
+    const lastIdx = out.length - 1;
+    const last = out[lastIdx];
+    const prefix = `[KONTEKS AKTIF]\n${dynamicTail}\n\n[PESAN]\n`;
+    if (typeof last.content === 'string') {
+      out[lastIdx] = { ...last, content: prefix + last.content };
+    } else if (Array.isArray(last.content)) {
+      out[lastIdx] = {
+        ...last,
+        content: [{ type: 'text', text: prefix }, ...last.content],
+      };
+    }
+  }
+  return trimMessagesToTokenBudget(out, maxContextTokens);
+}
+
+async function localAiChat(
+  key: string,
+  model: string,
+  msgs: ChatMsg[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<ProviderResult> {
+  const prepared = siapkanPromptUntukLocalAi(msgs, config.localAiMaxContextTokens);
+  const hasImage = messagesContainImage(prepared);
+  const firstTokenMs = Math.min(
+    timeoutMs,
+    hasImage ? Math.max(config.visionFirstTokenMs, config.localAiFirstTokenMs) : config.localAiFirstTokenMs,
+  );
+  const result = await streamSse(
+    `${config.localAiUrl}/chat/completions`,
+    {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    {
+      model,
+      messages: prepared,
+      max_tokens: config.maxOutputTokens,
+      ...BASE_GEN,
+      reasoning_effort: 'none',
+      chat_template_kwargs: { enable_thinking: false },
+      stream: true,
+      stream_options: { include_usage: true },
+    },
+    {
+      firstTokenMs,
+      idleMs: config.streamIdleTimeoutMs,
+      totalMs: timeoutMs,
+    },
+    openAiDelta,
+    openAiUsage,
+    signal,
+  );
+  return { text: result.text, tokens: result.tokens };
+}
+
 function steps(): Step[] {
-  return [
+  const cloudSteps: Step[] = [
     // Tier 1: OpenCode DeepSeek, lalu GLM menyusul dalam race.
     {
       kind: 'opencode', keys: config.pools.opencode,
@@ -1386,6 +1543,25 @@ function steps(): Step[] {
       run: (k, m, msgs, t, signal) => geminiChat(k, m, msgs, t, undefined, signal),
     },
   ];
+
+  if (config.localAiUrl && config.pools.localai.length > 0) {
+    const localStep: Step = {
+      kind: 'localai',
+      keys: config.pools.localai,
+      models: [config.localAiModel],
+      cap: config.dailyCap.localai,
+      maxPromptTokens: 0,
+      run: (k, m, msgs, t, signal) => localAiChat(k, m, msgs, t, signal),
+    };
+    const effectivePriority =
+      typeof getEffectiveLocalAiPriority === 'function'
+        ? getEffectiveLocalAiPriority()
+        : config.localAiPriority;
+    return effectivePriority === 'primary'
+      ? [localStep, ...cloudSteps]
+      : [...cloudSteps, localStep];
+  }
+  return cloudSteps;
 }
 
 
@@ -1427,6 +1603,19 @@ function visionSteps(all: Step[], msgs?: ChatMsg[]): Step[] {
     // dan xKiro menerimanya dengan baik.
     if (imgMime === 'image/webp' && entry.kind === 'groq') continue;
     out.push({ ...base, models: [entry.model] });
+  }
+
+  // Self-hosted local AI (llama-server + mmproj): mendukung JPEG/PNG/GIF/BMP,
+  // namun stb_image llama.cpp menolak WebP (HTTP 400), jadi lewati untuk stiker WebP.
+  const localStep = byKind.get('localai');
+  if (localStep && config.localAiVision && imgMime !== 'image/webp') {
+    const localVisionStep = { ...localStep, models: [config.localAiModel] };
+    const effectivePriority =
+      typeof getEffectiveLocalAiPriority === 'function'
+        ? getEffectiveLocalAiPriority()
+        : config.localAiPriority;
+    if (effectivePriority === 'primary') out.unshift(localVisionStep);
+    else out.push(localVisionStep);
   }
   return out;
 }
@@ -1764,6 +1953,9 @@ export async function chat(
   }
 
   let lastError = 'NO_PROVIDER_KEYS';
+  if (config.localAiUrl && config.pools.localai.length > 0) {
+    await refreshLocalAiPriorityIfStale().catch(() => config.localAiPriority);
+  }
   const allSteps = steps();
 
   const estimatePromptTokens = (msgs: ChatMsg[]): number => estimatePromptTokensWithRatio(msgs, 4);

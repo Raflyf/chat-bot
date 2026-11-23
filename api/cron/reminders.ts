@@ -6,6 +6,7 @@ import { checkDueReminders, nomorWhatsApp } from '../../src/remind.js';
 import { sendWhatsAppCloudMessageSafe } from '../../src/whatsapp_cloud.js';
 import { cekLifecycleVps } from '../../src/vps_monitor.js';
 import { cobaAutoResumeDariCron } from '../../src/baileys_backup_web.js';
+import { cobaKeepaliveDanAutoResumeVps2DariCron } from '../../src/local_ai_vps.js';
 import { jalankanKeepaliveVps } from '../../src/vps_keepalive.js';
 
 function timingSafeMatch(a: string, b: string): boolean {
@@ -147,12 +148,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       );
     }
 
+    let localAiVps: {
+      configured: boolean;
+      state: string | null;
+      keepalive: { attempted: boolean; ok?: boolean; reason?: string; message?: string };
+      autoResume: { attempted: boolean; ok?: boolean; reason?: string; message?: string };
+    } = {
+      configured: false,
+      state: null,
+      keepalive: { attempted: false, reason: 'not_configured' },
+      autoResume: { attempted: false, reason: 'not_configured' },
+    };
+    try {
+      localAiVps = await cobaKeepaliveDanAutoResumeVps2DariCron();
+    } catch (err) {
+      console.warn(
+        '[cron/reminders] cobaKeepaliveDanAutoResumeVps2DariCron error:',
+        String((err as Error)?.message ?? err).slice(0, 120),
+      );
+    }
+
     res.status(200).json({
       ok: true,
       processed,
       vps_monitor: vpsMonitor,
       vps_keepalive: vpsKeepalive,
       baileys_auto_resume: baileysAutoResume,
+      local_ai_vps: localAiVps,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
