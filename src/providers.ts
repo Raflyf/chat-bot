@@ -1430,7 +1430,17 @@ export function siapkanPromptUntukLocalAi(
     .trim();
   const dynamicTail = dyn.filter(Boolean).join('\n').trim();
 
-  const out: ChatMsg[] = [{ role: 'system', content: staticSystem }, ...msgs.slice(1)];
+  // Batasi riwayat lama khusus local AI CPU agar perpindahan dari cloud (20+ giliran riwayat)
+  // tidak memicu prefill dingin >6.000 token yang melampaui timeout serverless.
+  // Pesan user terakhir tetap 100% utuh; 6 pesan riwayat terakhir (3 pasang giliran) cukup menjaga alur.
+  const MAX_LOCAL_HISTORY = 6;
+  const rawRest = msgs.slice(1);
+  const recentRest =
+    rawRest.length > MAX_LOCAL_HISTORY + 1
+      ? [...rawRest.slice(-(MAX_LOCAL_HISTORY + 1))]
+      : rawRest;
+
+  const out: ChatMsg[] = [{ role: 'system', content: staticSystem }, ...recentRest];
   if (dynamicTail && out.length > 1) {
     const lastIdx = out.length - 1;
     const last = out[lastIdx];

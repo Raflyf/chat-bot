@@ -19,6 +19,10 @@ const text = [
   ['openrouter', [m.orPrimary, ...m.orBackup]],
   ['gemini', [m.geminiPrimary, ...m.geminiBackup]],
 ];
+if (config.localAiUrl && config.pools.localai.length > 0) {
+  if (config.localAiPriority === 'primary') text.unshift(['localai', [config.localAiModel]]);
+  else text.push(['localai', [config.localAiModel]]);
+}
 
 test('katalog API mencakup semua model runtime tepat sekali per provider', () => {
   const expected = new Set(text.flatMap(([p, models]) => models.map(model => p + '/' + model)));

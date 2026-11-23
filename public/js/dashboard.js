@@ -1,6 +1,6 @@
 function modelUsageId(value) {
   const parts = String(value || '').split('#')[0].trim().toLowerCase().split('/');
-  const at = parts.findIndex((part) => ['opencode', 'cloudflare', 'groq', 'dreamprompting', 'openrouter', 'gemini', 'dahl', 'nvidia', 'xkiro'].includes(part));
+  const at = parts.findIndex((part) => ['localai', 'opencode', 'cloudflare', 'groq', 'dreamprompting', 'openrouter', 'gemini', 'dahl', 'nvidia', 'xkiro'].includes(part));
   return at >= 0 ? parts.slice(at).join('/') : '';
 }
 

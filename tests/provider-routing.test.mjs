@@ -16,7 +16,7 @@ function load(name, context) {
 }
 
 test('runtime tier mengikuti kontrak tanpa Dahl/NIM', () => {
-  const steps = load('steps', { config });
+  const steps = load('steps', { config: { ...config, localAiUrl: '' } });
   const routes = steps();
   assert.equal(routes.map(s => s.kind).join(','), 'opencode,cloudflare,groq,dreamprompting,openrouter,gemini');
   assert.equal(routes[0].models.join(','), 'deepseek-v4.1-flash-free,mimo-v2.6-flash-free');

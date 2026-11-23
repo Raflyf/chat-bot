@@ -238,3 +238,11 @@ test('UI dashboard memuat panel VPS 2, tombol ON/OFF Model Utama, dan wiring scr
   assert.ok(js.includes('/api/baileys-backup?target=ai'));
   assert.ok(dash.includes('window.LocalAiVpsPanel'));
 });
+
+test('kontrak skema DB: src/local_ai_vps.ts memakai kolom content (JSON string) pada whatsapp_sessions, bukan kolom data', () => {
+  const src = fs.readFileSync(new URL('../src/local_ai_vps.ts', import.meta.url), 'utf8');
+  assert.equal(src.includes(".select('data')"), false, 'whatsapp_sessions tidak punya kolom data');
+  assert.equal(/\bdata:\s*state\b/.test(src), false, 'upsert whatsapp_sessions wajib memakai content: JSON.stringify(state)');
+  assert.ok(src.includes(".select('content')"));
+  assert.ok(src.includes('content: JSON.stringify(state)'));
+});

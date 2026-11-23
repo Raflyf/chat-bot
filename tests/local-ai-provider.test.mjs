@@ -73,6 +73,24 @@ test('siapkanPromptUntukLocalAi menjaga payload multimodal gambar utuh', () => {
   assert.equal(out[1].content.some((p) => p.type === 'image_url' && p.image_url.url === 'data:image/jpeg;base64,abc123'), true);
 });
 
+test('siapkanPromptUntukLocalAi menjaga maks 6 pesan riwayat terbaru agar prefill CPU tidak timeout', () => {
+  const sys = systemPrompt({ chatId: 'wa_628991333323', history: [] }, null, 'pesan terbaru');
+  const longHistory = [];
+  for (let i = 1; i <= 10; i++) {
+    longHistory.push({ role: 'user', content: `lama user ${i}` });
+    longHistory.push({ role: 'assistant', content: `lama bot ${i}` });
+  }
+  const out = siapkanPromptUntukLocalAi([
+    { role: 'system', content: sys },
+    ...longHistory,
+    { role: 'user', content: 'pesan terbaru' },
+  ]);
+  // 1 system + 6 history terbaru + 1 user terbaru = 8 pesan
+  assert.equal(out.length, 8);
+  assert.equal(out[1].content, 'lama user 8');
+  assert.ok(String(out.at(-1).content).endsWith('pesan terbaru'));
+});
+
 test('routing localai opsional: fail-closed tanpa key, primary/fallback sesuai prioritas, dan skip WebP', () => {
   const mkCfg = (overrides) => ({
     ...config,

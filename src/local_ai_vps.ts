@@ -243,11 +243,12 @@ export async function bacaLocalAiVpsState(): Promise<LocalAiVpsCloudState | null
   try {
     const { data, error } = await c
       .from('whatsapp_sessions')
-      .select('data')
+      .select('content')
       .eq('filename', LOCAL_AI_VPS_STATE_FILENAME)
       .maybeSingle();
-    if (!error && data && data.data) {
-      const normalized = normalizeLocalAiVpsState(data.data);
+    if (!error && data && typeof (data as { content?: unknown }).content === 'string') {
+      const parsed = JSON.parse(String((data as { content: string }).content));
+      const normalized = normalizeLocalAiVpsState(parsed);
       memState = normalized;
       updatePriorityCacheFromState(normalized);
       return normalized;
@@ -267,7 +268,7 @@ export async function simpanLocalAiVpsState(state: LocalAiVpsCloudState): Promis
     const { error } = await c.from('whatsapp_sessions').upsert(
       {
         filename: LOCAL_AI_VPS_STATE_FILENAME,
-        data: state,
+        content: JSON.stringify(state),
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'filename' },
@@ -286,16 +287,19 @@ export async function bacaLocalAiKeepaliveState(): Promise<VpsKeepaliveState | n
   try {
     const { data, error } = await c
       .from('whatsapp_sessions')
-      .select('data')
+      .select('content')
       .eq('filename', LOCAL_AI_KEEPALIVE_FILENAME)
       .maybeSingle();
-    if (!error && data && data.data && typeof data.data === 'object') {
-      const merged: VpsKeepaliveState = {
-        ...defaultKeepaliveState(),
-        ...(data.data as Partial<VpsKeepaliveState>),
-      };
-      memKeepalive = merged;
-      return merged;
+    if (!error && data && typeof (data as { content?: unknown }).content === 'string') {
+      const parsed = JSON.parse(String((data as { content: string }).content));
+      if (parsed && typeof parsed === 'object') {
+        const merged: VpsKeepaliveState = {
+          ...defaultKeepaliveState(),
+          ...(parsed as Partial<VpsKeepaliveState>),
+        };
+        memKeepalive = merged;
+        return merged;
+      }
     }
   } catch (err) {
     console.warn('[local-ai-vps] gagal baca keepalive:', String((err as Error)?.message ?? err).slice(0, 120));
@@ -311,7 +315,7 @@ export async function simpanLocalAiKeepaliveState(state: VpsKeepaliveState): Pro
     const { error } = await c.from('whatsapp_sessions').upsert(
       {
         filename: LOCAL_AI_KEEPALIVE_FILENAME,
-        data: state,
+        content: JSON.stringify(state),
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'filename' },
