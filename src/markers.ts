@@ -92,6 +92,30 @@ export function assistantTurnCount(
   return count;
 }
 
+/**
+ * Mode VN terakhir ('sing' | 'chat') dalam N balasan asisten terbaru, atau null bila tidak ada.
+ * Dipakai untuk mengenali perintah pendek seperti "ulangii" / "coba lagi" tepat setelah VN.
+ */
+export function lastRecentVnMode(
+  history: Array<{ role: string; content: string | unknown }> | undefined,
+  maxAssistantLookback = 4,
+): 'chat' | 'sing' | null {
+  if (!history || history.length === 0) return null;
+  let seen = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    if (h.role !== 'assistant' || typeof h.content !== 'string') continue;
+    const m = h.content.match(VN_MARKER_RE);
+    if (m) {
+      const val = m[1].trim().toLowerCase();
+      return val === 'sing' ? 'sing' : 'chat';
+    }
+    seen++;
+    if (seen >= maxAssistantLookback) break;
+  }
+  return null;
+}
+
 /** Gabungkan teks balasan asisten dengan penanda durable (riddle / stiker / VN) untuk cache konteks. */
 export function appendDurableMarkers(reply: string, m: DurableMarkers): string {
   const suffix: string[] = [];

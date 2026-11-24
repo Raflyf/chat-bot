@@ -292,16 +292,22 @@ export const config = {
   vpsKeepaliveLeaseTtlSeconds: num('VPS_KEEPALIVE_LEASE_TTL_SECONDS', 3600),
   vpsIdlePauseMinutes: num('VPS_IDLE_PAUSE_MINUTES', 30),
   // ── BALASAN VOICE NOTE (VN) & NYANYI ACAPELLA ──
-  // VN biasa memakai Edge-TTS (id-ID-ArdiNeural / id-ID-GadisNeural) dengan rasio santai ~5:1;
-  // VN nyanyi memakai Gemini 3.8 TTS (gemini-3.8-flash-tts / gemini-3.8-flash-lite-tts).
+  // Semua VN (obrolan santai ~5:1 & nyanyi acapella) memakai rantai Gemini TTS
+  // (gemini-3.8-flash-lite-tts -> gemini-3.8-flash-tts -> gemini-2.5-flash-preview-tts)
+  // agar suara bahasa Indonesia natural seperti manusia. Edge-TTS hanya dipakai bila
+  // VOICE_EDGE_FALLBACK=1 diaktifkan eksplisit.
   voiceNoteEnabled: enabledByDefault('VOICE_NOTE_ENABLED', true),
+  voiceEdgeFallback: ['true', '1', 'yes', 'on'].includes(
+    String(process.env.VOICE_EDGE_FALLBACK ?? '').trim().toLowerCase(),
+  ),
   ttsVoice: cleanStr('TTS_VOICE') || 'id-ID-ArdiNeural',
-  ttsRate: cleanStr('TTS_RATE') || '+4%',
+  ttsRate: cleanStr('TTS_RATE') || '+0%',
   ttsPitch: cleanStr('TTS_PITCH') || '+0Hz',
   edgeTtsGecVersion: cleanStr('EDGE_TTS_GEC_VERSION') || '1-143.0.3650.75',
   geminiTtsModel: cleanStr('GEMINI_TTS_MODEL') || 'gemini-3.8-flash-tts',
   geminiTtsLiteModel: cleanStr('GEMINI_TTS_LITE_MODEL') || 'gemini-3.8-flash-lite-tts',
-  geminiTtsVoice: cleanStr('GEMINI_TTS_VOICE') || '',
+  geminiTtsBackupModel: cleanStr('GEMINI_TTS_BACKUP_MODEL') || 'gemini-2.5-flash-preview-tts',
+  geminiTtsVoice: cleanStr('GEMINI_TTS_VOICE') || 'Puck',
   vnSpontaneousInterval: num('VN_SPONTANEOUS_INTERVAL', 5),
 };
 

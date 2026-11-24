@@ -8,7 +8,7 @@ import { sanitizeKnowledgeText } from './knowledge.js';
 import { stripStickerMarker, hasStickerForEmoji, stickerFitsMood, isEdgyStickerEmoji, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { STICKER_MANIFEST, STICKER_INFO } from './sticker-manifest.js';
 import { stripRiddleMarker, stripVnMarker, lastRiddleAnswer } from './markers.js';
-import { detectSingRequest, detectExplicitVnRequest } from './voice.js';
+import { detectSingRequest, detectExplicitVnRequest, detectVnRetryMode } from './voice.js';
 import { getOrGrowMemory, needsGrowth, growMemory } from './bot_growth.js';
 import { markMemoryUsed, isMemoryRelevant } from './bot_memory.js';
 import { RIDDLE_SEED, GOMBAL_SEED } from './riddles.js';
@@ -1974,7 +1974,10 @@ export function sanitizeAssistantOutput(
       .trim();
   }
 
-  let cleaned = cleanMathAndNoise(extractImageDescTag(extractStickerReadTag(text).text).text, userPrompt);
+  let cleaned = cleanMathAndNoise(
+    stripVnMarker(stripStickerMarker(extractImageDescTag(extractStickerReadTag(text).text).text)),
+    userPrompt,
+  );
   // Huruf KAPITAL pertama kata terduplikasi (temuan live 21 Sep: "HHalo! Lagi siap bantu..."
   // dari xKiro qwen3.8-max). Model kadang mengetik huruf pertama dua kali; terlihat seperti
   // typo bagi user. HANYA huruf kapital -> "HHalo" jadi "Halo", sementara kata berhuruf
@@ -3171,13 +3174,13 @@ export function systemPrompt(
     '  * Membuka/mengubah akun lain (Spotify, YouTube, dll) atau menambah lagu ke playlist.',
     ...blokBatasanGrup,
     '  -> Bila dia meminta salah satunya: AKUI JUJUR dengan santai bahwa kamu tidak bisa (mis. "Aku nggak bisa muter lagu, tapi kalau mau cerita soal lagunya, boleh banget"), lalu TAWARKAN yang benar-benar bisa kamu lakukan (ngobrol, kirim VN, nyanyi acapella ringan, mengingatkan, mencatat, cari info). DILARANG berpura-pura memutar, DILARANG bilang "lagi diputar", dan DILARANG memuji lagunya seolah kamu sedang memutarnya.',
-    ...(detectSingRequest(userPromptText)
+    ...(detectSingRequest(userPromptText) || detectVnRetryMode(userPromptText, ctx?.history) === 'sing'
       ? [
-          '- MODE NYANYI ACAPELLA VIA VN (AKTIF PADA GILIRAN INI): Sistem akan langsung mengubah balasanmu menjadi Voice Note nyanyian acapella. Tulis langsung 2-5 baris lirik pendek bahasa Indonesia yang enak dilantunkan (boleh parodi/senandung ringan yang nyambung dengan judul/suasana permintaan user untuk seru-seruan). TANPA basa-basi pembuka, TANPA markdown, TANPA simbol aksi (*berdehem*/*nyanyi*), TANPA emoji, dan JANGAN menolak bilang tidak bisa nyanyi.',
+          '- MODE NYANYI ACAPELLA VIA VN (AKTIF PADA GILIRAN INI): Sistem akan langsung mengubah balasanmu menjadi Voice Note nyanyian acapella. Tulis langsung 2-5 baris lirik pendek sesuai bahasa lagu yang diminta yang enak dilantunkan (boleh potongan singkat atau senandung ringan yang nyambung dengan judul/suasana permintaan user untuk seru-seruan). TANPA basa-basi pembuka (jangan tulis "Oke gue coba lagi ya"), TANPA markdown, TANPA simbol aksi (*berdehem*/*nyanyi*), TANPA emoji, TANPA tag internal, dan JANGAN menolak bilang tidak bisa nyanyi.',
         ]
-      : detectExplicitVnRequest(userPromptText)
+      : detectExplicitVnRequest(userPromptText) || detectVnRetryMode(userPromptText, ctx?.history) === 'chat'
         ? [
-            '- MODE KIRIM VN (AKTIF PADA GILIRAN INI): Sistem akan langsung mengubah balasanmu menjadi Voice Note. Jawab santai dalam 1-3 kalimat lisan yang natural untuk didengar (tanpa markdown, tanpa daftar bernomor, tanpa emoji, dan JANGAN mengaku tidak bisa kirim VN).',
+            '- MODE KIRIM VN (AKTIF PADA GILIRAN INI): Sistem akan langsung mengubah balasanmu menjadi Voice Note. Jawab santai dalam 1-3 kalimat lisan yang natural untuk didengar (tanpa markdown, tanpa daftar bernomor, tanpa emoji, tanpa tag internal, dan JANGAN mengaku tidak bisa kirim VN).',
           ]
         : []),
   ];
@@ -4217,11 +4220,13 @@ function buildMessages(
   const history: ChatMsg[] = [];
   for (const h of rawHistory) {
     if (h.role === 'assistant' && typeof h.content === 'string') {
-      // Penanda stiker ("[Stiker terkirim: 😂]") hanya untuk hitung cooldown durable —
-      // JANGAN dikirim ke model (bukan pesan nyata; bisa ditiru sebagai format aneh).
+      // Penanda stiker ("[Stiker terkirim: ...]") dan VN ("[VN terkirim: ...]") hanya untuk
+      // hitung cooldown durable — JANGAN dikirim ke model agar tidak bocor/ditiru di balasan.
       // Penanda jawaban ("[Jawaban: ...]") JUSTRU HARUS ikut ke model: itulah kunci
       // jawaban benar agar model giliran berikutnya menilai tebakan user secara jujur.
-      const withoutStickerMarker = h.content.replace(/\n?\[Stiker terkirim:[^\]]*\]/g, '').trim();
+      const withoutStickerMarker = stripVnMarker(
+        h.content.replace(/\n?\[Stiker terkirim:[^\]]*\]/g, ''),
+      ).trim();
       if (!withoutStickerMarker) continue; // murni penanda stiker → bukan balasan nyata
       // [Jawaban: ...] dipertahankan (kunci jawaban tebakan) — dibersihkan hanya bila
       // baris itu satu-satunya isi pesan (bukan balasan nyata ke user).
@@ -4788,9 +4793,11 @@ export async function autoReply(
       let inter = 0;
       for (const t of tReply) if (tLast.has(t)) inter++;
       const similarity = tLast.size && tReply.size ? inter / Math.min(tLast.size, tReply.size) : 0;
+      const vnRetryActive = detectVnRetryMode(coreClean, ctx?.history) !== null;
       const isDuplicate =
-        (normLast.length > 15 && normLast === normReply) ||
-        (normLast.length > 30 && normReply.length > 30 && similarity >= 0.7);
+        !vnRetryActive &&
+        ((normLast.length > 15 && normLast === normReply) ||
+          (normLast.length > 30 && normReply.length > 30 && similarity >= 0.7));
       if (isDuplicate) {
         try {
           const retryMsgs: ChatMsg[] = [
@@ -5095,6 +5102,7 @@ export async function autoReply(
       isAudioInput(coreClean) ||
       detectSingRequest(coreClean) ||
       detectExplicitVnRequest(coreClean) ||
+      detectVnRetryMode(coreClean, ctx?.history) !== null ||
       /\b(?:lagu|musik|nyanyi(?:an)?|penyanyi|band|konser|podcast|film|video|murottal|murotal|voice\s?note|vn)\b/i.test(coreClean) ||
       /\b(?:kamu|lu|elo)\b[^.!?\n]{0,15}?\bdeng(?:er|ar)\b/i.test(coreClean);
     if (!audioContextOk && hasAudioClaim(reply)) {
@@ -5191,7 +5199,7 @@ export async function autoReply(
     // (jalur retry/regen mana pun tidak boleh meloloskan tag mentah ke user).
     const finalSticker = extractStickerTag(reply);
     const finalExtract = extractRiddleTag(finalSticker.text);
-    reply = finalExtract.text;
+    reply = stripVnMarker(finalExtract.text);
     if (!stickerEmoji && finalSticker.sticker) stickerEmoji = finalSticker.sticker;
     if (!riddleAnswer && finalExtract.answer) riddleAnswer = finalExtract.answer;
 

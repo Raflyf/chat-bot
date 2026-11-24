@@ -18,6 +18,7 @@ import {
   detectSingRequest,
   detectExplicitVnRequest,
   detectTextOnlyPreference,
+  detectVnRetryMode,
   isReplySpeakable,
   prepareTextForTts,
   encodeWavOrPcmToOggOpus,
@@ -30,7 +31,7 @@ import {
   isVnMarker,
   assistantTurnsSinceLastVn,
 } from '../src/markers.js';
-import { systemPrompt } from '../src/skills.js';
+import { systemPrompt, sanitizeAssistantOutput } from '../src/skills.js';
 
 function makeCasualHistory(assistantTurnsAfterVn, includePriorVn = true) {
   const hist = [];
@@ -336,4 +337,47 @@ test('wiring: semua kanal & prompt terhubung dengan benar tanpa membuka .play', 
   // Perbaikan stiker: contoh & panduan tawa di prompt aktif tidak lagi mengarahkan ke 😂 (yang bermood kesal)
   assert.ok(!normalPrompt.includes('[[sticker:😂]]'), 'contoh prompt stiker tidak boleh memakai 😂 (ditolak mood filter)');
   assert.ok(skills.includes('-> 🤣/😹'), 'panduan tawa stiker harus memakai 🤣/😹');
+
+  // Rantai TTS natural: chat VN memprioritaskan Gemini TTS (bukan Edge-TTS robotik) dengan 3 bucket model
+  const voiceSrc = fs.readFileSync(new URL('../src/voice.ts', import.meta.url), 'utf8');
+  assert.ok(voiceSrc.includes('config.geminiTtsBackupModel'), 'harus mendukung bucket cadangan gemini-2.5-flash-preview-tts');
+  assert.ok(voiceSrc.includes('if (!config.voiceEdgeFallback)'), 'Edge-TTS hanya aktif jika VOICE_EDGE_FALLBACK=1');
+  assert.match(skills, /stripVnMarker\(\s*h\.content\.replace/, 'buildMessages wajib membuang [VN terkirim: ...] dari history sebelum dikirim ke model');
+});
+
+test('regression screenshot: [VN terkirim: sing] tidak boleh bocor ke user & "ulangii"/"ulangg" mengulang VN', () => {
+  // 1. Jika model nekat menulis [VN terkirim: sing], sanitizeAssistantOutput wajib membuangnya
+  const sanitized = sanitizeAssistantOutput(
+    'If the world was ending, I wanna be next to you\n\n[VN terkirim: sing]',
+    'ulangii',
+  );
+  assert.ok(!sanitized.includes('[VN terkirim'), 'marker [VN terkirim] tidak boleh pernah lolos ke output user');
+
+  // 2. "ulangii" / "ulangg" setelah VN sing terakhir harus mengulang mode sing sebagai VN
+  const recentSingHistory = [
+    { role: 'user', content: 'coba nyanyikan die with a smile' },
+    { role: 'assistant', content: 'If the world was ending...\n[VN terkirim: sing]' },
+    { role: 'user', content: 'ga bener nadanya' },
+    { role: 'assistant', content: 'Waduh iya deh nadanya meleset ya.' },
+  ];
+  assert.equal(detectVnRetryMode('ulangii', recentSingHistory), 'sing');
+  assert.equal(detectVnRetryMode('ulangg', recentSingHistory), 'sing');
+  assert.equal(detectVnRetryMode('coba lagi', recentSingHistory), 'sing');
+
+  const retryDecision = decideVoiceReply({
+    userText: 'ulangii',
+    reply: 'If the world was ending, I wanna be next to you, hold you for just a while.',
+    history: recentSingHistory,
+    enabled: true,
+  });
+  assert.equal(retryDecision.sendVn, true);
+  assert.equal(retryDecision.mode, 'sing');
+  assert.equal(retryDecision.reason, 'explicit_sing');
+
+  // Prompt saat "ulangii" ikut mengaktifkan MODE NYANYI ACAPELLA VIA VN
+  const retryPrompt = systemPrompt({ history: recentSingHistory }, null, 'ulangii');
+  assert.ok(retryPrompt.includes('MODE NYANYI ACAPELLA VIA VN'));
+
+  // 3. "ulangii" tanpa riwayat VN baru TIDAK boleh memicu VN
+  assert.equal(detectVnRetryMode('ulangii', [{ role: 'assistant', content: 'Halo biasa aja' }]), null);
 });

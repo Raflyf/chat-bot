@@ -1,22 +1,24 @@
 /**
  * Sistem balasan Voice Note (VN) untuk WhatsApp Baileys, WhatsApp Cloud API, dan Telegram.
  *
- * Arsitektur dual-engine (gratis, berjalan di Vercel serverless & VPS tanpa ffmpeg):
+ * Arsitektur natural human-like TTS (berjalan di Vercel serverless & VPS tanpa ffmpeg):
  * - VN obrolan biasa (`mode: 'chat'`):
- *   1. Utama: Microsoft Edge Neural TTS (`id-ID-ArdiNeural` / `id-ID-GadisNeural`)
- *      output `webm-24khz-16bit-mono-opus` -> remux lossless (<1 ms) ke `audio/ogg; codecs=opus`.
- *   2. Cadangan: Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`) -> WAV 24kHz -> Ogg Opus (WASM).
+ *   1. Utama: Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`, cepat & natural bahasa Indonesia).
+ *   2. Cadangan 1: Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`, ekspresif).
+ *   3. Cadangan 2: Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`, kuota terpisah).
+ *   4. Opsional: Edge-TTS hanya bila `VOICE_EDGE_FALLBACK=1`; default `false` agar tidak jadi suara robot.
  * - VN nyanyi acapella (`mode: 'sing'`):
  *   1. Utama: Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`) dengan `speech_metadata.style` melodis/acapella.
  *   2. Cadangan 1: Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`).
- *   3. Cadangan 2: Edge-TTS (pitch lebih hidup) agar permintaan nyanyi tetap terbalas VN.
- * - Fallback terakhir di caller: bila semua engine gagal, kirim teks biasa agar pesan tidak hilang.
+ *   3. Cadangan 2: Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`).
+ * - Semua WAV/PCM 24kHz di-encode langsung ke `audio/ogg; codecs=opus` lewat WASM `@audio/encode-opus`.
+ * - Fallback terakhir di caller: bila kuota semua TTS habis, kirim teks biasa agar balasan tetap lancar.
  */
 
 import { EdgeTTS } from '@andresaya/edge-tts';
 import encodeOpus from '@audio/encode-opus';
 import { config } from './env.js';
-import { assistantTurnsSinceLastVn, assistantTurnCount } from './markers.js';
+import { assistantTurnsSinceLastVn, assistantTurnCount, lastRecentVnMode } from './markers.js';
 
 export type VoiceMode = 'chat' | 'sing';
 export type VoiceDecisionReason =
@@ -89,9 +91,22 @@ const PLAYFUL_OR_CASUAL_SIGNAL_RE =
 const SYSTEM_OUTPUT_RE =
   /^(?:📊\s*\*?Ringkasan|⏰\s*\*?Pengingat|📋\s*\*?Daftar|✅\s*(?:Pengingat|Catatan|Tugas|Pengeluaran|Pemasukan)\s+(?:disimpan|dicatat|selesai))/i;
 
+const VN_RETRY_RE =
+  /^\s*(?:ulang(?:i+|in|g+)?|coba\s+ulang(?:i+|in)?|coba\s+lagi|sekali\s+lagi|nyanyi\s+lagi|vn\s+lagi|lagi\s+dong|ulang\s+dong|coba\s+lagi\s+dong)[!.?\s]*$/i;
+
 /** True bila user secara eksplisit melarang VN di giliran ini. */
 export function detectTextOnlyPreference(userText: string): boolean {
   return TEXT_ONLY_OPT_OUT_RE.test(userText || '');
+}
+
+/** True bila user meminta mengulang VN/nyanyian yang baru saja dikirim ("ulangii", "coba lagi"). */
+export function detectVnRetryMode(
+  userText: string,
+  history?: Array<{ role: string; content: string | unknown }>,
+): VoiceMode | null {
+  const t = (userText || '').trim();
+  if (!t || detectTextOnlyPreference(t) || !VN_RETRY_RE.test(t)) return null;
+  return lastRecentVnMode(history, 4);
 }
 
 /** True bila user meminta bot menyanyi acapella lewat VN. */
@@ -188,16 +203,17 @@ export function decideVoiceReply(params: DecideVoiceParams): VoiceDecision {
     return { sendVn: false, mode: 'chat', reason: 'text_only_requested' };
   }
 
-  // 1. Permintaan nyanyi eksplisit -> selalu coba VN nyanyi (Gemini TTS)
-  if (detectSingRequest(userText)) {
+  // 1. Permintaan nyanyi eksplisit (atau mengulang VN nyanyi sebelumnya: "ulangii", "coba lagi")
+  const retryMode = detectVnRetryMode(userText, params.history);
+  if (detectSingRequest(userText) || retryMode === 'sing') {
     if (!isReplySpeakable(reply, true)) {
       return { sendVn: false, mode: 'sing', reason: 'unsuitable_reply' };
     }
     return { sendVn: true, mode: 'sing', reason: 'explicit_sing' };
   }
 
-  // 2. Permintaan VN eksplisit -> selalu coba VN bicara (Edge-TTS)
-  if (detectExplicitVnRequest(userText)) {
+  // 2. Permintaan VN eksplisit (atau mengulang VN bicara sebelumnya)
+  if (detectExplicitVnRequest(userText) || retryMode === 'chat') {
     if (!isReplySpeakable(reply, true)) {
       return { sendVn: false, mode: 'chat', reason: 'unsuitable_reply' };
     }
@@ -738,6 +754,19 @@ export async function encodeWavOrPcmToOggOpus(
 
 let lastEdgeTtsCallMs = 0;
 
+/** Cooldown per (model, keyIndex) saat kena HTTP 429 agar langsung lompat ke model/key berikutnya tanpa buang waktu. */
+const geminiTtsCooldownUntil = new Map<string, number>();
+const GEMINI_TTS_429_COOLDOWN_MS = 10 * 60 * 1000;
+
+function isGeminiBucketCooling(model: string, keyIdx: number): boolean {
+  const until = geminiTtsCooldownUntil.get(`${model}#${keyIdx}`) || 0;
+  return Date.now() < until;
+}
+
+function markGeminiBucketRateLimited(model: string, keyIdx: number): void {
+  geminiTtsCooldownUntil.set(`${model}#${keyIdx}`, Date.now() + GEMINI_TTS_429_COOLDOWN_MS);
+}
+
 /** Sintesis VN lewat Microsoft Edge Neural TTS (`id-ID-ArdiNeural` / `id-ID-GadisNeural`). */
 async function synthesizeViaEdgeTts(
   spokenText: string,
@@ -755,8 +784,8 @@ async function synthesizeViaEdgeTts(
   const ua = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36 Edg/${major}.0.0.0`;
 
   const voice = config.ttsVoice || 'id-ID-ArdiNeural';
-  const rate = mode === 'sing' ? '+4%' : (config.ttsRate || '+4%');
-  const pitch = mode === 'sing' ? '+6Hz' : (config.ttsPitch || '+0Hz');
+  const rate = mode === 'sing' ? '+2%' : (config.ttsRate || '+0%');
+  const pitch = mode === 'sing' ? '+4Hz' : (config.ttsPitch || '+0Hz');
 
   const tts = new EdgeTTS({
     secMsGecVersion: gecVersion,
@@ -786,7 +815,7 @@ async function synthesizeViaEdgeTts(
   };
 }
 
-/** Sintesis VN ekspresif / nyanyi acapella lewat Gemini 3.8 TTS (`v1beta/interactions`). */
+/** Sintesis VN natural lewat Gemini TTS (`v1beta/interactions` untuk seri 3.8, `:generateContent` untuk 2.5 preview). */
 async function synthesizeViaGeminiTts(
   spokenText: string,
   mode: VoiceMode,
@@ -797,80 +826,134 @@ async function synthesizeViaGeminiTts(
     throw new Error('GEMINI_KEYS tidak tersedia untuk Gemini TTS');
   }
 
-  const models = preferredModels && preferredModels.length > 0
-    ? preferredModels
-    : mode === 'sing'
-      ? [config.geminiTtsModel, config.geminiTtsLiteModel]
-      : [config.geminiTtsLiteModel, config.geminiTtsModel];
+  const defaultChain = mode === 'sing'
+    ? [config.geminiTtsModel, config.geminiTtsLiteModel, config.geminiTtsBackupModel]
+    : [config.geminiTtsLiteModel, config.geminiTtsModel, config.geminiTtsBackupModel];
+  const models = Array.from(new Set((preferredModels && preferredModels.length > 0 ? preferredModels : defaultChain).filter(Boolean)));
 
   const voiceName = config.geminiTtsVoice || (/gadis/i.test(config.ttsVoice || '') ? 'Aoede' : 'Puck');
+  const isEnglishLyrics =
+    mode === 'sing' &&
+    /\b(?:the|you|and|with|smile|love|heart|world|night|hold|close|never|want|if|was|over|be|next|to)\b/i.test(spokenText);
+  const isSlowEmotionalSong =
+    mode === 'sing' &&
+    /\b(?:die|smile|love|heart|world|hold|cry|miss|forever|rindu|cinta|luka|hati|pergi|hilang|air\s+mata|malam|sepi|kenangan|sendiri|sial|menangis|sayang)\b/i.test(spokenText);
+  const singLang = isEnglishLyrics ? 'natural English' : 'natural Indonesian';
   const style = mode === 'sing'
-    ? 'singing acapella playfully in natural Indonesian, light melodic humming and cheerful vocal rhythm without background instruments, fun casual friend vibe'
-    : 'natural casual Indonesian conversational friend, warm, relaxed, expressive everyday WhatsApp voice note tone';
+    ? isSlowEmotionalSong
+      ? `singing acapella softly and soulfully in ${singLang}, slow heartfelt emotional pop ballad melody, warm natural human voice with gentle vibrato and smooth phrasing, no background instruments`
+      : `singing acapella smoothly in ${singLang}, warm rhythmic melodic vocal phrasing like a friend humming and singing casually, no background instruments`
+    : 'relaxed young Indonesian close friend sending a casual spontaneous WhatsApp voice note, warm natural everyday Jakarta conversational rhythm, effortless human breathing and intonation, never formal or robotic';
 
   let lastErr: Error = new Error('Gemini TTS gagal');
 
   for (const model of models) {
-    for (const key of keys) {
+    const useLegacyGenerateContent = /^gemini-2\.5-/i.test(model);
+
+    for (let kIdx = 0; kIdx < keys.length; kIdx++) {
+      if (isGeminiBucketCooling(model, kIdx)) continue;
+      const key = keys[kIdx];
       try {
-        const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': key,
-            'Api-Revision': '2026-05-20',
-          },
-          body: JSON.stringify({
-            model,
-            input: [
-              {
-                type: 'user_input',
-                content: [
-                  {
-                    type: 'text',
-                    text: spokenText,
-                    annotations: [
-                      {
-                        type: 'speech_metadata',
-                        style,
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-            response_format: { type: 'audio' },
-            generation_config: {
-              speech_config: [{ voice: voiceName }],
-            },
-          }),
-          signal: AbortSignal.timeout(18000),
-        });
-
-        if (!res.ok) {
-          const errText = await res.text().catch(() => '');
-          lastErr = new Error(`Gemini TTS ${model} HTTP ${res.status}: ${errText.slice(0, 140)}`);
-          continue;
-        }
-
-        const data = (await res.json()) as {
-          steps?: Array<{
-            type?: string;
-            content?: Array<{ type?: string; mime_type?: string; data?: string }>;
-          }>;
-        };
-
         let audioBase64 = '';
-        let audioMime = 'audio/wav';
-        for (const step of data.steps ?? []) {
-          for (const item of step.content ?? []) {
-            if (item.type === 'audio' && typeof item.data === 'string' && item.data.length > 0) {
-              audioBase64 = item.data;
-              if (item.mime_type) audioMime = item.mime_type;
-              break;
-            }
+        let audioMime = useLegacyGenerateContent ? 'audio/L16;codec=pcm;rate=24000' : 'audio/wav';
+
+        if (useLegacyGenerateContent) {
+          const direction = mode === 'sing'
+            ? `Sing playfully acapella in natural Indonesian: ${spokenText}`
+            : `Speak casually like a relaxed young Indonesian friend sending a warm WhatsApp voice note (not formal, not robotic): ${spokenText}`;
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: direction }] }],
+                generationConfig: {
+                  responseModalities: ['AUDIO'],
+                  speechConfig: {
+                    voiceConfig: {
+                      prebuiltVoiceConfig: { voiceName },
+                    },
+                  },
+                },
+              }),
+              signal: AbortSignal.timeout(18000),
+            },
+          );
+          if (!res.ok) {
+            if (res.status === 429) markGeminiBucketRateLimited(model, kIdx);
+            const errText = await res.text().catch(() => '');
+            lastErr = new Error(`Gemini TTS ${model} HTTP ${res.status}: ${errText.slice(0, 140)}`);
+            continue;
           }
-          if (audioBase64) break;
+          const data = (await res.json()) as {
+            candidates?: Array<{
+              content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string } }> };
+            }>;
+          };
+          const inline = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
+          if (inline?.data) {
+            audioBase64 = inline.data;
+            if (inline.mimeType) audioMime = inline.mimeType;
+          }
+        } else {
+          const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': key,
+              'Api-Revision': '2026-05-20',
+            },
+            body: JSON.stringify({
+              model,
+              input: [
+                {
+                  type: 'user_input',
+                  content: [
+                    {
+                      type: 'text',
+                      text: spokenText,
+                      annotations: [
+                        {
+                          type: 'speech_metadata',
+                          style,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+              response_format: { type: 'audio' },
+              generation_config: {
+                speech_config: [{ voice: voiceName }],
+              },
+            }),
+            signal: AbortSignal.timeout(18000),
+          });
+
+          if (!res.ok) {
+            if (res.status === 429) markGeminiBucketRateLimited(model, kIdx);
+            const errText = await res.text().catch(() => '');
+            lastErr = new Error(`Gemini TTS ${model} HTTP ${res.status}: ${errText.slice(0, 140)}`);
+            continue;
+          }
+
+          const data = (await res.json()) as {
+            steps?: Array<{
+              type?: string;
+              content?: Array<{ type?: string; mime_type?: string; data?: string }>;
+            }>;
+          };
+          for (const step of data.steps ?? []) {
+            for (const item of step.content ?? []) {
+              if (item.type === 'audio' && typeof item.data === 'string' && item.data.length > 0) {
+                audioBase64 = item.data;
+                if (item.mime_type) audioMime = item.mime_type;
+                break;
+              }
+            }
+            if (audioBase64) break;
+          }
         }
 
         if (!audioBase64) {
@@ -879,11 +962,12 @@ async function synthesizeViaGeminiTts(
         }
 
         const rawBuf = Buffer.from(audioBase64, 'base64');
+        // Pakai mode 'audio' 32–36 kbps agar nuansa suara manusia tetap hangat & jernih (tidak cempreng/telepon).
         const { ogg, durationSec, waveform } = await encodeWavOrPcmToOggOpus(
           rawBuf,
           audioMime,
-          mode === 'sing' ? 'audio' : 'voip',
-          mode === 'sing' ? 32 : 24,
+          'audio',
+          mode === 'sing' ? 36 : 32,
         );
 
         return {
@@ -905,10 +989,11 @@ async function synthesizeViaGeminiTts(
 }
 
 /**
- * Sintesis Voice Note OGG/Opus siap kirim dengan failover otomatis:
- * - `chat`: Edge-TTS (`id-ID-ArdiNeural`/`GadisNeural`) -> fallback Gemini 3.8 Flash-Lite TTS.
- * - `sing`: Gemini 3.8 Flash TTS -> Gemini 3.8 Flash-Lite TTS -> fallback Edge-TTS.
- * Mengembalikan `null` bila semua engine gagal (caller wajib fallback kirim teks biasa).
+ * Sintesis Voice Note OGG/Opus siap kirim dengan prioritas suara paling natural:
+ * - `chat`: Gemini 3.8 Flash-Lite TTS -> Gemini 3.8 Flash TTS -> Gemini 2.5 Flash Preview TTS.
+ * - `sing`: Gemini 3.8 Flash TTS -> Gemini 3.8 Flash-Lite TTS -> Gemini 2.5 Flash Preview TTS.
+ * - Edge-TTS hanya dipakai sebagai cadangan opsional bila `VOICE_EDGE_FALLBACK=1` (default mati
+ *   agar kualitas VN tidak turun jadi suara robotik saat kuota Gemini TTS habis; caller fallback ke teks).
  */
 export async function synthesizeVoiceNote(
   replyText: string,
@@ -917,29 +1002,17 @@ export async function synthesizeVoiceNote(
   const spoken = prepareTextForTts(replyText, mode);
   if (!spoken || spoken.length < 3) return null;
 
-  if (mode === 'sing') {
-    try {
-      return await synthesizeViaGeminiTts(spoken, 'sing');
-    } catch (err) {
-      console.warn('[voice] Gemini TTS (sing) gagal, fallback ke Edge-TTS:', String((err as Error)?.message ?? err));
-      try {
-        return await synthesizeViaEdgeTts(spoken, 'sing');
-      } catch (err2) {
-        console.warn('[voice] Edge-TTS fallback (sing) gagal:', String((err2 as Error)?.message ?? err2));
-        return null;
-      }
-    }
-  }
-
-  // Mode obrolan biasa (`chat`): Edge-TTS utama (gratis & cepat), fallback Gemini TTS bila kena 429/error.
   try {
-    return await synthesizeViaEdgeTts(spoken, 'chat');
+    return await synthesizeViaGeminiTts(spoken, mode);
   } catch (err) {
-    console.warn('[voice] Edge-TTS gagal, fallback ke Gemini TTS:', String((err as Error)?.message ?? err));
+    console.warn(`[voice] Gemini TTS (${mode}) gagal:`, String((err as Error)?.message ?? err));
+    if (!config.voiceEdgeFallback) {
+      return null;
+    }
     try {
-      return await synthesizeViaGeminiTts(spoken, 'chat');
+      return await synthesizeViaEdgeTts(spoken, mode);
     } catch (err2) {
-      console.warn('[voice] Gemini TTS fallback gagal:', String((err2 as Error)?.message ?? err2));
+      console.warn(`[voice] Edge-TTS fallback (${mode}) gagal:`, String((err2 as Error)?.message ?? err2));
       return null;
     }
   }
