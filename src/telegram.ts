@@ -10,7 +10,8 @@ import { PERINTAH_BANTUAN, PERINTAH_DIGABUNG, teksBantuan, petunjukPemakaian } f
 import { tangkapFaktaPersonal } from './user_facts.js';
 import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
-import { encodeMarkers } from './markers.js';
+import { encodeMarkers, appendDurableMarkers } from './markers.js';
+import { decideVoiceReply, synthesizeVoiceNote, type SynthesizedVoiceNote, type VoiceMode } from './voice.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -69,6 +70,33 @@ export async function sendTelegramMessageSafe(
     if (chunks.length > 1) {
       await new Promise((r) => setTimeout(r, 120));
     }
+  }
+}
+
+/**
+ * Kirim Voice Note (OGG/Opus) via Telegram `sendVoice`. Mengembalikan true bila terkirim.
+ * Bila gagal, caller wajib fallback mengirim teks biasa.
+ */
+export async function sendTelegramVoiceNoteSafe(
+  bot: TelegramBot,
+  chatId: number,
+  vn: SynthesizedVoiceNote,
+  replyToMessageId?: number,
+): Promise<boolean> {
+  try {
+    await bot.sendVoice(
+      chatId,
+      vn.buffer,
+      {
+        duration: vn.durationSec,
+        ...(replyToMessageId ? { reply_parameters: { message_id: replyToMessageId } } : {}),
+      },
+      { filename: 'voice.ogg', contentType: 'audio/ogg' },
+    );
+    return true;
+  } catch (err) {
+    console.warn('[telegram] Gagal kirim VN balasan:', String((err as Error)?.message ?? err));
+    return false;
   }
 }
 
@@ -999,7 +1027,26 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             : `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
           const prompt = (tgPassivePrefix ? `${tgPassivePrefix}\n` : '') + vnPromptBase;
           const { reply, via, tokens } = await autoReply(prompt, ctx, web);
-          await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+          let vnSentMode: VoiceMode | undefined;
+          const vnDecision = decideVoiceReply({
+            userText: transcription,
+            reply,
+            history: ctx?.history,
+            hasWebResults: web !== null,
+            isGroup,
+            fromUserVoiceNote: true,
+          });
+          if (vnDecision.sendVn) {
+            void bot.sendChatAction(chatId, 'record_voice').catch(() => undefined);
+            const vn = await synthesizeVoiceNote(reply, vnDecision.mode);
+            if (vn && await sendTelegramVoiceNoteSafe(bot, chatId, vn, tgReplyRef)) {
+              vnSentMode = vn.mode;
+              console.log(`[telegram] VN terkirim (${vn.engine}/${vn.model}, ${vn.durationSec}s, ${vnDecision.reason})`);
+            }
+          }
+          if (!vnSentMode) {
+            await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+          }
           tandaiBalasGrupTg();
           if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
           await saveMessage({
@@ -1009,8 +1056,9 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             content: reply,
             via,
             tokens,
+            feedback: encodeMarkers({ vn: vnSentMode }),
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN assistant:', err));
-          updateContextCache(chatKey, 'assistant', reply);
+          updateContextCache(chatKey, 'assistant', appendDurableMarkers(reply, { vn: vnSentMode }));
           noteExchange(chatKey);
         } catch (err) {
           console.error('[telegram] Gagal transkripsi audio/VN:', err);
@@ -1272,9 +1320,28 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     const latencyMs = Date.now() - tStart;
     // Di grup selalu reply pesan penanya; di DM quote hanya bila dia membalas pesan lama.
     const idUntukQuoteTg = quotedText && msg.message_id ? msg.message_id : tgReplyRef;
-    await sendTelegramMessageSafe(bot, chatId, reply, idUntukQuoteTg);
+    let vnSentMode: VoiceMode | undefined;
+    const vnDecision = decideVoiceReply({
+      userText: text || rawText,
+      reply,
+      history: ctx?.history,
+      hasWebResults: web !== null,
+      isGroup,
+      hasRiddleAnswer: Boolean(riddleAnswer),
+    });
+    if (vnDecision.sendVn) {
+      void bot.sendChatAction(chatId, 'record_voice').catch(() => undefined);
+      const vn = await synthesizeVoiceNote(reply, vnDecision.mode);
+      if (vn && await sendTelegramVoiceNoteSafe(bot, chatId, vn, idUntukQuoteTg)) {
+        vnSentMode = vn.mode;
+        console.log(`[telegram] VN terkirim (${vn.engine}/${vn.model}, ${vn.durationSec}s, ${vnDecision.reason})`);
+      }
+    }
+    if (!vnSentMode) {
+      await sendTelegramMessageSafe(bot, chatId, reply, idUntukQuoteTg);
+    }
     tandaiBalasGrupTg();
-    // Stiker balasan (opsional) — hormati cooldown DURABLE (riwayat chat) + fast-path lokal.
+    // Stiker balasan (opsional — tidak digabung bila giliran ini sudah mengirim VN).
     // Emoji "keras" (🖕/🤬/👊) hanya boleh saat konteks bercanda (user bercanda/roasting dulu).
     const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text || rawText);
     // KECOCOKAN SUASANA (permintaan pemilik produk 24 Sep 2026): stiker harus pas
@@ -1286,6 +1353,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     const prevStickerEmoji = lastStickerEmoji(ctx?.history);
     let stickerSent = false;
     if (
+      !vnSentMode &&
       sticker &&
       reply.trim() &&
       edgyOk &&
@@ -1306,15 +1374,12 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
 
     // Update cache memori & simpan balasan asisten ke database secara synchronous (terjamin terekam di serverless)
-    updateContextCache(
-      chatKey,
-      'assistant',
-      riddleAnswer
-        ? `${reply}\n[Jawaban: ${riddleAnswer}]${stickerSent && sticker ? `\n[Stiker terkirim: ${sticker}]` : ''}`
-        : stickerSent && sticker
-          ? `${reply}\n[Stiker terkirim: ${sticker}]`
-          : reply,
-    );
+    const turnMarkers = {
+      sticker: stickerSent && sticker ? sticker : undefined,
+      riddle: riddleAnswer || undefined,
+      vn: vnSentMode,
+    };
+    updateContextCache(chatKey, 'assistant', appendDurableMarkers(reply, turnMarkers));
     await saveMessage({
       platform: 'telegram',
       chat_id: chatKey,
@@ -1325,12 +1390,8 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       latency_ms: latencyMs,
       needs_search: web !== null,
       prompt_version: PROMPT_VERSION,
-      // Sinyal durable: emoji stiker yang benar-benar terkirim (anti-overuse) dan
-      // jawaban benar tebakan (agar model giliran berikutnya menilai secara jujur).
-      feedback: encodeMarkers({
-        sticker: stickerSent && sticker ? sticker : undefined,
-        riddle: riddleAnswer || undefined,
-      }),
+      // Sinyal durable: stiker terkirim, kunci jawaban tebakan, dan penanda VN (cooldown 5:1).
+      feedback: encodeMarkers(turnMarkers),
     }).catch((err) => console.warn('[telegram] Gagal simpan pesan assistant:', err));
     noteExchange(chatKey);
 

@@ -16,6 +16,8 @@
 export interface DurableMarkers {
   sticker?: string;
   riddle?: string;
+  /** Mode VN yang benar-benar terkirim ('chat' | 'sing') untuk cooldown 5:1 durable. */
+  vn?: string;
 }
 
 const MAX_RIDDLE_LEN = 80;
@@ -29,6 +31,10 @@ export function encodeMarkers(m: DurableMarkers): string | undefined {
     const safe = m.riddle.trim().replace(/[|\r\n]+/g, ' ').slice(0, MAX_RIDDLE_LEN);
     if (safe) parts.push(`riddle:${safe}`);
   }
+  if (m.vn && m.vn.trim()) {
+    const safeVn = m.vn.trim().replace(/[|\r\n]+/g, '').slice(0, 16);
+    if (safeVn) parts.push(`vn:${safeVn}`);
+  }
   return parts.length ? parts.join('|') : undefined;
 }
 
@@ -36,10 +42,63 @@ export function encodeMarkers(m: DurableMarkers): string | undefined {
 /** Penanda jawaban di riwayat: "[Jawaban: <teks>]". */
 const RIDDLE_MARKER_RE = /\[Jawaban:\s*([^\]]+)\]/;
 
+/** Penanda durable Voice Note di riwayat: "[VN terkirim: chat|sing]". */
+const VN_MARKER_RE = /\[VN terkirim:\s*([^\]]+)\]/;
+
 
 /** Buang baris penanda jawaban dari konten (agar tidak ikut ke model / user). */
 export function stripRiddleMarker(content: string): string {
   return content.replace(/\n?\[Jawaban:[^\]]*\]/g, '').trim();
+}
+
+/** True bila konten memuat penanda Voice Note terkirim. */
+export function isVnMarker(content: unknown): boolean {
+  return typeof content === 'string' && VN_MARKER_RE.test(content);
+}
+
+/** Buang baris penanda Voice Note dari konten (agar tidak ikut ke model / user). */
+export function stripVnMarker(content: string): string {
+  return content.replace(/\n?\[VN terkirim:[^\]]*\]/g, '').trim();
+}
+
+/**
+ * Jumlah balasan asisten teks biasa yang lewat sejak Voice Note TERAKHIR dikirim.
+ * Mengembalikan Number.MAX_SAFE_INTEGER bila belum ada VN dalam jendela riwayat.
+ */
+export function assistantTurnsSinceLastVn(
+  history: Array<{ role: string; content: string | unknown }> | undefined,
+): number {
+  if (!history || history.length === 0) return Number.MAX_SAFE_INTEGER;
+  let turns = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    if (h.role !== 'assistant' || typeof h.content !== 'string') continue;
+    if (isVnMarker(h.content)) return turns;
+    turns++;
+    if (turns > 60) break;
+  }
+  return Number.MAX_SAFE_INTEGER;
+}
+
+/** Total balasan asisten yang tersimpan di jendela riwayat percakapan aktif. */
+export function assistantTurnCount(
+  history: Array<{ role: string; content: string | unknown }> | undefined,
+): number {
+  if (!history || history.length === 0) return 0;
+  let count = 0;
+  for (const h of history) {
+    if (h.role === 'assistant') count++;
+  }
+  return count;
+}
+
+/** Gabungkan teks balasan asisten dengan penanda durable (riddle / stiker / VN) untuk cache konteks. */
+export function appendDurableMarkers(reply: string, m: DurableMarkers): string {
+  const suffix: string[] = [];
+  if (m.riddle && m.riddle.trim()) suffix.push(`[Jawaban: ${m.riddle.trim()}]`);
+  if (m.sticker && m.sticker.trim()) suffix.push(`[Stiker terkirim: ${m.sticker.trim()}]`);
+  if (m.vn && m.vn.trim()) suffix.push(`[VN terkirim: ${m.vn.trim()}]`);
+  return suffix.length ? `${reply}\n${suffix.join('\n')}` : reply;
 }
 
 /**

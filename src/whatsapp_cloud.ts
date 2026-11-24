@@ -9,7 +9,8 @@ import { saveMessage, isMessageProcessed, claimIncomingMessage, markMessageProce
 import { withChatLock } from './memory.js';
 import { getContext, isResetCommand, noteExchange, resetSession, saveCorrection, updateContextCache, validateCorrection } from './memory.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
-import { encodeMarkers } from './markers.js';
+import { encodeMarkers, appendDurableMarkers } from './markers.js';
+import { decideVoiceReply, synthesizeVoiceNote, type SynthesizedVoiceNote, type VoiceMode } from './voice.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb, checkDueReminders, nomorWhatsApp } from './remind.js';
@@ -277,6 +278,75 @@ export async function sendWhatsAppCloudStickerSafe(to: string, emoji: string): P
     return true;
   } catch (err) {
     console.warn('[wa-cloud] Stiker error:', err);
+    return false;
+  }
+}
+
+/**
+ * Kirim Voice Note asli (audio/ogg; codecs=opus + `voice: true`) via WhatsApp Cloud API.
+ * Mengembalikan true bila berhasil; bila gagal, caller fallback ke teks biasa.
+ */
+export async function sendWhatsAppCloudVoiceNoteSafe(
+  to: string,
+  vn: SynthesizedVoiceNote,
+  replyToMessageId?: string,
+): Promise<boolean> {
+  if (!config.whatsappToken || !config.whatsappPhoneNumberId) return false;
+  try {
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', 'audio/ogg');
+    form.append('file', new Blob([new Uint8Array(vn.buffer)], { type: 'audio/ogg; codecs=opus' }), 'voice.ogg');
+
+    const upRes = await fetch(
+      `https://graph.facebook.com/v21.0/${config.whatsappPhoneNumberId}/media`,
+      {
+        method: 'POST',
+        signal: AbortSignal.timeout(config.timeoutMs),
+        headers: { Authorization: `Bearer ${config.whatsappToken}` },
+        body: form,
+      },
+    );
+    if (!upRes.ok) {
+      const errText = await upRes.text().catch(() => '');
+      console.warn(`[wa-cloud] Gagal upload VN: ${upRes.status} ${errText.slice(0, 120)}`);
+      return false;
+    }
+    const upData = (await upRes.json()) as { id?: string };
+    if (!upData.id) return false;
+
+    const payload: Record<string, unknown> = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'audio',
+      audio: { id: upData.id, voice: true },
+    };
+    if (replyToMessageId) {
+      payload.context = { message_id: replyToMessageId };
+    }
+
+    const sendRes = await fetch(
+      `https://graph.facebook.com/v21.0/${config.whatsappPhoneNumberId}/messages`,
+      {
+        method: 'POST',
+        signal: AbortSignal.timeout(config.timeoutMs),
+        headers: {
+          Authorization: `Bearer ${config.whatsappToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (!sendRes.ok) {
+      const errText = await sendRes.text().catch(() => '');
+      console.warn(`[wa-cloud] Gagal kirim VN: ${sendRes.status} ${errText.slice(0, 120)}`);
+      return false;
+    }
+    void catatHasilKirimWa(true);
+    return true;
+  } catch (err) {
+    console.warn('[wa-cloud] VN error:', String((err as Error)?.message ?? err));
     return false;
   }
 }
@@ -749,7 +819,24 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
 
               const prompt = `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
               const { reply, via, tokens } = await autoReply(prompt, context, webResults);
-              await sendWhatsAppCloudMessageSafe(from, reply);
+              let vnSentMode: VoiceMode | undefined;
+              const vnDecision = decideVoiceReply({
+                userText: transcription,
+                reply,
+                history: context?.history,
+                hasWebResults: webResults !== null,
+                fromUserVoiceNote: true,
+              });
+              if (vnDecision.sendVn) {
+                const vn = await synthesizeVoiceNote(reply, vnDecision.mode);
+                if (vn && await sendWhatsAppCloudVoiceNoteSafe(from, vn)) {
+                  vnSentMode = vn.mode;
+                  console.log(`[wa-cloud] VN terkirim (${vn.engine}/${vn.model}, ${vn.durationSec}s, ${vnDecision.reason})`);
+                }
+              }
+              if (!vnSentMode) {
+                await sendWhatsAppCloudMessageSafe(from, reply);
+              }
               void markMessageProcessed('whatsapp', messageId);
               await saveMessage({
                 platform: 'whatsapp',
@@ -758,8 +845,9 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
                 content: reply,
                 via,
                 tokens,
+                feedback: encodeMarkers({ vn: vnSentMode }),
               });
-              updateContextCache(chatKey, 'assistant', reply);
+              updateContextCache(chatKey, 'assistant', appendDurableMarkers(reply, { vn: vnSentMode }));
               noteExchange(chatKey);
             } catch (err) {
               console.error('[wa-cloud] Gagal transkripsi audio/VN:', err);
@@ -1192,12 +1280,29 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         const idUntukQuote = perluQuote ? messageId : undefined;
 
         // Jaring terakhir: bila tetap kosong, jangan kirim apa pun (hindari pesan hampa).
+        let vnSentMode: VoiceMode | undefined;
         if (reply && reply.trim()) {
-          await sendWhatsAppCloudMessageSafe(from, reply, idUntukQuote);
+          const vnDecision = decideVoiceReply({
+            userText: text,
+            reply,
+            history: context?.history,
+            hasWebResults: webResults !== null,
+            hasRiddleAnswer: Boolean(riddleAnswer),
+          });
+          if (vnDecision.sendVn) {
+            const vn = await synthesizeVoiceNote(reply, vnDecision.mode);
+            if (vn && await sendWhatsAppCloudVoiceNoteSafe(from, vn, idUntukQuote)) {
+              vnSentMode = vn.mode;
+              console.log(`[wa-cloud] VN terkirim (${vn.engine}/${vn.model}, ${vn.durationSec}s, ${vnDecision.reason})`);
+            }
+          }
+          if (!vnSentMode) {
+            await sendWhatsAppCloudMessageSafe(from, reply, idUntukQuote);
+          }
         } else {
           console.warn('[wa-cloud] Balasan tetap kosong — pesan tidak dikirim (menghindari pesan hampa).');
         }
-        // Stiker balasan (opsional) — cooldown DURABLE (riwayat chat) + fast-path lokal.
+        // Stiker balasan (opsional — tidak digabung bila giliran ini sudah mengirim VN).
         // Emoji "keras" (🖕/🤬/👊) hanya saat konteks bercanda (user bercanda/roasting dulu).
         const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text);
         // KECOCOKAN SUASANA (permintaan pemilik produk 24 Sep 2026): stiker harus pas
@@ -1209,6 +1314,7 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         const prevStickerEmoji = lastStickerEmoji(context?.history);
         let stickerSent = false;
         if (
+          !vnSentMode &&
           sticker &&
           reply.trim() &&
           edgyOk &&
@@ -1229,15 +1335,12 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
         void markMessageProcessed('whatsapp', messageId);
 
         // 6. Update cache memori & simpan balasan asisten ke database Supabase
-        updateContextCache(
-          chatKey,
-          'assistant',
-          riddleAnswer
-            ? `${reply}\n[Jawaban: ${riddleAnswer}]${stickerSent && sticker ? `\n[Stiker terkirim: ${sticker}]` : ''}`
-            : stickerSent && sticker
-              ? `${reply}\n[Stiker terkirim: ${sticker}]`
-              : reply,
-        );
+        const turnMarkers = {
+          sticker: stickerSent && sticker ? sticker : undefined,
+          riddle: riddleAnswer || undefined,
+          vn: vnSentMode,
+        };
+        updateContextCache(chatKey, 'assistant', appendDurableMarkers(reply, turnMarkers));
         // OPTIMASI (05 Okt 2026): balasan SUDAH terkirim ke user di atas, jadi
         // menyimpan ke DB TIDAK perlu ditunggu. Dulu di-`await` -> menambah
         // ~645ms sebelum handler selesai (memblokir pesan berikutnya).
@@ -1252,12 +1355,8 @@ export async function processWhatsAppCloudWebhook(body: any): Promise<void> {
           latency_ms: latencyMs,
           needs_search: webResults !== null,
           prompt_version: PROMPT_VERSION,
-          // Sinyal durable: emoji stiker yang benar-benar terkirim (anti-overuse) dan
-          // jawaban benar tebakan (agar model giliran berikutnya menilai secara jujur).
-          feedback: encodeMarkers({
-            sticker: stickerSent && sticker ? sticker : undefined,
-            riddle: riddleAnswer || undefined,
-          }),
+          // Sinyal durable: stiker terkirim, kunci jawaban tebakan, dan penanda VN (cooldown 5:1).
+          feedback: encodeMarkers(turnMarkers),
         }).catch((err) => console.warn('[wa-cloud] Gagal simpan pesan assistant:', err));
 
         // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat

@@ -291,6 +291,18 @@ export const config = {
   vpsKeepaliveIntervalSeconds: num('VPS_KEEPALIVE_INTERVAL_SECONDS', 600),
   vpsKeepaliveLeaseTtlSeconds: num('VPS_KEEPALIVE_LEASE_TTL_SECONDS', 3600),
   vpsIdlePauseMinutes: num('VPS_IDLE_PAUSE_MINUTES', 30),
+  // ── BALASAN VOICE NOTE (VN) & NYANYI ACAPELLA ──
+  // VN biasa memakai Edge-TTS (id-ID-ArdiNeural / id-ID-GadisNeural) dengan rasio santai ~5:1;
+  // VN nyanyi memakai Gemini 3.8 TTS (gemini-3.8-flash-tts / gemini-3.8-flash-lite-tts).
+  voiceNoteEnabled: enabledByDefault('VOICE_NOTE_ENABLED', true),
+  ttsVoice: cleanStr('TTS_VOICE') || 'id-ID-ArdiNeural',
+  ttsRate: cleanStr('TTS_RATE') || '+4%',
+  ttsPitch: cleanStr('TTS_PITCH') || '+0Hz',
+  edgeTtsGecVersion: cleanStr('EDGE_TTS_GEC_VERSION') || '1-143.0.3650.75',
+  geminiTtsModel: cleanStr('GEMINI_TTS_MODEL') || 'gemini-3.8-flash-tts',
+  geminiTtsLiteModel: cleanStr('GEMINI_TTS_LITE_MODEL') || 'gemini-3.8-flash-lite-tts',
+  geminiTtsVoice: cleanStr('GEMINI_TTS_VOICE') || '',
+  vnSpontaneousInterval: num('VN_SPONTANEOUS_INTERVAL', 5),
 };
 
 export function assertRuntime(target: 'telegram' | 'whatsapp' | 'all' = 'telegram'): void {

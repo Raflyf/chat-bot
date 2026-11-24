@@ -313,6 +313,7 @@ export async function getContext(chatKey: string, msgSentAt?: Date): Promise<Cha
         if (!val) continue;
         if (key === 'sticker') content = `${content}\n[Stiker terkirim: ${val}]`;
         else if (key === 'riddle') content = `${content}\n[Jawaban: ${val}]`;
+        else if (key === 'vn') content = `${content}\n[VN terkirim: ${val}]`;
       }
       return { role: m.role, content };
     });

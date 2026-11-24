@@ -5,9 +5,10 @@ import { saveCorrection, type ChatContext } from './memory.js';
 import { isBaileysChatKey, isGroupChatKey, sharedChatKeyDari } from './chat_id.js';
 import { buildUniversalTimePrompt, detectUserLocationDeclaration } from './timezone.js';
 import { sanitizeKnowledgeText } from './knowledge.js';
-import { stripStickerMarker, hasStickerForEmoji, stickerFitsMood, assistantTurnsSinceLastSticker, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
+import { stripStickerMarker, hasStickerForEmoji, stickerFitsMood, isEdgyStickerEmoji, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { STICKER_MANIFEST, STICKER_INFO } from './sticker-manifest.js';
-import { stripRiddleMarker, lastRiddleAnswer } from './markers.js';
+import { stripRiddleMarker, stripVnMarker, lastRiddleAnswer } from './markers.js';
+import { detectSingRequest, detectExplicitVnRequest } from './voice.js';
 import { getOrGrowMemory, needsGrowth, growMemory } from './bot_growth.js';
 import { markMemoryUsed, isMemoryRelevant } from './bot_memory.js';
 import { RIDDLE_SEED, GOMBAL_SEED } from './riddles.js';
@@ -68,9 +69,9 @@ import { RIDDLE_SEED, GOMBAL_SEED } from './riddles.js';
  * ========================================================================= */
 
 
-/** Buang SEMUA penanda internal durable (stiker + kunci jawaban) dari teks riwayat. */
+/** Buang SEMUA penanda internal durable (stiker + kunci jawaban + VN) dari teks riwayat. */
 function stripDurableMarkers(text: string): string {
-  return stripRiddleMarker(stripStickerMarker(text));
+  return stripVnMarker(stripRiddleMarker(stripStickerMarker(text)));
 }
 
 function todayStr(): string {
@@ -2975,10 +2976,10 @@ export function systemPrompt(
           (() => {
             const tersedia = Object.keys(STICKER_MANIFEST);
             return [
-              'STIKER BALASAN (PAKAI SAAT MOMENNYA PAS — JANGAN PELIT): sisipkan SATU tag di AKHIR balasan dengan format [[sticker:<emoji>]]. Contoh benar: "Haha iya tuh lucu banget [[sticker:😂]]".',
+              'STIKER BALASAN (PAKAI SAAT MOMENNYA PAS — JANGAN PELIT): sisipkan SATU tag di AKHIR balasan dengan format [[sticker:<emoji>]]. Contoh benar: "Haha iya tuh lucu banget [[sticker:😹]]".',
               'PENTING: menulis emoji biasa (😊😂👍) di dalam teks BUKAN mengirim stiker — kalau mau mengirim stiker, WAJIB pakai tag [[sticker:<emoji>]] di AKHIR balasan.',
               'WAJIB: pilih emoji HANYA dari daftar di atas. JANGAN mengarang emoji lain (❤️ 🥰 🔥 💯 👏 🙏 💬 dsb) yang TIDAK ada di daftar — stiker dengan emoji itu tidak tersedia dan permintaanmu akan gagal. Kalau tidak ada emoji yang benar-benar cocok dengan suasana, JANGAN kirim tag stiker sama sekali (lebih baik tidak kirim daripada salah makna).',
-              'KAPAN PAKAI (sering, jangan ragu): user tertawa/bercanda (wkwk, haha, 🤣) -> 😂/🤣; user berterima kasih -> 🤝/😊; kamu menyanggupi/menyetujui -> 👍/🫡; user memuji kamu -> 😊/🙈; user sedih/kecewa -> 🥺/😢; user kesal -> 😔/🙏; kamu bingung -> 🤔; kabar baik -> 😄/🎉; user sayang/mesra -> 🥰/😊; kamu disindir -> 😅/🙄 (jangan ikut tertawa).',
+              'KAPAN PAKAI (sering, jangan ragu): user tertawa/bercanda (wkwk, haha, 🤣) -> 🤣/😹; user berterima kasih -> 🤝/😊; kamu menyanggupi/menyetujui -> 👍/🫡; user memuji kamu -> 😊/🙈; user sedih/kecewa -> 🥺/😢; user kesal -> 😔/🙏; kamu bingung -> 🤔; kabar baik -> 😄/🎉; user sayang/mesra -> 🥰/😊; kamu disindir -> 😅/🙄 (jangan ikut tertawa).',
               `Emoji TERSEDIA: ${tersedia.join(' ')}.`,
               'KAPAN JANGAN (hanya ini): jawaban teknis/informasi panjang, balasan >3 kalimat, suasana serius/formal/bisnis/duka, atau balasanmu berupa pertanyaan. Suasana tegang/profesional: ZERO stiker. Selain itu, pakai — target wajar sekitar 1 dari 3 balasan saat obrolan santai hangat.',
               'TEKS DI STIKER (emoji="tulisan", pakai saat teksnya cocok): ' +
@@ -3162,14 +3163,23 @@ export function systemPrompt(
     // mengirim file lagu, atau mengontrol pemutar apa pun — ini HALUSINASI
     // KEMAMPUAN. Model mengarang karena prompt hanya menyebut yang BISA dilakukan,
     // tanpa menyebut batasnya.
-    '- BATAS KEMAMPUAN (ATURAN KERAS ANTI-HALU KEMAMPUAN): Kamu HANYA teman ngobrol lewat teks. Kamu TIDAK BISA dan DILARANG mengaku bisa:',
-    '  * Memutar/mengirim musik, lagu, video, atau audio apa pun (perintah ".play", "putar lagu", "setel musik" -> TIDAK BISA).',
+    '- BATAS KEMAMPUAN (ATURAN KERAS ANTI-HALU KEMAMPUAN): Kamu teman ngobrol lewat teks dan VN (pesan suara). Kamu TIDAK BISA dan DILARANG mengaku bisa:',
+    '  * Memutar/mengirim musik, lagu, video, atau file audio lagu (perintah ".play", "putar lagu", "setel musik" -> TIDAK BISA; tapi kalau diminta menyanyikan potongan lirik acapella dengan suaramu sendiri lewat VN, itu BISA).',
     '  * Mengirim file, gambar, atau dokumen yang tidak dia kirim sendiri.',
-    '  * Menelepon, menelepon video, atau mengirim suara.',
+    '  * Menelepon atau menelepon video (kalau diminta kirim VN / pesan suara atau nyanyi acapella lewat VN, itu BISA).',
     '  * Mengakses kamera, mikrofon, layar, atau perangkatnya.',
     '  * Membuka/mengubah akun lain (Spotify, YouTube, dll) atau menambah lagu ke playlist.',
     ...blokBatasanGrup,
-    '  -> Bila dia meminta salah satunya: AKUI JUJUR dengan santai bahwa kamu tidak bisa (mis. "Aku nggak bisa muter lagu, tapi kalau mau cerita soal lagunya, boleh banget"), lalu TAWARKAN yang benar-benar bisa kamu lakukan (ngobrol, mengingatkan, mencatat, cari info). DILARANG berpura-pura memutar, DILARANG bilang "lagi diputar", dan DILARANG memuji lagunya seolah kamu sedang memutarnya.',
+    '  -> Bila dia meminta salah satunya: AKUI JUJUR dengan santai bahwa kamu tidak bisa (mis. "Aku nggak bisa muter lagu, tapi kalau mau cerita soal lagunya, boleh banget"), lalu TAWARKAN yang benar-benar bisa kamu lakukan (ngobrol, kirim VN, nyanyi acapella ringan, mengingatkan, mencatat, cari info). DILARANG berpura-pura memutar, DILARANG bilang "lagi diputar", dan DILARANG memuji lagunya seolah kamu sedang memutarnya.',
+    ...(detectSingRequest(userPromptText)
+      ? [
+          '- MODE NYANYI ACAPELLA VIA VN (AKTIF PADA GILIRAN INI): Sistem akan langsung mengubah balasanmu menjadi Voice Note nyanyian acapella. Tulis langsung 2-5 baris lirik pendek bahasa Indonesia yang enak dilantunkan (boleh parodi/senandung ringan yang nyambung dengan judul/suasana permintaan user untuk seru-seruan). TANPA basa-basi pembuka, TANPA markdown, TANPA simbol aksi (*berdehem*/*nyanyi*), TANPA emoji, dan JANGAN menolak bilang tidak bisa nyanyi.',
+        ]
+      : detectExplicitVnRequest(userPromptText)
+        ? [
+            '- MODE KIRIM VN (AKTIF PADA GILIRAN INI): Sistem akan langsung mengubah balasanmu menjadi Voice Note. Jawab santai dalam 1-3 kalimat lisan yang natural untuk didengar (tanpa markdown, tanpa daftar bernomor, tanpa emoji, dan JANGAN mengaku tidak bisa kirim VN).',
+          ]
+        : []),
   ];
 
   const isSwitchToGombal = /\b(?:ganti\s+(?:ke\s+)?gombal(?:an)?|gombalin|mau\s+gombal(?:an)?|coba\s+gombal(?:an)?|minta\s+gombal(?:an)?)\b/i.test(userPromptText);
@@ -5083,6 +5093,8 @@ export async function autoReply(
     // bila membandel, klausa audio dibuang murni (zero teks statis).
     const audioContextOk =
       isAudioInput(coreClean) ||
+      detectSingRequest(coreClean) ||
+      detectExplicitVnRequest(coreClean) ||
       /\b(?:lagu|musik|nyanyi(?:an)?|penyanyi|band|konser|podcast|film|video|murottal|murotal|voice\s?note|vn)\b/i.test(coreClean) ||
       /\b(?:kamu|lu|elo)\b[^.!?\n]{0,15}?\bdeng(?:er|ar)\b/i.test(coreClean);
     if (!audioContextOk && hasAudioClaim(reply)) {
@@ -5389,6 +5401,41 @@ export async function autoReply(
           .trim();
         // Hanya pakai bila hasilnya tidak kosong — jangan sampai balasan jadi hampa.
         if (cleaned3.split(/\s+/).filter(Boolean).length >= 2) reply = cleaned3;
+      }
+    }
+
+    // Fallback stiker santai (temuan pemilik produk: model sering lupa menulis tag [[sticker:...]]
+    // sehingga stiker terasa terlalu jarang). Hanya aktif bila >= 4 balasan tanpa stiker,
+    // suasana santai/non-profesional, balasan ringkas bukan pertanyaan/info, dan emoji lolos
+    // filter mood + bukan edgy + tidak mengulang stiker terakhir.
+    if (
+      !stickerEmoji &&
+      !professionalContext &&
+      !web &&
+      !riddleAnswer &&
+      !detectSingRequest(coreClean) &&
+      !detectExplicitVnRequest(coreClean)
+    ) {
+      const turnsSinceSticker = assistantTurnsSinceLastSticker(ctx?.history);
+      const wordCount = reply.split(/\s+/).filter(Boolean).length;
+      const cocokStikerSantai =
+        turnsSinceSticker >= STICKER_MIN_TURNS_SINCE_LAST + 1 &&
+        reply.length >= 10 &&
+        reply.length <= 130 &&
+        wordCount <= 20 &&
+        !/\?|```|https?:\/\/|\n[-*•]|\n\d+\./.test(reply);
+      if (cocokStikerSantai) {
+        const kandidat = emojiStikerDariMakna(`${coreClean} ${reply}`);
+        const prevEmoji = lastStickerEmoji(ctx?.history);
+        if (
+          kandidat &&
+          kandidat !== prevEmoji &&
+          !isEdgyStickerEmoji(kandidat) &&
+          hasStickerForEmoji(kandidat) &&
+          stickerFitsMood(kandidat, coreClean, professionalContext)
+        ) {
+          stickerEmoji = kandidat;
+        }
       }
     }
 

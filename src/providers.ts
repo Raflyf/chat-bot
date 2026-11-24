@@ -1412,6 +1412,10 @@ export function siapkanPromptUntukLocalAi(
     dyn.push(m.trim());
     return '';
   });
+  stat = stat.replace(/\n*- MODE (?:NYANYI ACAPELLA VIA VN|KIRIM VN)[^\n]+/g, (m) => {
+    dyn.push(m.trim());
+    return '';
+  });
 
   // 5. Blok dinamis di ekor (biarkan [BACA SUASANA SENDIRI], [PRIORITAS UTAMA],
   //    [DILARANG MUTLAK membicarakan...], [NAFAS PERCAKAPAN] tetap STATIS!)
@@ -1887,7 +1891,7 @@ export function ringkasUntukGroqTeks(msgs: ChatMsg[], maxBudgetTokens: number = 
       );
       out = out.replace(
         /(PRINSIP 5:[\s\S]*?)(?=\n\n|\n\[)/,
-        'PRINSIP 5: Kamu terhubung ke internet real-time & multimodal. Format WhatsApp rapi tanpa #, maks 1 emoji wajar (nol saat serius). BATAS: hanya chat teks; tolak jujur & santai jika diminta putar musik/.play, kirim file sendiri, telepon, atau akses akun luar.',
+        'PRINSIP 5: Kamu terhubung ke internet real-time & multimodal. Format WhatsApp rapi tanpa #, maks 1 emoji wajar (nol saat serius). BATAS: chat teks & VN; tolak jujur & santai jika diminta putar musik/.play, kirim file sendiri, telepon, atau akses akun luar.',
       );
     }
     return out.replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim();

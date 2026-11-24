@@ -21,6 +21,8 @@
     "map:codebase": "tsx scripts/gen-codebase-map.ts"
   },
   "dependencies": {
+    "@andresaya/edge-tts": "^1.9.1",
+    "@audio/encode-opus": "^1.3.2",
     "@supabase/supabase-js": "^2.47.0",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "dotenv": "^16.4.5",

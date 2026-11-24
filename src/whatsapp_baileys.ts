@@ -21,7 +21,8 @@ import { tanganiPencatatan, adaInteraksiTertunda } from './notes.js';
 import { tangkapFaktaPersonal } from './user_facts.js';
 import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
-import { encodeMarkers } from './markers.js';
+import { encodeMarkers, appendDurableMarkers } from './markers.js';
+import { decideVoiceReply, synthesizeVoiceNote, type SynthesizedVoiceNote, type VoiceMode } from './voice.js';
 import { needsSearch, searchWeb } from './web.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
 import { saveReminderToDb, checkDueReminders, nomorWhatsApp, tandaiPengingatBaileys, tandaiPengingatBaileysEksklusif } from './remind.js';
@@ -721,6 +722,38 @@ export async function sendWhatsAppMessageSafe(
     semuaBerhasil ? undefined : 'Baileys gagal mengirim pesan',
   );
   return semuaBerhasil;
+}
+
+/**
+ * Kirim Voice Note (PTT OGG/Opus) via Baileys. Mengembalikan true bila terkirim.
+ * Bila gagal, caller wajib fallback mengirim teks balasan biasa.
+ */
+export async function sendWhatsAppVoiceNoteSafe(
+  sock: WASocket,
+  jid: string,
+  vn: SynthesizedVoiceNote,
+  quotedMsg?: unknown,
+): Promise<boolean> {
+  try {
+    const sendOptions = quotedMsg
+      ? ({ quoted: quotedMsg } as Parameters<typeof sock.sendMessage>[2])
+      : undefined;
+    await sock.sendMessage(
+      jid,
+      {
+        audio: vn.buffer,
+        mimetype: vn.mimetype,
+        ptt: true,
+        seconds: vn.durationSec,
+      },
+      sendOptions,
+    );
+    void catatHasilKirimWa(true);
+    return true;
+  } catch (err) {
+    console.warn('[whatsapp] Gagal kirim VN balasan:', String((err as Error)?.message ?? err));
+    return false;
+  }
 }
 
 /**
@@ -1565,7 +1598,26 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             : `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
           const prompt = (isGroup && passiveGroupPrefix ? `${passiveGroupPrefix}\n` : '') + vnPromptBase;
           const { reply, via, tokens } = await baileysAutoReply(prompt, context, web);
-          await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
+          let vnSentMode: VoiceMode | undefined;
+          const vnDecision = decideVoiceReply({
+            userText: transcription,
+            reply,
+            history: context?.history,
+            hasWebResults: web !== null,
+            isGroup,
+            fromUserVoiceNote: true,
+          });
+          if (vnDecision.sendVn) {
+            void sock.sendPresenceUpdate('recording', remoteJid).catch(() => undefined);
+            const vn = await synthesizeVoiceNote(reply, vnDecision.mode);
+            if (vn && await sendWhatsAppVoiceNoteSafe(sock, remoteJid, vn, groupReplyRef)) {
+              vnSentMode = vn.mode;
+              console.log(`[whatsapp] VN terkirim (${vn.engine}/${vn.model}, ${vn.durationSec}s, ${vnDecision.reason})`);
+            }
+          }
+          if (!vnSentMode) {
+            await sendWhatsAppMessageSafe(sock, remoteJid, reply, groupReplyRef);
+          }
           tandaiBalasGrup();
           if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
           await saveMessage({
@@ -1575,8 +1627,9 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
             content: reply,
             via,
             tokens,
+            feedback: encodeMarkers({ vn: vnSentMode }),
           });
-          updateContextCache(chatKey, 'assistant', reply);
+          updateContextCache(chatKey, 'assistant', appendDurableMarkers(reply, { vn: vnSentMode }));
           noteExchange(chatKey);
         } catch (err) {
           console.error('[whatsapp] Gagal transkripsi audio/VN:', err);
@@ -2119,12 +2172,31 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       return;
     }
 
-    // 5. Kirim balasan ke WhatsApp secepat mungkin
+    // 5. Kirim balasan ke WhatsApp (VN bila waktunya / diminta, fallback otomatis ke teks bila gagal)
     // Di grup selalu reply (quote) pesan pengirim agar jelas siapa yang dijawab;
     // di DM quote hanya bila dia me-reply pesan lama (perbaikan 06 Okt 2026).
-    await sendWhatsAppMessageSafe(sock, remoteJid, reply, quotedOrGroupRef);
+    let vnSentMode: VoiceMode | undefined;
+    const vnDecision = decideVoiceReply({
+      userText: text,
+      reply,
+      history: context?.history,
+      hasWebResults: webResults !== null,
+      isGroup,
+      hasRiddleAnswer: Boolean(riddleAnswer),
+    });
+    if (vnDecision.sendVn) {
+      void sock.sendPresenceUpdate('recording', remoteJid).catch(() => undefined);
+      const vn = await synthesizeVoiceNote(reply, vnDecision.mode);
+      if (vn && await sendWhatsAppVoiceNoteSafe(sock, remoteJid, vn, quotedOrGroupRef)) {
+        vnSentMode = vn.mode;
+        console.log(`[whatsapp] VN terkirim (${vn.engine}/${vn.model}, ${vn.durationSec}s, ${vnDecision.reason})`);
+      }
+    }
+    if (!vnSentMode) {
+      await sendWhatsAppMessageSafe(sock, remoteJid, reply, quotedOrGroupRef);
+    }
     tandaiBalasGrup();
-    // Stiker balasan (opsional) — cooldown DURABLE (riwayat chat) + fast-path lokal.
+    // Stiker balasan (opsional — tidak digabung bila giliran ini sudah mengirim VN).
     // Emoji "keras" (🖕/🤬/👊) hanya saat konteks bercanda (user bercanda/roasting dulu).
     const edgyOk = !isEdgyStickerEmoji(sticker || '') || isPlayfulContext(text);
     // KECOCOKAN SUASANA (permintaan pemilik produk 24 Sep 2026): stiker harus pas
@@ -2136,6 +2208,7 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     const prevStickerEmoji = lastStickerEmoji(context?.history);
     let stickerSent = false;
     if (
+      !vnSentMode &&
       sticker &&
       reply.trim() &&
       edgyOk &&
@@ -2156,15 +2229,12 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
     if (messageId) void markMessageProcessed('whatsapp', messageId, chatKey);
 
     // 6. Update cache memori & simpan balasan asisten ke database secara non-blocking
-    updateContextCache(
-      chatKey,
-      'assistant',
-      riddleAnswer
-        ? `${reply}\n[Jawaban: ${riddleAnswer}]${stickerSent && sticker ? `\n[Stiker terkirim: ${sticker}]` : ''}`
-        : stickerSent && sticker
-          ? `${reply}\n[Stiker terkirim: ${sticker}]`
-          : reply,
-    );
+    const turnMarkers = {
+      sticker: stickerSent && sticker ? sticker : undefined,
+      riddle: riddleAnswer || undefined,
+      vn: vnSentMode,
+    };
+    updateContextCache(chatKey, 'assistant', appendDurableMarkers(reply, turnMarkers));
     void saveMessage({
       platform: 'whatsapp',
       chat_id: chatKey,
@@ -2175,12 +2245,8 @@ async function handleIncomingWAMessage(sock: WASocket, m: WAMessage): Promise<vo
       latency_ms: latencyMs,
       needs_search: webResults !== null,
       prompt_version: PROMPT_VERSION,
-      // Sinyal durable: emoji stiker yang benar-benar terkirim (anti-overuse) dan
-      // jawaban benar tebakan (agar model giliran berikutnya menilai secara jujur).
-      feedback: encodeMarkers({
-        sticker: stickerSent && sticker ? sticker : undefined,
-        riddle: riddleAnswer || undefined,
-      }),
+      // Sinyal durable: stiker terkirim, kunci jawaban tebakan, dan penanda VN (cooldown 5:1).
+      feedback: encodeMarkers(turnMarkers),
     }).catch((err) => console.warn('[whatsapp] Gagal simpan pesan assistant:', err));
 
     // 7. Hitung pertukaran pesan untuk auto-summary per 20 chat
