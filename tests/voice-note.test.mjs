@@ -380,4 +380,16 @@ test('regression screenshot: [VN terkirim: sing] tidak boleh bocor ke user & "ul
 
   // 3. "ulangii" tanpa riwayat VN baru TIDAK boleh memicu VN
   assert.equal(detectVnRetryMode('ulangii', [{ role: 'assistant', content: 'Halo biasa aja' }]), null);
+
+  // 4. Regression screenshot #2: typo "buruan nyayiin" & koreksi lirik setelah VN nyanyi wajib kirim VN sing
+  assert.equal(detectSingRequest('buruan nyayiin'), true, 'typo nyayiin harus tetap terdeteksi');
+  assert.equal(detectSingRequest('cepet nyayikan lagu stay'), true, 'typo nyayikan harus tetap terdeteksi');
+  assert.equal(detectSingRequest('aku lagi nyanyi di kamar'), false, 'cerita diri sendiri tidak boleh memicu nyanyi');
+  assert.equal(
+    detectVnRetryMode("bukan yg itu jir, yg lirik nya I'll be fucked up if you can't be right here", [
+      { role: 'user', content: 'coba nyanyi lagu stay dari Justin Bieber' },
+      { role: 'assistant', content: 'I do the same thing I told you...\n[VN terkirim: sing]' },
+    ]),
+    'sing',
+  );
 });

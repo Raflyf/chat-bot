@@ -65,10 +65,11 @@ const TEXT_ONLY_OPT_OUT_RE =
   /\b(?:jangan\s+(?:kirim\s+|pakai\s+|pake\s+|balas\s+(?:pakai\s+|pake\s+)?)?(?:vn|voice\s*note|suara)|ga\s*usah\s+(?:vn|voice\s*note|suara)|gak\s*usah\s+(?:vn|voice\s*note|suara)|nggak\s*usah\s+(?:vn|voice\s*note|suara)|teks\s+aja|text\s+aja|ketik\s+aja|tulis\s+aja|lewat\s+teks\s+aja)\b/i;
 
 const SING_NEGATED_RE =
-  /\b(?:jangan\s+(?:nyanyi|bernyanyi|nyanyiin|nyanyikan)|siapa\s+penyanyi|lagu\s+apa\s+itu|judul\s+lagu|arti\s+lirik|makna\s+lagu|penyanyi\s+(?:asli|nya))\b/i;
+  /\b(?:jangan\s+(?:nyan?yi|bernyan?yi|nyan?yiin|nyan?yikan)|siapa\s+penyanyi|lagu\s+apa\s+itu|judul\s+lagu|arti\s+lirik|makna\s+lagu|penyanyi\s+(?:asli|nya)|(?:aku|gue|gw|saya|dia)\s+(?:lagi|sedang|suka|hobi|abis|habis)\s+nyan?yi|suka\s+nyan?yi)\b/i;
 
+// Tangkap bentuk baku, kasual, maupun typo umum ("nyayiin", "nyayikan", "buruan nyayiin", "nyanyin")
 const SING_REQUEST_RE =
-  /\b(?:nyanyiin|nyanyikan(?:lah)?|coba\s+(?:kamu\s+|lu\s+|lo\s+)?(?:nyanyi|bernyanyi|senandung)|tolong\s+(?:kamu\s+)?(?:nyanyi|nyanyiin|nyanyikan)|nyanyi\s+(?:dong|donk|deh|dulu|bentar|sebentar|satu|lagu|in|yuk|coba|pakai|pake|lewat)|nyanyi\s+aja|bernyanyi(?:lah)?\s+(?:dong|dulu|bentar|untukku|buatku)?|senandungin|senandungkan)\b/i;
+  /\b(?:nyan?yi(?:in|n|kan|lah)|(?:coba|tolong|buruan|cepet(?:an)?|ayo|yuk|gas+|sok|langsung|pls|plis|please)\s+(?:kamu\s+|lu\s+|lo\s+|dong\s+)?(?:nyan?yi|bernyan?yi|senandung)|nyan?yi\s+(?:dong|donk|deh|dulu|bentar|sebentar|satu|lagu|in|yuk|coba|pakai|pake|lewat|lagi|aja|deh|lah|nih|kek|beneran)|bernyan?yi(?:lah)?\s*(?:dong|dulu|bentar|untukku|buatku|lagi)?|senandung(?:in|kan))\b/i;
 
 const EXPLICIT_VN_RE =
   /\b(?:kirim(?:in)?\s+(?:aku\s+|gue\s+|dong\s+)?(?:vn|voice\s*note|pesan\s*suara)|balas\s+(?:pakai|pake|dengan|lewat)\s+(?:vn|voice\s*note|pesan\s*suara|suara)|jawab\s+(?:pakai|pake|dengan|lewat)\s+(?:vn|voice\s*note|pesan\s*suara|suara)|(?:pakai|pake|lewat)\s+(?:vn|voice\s*note|pesan\s*suara)|ngomong\s+(?:pakai|pake|lewat)\s+(?:vn|voice\s*note|suara)|coba\s+(?:kirim\s+)?(?:vn|voice\s*note|ngomong\s+(?:dong|pake\s+vn|pakai\s+vn)|dengar\s+suara(?:mu)?|denger\s+suara(?:mu)?)|pengen\s+(?:denger|dengar)\s+suara(?:mu)?|mau\s+(?:denger|dengar)\s+suara(?:mu)?|(?:vn|voice\s*note)\s+(?:dong|donk|deh|ya|plis|please|aja))\b/i;
@@ -92,21 +93,33 @@ const SYSTEM_OUTPUT_RE =
   /^(?:📊\s*\*?Ringkasan|⏰\s*\*?Pengingat|📋\s*\*?Daftar|✅\s*(?:Pengingat|Catatan|Tugas|Pengeluaran|Pemasukan)\s+(?:disimpan|dicatat|selesai))/i;
 
 const VN_RETRY_RE =
-  /^\s*(?:ulang(?:i+|in|g+)?|coba\s+ulang(?:i+|in)?|coba\s+lagi|sekali\s+lagi|nyanyi\s+lagi|vn\s+lagi|lagi\s+dong|ulang\s+dong|coba\s+lagi\s+dong)[!.?\s]*$/i;
+  /^\s*(?:ulang(?:i+|in|g+)?|coba\s+ulang(?:i+|in)?|coba\s+lagi|sekali\s+lagi|nyan?yi\s+lagi|vn\s+lagi|lagi\s+dong|ulang\s+dong|coba\s+lagi\s+dong|buruan(?:\s+nyan?yi(?:in|n)?)?)[!.?\s]*$/i;
+
+const SING_LYRIC_CORRECTION_RE =
+  /\b(?:lirik\s*nya|bukan\s+(?:yg|yang)\s+itu|salah\s+(?:lagu|lirik|nada)|(?:yg|yang)\s+(?:bagian|lirik|reff|chorus|bait))\b/i;
 
 /** True bila user secara eksplisit melarang VN di giliran ini. */
 export function detectTextOnlyPreference(userText: string): boolean {
   return TEXT_ONLY_OPT_OUT_RE.test(userText || '');
 }
 
-/** True bila user meminta mengulang VN/nyanyian yang baru saja dikirim ("ulangii", "coba lagi"). */
+/**
+ * True bila user meminta mengulang VN/nyanyian yang baru saja dikirim ("ulangii", "coba lagi",
+ * "buruan nyayiin") atau mengoreksi lirik/bagian lagu tepat setelah VN nyanyi ("bukan yg itu, yg lirik nya...").
+ */
 export function detectVnRetryMode(
   userText: string,
   history?: Array<{ role: string; content: string | unknown }>,
 ): VoiceMode | null {
   const t = (userText || '').trim();
-  if (!t || detectTextOnlyPreference(t) || !VN_RETRY_RE.test(t)) return null;
-  return lastRecentVnMode(history, 4);
+  if (!t || detectTextOnlyPreference(t)) return null;
+  if (VN_RETRY_RE.test(t)) {
+    return lastRecentVnMode(history, 4);
+  }
+  if (!SING_NEGATED_RE.test(t) && SING_LYRIC_CORRECTION_RE.test(t) && lastRecentVnMode(history, 2) === 'sing') {
+    return 'sing';
+  }
+  return null;
 }
 
 /** True bila user meminta bot menyanyi acapella lewat VN. */
