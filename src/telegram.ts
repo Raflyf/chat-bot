@@ -11,7 +11,13 @@ import { tangkapFaktaPersonal } from './user_facts.js';
 import { simpanDokumen, ekstrakTeksDokumen } from './documents.js';
 import { fetchStickerBuffer, allowStickerForChat, hasStickerForEmoji, isEdgyStickerEmoji, isPlayfulContext, stickerFitsMood, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST, stripStickerMarker } from './stickers.js';
 import { encodeMarkers, appendDurableMarkers } from './markers.js';
-import { decideVoiceReply, synthesizeVoiceNote, type SynthesizedVoiceNote, type VoiceMode } from './voice.js';
+import {
+  decideVoiceReply,
+  synthesizeVoiceNote,
+  SING_QUOTA_EXHAUSTED_NOTICE_PROMPT,
+  type SynthesizedVoiceNote,
+  type VoiceMode,
+} from './voice.js';
 import { needsSearch, searchWeb } from './web.js';
 import { handleRemind, startReminderWorker } from './remind.js';
 import { resolveTimezoneFromCoords, formatInZone } from './timezone.js';
@@ -1027,6 +1033,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             : `[Pesan Suara / Voice Note dari Temanmu]: "${transcription}"\n(Kamu mendengar rekaman suara ini secara jernih. Tanggapi langsung apa yang dibicarakan temanmu secara wajar, hangat, dan bersahabat).`;
           const prompt = (tgPassivePrefix ? `${tgPassivePrefix}\n` : '') + vnPromptBase;
           const { reply, via, tokens } = await autoReply(prompt, ctx, web);
+          let finalReply = reply;
           let vnSentMode: VoiceMode | undefined;
           const vnDecision = decideVoiceReply({
             userText: transcription,
@@ -1045,7 +1052,11 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             }
           }
           if (!vnSentMode) {
-            await sendTelegramMessageSafe(bot, chatId, reply, tgReplyRef);
+            if (vnDecision.sendVn && vnDecision.reason === 'explicit_sing') {
+              const notice = await dynamicNotice(SING_QUOTA_EXHAUSTED_NOTICE_PROMPT, ctx);
+              if (notice && notice.trim()) finalReply = notice.trim();
+            }
+            await sendTelegramMessageSafe(bot, chatId, finalReply, tgReplyRef);
           }
           tandaiBalasGrupTg();
           if (msgId) void markMessageProcessed('telegram', msgId, chatKey);
@@ -1053,12 +1064,12 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
             platform: 'telegram',
             chat_id: chatKey,
             role: 'assistant',
-            content: reply,
+            content: finalReply,
             via,
             tokens,
             feedback: encodeMarkers({ vn: vnSentMode }),
           }).catch((err) => console.warn('[telegram] Gagal simpan pesan VN assistant:', err));
-          updateContextCache(chatKey, 'assistant', appendDurableMarkers(reply, { vn: vnSentMode }));
+          updateContextCache(chatKey, 'assistant', appendDurableMarkers(finalReply, { vn: vnSentMode }));
           noteExchange(chatKey);
         } catch (err) {
           console.error('[telegram] Gagal transkripsi audio/VN:', err);
@@ -1320,6 +1331,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     const latencyMs = Date.now() - tStart;
     // Di grup selalu reply pesan penanya; di DM quote hanya bila dia membalas pesan lama.
     const idUntukQuoteTg = quotedText && msg.message_id ? msg.message_id : tgReplyRef;
+    let finalReply = reply;
     let vnSentMode: VoiceMode | undefined;
     const vnDecision = decideVoiceReply({
       userText: text || rawText,
@@ -1338,7 +1350,11 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       }
     }
     if (!vnSentMode) {
-      await sendTelegramMessageSafe(bot, chatId, reply, idUntukQuoteTg);
+      if (vnDecision.sendVn && vnDecision.reason === 'explicit_sing') {
+        const notice = await dynamicNotice(SING_QUOTA_EXHAUSTED_NOTICE_PROMPT, ctx);
+        if (notice && notice.trim()) finalReply = notice.trim();
+      }
+      await sendTelegramMessageSafe(bot, chatId, finalReply, idUntukQuoteTg);
     }
     tandaiBalasGrupTg();
     // Stiker balasan (opsional — tidak digabung bila giliran ini sudah mengirim VN).
@@ -1355,7 +1371,7 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
     if (
       !vnSentMode &&
       sticker &&
-      reply.trim() &&
+      finalReply.trim() &&
       edgyOk &&
       moodOk &&
       turnsSinceSticker >= STICKER_MIN_TURNS_SINCE_LAST &&
@@ -1379,12 +1395,12 @@ async function handleIncomingMessageInner(bot: TelegramBot, msg: TelegramBot.Mes
       riddle: riddleAnswer || undefined,
       vn: vnSentMode,
     };
-    updateContextCache(chatKey, 'assistant', appendDurableMarkers(reply, turnMarkers));
+    updateContextCache(chatKey, 'assistant', appendDurableMarkers(finalReply, turnMarkers));
     await saveMessage({
       platform: 'telegram',
       chat_id: chatKey,
       role: 'assistant',
-      content: reply,
+      content: finalReply,
       via,
       tokens,
       latency_ms: latencyMs,

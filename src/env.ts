@@ -292,14 +292,25 @@ export const config = {
   vpsKeepaliveLeaseTtlSeconds: num('VPS_KEEPALIVE_LEASE_TTL_SECONDS', 3600),
   vpsIdlePauseMinutes: num('VPS_IDLE_PAUSE_MINUTES', 30),
   // ── BALASAN VOICE NOTE (VN) & NYANYI ACAPELLA ──
-  // Semua VN (obrolan santai ~5:1 & nyanyi acapella) memakai rantai Gemini TTS
-  // (gemini-3.8-flash-lite-tts -> gemini-3.8-flash-tts -> gemini-2.5-flash-preview-tts)
-  // agar suara bahasa Indonesia natural seperti manusia. Edge-TTS hanya dipakai bila
-  // VOICE_EDGE_FALLBACK=1 diaktifkan eksplisit.
+  // - VN obrolan biasa (`mode: 'chat'`):
+  //   Jika LOCAL_TTS_URL terisi (mis. Supertonic 3 ONNX lokal di VPS 1, open-source gratis unlimited
+  //   bahasa Indonesia), dipakai sebagai prioritas utama (atau cadangan bila LOCAL_TTS_PRIORITY=fallback)
+  //   sehingga kuota Gemini 3.8 TTS utuh untuk nyanyi acapella.
+  // - VN nyanyi acapella (`mode: 'sing'`):
+  //   Memakai Gemini 3.8 Flash TTS -> Gemini 3.8 Flash-Lite TTS (melodis natural).
+  // - Edge-TTS hanya dipakai bila VOICE_EDGE_FALLBACK=1 diaktifkan eksplisit.
   voiceNoteEnabled: enabledByDefault('VOICE_NOTE_ENABLED', true),
   voiceEdgeFallback: ['true', '1', 'yes', 'on'].includes(
     String(process.env.VOICE_EDGE_FALLBACK ?? '').trim().toLowerCase(),
   ),
+  localTtsUrl: cleanStr('LOCAL_TTS_URL').replace(/\/+$/, ''),
+  localTtsApiKey: cleanStr('LOCAL_TTS_API_KEY'),
+  localTtsVoice: cleanStr('LOCAL_TTS_VOICE') || 'M3',
+  localTtsSpeed: num('LOCAL_TTS_SPEED', 1.03),
+  localTtsSteps: num('LOCAL_TTS_STEPS', 8),
+  localTtsPriority: (cleanStr('LOCAL_TTS_PRIORITY').toLowerCase() === 'fallback' ? 'fallback' : 'primary') as
+    | 'primary'
+    | 'fallback',
   ttsVoice: cleanStr('TTS_VOICE') || 'id-ID-ArdiNeural',
   ttsRate: cleanStr('TTS_RATE') || '+0%',
   ttsPitch: cleanStr('TTS_PITCH') || '+0Hz',

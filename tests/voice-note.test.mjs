@@ -13,6 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import {
   decideVoiceReply,
   detectSingRequest,
@@ -20,6 +21,12 @@ import {
   detectTextOnlyPreference,
   detectVnRetryMode,
   extractSongQuery,
+  detectSongStylePreference,
+  pickPopularSongForStyle,
+  hasUnexpectedForeignScript,
+  INDO_GALAU_SONGS,
+  INDO_POP_SONGS,
+  WESTERN_POP_SONGS,
   pickShortChorus,
   pickRandomPopularSongQuery,
   POPULAR_DEFAULT_SONGS,
@@ -27,6 +34,7 @@ import {
   prepareTextForTts,
   encodeWavOrPcmToOggOpus,
   remuxWebmOpusToOgg,
+  synthesizeViaLocalTts,
 } from '../src/voice.js';
 import {
   encodeMarkers,
@@ -498,4 +506,128 @@ test('regression 24 Nov: komplain lirik TIDAK dinyanyikan, 0 stiker WebP cacat, 
   const skillsSrc = fs.readFileSync(new URL('../src/skills.ts', import.meta.url), 'utf8');
   assert.ok(skillsSrc.includes('isDuplicateVisionReply'), 'describeImage wajib mencegah pengulangan balasan lama');
   assert.ok(skillsSrc.includes('cleanMathAndNoise(stripDurableMarkers(h.content))'), 'describeImage wajib buang marker durable dari history');
+});
+
+test('regression 24 Nov (lanjutan): stopword lagu lain/sama, follow-up lagu indo/galau, filter skrip Serbia, dan Local TTS Supertonic', async () => {
+  // 1. Kata pengisi Indonesia ("lain", "sama", "indo", "galau") TIDAK boleh tersisa jadi query lagu aneh
+  assert.equal(extractSongQuery('nyanyiin lagu lain deh'), null);
+  assert.equal(extractSongQuery('lah nyanyiin sama lu'), null);
+  assert.equal(extractSongQuery('lagu indo coba'), null);
+  assert.equal(extractSongQuery('coba yg galau'), null);
+  assert.equal(extractSongQuery('ganti lagu yg asik dong'), null);
+  // Judul asli tetap terekstrak rapi
+  assert.equal(extractSongQuery('lagu komang dong'), 'komang');
+  assert.equal(extractSongQuery('nyanyiin sial mahalini'), 'sial mahalini');
+
+  // 2. Follow-up genre/bahasa tepat setelah sesi nyanyi WAJIB memicu mode sing (bukan jadi teks biasa)
+  const afterSingHist = [
+    { role: 'user', content: 'nyanyiin lagu lain deh' },
+    { role: 'assistant', content: 'I was all alone...\n[VN terkirim: sing]' },
+  ];
+  assert.equal(detectVnRetryMode('lagu indo coba', afterSingHist), 'sing');
+  assert.equal(detectVnRetryMode('coba yg galau', afterSingHist), 'sing');
+  assert.equal(detectVnRetryMode('lagu lain deh', afterSingHist), 'sing');
+  assert.equal(detectVnRetryMode('ganti lagu', afterSingHist), 'sing');
+  assert.equal(detectVnRetryMode('lagu barat dong', afterSingHist), 'sing');
+  // Pertanyaan meta tentang lagu tetap bukan perintah nyanyi
+  assert.equal(detectVnRetryMode('siapa penyanyi lagu itu?', afterSingHist), null);
+  assert.equal(detectVnRetryMode('arti lagu itu apa sih?', afterSingHist), null);
+
+  // 3. Preferensi genre & deduplikasi riwayat lagu
+  assert.equal(detectSongStylePreference('lagu indo coba'), 'indo_pop');
+  assert.equal(detectSongStylePreference('coba yg galau', [{ role: 'user', content: 'lagu indo coba' }]), 'indo_galau');
+  assert.equal(detectSongStylePreference('nyanyiin lagu barat dong'), 'western');
+  assert.ok(INDO_GALAU_SONGS.includes(pickPopularSongForStyle('indo_galau', undefined, () => 0.0)));
+  assert.ok(INDO_POP_SONGS.includes(pickPopularSongForStyle('indo_pop', undefined, () => 0.0)));
+  assert.ok(WESTERN_POP_SONGS.includes(pickPopularSongForStyle('western', undefined, () => 0.0)));
+
+  // Jika Sial Mahalini baru muncul di riwayat, pilihan berikutnya harus lagu galau lain
+  const pickedFresh = pickPopularSongForStyle(
+    'indo_galau',
+    [{ role: 'assistant', content: 'Sial Mahalini\n[VN terkirim: sing]' }],
+    () => 0.0,
+  );
+  assert.notEqual(pickedFresh, 'Sial Mahalini');
+
+  // 4. Filter skrip asing menolak lirik Serbia/Cyrillic untuk prompt Indonesia, tapi mengizinkan bila diminta eksplisit
+  assert.equal(
+    hasUnexpectedForeignScript('Kuda da pobegnem od sebe\nŽivim od sećanja na tebe', 'lah nyanyiin sama lu'),
+    true,
+  );
+  assert.equal(
+    hasUnexpectedForeignScript('Sampai saat ini tak terpikir olehku', 'lagu galau indo'),
+    false,
+  );
+  assert.equal(
+    hasUnexpectedForeignScript('夜に駆ける 騒がしい日々に', 'nyanyiin lagu anime jepang yoasobi'),
+    false,
+  );
+
+  // 5. Encoder WAV 44.1kHz (sample rate Supertonic 3) otomatis di-resample ke 24kHz lalu jadi Ogg Opus valid
+  const makeSineWav = (sr) => {
+    const numSamples = Math.floor(sr * 0.5);
+    const dataSize = numSamples * 2;
+    const wav = Buffer.alloc(44 + dataSize);
+    wav.write('RIFF', 0, 'ascii');
+    wav.writeUInt32LE(36 + dataSize, 4);
+    wav.write('WAVE', 8, 'ascii');
+    wav.write('fmt ', 12, 'ascii');
+    wav.writeUInt32LE(16, 16);
+    wav.writeUInt16LE(1, 20);
+    wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(sr, 24);
+    wav.writeUInt32LE(sr * 2, 28);
+    wav.writeUInt16LE(2, 32);
+    wav.writeUInt16LE(16, 34);
+    wav.write('data', 36, 'ascii');
+    wav.writeUInt32LE(dataSize, 40);
+    for (let i = 0; i < numSamples; i++) {
+      wav.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / sr) * 8000), 44 + i * 2);
+    }
+    return wav;
+  };
+  const encoded44k = await encodeWavOrPcmToOggOpus(makeSineWav(44100), 'audio/wav', 'audio', 32);
+  assert.equal(encoded44k.ogg.subarray(0, 4).toString('ascii'), 'OggS');
+  assert.ok(encoded44k.ogg.includes(Buffer.from('OpusHead')));
+
+  // 6. Klien Local TTS Supertonic 3 mengirim Bearer auth + lang='id' dan menghasilkan Ogg Opus valid
+  let receivedAuth = '';
+  let receivedBody = null;
+  const wav24 = makeSineWav(24000);
+  const srv = http.createServer((req, res) => {
+    receivedAuth = req.headers.authorization || '';
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      receivedBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      res.writeHead(200, { 'Content-Type': 'audio/wav', 'X-TTS-Model': 'supertonic-3' });
+      res.end(wav24);
+    });
+  });
+  await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+  try {
+    const addr = srv.address();
+    const vn = await synthesizeViaLocalTts('Weh santai aja kali bro, aman kok!', 'chat', {
+      url: `http://127.0.0.1:${addr.port}`,
+      apiKey: 'secret-test-key',
+      voice: 'M3',
+    });
+    assert.equal(receivedAuth, 'Bearer secret-test-key');
+    assert.equal(receivedBody.lang, 'id');
+    assert.equal(receivedBody.voice, 'M3');
+    assert.equal(vn.engine, 'local-tts');
+    assert.equal(vn.model, 'supertonic-3/M3');
+    assert.equal(vn.buffer.subarray(0, 4).toString('ascii'), 'OggS');
+  } finally {
+    await new Promise((resolve) => srv.close(resolve));
+  }
+
+  // 7. Semua kanal memakai SING_QUOTA_EXHAUSTED_NOTICE_PROMPT saat VN nyanyi gagal (tidak dump lirik mentah)
+  for (const rel of ['../src/whatsapp_baileys.ts', '../src/whatsapp_cloud.ts', '../src/telegram.ts']) {
+    const src = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
+    assert.ok(
+      src.includes('SING_QUOTA_EXHAUSTED_NOTICE_PROMPT'),
+      `${rel} wajib pakai SING_QUOTA_EXHAUSTED_NOTICE_PROMPT agar tidak kirim lirik mentah saat kuota TTS nyanyi penuh`,
+    );
+  }
 });

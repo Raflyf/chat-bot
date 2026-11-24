@@ -3,16 +3,16 @@
  *
  * Arsitektur natural human-like TTS (berjalan di Vercel serverless & VPS tanpa ffmpeg):
  * - VN obrolan biasa (`mode: 'chat'`):
- *   1. Utama: Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`, cepat & natural bahasa Indonesia).
- *   2. Cadangan 1: Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`, ekspresif).
- *   3. Cadangan 2: Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`, kuota terpisah).
- *   4. Opsional: Edge-TTS hanya bila `VOICE_EDGE_FALLBACK=1`; default `false` agar tidak jadi suara robot.
+ *   1. Jika `LOCAL_TTS_URL` terisi (mis. Supertonic 3 ONNX lokal di VPS 1, open-source gratis unlimited
+ *      native Bahasa Indonesia): dipakai sebagai prioritas utama (hemat kuota Gemini 3.8 TTS).
+ *   2. Cadangan / utama serverless: Gemini 3.8 Flash-Lite TTS <-> Gemini 3.8 Flash TTS.
+ *   3. Opsional: Edge-TTS hanya bila `VOICE_EDGE_FALLBACK=1`; default `false` agar tidak jadi suara robot.
  * - VN nyanyi acapella (`mode: 'sing'`):
  *   1. Utama: Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`) dengan `speech_metadata.style` melodis/acapella.
  *   2. Cadangan 1: Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`).
- *   3. Cadangan 2: Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`).
- * - Semua WAV/PCM 24kHz di-encode langsung ke `audio/ogg; codecs=opus` lewat WASM `@audio/encode-opus`.
- * - Fallback terakhir di caller: bila kuota semua TTS habis, kirim teks biasa agar balasan tetap lancar.
+ *   3. Bila keduanya habis kuota (429), kembalikan `null` agar caller memberi tahu user jujur secara dinamis
+ *      (tanpa membuang lirik mentah sebagai teks).
+ * - Semua WAV/PCM di-encode langsung ke `audio/ogg; codecs=opus` lewat WASM `@audio/encode-opus`.
  */
 
 import { EdgeTTS } from '@andresaya/edge-tts';
@@ -43,7 +43,7 @@ export interface SynthesizedVoiceNote {
   mimetype: 'audio/ogg; codecs=opus';
   durationSec: number;
   waveform: Uint8Array;
-  engine: 'edge-tts' | 'gemini-tts';
+  engine: 'local-tts' | 'gemini-tts' | 'edge-tts';
   model: string;
   mode: VoiceMode;
 }
@@ -107,7 +107,15 @@ const SING_LYRIC_CORRECTION_RE =
   /(?:bukan\s+(?:yg|yang)\s+itu[\s\S]{0,24}(?:lirik|bagian|reff|chorus)|(?:yg|yang)\s+(?:lirik\s*nya|bagian|reff|chorus)\s+(?!(?:ngawur+|ngaco+|salah|jelek|hancur|ancur|aneh|beda|sama|gitu|begitu|itu\s*$))\S+)/i;
 
 const SING_COMPLAINT_ONLY_RE =
-  /\b(?:ngawur+|ngaco+|hancur|ancur|jelek|knapa|kenapa|kok\s+malah|tau\s+lagu\s*nya\s+ga|tahu\s+lagu\s*nya\s+ga)\b/i;
+  /\b(?:ngawur+|ngaco+|hancur|ancur|jelek|knapa|kenapa|kok\s+malah|tau\s+lagu\s*nya\s+ga|tahu\s+lagu\s*nya\s+ga|bukan\s+gitu\s+nada|ga\s+gitu\s+nada)\b/i;
+
+// Follow-up ganti lagu / pilih genre tepat setelah sesi nyanyi ("lagu indo coba", "coba yg galau",
+// "lagu lain deh", "yg galau aja", "ganti lagu", "lagu mahalini coba").
+const SING_FOLLOWUP_STYLE_RE =
+  /(?:^\s*(?:coba\s+|ganti\s+|pindah\s+|tukar\s+|mau\s+|pengen\s+)?(?:lagu\s+\S+|(?:yg|yang)\s+(?:indo(?:nesia)?|barat|inggris|english|galau|sedih|baper|nyesek|mellow|pop|asik|asyik|ceria|senang|santai|lain(?:nya)?|beda|baru|sing-?along|hits|viral)\b)|\b(?:lagu\s+(?:indo(?:nesia)?|barat|inggris|english|galau|sedih|baper|nyesek|pop|asik|asyik|ceria|lain(?:nya)?|beda|baru)\b|ganti\s+lagu)\b)/i;
+
+const SING_META_QUESTION_RE =
+  /\b(?:siapa|penyanyi|judul\s*(?:nya|lagu)?\s+apa|arti|makna|rilis|tahun\s+berapa|album|spotify|youtube|download|putar|setel)\b/i;
 
 /** Deteksi balasan permintaan maaf / pengakuan tidak tahu lirik agar TIDAK dinyanyikan sebagai VN sing. */
 const NON_SINGABLE_META_REPLY_RE =
@@ -120,7 +128,8 @@ export function detectTextOnlyPreference(userText: string): boolean {
 
 /**
  * True bila user meminta mengulang VN/nyanyian yang baru saja dikirim ("ulangii", "coba lagi",
- * "buruan nyayiin") atau mengoreksi lirik/bagian lagu tepat setelah VN nyanyi ("bukan yg itu, yg lirik nya...").
+ * "buruan nyayiin"), memilih genre/lagu lanjutan tepat setelah VN nyanyi ("lagu indo coba",
+ * "coba yg galau", "ganti lagu"), atau mengoreksi lirik/bagian lagu ("bukan yg itu, yg lirik nya...").
  */
 export function detectVnRetryMode(
   userText: string,
@@ -131,13 +140,19 @@ export function detectVnRetryMode(
   if (VN_RETRY_RE.test(t)) {
     return lastRecentVnMode(history, 4);
   }
+  const recentMode = lastRecentVnMode(history, 4);
   if (
+    recentMode === 'sing' &&
     !SING_NEGATED_RE.test(t) &&
     !SING_COMPLAINT_ONLY_RE.test(t) &&
-    SING_LYRIC_CORRECTION_RE.test(t) &&
-    lastRecentVnMode(history, 2) === 'sing'
+    !SING_META_QUESTION_RE.test(t)
   ) {
-    return 'sing';
+    if (SING_LYRIC_CORRECTION_RE.test(t) && lastRecentVnMode(history, 2) === 'sing') {
+      return 'sing';
+    }
+    if (t.length <= 80 && SING_FOLLOWUP_STYLE_RE.test(t)) {
+      return 'sing';
+    }
   }
   return null;
 }
@@ -710,6 +725,25 @@ function buildWaveformFromPcm(samples: Float32Array): Uint8Array {
   return bars;
 }
 
+const OPUS_SUPPORTED_RATES = new Set([8000, 12000, 16000, 24000, 48000]);
+
+/** Resample linear cepat untuk WAV dengan sample rate non-Opus (mis. 44100 Hz -> 24000 Hz). */
+function resampleMonoLinear(input: Float32Array, fromRate: number, toRate: number): Float32Array {
+  if (fromRate === toRate || input.length === 0) return input;
+  const outLen = Math.max(1, Math.round((input.length * toRate) / fromRate));
+  const out = new Float32Array(outLen);
+  const ratio = fromRate / toRate;
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * ratio;
+    const idx = Math.floor(pos);
+    const frac = pos - idx;
+    const s0 = input[Math.min(idx, input.length - 1)];
+    const s1 = input[Math.min(idx + 1, input.length - 1)];
+    out[i] = s0 + (s1 - s0) * frac;
+  }
+  return out;
+}
+
 /** Parse WAV (RIFF PCM 16-bit) atau raw PCM L16 24kHz mono lalu encode ke Ogg Opus via WASM `@audio/encode-opus`. */
 export async function encodeWavOrPcmToOggOpus(
   audioBuf: Buffer,
@@ -749,7 +783,7 @@ export async function encodeWavOrPcmToOggOpus(
   }
 
   // Downmix ke mono Float32 untuk ukuran VN kecil & kompatibel penuh dengan Meta voice:true
-  const mono = new Float32Array(totalFrames);
+  const rawMono = new Float32Array(totalFrames);
   for (let i = 0; i < totalFrames; i++) {
     let sum = 0;
     for (let ch = 0; ch < channels; ch++) {
@@ -758,11 +792,14 @@ export async function encodeWavOrPcmToOggOpus(
         sum += audioBuf.readInt16LE(bytePos) / 32768;
       }
     }
-    mono[i] = sum / channels;
+    rawMono[i] = sum / channels;
   }
 
+  const targetRate = OPUS_SUPPORTED_RATES.has(sampleRate) ? sampleRate : 24000;
+  const mono = targetRate === sampleRate ? rawMono : resampleMonoLinear(rawMono, sampleRate, targetRate);
+
   const encoder = await encodeOpus({
-    sampleRate,
+    sampleRate: targetRate,
     channels: 1,
     bitrate,
     application,
@@ -773,7 +810,7 @@ export async function encodeWavOrPcmToOggOpus(
     const ogg = Buffer.concat([Buffer.from(head), Buffer.from(tail)]);
     return {
       ogg,
-      durationSec: Math.max(1, Math.round(totalFrames / sampleRate)),
+      durationSec: Math.max(1, Math.round(mono.length / targetRate)),
       waveform: buildWaveformFromPcm(mono),
     };
   } finally {
@@ -1021,12 +1058,80 @@ async function synthesizeViaGeminiTts(
   throw lastErr;
 }
 
+/** Deteksi bahasa TTS lokal ('en' hanya bila dominan Inggris tanpa partikel Indonesia, selebihnya 'id'). */
+function detectLocalTtsLang(spokenText: string): 'id' | 'en' {
+  const hasIndo =
+    /\b(?:aku|gue|kamu|yang|nggak|tidak|udah|sudah|bisa|banget|santai|aja|dong|deh|nih|kok|kalau|karena|tapi|untuk|sama|dari|hari|ini|itu|lagi)\b/i.test(
+      spokenText,
+    );
+  if (hasIndo) return 'id';
+  const enHits = spokenText.match(/\b(?:the|you|and|that|this|with|have|for|just|not|are|was|your|what|when|how)\b/gi);
+  return enHits && enHits.length >= 3 ? 'en' : 'id';
+}
+
 /**
- * Sintesis Voice Note OGG/Opus siap kirim dengan prioritas suara paling natural:
- * - `chat`: Gemini 3.8 Flash-Lite TTS -> Gemini 3.8 Flash TTS -> Gemini 2.5 Flash Preview TTS.
- * - `sing`: Gemini 3.8 Flash TTS -> Gemini 3.8 Flash-Lite TTS -> Gemini 2.5 Flash Preview TTS.
- * - Edge-TTS hanya dipakai sebagai cadangan opsional bila `VOICE_EDGE_FALLBACK=1` (default mati
- *   agar kualitas VN tidak turun jadi suara robotik saat kuota Gemini TTS habis; caller fallback ke teks).
+ * Sintesis VN natural open-source lewat server TTS lokal (mis. Supertonic 3 ONNX di VPS 1).
+ * Gratis, unlimited (tanpa kuota harian), native Bahasa Indonesia (`lang="id"`), ~0.8s di CPU.
+ */
+export async function synthesizeViaLocalTts(
+  spokenText: string,
+  mode: VoiceMode,
+  opts?: { url?: string; apiKey?: string; voice?: string; speed?: number; steps?: number },
+): Promise<SynthesizedVoiceNote> {
+  const baseUrl = (opts?.url ?? config.localTtsUrl).replace(/\/+$/, '');
+  if (!baseUrl) {
+    throw new Error('LOCAL_TTS_URL belum dikonfigurasi');
+  }
+  const apiKey = opts?.apiKey ?? config.localTtsApiKey;
+  const voice = opts?.voice ?? config.localTtsVoice ?? 'M3';
+  const speed = opts?.speed ?? config.localTtsSpeed ?? 1.03;
+  const steps = opts?.steps ?? config.localTtsSteps ?? 8;
+  const lang = detectLocalTtsLang(spokenText);
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const res = await fetch(`${baseUrl}/tts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ text: spokenText, voice, lang, speed, steps }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Local TTS HTTP ${res.status}: ${errText.slice(0, 140)}`);
+  }
+
+  const rawBuf = Buffer.from(await res.arrayBuffer());
+  if (rawBuf.length < 200) {
+    throw new Error('Local TTS mengembalikan audio kosong');
+  }
+  const contentType = res.headers.get('content-type') || 'audio/wav';
+  const modelHeader = res.headers.get('x-tts-model') || 'supertonic-3';
+  const { ogg, durationSec, waveform } = await encodeWavOrPcmToOggOpus(rawBuf, contentType, 'audio', 32);
+
+  return {
+    buffer: ogg,
+    mimetype: 'audio/ogg; codecs=opus',
+    durationSec,
+    waveform,
+    engine: 'local-tts',
+    model: `${modelHeader}/${voice}`,
+    mode,
+  };
+}
+
+/** Instruksi notice dinamis bila kuota TTS nyanyi acapella penuh (hindari mengirim lirik mentah jadi teks). */
+export const SING_QUOTA_EXHAUSTED_NOTICE_PROMPT =
+  'Kuota suara untuk nyanyi acapella hari ini sedang penuh/limit sementara sehingga kamu tidak bisa mengirim Voice Note nyanyi saat ini. Beri tahu temanmu dalam 1-2 kalimat santai, jujur, dan hangat dengan gayamu sendiri bahwa pita suaramu lagi capek / kuota suara nyanyi penuh dulu hari ini dan ajak coba lagi nanti atau lanjut ngobrol biasa. DILARANG menulis lirik lagu mentah.';
+
+/**
+ * Sintesis Voice Note OGG/Opus siap kirim dengan prioritas suara paling natural & hemat kuota:
+ * - `chat`:
+ *   - Jika `LOCAL_TTS_URL` terisi & `LOCAL_TTS_PRIORITY=primary` (default VPS): Supertonic 3 lokal (unlimited) -> Gemini 3.8 TTS.
+ *   - Jika `LOCAL_TTS_URL` kosong (Vercel) atau `fallback`: Gemini 3.8 TTS -> Supertonic 3 lokal (jika ada).
+ * - `sing`: Gemini 3.8 Flash TTS -> Gemini 3.8 Flash-Lite TTS (melodis acapella).
+ * - Edge-TTS hanya dipakai sebagai cadangan opsional bila `VOICE_EDGE_FALLBACK=1`.
  */
 export async function synthesizeVoiceNote(
   replyText: string,
@@ -1035,11 +1140,27 @@ export async function synthesizeVoiceNote(
   const spoken = prepareTextForTts(replyText, mode);
   if (!spoken || spoken.length < 3) return null;
 
-  // Mode obrolan & nyanyi memakai rantai Gemini TTS natural; Edge-TTS hanya bila VOICE_EDGE_FALLBACK=1.
+  const hasLocalTts = Boolean(config.localTtsUrl);
+
+  if (mode === 'chat' && hasLocalTts && config.localTtsPriority === 'primary') {
+    try {
+      return await synthesizeViaLocalTts(spoken, mode);
+    } catch (err) {
+      console.warn(`[voice] Local TTS (${mode}) gagal, failover ke Gemini TTS:`, String((err as Error)?.message ?? err));
+    }
+  }
+
   try {
     return await synthesizeViaGeminiTts(spoken, mode);
   } catch (err) {
     console.warn(`[voice] Gemini TTS (${mode}) gagal:`, String((err as Error)?.message ?? err));
+    if (mode === 'chat' && hasLocalTts && config.localTtsPriority !== 'primary') {
+      try {
+        return await synthesizeViaLocalTts(spoken, mode);
+      } catch (errLocal) {
+        console.warn(`[voice] Local TTS fallback (${mode}) gagal:`, String((errLocal as Error)?.message ?? errLocal));
+      }
+    }
     if (!config.voiceEdgeFallback) {
       return null;
     }
@@ -1057,10 +1178,42 @@ export async function synthesizeVoiceNote(
 //    Mencegah model kecil mengarang lirik ngawur saat diminta menyanyi lagu terkenal.
 // ============================================================================
 
+export type SongStylePreference = 'indo_galau' | 'indo_pop' | 'western' | 'any';
+
 const VOCAL_FILLER_LINE_RE =
   /^(?:(?:oh+|ooh+|uh+|ah+|eh+|hm+|mm+|la+|na+|da+|ta-da|yeah+|yea+|woah+|whoa+|hey+|ayy+)[\s,()!?.~-]*)+$/i;
 
-/** Ekstrak judul/artis lagu bersih dari permintaan nyanyi user (null bila generik seperti "nyanyi dong"). */
+// Kata generik/pengisi Bahasa Indonesia yang TIDAK boleh tersisa sebagai judul lagu sendirian
+// (mencegah "nyanyiin lagu lain deh" -> "lain" / "lah nyanyiin sama lu" -> "sama" -> lagu Serbia).
+const GENERIC_NON_TITLE_WORDS = new Set([
+  'lain', 'lainnya', 'sama', 'beda', 'baru', 'lama', 'lagi', 'coba', 'dong', 'donk', 'deh', 'lah',
+  'aja', 'saja', 'nih', 'tuh', 'itu', 'ini', 'yuk', 'ayo', 'kuy', 'gas', 'gass', 'cepet', 'cepat',
+  'buruan', 'sekarang', 'skrg', 'dulu', 'bentar', 'sebentar', 'terus', 'trs', 'trus', 'juga',
+  'kali', 'bebas', 'terserah', 'random', 'acak', 'apa', 'apaan', 'bagus', 'enak', 'asik', 'asyik',
+  'seru', 'keren', 'mantap', 'hits', 'hit', 'viral', 'populer', 'terkenal', 'favorit', 'fav',
+  'ganti', 'pindah', 'tukar', 'pilih', 'pilihin', 'pilihan', 'indo', 'indonesia', 'barat', 'inggris',
+  'english', 'bule', 'luar', 'galau', 'sedih', 'baper', 'nyesek', 'mellow', 'melo', 'pop', 'rock',
+  'indie', 'akustik', 'acapella', 'senang', 'ceria', 'happy', 'semangat', 'santai', 'chill',
+  'nostalgia', 'jadul', 'lawas', 'cuy', 'bro', 'bang', 'mas', 'kak', 'gan', 'bot', 'bott',
+]);
+
+// Karakter skrip asing / diakritik Balkan-Slavia yang menandakan hasil LRCLIB salah bahasa
+// (mis. lagu Serbia "Živim od sećanja" saat user minta dalam bahasa Indonesia/Inggris).
+const UNEXPECTED_FOREIGN_SCRIPT_RE =
+  /[žćčšđŽĆČŠĐłŁńŃśŚźŹżŻőŐűŰăĂșȘțȚа-яА-ЯёЁ\u0370-\u03FF\u0590-\u05FF\u0600-\u06FF\u0E00-\u0E7F\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/;
+
+const EXPLICIT_FOREIGN_QUERY_RE =
+  /\b(?:korea|kpop|k-pop|bts|blackpink|exo|twice|newjeans|ive|aespa|jepang|jpop|j-pop|anime|yoasobi|radwimps|kenshi|arab|sholawat|shalawat|nasheed|rusia|russia|serbia|turki|thailand|china|mandarin|cantonese|hindi|india|bollywood)\b/i;
+
+/** True bila lirik memuat skrip/diakritik asing tak terduga (mis. Serbia/Rusia/CJK) yang tidak diminta user. */
+export function hasUnexpectedForeignScript(lyrics: string, userQuery = ''): boolean {
+  if (!UNEXPECTED_FOREIGN_SCRIPT_RE.test(lyrics || '')) return false;
+  if (UNEXPECTED_FOREIGN_SCRIPT_RE.test(userQuery || '')) return false;
+  if (EXPLICIT_FOREIGN_QUERY_RE.test(userQuery || '')) return false;
+  return true;
+}
+
+/** Ekstrak judul/artis lagu bersih dari permintaan nyanyi user (null bila generik seperti "nyanyi dong" / "lagu indo coba"). */
 export function extractSongQuery(userText: string): string | null {
   let q = String(userText || '').trim();
   if (!q) return null;
@@ -1070,11 +1223,18 @@ export function extractSongQuery(userText: string): string | null {
     return lyricHint[1].replace(/["'`]/g, '').trim();
   }
   q = q
-    .replace(/\b(?:coba|tolong|buruan|cepet(?:an)?|ayo|yuk|gas+|sok|langsung|pls|plis|please|kamu|lu|lo|aku|gue|gw|dong|donk|deh|lah|ya|nih|dongg+|bentar|sebentar|satu|bait|potongan|lirik|reff|chorus|lagunya|lagu|musik|nyan?yi(?:in|n|kan|lah)?|bernyan?yi(?:lah)?|senandung(?:in|kan)?|pake|pakai|lewat|via|vn|voice\s*note|suara|dari|by|nya|yang|yg|itu|dong|lagi|aja|buat|seru(?:-?seruan)?|acapella|akustik|terkenal)\b/gi, ' ')
+    .replace(
+      /\b(?:coba|tolong|buruan|cepet(?:an)?|cepat|ayo|yuk|kuy|gas+|sok|langsung|pls|plis|please|mau|pengen|ingin|minta|kasih|bisa|kamu|km|kau|lu|lo|elo|aku|gue|gw|gua|kita|kami|dia|dong|donk|dongg+|deh|lah|ya|nih|tuh|kek|kok|sih|kan|bentar|sebentar|dulu|satu|salah|bait|potongan|lirik|reff|chorus|lagunya|lagu|musik|nyan?yi(?:in|n|kan|lah)?|bernyan?yi(?:lah)?|senandung(?:in|kan)?|pake|pakai|lewat|via|vn|voice\s*note|suara|dari|by|sama|sm|ama|dengan|dgn|nya|yang|yg|itu|ini|lagi|aja|saja|juga|terus|trs|trus|kali|buat|seru(?:-?seruan)?|lain(?:nya)?|beda|baru|ganti|pindah|tukar|bebas|terserah|random|acak|apa(?:an)?|bagus|enak|asik|asyik|keren|mantap|hits?|viral|populer|terkenal|favorit|fav|pilihan|pilihin|pilih|indo(?:nesia)?|barat|inggris|english|bule|luar|galau|sedih|baper|nyesek|mellow|melo|pop|rock|indie|akustik|acapella|senang|ceria|happy|semangat|santai|chill|sing-?along|nostalgia|jadul|lawas|lama|cuy|bro|bang|bg|mas|kak|gan|bot|bott)\b/gi,
+      ' ',
+    )
     .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
   if (q.length < 3) return null;
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.every((w) => GENERIC_NON_TITLE_WORDS.has(w))) {
+    return null;
+  }
   return q.slice(0, 80);
 }
 
@@ -1151,61 +1311,161 @@ export function pickShortChorus(plainLyrics: string, preferredPhrase?: string): 
   return picked.join('\n');
 }
 
-/** Daftar lagu asli terkenal (Indonesia & global) bila user minta nyanyi tanpa menyebut judul. */
-export const POPULAR_DEFAULT_SONGS: readonly string[] = [
-  'golden hour JVKE',
-  'Die With A Smile Lady Gaga Bruno Mars',
-  'Birds of a Feather Billie Eilish',
+/** Pool lagu galau Indonesia terverifikasi di iTunes + LRCLIB. */
+export const INDO_GALAU_SONGS: readonly string[] = [
   'Sial Mahalini',
-  'Komang Raim Laode',
   'Hati-Hati di Jalan Tulus',
   'Tak Segampang Itu Anggi Marito',
+  'Pesan Terakhir Lyodra',
+  'Satu Bulan Bernadya',
+  'Lantas Juicy Luicy',
+  'Bertaut Nadin Amizah',
+  'Kali Kedua Raisa',
+];
+
+/** Pool lagu pop / sing-along Indonesia terverifikasi di iTunes + LRCLIB. */
+export const INDO_POP_SONGS: readonly string[] = [
+  'Komang Raim Laode',
   'Monokrom Tulus',
   'Evaluasi Hindia',
   'Sempurna Andra and The Backbone',
   'Kangen Dewa 19',
-  'Perfect Ed Sheeran',
+  'Dan Sheila On 7',
+  'Sephia Sheila On 7',
+  'Gala Bunga Matahari Sal Priadi',
+  'Hingga Tua Bersama Rizky Febian',
+  'Akad Payung Teduh',
 ];
 
-export function pickRandomPopularSongQuery(rng: () => number = Math.random): string {
-  const idx = Math.floor(Math.max(0, Math.min(0.999999, rng())) * POPULAR_DEFAULT_SONGS.length);
-  return POPULAR_DEFAULT_SONGS[idx];
-}
+/** Pool lagu barat terkenal terverifikasi di iTunes + LRCLIB. */
+export const WESTERN_POP_SONGS: readonly string[] = [
+  'golden hour JVKE',
+  'Die With A Smile Lady Gaga Bruno Mars',
+  'Birds of a Feather Billie Eilish',
+  'Perfect Ed Sheeran',
+  'Talking to the Moon Bruno Mars',
+  'Yellow Coldplay',
+  'Easy on Me Adele',
+  'STAY The Kid LAROI Justin Bieber',
+];
 
-/**
- * Cari potongan reff singkat (3–4 baris) untuk lagu terkenal yang diminta user.
- * Jika user meminta nyanyi TANPA menyebut judul ("nyanyi dong"), otomatis pilih lagu asli
- * terkenal dari POPULAR_DEFAULT_SONGS agar tidak pernah mengarang lirik ngawur.
- * Memakai iTunes Search API (fuzzy + ranking popularitas, tangani typo "golden hours" / "billie elish")
- * lalu LRCLIB publik (zero API key). Gagal = kembalikan null (fail-open).
- */
-export async function lookupShortSongChorus(
+/** Daftar lagu asli terkenal (Indonesia & global) bila user minta nyanyi tanpa menyebut judul. */
+export const POPULAR_DEFAULT_SONGS: readonly string[] = [
+  ...INDO_GALAU_SONGS,
+  ...INDO_POP_SONGS,
+  ...WESTERN_POP_SONGS,
+];
+
+/** Deteksi preferensi bahasa/suasana lagu dari pesan saat ini (+ konteks singkat 2 giliran user terakhir). */
+export function detectSongStylePreference(
   userText: string,
   history?: Array<{ role: string; content: string | unknown }>,
-): Promise<SongChorusExcerpt | null> {
-  const lyricHintMatch = String(userText || '').match(/(?:lirik\s*nya|bagian)\s+(.{6,80})$/i);
-  const preferredPhrase = lyricHintMatch ? lyricHintMatch[1].replace(/["'`]/g, '').trim() : undefined;
+): SongStylePreference {
+  const cur = String(userText || '');
+  const recentUsers = (history ?? [])
+    .slice(-4)
+    .filter((h) => h.role === 'user' && typeof h.content === 'string')
+    .map((h) => String(h.content))
+    .join(' ');
 
-  let query = extractSongQuery(userText);
-  // Jika user hanya bilang "ulangii" atau "bukan yg itu yg lirik nya ...", cari judul dari pesan user sebelumnya.
-  if ((!query || preferredPhrase) && history && history.length > 0) {
-    for (let i = history.length - 1; i >= Math.max(0, history.length - 8); i--) {
-      const h = history[i];
-      if (h.role !== 'user' || typeof h.content !== 'string') continue;
-      if (detectSingRequest(h.content)) {
-        const prevQ = extractSongQuery(h.content);
-        if (prevQ) {
-          query = prevQ;
-          break;
-        }
-      }
+  const wantsWesternCur = /\b(?:barat|inggris|english|bule|luar)\b/i.test(cur);
+  const wantsIndoCur = /\b(?:indo(?:nesia)?)\b/i.test(cur);
+  const wantsGalauCur = /\b(?:galau|sedih|baper|nyesek|mellow|melo|patah\s+hati)\b/i.test(cur);
+  const wantsUpbeatCur = /\b(?:asik|asyik|ceria|senang|happy|semangat|sing-?along|pop|santai|chill)\b/i.test(cur);
+
+  if (wantsWesternCur) return 'western';
+  if (wantsGalauCur) return 'indo_galau';
+  if (wantsIndoCur && wantsUpbeatCur) return 'indo_pop';
+  if (wantsIndoCur) return 'indo_pop';
+  if (wantsUpbeatCur && /\b(?:indo(?:nesia)?)\b/i.test(recentUsers)) return 'indo_pop';
+  if (wantsUpbeatCur) return 'indo_pop';
+  if (/\b(?:indo(?:nesia)?)\b/i.test(recentUsers) && /\b(?:lain(?:nya)?|beda|ganti)\b/i.test(cur)) {
+    return 'indo_pop';
+  }
+  return 'any';
+}
+
+export function pickPopularSongForStyle(
+  style: SongStylePreference = 'any',
+  history?: Array<{ role: string; content: string | unknown }>,
+  rng: () => number = Math.random,
+): string {
+  const basePool =
+    style === 'indo_galau'
+      ? INDO_GALAU_SONGS
+      : style === 'indo_pop'
+        ? INDO_POP_SONGS
+        : style === 'western'
+          ? WESTERN_POP_SONGS
+          : POPULAR_DEFAULT_SONGS;
+
+  // Hindari lagu yang baru saja muncul di riwayat percakapan (6 pesan terakhir)
+  const recentText = (history ?? [])
+    .slice(-6)
+    .map((h) => (typeof h.content === 'string' ? h.content.toLowerCase() : ''))
+    .join(' ');
+  const freshPool = basePool.filter((song) => {
+    const tokens = song
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length >= 4);
+    if (tokens.length === 0) return true;
+    const hits = tokens.filter((t) => recentText.includes(t)).length;
+    return hits < Math.min(2, tokens.length);
+  });
+  const pool = freshPool.length > 0 ? freshPool : basePool;
+  const idx = Math.floor(Math.max(0, Math.min(0.999999, rng())) * pool.length);
+  return pool[idx];
+}
+
+export function pickRandomPopularSongQuery(rng: () => number = Math.random): string {
+  return pickPopularSongForStyle('any', undefined, rng);
+}
+
+/** Pilih kandidat LRCLIB terbaik: tolak skrip asing tak terduga & prioritaskan kecocokan judul/artis. */
+function selectBestLrclibHit(
+  arr: Array<{ artistName?: string; trackName?: string; plainLyrics?: string }>,
+  targetQuery: string,
+  rawUserQuery: string,
+): { artistName?: string; trackName?: string; plainLyrics?: string } | null {
+  const valid = arr.filter(
+    (x) =>
+      typeof x.plainLyrics === 'string' &&
+      x.plainLyrics.trim().length > 40 &&
+      !hasUnexpectedForeignScript(x.plainLyrics, rawUserQuery),
+  );
+  if (valid.length === 0) return null;
+
+  const qWords = targetQuery
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 2);
+  if (qWords.length === 0) return valid[0];
+
+  let best = valid[0];
+  let bestScore = -1;
+  for (const item of valid) {
+    const track = (item.trackName || '').toLowerCase();
+    const artist = (item.artistName || '').toLowerCase();
+    let score = 0;
+    for (const w of qWords) {
+      if (track.includes(w)) score += 3;
+      if (artist.includes(w)) score += 2;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = item;
     }
   }
-  // Jika user tetap tidak menyebut judul ("nyanyi dong", "coba nyanyi"), pilih lagu terkenal asli.
-  if (!query || query.length < 3) {
-    query = pickRandomPopularSongQuery();
-  }
+  return best;
+}
 
+async function fetchSongChorusForSingleQuery(
+  query: string,
+  rawUserQuery: string,
+  preferredPhrase?: string,
+): Promise<SongChorusExcerpt | null> {
   const queriesToTry: string[] = [];
   // 1. Resolve judul & artis kanonik lewat iTunes Search (tangani typo & pilih lagu paling populer)
   try {
@@ -1221,7 +1481,7 @@ export async function lookupShortSongChorus(
       if (top?.trackName && top?.artistName) {
         const cleanTrack = top.trackName.replace(/\s*\([^)]*\)/g, '').trim();
         const primaryArtist = top.artistName.split(/[,&]/)[0].trim();
-        if (cleanTrack && primaryArtist) {
+        if (cleanTrack && primaryArtist && !hasUnexpectedForeignScript(`${cleanTrack} ${primaryArtist}`, rawUserQuery)) {
           queriesToTry.push(`${cleanTrack} ${primaryArtist}`);
         }
       }
@@ -1233,13 +1493,10 @@ export async function lookupShortSongChorus(
 
   for (const q of queriesToTry) {
     try {
-      const res = await fetch(
-        `https://lrclib.net/api/search?q=${encodeURIComponent(q)}`,
-        {
-          headers: { 'User-Agent': 'FreeAIBot/1.0 (https://free-chatbot-ai.vercel.app)' },
-          signal: AbortSignal.timeout(4500),
-        },
-      );
+      const res = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`, {
+        headers: { 'User-Agent': 'FreeAIBot/1.0 (https://free-chatbot-ai.vercel.app)' },
+        signal: AbortSignal.timeout(4500),
+      });
       if (!res.ok) continue;
       const arr = (await res.json()) as Array<{
         artistName?: string;
@@ -1247,7 +1504,7 @@ export async function lookupShortSongChorus(
         plainLyrics?: string;
       }>;
       if (!Array.isArray(arr) || arr.length === 0) continue;
-      const hit = arr.find((x) => typeof x.plainLyrics === 'string' && x.plainLyrics.trim().length > 40);
+      const hit = selectBestLrclibHit(arr, q, rawUserQuery);
       if (!hit || !hit.plainLyrics) continue;
       const excerpt = pickShortChorus(hit.plainLyrics, preferredPhrase);
       if (!excerpt) continue;
@@ -1258,6 +1515,65 @@ export async function lookupShortSongChorus(
       };
     } catch {
       // Lanjut kandidat query berikutnya
+    }
+  }
+  return null;
+}
+
+const WANTS_DIFFERENT_SONG_RE =
+  /\b(?:lain(?:nya)?|beda|ganti|tukar|pindah|indo(?:nesia)?|barat|inggris|english|galau|sedih|baper|nyesek|asik|asyik|ceria|sing-?along|baru)\b/i;
+
+/**
+ * Cari potongan reff singkat (3–4 baris) untuk lagu terkenal yang diminta user.
+ * - Jika user menyebut judul/artis spesifik -> cari lewat iTunes fuzzy + LRCLIB (filter skrip asing).
+ * - Jika user minta ganti lagu / pilih genre ("nyanyiin lagu lain deh", "lagu indo coba", "coba yg galau")
+ *   atau tanpa judul ("nyanyi dong", "lah nyanyiin sama lu") -> pilih lagu asli terkenal sesuai genre
+ *   dari pool terverifikasi tanpa mengulang lagu terakhir di riwayat.
+ */
+export async function lookupShortSongChorus(
+  userText: string,
+  history?: Array<{ role: string; content: string | unknown }>,
+): Promise<SongChorusExcerpt | null> {
+  const lyricHintMatch = String(userText || '').match(/(?:lirik\s*nya|bagian)\s+(.{6,80})$/i);
+  const preferredPhrase = lyricHintMatch ? lyricHintMatch[1].replace(/["'`]/g, '').trim() : undefined;
+  const wantsDifferentSong = !preferredPhrase && WANTS_DIFFERENT_SONG_RE.test(userText || '');
+
+  let query = extractSongQuery(userText);
+  let usedDefaultPool = false;
+
+  // Hanya pakai ulang judul lagu sebelumnya saat user minta "ulangii" / "coba lagi" / koreksi lirik,
+  // BUKAN saat user meminta lagu lain atau ganti genre ("lagu lain deh", "lagu indo coba", "coba yg galau").
+  if ((!query || preferredPhrase) && !wantsDifferentSong && history && history.length > 0) {
+    for (let i = history.length - 1; i >= Math.max(0, history.length - 8); i--) {
+      const h = history[i];
+      if (h.role !== 'user' || typeof h.content !== 'string') continue;
+      if (detectSingRequest(h.content) || SING_FOLLOWUP_STYLE_RE.test(h.content)) {
+        const prevQ = extractSongQuery(h.content);
+        if (prevQ) {
+          query = prevQ;
+          break;
+        }
+      }
+    }
+  }
+
+  const style = detectSongStylePreference(userText, history);
+  if (!query || query.length < 3) {
+    query = pickPopularSongForStyle(style, history);
+    usedDefaultPool = true;
+  }
+
+  const first = await fetchSongChorusForSingleQuery(query, userText, preferredPhrase);
+  if (first) return first;
+
+  // Jika pilihan otomatis dari pool sempat miss/timeout, coba 1 lagu cadangan dari pool yang sama.
+  if (usedDefaultPool) {
+    const backup = pickPopularSongForStyle(
+      style,
+      [...(history ?? []), { role: 'assistant', content: query }],
+    );
+    if (backup && backup !== query) {
+      return await fetchSongChorusForSingleQuery(backup, userText);
     }
   }
   return null;
