@@ -8,7 +8,7 @@ import { sanitizeKnowledgeText } from './knowledge.js';
 import { stripStickerMarker, hasStickerForEmoji, stickerFitsMood, isEdgyStickerEmoji, assistantTurnsSinceLastSticker, lastStickerEmoji, STICKER_MIN_TURNS_SINCE_LAST } from './stickers.js';
 import { STICKER_MANIFEST, STICKER_INFO } from './sticker-manifest.js';
 import { stripRiddleMarker, stripVnMarker, lastRiddleAnswer } from './markers.js';
-import { detectSingRequest, detectExplicitVnRequest, detectVnRetryMode } from './voice.js';
+import { detectSingRequest, detectExplicitVnRequest, detectVnRetryMode, lookupShortSongChorus, type SongChorusExcerpt } from './voice.js';
 import { getOrGrowMemory, needsGrowth, growMemory } from './bot_growth.js';
 import { markMemoryUsed, isMemoryRelevant } from './bot_memory.js';
 import { RIDDLE_SEED, GOMBAL_SEED } from './riddles.js';
@@ -2804,6 +2804,7 @@ export function systemPrompt(
   web?: string | null,
   userPrompt: string = '',
   picked?: PickedMemory | null,
+  songChorus?: SongChorusExcerpt | null,
 ): string {
   // GUARD (audit v0.79): pemanggil JS/API bisa mengirim `null` (bukan undefined) untuk
   // userPromptText — default parameter `= ''` TIDAK menangkap null, sehingga `.trim()` di
@@ -3176,7 +3177,9 @@ export function systemPrompt(
     '  -> Bila dia meminta salah satunya: AKUI JUJUR dengan santai bahwa kamu tidak bisa (mis. "Aku nggak bisa muter lagu, tapi kalau mau cerita soal lagunya, boleh banget"), lalu TAWARKAN yang benar-benar bisa kamu lakukan (ngobrol, kirim VN, nyanyi acapella ringan, mengingatkan, mencatat, cari info). DILARANG berpura-pura memutar, DILARANG bilang "lagi diputar", dan DILARANG memuji lagunya seolah kamu sedang memutarnya.',
     ...(detectSingRequest(userPromptText) || detectVnRetryMode(userPromptText, ctx?.history) === 'sing'
       ? [
-          '- MODE NYANYI ACAPELLA VIA VN (AKTIF PADA GILIRAN INI): Sistem akan langsung mengubah balasanmu menjadi Voice Note nyanyian acapella. Tulis langsung 2-5 baris lirik pendek sesuai bahasa lagu yang diminta yang enak dilantunkan (boleh potongan singkat atau senandung ringan yang nyambung dengan judul/suasana permintaan user untuk seru-seruan). TANPA basa-basi pembuka (jangan tulis "Oke gue coba lagi ya"), TANPA markdown, TANPA simbol aksi (*berdehem*/*nyanyi*), TANPA emoji, TANPA tag internal, dan JANGAN menolak bilang tidak bisa nyanyi.',
+          songChorus
+            ? `- MODE NYANYI ACAPELLA VIA VN (AKTIF PADA GILIRAN INI): Sistem akan langsung mengubah balasanmu menjadi Voice Note nyanyian acapella. REFERENSI POTONGAN LIRIK ASLI (${songChorus.artist} - ${songChorus.title}):\n${songChorus.excerpt}\nWAJIB gunakan potongan lirik asli di atas apa adanya (2-4 baris). DILARANG mengarang lirik baru, DILARANG mengubah lirik, TANPA basa-basi pembuka (jangan tulis "Oke gue coba lagi ya"), TANPA markdown, TANPA simbol aksi (*berdehem*/*nyanyi*), TANPA emoji, TANPA tag internal, dan JANGAN menolak.`
+            : '- MODE NYANYI ACAPELLA VIA VN (AKTIF PADA GILIRAN INI): Sistem akan langsung mengubah balasanmu menjadi Voice Note nyanyian acapella. Jika user menyebut potongan lirik tertentu, nyanyikan persis potongan itu (2-4 baris). Jika user meminta nyanyi bebas tanpa judul, buat 2-4 baris singkat yang enak dilantunkan. Jika user menyebut judul lagu tertentu tapi kamu tidak yakin lirik aslinya, JANGAN mengarang lirik palsu — akui jujur singkat atau minta user beri potongan liriknya. TANPA basa-basi pembuka, TANPA markdown, TANPA simbol aksi, TANPA emoji, dan TANPA tag internal.',
         ]
       : detectExplicitVnRequest(userPromptText) || detectVnRetryMode(userPromptText, ctx?.history) === 'chat'
         ? [
@@ -3644,6 +3647,9 @@ export function systemPrompt(
         ? '- Pesanmu sebelumnya berupa PERTANYAAN. Pesan temanmu sekarang kemungkinan besar adalah JAWABAN atas pertanyaan itu — tanggapi JAWABANNYA secara langsung dan nyambung, jangan mengalihkan topik atau bertanya balik hal yang tidak berhubungan.'
         : '- Lanjutkan alur yang sedang berjalan: tanggapi langsung apa yang dia bicarakan, jangan mengulang pertanyaan yang sudah dijawabnya.',
       topicLine ? `- Yang sedang kalian bicarakan (fakta riwayat, JANGAN dibacakan mentah): ${topicLine}` : '',
+      lastAssistantText && !lastRawWasSystemOutput
+        ? `- UCAPAN TERAKHIRMU BARUSAN (jika pesan barunya singkat/sindir/ngeledek seperti "ngaku-ngaku", "bohong", "masa sih", "beneran?", itu MERUJUK ke kalimatmu ini — WAJIB nyambung dan jangan pura-pura lupa): "${lastAssistantText.replace(/\s+/g, ' ').trim().slice(0, 160)}"`
+        : '',
       factsLine ? `- FAKTA TENTANG TEMANMU yang sudah dia sebutkan (WAJIB diingat & dipakai; DILARANG bilang dia belum pernah bilang): ${factsLine}` : '',
       '- DILARANG mengulang isi balasanmu sendiri yang sebelumnya dengan kata berbeda (mis. sudah bilang "belum ada info resmi" lalu mengulang hal yang sama dengan kalimat lain). Bila topik yang sama ditanya lagi, berikan SUDUT BARU atau akui singkat lalu lanjut — jangan mengulang penjelasan yang sama.',
       '- Bila temanmu cuma memanggil/menyapa singkat ("woy", "p", "oy", "halo") atau mengiyakan singkat ("okeh", "sip", "y") di tengah chat, langsung sahut santai dan hidup — DILARANG meminta maaf seolah baru mulai chat lagi dan DILARANG mengulang isi ringkasan/pengingat otomatis sebelumnya.',
@@ -4202,8 +4208,9 @@ function buildMessages(
   ctx?: ChatContext,
   web?: string | null,
   picked?: PickedMemory | null,
+  songChorus?: SongChorusExcerpt | null,
 ): ChatMsg[] {
-  const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt(ctx, web, clean, picked) }];
+  const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt(ctx, web, clean, picked, songChorus) }];
   // ── DIPERBESAR (permintaan pemilik produk 06 Okt 2026) ──
   // "tambahkan memory bot nya agar mengingat lebih banyak chat dan lebih pintar
   //  tidak ngaco jawabannya"
@@ -4527,8 +4534,23 @@ export async function autoReply(
     .map((h) => (typeof h.content === 'string' ? stripDurableMarkers(h.content) : ''))
     .join(' ');
 
+  // Lookup potongan reff singkat nyata (iTunes fuzzy + LRCLIB) khusus saat user minta nyanyi
+  // lagu tertentu agar model kecil tidak mengarang lirik palsu untuk lagu terkenal.
+  let songChorusForTurn: SongChorusExcerpt | null = null;
+  const isSingTurn = detectSingRequest(coreClean) || detectVnRetryMode(coreClean, ctx?.history) === 'sing';
+  if (isSingTurn) {
+    try {
+      songChorusForTurn = await lookupShortSongChorus(coreClean, ctx?.history);
+      if (songChorusForTurn) {
+        console.log(`[skills] Referensi reff lagu ditemukan: ${songChorusForTurn.artist} - ${songChorusForTurn.title}`);
+      }
+    } catch {
+      // fail-open
+    }
+  }
+
   try {
-    let { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn), false, ctx?.chatId);
+    let { text, via, tokens } = await chatRetry(buildMessages(clean, ctx, web, pickedForTurn, songChorusForTurn), false, ctx?.chatId);
     // Tag stiker ([[sticker:😹]]) diparsing SEBELUM sanitizer agar emoji di dalam tag
     // tidak ikut kena aturan "maks 1 emoji" milik sanitizer.
     const firstExtract = extractStickerTag(text);
@@ -5447,6 +5469,29 @@ export async function autoReply(
       }
     }
 
+    // Penjaga anti-karang-lirik saat nyanyi: jika referensi potongan reff asli berhasil diambil
+    // dari katalog (iTunes + LRCLIB) namun model tetap mengarang lirik lain atau menambahkan
+    // basa-basi melenceng, pakai potongan reff asli dari API agar nyanyian tidak ngaco.
+    if (isSingTurn && songChorusForTurn && songChorusForTurn.excerpt) {
+      const toWords = (s: string) =>
+        new Set(
+          s
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter((w) => w.length >= 3),
+        );
+      const refWords = toWords(songChorusForTurn.excerpt);
+      const repWords = toWords(reply);
+      let hits = 0;
+      for (const w of refWords) if (repWords.has(w)) hits++;
+      const overlap = refWords.size > 0 ? hits / refWords.size : 0;
+      if (overlap < 0.35 || reply.length > songChorusForTurn.excerpt.length + 90) {
+        console.warn(`[skills] Model mengarang lirik saat nyanyi (overlap=${overlap.toFixed(2)}) — memakai potongan reff asli.`);
+        reply = songChorusForTurn.excerpt;
+      }
+    }
+
     return { reply, escalate: false, via, tokens, sticker: stickerEmoji, riddleAnswer };
   } catch {
     return { reply: '', escalate: true, via: 'failed' };
@@ -5708,9 +5753,11 @@ export async function describeImage(
     const rawHistory = ctx.history.slice(-8);
     for (const h of rawHistory) {
       if (typeof h.content === 'string') {
+        const cleanHist = h.role === 'assistant' ? cleanMathAndNoise(stripDurableMarkers(h.content)) : h.content;
+        if (!cleanHist.trim()) continue;
         historyParts.push({
           role: h.role,
-          content: h.role === 'assistant' ? cleanMathAndNoise(h.content) : h.content,
+          content: cleanHist,
         });
       }
     }
@@ -5832,8 +5879,38 @@ export async function describeImage(
   const reaksiVisualAwal =
     isSticker && !userTanyaIsiStiker && (adalahReaksiVisualStiker(textLengkap) || adalahReaksiVisualStiker(reply));
   const perluRegenVisual = isSticker && !userTanyaIsiStiker && adalahReaksiVisualStiker(reply);
+
+  // Guard anti-duplikat balasan di jalur vision/stiker (temuan produksi 24 Nov 2026):
+  // Model vision kadang menyalin balasan asisten sebelumnya hampir identik (hanya ganti kata
+  // pembuka "Halah" -> "Woyy") saat membalas stiker tanpa teks. Paksa regenerasi segar.
+  const lastAssistantVisionRaw = (ctx?.history ?? []).filter((h) => h.role === 'assistant').slice(-1)[0]?.content;
+  const lastAssistantVision = typeof lastAssistantVisionRaw === 'string' ? stripDurableMarkers(lastAssistantVisionRaw).trim().toLowerCase() : '';
+  const isDuplicateVisionReply = (cand: string): boolean => {
+    const normCand = cand.trim().toLowerCase();
+    if (!lastAssistantVision || !normCand || lastAssistantVision.length < 15 || normCand.length < 15) return false;
+    if (lastAssistantVision === normCand) return true;
+    const toks = (s: string) => new Set(s.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3));
+    const ta = toks(lastAssistantVision);
+    const tb = toks(normCand);
+    if (!ta.size || !tb.size) return false;
+    let inter = 0;
+    for (const w of tb) if (ta.has(w)) inter++;
+    return inter / Math.min(ta.size, tb.size) >= 0.65;
+  };
+  const duplikatBalasanLama = !ekstraksiTsv && isDuplicateVisionReply(reply);
+
   const retryMessages: ChatMsg[] =
-    reaksiVisualAwal || perluRegenVisual
+    duplikatBalasanLama
+      ? [
+          ...messages,
+          ...(textLengkap.trim() ? [{ role: 'assistant' as const, content: textLengkap.trim() }] : []),
+          {
+            role: 'user' as const,
+            content:
+              'Balasanmu barusan MENYALIN kalimat balasanmu sendiri sebelumnya di riwayat. DILARANG mengulang kalimat lama! Buat 1 reaksi BARU yang benar-benar berbeda, singkat, dan segar untuk menanggapi stiker/gambar yang baru dikirim temanmu.',
+          },
+        ]
+      : reaksiVisualAwal || perluRegenVisual
       ? [
           ...messages,
           ...(textLengkap.trim() ? [{ role: 'assistant' as const, content: textLengkap.trim() }] : []),
@@ -5846,8 +5923,8 @@ export async function describeImage(
       : messages;
 
   // Regenerasi tetap memakai gambar dan konteks yang sama, tanpa pernah memukul cache jawaban lama.
-  if (!reply.trim() || perluRegenVisual) {
-    if (perluRegenVisual) reply = '';
+  if (!reply.trim() || perluRegenVisual || duplikatBalasanLama) {
+    if (perluRegenVisual || duplikatBalasanLama) reply = '';
     try {
       const regen = await chatRetry(retryMessages, true, ctx?.chatId, true);
       const regenDesc = extractImageDescTag(regen.text);

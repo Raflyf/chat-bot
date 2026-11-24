@@ -48,6 +48,12 @@ export interface SynthesizedVoiceNote {
   mode: VoiceMode;
 }
 
+export interface SongChorusExcerpt {
+  artist: string;
+  title: string;
+  excerpt: string;
+}
+
 /** Minimal balasan teks sebelum bot boleh kirim VN spontan lagi (target rasio ~5:1). */
 export const VN_MIN_TURNS_BETWEEN = 4;
 
@@ -95,8 +101,17 @@ const SYSTEM_OUTPUT_RE =
 const VN_RETRY_RE =
   /^\s*(?:ulang(?:i+|in|g+)?|coba\s+ulang(?:i+|in)?|coba\s+lagi|sekali\s+lagi|nyan?yi\s+lagi|vn\s+lagi|lagi\s+dong|ulang\s+dong|coba\s+lagi\s+dong|buruan(?:\s+nyan?yi(?:in|n)?)?)[!.?\s]*$/i;
 
+// Hanya cocok jika user BENAR-BENAR memberi pengganti lirik/bagian ("bukan yg itu, yg lirik nya <teks>"),
+// BUKAN saat user sekadar komplain ("lirik nya ngawur", "knapa ulang ulang lirik nya?").
 const SING_LYRIC_CORRECTION_RE =
-  /\b(?:lirik\s*nya|bukan\s+(?:yg|yang)\s+itu|salah\s+(?:lagu|lirik|nada)|(?:yg|yang)\s+(?:bagian|lirik|reff|chorus|bait))\b/i;
+  /(?:bukan\s+(?:yg|yang)\s+itu[\s\S]{0,24}(?:lirik|bagian|reff|chorus)|(?:yg|yang)\s+(?:lirik\s*nya|bagian|reff|chorus)\s+(?!(?:ngawur+|ngaco+|salah|jelek|hancur|ancur|aneh|beda|sama|gitu|begitu|itu\s*$))\S+)/i;
+
+const SING_COMPLAINT_ONLY_RE =
+  /\b(?:ngawur+|ngaco+|hancur|ancur|jelek|knapa|kenapa|kok\s+malah|tau\s+lagu\s*nya\s+ga|tahu\s+lagu\s*nya\s+ga)\b/i;
+
+/** Deteksi balasan permintaan maaf / pengakuan tidak tahu lirik agar TIDAK dinyanyikan sebagai VN sing. */
+const NON_SINGABLE_META_REPLY_RE =
+  /^\s*(?:aduh|waduh|maaf|sori|sorry|hahaha[,\s]+(?:ya\s+ampun|gue\s+emang\s+nggak\s+tau)|gue\s+(?:emang\s+)?(?:nggak|gak|ga)\s+(?:tau|hafal)\s+lagu|aku\s+(?:emang\s+)?(?:nggak|gak|ga)\s+(?:tau|hafal)\s+lagu)/i;
 
 /** True bila user secara eksplisit melarang VN di giliran ini. */
 export function detectTextOnlyPreference(userText: string): boolean {
@@ -116,7 +131,12 @@ export function detectVnRetryMode(
   if (VN_RETRY_RE.test(t)) {
     return lastRecentVnMode(history, 4);
   }
-  if (!SING_NEGATED_RE.test(t) && SING_LYRIC_CORRECTION_RE.test(t) && lastRecentVnMode(history, 2) === 'sing') {
+  if (
+    !SING_NEGATED_RE.test(t) &&
+    !SING_COMPLAINT_ONLY_RE.test(t) &&
+    SING_LYRIC_CORRECTION_RE.test(t) &&
+    lastRecentVnMode(history, 2) === 'sing'
+  ) {
     return 'sing';
   }
   return null;
@@ -219,7 +239,7 @@ export function decideVoiceReply(params: DecideVoiceParams): VoiceDecision {
   // 1. Permintaan nyanyi eksplisit (atau mengulang VN nyanyi sebelumnya: "ulangii", "coba lagi")
   const retryMode = detectVnRetryMode(userText, params.history);
   if (detectSingRequest(userText) || retryMode === 'sing') {
-    if (!isReplySpeakable(reply, true)) {
+    if (!isReplySpeakable(reply, true) || NON_SINGABLE_META_REPLY_RE.test(reply)) {
       return { sendVn: false, mode: 'sing', reason: 'unsuitable_reply' };
     }
     return { sendVn: true, mode: 'sing', reason: 'explicit_sing' };
@@ -1015,6 +1035,7 @@ export async function synthesizeVoiceNote(
   const spoken = prepareTextForTts(replyText, mode);
   if (!spoken || spoken.length < 3) return null;
 
+  // Mode obrolan & nyanyi memakai rantai Gemini TTS natural; Edge-TTS hanya bila VOICE_EDGE_FALLBACK=1.
   try {
     return await synthesizeViaGeminiTts(spoken, mode);
   } catch (err) {
@@ -1030,3 +1051,215 @@ export async function synthesizeVoiceNote(
     }
   }
 }
+
+// ============================================================================
+// 5. PENCARI POTONGAN REFF LAGU NYATA (iTunes fuzzy + LRCLIB, zero API key)
+//    Mencegah model kecil mengarang lirik ngawur saat diminta menyanyi lagu terkenal.
+// ============================================================================
+
+const VOCAL_FILLER_LINE_RE =
+  /^(?:(?:oh+|ooh+|uh+|ah+|eh+|hm+|mm+|la+|na+|da+|ta-da|yeah+|yea+|woah+|whoa+|hey+|ayy+)[\s,()!?.~-]*)+$/i;
+
+/** Ekstrak judul/artis lagu bersih dari permintaan nyanyi user (null bila generik seperti "nyanyi dong"). */
+export function extractSongQuery(userText: string): string | null {
+  let q = String(userText || '').trim();
+  if (!q) return null;
+  // Bila user memberi potongan lirik spesifik ("yg lirik nya ..."), ambil frasanya langsung.
+  const lyricHint = q.match(/(?:lirik\s*nya|bagian)\s+(.{6,80})$/i);
+  if (lyricHint) {
+    return lyricHint[1].replace(/["'`]/g, '').trim();
+  }
+  q = q
+    .replace(/\b(?:coba|tolong|buruan|cepet(?:an)?|ayo|yuk|gas+|sok|langsung|pls|plis|please|kamu|lu|lo|aku|gue|gw|dong|donk|deh|lah|ya|nih|dongg+|bentar|sebentar|satu|bait|potongan|lirik|reff|chorus|lagunya|lagu|musik|nyan?yi(?:in|n|kan|lah)?|bernyan?yi(?:lah)?|senandung(?:in|kan)?|pake|pakai|lewat|via|vn|voice\s*note|suara|dari|by|nya|yang|yg|itu|dong|lagi|aja|buat|seru(?:-?seruan)?|acapella|akustik|terkenal)\b/gi, ' ')
+    .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (q.length < 3) return null;
+  return q.slice(0, 80);
+}
+
+/** Pilih potongan reff singkat (3–4 baris, maks ~270 karakter) dari lirik mentah. */
+export function pickShortChorus(plainLyrics: string, preferredPhrase?: string): string {
+  const rawLines = String(plainLyrics || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !/^\[[^\]]+\]$/.test(l) && !VOCAL_FILLER_LINE_RE.test(l));
+  if (rawLines.length === 0) return '';
+
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+  // 1. Jika user mengutip potongan lirik tertentu, mulai tepat dari baris yang paling cocok.
+  let startIdx = -1;
+  if (preferredPhrase && preferredPhrase.trim().length >= 6) {
+    const needle = norm(preferredPhrase);
+    const needleWords = needle.split(' ').filter((w) => w.length >= 3);
+    let bestOverlap = 0;
+    for (let i = 0; i < rawLines.length; i++) {
+      const nl = norm(rawLines[i]);
+      if (nl.includes(needle)) {
+        startIdx = i;
+        break;
+      }
+      if (needleWords.length >= 2) {
+        const hits = needleWords.filter((w) => nl.includes(w)).length;
+        if (hits > bestOverlap && hits >= Math.ceil(needleWords.length * 0.6)) {
+          bestOverlap = hits;
+          startIdx = i;
+        }
+      }
+    }
+  }
+
+  // 2. Cari jendela 4 baris dengan skor pengulangan tertinggi (= reff / hook paling terkenal).
+  if (startIdx < 0) {
+    const counts = new Map<string, number>();
+    for (const l of rawLines) {
+      const k = norm(l);
+      if (k.length >= 10) counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    let bestScore = -1;
+    startIdx = 0;
+    for (let i = 0; i < rawLines.length; i++) {
+      let score = 0;
+      let chars = 0;
+      const seenInWindow = new Set<string>();
+      for (let j = i; j < Math.min(i + 4, rawLines.length); j++) {
+        const k = norm(rawLines[j]);
+        const c = counts.get(k) || 1;
+        if (c >= 2 && !seenInWindow.has(k)) score += c * 3;
+        seenInWindow.add(k);
+        chars += rawLines[j].length;
+      }
+      if (chars < 45 || chars > 340) score -= 5;
+      if (score > bestScore) {
+        bestScore = score;
+        startIdx = i;
+      }
+    }
+  }
+
+  const picked: string[] = [];
+  let total = 0;
+  for (let j = startIdx; j < Math.min(startIdx + 5, rawLines.length) && picked.length < 4; j++) {
+    const line = rawLines[j];
+    if (picked.length > 0 && norm(picked[picked.length - 1]) === norm(line)) continue;
+    if (total + line.length > 270 && picked.length >= 2) break;
+    picked.push(line);
+    total += line.length;
+  }
+  return picked.join('\n');
+}
+
+/** Daftar lagu asli terkenal (Indonesia & global) bila user minta nyanyi tanpa menyebut judul. */
+export const POPULAR_DEFAULT_SONGS: readonly string[] = [
+  'golden hour JVKE',
+  'Die With A Smile Lady Gaga Bruno Mars',
+  'Birds of a Feather Billie Eilish',
+  'Sial Mahalini',
+  'Komang Raim Laode',
+  'Hati-Hati di Jalan Tulus',
+  'Tak Segampang Itu Anggi Marito',
+  'Monokrom Tulus',
+  'Evaluasi Hindia',
+  'Sempurna Andra and The Backbone',
+  'Kangen Dewa 19',
+  'Perfect Ed Sheeran',
+];
+
+export function pickRandomPopularSongQuery(rng: () => number = Math.random): string {
+  const idx = Math.floor(Math.max(0, Math.min(0.999999, rng())) * POPULAR_DEFAULT_SONGS.length);
+  return POPULAR_DEFAULT_SONGS[idx];
+}
+
+/**
+ * Cari potongan reff singkat (3–4 baris) untuk lagu terkenal yang diminta user.
+ * Jika user meminta nyanyi TANPA menyebut judul ("nyanyi dong"), otomatis pilih lagu asli
+ * terkenal dari POPULAR_DEFAULT_SONGS agar tidak pernah mengarang lirik ngawur.
+ * Memakai iTunes Search API (fuzzy + ranking popularitas, tangani typo "golden hours" / "billie elish")
+ * lalu LRCLIB publik (zero API key). Gagal = kembalikan null (fail-open).
+ */
+export async function lookupShortSongChorus(
+  userText: string,
+  history?: Array<{ role: string; content: string | unknown }>,
+): Promise<SongChorusExcerpt | null> {
+  const lyricHintMatch = String(userText || '').match(/(?:lirik\s*nya|bagian)\s+(.{6,80})$/i);
+  const preferredPhrase = lyricHintMatch ? lyricHintMatch[1].replace(/["'`]/g, '').trim() : undefined;
+
+  let query = extractSongQuery(userText);
+  // Jika user hanya bilang "ulangii" atau "bukan yg itu yg lirik nya ...", cari judul dari pesan user sebelumnya.
+  if ((!query || preferredPhrase) && history && history.length > 0) {
+    for (let i = history.length - 1; i >= Math.max(0, history.length - 8); i--) {
+      const h = history[i];
+      if (h.role !== 'user' || typeof h.content !== 'string') continue;
+      if (detectSingRequest(h.content)) {
+        const prevQ = extractSongQuery(h.content);
+        if (prevQ) {
+          query = prevQ;
+          break;
+        }
+      }
+    }
+  }
+  // Jika user tetap tidak menyebut judul ("nyanyi dong", "coba nyanyi"), pilih lagu terkenal asli.
+  if (!query || query.length < 3) {
+    query = pickRandomPopularSongQuery();
+  }
+
+  const queriesToTry: string[] = [];
+  // 1. Resolve judul & artis kanonik lewat iTunes Search (tangani typo & pilih lagu paling populer)
+  try {
+    const itRes = await fetch(
+      `https://itunes.apple.com/search?media=music&entity=song&limit=3&term=${encodeURIComponent(query)}`,
+      { signal: AbortSignal.timeout(3500) },
+    );
+    if (itRes.ok) {
+      const itData = (await itRes.json()) as {
+        results?: Array<{ trackName?: string; artistName?: string }>;
+      };
+      const top = itData.results?.[0];
+      if (top?.trackName && top?.artistName) {
+        const cleanTrack = top.trackName.replace(/\s*\([^)]*\)/g, '').trim();
+        const primaryArtist = top.artistName.split(/[,&]/)[0].trim();
+        if (cleanTrack && primaryArtist) {
+          queriesToTry.push(`${cleanTrack} ${primaryArtist}`);
+        }
+      }
+    }
+  } catch {
+    // Lanjut langsung ke query mentah di LRCLIB
+  }
+  if (!queriesToTry.includes(query)) queriesToTry.push(query);
+
+  for (const q of queriesToTry) {
+    try {
+      const res = await fetch(
+        `https://lrclib.net/api/search?q=${encodeURIComponent(q)}`,
+        {
+          headers: { 'User-Agent': 'FreeAIBot/1.0 (https://free-chatbot-ai.vercel.app)' },
+          signal: AbortSignal.timeout(4500),
+        },
+      );
+      if (!res.ok) continue;
+      const arr = (await res.json()) as Array<{
+        artistName?: string;
+        trackName?: string;
+        plainLyrics?: string;
+      }>;
+      if (!Array.isArray(arr) || arr.length === 0) continue;
+      const hit = arr.find((x) => typeof x.plainLyrics === 'string' && x.plainLyrics.trim().length > 40);
+      if (!hit || !hit.plainLyrics) continue;
+      const excerpt = pickShortChorus(hit.plainLyrics, preferredPhrase);
+      if (!excerpt) continue;
+      return {
+        artist: (hit.artistName || '').trim() || 'Artis',
+        title: (hit.trackName || '').trim() || q,
+        excerpt,
+      };
+    } catch {
+      // Lanjut kandidat query berikutnya
+    }
+  }
+  return null;
+}
+

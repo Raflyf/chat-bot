@@ -306,7 +306,9 @@ export const config = {
   edgeTtsGecVersion: cleanStr('EDGE_TTS_GEC_VERSION') || '1-143.0.3650.75',
   geminiTtsModel: cleanStr('GEMINI_TTS_MODEL') || 'gemini-3.8-flash-tts',
   geminiTtsLiteModel: cleanStr('GEMINI_TTS_LITE_MODEL') || 'gemini-3.8-flash-lite-tts',
-  geminiTtsBackupModel: cleanStr('GEMINI_TTS_BACKUP_MODEL') || 'gemini-2.5-flash-preview-tts',
+  // Default kosong: gemini-2.5-flash-preview-tts adalah model legacy yang terdengar lebih robotik
+  // dibanding seri 3.8. Hanya dipakai bila diset eksplisit lewat GEMINI_TTS_BACKUP_MODEL.
+  geminiTtsBackupModel: cleanStr('GEMINI_TTS_BACKUP_MODEL'),
   geminiTtsVoice: cleanStr('GEMINI_TTS_VOICE') || 'Puck',
   vnSpontaneousInterval: num('VN_SPONTANEOUS_INTERVAL', 5),
 };

@@ -1412,7 +1412,7 @@ export function siapkanPromptUntukLocalAi(
     dyn.push(m.trim());
     return '';
   });
-  stat = stat.replace(/\n*- MODE (?:NYANYI ACAPELLA VIA VN|KIRIM VN)[^\n]+/g, (m) => {
+  stat = stat.replace(/\n*- MODE (?:NYANYI ACAPELLA VIA VN|KIRIM VN)[\s\S]*?(?=\n- |\n\n|$)/g, (m) => {
     dyn.push(m.trim());
     return '';
   });

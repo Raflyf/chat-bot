@@ -19,6 +19,10 @@ import {
   detectExplicitVnRequest,
   detectTextOnlyPreference,
   detectVnRetryMode,
+  extractSongQuery,
+  pickShortChorus,
+  pickRandomPopularSongQuery,
+  POPULAR_DEFAULT_SONGS,
   isReplySpeakable,
   prepareTextForTts,
   encodeWavOrPcmToOggOpus,
@@ -392,4 +396,106 @@ test('regression screenshot: [VN terkirim: sing] tidak boleh bocor ke user & "ul
     ]),
     'sing',
   );
+});
+
+test('song chorus: ekstrak judul lagu (termasuk typo) dan pilih reff tanpa mengarang lirik', () => {
+  assert.equal(extractSongQuery('coba nyanyi lagu golden hours jvke dong'), 'golden hours jvke');
+  assert.equal(extractSongQuery('nyanyiin birds of a feather billie elish'), 'birds of a feather billie elish');
+  assert.equal(extractSongQuery('nyanyi dong'), null);
+
+  const sampleLyrics = [
+    '[Intro]',
+    'Ooh, yeah, oh-whoa',
+    'I was all alone with the love of my life',
+    "She's got glitter for skin, my radiant beam in the night",
+    "I don't need no light to see you",
+    "Shine, it's your golden hour",
+    'Random bridge verse one',
+    'I was all alone with the love of my life',
+    "She's got glitter for skin, my radiant beam in the night",
+    "I don't need no light to see you",
+    "Shine, it's your golden hour",
+  ].join('\n');
+  const chorus = pickShortChorus(sampleLyrics);
+  assert.ok(chorus.includes('love of my life'), 'harus memilih blok reff yang berulang');
+  assert.ok(!chorus.includes('[Intro]'), 'header [Intro] harus dibuang');
+  assert.ok(!chorus.includes('Ooh, yeah'), 'filler vokal harus dibuang');
+
+  // Jika user menyebut baris tertentu, mulai dari baris itu
+  const targeted = pickShortChorus(sampleLyrics, 'glitter for skin');
+  assert.ok(targeted.startsWith("She's got glitter for skin"));
+
+  // Prompt nyanyi menyuntikkan REFERENSI POTONGAN LIRIK ASLI dan melarang mengarang
+  const p = systemPrompt(undefined, null, 'nyanyiin golden hour jvke', null, {
+    artist: 'JVKE',
+    title: 'golden hour',
+    excerpt: chorus,
+  });
+  assert.ok(p.includes('REFERENSI POTONGAN LIRIK ASLI (JVKE - golden hour)'));
+  assert.ok(p.includes('DILARANG mengarang lirik baru'));
+
+  // Lagu default tanpa judul harus mengambil lagu asli terkenal (bukan kosong/ngarang)
+  assert.ok(POPULAR_DEFAULT_SONGS.length >= 10);
+  const pickedDefault = pickRandomPopularSongQuery(() => 0.1);
+  assert.ok(POPULAR_DEFAULT_SONGS.includes(pickedDefault));
+});
+
+test('regression 24 Nov: komplain lirik TIDAK dinyanyikan, 0 stiker WebP cacat, anti-duplikat stiker & kontinuitas ucapan terakhir', () => {
+  const afterSingHist = [
+    { role: 'user', content: 'nyanyiin golden hours jvke' },
+    { role: 'assistant', content: 'I was all alone...\n[VN terkirim: sing]' },
+  ];
+  // Komplain soal lirik ngawur tidak boleh memicu nyanyi ulang otomatis
+  assert.equal(detectVnRetryMode('lirik nya ngawurr', afterSingHist), null);
+  assert.equal(detectVnRetryMode('lu tau lagu nya ga sih? knapa malah ulang ulang lirik nya?', afterSingHist), null);
+
+  // Balasan permintaan maaf tidak boleh dinyanyikan sebagai VN sing
+  const apologyDec = decideVoiceReply({
+    userText: 'ulangii',
+    reply: 'Aduh, parah banget ya? Sori, sori, gue beneran ngaco banget tadi.',
+    history: afterSingHist,
+    enabled: true,
+  });
+  assert.equal(apologyDec.sendVn, false);
+
+  // Semua 221 stiker di public/stickers/ wajib valid WebP (tidak boleh EXIF/ALPH tanpa VP8X -> gagal download di WA)
+  const stickerDir = new URL('../public/stickers/', import.meta.url);
+  const stickerFiles = fs.readdirSync(stickerDir).filter((f) => f.endsWith('.webp'));
+  assert.ok(stickerFiles.length >= 200);
+  const broken = [];
+  for (const f of stickerFiles) {
+    const b = fs.readFileSync(new URL(f, stickerDir));
+    const tags = [];
+    let off = 12;
+    while (off + 8 <= b.length) {
+      tags.push(b.subarray(off, off + 4).toString('ascii'));
+      const sz = b.readUInt32LE(off + 4);
+      off += 8 + sz + (sz % 2);
+    }
+    const hasVp8x = tags[0] === 'VP8X';
+    const hasExtra = tags.some((t) => t === 'EXIF' || t === 'ALPH' || t === 'ANIM' || t === 'ICCP' || t === 'XMP ');
+    if (!hasVp8x && hasExtra) broken.push(f);
+  }
+  assert.deepEqual(broken, [], `stiker WebP cacat (tanpa VP8X): ${broken.join(', ')}`);
+
+  // Kontinuitas 1-turn: ucapan terakhir bot harus muncul di [KONTINUITAS PERCAKAPAN]
+  const contPrompt = systemPrompt(
+    {
+      history: [
+        { role: 'user', content: 'ppp' },
+        { role: 'assistant', content: 'Woyy halo!' },
+        { role: 'user', content: 'gaje ah lu bott jelek' },
+        { role: 'assistant', content: 'Jelek-jelek gini juga yang nemenin lu ngobrol tiap hari.' },
+      ],
+    },
+    null,
+    'ngaku ngaku luu',
+  );
+  assert.ok(contPrompt.includes('UCAPAN TERAKHIRMU BARUSAN'));
+  assert.ok(contPrompt.includes('Jelek-jelek gini juga yang nemenin lu ngobrol tiap hari.'));
+
+  // describeImage wajib punya anti-duplikat & stripDurableMarkers
+  const skillsSrc = fs.readFileSync(new URL('../src/skills.ts', import.meta.url), 'utf8');
+  assert.ok(skillsSrc.includes('isDuplicateVisionReply'), 'describeImage wajib mencegah pengulangan balasan lama');
+  assert.ok(skillsSrc.includes('cleanMathAndNoise(stripDurableMarkers(h.content))'), 'describeImage wajib buang marker durable dari history');
 });
