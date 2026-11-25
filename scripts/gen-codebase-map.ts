@@ -114,7 +114,7 @@ P('');
 P('1. Cari topik di **Peta cepat: topik ke file**.');
 P('2. Sebelum mengubah berkas bersama, baca **Dampak perubahan**.');
 P('3. Detail simbol per berkas: `docs/codebase-index.json` (exports, imports, kasus tes).');
-P('4. Jangan membaca `CLAUDE.md`/`DOCUMENTATION.md` utuh; pakai `grep` lalu baca rentang kecil.');
+P('4. Berkas besar seperti `src/skills.ts` punya peta baris di bagian atas; pakai `grep` dan baca rentang kecil.');
 P('5. `graphify-out/` (jika ada) adalah graf lama dan tidak memuat semua berkas terbaru; verifikasi dengan peta ini.');
 P('');
 P('## Ringkasan');
@@ -134,38 +134,42 @@ for (const e of [
   ['api/whatsapp.ts', 'Webhook WhatsApp Cloud + verifikasi signature.'],
   ['api/health.ts', 'Health check produksi: versi, database, provider.'],
   ['api/stats.ts', 'Metrik dashboard: kuota, kunci, model, pool.'],
+  ['api/baileys-backup.ts', 'API admin kontrol VPS 1 (Baileys) & VPS 2 (Local AI), Auto-Ping, Resume.'],
   ['api/dataset.ts', 'Ekspor riwayat percakapan (CSV/JSON).'],
   ['api/admin-otp.ts', 'Auth admin: PIN, OTP, sesi, purge data.'],
+  ['api/cron/reminders.ts', 'Cron pengingat jatuh tempo, lifecycle VPS, keepalive, & Auto-Resume.'],
   ['src/index.ts', 'Runner lokal: Telegram polling + Baileys.'],
   ['src/telegram.ts', 'Handler seluruh pesan Telegram.'],
   ['src/whatsapp_cloud.ts', 'Handler pesan WhatsApp Cloud.'],
   ['src/whatsapp_baileys.ts', 'Handler pesan WhatsApp Baileys.'],
   ['src/skills.ts', 'Persona, prompt, sanitasi, autoReply.'],
-  ['src/providers.ts', 'Urutan tier, race, failover provider.'],
+  ['src/voice.ts', 'Sistem Voice Note (VN) obrolan, nyanyi acapella, Ogg Opus, & lookup lirik.'],
+  ['src/providers.ts', 'Urutan tier, race, failover provider (6 cloud tier + Local AI VPS).'],
 ]) if (byPath.has(e[0])) P('- `' + e[0] + '` — ' + e[1]);
 P('');
 P('## Peta cepat: topik ke file');
 P('');
 const topics = {
   'Persona, prompt, sanitasi balasan': ['src/skills.ts'],
-  'Routing provider, failover, race': ['src/providers.ts', 'src/limits.ts', 'src/quota.ts', 'src/neuron.ts', 'src/cooldown.ts'],
+  'Voice Note (VN), nyanyi acapella, & TTS lokal': ['src/voice.ts', 'src/markers.ts', 'scripts/supertonic_tts_server.py'],
+  'Routing provider, failover, race, & AI lokal VPS 2': ['src/providers.ts', 'src/local_ai_vps.ts', 'src/limits.ts', 'src/quota.ts', 'src/neuron.ts', 'src/cooldown.ts'],
   'Kontrak env dan daftar model': ['src/env.ts'],
   'Riwayat dan cache konteks': ['src/memory.ts', 'src/db.ts', 'src/chat_id.ts'],
   'Telegram': ['src/telegram.ts', 'api/webhook.ts'],
   'WhatsApp Cloud': ['src/whatsapp_cloud.ts', 'api/whatsapp.ts'],
   'WhatsApp Baileys': ['src/whatsapp_baileys.ts', 'src/baileys_brain.ts', 'src/whatsapp_session.ts'],
-  'Media: gambar, stiker, audio, dokumen, video': ['src/media.ts', 'src/media_guard.ts'],
+  'Media: gambar, stiker, audio, dokumen, video': ['src/media.ts', 'src/media_guard.ts', 'src/documents.ts'],
   'Stiker: aset, label, cooldown': ['src/stickers.ts', 'src/sticker-manifest.ts'],
   'Pencarian web dan scraping': ['src/web.ts', 'src/knowledge.ts', 'src/bot_growth.ts'],
   'Tebak-tebakan, gombalan, game': ['src/riddles.ts', 'src/bot_memory.ts', 'src/games/engine.ts', 'src/games/index.ts', 'src/games/cards.ts'],
-  'Catatan, tugas, keuangan, kebiasaan': ['src/notes.ts'],
+  'Catatan, tugas, keuangan, kebiasaan, ringkasan': ['src/notes.ts', 'src/ringkasan.ts'],
   'Pengingat': ['src/remind.ts', 'src/reminder-repeat.ts', 'src/reminder-dedup.ts', 'src/reminder-ubah.ts', 'src/reminder-multihari.ts'],
   'Zona waktu dan profil user': ['src/timezone.ts', 'src/user-profile.ts', 'src/user_facts.ts'],
-  'Keamanan admin': ['src/admin_auth.ts', 'src/rate_limit.ts', 'api/admin-otp.ts'],
+  'Keamanan admin & laporan': ['src/admin_auth.ts', 'src/rate_limit.ts', 'api/admin-otp.ts', 'api/laporan.ts'],
   'Dashboard metrik': ['api/stats.ts', 'public/js/dashboard.js', 'public/dashboard.html', 'public/css/console.css', 'public/js/i18n.js'],
   'Landing dan UI publik': ['public/index.html', 'public/privacy.html'],
   'Mode grup': ['src/group_mode.ts', 'src/group_db.ts'],
-  'Monitor pengiriman dan VPS': ['src/wa_monitor.ts', 'src/vps_monitor.ts'],
+  'Monitor pengiriman, VPS, & Baileys Backup': ['src/wa_monitor.ts', 'src/vps_monitor.ts', 'src/vps_keepalive.ts', 'src/baileys_backup_web.ts', 'api/baileys-backup.ts'],
   'Perintah bot (satu sumber)': ['src/commands.ts'],
   'Logger dan observabilitas': ['src/logger.ts'],
 };

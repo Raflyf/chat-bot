@@ -1948,8 +1948,8 @@ export function ringkasUntukGroqVision(msgs: ChatMsg[]): ChatMsg[] {
 }
 
 /**
- * Teks: OpenCode > Cloudflare > Groq > DreamPrompting > OpenRouter > Gemini.
- * Vision: urutan eksplisit config.models.visionChain, tanpa race.
+ * Teks: [Local AI VPS (bila primary)] > OpenCode > Cloudflare > Groq > DreamPrompting > OpenRouter > Gemini [> Local AI VPS (bila fallback)].
+ * Vision: urutan eksplisit config.models.visionChain (serta Local AI VPS bila aktif & multi-modal), tanpa race.
  * Kegagalan seluruh tier tetap dilempar ke caller.
  */
 export async function chat(

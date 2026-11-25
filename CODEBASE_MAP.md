@@ -9,20 +9,20 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 1. Cari topik di **Peta cepat: topik ke file**.
 2. Sebelum mengubah berkas bersama, baca **Dampak perubahan**.
 3. Detail simbol per berkas: `docs/codebase-index.json` (exports, imports, kasus tes).
-4. Jangan membaca `CLAUDE.md`/`DOCUMENTATION.md` utuh; pakai `grep` lalu baca rentang kecil.
+4. Berkas besar seperti `src/skills.ts` punya peta baris di bagian atas; pakai `grep` dan baca rentang kecil.
 5. `graphify-out/` (jika ada) adalah graf lama dan tidak memuat semua berkas terbaru; verifikasi dengan peta ini.
 
 ## Ringkasan
 
 | Area | File | Baris |
 | --- | --- | --- |
-| api | 11 | 3496 |
-| public | 19 | 10645 |
-| scripts | 17 | 3163 |
+| api | 11 | 3658 |
+| public | 20 | 11674 |
+| scripts | 18 | 3347 |
 | sql | 28 | 2958 |
-| src | 51 | 36651 |
-| tests | 99 | 9733 |
-| **total** | **225** | **66646** |
+| src | 53 | 40380 |
+| tests | 103 | 11085 |
+| **total** | **233** | **73102** |
 
 ## Titik masuk
 
@@ -30,36 +30,40 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 - `api/whatsapp.ts` — Webhook WhatsApp Cloud + verifikasi signature.
 - `api/health.ts` — Health check produksi: versi, database, provider.
 - `api/stats.ts` — Metrik dashboard: kuota, kunci, model, pool.
+- `api/baileys-backup.ts` — API admin kontrol VPS 1 (Baileys) & VPS 2 (Local AI), Auto-Ping, Resume.
 - `api/dataset.ts` — Ekspor riwayat percakapan (CSV/JSON).
 - `api/admin-otp.ts` — Auth admin: PIN, OTP, sesi, purge data.
+- `api/cron/reminders.ts` — Cron pengingat jatuh tempo, lifecycle VPS, keepalive, & Auto-Resume.
 - `src/index.ts` — Runner lokal: Telegram polling + Baileys.
 - `src/telegram.ts` — Handler seluruh pesan Telegram.
 - `src/whatsapp_cloud.ts` — Handler pesan WhatsApp Cloud.
 - `src/whatsapp_baileys.ts` — Handler pesan WhatsApp Baileys.
 - `src/skills.ts` — Persona, prompt, sanitasi, autoReply.
-- `src/providers.ts` — Urutan tier, race, failover provider.
+- `src/voice.ts` — Sistem Voice Note (VN) obrolan, nyanyi acapella, Ogg Opus, & lookup lirik.
+- `src/providers.ts` — Urutan tier, race, failover provider (6 cloud tier + Local AI VPS).
 
 ## Peta cepat: topik ke file
 
 - **Persona, prompt, sanitasi balasan**: `src/skills.ts`
-- **Routing provider, failover, race**: `src/providers.ts`, `src/limits.ts`, `src/quota.ts`, `src/neuron.ts`, `src/cooldown.ts`
+- **Voice Note (VN), nyanyi acapella, & TTS lokal**: `src/voice.ts`, `src/markers.ts`, `scripts/supertonic_tts_server.py`
+- **Routing provider, failover, race, & AI lokal VPS 2**: `src/providers.ts`, `src/local_ai_vps.ts`, `src/limits.ts`, `src/quota.ts`, `src/neuron.ts`, `src/cooldown.ts`
 - **Kontrak env dan daftar model**: `src/env.ts`
 - **Riwayat dan cache konteks**: `src/memory.ts`, `src/db.ts`, `src/chat_id.ts`
 - **Telegram**: `src/telegram.ts`, `api/webhook.ts`
 - **WhatsApp Cloud**: `src/whatsapp_cloud.ts`, `api/whatsapp.ts`
 - **WhatsApp Baileys**: `src/whatsapp_baileys.ts`, `src/baileys_brain.ts`, `src/whatsapp_session.ts`
-- **Media: gambar, stiker, audio, dokumen, video**: `src/media.ts`, `src/media_guard.ts`
+- **Media: gambar, stiker, audio, dokumen, video**: `src/media.ts`, `src/media_guard.ts`, `src/documents.ts`
 - **Stiker: aset, label, cooldown**: `src/stickers.ts`, `src/sticker-manifest.ts`
 - **Pencarian web dan scraping**: `src/web.ts`, `src/knowledge.ts`, `src/bot_growth.ts`
 - **Tebak-tebakan, gombalan, game**: `src/riddles.ts`, `src/bot_memory.ts`, `src/games/engine.ts`, `src/games/index.ts`, `src/games/cards.ts`
-- **Catatan, tugas, keuangan, kebiasaan**: `src/notes.ts`
+- **Catatan, tugas, keuangan, kebiasaan, ringkasan**: `src/notes.ts`, `src/ringkasan.ts`
 - **Pengingat**: `src/remind.ts`, `src/reminder-repeat.ts`, `src/reminder-dedup.ts`, `src/reminder-ubah.ts`, `src/reminder-multihari.ts`
 - **Zona waktu dan profil user**: `src/timezone.ts`, `src/user-profile.ts`, `src/user_facts.ts`
-- **Keamanan admin**: `src/admin_auth.ts`, `src/rate_limit.ts`, `api/admin-otp.ts`
+- **Keamanan admin & laporan**: `src/admin_auth.ts`, `src/rate_limit.ts`, `api/admin-otp.ts`, `api/laporan.ts`
 - **Dashboard metrik**: `api/stats.ts`, `public/js/dashboard.js`, `public/dashboard.html`, `public/css/console.css`, `public/js/i18n.js`
 - **Landing dan UI publik**: `public/index.html`, `public/privacy.html`
 - **Mode grup**: `src/group_mode.ts`, `src/group_db.ts`
-- **Monitor pengiriman dan VPS**: `src/wa_monitor.ts`, `src/vps_monitor.ts`
+- **Monitor pengiriman, VPS, & Baileys Backup**: `src/wa_monitor.ts`, `src/vps_monitor.ts`, `src/vps_keepalive.ts`, `src/baileys_backup_web.ts`, `api/baileys-backup.ts`
 - **Perintah bot (satu sumber)**: `src/commands.ts`
 - **Logger dan observabilitas**: `src/logger.ts`
 
@@ -67,37 +71,40 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 
 | File | Baris | Tujuan | Ekspor utama |
 | --- | --- | --- | --- |
-| `src/skills.ts` | 5880 | - | fn cleanMathAndNoise, fn userAskedAboutMedia, fn stripMediaNarration, fn adalahReaksiVisualStiker, fn extractStickerReadTag |
+| `src/skills.ts` | 6122 | - | fn bersihkanKlausaMenggantung, fn cleanMathAndNoise, fn userAskedAboutMedia, fn stripMediaNarration, fn adalahReaksiVisualStiker |
 | `src/notes.ts` | 4393 | PENCATATAN PRIBADI, catatan, tugas, keuangan, kebiasaan. KENAPA MODUL INI ADA (permintaan pemilik produk, 04 Okt 2026): "apakah bot nya bisa digunakan untuk mencatat dan mengingat  | type NoteKind, type ExpenseKind, iface NiatTerdeteksi, iface CatatanRingkas, iface TugasRingkas |
-| `src/whatsapp_baileys.ts` | 2273 | - | iface BaileysGroupTargetInfo, fn unwrapBaileysMessage, fn deteksiTargetBotBaileys, fn startBaileysReminderWorker, fn stopBaileysReminderWorker |
+| `src/whatsapp_baileys.ts` | 2355 | - | iface BaileysGroupTargetInfo, fn unwrapBaileysMessage, fn deteksiTargetBotBaileys, fn startBaileysReminderWorker, fn stopBaileysReminderWorker |
+| `src/providers.ts` | 2252 | - | fn getOrderedKeys, iface TextPart, iface ImagePart, type ContentPart, iface ChatMsg |
 | `src/web.ts` | 2220 | Mesin Pencari & Penjelajah Web Bebas Real-Time 2026 (Zero-API-Key) Menggabungkan Google News Global & ID, Bing News, Hacker News, Wikipedia (ID/EN), arXiv, serta Deep Webpage Scrap | fn isSafePublicUrl, fn fetchAmanSsrf, fn cleanStr, fn decodeBingUrl, fn isJunkArticle |
-| `src/providers.ts` | 2046 | - | fn getOrderedKeys, iface TextPart, iface ImagePart, type ContentPart, iface ChatMsg |
-| `src/baileys_backup_web.ts` | 1655 | BAILEYS BACKUP WEB & CLOUD SYNC SERVICE Menyediakan kontrol web penuh untuk Baileys Backup (status VPS InstaBox, telemetri failover laptop Windows, Resume/Start VPS, dan sinkronisa | const BAILEYS_BACKUP_CLOUD_FILENAME, const BAILEYS_BACKUP_DESKTOP_FILENAME, const DESKTOP_HEARTBEAT_TTL_SECS, const BAILEYS_BACKUP_RELEASE_URL, type VpsAvailability |
+| `src/baileys_backup_web.ts` | 1790 | BAILEYS BACKUP WEB & CLOUD SYNC SERVICE Menyediakan kontrol web penuh untuk Baileys Backup (status VPS InstaBox, telemetri failover laptop Windows, Resume/Start VPS, dan sinkronisa | const BAILEYS_BACKUP_CLOUD_FILENAME, const BAILEYS_BACKUP_DESKTOP_FILENAME, const DESKTOP_HEARTBEAT_TTL_SECS, const BAILEYS_BACKUP_RELEASE_URL, type VpsAvailability |
+| `src/voice.ts` | 1582 | Sistem balasan Voice Note (VN) untuk WhatsApp Baileys, WhatsApp Cloud API, dan Telegram. Arsitektur natural human-like TTS (berjalan di Vercel serverless & VPS tanpa ffmpeg): - VN  | type VoiceMode, type VoiceDecisionReason, iface VoiceDecision, iface SynthesizedVoiceNote, iface SongChorusExcerpt |
+| `src/telegram.ts` | 1466 | - | fn getTelegramBot, fn sendTelegramMessageSafe, fn sendTelegramVoiceNoteSafe, fn sendTelegramStickerSafe, fn deteksiPanggilSlash |
 | `src/media.ts` | 1446 | - | fn transcribeAudio, fn extractPdfTextSimple, fn sniffMimeType, fn extractDocumentText, fn processIncomingDocument |
-| `src/telegram.ts` | 1389 | - | fn getTelegramBot, fn sendTelegramMessageSafe, fn sendTelegramStickerSafe, fn deteksiPanggilSlash, fn handleIncomingMessage |
+| `src/whatsapp_cloud.ts` | 1400 | - | fn verifyWhatsAppWebhook, fn verifyMetaSignature, const verifyWhatsAppSignature, fn sendWhatsAppCloudMessageSafe, fn sendWhatsAppCloudStickerSafe |
 | `src/admin_auth.ts` | 1334 | - | iface AdminAuthConfig, fn hashValue, fn isScryptHash, fn verifyPinHash, fn resolveMatchingHash |
-| `api/stats.ts` | 1295 | - | fn getModelCatalog, fn handler |
-| `src/whatsapp_cloud.ts` | 1285 | - | fn verifyWhatsAppWebhook, fn verifyMetaSignature, const verifyWhatsAppSignature, fn sendWhatsAppCloudMessageSafe, fn sendWhatsAppCloudStickerSafe |
+| `api/stats.ts` | 1327 | - | fn getModelCatalog, fn handler |
 | `src/games/engine.ts` | 1275 | MESIN GAME — logika utama semua permainan. Alur: `mulaiGame()` -> state awal -> tiap pesan user lewat `prosesGame()` -> state baru + teks balasan. State disimpan di DB (tabel game_ | iface HasilGame, fn unoMulai, fn unoLangkah, fn capsaMulai, fn capsaKombinasiTerbaik |
+| `src/local_ai_vps.ts` | 1046 | LOCAL AI VPS (VPS 2) CONTROL & LIVE ROUTING SERVICE Mengelola VPS InstaBox kedua khusus model AI lokal (`llama-server` / Ternary-Bonsai-2): - Status VPS live (GET /v1/machines/{id} | const LOCAL_AI_VPS_STATE_FILENAME, const LOCAL_AI_KEEPALIVE_FILENAME, const LOCAL_AI_KEEPALIVE_LEASE_ID, iface LocalAiVpsCloudState, iface LocalAiVpsView |
 | `src/remind.ts` | 834 | - | iface ReminderItem, iface HasilSimpanReminder, fn saveReminderToDb, fn simpanReminderCerdas, const BAILEYS_REMINDER_MARKER |
 | `src/group_mode.ts` | 728 | ENGINE MODE GRUP BERSAMA — WhatsApp Baileys & Telegram. Mengelola 3 mode per-grup: - 'mention' (default): balas saat @mention, reply pesan bot, kata panggil natural, atau follow-up | type GroupMode, iface GroupModeRecord, type GroupCommandKind, iface GroupEvaluationInput, iface GroupEvaluationResult |
+| `src/vps_keepalive.ts` | 593 | AUTO-PING / ACTIVITY LEASE VPS BAILEYS (ANTI AUTO-PAUSE) InstaBox mem-pause sandbox yang idle selama `autoSuspendAfterSeconds` (free plan: 1800 detik = 30 menit). Endpoint resmi un | const KEEPALIVE_STATE_FILENAME, const KEEPALIVE_LEASE_ID, const MIN_KEEPALIVE_INTERVAL_SECS, const MAX_KEEPALIVE_LEASE_TTL_SECS, type KeepaliveSource |
 | `src/vps_monitor.ts` | 590 | MONITOR LIFECYCLE VPS BAILEYS (PASSIVE & COMPLIANT) Memantau batas runtime maksimum (mis. 120 menit pada InstaBox Free Plan) dan perubahan status VPS (paused/stopped/pulih). Modul  | const STATE_FILENAME, iface InstaboxMachineSnapshot, iface VpsMonitorState, iface VpsMonitorEvent, iface CekLifecycleDeps |
 | `src/timezone.ts` | 587 | Mesin Zona Waktu Global & Universal Real-Time Clock Menangani waktu dinamis untuk pengguna di seluruh belahan bumi: - Waktu Universal (UTC/GMT) | iface FormattedTime, fn formatInZone, iface CountryTz, fn detectUserCountry, iface LocationEntry |
 | `api/dataset.ts` | 582 | - | iface DatasetPair, fn formatLocalComponents, fn handler |
-| `src/memory.ts` | 565 | - | iface ChatContext, fn withChatLock, fn adalahTestChatId, fn invalidateContextCache, fn updateContextCache |
+| `src/memory.ts` | 566 | - | iface ChatContext, fn withChatLock, fn adalahTestChatId, fn invalidateContextCache, fn updateContextCache |
 | `src/bot_memory.ts` | 517 | Memori bot yang tumbuh sendiri. KENAPA MODUL INI ADA: Sebelumnya tebak-tebakan (dan gombalan) disimpan sebagai konstanta di kode. | type MemoryKind, iface MemoryItem, fn slugify, fn memoryKey, fn saveMemoryItem |
 | `src/limits.ts` | 484 | Batas kuota LIVE dari endpoint resmi tiap provider. Kenapa modul ini ada: sebelumnya limit di-hardcode di .env dan TERBUKTI SALAH untuk beberapa provider (temuan audit v0.49): | iface LiveLimit, fn geminiDocumentedLimits, fn dreampromptingDocumentedLimits, fn getCachedLimits, fn fetchOpenRouterLimits |
-| `src/vps_keepalive.ts` | 482 | AUTO-PING / ACTIVITY LEASE VPS BAILEYS (ANTI AUTO-PAUSE) InstaBox mem-pause sandbox yang idle selama `autoSuspendAfterSeconds` (free plan: 1800 detik = 30 menit). Endpoint resmi un | const KEEPALIVE_STATE_FILENAME, const KEEPALIVE_LEASE_ID, const MIN_KEEPALIVE_INTERVAL_SECS, const MAX_KEEPALIVE_LEASE_TTL_SECS, type KeepaliveSource |
 | `src/wa_monitor.ts` | 474 | MONITOR PENGIRIMAN WHATSAPP KENAPA ADA: Saat akun WhatsApp Cloud API terblokir Meta (mis. payment method belum | iface MetaErrorInfo, type KategoriErrorMeta, fn klasifikasiErrorMeta, fn resetMonitorWaUntukTest, fn statistikKirimWa |
 | `api/laporan.ts` | 408 | - | const maxDuration, fn handler |
 | `src/stickers.ts` | 395 | Sistem stiker balasan bot (aset stiker WhatsApp milik user). Model memilih emoji secara DINAMIS (lewat tag [[sticker:<emoji>]] di balasannya — bukan daftar template hardcode). Modu | fn isEdgyStickerEmoji, fn isPlayfulContext, type StickerMood, fn stickerMood, fn stickerFitsMood |
 | `src/user-profile.ts` | 390 | PROFIL WAKTU PENGGUNA, zona waktu per-user, permanen. MASALAH (temuan pemilik produk 05 Okt 2026): "jangan salah membaca waktu user sedang berada... misal sistem defaultnya WIB, | iface ProfilWaktu, fn ambilProfilWaktu, fn simpanProfilWaktu, fn profilDariLokasi, iface KeputusanWaktu |
+| `src/quota.ts` | 375 | Pelacak kuota harian per key (hybrid in-memory + Supabase provider_quota). Reset otomatis tiap tanggal UTC baru. 429 ikut dihitung agar pool berhenti. Sejak v0.27.13: juga melacak  | type ProviderKind, type QuotaKind, fn keyHash, fn keyTokensUsedToday, fn keyRequestsUsedToday |
 | `src/games/index.ts` | 374 | MESIN GAME — lapisan integrasi (DB + deteksi + alur percakapan). Modul ini yang dipanggil `tanganiPencatatan()`: mendeteksi apakah user minta bermain, memulai permainan, memproses  | iface HasilTanganiGame, fn ambilGame, fn simpanGame, fn akhiriGame, fn daftarGameTeks |
-| `src/quota.ts` | 374 | Pelacak kuota harian per key (hybrid in-memory + Supabase provider_quota). Reset otomatis tiap tanggal UTC baru. 429 ikut dihitung agar pool berhenti. Sejak v0.27.13: juga melacak  | type ProviderKind, type QuotaKind, fn keyHash, fn keyTokensUsedToday, fn keyRequestsUsedToday |
+| `src/env.ts` | 363 | - | const config, fn assertRuntime |
 | `api/admin-otp.ts` | 362 | - | fn handler |
 | `src/db.ts` | 356 | - | fn db, fn saveMessage, fn isMessageProcessed, fn markMessageProcessed, fn claimIncomingMessage |
+| `api/baileys-backup.ts` | 333 | - | iface BaileysBackupHandlerDeps, fn createBaileysBackupHandler |
 | `src/bot_growth.ts` | 328 | Pertumbuhan memori bot: cari dari internet, simpan ke memori. KENAPA MODUL INI ADA: Pemilik produk meminta bot tumbuh sendiri: | fn extractUrlsFromSearch, fn growMemory, fn getOrGrowMemory, fn needsGrowth |
-| `src/env.ts` | 316 | - | const config, fn assertRuntime |
 | `src/games/cards.ts` | 304 | MESIN GAME — kartu, papan, dadu, dan aturan permainan. KENAPA MODUL INI ADA: Sebelumnya bot MENGARANG saat diajak main (UNO/kartu/catur) karena tidak ada | type Jenis, type Nilai, iface Kartu, const SIMBOL, const NILAI_ANGKA |
 | `src/reminder-ubah.ts` | 292 | UBAH / UNDUR / BATALKAN PENGINGAT. MASALAH (temuan pemilik produk 05 Okt 2026): "jika user bilang 'waktu rapat di undur 1 jam jadi jam 10 sampai jam 11', | iface PengingatRingkas, type AksiUbah, iface PermintaanUbah, fn daftarPengingatPending, fn ubahPengingat |
 | `src/user_facts.ts` | 277 | PENANGKAP FAKTA PERSONAL USER (permintaan pemilik produk 06 Okt 2026): "buat agar bot bisa menangkap personality, kesukaan, dan lainnya dari user, simpan di database" | const PENANDA_FAKTA, iface FaktaPersonal, fn deteksiFaktaPersonal, fn simpanFaktaPersonal, fn tangkapFaktaPersonal |
@@ -105,12 +112,12 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 | `src/sticker-manifest.ts` | 262 | Manifest stiker: emoji -> nama file di public/stickers/, PLUS teks & konsep. DILABELI MANUAL (bukan model API) dengan membaca TEKS di setiap stiker lebih dulu, baru konsep gambarny | const STICKER_MANIFEST, const STICKER_INFO, const EDGY_STICKER_EMOJIS |
 | `src/commands.ts` | 257 | DAFTAR PERINTAH BOT — SATU SUMBER KEBENARAN. KENAPA MODUL INI ADA (permintaan pemilik produk 16 Okt 2026): "saya ingin ketika / gini itu muncul semua list fitur yg ada secara lengk | iface PerintahBot, const PERINTAH_BOT, const PERINTAH_BERARGUMEN, const PERINTAH_BANTUAN, const PERINTAH_DIGABUNG |
 | `src/reminder-repeat.ts` | 243 | PENGINGAT BERULANG — aturan pengulangan & perhitungan kemunculan berikutnya. FITUR BARU (permintaan pemilik produk 05 Okt 2026): "ingatkan tiap hari jam 7 minum obat" | type RepeatKind, iface AturanUlang, fn deteksiPengulangan, fn berikutnya, fn labelUlang |
-| `api/baileys-backup.ts` | 227 | - | iface BaileysBackupHandlerDeps, fn createBaileysBackupHandler |
 | `src/reminder-multihari.ts` | 216 | PENGINGAT MULTI-HARI (H-N) — "ingatkan 3, 2, 1 hari sebelum" PERMINTAAN PEMILIK PRODUK (09 Okt 2026): "reminder setiap 3, 2, 1 hari senelummnya" | iface PermintaanMultiHari, fn deteksiMultiHari, fn susunDaftarPengingat |
 | `src/whatsapp_session.ts` | 195 | - | iface RestoreSessionOptions, fn isRemoteFileNewer, fn restoreSessionFromSupabase, fn syncSessionDirToSupabase, fn clearSessionInSupabase |
+| `api/cron/reminders.ts` | 185 | - | fn handler |
 | `src/ringkasan.ts` | 184 | RINGKASAN PERIODIK, laporan bulanan/mingguan di chat. KENAPA (audit 05 Okt 2026): user harus membuka dashboard atau bertanya satu per satu untuk tahu kondisi datanya. Dengan `/ring | iface OpsiRingkasan, fn susunRingkasan, fn mintaRingkasan |
 | `src/documents.ts` | 164 | SIMPAN DOKUMEN — teks hasil ekstraksi PDF/Word agar bisa DIAUDIT. KENAPA (permintaan pemilik produk, 09 Okt 2026): "apalah bot benar menjelaskan isi pdf nya? coba kamu cek isi pdf  | iface DokumenTersimpan, fn simpanDokumen, fn dokumenTerakhir, fn ekstrakTeksDokumen, fn ekstrakTeksPdf |
-| `api/cron/reminders.ts` | 161 | - | fn handler |
+| `src/markers.ts` | 146 | Sinyal durable antar-giliran percakapan yang disimpan di kolom `feedback` tabel messages (tanpa menambah kolom baru / mengotori data). Mengapa perlu: balasan bot diproduksi oleh mo | iface DurableMarkers, fn encodeMarkers, fn stripRiddleMarker, fn isVnMarker, fn stripVnMarker |
 | `src/chat_id.ts` | 138 | NORMALISASI chat_id — SATU SUMBER untuk SELURUH APLIKASI. MASALAH YANG DIPERBAIKI (temuan pemilik produk 09 Okt 2026): chat_id TIDAK KONSISTEN antar tabel: | fn normChatId, fn nomorWhatsApp, const BAILEYS_CHAT_PREFIX, const BAILEYS_GROUP_PREFIX, fn baileysGroupChatKey |
 | `src/logger.ts` | 129 | Logger terstruktur tanpa dependensi eksternal (single-line JSON). CATATAN MIGRASI: Saat ini logger hanya dipasang di entrypoint (src/index.ts) dan endpoint webhook (api/webhook.ts, | type LogLevel, iface LogContext, iface Logger, fn log, fn logInfo |
 | `src/cooldown.ts` | 119 | COOLDOWN PROVIDER PERSISTEN. KENAPA MODUL INI ADA (audit 05 Okt 2026): Cooldown key provider sebelumnya hanya di MEMORI (`keyCooldownMap`). Pada | fn cooldownMemori, fn setCooldown, fn hapusCooldown, fn hidrasiCooldown, fn mulaiHidrasiLatar |
@@ -124,7 +131,6 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 | `api/webhook.ts` | 72 | - | const maxDuration, fn handler |
 | `api/cron/arsip.ts` | 67 | - | fn handler |
 | `src/riddles.ts` | 64 | Benih awal memori tebak-tebakan. PENTING — INI BUKAN SUMBER UTAMA: Sebelumnya berkas ini adalah bank tebak-tebakan yang dibaca langsung oleh | iface SeedRiddle, const RIDDLE_SEED, const GOMBAL_SEED |
-| `src/markers.ts` | 62 | Sinyal durable antar-giliran percakapan yang disimpan di kolom `feedback` tabel messages (tanpa menambah kolom baru / mengotori data). Mengapa perlu: balasan bot diproduksi oleh mo | iface DurableMarkers, fn encodeMarkers, fn stripRiddleMarker, fn lastRiddleAnswer |
 | `src/rate_limit.ts` | 61 | RATE LIMIT sederhana berbasis memori. KENAPA: endpoint publik (login admin) bisa dibombardir percobaan. Lockout PIN sudah ada, tapi GET status tidak dibatasi — penyerang bisa | iface HasilRateLimit, fn cekRateLimit |
 | `src/baileys_brain.ts` | 43 | Otak percakapan khusus jalur WhatsApp Baileys. Memisahkan sesi obrolan biasa (`wa_baileys_<nomor>`) dari Cloud API (`wa_<nomor>`), sementara data terstruktur bersama (pengingat, ca | fn baileysAutoReply, fn baileysDescribeImage, fn baileysDynamicNotice |
 
@@ -132,36 +138,36 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 
 | File | Peng-import | Contoh |
 | --- | --- | --- |
-| `src/db.ts` | 30 | `api/admin-otp.ts`, `api/cron/arsip.ts`, `api/cron/backup.ts`, `api/dataset.ts`, ... |
-| `src/env.ts` | 28 | `api/admin-otp.ts`, `api/cron/arsip.ts`, `api/cron/backup.ts`, `api/cron/reminders.ts`, ... |
+| `src/env.ts` | 31 | `api/admin-otp.ts`, `api/cron/arsip.ts`, `api/cron/backup.ts`, `api/cron/reminders.ts`, ... |
+| `src/db.ts` | 31 | `api/admin-otp.ts`, `api/cron/arsip.ts`, `api/cron/backup.ts`, `api/dataset.ts`, ... |
 | `src/notes.ts` | 26 | `src/reminder-ubah.ts`, `src/ringkasan.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`, ... |
-| `src/skills.ts` | 21 | `src/baileys_brain.ts`, `src/media.ts`, `src/remind.ts`, `src/telegram.ts`, ... |
+| `src/skills.ts` | 24 | `src/baileys_brain.ts`, `src/media.ts`, `src/remind.ts`, `src/telegram.ts`, ... |
 | `src/chat_id.ts` | 19 | `api/admin-otp.ts`, `api/dataset.ts`, `src/baileys_brain.ts`, `src/db.ts`, ... |
 | `src/group_db.ts` | 14 | `api/cron/backup.ts`, `api/dataset.ts`, `api/stats.ts`, `src/db.ts`, ... |
 | `src/memory.ts` | 11 | `src/baileys_brain.ts`, `src/media.ts`, `src/skills.ts`, `src/telegram.ts`, ... |
 | `src/timezone.ts` | 9 | `src/group_mode.ts`, `src/notes.ts`, `src/reminder-repeat.ts`, `src/skills.ts`, ... |
 | `src/user_facts.ts` | 9 | `src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`, `tests/adaptasi-universal.test.mjs`, ... |
 | `src/remind.ts` | 7 | `api/cron/reminders.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`, ... |
+| `src/providers.ts` | 6 | `api/stats.ts`, `src/media.ts`, `src/memory.ts`, `src/skills.ts`, ... |
 | `src/logger.ts` | 6 | `api/webhook.ts`, `api/whatsapp.ts`, `src/documents.ts`, `src/index.ts`, ... |
 | `src/web.ts` | 6 | `src/bot_growth.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`, ... |
 | `src/user-profile.ts` | 6 | `src/notes.ts`, `src/remind.ts`, `src/ringkasan.ts`, `tests/evaluasi-07okt.test.mjs`, ... |
 | `src/stickers.ts` | 6 | `src/skills.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`, ... |
-| `src/providers.ts` | 5 | `api/stats.ts`, `src/media.ts`, `src/memory.ts`, `src/skills.ts`, ... |
+| `src/markers.ts` | 6 | `src/skills.ts`, `src/telegram.ts`, `src/voice.ts`, `src/whatsapp_baileys.ts`, ... |
+| `src/local_ai_vps.ts` | 5 | `api/baileys-backup.ts`, `api/cron/reminders.ts`, `api/stats.ts`, `src/providers.ts`, ... |
+| `src/vps_keepalive.ts` | 5 | `api/cron/reminders.ts`, `src/baileys_backup_web.ts`, `src/local_ai_vps.ts`, `tests/local-ai-vps.test.mjs`, ... |
+| `src/voice.ts` | 5 | `src/skills.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`, ... |
 | `src/admin_auth.ts` | 4 | `api/admin-otp.ts`, `api/baileys-backup.ts`, `api/dataset.ts`, `api/stats.ts` |
+| `src/baileys_backup_web.ts` | 4 | `api/baileys-backup.ts`, `api/cron/reminders.ts`, `src/local_ai_vps.ts`, `tests/vps-keepalive.test.mjs` |
 | `src/telegram.ts` | 4 | `api/cron/reminders.ts`, `api/webhook.ts`, `src/index.ts`, `tests/telegram-grup-panggil.test.mjs` |
+| `src/vps_monitor.ts` | 4 | `api/cron/reminders.ts`, `src/baileys_backup_web.ts`, `src/local_ai_vps.ts`, `src/whatsapp_baileys.ts` |
 | `src/wa_monitor.ts` | 4 | `api/health.ts`, `src/remind.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts` |
 | `src/neuron.ts` | 4 | `api/stats.ts`, `src/providers.ts`, `tests/cloudflare-neuron.test.mjs`, `tests/neuron.test.mjs` |
 | `src/commands.ts` | 4 | `scripts/set_perintah_telegram.ts`, `src/notes.ts`, `src/telegram.ts`, `tests/telegram-menu-perintah.test.mjs` |
 | `src/reminder-repeat.ts` | 4 | `src/notes.ts`, `src/remind.ts`, `src/ringkasan.ts`, `tests/berulang.test.mjs` |
 | `src/reminder-dedup.ts` | 4 | `src/remind.ts`, `src/reminder-ubah.ts`, `tests/pengingat-kanal-baileys.test.mjs`, `tests/pengingat.test.mjs` |
 | `src/sticker-manifest.ts` | 4 | `src/skills.ts`, `src/stickers.ts`, `tests/stiker-klasifikasi.test.mjs`, `tests/stiker-teks-konsep.test.mjs` |
-| `src/markers.ts` | 4 | `src/skills.ts`, `src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts` |
 | `src/media.ts` | 4 | `src/telegram.ts`, `src/whatsapp_baileys.ts`, `src/whatsapp_cloud.ts`, `tests/otak-terpisah-dan-konteks.test.mjs` |
-| `src/rate_limit.ts` | 3 | `api/admin-otp.ts`, `api/baileys-backup.ts`, `tests/rate-limit.test.mjs` |
-| `src/baileys_backup_web.ts` | 3 | `api/baileys-backup.ts`, `api/cron/reminders.ts`, `tests/vps-keepalive.test.mjs` |
-| `src/vps_monitor.ts` | 3 | `api/cron/reminders.ts`, `src/baileys_backup_web.ts`, `src/whatsapp_baileys.ts` |
-| `src/vps_keepalive.ts` | 3 | `api/cron/reminders.ts`, `src/baileys_backup_web.ts`, `tests/vps-keepalive.test.mjs` |
-| `src/knowledge.ts` | 3 | `src/bot_memory.ts`, `src/skills.ts`, `src/web.ts` |
 
 ## Impor internal per modul besar
 
@@ -170,40 +176,40 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 | `src/skills.ts` | `src/bot_growth.ts`, `src/bot_memory.ts`, `src/chat_id.ts`, `src/env.ts`, `src/games/index.ts`, `src/knowledge.ts`, `src/markers.ts`, `src/memory.ts`, ... |
 | `src/notes.ts` | `src/chat_id.ts`, `src/commands.ts`, `src/db.ts`, `src/games/index.ts`, `src/group_db.ts`, `src/reminder-repeat.ts`, `src/reminder-ubah.ts`, `src/ringkasan.ts`, ... |
 | `src/whatsapp_baileys.ts` | `src/baileys_brain.ts`, `src/chat_id.ts`, `src/db.ts`, `src/documents.ts`, `src/env.ts`, `src/group_mode.ts`, `src/markers.ts`, `src/media.ts`, ... |
+| `src/providers.ts` | `src/cooldown.ts`, `src/env.ts`, `src/local_ai_vps.ts`, `src/logger.ts`, `src/neuron.ts`, `src/quota.ts` |
 | `src/web.ts` | `src/knowledge.ts` |
-| `src/providers.ts` | `src/cooldown.ts`, `src/env.ts`, `src/logger.ts`, `src/neuron.ts`, `src/quota.ts` |
 | `src/baileys_backup_web.ts` | `src/db.ts`, `src/env.ts`, `src/vps_keepalive.ts`, `src/vps_monitor.ts` |
-| `src/media.ts` | `src/env.ts`, `src/media_guard.ts`, `src/memory.ts`, `src/providers.ts`, `src/quota.ts`, `src/skills.ts` |
+| `src/voice.ts` | `src/env.ts`, `src/markers.ts` |
 | `src/telegram.ts` | `src/commands.ts`, `src/db.ts`, `src/documents.ts`, `src/env.ts`, `src/group_mode.ts`, `src/markers.ts`, `src/media.ts`, `src/memory.ts`, ... |
-| `src/admin_auth.ts` | `src/db.ts`, `src/env.ts` |
-| `api/stats.ts` | `src/admin_auth.ts`, `src/db.ts`, `src/env.ts`, `src/group_db.ts`, `src/limits.ts`, `src/neuron.ts`, `src/providers.ts` |
+| `src/media.ts` | `src/env.ts`, `src/media_guard.ts`, `src/memory.ts`, `src/providers.ts`, `src/quota.ts`, `src/skills.ts` |
 | `src/whatsapp_cloud.ts` | `src/db.ts`, `src/documents.ts`, `src/env.ts`, `src/markers.ts`, `src/media.ts`, `src/memory.ts`, `src/notes.ts`, `src/remind.ts`, ... |
+| `src/admin_auth.ts` | `src/db.ts`, `src/env.ts` |
+| `api/stats.ts` | `src/admin_auth.ts`, `src/db.ts`, `src/env.ts`, `src/group_db.ts`, `src/limits.ts`, `src/local_ai_vps.ts`, `src/neuron.ts`, `src/providers.ts` |
 | `src/games/engine.ts` | `src/games/cards.ts` |
+| `src/local_ai_vps.ts` | `src/baileys_backup_web.ts`, `src/db.ts`, `src/env.ts`, `src/vps_keepalive.ts`, `src/vps_monitor.ts` |
 | `src/remind.ts` | `src/chat_id.ts`, `src/db.ts`, `src/env.ts`, `src/group_db.ts`, `src/reminder-dedup.ts`, `src/reminder-repeat.ts`, `src/skills.ts`, `src/user-profile.ts`, ... |
 | `src/group_mode.ts` | `src/db.ts`, `src/group_db.ts`, `src/timezone.ts` |
+| `src/vps_keepalive.ts` | `src/db.ts`, `src/env.ts` |
 | `src/vps_monitor.ts` | `src/db.ts`, `src/env.ts` |
 | `src/timezone.ts` | `src/chat_id.ts` |
 | `api/dataset.ts` | `src/admin_auth.ts`, `src/chat_id.ts`, `src/db.ts`, `src/env.ts`, `src/group_db.ts` |
 | `src/memory.ts` | `src/chat_id.ts`, `src/db.ts`, `src/group_db.ts`, `src/providers.ts` |
 | `src/bot_memory.ts` | `src/db.ts`, `src/knowledge.ts` |
-| `src/vps_keepalive.ts` | `src/db.ts`, `src/env.ts` |
 | `src/wa_monitor.ts` | `src/cooldown.ts`, `src/db.ts`, `src/env.ts` |
-| `api/laporan.ts` | `src/db.ts`, `src/env.ts` |
-| `src/stickers.ts` | `src/sticker-manifest.ts` |
 
 ## API HTTP
 
 | Route | File | Baris |
 | --- | --- | --- |
 | `/api/admin-otp` | `api/admin-otp.ts` | 362 |
-| `/api/baileys-backup` | `api/baileys-backup.ts` | 227 |
+| `/api/baileys-backup` | `api/baileys-backup.ts` | 333 |
 | `/api/arsip` | `api/cron/arsip.ts` | 67 |
 | `/api/backup` | `api/cron/backup.ts` | 103 |
-| `/api/reminders` | `api/cron/reminders.ts` | 161 |
+| `/api/reminders` | `api/cron/reminders.ts` | 185 |
 | `/api/dataset` | `api/dataset.ts` | 582 |
 | `/api/health` | `api/health.ts` | 116 |
 | `/api/laporan` | `api/laporan.ts` | 408 |
-| `/api/stats` | `api/stats.ts` | 1295 |
+| `/api/stats` | `api/stats.ts` | 1327 |
 | `/api/webhook` | `api/webhook.ts` | 72 |
 | `/api/whatsapp` | `api/whatsapp.ts` | 103 |
 
@@ -289,6 +295,8 @@ Semua tes offline: `npm test`, atau satu berkas `node --import tsx --test tests/
 | `tests/keuangan-masuk.test.mjs` | keuangan: kata pemasukan mencakup gajian/bonus/thr/komisi / keuangan: daftar pemasukan di jalur implisit disamakan / keuangan: klasifikasi i |
 | `tests/klasifikasi-presisi.test.mjs` | presisi: CURHAT tidak boleh dicatat sebagai fitur / presisi: PERMINTAAN fitur HARUS terdeteksi / presisi: "aku habis 50rb buat makan" (tanpa |
 | `tests/larangan-arahkan-lapor.test.mjs` | bot: ajakan melapor dibuang / bot: balasan normal TIDAK terpengaruh / prompt: ada larangan eksplisit mengarahkan user |
+| `tests/local-ai-provider.test.mjs` | siapkanPromptUntukLocalAi menghasilkan prefix statis 100% identik lintas user, cooldown stiker, energi rendah, dan grup / siapkanPromptUntuk |
+| `tests/local-ai-vps.test.mjs` | setLocalAiPrimaryMode mengubah prioritas live antara primary (ON) dan fallback (OFF) / endpoint /api/baileys-backup target=ai mendukung GET  |
 | `tests/lokasi-tertunda.test.mjs` | butuhLokasi: cuaca terdeteksi / butuhLokasi: waktu & pengingat tetap terdeteksi / butuhLokasi: kiblat, matahari, puasa terdeteksi |
 | `tests/memori-bot.test.mjs` | memori: riwayat dari DB diperbesar (40 pesan) / memori: fakta/koreksi diperbesar (15) / memori: riwayat di prompt diperbesar (30) |
 | `tests/memori-pikun.test.mjs` | pikun: ringkasan AKUMULATIF (gabung lama + baru) / pikun: ringkasan lama dibaca sebelum diperbarui / pikun: counter berbasis DB (bukan hanya |
@@ -322,6 +330,7 @@ Semua tes offline: `npm test`, atau satu berkas `node --import tsx --test tests/
 | `tests/redaksi-log.test.mjs` | redactUrl: key di query string dibuang / redactUrl: berbagai nama parameter kredensial / redactUrl: Authorization Bearer dibuang |
 | `tests/reminder-multihari.test.mjs` | multi-hari: "3, 2, 1 hari sebelum" dideteksi / multi-hari: notasi H-N didukung / multi-hari: "seminggu sebelum" = H-7 |
 | `tests/reply-quote.test.mjs` | whatsapp-cloud: kirim pesan dukung quote (context.message_id) / whatsapp-cloud: quote hanya chunk pertama / telegram: kirim pesan dukung rep |
+| `tests/sanitasi-klausa-utuh.test.mjs` | bug produksi: penghapusan klausa penawaran tidak menyisakan fragmen "Sipp, kalau." / tanda baca & filler penutup tidak menyisakan titik tung |
 | `tests/selesai-nama.test.mjs` | selesai: "tugas upload jurnal selesai" cocok tugas "upload jurnal" / selesai: "upload jurnal selesai" cocok tugas "upload jurnal" / selesai: |
 | `tests/sesi-upgrade.test.mjs` | sesi: token dengan hash LAMA tetap valid setelah PIN di-upgrade / sesi: token dengan hash BARU juga valid / sesi: token dengan hash yang tid |
 | `tests/stiker-balas-bukan-reaksi.test.mjs` | adalahReaksiVisualStiker menangkap komentar hewan/tokoh/gesture/ekspresi stiker / adalahReaksiVisualStiker tidak menangkap balasan chat natu |
@@ -337,6 +346,7 @@ Semua tes offline: `npm test`, atau satu berkas `node --import tsx --test tests/
 | `tests/telegram-menu-perintah.test.mjs` | semua perintah sah menurut aturan Telegram (a-z, 0-9, garis bawah) / deskripsi memenuhi batas Telegram (3-256 karakter) / tidak lebih dari 1 |
 | `tests/usage-groq.test.mjs` | usage: format standar OpenAI terbaca / usage: format KHUSUS Groq (x_groq.usage) terbaca / usage: format Groq LENGKAP (keduanya ada) -> pakai |
 | `tests/vision-stiker-akurat.test.mjs` | stiker: balasan ROBOTIK dibuang / stiker: enforcer tak-bisa-baca WAJIB context-aware (jangan buang balasan sah) / stiker: bocoran prefix "Ja |
+| `tests/voice-note.test.mjs` | voice intent: deteksi permintaan nyanyi acapella dan tolak negatif/meta / voice intent: deteksi permintaan VN eksplisit dan opt-out teks / v |
 | `tests/vps-keepalive.test.mjs` | 1. normalizeKeepaliveState mengisi default & membersihkan error / 2. renewVpsActivityLease memanggil endpoint lease yang benar + parse expir |
 | `tests/vps-monitor.test.mjs` | 1. parseInstaboxMachine mendukung flat camelCase, wrapper { machine }, snake_case, dan menolak invalid / 2. evaluasiStatusVps TIDAK mengirim |
 | `tests/waktu.test.mjs` | parseNominal: digit & satuan / parseNominal: ANGKA KATA (penting untuk Voice Note) / parseNominal: tidak salah baca |
@@ -350,18 +360,18 @@ Semua tes offline: `npm test`, atau satu berkas `node --import tsx --test tests/
 
 | File | Baris |
 | --- | --- |
-| `src/skills.ts` | 5880 |
+| `src/skills.ts` | 6122 |
 | `src/notes.ts` | 4393 |
-| `public/css/console.css` | 3650 |
-| `public/js/dashboard.js` | 2524 |
-| `src/whatsapp_baileys.ts` | 2273 |
+| `public/css/console.css` | 3654 |
+| `public/js/dashboard.js` | 2542 |
+| `src/whatsapp_baileys.ts` | 2355 |
+| `src/providers.ts` | 2252 |
 | `src/web.ts` | 2220 |
-| `src/providers.ts` | 2046 |
-| `src/baileys_backup_web.ts` | 1655 |
+| `src/baileys_backup_web.ts` | 1790 |
+| `src/voice.ts` | 1582 |
+| `src/telegram.ts` | 1466 |
 | `src/media.ts` | 1446 |
-| `src/telegram.ts` | 1389 |
-| `src/admin_auth.ts` | 1334 |
-| `api/stats.ts` | 1295 |
+| `src/whatsapp_cloud.ts` | 1400 |
 
 ## Berkas yang tidak boleh diubah tanpa alasan kuat
 

@@ -8,9 +8,10 @@
  * yang ia lempar sendiri. Tanpa jejak durable, model mengarang ("orang aring
  * matanya melek terus") demi terdengar nyambung. Marker ini menyimpan fakta itu.
  *
- * Format: "key:value" dipisah "|", mis. "sticker:😂|riddle:Apel".
+ * Format: "key:value" dipisah "|", mis. "sticker:😂|riddle:Apel|vn:chat".
  * - sticker:<emoji>  → stiker yang benar-benar terkirim (anti-overuse).
  * - riddle:<jawaban> → jawaban benar tebak-tebakan/gombalan tanya-jawab terakhir.
+ * - vn:<chat|sing>   → mode Voice Note yang terkirim (cooldown ~5:1 & deteksi ulangi/ganti lagu).
  */
 
 export interface DurableMarkers {

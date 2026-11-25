@@ -18,7 +18,7 @@
  },
  {
   "path": "api/baileys-backup.ts",
-  "lines": 227,
+  "lines": 333,
   "kind": "api",
   "exports": [
    "iface BaileysBackupHandlerDeps",
@@ -28,6 +28,7 @@
    "@vercel/node",
    "../src/admin_auth.js",
    "../src/baileys_backup_web.js",
+   "../src/local_ai_vps.js",
    "../src/rate_limit.js"
   ],
   "tests": []
@@ -65,7 +66,7 @@
  },
  {
   "path": "api/cron/reminders.ts",
-  "lines": 161,
+  "lines": 185,
   "kind": "api",
   "exports": [
    "fn handler"
@@ -79,6 +80,7 @@
    "../../src/whatsapp_cloud.js",
    "../../src/vps_monitor.js",
    "../../src/baileys_backup_web.js",
+   "../../src/local_ai_vps.js",
    "../../src/vps_keepalive.js"
   ],
   "tests": []
@@ -135,7 +137,7 @@
  },
  {
   "path": "api/stats.ts",
-  "lines": 1295,
+  "lines": 1327,
   "kind": "api",
   "exports": [
    "fn getModelCatalog",
@@ -153,7 +155,8 @@
    "fs",
    "url",
    "path",
-   "../src/limits.js"
+   "../src/limits.js",
+   "../src/local_ai_vps.js"
   ],
   "tests": []
  },
@@ -192,7 +195,7 @@
  },
  {
   "path": "public/css/console.css",
-  "lines": 3650,
+  "lines": 3654,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -208,7 +211,7 @@
  },
  {
   "path": "public/dashboard.html",
-  "lines": 722,
+  "lines": 821,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -224,7 +227,7 @@
  },
  {
   "path": "public/js/baileys-backup.js",
-  "lines": 855,
+  "lines": 881,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -248,7 +251,7 @@
  },
  {
   "path": "public/js/dashboard.js",
-  "lines": 2524,
+  "lines": 2542,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -280,7 +283,7 @@
  },
  {
   "path": "public/js/i18n.js",
-  "lines": 482,
+  "lines": 521,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -297,6 +300,14 @@
  {
   "path": "public/js/lenis.min.js",
   "lines": 2,
+  "kind": "public",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
+  "path": "public/js/local-ai-vps.js",
+  "lines": 843,
   "kind": "public",
   "exports": [],
   "imports": [],
@@ -392,7 +403,7 @@
  },
  {
   "path": "scripts/gen-codebase-map.ts",
-  "lines": 246,
+  "lines": 250,
   "kind": "scripts",
   "exports": [],
   "imports": [
@@ -448,6 +459,14 @@
   "tests": []
  },
  {
+  "path": "scripts/supertonic_tts_server.py",
+  "lines": 176,
+  "kind": "scripts",
+  "exports": [],
+  "imports": [],
+  "tests": []
+ },
+ {
   "path": "scripts/uji_jev.mjs",
   "lines": 177,
   "kind": "scripts",
@@ -481,7 +500,7 @@
  },
  {
   "path": "scripts/watchdog-ctl.mjs",
-  "lines": 502,
+  "lines": 506,
   "kind": "scripts",
   "exports": [],
   "imports": [
@@ -905,7 +924,7 @@
  },
  {
   "path": "src/baileys_backup_web.ts",
-  "lines": 1655,
+  "lines": 1790,
   "kind": "src",
   "exports": [
    "const BAILEYS_BACKUP_CLOUD_FILENAME",
@@ -1107,7 +1126,7 @@
  },
  {
   "path": "src/env.ts",
-  "lines": 316,
+  "lines": 363,
   "kind": "src",
   "exports": [
    "const config",
@@ -1339,6 +1358,43 @@
   "tests": []
  },
  {
+  "path": "src/local_ai_vps.ts",
+  "lines": 1046,
+  "kind": "src",
+  "exports": [
+   "const LOCAL_AI_VPS_STATE_FILENAME",
+   "const LOCAL_AI_KEEPALIVE_FILENAME",
+   "const LOCAL_AI_KEEPALIVE_LEASE_ID",
+   "iface LocalAiVpsCloudState",
+   "iface LocalAiVpsView",
+   "iface LocalAiVpsDeps",
+   "fn resetLocalAiVpsCacheUntukTest",
+   "fn defaultLocalAiVpsState",
+   "fn getEffectiveLocalAiPriority",
+   "fn bacaLocalAiVpsState",
+   "fn simpanLocalAiVpsState",
+   "fn bacaLocalAiKeepaliveState",
+   "fn simpanLocalAiKeepaliveState",
+   "fn refreshLocalAiPriorityIfStale",
+   "fn getLocalAiVpsSnapshot",
+   "fn runManualLocalAiVpsCheck",
+   "fn setLocalAiPrimaryMode",
+   "fn setLocalAiAutoResumeMode",
+   "fn setLocalAiKeepaliveMode",
+   "fn runManualLocalAiVpsKeepalive",
+   "fn runManualLocalAiVpsResume",
+   "fn cobaKeepaliveDanAutoResumeVps2DariCron"
+  ],
+  "imports": [
+   "./db.js",
+   "./env.js",
+   "./vps_monitor.js",
+   "./vps_keepalive.js",
+   "./baileys_backup_web.js"
+  ],
+  "tests": []
+ },
+ {
   "path": "src/logger.ts",
   "lines": 129,
   "kind": "src",
@@ -1359,12 +1415,18 @@
  },
  {
   "path": "src/markers.ts",
-  "lines": 62,
+  "lines": 146,
   "kind": "src",
   "exports": [
    "iface DurableMarkers",
    "fn encodeMarkers",
    "fn stripRiddleMarker",
+   "fn isVnMarker",
+   "fn stripVnMarker",
+   "fn assistantTurnsSinceLastVn",
+   "fn assistantTurnCount",
+   "fn lastRecentVnMode",
+   "fn appendDurableMarkers",
    "fn lastRiddleAnswer"
   ],
   "imports": [],
@@ -1411,7 +1473,7 @@
  },
  {
   "path": "src/memory.ts",
-  "lines": 565,
+  "lines": 566,
   "kind": "src",
   "exports": [
    "iface ChatContext",
@@ -1520,7 +1582,7 @@
  },
  {
   "path": "src/providers.ts",
-  "lines": 2046,
+  "lines": 2252,
   "kind": "src",
   "exports": [
    "fn getOrderedKeys",
@@ -1531,6 +1593,7 @@
    "iface ProviderResult",
    "fn geminiThinkingConfig",
    "fn trimMessagesToTokenBudget",
+   "fn siapkanPromptUntukLocalAi",
    "fn ringkasUntukGroqTeks",
    "fn ringkasUntukGroqVision",
    "fn chat",
@@ -1544,13 +1607,14 @@
    "./cooldown.js",
    "./neuron.js",
    "./quota.js",
+   "./local_ai_vps.js",
    "./logger.js"
   ],
   "tests": []
  },
  {
   "path": "src/quota.ts",
-  "lines": 374,
+  "lines": 375,
   "kind": "src",
   "exports": [
    "type ProviderKind",
@@ -1721,9 +1785,10 @@
  },
  {
   "path": "src/skills.ts",
-  "lines": 5880,
+  "lines": 6122,
   "kind": "src",
   "exports": [
+   "fn bersihkanKlausaMenggantung",
    "fn cleanMathAndNoise",
    "fn userAskedAboutMedia",
    "fn stripMediaNarration",
@@ -1770,6 +1835,7 @@
    "./stickers.js",
    "./sticker-manifest.js",
    "./markers.js",
+   "./voice.js",
    "./bot_growth.js",
    "./bot_memory.js",
    "./riddles.js"
@@ -1819,11 +1885,12 @@
  },
  {
   "path": "src/telegram.ts",
-  "lines": 1389,
+  "lines": 1466,
   "kind": "src",
   "exports": [
    "fn getTelegramBot",
    "fn sendTelegramMessageSafe",
+   "fn sendTelegramVoiceNoteSafe",
    "fn sendTelegramStickerSafe",
    "fn deteksiPanggilSlash",
    "fn handleIncomingMessage",
@@ -1843,6 +1910,7 @@
    "./documents.js",
    "./stickers.js",
    "./markers.js",
+   "./voice.js",
    "./web.js",
    "./remind.js",
    "./timezone.js",
@@ -1928,8 +1996,53 @@
   "tests": []
  },
  {
+  "path": "src/voice.ts",
+  "lines": 1582,
+  "kind": "src",
+  "exports": [
+   "type VoiceMode",
+   "type VoiceDecisionReason",
+   "iface VoiceDecision",
+   "iface SynthesizedVoiceNote",
+   "iface SongChorusExcerpt",
+   "const VN_MIN_TURNS_BETWEEN",
+   "fn detectTextOnlyPreference",
+   "fn detectVnRetryMode",
+   "fn detectSingRequest",
+   "fn detectExplicitVnRequest",
+   "fn isReplySpeakable",
+   "iface DecideVoiceParams",
+   "fn decideVoiceReply",
+   "fn prepareTextForTts",
+   "fn remuxWebmOpusToOgg",
+   "fn encodeWavOrPcmToOggOpus",
+   "fn synthesizeViaLocalTts",
+   "const SING_QUOTA_EXHAUSTED_NOTICE_PROMPT",
+   "fn synthesizeVoiceNote",
+   "type SongStylePreference",
+   "fn hasUnexpectedForeignScript",
+   "fn extractSongQuery",
+   "fn pickShortChorus",
+   "const INDO_GALAU_SONGS",
+   "const INDO_POP_SONGS",
+   "const WESTERN_POP_SONGS",
+   "const POPULAR_DEFAULT_SONGS",
+   "fn detectSongStylePreference",
+   "fn pickPopularSongForStyle",
+   "fn pickRandomPopularSongQuery",
+   "fn lookupShortSongChorus"
+  ],
+  "imports": [
+   "@andresaya/edge-tts",
+   "@audio/encode-opus",
+   "./env.js",
+   "./markers.js"
+  ],
+  "tests": []
+ },
+ {
   "path": "src/vps_keepalive.ts",
-  "lines": 482,
+  "lines": 593,
   "kind": "src",
   "exports": [
    "const KEEPALIVE_STATE_FILENAME",
@@ -1949,6 +2062,7 @@
    "fn simpanKeepaliveState",
    "fn setKeepaliveEnabled",
    "fn renewVpsActivityLease",
+   "fn releaseVpsActivityLease",
    "fn jalankanKeepaliveVps"
   ],
   "imports": [
@@ -2037,7 +2151,7 @@
  },
  {
   "path": "src/whatsapp_baileys.ts",
-  "lines": 2273,
+  "lines": 2355,
   "kind": "src",
   "exports": [
    "iface BaileysGroupTargetInfo",
@@ -2056,6 +2170,7 @@
    "fn extractPnDigits",
    "fn resolveBaileysSenderNumber",
    "fn sendWhatsAppMessageSafe",
+   "fn sendWhatsAppVoiceNoteSafe",
    "fn sendWhatsAppStickerSafe",
    "fn startWhatsApp"
   ],
@@ -2076,6 +2191,7 @@
    "./documents.js",
    "./stickers.js",
    "./markers.js",
+   "./voice.js",
    "./web.js",
    "./timezone.js",
    "./remind.js",
@@ -2089,7 +2205,7 @@
  },
  {
   "path": "src/whatsapp_cloud.ts",
-  "lines": 1285,
+  "lines": 1400,
   "kind": "src",
   "exports": [
    "fn verifyWhatsAppWebhook",
@@ -2097,6 +2213,7 @@
    "const verifyWhatsAppSignature",
    "fn sendWhatsAppCloudMessageSafe",
    "fn sendWhatsAppCloudStickerSafe",
+   "fn sendWhatsAppCloudVoiceNoteSafe",
    "fn markWhatsAppCloudMessageRead",
    "fn processWhatsAppCloudWebhook"
   ],
@@ -2109,6 +2226,7 @@
    "./memory.js",
    "./stickers.js",
    "./markers.js",
+   "./voice.js",
    "./web.js",
    "./timezone.js",
    "./remind.js",
@@ -2388,7 +2506,7 @@
  },
  {
   "path": "tests/baileys-backup-web.test.mjs",
-  "lines": 499,
+  "lines": 567,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -2405,7 +2523,8 @@
    "4. setAutoResumeMode(true) memicu resume langsung bila VPS sedang down & di luar cooldown",
    "5. cobaAutoResumeDariCron menghormati mode MANUAL, state RUNNING, cooldown, & berjalan saat OTOMATIS+DOWN",
    "6. api/baileys-backup handler: fail-closed 401, 405, 400 validation, dan eksekusi 200 saat terautentikasi",
-   "7. Wiring, keamanan, batas fungsi Vercel, sintaks JS, & kepatuhan CSP dashboard"
+   "7. Wiring, keamanan, batas fungsi Vercel, sintaks JS, & kepatuhan CSP dashboard",
+   "8. Keepalive web: auto=true hormati enabled:false, setKeepaliveMode(false) DELETE lease & catat aktivitas"
   ]
  },
  {
@@ -2888,7 +3007,7 @@
  },
  {
   "path": "tests/katalog-model-sinkron.test.mjs",
-  "lines": 77,
+  "lines": 81,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -3029,6 +3148,49 @@
    "prompt: ada larangan eksplisit mengarahkan user",
    "prompt: TIDAK ada lagi instruksi menyebut landing page",
    "penegak kode: ada penyaring ajakan lapor"
+  ]
+ },
+ {
+  "path": "tests/local-ai-provider.test.mjs",
+  "lines": 125,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:vm",
+   "typescript",
+   "../src/env.ts",
+   "../src/providers.ts",
+   "../src/skills.ts"
+  ],
+  "tests": [
+   "siapkanPromptUntukLocalAi menghasilkan prefix statis 100% identik lintas user, cooldown stiker, energi rendah, dan grup",
+   "siapkanPromptUntukLocalAi menjaga payload multimodal gambar utuh",
+   "siapkanPromptUntukLocalAi menjaga maks 6 pesan riwayat terbaru agar prefill CPU tidak timeout",
+   "routing localai opsional: fail-closed tanpa key, primary/fallback sesuai prioritas, dan skip WebP"
+  ]
+ },
+ {
+  "path": "tests/local-ai-vps.test.mjs",
+  "lines": 249,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "../src/local_ai_vps.ts",
+   "../src/vps_keepalive.ts",
+   "../api/baileys-backup.ts"
+  ],
+  "tests": [
+   "setLocalAiPrimaryMode mengubah prioritas live antara primary (ON) dan fallback (OFF)",
+   "endpoint /api/baileys-backup target=ai mendukung GET snapshot, set_primary, set_mode, set_keepalive, keepalive, resume, dan fail-closed 401",
+   "cron VPS 2 melakukan auto-resume saat paused dan autoResumeEnabled=true",
+   "UI dashboard memuat panel VPS 2, tombol ON/OFF Model Utama, dan wiring script",
+   "kontrak skema DB: src/local_ai_vps.ts memakai kolom content (JSON string) pada whatsapp_sessions, bukan kolom data"
   ]
  },
  {
@@ -3722,6 +3884,23 @@
   ]
  },
  {
+  "path": "tests/sanitasi-klausa-utuh.test.mjs",
+  "lines": 76,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "bug produksi: penghapusan klausa penawaran tidak menyisakan fragmen \"Sipp, kalau.\"",
+   "tanda baca & filler penutup tidak menyisakan titik tunggal atau potongan kata",
+   "bersihkanKlausaMenggantung membersihkan ujung kalimat menggantung & tanda baca rusak",
+   "kalimat wajar & empati valid tidak ikut terpotong (anti false-positive)"
+  ]
+ },
+ {
   "path": "tests/selesai-nama.test.mjs",
   "lines": 85,
   "kind": "tests",
@@ -4051,8 +4230,39 @@
   ]
  },
  {
+  "path": "tests/voice-note.test.mjs",
+  "lines": 634,
+  "kind": "tests",
+  "exports": [],
+  "imports": [
+   "node:test",
+   "node:assert/strict",
+   "node:fs",
+   "node:http",
+   "../src/voice.js",
+   "../src/markers.js",
+   "../src/skills.js"
+  ],
+  "tests": [
+   "voice intent: deteksi permintaan nyanyi acapella dan tolak negatif/meta",
+   "voice intent: deteksi permintaan VN eksplisit dan opt-out teks",
+   "voice cadence: rasio ~5:1 durable dan cooldown bekerja akurat",
+   "voice guard: DILARANG kirim VN spontan saat serius, rumit, sedih, koding, web, atau jawaban panjang",
+   "voice explicit: permintaan nyanyi & VN langsung lolos ke mode tepat",
+   "voice text prep: buang markdown/emoji/stage-direction dan ekspansi singkatan Indonesia",
+   "markers: durable VN marker roundtrip & hitungan giliran",
+   "audio encoder: WAV 24kHz mono PCM -> Ogg Opus WASM menghasilkan OggS + OpusHead valid",
+   "audio remuxer: WebM Opus sintetis -> Ogg Opus lossless valid",
+   "wiring: semua kanal & prompt terhubung dengan benar tanpa membuka .play",
+   "regression screenshot: [VN terkirim: sing] tidak boleh bocor ke user & \"ulangii\"/\"ulangg\" mengulang VN",
+   "song chorus: ekstrak judul lagu (termasuk typo) dan pilih reff tanpa mengarang lirik",
+   "regression 24 Nov: komplain lirik TIDAK dinyanyikan, 0 stiker WebP cacat, anti-duplikat stiker & kontinuitas ucapan terakhir",
+   "regression 24 Nov (lanjutan): stopword lagu lain/sama, follow-up lagu indo/galau, filter skrip Serbia, dan Local TTS Supertonic"
+  ]
+ },
+ {
   "path": "tests/vps-keepalive.test.mjs",
-  "lines": 326,
+  "lines": 522,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -4071,7 +4281,11 @@
    "7. setKeepaliveEnabled durable + mematikan cooldown saat OFF",
    "8. buildKeepaliveView memakai jendela idle LIVE dan menghitung pause dari lease",
    "9. buildKeepaliveView fallback config saat API tidak melaporkan jendela idle",
-   "10. ping manual tetap bekerja saat auto-ping OFF (ignoreEnabled)"
+   "10. ping manual tetap bekerja saat auto-ping OFF (ignoreEnabled)",
+   "11. normalizeKeepaliveState menjaga enabled_updated_by & last_ping_latency_ms tetap null bila kosong",
+   "12. starting/resuming dilewati & HTTP 409 PUT lease tidak menaikkan fail_count/cooldown",
+   "13. HTTP 429 menghormati Retry-After, releaseVpsActivityLease memanggil DELETE, & sesi baru bypass interval",
+   "14. buildKeepaliveView: kontinuitas pauseInSecs setelah lease habis, reset saat runStartedAt baru, & fallback cache"
   ]
  },
  {

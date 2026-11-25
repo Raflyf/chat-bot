@@ -225,8 +225,8 @@ export interface DecideVoiceParams {
  *
  * Logika:
  * 1. User minta "teks aja / jangan vn" -> selalu teks.
- * 2. User minta nyanyi (`coba nyanyikan...`, `nyanyi dong`) -> VN mode `sing` (Gemini TTS).
- * 3. User minta VN (`kirim vn`, `balas pake suara`) -> VN mode `chat` (Edge-TTS).
+ * 2. User minta nyanyi (`coba nyanyikan...`, `nyanyi dong`, `lagu indo coba`) -> VN mode `sing` (Gemini 3.8 TTS).
+ * 3. User minta VN (`kirim vn`, `balas pake suara`) -> VN mode `chat` (Supertonic 3 lokal / Gemini 3.8 TTS).
  * 4. VN spontan (~5:1):
  *    - HANYA saat suasana santai/ringan/bercanda (bukan topik rumit, teknis, serius, sedih, formal, pencarian web).
  *    - HANYA saat balasan pendek & lisan (18–260 char, tanpa kode/URL/daftar/tabel/angka berat).

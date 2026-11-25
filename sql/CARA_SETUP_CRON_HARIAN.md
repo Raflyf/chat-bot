@@ -10,11 +10,9 @@ POST https://free-chatbot-ai.vercel.app/api/cron/backup
 Header: Authorization: Bearer <CRON_SECRET>
 ```
 
-Mengekspor 7 tabel (messages, reminders, notes, todos, expenses, corrections,
-user_profiles) ke Supabase Storage bucket **`backups`** dalam folder tanggal.
+Mengekspor 7 tabel inti (`messages`, `reminders`, `notes`, `todos`, `expenses`, `corrections`, `user_profiles`) plus 9 tabel grup (`group_messages`, `group_reminders`, `group_notes`, `group_todos`, `group_expenses`, `group_corrections`, `group_summaries`, `group_documents`, `group_settings`) apabila migrasi v35 sudah aktif, ke Supabase Storage bucket **`backups`** dalam folder tanggal.
 
-**Bucket `backups` sudah dibuat** ✅ (kalau belum: Supabase → Storage → New bucket
-→ nama `backups` → jangan centang public).
+**Bucket `backups` sudah dibuat** (kalau belum: Supabase → Storage → New bucket → nama `backups` → jangan centang public).
 
 Hasil uji nyata:
 ```

@@ -14,16 +14,16 @@ import { markMemoryUsed, isMemoryRelevant } from './bot_memory.js';
 import { RIDDLE_SEED, GOMBAL_SEED } from './riddles.js';
 
 /* ============================================================================
- * PETA NAVIGASI skills.ts (dibuat otomatis 05 Okt 2026)
+ * PETA NAVIGASI skills.ts (diperbarui 25 Nov 2026)
  * ============================================================================
  * File ini SENGAJA monolit: prompt persona harus dibaca UTUH oleh model, dan
  * memecahnya secara fisik berisiko mengubah urutan/isi blok yang memengaruhi
  * perilaku bot. Untuk navigasi, gunakan peta di bawah.
  *
  * ALUR PEMAKAIAN:
- *   autoReply()                      -> titik masuk balasan
- *     -> systemPrompt()              -> MERAKIT prompt (persona + konteks + waktu)
- *     -> buildMessages()             -> susun pesan ke provider
+ *   autoReply()                      -> titik masuk balasan (plus lookup reff lagu bila nyanyi)
+ *     -> systemPrompt()              -> MERAKIT prompt (persona + konteks + waktu + mode VN)
+ *     -> buildMessages()             -> susun pesan ke provider (buang marker durable)
  *     -> sanitizeAssistantOutput()   -> BERSIHKAN balasan sebelum dikirim
  *          -> cleanMathAndNoise()    -> buang noise matematika/tanda
  *          -> enforceUniversalRules()-> aturan universal (tag, placeholder)
@@ -31,41 +31,41 @@ import { RIDDLE_SEED, GOMBAL_SEED } from './riddles.js';
  *          -> stripInventedUrls()    -> buang URL karangan
  *
  * FUNGSI PENTING (baris):
- *      14  stripDurableMarkers
- *      18  todayStr
- *      22  redactOutput
- *      57  stripInventedUrls
- *     189  isOwnerChatKey
- *     205  cleanMathAndNoise
- *     896  leadingInterjection
- *     904  stripLeadingInterjection
- *     915  avoidRepeatedOpening
- *     934  hasAudioClaim
- *     939  stripAudioClaims
- *     948  isAudioInput
- *     979  userAskedAboutMedia
- *     986  stripMediaNarration
- *    1002  extractStickerTag
- *    1027  similarityScore
- *    1060  extractRiddleTag
- *    1093  isTsvExtraction
- *    1104  sanitizeAssistantOutput
- *    1185  stripProtocolLeak
- *    1229  tegakkanAntiMengiyakanKlaim
- *    1275  enforceUniversalRules
- *    1409  scrubInventedJargon
- *    1438  dedupeSentences
- *    1577  splitMessageSmart
- *    1631  systemPrompt
- *    2482  wait
- *    2487  chatRetry
- *    2518  isTruncatedReply
- *    2580  continueIfTruncated
- *    2653  buildMessages
- *    2785  autoReply
- *    3576  dynamicNotice
- *    3605  bersihkanArtefakEkstraksi
- *    3641  describeImage
+ *      73  stripDurableMarkers
+ *      77  todayStr
+ *      81  redactOutput
+ *     128  stripInventedUrls
+ *     274  isOwnerChatKey
+ *     330  cleanMathAndNoise
+ *    1314  leadingInterjection
+ *    1322  stripLeadingInterjection
+ *    1439  avoidRepeatedOpening
+ *    1458  hasAudioClaim
+ *    1463  stripAudioClaims
+ *    1480  isAudioInput
+ *    1511  userAskedAboutMedia
+ *    1518  stripMediaNarration
+ *    1580  extractStickerTag
+ *    1612  similarityScore
+ *    1645  extractRiddleTag
+ *    1683  isTsvExtraction
+ *    1948  sanitizeAssistantOutput
+ *    2364  stripProtocolLeak
+ *    2412  tegakkanAntiMengiyakanKlaim
+ *    2475  enforceUniversalRules
+ *    2548  scrubInventedJargon
+ *    2575  dedupeSentences
+ *    2715  splitMessageSmart
+ *    2802  systemPrompt
+ *    4033  wait
+ *    4038  chatRetry
+ *    4071  isTruncatedReply
+ *    4133  continueIfTruncated
+ *    4206  buildMessages
+ *    4426  autoReply
+ *    5506  dynamicNotice
+ *    5571  bersihkanArtefakEkstraksi
+ *    5607  describeImage
  * ========================================================================= */
 
 

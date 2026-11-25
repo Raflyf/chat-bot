@@ -3,14 +3,14 @@
  *
  * Model memilih emoji secara DINAMIS (lewat tag [[sticker:<emoji>]] di balasannya —
  * bukan daftar template hardcode). Modul ini memetakan emoji pilihan model ke aset
- * stiker webp di public/stickers/ via manifest hasil pelabelan vision
- * (src/sticker-manifest.json: emoji → nama file).
+ * stiker webp di public/stickers/ via manifest hasil pelabelan teks & konsep
+ * (src/sticker-manifest.ts: emoji -> nama file).
  *
  * Bila emoji tidak ada di manifest, fallback: emoji dikirim sebagai teks (konten model).
  *
  * Anti-spam (aturan program, bukan teks balasan):
  * - Maksimal 1 stiker per balasan (parser hanya mengambil tag pertama).
- * - Cooldown per chat: maksimal 2 stiker per 10 menit.
+ * - Cooldown per chat: maksimal 4 stiker per 10 menit + jeda minimal giliran antar-stiker.
  */
 
 import fs from 'node:fs/promises';

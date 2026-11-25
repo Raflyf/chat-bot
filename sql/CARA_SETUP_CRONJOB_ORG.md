@@ -65,8 +65,7 @@ Kalau dapat **403** → `CRON_SECRET` di Vercel kosong.
 
 ## Setelah cron-job.org aktif
 
-Pengingat akan dikirim **tepat waktu (±1 menit)**. Tiga lapisan tetap berjalan
-bersama sebagai cadangan:
+Pengingat akan dikirim **tepat waktu (±1 menit)**. Selain mengirim pengingat jatuh tempo, endpoint ini juga memeriksa siklus hidup VPS 1 (Baileys) & VPS 2 (Local AI), memperbarui *activity lease* keepalive, serta menjalankan Auto-Resume bila diaktifkan. Tiga lapisan pengingat tetap berjalan bersama sebagai cadangan:
 
 1. **cron-job.org** tiap 1 menit → paling akurat (UTAMA)
 2. **GitHub Actions** 3 jadwal bergeser → cadangan
