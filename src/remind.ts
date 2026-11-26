@@ -4,7 +4,7 @@ import { db } from './db.js';
 import { config } from './env.js';
 import { kemiripanPesan, AMBANG_MIRIP, TOLERANSI_WAKTU_MENIT } from './reminder-dedup.js';
 import { berikutnya, type AturanUlang } from './reminder-repeat.js';
-import { normChatId, nomorWhatsApp, baileysChatKey, isGroupChatKey } from './chat_id.js';
+import { normChatId, nomorWhatsApp, baileysChatKey, isGroupChatKey, sharedChatKeyDari } from './chat_id.js';
 import { resolveTableName, hasDedicatedGroupTables } from './group_db.js';
 import { statusAutoMaintenanceWa } from './wa_monitor.js';
 
@@ -289,6 +289,13 @@ export const BAILEYS_FALLBACK_KE_CLOUD_MS = 60_000;
 export const CLOUD_FALLBACK_KE_BAILEYS_MS = 180_000;
 /** Batas toleransi keterlambatan pengingat GRUP sebelum dilewati/dilompat ke jadwal berikutnya. */
 export const GROUP_REMINDER_MAX_LATE_MS = 30 * 60 * 1000;
+/**
+ * Margin aman jendela layanan 24 jam Meta WhatsApp Cloud API (23 jam 30 menit).
+ * Di luar jendela ini Meta menolak teks biasa secara asinkron (error 131047) walau
+ * `POST /messages` sempat membalas HTTP 200 — sehingga jalur Cloud harus menyerahkan
+ * pengingat ke WhatsApp Baileys yang tidak dibatasi 24 jam.
+ */
+export const META_CLOUD_24H_WINDOW_MS = (23 * 60 + 30) * 60 * 1000;
 
 /**
  * True bila pengingat milik GRUP dan sudah terlewat lebih dari `maxLateMs` (default 30 menit),
@@ -309,11 +316,14 @@ export interface OpsiFilterKanalPengingat {
   channelFilter?: 'baileys_only' | 'cloud_only' | 'all';
   nowMs?: number;
   cloudMaintenance?: boolean;
+  /** True bila tidak ada pesan masuk user di WA Cloud dalam 23,5 jam terakhir (risiko 131047). */
+  cloudWindowExpired?: boolean;
 }
 
 /**
  * Menentukan apakah satu baris pengingat boleh diproses oleh worker/cron tertentu.
- * Memisahkan rute Baileys vs Cloud API sambil menyediakan failover dua arah.
+ * Memisahkan rute Baileys vs Cloud API sambil menyediakan failover dua arah,
+ * termasuk handover otomatis ke Baileys bila jendela 24 jam Meta Cloud API sudah habis.
  */
 export function bolehProsesKanalPengingat(
   item: { chat_id?: string; message?: string; due_at?: string; platform?: string },
@@ -332,16 +342,62 @@ export function bolehProsesKanalPengingat(
 
   if (opsi.channelFilter === 'baileys_only') {
     if (isTelegram) return false;
-    if (isBaileys || opsi.cloudMaintenance) return true;
+    if (isBaileys || opsi.cloudMaintenance || opsi.cloudWindowExpired) return true;
     return telatMs > CLOUD_FALLBACK_KE_BAILEYS_MS;
   }
 
   // opsi.channelFilter === 'cloud_only'
   if (isTelegram) return true;
-  if (opsi.cloudMaintenance) return false;
+  if (opsi.cloudMaintenance || opsi.cloudWindowExpired) return false;
   if (!isBaileys) return true;
   if (adalahPengingatBaileysEksklusif(String(item.message ?? ''))) return false;
   return telatMs > BAILEYS_FALLBACK_KE_CLOUD_MS;
+}
+
+const cloud24hHandoffLoggedAt = new Map<number, number>();
+
+/**
+ * Periksa apakah tiap `chat_id` WA privat memiliki pesan masuk (`role='user'`) di jalur
+ * WA Cloud (`wa_<nomor>`) dalam `META_CLOUD_24H_WINDOW_MS` terakhir (23,5 jam).
+ * - Map value `true`  = jendela 24 jam Meta SUDAH HABIS (harus diserahkan ke Baileys).
+ * - Map value `false` = jendela 24 jam Meta MASIH TERBUKA (atau error DB -> fail-open).
+ */
+async function cekJendelaCloud24JamKadaluarsa(
+  client: NonNullable<ReturnType<typeof db>>,
+  rows: Array<Record<string, unknown>>,
+  nowMs: number,
+): Promise<Map<string, boolean>> {
+  const hasil = new Map<string, boolean>();
+  const keys = new Set<string>();
+  for (const r of rows) {
+    const p = String((r as { platform?: string }).platform ?? '').toLowerCase();
+    if (p === 'telegram') continue;
+    const rawChat = String((r as { chat_id?: string }).chat_id ?? '');
+    if (!rawChat || isGroupChatKey(rawChat)) continue;
+    const cloudKey = sharedChatKeyDari(rawChat);
+    if (cloudKey && !isGroupChatKey(cloudKey)) keys.add(cloudKey);
+  }
+  if (keys.size === 0) return hasil;
+
+  const cutoffIso = new Date(nowMs - META_CLOUD_24H_WINDOW_MS).toISOString();
+  await Promise.all(
+    Array.from(keys).map(async (cloudKey) => {
+      try {
+        const { data, error } = await client
+          .from('messages')
+          .select('id')
+          .eq('chat_id', cloudKey)
+          .eq('role', 'user')
+          .gte('created_at', cutoffIso)
+          .limit(1);
+        if (error) return; // fail-open bila DB bermasalah
+        hasil.set(cloudKey, !data || data.length === 0);
+      } catch {
+        // fail-open
+      }
+    }),
+  );
+  return hasil;
 }
 
 function teksPengingatCadangan(pesan: string): string {
@@ -444,13 +500,20 @@ export async function checkDueReminders(
     const TUNGGU_MAKS_MS = options?.allowWait === false ? 0 : 20_000;
     if (TUNGGU_MAKS_MS > 0) {
     try {
-      const cekBolehUntukKanal = (row: Record<string, unknown>, nowMs: number): boolean => {
+      const cekBolehUntukKanal = (
+        row: Record<string, unknown>,
+        nowMs: number,
+        expiredMap?: Map<string, boolean>,
+      ): boolean => {
         const p = String((row as { platform?: string }).platform ?? '').toLowerCase();
         if (platformFilter && p !== platformFilter && p !== '') return false;
         if (!filterKanalAktif || !options?.channelFilter) return true;
+        const rawChat = String((row as { chat_id?: string }).chat_id ?? '');
+        const cloudKey = rawChat && !isGroupChatKey(rawChat) ? sharedChatKeyDari(rawChat) : '';
+        const cloudWindowExpired = cloudKey ? expiredMap?.get(cloudKey) === true : false;
         return bolehProsesKanalPengingat(
           row as { chat_id?: string; message?: string; due_at?: string; platform?: string },
-          { channelFilter: options.channelFilter, nowMs, cloudMaintenance },
+          { channelFilter: options.channelFilter, nowMs, cloudMaintenance, cloudWindowExpired },
         );
       };
 
@@ -462,7 +525,11 @@ export async function checkDueReminders(
       const resTelat = await Promise.all(queriesTelat);
       const sudahTelatRows = resTelat.flatMap((r) => (r.data ?? []) as Array<Record<string, unknown>>);
       const nowCekMs = Date.now();
-      const adaYangTelat = sudahTelatRows.some((r) => cekBolehUntukKanal(r, nowCekMs));
+      const expiredTelat =
+        filterKanalAktif && !cloudMaintenance
+          ? await cekJendelaCloud24JamKadaluarsa(c, sudahTelatRows, nowCekMs)
+          : undefined;
+      const adaYangTelat = sudahTelatRows.some((r) => cekBolehUntukKanal(r, nowCekMs, expiredTelat));
 
       if (!adaYangTelat) {
         const batasCek = new Date(Date.now() + TUNGGU_MAKS_MS + 2000).toISOString();
@@ -472,6 +539,10 @@ export async function checkDueReminders(
         ];
         const resHampir = await Promise.all(queriesHampir);
         const hampirRows = resHampir.flatMap((r) => (r.data ?? []) as Array<Record<string, unknown>>);
+        const expiredHampir =
+          filterKanalAktif && !cloudMaintenance && hampirRows.length > 0
+            ? await cekJendelaCloud24JamKadaluarsa(c, hampirRows, Date.now())
+            : undefined;
         const hampirList = hampirRows
           .filter((r) => {
             if (!filterKanalAktif && !platformFilter) return true;
@@ -491,7 +562,7 @@ export async function checkDueReminders(
             }
             const dueMs = new Date(String((r as { due_at?: string }).due_at ?? '')).getTime();
             return Number.isFinite(dueMs)
-              ? cekBolehUntukKanal(r, dueMs + 1_000)
+              ? cekBolehUntukKanal(r, dueMs + 1_000, expiredHampir)
               : true;
           })
           .sort((a, b) => new Date(String(a.due_at ?? 0)).getTime() - new Date(String(b.due_at ?? 0)).getTime());
@@ -575,13 +646,32 @@ export async function checkDueReminders(
       if (filterKanalAktif && options?.channelFilter) {
         const nowMs = Date.now();
         const filter = options.channelFilter;
-        data = data.filter((r) =>
-          bolehProsesKanalPengingat(r as { chat_id?: string; message?: string; due_at?: string; platform?: string }, {
+        const expiredMap =
+          remTable === 'reminders' && !cloudMaintenance
+            ? await cekJendelaCloud24JamKadaluarsa(client, data, nowMs)
+            : undefined;
+        data = data.filter((r) => {
+          const row = r as { id?: number; chat_id?: string; message?: string; due_at?: string; platform?: string };
+          const rawChat = String(row.chat_id ?? '');
+          const cloudKey = rawChat && !isGroupChatKey(rawChat) ? sharedChatKeyDari(rawChat) : '';
+          const cloudWindowExpired = cloudKey ? expiredMap?.get(cloudKey) === true : false;
+          const allowed = bolehProsesKanalPengingat(row, {
             channelFilter: filter,
             nowMs,
             cloudMaintenance,
-          }),
-        );
+            cloudWindowExpired,
+          });
+          if (!allowed && filter === 'cloud_only' && cloudWindowExpired && typeof row.id === 'number') {
+            const lastLog = cloud24hHandoffLoggedAt.get(row.id) || 0;
+            if (nowMs - lastLog > 15 * 60_000) {
+              cloud24hHandoffLoggedAt.set(row.id, nowMs);
+              console.log(
+                `[remind] Lewati WA Cloud #${row.id} (${cloudKey}): di luar jendela 24 jam Meta — diserahkan ke jalur Baileys.`,
+              );
+            }
+          }
+          return allowed;
+        });
         if (data.length === 0) return 0;
       }
 

@@ -1649,7 +1649,7 @@
  },
  {
   "path": "src/remind.ts",
-  "lines": 834,
+  "lines": 924,
   "kind": "src",
   "exports": [
    "iface ReminderItem",
@@ -1666,6 +1666,7 @@
    "const BAILEYS_FALLBACK_KE_CLOUD_MS",
    "const CLOUD_FALLBACK_KE_BAILEYS_MS",
    "const GROUP_REMINDER_MAX_LATE_MS",
+   "const META_CLOUD_24H_WINDOW_MS",
    "fn adalahPengingatGrupKadaluarsa",
    "iface OpsiFilterKanalPengingat",
    "fn bolehProsesKanalPengingat",
@@ -3531,7 +3532,7 @@
  },
  {
   "path": "tests/pengingat-kanal-baileys.test.mjs",
-  "lines": 135,
+  "lines": 180,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -3551,7 +3552,8 @@
    "failover maintenance Cloud API: Baileys langsung ambil semua WA, Cloud tunda WA tapi tetap proses Telegram",
    "wiring: Baileys, Cloud, Cron, dan Multi-Hari terpasang konsisten tanpa kebocoran",
    "marker Baileys eksklusif: idempoten, terdeteksi sebagai Baileys & eksklusif, bersih saat di-strip",
-   "eksklusif Baileys: telat 1 jam pun TETAP hanya diproses Baileys dan ditolak Cloud API"
+   "eksklusif Baileys: telat 1 jam pun TETAP hanya diproses Baileys dan ditolak Cloud API",
+   "jendela 24 jam Meta habis: Cloud API lewati (cegah sukses palsu 131047) dan Baileys langsung ambil alih tepat waktu"
   ]
  },
  {

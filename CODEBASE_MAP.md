@@ -20,9 +20,9 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 | public | 20 | 11674 |
 | scripts | 18 | 3347 |
 | sql | 28 | 2958 |
-| src | 53 | 40380 |
-| tests | 103 | 11085 |
-| **total** | **233** | **73102** |
+| src | 53 | 40470 |
+| tests | 103 | 11130 |
+| **total** | **233** | **73237** |
 
 ## Titik masuk
 
@@ -85,7 +85,7 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 | `api/stats.ts` | 1327 | - | fn getModelCatalog, fn handler |
 | `src/games/engine.ts` | 1275 | MESIN GAME — logika utama semua permainan. Alur: `mulaiGame()` -> state awal -> tiap pesan user lewat `prosesGame()` -> state baru + teks balasan. State disimpan di DB (tabel game_ | iface HasilGame, fn unoMulai, fn unoLangkah, fn capsaMulai, fn capsaKombinasiTerbaik |
 | `src/local_ai_vps.ts` | 1046 | LOCAL AI VPS (VPS 2) CONTROL & LIVE ROUTING SERVICE Mengelola VPS InstaBox kedua khusus model AI lokal (`llama-server` / Ternary-Bonsai-2): - Status VPS live (GET /v1/machines/{id} | const LOCAL_AI_VPS_STATE_FILENAME, const LOCAL_AI_KEEPALIVE_FILENAME, const LOCAL_AI_KEEPALIVE_LEASE_ID, iface LocalAiVpsCloudState, iface LocalAiVpsView |
-| `src/remind.ts` | 834 | - | iface ReminderItem, iface HasilSimpanReminder, fn saveReminderToDb, fn simpanReminderCerdas, const BAILEYS_REMINDER_MARKER |
+| `src/remind.ts` | 924 | - | iface ReminderItem, iface HasilSimpanReminder, fn saveReminderToDb, fn simpanReminderCerdas, const BAILEYS_REMINDER_MARKER |
 | `src/group_mode.ts` | 728 | ENGINE MODE GRUP BERSAMA — WhatsApp Baileys & Telegram. Mengelola 3 mode per-grup: - 'mention' (default): balas saat @mention, reply pesan bot, kata panggil natural, atau follow-up | type GroupMode, iface GroupModeRecord, type GroupCommandKind, iface GroupEvaluationInput, iface GroupEvaluationResult |
 | `src/vps_keepalive.ts` | 593 | AUTO-PING / ACTIVITY LEASE VPS BAILEYS (ANTI AUTO-PAUSE) InstaBox mem-pause sandbox yang idle selama `autoSuspendAfterSeconds` (free plan: 1800 detik = 30 menit). Endpoint resmi un | const KEEPALIVE_STATE_FILENAME, const KEEPALIVE_LEASE_ID, const MIN_KEEPALIVE_INTERVAL_SECS, const MAX_KEEPALIVE_LEASE_TTL_SECS, type KeepaliveSource |
 | `src/vps_monitor.ts` | 590 | MONITOR LIFECYCLE VPS BAILEYS (PASSIVE & COMPLIANT) Memantau batas runtime maksimum (mis. 120 menit pada InstaBox Free Plan) dan perubahan status VPS (paused/stopped/pulih). Modul  | const STATE_FILENAME, iface InstaboxMachineSnapshot, iface VpsMonitorState, iface VpsMonitorEvent, iface CekLifecycleDeps |

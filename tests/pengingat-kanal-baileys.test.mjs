@@ -9,6 +9,7 @@ import {
   BAILEYS_STRICT_MARKER,
   BAILEYS_FALLBACK_KE_CLOUD_MS,
   CLOUD_FALLBACK_KE_BAILEYS_MS,
+  META_CLOUD_24H_WINDOW_MS,
   tandaiPengingatBaileys,
   tandaiPengingatBaileysEksklusif,
   adalahPengingatBaileys,
@@ -131,4 +132,48 @@ test('eksklusif Baileys: telat 1 jam pun TETAP hanya diproses Baileys dan ditola
 
   assert.equal(bolehProsesKanalPengingat(item, { channelFilter: 'baileys_only', nowMs: now }), true);
   assert.equal(bolehProsesKanalPengingat(item, { channelFilter: 'cloud_only', nowMs: now }), false);
+});
+
+test('jendela 24 jam Meta habis: Cloud API lewati (cegah sukses palsu 131047) dan Baileys langsung ambil alih tepat waktu', () => {
+  assert.equal(META_CLOUD_24H_WINDOW_MS, (23 * 60 + 30) * 60 * 1000, 'margin aman harus 23 jam 30 menit');
+
+  const now = Date.UTC(2026, 10, 26, 23, 0, 5);
+  const due = new Date(now - 5_000).toISOString(); // baru telat 5 detik (belum lewat 180 detik)
+  const itemWa = { chat_id: 'wa_628991333323', message: 'bangun', due_at: due, platform: 'whatsapp' };
+  const itemTg = { chat_id: 'wa_1073504871', message: 'bangun', due_at: due, platform: 'telegram' };
+
+  // Saat jendela 24 jam Meta sudah habis -> Cloud skip, Baileys langsung ambil (tanpa tunggu 180s)
+  assert.equal(
+    bolehProsesKanalPengingat(itemWa, { channelFilter: 'cloud_only', nowMs: now, cloudWindowExpired: true }),
+    false,
+  );
+  assert.equal(
+    bolehProsesKanalPengingat(itemWa, { channelFilter: 'baileys_only', nowMs: now, cloudWindowExpired: true }),
+    true,
+  );
+
+  // Saat jendela 24 jam Meta masih terbuka -> tetap rute normal ke Cloud
+  assert.equal(
+    bolehProsesKanalPengingat(itemWa, { channelFilter: 'cloud_only', nowMs: now, cloudWindowExpired: false }),
+    true,
+  );
+  assert.equal(
+    bolehProsesKanalPengingat(itemWa, { channelFilter: 'baileys_only', nowMs: now, cloudWindowExpired: false }),
+    false,
+  );
+
+  // Telegram tidak terpengaruh jendela 24 jam Meta
+  assert.equal(
+    bolehProsesKanalPengingat(itemTg, { channelFilter: 'cloud_only', nowMs: now, cloudWindowExpired: true }),
+    true,
+  );
+  assert.equal(
+    bolehProsesKanalPengingat(itemTg, { channelFilter: 'baileys_only', nowMs: now, cloudWindowExpired: true }),
+    false,
+  );
+
+  // Wiring check: src/remind.ts wajib mengecek jendela 24 jam di checkDueReminders
+  const REMIND = baca('src/remind.ts');
+  assert.match(REMIND, /cekJendelaCloud24JamKadaluarsa/);
+  assert.match(REMIND, /META_CLOUD_24H_WINDOW_MS/);
 });
