@@ -2152,7 +2152,7 @@
  },
  {
   "path": "src/whatsapp_baileys.ts",
-  "lines": 2456,
+  "lines": 2503,
   "kind": "src",
   "exports": [
    "iface BaileysGroupTargetInfo",
@@ -2176,6 +2176,7 @@
    "iface MinimalPairingCreds",
    "fn hasPairedWhatsAppAccount",
    "fn shouldRequestPairingCode",
+   "fn bangunPesanLogoutWaHtml",
    "fn isIncompletePairingCreds",
    "fn startWhatsApp"
   ],
@@ -2534,7 +2535,7 @@
  },
  {
   "path": "tests/baileys-lid-dan-stiker.test.mjs",
-  "lines": 163,
+  "lines": 179,
   "kind": "tests",
   "exports": [],
   "imports": [
@@ -2553,7 +2554,8 @@
    "systemPrompt tidak mengaktifkan ENERGI RENDAH dan memakai register gaul pada slang santai",
    "buangBocorInstruksi membersihkan janji meta kaku ala bot CS",
    "shouldRequestPairingCode tidak memicu pairing ulang saat fase restart 515 (account terisi walau registered false)",
-   "isIncompletePairingCreds mendeteksi sisa requestPairingCode yang gagal tanpa menandai akun valid"
+   "isIncompletePairingCreds mendeteksi sisa requestPairingCode yang gagal tanpa menandai akun valid",
+   "bangunPesanLogoutWaHtml menyertakan status 401, info aman HTML-escaped, dan perintah restart"
   ]
  },
  {

@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  bangunPesanLogoutWaHtml,
   extractPnDigits,
   hasPairedWhatsAppAccount,
   isIncompletePairingCreds,
@@ -159,4 +160,19 @@ test('isIncompletePairingCreds mendeteksi sisa requestPairingCode yang gagal tan
     false,
   );
   assert.equal(isIncompletePairingCreds({ registered: true, me: { id: '6287789587654:12@s.whatsapp.net' } }), false);
+});
+
+test('bangunPesanLogoutWaHtml menyertakan status 401, info aman HTML-escaped, dan perintah restart', () => {
+  const html = bangunPesanLogoutWaHtml({
+    statusCode: 401,
+    errorDetail: 'Intentional <script>Logout</script> & token expired',
+    phoneNumber: '6287789587654',
+    modeLabel: 'Primary VPS',
+    nowMs: Date.UTC(2026, 10, 27, 14, 30, 0),
+  });
+  assert.ok(html.includes('STATUS 401'));
+  assert.ok(html.includes('6287789587654'));
+  assert.ok(html.includes('Primary VPS'));
+  assert.ok(html.includes('&lt;script&gt;Logout&lt;/script&gt; &amp; token expired'));
+  assert.ok(html.includes('sudo systemctl restart freeaibot-wa'));
 });

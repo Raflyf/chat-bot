@@ -378,6 +378,9 @@ export function stopBaileysReminderWorker(): void {
   }
 }
 import {
+  escapeHtml,
+  formatWaktuWib,
+  kirimNotifTelegramPemilik,
   laporShutdownVps,
   mulaiTimerPeringatanLokalVps,
   parseInstaboxMachine,
@@ -817,7 +820,33 @@ export function shouldRequestPairingCode(
 }
 
 /**
- * Deteksi `creds.json` setengah jadi dari permintaan pairing code yang batal/kedaluwarsa
+ * Bangun pesan alert HTML Telegram saat Baileys mengalami logout (status 401).
+ */
+export function bangunPesanLogoutWaHtml(opts: {
+  statusCode?: number;
+  errorDetail?: string;
+  phoneNumber?: string;
+  modeLabel?: string;
+  nowMs?: number;
+}): string {
+  const waktuWib = formatWaktuWib(opts.nowMs ?? Date.now());
+  const nomor = String(opts.phoneNumber ?? '').trim() || '-';
+  const mode = String(opts.modeLabel ?? '').trim() || 'Primary VPS';
+  const kode = opts.statusCode ?? DisconnectReason.loggedOut;
+  const detail = String(opts.errorDetail ?? '').trim().slice(0, 180);
+  return (
+    `<b>[WA BAILEYS LOGOUT - STATUS ${escapeHtml(String(kode))}]</b>\n` +
+    `Mode: <code>${escapeHtml(mode)}</code>\n` +
+    `Nomor: <code>${escapeHtml(nomor)}</code>\n` +
+    `Waktu: ${escapeHtml(waktuWib)}\n` +
+    (detail ? `Detail: <code>${escapeHtml(detail)}</code>\n` : '') +
+    `Sesi lama sudah dibersihkan otomatis. Restart bot untuk menautkan ulang:\n` +
+    `<code>sudo systemctl restart freeaibot-wa &amp;&amp; sudo journalctl -u freeaibot-wa -f</code>`
+  );
+}
+
+/**
+ * Cek `creds.json` setengah jadi dari permintaan pairing code yang batal/kedaluwarsa
  * (belum `registered`, belum punya `account`, tetapi menyimpan `pairingCode` atau `me.id` tanpa `:device`).
  */
 export function isIncompletePairingCreds(creds: MinimalPairingCreds | null | undefined): boolean {
@@ -1028,6 +1057,24 @@ export async function startWhatsApp(): Promise<void> {
           fs.rmSync(sessionDir, { recursive: true, force: true });
         } catch (e) {
           console.error('[whatsapp] Gagal menghapus sessionDir lokal:', e);
+        }
+        const errorDetail =
+          (lastDisconnect?.error as { message?: string } | undefined)?.message || '';
+        const modeLabel = process.argv.includes('--from-watchdog') || isStandbyBackupMode()
+          ? 'Standby Laptop'
+          : 'Primary VPS';
+        const pesanHtml = bangunPesanLogoutWaHtml({
+          statusCode,
+          errorDetail,
+          phoneNumber: config.whatsappPhoneNumber,
+          modeLabel,
+        });
+        const terkirim = await kirimNotifTelegramPemilik(pesanHtml).catch((err) => {
+          console.warn('[whatsapp] Gagal mengirim notifikasi logout ke Telegram:', err);
+          return false;
+        });
+        if (terkirim) {
+          console.log('[whatsapp] Notifikasi logout WA (status 401) berhasil dikirim ke Telegram pemilik.');
         }
         console.log('[whatsapp] Sesi telah direset. Silakan restart bot untuk scan QR atau pairing baru.');
       }
