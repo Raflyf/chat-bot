@@ -782,14 +782,94 @@ export async function sendWhatsAppStickerSafe(
   }
 }
 
+export interface MinimalPairingCreds {
+  registered?: boolean;
+  account?: unknown;
+  pairingCode?: string | null;
+  me?: { id?: string | null } | null;
+}
+
+/**
+ * Cek apakah kredensial sudah berada pada fase terpairing/siap pakai
+ * (baik `registered: true`, sudah punya `account` dari `pair-success`,
+ * atau `me.id` sudah memiliki companion device id `:N@`).
+ */
+export function hasPairedWhatsAppAccount(creds: MinimalPairingCreds | null | undefined): boolean {
+  if (!creds) return false;
+  if (creds.registered) return true;
+  if (creds.account) return true;
+  const meId = String(creds.me?.id ?? '').trim();
+  return Boolean(meId && /:\d+@/.test(meId));
+}
+
+/**
+ * Cek apakah aman meminta kode pairing 8-digit untuk socket baru.
+ * Mengembalikan `false` pada fase `515` restart sesudah QR/pairing sukses
+ * (ketika `registered` masih `false` tetapi `creds.account` sudah terisi),
+ * agar `requestPairingCode` tidak menimpa `creds.me` dan memicu `401 loggedOut`.
+ */
+export function shouldRequestPairingCode(
+  creds: MinimalPairingCreds | null | undefined,
+  phoneNumber: string | null | undefined,
+): boolean {
+  if (!String(phoneNumber ?? '').trim()) return false;
+  return !hasPairedWhatsAppAccount(creds);
+}
+
+/**
+ * Deteksi `creds.json` setengah jadi dari permintaan pairing code yang batal/kedaluwarsa
+ * (belum `registered`, belum punya `account`, tetapi menyimpan `pairingCode` atau `me.id` tanpa `:device`).
+ */
+export function isIncompletePairingCreds(creds: MinimalPairingCreds | null | undefined): boolean {
+  if (!creds || hasPairedWhatsAppAccount(creds)) return false;
+  const meId = String(creds.me?.id ?? '').trim();
+  return Boolean(creds.pairingCode || (meId && !/:\d+@/.test(meId)));
+}
+
+function readLocalCredsRaw(): MinimalPairingCreds | null {
+  try {
+    const credsFile = path.join(sessionDir, 'creds.json');
+    if (!fs.existsSync(credsFile)) return null;
+    return JSON.parse(fs.readFileSync(credsFile, 'utf8')) as MinimalPairingCreds;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Memulai instance WhatsApp Multi-Device Baileys dengan persistensi sesi ke Supabase.
  */
 export async function startWhatsApp(): Promise<void> {
   assertRuntime('whatsapp');
 
-  console.log('[whatsapp] Memeriksa sesi tersimpan di Supabase...');
-  await restoreSessionFromSupabase(sessionDir, { preferNewerRemote: true });
+  let localCreds = readLocalCredsRaw();
+  if (isIncompletePairingCreds(localCreds)) {
+    console.warn('[whatsapp] Mendeteksi sisa kredensial pairing belum selesai. Mereset direktori sesi lokal...');
+    try {
+      fs.rmSync(sessionDir, { recursive: true, force: true });
+    } catch (e) {
+      console.warn('[whatsapp] Gagal membersihkan sessionDir setengah jadi:', e);
+    }
+    localCreds = null;
+  }
+
+  const inPostPairRestart = Boolean(localCreds && !localCreds.registered && hasPairedWhatsAppAccount(localCreds));
+  const shouldRestoreRemote = !inPostPairRestart && !(reconnectCount > 0 && hasPairedWhatsAppAccount(localCreds));
+  if (shouldRestoreRemote) {
+    console.log('[whatsapp] Memeriksa sesi tersimpan di Supabase...');
+    await restoreSessionFromSupabase(sessionDir, { preferNewerRemote: true });
+    localCreds = readLocalCredsRaw();
+    if (isIncompletePairingCreds(localCreds)) {
+      console.warn('[whatsapp] Sesi remote berisi kredensial pairing belum selesai. Mereset direktori lokal agar pairing ulang bersih...');
+      try {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+      } catch (e) {
+        console.warn('[whatsapp] Gagal membersihkan sessionDir dari remote:', e);
+      }
+    }
+  } else {
+    console.log('[whatsapp] Sesi terpairing lokal ditemukan (fase 515/reconnect), melewati restore Supabase agar tidak menimpa kredensial terbaru.');
+  }
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
@@ -801,18 +881,33 @@ export async function startWhatsApp(): Promise<void> {
   });
   currentConnectingSock = sock;
 
-  // 1. Simpan perubahan kredensial ke disk lokal dan sinkronkan ke Supabase
+  let socketClosed = false;
+  let pairingCodeTimer: NodeJS.Timeout | null = null;
+  const clearPairingCodeTimer = (): void => {
+    if (pairingCodeTimer) {
+      clearTimeout(pairingCodeTimer);
+      pairingCodeTimer = null;
+    }
+  };
+
+  // 1. Simpan perubahan kredensial ke disk lokal dan sinkronkan ke Supabase (hanya jika sudah terpairing)
   sock.ev.on('creds.update', async () => {
     await saveCreds();
-    await syncSessionDirToSupabase(sessionDir);
+    if (hasPairedWhatsAppAccount(state.creds)) {
+      clearPairingCodeTimer();
+      await syncSessionDirToSupabase(sessionDir);
+    }
   });
 
-  // Jika nomor telepon disediakan dan belum terdaftar, gunakan Pairing Code 8-digit
-  if (config.whatsappPhoneNumber && !state.creds.registered) {
+  // Jika nomor telepon disediakan dan benar-benar belum terpairing (bukan fase 515), minta Pairing Code 8-digit
+  if (shouldRequestPairingCode(state.creds, config.whatsappPhoneNumber)) {
     let cleanNumber = config.whatsappPhoneNumber.replace(/\D/g, '');
     if (cleanNumber.startsWith('0')) cleanNumber = '62' + cleanNumber.slice(1);
 
-    setTimeout(async () => {
+    pairingCodeTimer = setTimeout(async () => {
+      pairingCodeTimer = null;
+      if (socketClosed || currentConnectingSock !== sock) return;
+      if (!shouldRequestPairingCode(state.creds, config.whatsappPhoneNumber)) return;
       try {
         const code = await sock.requestPairingCode(cleanNumber);
         console.log('\n======================================================');
@@ -847,6 +942,7 @@ export async function startWhatsApp(): Promise<void> {
 
     if (connection === 'open') {
       // Koneksi berhasil -> reset penghitung reconnect (perbaikan audit 14 Okt 2026).
+      clearPairingCodeTimer();
       reconnectCount = 0;
       activeSock = sock;
       if (currentConnectingSock === sock) currentConnectingSock = null;
@@ -862,6 +958,8 @@ export async function startWhatsApp(): Promise<void> {
     }
 
     if (connection === 'close') {
+      socketClosed = true;
+      clearPairingCodeTimer();
       stopBaileysReminderWorker();
       batalkanSyncSesiDebounced();
       if (sessionSyncTimer) { clearInterval(sessionSyncTimer); sessionSyncTimer = null; }
@@ -905,6 +1003,9 @@ export async function startWhatsApp(): Promise<void> {
             `[whatsapp] Gagal menyambung ulang ${MAX_RECONNECT}x. Berhenti mencoba otomatis — restart bot untuk mencoba lagi.`,
           );
           return;
+        }
+        if (hasPairedWhatsAppAccount(state.creds)) {
+          await saveCreds().catch(() => {});
         }
         // Tutup socket lama supaya tidak menumpuk (best-effort).
         try {

@@ -3,7 +3,13 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractPnDigits, resolveBaileysSenderNumber } from '../src/whatsapp_baileys.js';
+import {
+  extractPnDigits,
+  hasPairedWhatsAppAccount,
+  isIncompletePairingCreds,
+  resolveBaileysSenderNumber,
+  shouldRequestPairingCode,
+} from '../src/whatsapp_baileys.js';
 import { sanitizeAssistantOutput, systemPrompt } from '../src/skills.js';
 
 test('extractPnDigits hanya menerima JID nomor telepon dan menolak LID/grup', () => {
@@ -110,4 +116,47 @@ test('buangBocorInstruksi membersihkan janji meta kaku ala bot CS', () => {
   assert.equal(sanitizeAssistantOutput('Halo, aku di sini.', 'tes'), '');
   const tanpaKoma = sanitizeAssistantOutput('Yaa maap, tadi kebawa formal. Santai aja deh, mau ngobrolin apa?', 'kaku bet jir');
   assert.ok(tanpaKoma && !/[,;:]$/.test(tanpaKoma), `tidak boleh menyisakan koma menggantung: ${tanpaKoma}`);
+});
+
+test('shouldRequestPairingCode tidak memicu pairing ulang saat fase restart 515 (account terisi walau registered false)', () => {
+  // Kredensial bersih tanpa akun & nomor tersedia -> boleh minta kode pairing
+  assert.equal(shouldRequestPairingCode({ registered: false }, '6287789587654'), true);
+  assert.equal(hasPairedWhatsAppAccount({ registered: false }), false);
+
+  // Fase 515 tepat setelah pair-success: registered masih false, tapi account & me (:device) sudah terisi -> WAJIB false
+  const fase515Creds = {
+    registered: false,
+    account: { details: 'mock' },
+    me: { id: '6287789587654:12@s.whatsapp.net' },
+  };
+  assert.equal(hasPairedWhatsAppAccount(fase515Creds), true);
+  assert.equal(shouldRequestPairingCode(fase515Creds, '6287789587654'), false);
+
+  // Hanya punya me.id dengan companion device :device -> sudah terpairing
+  assert.equal(
+    shouldRequestPairingCode({ registered: false, me: { id: '6287789587654:4@s.whatsapp.net' } }, '6287789587654'),
+    false,
+  );
+
+  // Sudah registered penuh -> false
+  assert.equal(shouldRequestPairingCode({ registered: true }, '6287789587654'), false);
+
+  // Tidak ada nomor telepon -> false
+  assert.equal(shouldRequestPairingCode({ registered: false }, ''), false);
+});
+
+test('isIncompletePairingCreds mendeteksi sisa requestPairingCode yang gagal tanpa menandai akun valid', () => {
+  assert.equal(isIncompletePairingCreds({ registered: false, pairingCode: 'PM796NL3', me: { id: '6287789587654@s.whatsapp.net' } }), true);
+  assert.equal(isIncompletePairingCreds({ registered: false, me: { id: '6287789587654@s.whatsapp.net' } }), true);
+  assert.equal(isIncompletePairingCreds({ registered: false }), false);
+  assert.equal(
+    isIncompletePairingCreds({
+      registered: false,
+      pairingCode: 'PM796NL3',
+      account: { details: 'ok' },
+      me: { id: '6287789587654:12@s.whatsapp.net' },
+    }),
+    false,
+  );
+  assert.equal(isIncompletePairingCreds({ registered: true, me: { id: '6287789587654:12@s.whatsapp.net' } }), false);
 });

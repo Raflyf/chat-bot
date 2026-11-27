@@ -20,9 +20,9 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 | public | 20 | 11674 |
 | scripts | 18 | 3347 |
 | sql | 28 | 2958 |
-| src | 53 | 40470 |
-| tests | 103 | 11130 |
-| **total** | **233** | **73237** |
+| src | 53 | 40571 |
+| tests | 103 | 11179 |
+| **total** | **233** | **73387** |
 
 ## Titik masuk
 
@@ -73,7 +73,7 @@ Dihasilkan oleh `npm run map:codebase` dari AST repo lokal. Tidak ada kode aplik
 | --- | --- | --- | --- |
 | `src/skills.ts` | 6122 | - | fn bersihkanKlausaMenggantung, fn cleanMathAndNoise, fn userAskedAboutMedia, fn stripMediaNarration, fn adalahReaksiVisualStiker |
 | `src/notes.ts` | 4393 | PENCATATAN PRIBADI, catatan, tugas, keuangan, kebiasaan. KENAPA MODUL INI ADA (permintaan pemilik produk, 04 Okt 2026): "apakah bot nya bisa digunakan untuk mencatat dan mengingat  | type NoteKind, type ExpenseKind, iface NiatTerdeteksi, iface CatatanRingkas, iface TugasRingkas |
-| `src/whatsapp_baileys.ts` | 2355 | - | iface BaileysGroupTargetInfo, fn unwrapBaileysMessage, fn deteksiTargetBotBaileys, fn startBaileysReminderWorker, fn stopBaileysReminderWorker |
+| `src/whatsapp_baileys.ts` | 2456 | - | iface BaileysGroupTargetInfo, fn unwrapBaileysMessage, fn deteksiTargetBotBaileys, fn startBaileysReminderWorker, fn stopBaileysReminderWorker |
 | `src/providers.ts` | 2252 | - | fn getOrderedKeys, iface TextPart, iface ImagePart, type ContentPart, iface ChatMsg |
 | `src/web.ts` | 2220 | Mesin Pencari & Penjelajah Web Bebas Real-Time 2026 (Zero-API-Key) Menggabungkan Google News Global & ID, Bing News, Hacker News, Wikipedia (ID/EN), arXiv, serta Deep Webpage Scrap | fn isSafePublicUrl, fn fetchAmanSsrf, fn cleanStr, fn decodeBingUrl, fn isJunkArticle |
 | `src/baileys_backup_web.ts` | 1790 | BAILEYS BACKUP WEB & CLOUD SYNC SERVICE Menyediakan kontrol web penuh untuk Baileys Backup (status VPS InstaBox, telemetri failover laptop Windows, Resume/Start VPS, dan sinkronisa | const BAILEYS_BACKUP_CLOUD_FILENAME, const BAILEYS_BACKUP_DESKTOP_FILENAME, const DESKTOP_HEARTBEAT_TTL_SECS, const BAILEYS_BACKUP_RELEASE_URL, type VpsAvailability |
@@ -364,7 +364,7 @@ Semua tes offline: `npm test`, atau satu berkas `node --import tsx --test tests/
 | `src/notes.ts` | 4393 |
 | `public/css/console.css` | 3654 |
 | `public/js/dashboard.js` | 2542 |
-| `src/whatsapp_baileys.ts` | 2355 |
+| `src/whatsapp_baileys.ts` | 2456 |
 | `src/providers.ts` | 2252 |
 | `src/web.ts` | 2220 |
 | `src/baileys_backup_web.ts` | 1790 |
