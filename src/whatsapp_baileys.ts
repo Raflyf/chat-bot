@@ -882,8 +882,7 @@ export async function startWhatsApp(): Promise<void> {
     localCreds = null;
   }
 
-  const inPostPairRestart = Boolean(localCreds && !localCreds.registered && hasPairedWhatsAppAccount(localCreds));
-  const shouldRestoreRemote = !inPostPairRestart && !(reconnectCount > 0 && hasPairedWhatsAppAccount(localCreds));
+  const shouldRestoreRemote = !(reconnectCount > 0 && hasPairedWhatsAppAccount(localCreds));
   if (shouldRestoreRemote) {
     console.log('[whatsapp] Memeriksa sesi tersimpan di Supabase...');
     await restoreSessionFromSupabase(sessionDir, { preferNewerRemote: true });
